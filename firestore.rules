@@ -1,0 +1,11 @@
+rules_version = '2';
+// All data access goes through the Cloud Run backend, which uses the Admin SDK
+// (Admin SDK bypasses these rules). Direct client access is denied outright, so
+// nothing is world-readable/writable even if someone has the web config.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

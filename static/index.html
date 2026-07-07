@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeetCode Revision</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- Sign-in gate -->
+  <div id="signin-gate" class="modal hidden">
+    <div class="modal-card signin">
+      <h2>LeetCode Revision</h2>
+      <p class="small">Sign in with your allow-listed Google account.</p>
+      <button id="btn-signin" class="primary">Sign in with Google</button>
+      <p id="signin-error" class="help"></p>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <header>
+      <div class="header-top">
+        <h1>LeetCode Revision <span class="v2">v2</span></h1>
+        <div id="user-chip"></div>
+      </div>
+      <nav id="tabs">
+        <button data-tab="today" class="active">Today</button>
+        <button data-tab="discover">Discover</button>
+        <button data-tab="topics">Topics</button>
+        <button data-tab="insights">Insights</button>
+        <button data-tab="playbook">Playbook</button>
+        <button data-tab="history">History</button>
+        <button data-tab="problems">Problems</button>
+        <button data-tab="settings">Settings</button>
+      </nav>
+      <div id="overview" class="overview"></div>
+    </header>
+
+    <!-- Active session banner (timer + hint ladder) -->
+    <div id="active-banner" class="banner hidden">
+      <div class="banner-info">
+        <span class="dot"></span>
+        <strong id="active-title"></strong>
+        <span id="active-timer" class="timer">00:00</span>
+      </div>
+      <div class="banner-actions">
+        <button id="btn-hint" class="ghost hint-btn">💡 Stuck?</button>
+        <a id="active-link" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
+        <button id="btn-cancel-session" class="ghost">Cancel</button>
+      </div>
+    </div>
+    <div id="hint-panel" class="hint-panel hidden"></div>
+    <div id="nudge" class="nudge hidden"></div>
+
+    <main>
+      <section id="tab-today" class="tab"></section>
+      <section id="tab-discover" class="tab hidden"></section>
+      <section id="tab-topics" class="tab hidden"></section>
+      <section id="tab-insights" class="tab hidden"></section>
+      <section id="tab-playbook" class="tab hidden"></section>
+      <section id="tab-history" class="tab hidden"></section>
+      <section id="tab-problems" class="tab hidden"></section>
+      <section id="tab-settings" class="tab hidden"></section>
+    </main>
+  </div>
+
+  <!-- Pre-solve prediction modal -->
+  <div id="predict-modal" class="modal hidden">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <h2>Before you start</h2>
+      <p class="small" id="predict-problem"></p>
+      <label>Which pattern do you think this is? <span class="help-inline">(trains recognition — skippable)</span></label>
+      <div class="pill-grid" id="predict-cats"></div>
+      <label>Approach in one sentence (optional)</label>
+      <input id="predict-approach" type="text" placeholder="e.g. sort then two pointers inward" />
+      <div class="modal-actions">
+        <button id="btn-skip-predict" class="ghost">Skip &amp; start</button>
+        <button id="btn-do-predict" class="primary">Lock in &amp; start</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post-solve annotation modal -->
+  <div id="annotate-modal" class="modal hidden">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="annotate-heading">
+      <h2 id="annotate-heading">Solved!</h2>
+      <div class="solved-problem">
+        <div class="solved-problem-main">
+          <a id="annotate-problem-link" href="#" target="_blank" rel="noopener">
+            <span id="annotate-problem-id"></span><span id="annotate-title"></span>
+          </a>
+          <span id="annotate-difficulty" class="badge hidden"></span>
+        </div>
+        <div id="annotate-problem-meta" class="solved-problem-meta"></div>
+      </div>
+      <div id="annotate-facts" class="facts"></div>
+
+      <label>How confident are you with this pattern?</label>
+      <div class="pill-group" id="conf-group">
+        <button data-val="1">Low</button>
+        <button data-val="2" class="sel">Medium</button>
+        <button data-val="3">High</button>
+      </div>
+
+      <label>How did it go?</label>
+      <div class="pill-group" id="indep-group">
+        <button data-val="solo" class="sel">Solved solo</button>
+        <button data-val="hints">Needed hints</button>
+        <button data-val="solution">Read solution</button>
+      </div>
+
+      <div class="row">
+        <div class="settings-field"><label>Time complexity</label><select id="annotate-time" class="cx"></select></div>
+        <div class="settings-field"><label>Space complexity</label><select id="annotate-space" class="cx"></select></div>
+      </div>
+
+      <label>What tripped you up? <span class="help-inline">(plain text — the coach structures it)</span></label>
+      <input id="annotate-note" type="text" placeholder="e.g. shrank the window before checking the count" />
+
+      <label>Approach / pattern (optional)</label>
+      <input id="annotate-approach" type="text" placeholder="e.g. monotonic stack" />
+
+      <div class="modal-actions">
+        <button id="btn-close-annotate" class="ghost">Close</button>
+        <button id="btn-save-annotate" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Approach-recall modal -->
+  <div id="recall-modal" class="modal hidden">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <h2>Quick recall</h2>
+      <p class="small" id="recall-problem"></p>
+      <p class="help">No coding — just recall the approach from memory in under 3 minutes.</p>
+      <label>How would you solve it? Key idea + the crucial trick.</label>
+      <textarea id="recall-text" rows="4" placeholder="Describe the approach…"></textarea>
+      <div class="row">
+        <div class="settings-field"><label>Time</label><select id="recall-time" class="cx"></select></div>
+        <div class="settings-field"><label>Space</label><select id="recall-space" class="cx"></select></div>
+      </div>
+      <div id="recall-grade" class="recall-grade hidden"></div>
+      <div class="modal-actions" id="recall-actions">
+        <button id="btn-close-recall" class="ghost">Cancel</button>
+        <button id="btn-submit-recall" class="primary">Check my recall</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Attempt detail (solution archive) modal -->
+  <div id="detail-modal" class="modal hidden">
+    <div class="modal-card wide" role="dialog" aria-modal="true">
+      <div id="detail-body"></div>
+      <div class="modal-actions"><button id="btn-close-detail" class="ghost">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Mock runner (full screen) -->
+  <div id="mock-modal" class="modal hidden">
+    <div class="modal-card wide" role="dialog" aria-modal="true">
+      <div id="mock-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="/firebase-config.js"></script>
+  <script src="/charts.js"></script>
+  <script src="/app.js"></script>
+  <script src="/views.js"></script>
+</body>
+</html>

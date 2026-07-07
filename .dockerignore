@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+local_data.json
+revision.db
+.git/
+.firebase/
+node_modules/
+*.md
+.env.local
+*.json.key
+service-account*.json

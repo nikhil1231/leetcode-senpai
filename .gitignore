@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment variables and credentials
+.env
+.env.*
+!.env.example
+*.serviceaccount.json
+*service-account*.json
+firebase-adminsdk-*.json
+*.json.key
+
+# Local application state
+local_data.json
+revision.db
+*.log
+
+# Firebase local cache
+.firebase/
+
+# Editor and OS files
+.claude/
+.DS_Store
+Thumbs.db
