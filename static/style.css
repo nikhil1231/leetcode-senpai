@@ -260,6 +260,12 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .recall-grade { margin-top: 14px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
 .grade-score { font-size: 15px; }
 .recall-grade .missed { color: var(--amber); font-size: 13px; }
+.grading { display: flex; align-items: center; gap: 12px; padding: 6px 2px; }
+.grading-text { color: var(--muted); font-size: 13px; animation: gradetext 1.4s ease-in-out infinite; }
+@keyframes gradetext { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+.spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+.spinner-sm { width: 12px; height: 12px; border-width: 2px; vertical-align: -1px; margin-right: 4px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* mock */
 .mock-prob { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }

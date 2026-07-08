@@ -310,8 +310,12 @@ function offerSimilar(sim) {
 // ---- recall modal --------------------------------------------------------------
 function openRecall(slug, title, category) {
   currentRecall = { slug, title, category };
+  stopRecallGrading();
   $("#recall-problem").textContent = `${title || slug}${category ? " · " + category : ""}`;
   $("#recall-text").value = "";
+  $("#recall-text").disabled = false;
+  $("#recall-time").disabled = false;
+  $("#recall-space").disabled = false;
   $("#recall-time").innerHTML = cxOptions("");
   $("#recall-space").innerHTML = cxOptions("");
   $("#recall-grade").classList.add("hidden");
@@ -329,8 +333,9 @@ function wireRecallButtons() {
 }
 
 async function submitRecall() {
+  const text = $("#recall-text").value.trim();
   const body = {
-    slug: currentRecall.slug, recall_text: $("#recall-text").value,
+    slug: currentRecall.slug, recall_text: text,
     complexity_time: $("#recall-time").value || null,
     complexity_space: $("#recall-space").value || null,
   };
@@ -338,8 +343,25 @@ async function submitRecall() {
     // manual self-grade path: ask confidence via pills inline
     body.confidence = await pickSelfGrade();
     if (body.confidence == null) return;
+    showRecallGrading(["Scheduling your next review…"]);
+  } else {
+    if (!text) { toast("Jot down your recall first."); return; }
+    showRecallGrading([
+      "Reading your recall…",
+      "Comparing against your past solution…",
+      "Checking for the key trick…",
+      "Grading…",
+    ]);
   }
-  const r = await api("/review/recall", "POST", body);
+  let r;
+  try {
+    r = await api("/review/recall", "POST", body);
+  } catch (e) {
+    stopRecallGrading();
+    toast(e.message);
+    return;
+  }
+  stopRecallGrading();
   if (r.graded) {
     const g = r.graded;
     $("#recall-grade").classList.remove("hidden");
@@ -358,6 +380,33 @@ async function submitRecall() {
     toast("Recall logged ✅");
     loadOverview(); render(currentActiveTab());
   }
+}
+
+let recallGradeTimer = null;
+function showRecallGrading(messages) {
+  // lock the inputs, swap the actions for a disabled spinner, and animate a
+  // status line that steps through `messages`.
+  $("#recall-text").disabled = true;
+  $("#recall-time").disabled = true;
+  $("#recall-space").disabled = true;
+  const g = $("#recall-grade");
+  g.classList.remove("hidden");
+  g.innerHTML = `<div class="grading"><span class="spinner"></span>
+    <span class="grading-text">${escapeHtml(messages[0])}</span></div>`;
+  $("#recall-actions").innerHTML =
+    `<button class="ghost" disabled>Cancel</button>
+     <button class="primary" disabled><span class="spinner spinner-sm"></span> Grading…</button>`;
+  let i = 0;
+  if (messages.length > 1) {
+    recallGradeTimer = setInterval(() => {
+      i = (i + 1) % messages.length;
+      const t = $(".grading-text");
+      if (t) t.textContent = messages[i];
+    }, 1400);
+  }
+}
+function stopRecallGrading() {
+  if (recallGradeTimer) { clearInterval(recallGradeTimer); recallGradeTimer = null; }
 }
 
 function pickSelfGrade() {
