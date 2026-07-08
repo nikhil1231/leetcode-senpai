@@ -112,17 +112,28 @@ def _effective_tags(e):
     return (e.get("user_overrides") or {}).get("tags") or e.get("mistake_tags") or []
 
 
+# Only auto-prompt to annotate freshly-solved problems. Older un-annotated
+# attempts (e.g. the modal was dismissed, or solved days ago) are left alone so
+# the "Solved!" modal doesn't nag on every page load — they stay in History and
+# can still be annotated from there.
+PENDING_MAX_AGE_SEC = 12 * 3600
+
+
 def _pending(store):
     pm = _problem_map(store)
+    cutoff = time.time() - PENDING_MAX_AGE_SEC
     out = []
     for a in store.list_attempts():
-        if a.get("confidence") is None and a.get("source") != "backfill":
-            p = pm.get(a["slug"], {})
-            out.append({
-                **a, "title": p.get("title", a["slug"]),
-                "frontend_id": p.get("frontend_id"), "difficulty": p.get("difficulty"),
-                "neetcode_category": p.get("neetcode_category"), "url": p.get("url"),
-            })
+        if a.get("confidence") is not None or a.get("source") == "backfill":
+            continue
+        if (a.get("solved_at") or 0) < cutoff:
+            continue
+        p = pm.get(a["slug"], {})
+        out.append({
+            **a, "title": p.get("title", a["slug"]),
+            "frontend_id": p.get("frontend_id"), "difficulty": p.get("difficulty"),
+            "neetcode_category": p.get("neetcode_category"), "url": p.get("url"),
+        })
     out.sort(key=lambda a: a.get("solved_at") or 0, reverse=True)
     return out
 

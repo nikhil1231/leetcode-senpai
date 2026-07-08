@@ -47,11 +47,16 @@ const toast = (msg) => {
   t.classList.remove("hidden");
   setTimeout(() => t.classList.add("hidden"), 3200);
 };
-const badge = (d) => `<span class="badge ${d}">${d}</span>`;
+const DIFF_TAG = { Easy: "diff-easy", Medium: "diff-medium", Hard: "diff-hard" };
+const diffTagClass = (d) => DIFF_TAG[d] || "";
+const badge = (d) => `<span class="tag ${diffTagClass(d)}">${d || "—"}</span>`;
 const cxOptions = (sel) => COMPLEXITIES.map((c) =>
   `<option value="${c}"${c === sel ? " selected" : ""}>${c || "—"}</option>`).join("");
+// Reusable async-loading indicator (matches the recall grading spinner).
+const loader = (msg = "Loading…") =>
+  `<div class="loading-block"><span class="spinner"></span><span>${escapeHtml(msg)}</span></div>`;
 
-window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, COMPLEXITIES };
+window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader, COMPLEXITIES };
 
 // ---- state ---------------------------------------------------------------------
 let activeSession = null;
@@ -76,16 +81,16 @@ function hideSignIn() {
 }
 
 // ---- tabs / router -------------------------------------------------------------
-$$("#tabs button").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    $$("#tabs button").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
+$$("#tabs li").forEach((li) => {
+  li.addEventListener("click", () => {
+    $$("#tabs li").forEach((b) => b.classList.remove("is-active"));
+    li.classList.add("is-active");
     $$(".tab").forEach((t) => t.classList.add("hidden"));
-    $("#tab-" + btn.dataset.tab).classList.remove("hidden");
-    render(btn.dataset.tab);
+    $("#tab-" + li.dataset.tab).classList.remove("hidden");
+    render(li.dataset.tab);
   });
 });
-function currentActiveTab() { return $("#tabs button.active").dataset.tab; }
+function currentActiveTab() { return $("#tabs li.is-active").dataset.tab; }
 function render(tab) {
   const fn = window.Views["render" + tab.charAt(0).toUpperCase() + tab.slice(1)];
   (fn || window.Views.renderToday)();
@@ -244,7 +249,7 @@ function openAnnotate(attempt) {
   $("#annotate-problem-link").href = attempt.url || `https://leetcode.com/problems/${attempt.slug}/`;
   const difficulty = $("#annotate-difficulty");
   difficulty.textContent = attempt.difficulty || "";
-  difficulty.className = attempt.difficulty ? `badge ${attempt.difficulty}` : "badge hidden";
+  difficulty.className = attempt.difficulty ? `tag ${diffTagClass(attempt.difficulty)}` : "tag hidden";
   const meta = [];
   if (attempt.neetcode_category) meta.push(attempt.neetcode_category);
   if (attempt.slug) meta.push(attempt.slug);
@@ -321,8 +326,8 @@ function openRecall(slug, title, category) {
   $("#recall-grade").classList.add("hidden");
   $("#recall-grade").innerHTML = "";
   $("#recall-actions").innerHTML =
-    `<button id="btn-close-recall" class="ghost">Cancel</button>
-     <button id="btn-submit-recall" class="primary">${llmEnabled ? "Check my recall" : "Grade & schedule"}</button>`;
+    `<button id="btn-close-recall" class="button is-ghost">Cancel</button>
+     <button id="btn-submit-recall" class="button is-primary">${llmEnabled ? "Check my recall" : "Grade & schedule"}</button>`;
   wireRecallButtons();
   $("#recall-modal").classList.remove("hidden");
 }
@@ -371,7 +376,7 @@ async function submitRecall() {
       ${g.key_ideas_missed && g.key_ideas_missed.length ?
         `<p class="missed"><b>You missed:</b> ${g.key_ideas_missed.map(escapeHtml).join("; ")}</p>` : ""}
       <p class="small">Scheduled next review accordingly.</p>`;
-    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="primary">Done</button>`;
+    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;
     $("#btn-close-recall").addEventListener("click", () => {
       $("#recall-modal").classList.add("hidden"); loadOverview(); render(currentActiveTab());
     });
@@ -394,8 +399,8 @@ function showRecallGrading(messages) {
   g.innerHTML = `<div class="grading"><span class="spinner"></span>
     <span class="grading-text">${escapeHtml(messages[0])}</span></div>`;
   $("#recall-actions").innerHTML =
-    `<button class="ghost" disabled>Cancel</button>
-     <button class="primary" disabled><span class="spinner spinner-sm"></span> Grading…</button>`;
+    `<button class="button is-ghost" disabled>Cancel</button>
+     <button class="button is-primary" disabled><span class="spinner spinner-sm"></span> Grading…</button>`;
   let i = 0;
   if (messages.length > 1) {
     recallGradeTimer = setInterval(() => {
@@ -423,7 +428,16 @@ function pickSelfGrade() {
 
 // ---- attempt detail (solution archive) -----------------------------------------
 async function openDetail(attemptId) {
-  const a = await api(`/attempt/${attemptId}`);
+  $("#detail-body").innerHTML = loader("Loading attempt…");
+  $("#detail-modal").classList.remove("hidden");
+  let a;
+  try {
+    a = await api(`/attempt/${attemptId}`);
+  } catch (err) {
+    $("#detail-modal").classList.add("hidden");
+    toast(err.message);
+    return;
+  }
   const e = a.enrichment || {};
   const tags = (e.user_overrides && e.user_overrides.tags) || e.mistake_tags || [];
   const body = `
@@ -448,9 +462,17 @@ $("#btn-close-detail").addEventListener("click", () => $("#detail-modal").classL
 
 // ---- mock runner ---------------------------------------------------------------
 async function startMock() {
-  const m = await api("/mock/start", "POST");
-  renderMock(m);
+  $("#mock-body").innerHTML = loader("Setting up your mock…");
   $("#mock-modal").classList.remove("hidden");
+  let m;
+  try {
+    m = await api("/mock/start", "POST");
+  } catch (e) {
+    $("#mock-modal").classList.add("hidden");
+    toast(e.message);
+    return;
+  }
+  renderMock(m);
 }
 
 function renderMock(m) {
@@ -459,14 +481,14 @@ function renderMock(m) {
     <div class="mock-prob">
       <span class="mock-role ${p.role}">${p.role}</span>
       <a href="${p.url}" target="_blank" rel="noopener">${escapeHtml(p.title)}</a> ${badge(p.difficulty)}
-      <button class="ghost mock-open" data-slug="${p.slug}" data-title="${escapeHtml(p.title)}">Start</button>
+      <button class="button is-ghost is-small mock-open" data-slug="${p.slug}" data-title="${escapeHtml(p.title)}">Start</button>
     </div>`).join("");
   $("#mock-body").innerHTML = `
     <h2>Mock interview <span class="mock-timer" id="mock-timer"></span></h2>
     <p class="small">60 minutes, three problems, no hints. Solve on LeetCode; they auto-log. Finish when done or time's up.</p>
     ${list}
-    <div class="modal-actions">
-      <button id="btn-finish-mock" class="primary" data-id="${m.id}">Finish &amp; score</button>
+    <div class="overlay-actions">
+      <button id="btn-finish-mock" class="button is-primary" data-id="${m.id}">Finish &amp; score</button>
     </div>`;
   const tick = () => {
     const left = end - Math.floor(Date.now() / 1000);
@@ -508,7 +530,7 @@ async function startApp() {
 }
 
 function showUserChip(email) {
-  $("#user-chip").innerHTML = `<span class="small">${email}</span> <button id="btn-signout" class="ghost">Sign out</button>`;
+  $("#user-chip").innerHTML = `<span class="small">${email}</span> <button id="btn-signout" class="button is-ghost is-small">Sign out</button>`;
   $("#btn-signout").addEventListener("click", () => firebase.auth().signOut());
 }
 

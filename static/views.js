@@ -1,12 +1,12 @@
 // Tab renderers. Exposed as window.Views. Uses window.H, window.App, window.Charts.
 (function () {
-  const { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions } = window.H;
+  const { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader } = window.H;
   const App = window.App, Charts = window.Charts;
 
   // ---- Today -------------------------------------------------------------------
   async function renderToday() {
     const el = $("#tab-today");
-    el.innerHTML = "<p class='small'>Loading queue…</p>";
+    el.innerHTML = loader("Loading your queue…");
     const [q, reportWrap, mock] = await Promise.all([
       api("/today"), api("/report/latest").catch(() => ({ report: null })),
       api("/mock/status").catch(() => ({})),
@@ -18,18 +18,18 @@
     html += mockCard(mock);
 
     const item = (it) => `
-      <div class="card">
+      <div class="box queue-card">
         <div class="meta">
           <div class="title-row">
             <h3>${escapeHtml(it.title)}</h3>
             ${badge(it.difficulty)}
-            ${it.leech ? '<span class="badge leech">leech</span>' : ""}
-            ${it.mode === "recall" ? '<span class="badge recall">recall</span>' : ""}
+            ${it.leech ? '<span class="tag is-danger is-light">leech</span>' : ""}
+            ${it.mode === "recall" ? '<span class="tag is-link is-light">recall</span>' : ""}
           </div>
           <span class="sub">${escapeHtml(it.category || "")}</span>
           <span class="reason">${escapeHtml(it.reason)}${it.due_date ? " · due " + it.due_date : ""}</span>
         </div>
-        <button class="start" data-slug="${it.slug}" data-kind="${it.kind}" data-mode="${it.mode || ""}"
+        <button class="button ${it.mode === "recall" ? "is-link" : "start"}" data-slug="${it.slug}" data-kind="${it.kind}" data-mode="${it.mode || ""}"
           data-title="${escapeHtml(it.title)}" data-cat="${escapeHtml(it.category || "")}">
           ${it.mode === "recall" ? "Recall" : "Start"}</button>
       </div>`;
@@ -41,11 +41,11 @@
     if (q.expansion && q.expansion.length) {
       html += `<div class="section-title">Grow your library <span class="help-inline">topics you've cleared</span></div>`;
       html += q.expansion.map((x) => `
-        <div class="card expansion">
+        <div class="box queue-card expansion">
           <div class="meta"><div class="title-row"><h3>${escapeHtml(x.title)}</h3>${badge(x.difficulty)}
             ${x.like_ratio ? `<span class="ratio">${Math.round(x.like_ratio * 100)}%👍</span>` : ""}</div>
             <span class="reason">${escapeHtml(x.reason)} · ${escapeHtml(x.category)}</span></div>
-          <button class="import-one" data-slug="${x.slug}">Import</button>
+          <button class="button is-primary is-small import-one" data-slug="${x.slug}">Import</button>
         </div>`).join("");
     }
     el.innerHTML = html;
@@ -58,7 +58,8 @@
       toast("Imported."); renderToday();
     }));
     $("#btn-gen-report") && $("#btn-gen-report").addEventListener("click", async () => {
-      $("#btn-gen-report").textContent = "Thinking…";
+      $("#btn-gen-report").innerHTML = '<span class="spinner spinner-sm"></span> Thinking…';
+      $("#btn-gen-report").disabled = true;
       const r = await api("/report/weekly", "POST");
       renderToday();
     });
@@ -69,11 +70,11 @@
     const thisWeek = isoWeek(new Date());
     if (!report || report.iso_week !== thisWeek) {
       if (!App.llmEnabled) return "";
-      return `<div class="report-banner">
+      return `<div class="notification report-banner is-flex is-justify-content-space-between is-align-items-center">
         <div><b>Weekly coach report</b><p class="small">Get this week's diagnosis and focus plan.</p></div>
-        <button id="btn-gen-report" class="primary">Generate</button></div>`;
+        <button id="btn-gen-report" class="button is-primary">Generate</button></div>`;
     }
-    return `<div class="report-banner report-ready">
+    return `<div class="notification is-info is-light report-banner report-ready">
       <div><b>Weekly coach report</b>
       <ul>${report.insights.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
       ${report.focus_plan ? `<p class="focus"><b>Focus:</b> ${escapeHtml(report.focus_plan)}</p>` : ""}</div></div>`;
@@ -92,26 +93,28 @@
 
   function mockCard(mock) {
     if (!mock || mock.active) {
-      if (mock && mock.active) return `<div class="mock-banner"><div><b>Mock in progress</b></div>
-        <button id="btn-start-mock" class="primary">Resume</button></div>`;
+      if (mock && mock.active) return `<div class="notification mock-banner is-flex is-justify-content-space-between is-align-items-center">
+        <div><b>Mock in progress</b></div>
+        <button id="btn-start-mock" class="button is-primary">Resume</button></div>`;
       return "";
     }
     if (mock.taken_this_week) return "";
-    return `<div class="mock-banner"><div><b>Weekly mock interview</b>
+    return `<div class="notification mock-banner is-flex is-justify-content-space-between is-align-items-center">
+      <div><b>Weekly mock interview</b>
       <p class="small">60 min · 3 problems · exam conditions. Builds the trend that actually tracks readiness.</p></div>
-      <button id="btn-start-mock" class="primary">Start mock</button></div>`;
+      <button id="btn-start-mock" class="button is-primary">Start mock</button></div>`;
   }
 
   // ---- Discover ----------------------------------------------------------------
   async function renderDiscover() {
     const el = $("#tab-discover");
-    el.innerHTML = "<p class='small'>Loading packs…</p>";
+    el.innerHTML = loader("Loading packs…");
     const packs = await api("/packs");
     const packCards = packs.map((p) => `
-      <div class="pack-card">
+      <div class="box pack-card">
         <div><b>${escapeHtml(p.label)}</b><div class="small">${p.imported}/${p.total} imported</div>
           <div class="goal-track"><span class="goal-fill" style="width:${Math.round((p.imported / p.total) * 100)}%"></span></div></div>
-        <button class="import-pack" data-pack="${p.name}">${p.imported >= p.total ? "Refresh" : "Import"}</button>
+        <button class="button is-primary is-small import-pack" data-pack="${p.name}">${p.imported >= p.total ? "Refresh" : "Import"}</button>
       </div>`).join("");
 
     el.innerHTML = `
@@ -119,45 +122,51 @@
       <div class="pack-grid">${packCards}</div>
       <div class="section-title">Discover highly-rated problems</div>
       <p class="help">Only problems the community actually likes (like-ratio + vote thresholds in Settings). Needs your LeetCode cookie.</p>
-      <div class="row discover-filters">
-        <input id="disc-topic" placeholder="topic slug e.g. two-pointers (optional)" />
-        <select id="disc-diff"><option value="">Any difficulty</option><option>Easy</option><option>Medium</option><option>Hard</option></select>
-        <button id="btn-discover" class="primary">Find gems</button>
+      <div class="discover-filters">
+        <div class="control"><input id="disc-topic" class="input" placeholder="topic slug e.g. two-pointers (optional)" /></div>
+        <div class="control"><div class="select is-fullwidth"><select id="disc-diff"><option value="">Any difficulty</option><option>Easy</option><option>Medium</option><option>Hard</option></select></div></div>
+        <button id="btn-discover" class="button is-primary">Find gems</button>
       </div>
-      <div id="discover-results"></div>
+      <div id="discover-results" class="mt-4"></div>
       <div class="help" id="import-status"></div>`;
 
     $$("#tab-discover .import-pack").forEach((b) => b.addEventListener("click", async () => {
-      b.disabled = true; $("#import-status").textContent = `Importing ${b.dataset.pack} (fetching metadata, be patient)…`;
+      b.disabled = true;
+      $("#import-status").innerHTML = `<span class="spinner spinner-sm"></span> Importing ${escapeHtml(b.dataset.pack)} (fetching metadata, be patient)…`;
       const r = await api("/import/pack", "POST", { pack: b.dataset.pack, fetch_metadata: true });
       $("#import-status").textContent = `Imported ${r.total} (${r.metadata_fetched} enriched, ${r.metadata_failed} failed).`;
       App.loadOverview(); renderDiscover();
     }));
     $("#btn-discover").addEventListener("click", async () => {
       const box = $("#discover-results");
-      box.innerHTML = "<p class='small'>Scanning the problem set…</p>";
+      const btn = $("#btn-discover");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner spinner-sm"></span> Finding…';
+      box.innerHTML = loader("Scanning the problem set…");
       try {
         const r = await api(`/discover?topic=${encodeURIComponent($("#disc-topic").value.trim())}&difficulty=${$("#disc-diff").value}`);
         if (r.error) { box.innerHTML = `<p class='empty'>${escapeHtml(r.error)}</p>`; return; }
         if (!r.candidates.length) { box.innerHTML = "<p class='empty'>No new problems cleared the quality bar.</p>"; return; }
-        box.innerHTML = `<table><thead><tr><th>Problem</th><th>Diff</th><th>👍 ratio</th><th>Votes</th><th>AC</th><th></th></tr></thead>
+        box.innerHTML = `<table class="table is-app is-fullwidth is-hoverable"><thead><tr><th>Problem</th><th>Diff</th><th>👍 ratio</th><th>Votes</th><th>AC</th><th></th></tr></thead>
           <tbody>${r.candidates.map((c) => `<tr>
             <td><a href="${c.url}" target="_blank">${escapeHtml(c.title)}</a><div class="small">${escapeHtml(c.category)}</div></td>
             <td>${badge(c.difficulty)}</td><td><b>${Math.round(c.like_ratio * 100)}%</b></td>
             <td class="small">${c.votes.toLocaleString()}</td><td class="small">${c.ac_rate != null ? c.ac_rate + "%" : "—"}</td>
-            <td><button class="import-one" data-slug="${c.slug}">Import</button></td></tr>`).join("")}</tbody></table>`;
+            <td><button class="button is-primary is-small import-one" data-slug="${c.slug}">Import</button></td></tr>`).join("")}</tbody></table>`;
         $$("#discover-results .import-one").forEach((b) => b.addEventListener("click", async () => {
           b.disabled = true; b.textContent = "✓";
           await api("/import/problem", "POST", { slug: b.dataset.slug });
           toast("Imported."); App.loadOverview();
         }));
       } catch (e) { box.innerHTML = `<p class='empty'>${escapeHtml(e.message)}</p>`; }
+      finally { btn.disabled = false; btn.textContent = "Find gems"; }
     });
   }
 
   // ---- Topics ------------------------------------------------------------------
   async function renderTopics() {
     const el = $("#tab-topics");
+    el.innerHTML = loader("Loading topics…");
     const topics = await api("/topics");
     if (!topics.length) { el.innerHTML = "<p class='empty'>No data yet. Import a pack and solve a few.</p>"; return; }
     const color = (m) => (m >= 0.66 ? "var(--green)" : m >= 0.33 ? "var(--amber)" : "var(--red)");
@@ -177,24 +186,24 @@
   // ---- Insights ----------------------------------------------------------------
   async function renderInsights() {
     const el = $("#tab-insights");
-    el.innerHTML = "<p class='small'>Crunching…</p>";
+    el.innerHTML = loader("Crunching your stats…");
     const d = await api("/insights");
     const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v, color: "var(--red)" }));
     const pa = d.prediction_accuracy || {};
     el.innerHTML = `
-      <div class="grid-2">
-        <div class="panel"><h3>Review forecast (30 days)</h3>${Charts.forecast(d.forecast)}</div>
-        <div class="panel"><h3>Pace</h3>${paceHtml(d.pace)}</div>
+      <div class="columns">
+        <div class="column"><div class="panel-box"><h3>Review forecast (30 days)</h3>${Charts.forecast(d.forecast)}</div></div>
+        <div class="column"><div class="panel-box"><h3>Pace</h3>${paceHtml(d.pace)}</div></div>
       </div>
-      <div class="grid-2">
-        <div class="panel"><h3>Mastery radar</h3>${Charts.radar(d.mastery_radar)}</div>
-        <div class="panel"><h3>Time to solve (weekly median)</h3>${Charts.lines(d.time_trend, { yLabel: "min" })}</div>
+      <div class="columns">
+        <div class="column"><div class="panel-box"><h3>Mastery radar</h3>${Charts.radar(d.mastery_radar)}</div></div>
+        <div class="column"><div class="panel-box"><h3>Time to solve (weekly median)</h3>${Charts.lines(d.time_trend, { yLabel: "min" })}</div></div>
       </div>
-      <div class="grid-2">
-        <div class="panel"><h3>Failure modes (30 days)</h3>${fm.length ? Charts.bars(fm) : "<p class='empty'>No structured mistakes yet — the coach fills this in.</p>"}</div>
-        <div class="panel"><h3>Pattern recognition</h3>${predHtml(pa)}</div>
+      <div class="columns">
+        <div class="column"><div class="panel-box"><h3>Failure modes (30 days)</h3>${fm.length ? Charts.bars(fm) : "<p class='empty'>No structured mistakes yet — the coach fills this in.</p>"}</div></div>
+        <div class="column"><div class="panel-box"><h3>Pattern recognition</h3>${predHtml(pa)}</div></div>
       </div>
-      <div class="panel"><h3>Mock score trend</h3>${mockTrendHtml(d.mock_trend)}</div>`;
+      <div class="panel-box"><h3>Mock score trend</h3>${mockTrendHtml(d.mock_trend)}</div>`;
   }
 
   function paceHtml(p) {
@@ -224,17 +233,18 @@
   // ---- Playbook ----------------------------------------------------------------
   async function renderPlaybook() {
     const el = $("#tab-playbook");
+    el.innerHTML = loader("Loading playbooks…");
     const topics = await api("/topics");
     if (!topics.length) { el.innerHTML = "<p class='empty'>Solve some problems first.</p>"; return; }
     const opts = topics.map((t) => `<option value="${escapeHtml(t.category)}">${escapeHtml(t.category)}</option>`).join("");
-    el.innerHTML = `<div class="row">
-        <select id="pb-cat">${opts}</select>
-        <button id="pb-load" class="primary">Open</button>
+    el.innerHTML = `<div class="field has-addons">
+        <div class="control is-expanded"><div class="select is-fullwidth"><select id="pb-cat">${opts}</select></div></div>
+        <div class="control"><button id="pb-load" class="button is-primary">Open</button></div>
       </div><div id="pb-body"></div>`;
     const load = async () => {
       const cat = $("#pb-cat").value;
       const body = $("#pb-body");
-      body.innerHTML = "<p class='small'>Loading…</p>";
+      body.innerHTML = loader("Loading playbook…");
       const r = await api(`/playbook/${encodeURIComponent(cat)}`);
       let html = "";
       if (r.playbook) {
@@ -244,13 +254,13 @@
         html += `<p class="empty">No playbook yet for ${escapeHtml(cat)}.</p>`;
       }
       if (r.can_generate) {
-        html += `<button id="pb-gen" class="primary">${r.playbook ? "Regenerate" : "Generate playbook"}</button>`;
+        html += `<button id="pb-gen" class="button is-primary mt-3">${r.playbook ? "Regenerate" : "Generate playbook"}</button>`;
       } else if (!App.llmEnabled) {
         html += `<p class="small">Enable the coach (Gemini) to synthesize playbooks.</p>`;
       }
       body.innerHTML = html;
       $("#pb-gen") && $("#pb-gen").addEventListener("click", async () => {
-        $("#pb-gen").textContent = "Synthesizing…"; $("#pb-gen").disabled = true;
+        $("#pb-gen").innerHTML = '<span class="spinner spinner-sm"></span> Synthesizing…'; $("#pb-gen").disabled = true;
         await api(`/playbook/${encodeURIComponent(cat)}/regenerate`, "POST");
         load();
       });
@@ -260,8 +270,15 @@
   }
 
   // ---- History -----------------------------------------------------------------
+  let historyFilter = "all"; // all | solve | recall — persists across re-renders
+  const historyType = (r) => (r.kind === "recall" ? "recall" : "solve");
+  const typeTag = (t) => (t === "recall"
+    ? '<span class="tag type-recall">recall</span>'
+    : '<span class="tag type-solve">solve</span>');
+
   async function renderHistory() {
     const el = $("#tab-history");
+    el.innerHTML = loader("Loading history…");
     const rows = await api("/history?limit=100");
     if (!rows.length) { el.innerHTML = "<p class='empty'>No attempts logged yet.</p>"; return; }
     const confLabel = (c) => (c == null ? "—" : `<span class="conf-${c}">${["", "Low", "Med", "High"][c]}</span>`);
@@ -270,39 +287,62 @@
       const m = { correct: "✓", partial: "~", wrong: "✗" }[r.prediction_verdict] || "";
       return `<span class="pred pred-${r.prediction_verdict}" title="pattern prediction ${r.prediction_verdict}">${m}</span>`;
     };
-    el.innerHTML = `<table>
-      <thead><tr><th>Problem</th><th>Topic</th><th>When</th><th>Time</th><th>Conf</th><th>How</th><th>Coach read</th></tr></thead>
-      <tbody>${rows.map((r) => `
-        <tr class="hist-row" data-id="${r.id}">
+    const counts = { all: rows.length, solve: 0, recall: 0 };
+    rows.forEach((r) => { counts[historyType(r)]++; });
+    const fbtn = (f, label) =>
+      `<button class="button is-small" data-f="${f}">${label} <span class="ml-1 has-text-grey">${counts[f]}</span></button>`;
+    el.innerHTML = `
+      <div class="buttons has-addons type-filter" id="history-filter">
+        ${fbtn("all", "All")}${fbtn("solve", "Completions")}${fbtn("recall", "Recalls")}
+      </div>
+      <table class="table is-app is-fullwidth is-hoverable">
+      <thead><tr><th>Problem</th><th>Type</th><th>Topic</th><th>When</th><th>Time</th><th>Conf</th><th>How</th><th>Coach read</th></tr></thead>
+      <tbody>${rows.map((r) => {
+        const t = historyType(r);
+        return `
+        <tr class="hist-row" data-id="${r.id}" data-type="${t}">
           <td><a href="${r.url}" target="_blank" onclick="event.stopPropagation()">${escapeHtml(r.title)}</a> ${badge(r.difficulty)} ${predBadge(r)}</td>
+          <td>${typeTag(t)}</td>
           <td class="small">${escapeHtml(r.neetcode_category || "")}</td>
           <td class="small">${r.solved_at ? new Date(r.solved_at * 1000).toLocaleDateString() : "—"}</td>
           <td>${fmtTime(r.time_taken_sec)}</td>
           <td>${confLabel(r.confidence)}</td>
           <td class="small">${r.independence || "—"}</td>
-          <td class="small">${(r.mistake_tags || []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(" ")}
+          <td class="small">${(r.mistake_tags || []).map((t) => `<span class="mtag">${escapeHtml(t)}</span>`).join(" ")}
             ${r.pattern_used ? `<span class="pat">${escapeHtml(r.pattern_used)}</span>` : ""}</td>
-        </tr>`).join("")}</tbody></table>
+        </tr>`; }).join("")}</tbody></table>
       <p class="small">Click a row for code, diffs &amp; the coach's full read.</p>`;
+
+    const applyFilter = () => {
+      $$("#tab-history .hist-row").forEach((tr) =>
+        tr.classList.toggle("hidden", historyFilter !== "all" && tr.dataset.type !== historyFilter));
+      $$("#history-filter button").forEach((b) =>
+        b.classList.toggle("is-primary", b.dataset.f === historyFilter));
+    };
+    $$("#history-filter button").forEach((b) => b.addEventListener("click", () => {
+      historyFilter = b.dataset.f; applyFilter();
+    }));
+    applyFilter();
     $$("#tab-history .hist-row").forEach((tr) => tr.addEventListener("click", () => App.openDetail(tr.dataset.id)));
   }
 
   // ---- Problems ----------------------------------------------------------------
   async function renderProblems() {
     const el = $("#tab-problems");
+    el.innerHTML = loader("Loading problems…");
     const rows = await api("/problems");
     if (!rows.length) { el.innerHTML = "<p class='empty'>No problems imported. Go to Discover.</p>"; return; }
-    el.innerHTML = `<table>
+    el.innerHTML = `<table class="table is-app is-fullwidth is-hoverable">
       <thead><tr><th>#</th><th>Problem</th><th>Topic</th><th>Diff</th><th>Attempts</th><th>Next review</th><th></th></tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
           <td class="small">${r.frontend_id || ""}</td>
-          <td><a href="${r.url}" target="_blank">${escapeHtml(r.title)}</a> ${r.leech ? '<span class="badge leech">leech</span>' : ""}</td>
+          <td><a href="${r.url}" target="_blank">${escapeHtml(r.title)}</a> ${r.leech ? '<span class="tag is-danger is-light">leech</span>' : ""}</td>
           <td class="small">${escapeHtml(r.neetcode_category || "")}</td>
           <td>${badge(r.difficulty)}</td>
           <td>${r.attempt_count}</td>
           <td class="small">${r.due_date || "—"}</td>
-          <td><button class="start" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(r.neetcode_category || "")}">Start</button></td>
+          <td><button class="button start is-small" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(r.neetcode_category || "")}">Start</button></td>
         </tr>`).join("")}</tbody></table>`;
     $$("#tab-problems .start").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, "adhoc", "", b.dataset.title, b.dataset.cat)));
@@ -311,47 +351,48 @@
   // ---- Settings ----------------------------------------------------------------
   async function renderSettings() {
     const el = $("#tab-settings");
+    el.innerHTML = loader("Loading settings…");
     const c = await api("/config");
     const hasCookie = !!localStorage.getItem("lc_session");
     el.innerHTML = `
       <div class="section-title">LeetCode account</div>
-      <div class="settings-field"><label>Username</label><input id="cfg-username" value="${escapeHtml(c.username || "")}" /></div>
+      <div class="settings-field"><label>Username</label><input id="cfg-username" class="input" value="${escapeHtml(c.username || "")}" /></div>
       <div class="settings-field">
         <label>LEETCODE_SESSION cookie ${hasCookie ? "✅ set (this browser)" : "(not set)"}</label>
-        <input id="cfg-session" type="password" placeholder="${hasCookie ? "••• leave blank to keep" : "paste cookie value"}" />
+        <input id="cfg-session" class="input" type="password" placeholder="${hasCookie ? "••• leave blank to keep" : "paste cookie value"}" />
         <div class="help">Stored only in this browser and sent per-request; never saved server-side. Unlocks % beaten, code, wrong-attempt counts, and Discover.</div>
       </div>
       <div class="settings-field"><label>csrftoken cookie</label>
-        <input id="cfg-csrf" type="password" placeholder="${localStorage.getItem('lc_csrf') ? '••• leave blank to keep' : 'paste csrftoken'}" /></div>
-      <div class="row"><button class="primary" id="btn-save-cfg">Save</button>
-        <button class="ghost" id="btn-clear-cookie">Clear cookie</button></div>
+        <input id="cfg-csrf" class="input" type="password" placeholder="${localStorage.getItem('lc_csrf') ? '••• leave blank to keep' : 'paste csrftoken'}" /></div>
+      <div class="buttons"><button class="button is-primary" id="btn-save-cfg">Save</button>
+        <button class="button is-ghost" id="btn-clear-cookie">Clear cookie</button></div>
 
       <div class="section-title">Scheduling &amp; weighting</div>
-      <div class="row">
-        <div class="settings-field"><label>Reviews / day</label><input id="cfg-review" type="number" value="${c.review_limit}" /></div>
-        <div class="settings-field"><label>New / day</label><input id="cfg-new" type="number" value="${c.new_limit}" /></div>
+      <div class="settings-row">
+        <div class="settings-field"><label>Reviews / day</label><input id="cfg-review" class="input" type="number" value="${c.review_limit}" /></div>
+        <div class="settings-field"><label>New / day</label><input id="cfg-new" class="input" type="number" value="${c.new_limit}" /></div>
       </div>
-      <div class="row">
-        <div class="settings-field"><label>Weakness weight</label><input id="cfg-weak" type="number" step="0.1" value="${c.weakness_weight}" /></div>
-        <div class="settings-field"><label>Breadth weight</label><input id="cfg-breadth" type="number" step="0.1" value="${c.breadth_weight}" /></div>
-        <div class="settings-field"><label>Mistake weight</label><input id="cfg-mistake" type="number" step="0.1" value="${c.mistake_weight}" /></div>
+      <div class="settings-row">
+        <div class="settings-field"><label>Weakness weight</label><input id="cfg-weak" class="input" type="number" step="0.1" value="${c.weakness_weight}" /></div>
+        <div class="settings-field"><label>Breadth weight</label><input id="cfg-breadth" class="input" type="number" step="0.1" value="${c.breadth_weight}" /></div>
+        <div class="settings-field"><label>Mistake weight</label><input id="cfg-mistake" class="input" type="number" step="0.1" value="${c.mistake_weight}" /></div>
       </div>
       <div class="section-title">Weekly goals</div>
-      <div class="row">
-        <div class="settings-field"><label>Reviews / week</label><input id="cfg-grev" type="number" value="${c.goal_reviews_per_week}" /></div>
-        <div class="settings-field"><label>New / week</label><input id="cfg-gnew" type="number" value="${c.goal_new_per_week}" /></div>
+      <div class="settings-row">
+        <div class="settings-field"><label>Reviews / week</label><input id="cfg-grev" class="input" type="number" value="${c.goal_reviews_per_week}" /></div>
+        <div class="settings-field"><label>New / week</label><input id="cfg-gnew" class="input" type="number" value="${c.goal_new_per_week}" /></div>
       </div>
       <div class="section-title">Discover thresholds</div>
-      <div class="row">
-        <div class="settings-field"><label>Min like-ratio</label><input id="cfg-ratio" type="number" step="0.01" value="${c.discover_min_like_ratio}" /></div>
-        <div class="settings-field"><label>Min votes</label><input id="cfg-votes" type="number" value="${c.discover_min_votes}" /></div>
+      <div class="settings-row">
+        <div class="settings-field"><label>Min like-ratio</label><input id="cfg-ratio" class="input" type="number" step="0.01" value="${c.discover_min_like_ratio}" /></div>
+        <div class="settings-field"><label>Min votes</label><input id="cfg-votes" class="input" type="number" value="${c.discover_min_votes}" /></div>
       </div>
-      <button class="primary" id="btn-save-sched">Save settings</button>
+      <button class="button is-primary" id="btn-save-sched">Save settings</button>
 
       <div class="section-title">Data</div>
-      <div class="row">
-        <button class="ghost" id="btn-backfill">Backfill recent history</button>
-        <button class="ghost" id="btn-sweep">Run coach enrichment now</button>
+      <div class="buttons">
+        <button class="button is-ghost" id="btn-backfill">Backfill recent history</button>
+        <button class="button is-ghost" id="btn-sweep">Run coach enrichment now</button>
       </div>
       <div class="help" id="settings-status"></div>`;
 
@@ -376,13 +417,13 @@
       toast("Settings saved");
     });
     $("#btn-backfill").addEventListener("click", async () => {
-      $("#settings-status").textContent = "Backfilling…";
+      $("#settings-status").innerHTML = '<span class="spinner spinner-sm"></span> Backfilling…';
       const r = await api("/import/history", "POST", { limit: 20 });
       $("#settings-status").textContent = r.error ? "Error: " + r.error : `Added ${r.added} past solves (scanned ${r.scanned}).`;
       App.loadOverview();
     });
     $("#btn-sweep").addEventListener("click", async () => {
-      $("#settings-status").textContent = "Enriching…";
+      $("#settings-status").innerHTML = '<span class="spinner spinner-sm"></span> Enriching…';
       const r = await api("/enrich/sweep", "POST", { limit: 20 });
       $("#settings-status").textContent = r.llm ? `Enriched ${r.enriched}, ${r.remaining} remaining.` : "Coach (Gemini) not enabled.";
     });
