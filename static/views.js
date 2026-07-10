@@ -50,7 +50,7 @@
     }
     el.innerHTML = html;
 
-    $$("#tab-today .start").forEach((b) => b.addEventListener("click", () =>
+    $$("#tab-today button[data-slug][data-kind]").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, b.dataset.kind, b.dataset.mode, b.dataset.title, b.dataset.cat)));
     $$("#tab-today .import-one").forEach((b) => b.addEventListener("click", async () => {
       b.disabled = true; b.textContent = "…";
