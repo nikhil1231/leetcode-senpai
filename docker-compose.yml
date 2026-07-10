@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    container_name: leetcode-revision
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8000}:8080"
+    env_file:
+      - .env.local
+    environment:
+      AUTH_MODE: local
+      PORT: 8080
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-service-account.json
+    volumes:
+      - type: bind
+        source: ${FIREBASE_SERVICE_ACCOUNT_JSON:?Set FIREBASE_SERVICE_ACCOUNT_JSON in .env to the host path of your Firebase service-account JSON}
+        target: /run/secrets/firebase-service-account.json
+        read_only: true
+    restart: unless-stopped

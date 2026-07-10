@@ -93,6 +93,60 @@ Open http://127.0.0.1:8000. Without `GEMINI_API_KEY` everything still works; the
 LLM-powered features degrade gracefully. In **Settings** set your username +
 `LEETCODE_SESSION` cookie; in **Discover** import a pack and backfill history.
 
+### Run on startup
+
+Docker makes the app package portable, but each operating system still needs a
+local supervisor to start it after a restart.
+
+#### Windows Task Scheduler
+
+This is the simplest Windows-native option and does not require Docker Desktop.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\scripts\install-windows-startup-task.ps1
+```
+
+If Windows denies scheduled-task creation, the installer falls back to a
+per-user Startup folder shortcut.
+
+The default trigger is logon. To install a true machine startup trigger instead,
+run PowerShell as Administrator and pass `-AtStartup`:
+
+```powershell
+.\scripts\install-windows-startup-task.ps1 -AtStartup
+```
+
+Logs are written to `logs/`. Remove the task with:
+
+```powershell
+.\scripts\uninstall-windows-startup-task.ps1
+```
+
+#### Docker Compose
+
+The repo also includes a `Dockerfile` for the app image and `docker-compose.yml`
+for Docker supervision.
+
+1. Keep app secrets in `.env.local` as above (`GOOGLE_CLOUD_PROJECT`, `DEV_UID`,
+   optional `GEMINI_API_KEY`, etc.).
+2. Copy `.env.example` to `.env` and set `FIREBASE_SERVICE_ACCOUNT_JSON` to the
+   host path of your Firebase service-account key.
+3. Start it:
+   ```powershell
+   docker compose up -d --build
+   ```
+4. Open http://127.0.0.1:8000.
+
+Because the Compose service uses `restart: unless-stopped`, Docker will bring it
+back after a restart as long as the Docker daemon is running. On Windows that
+means Docker Desktop must be running and configured to start when you log in.
+Stop it intentionally with:
+```powershell
+docker compose down
+```
+
 ### Migrate old local_data.json
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/key.json GOOGLE_CLOUD_PROJECT=your-project \

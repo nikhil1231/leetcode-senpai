@@ -37,7 +37,7 @@ def _load_dotenv_local():
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, _, value = line.partition("=")
-            os.environ.setdefault(key.strip(), value.strip())
+            os.environ.setdefault(key.strip().lstrip("\ufeff"), value.strip())
 
 
 _load_dotenv_local()
@@ -46,4 +46,7 @@ os.environ.setdefault("AUTH_MODE", "local")
 import uvicorn
 
 if __name__ == "__main__":
-    uvicorn.run("server.main:app", host="127.0.0.1", port=8000, reload=True)
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8000"))
+    reload = os.environ.get("UVICORN_RELOAD", "true").lower() in {"1", "true", "yes"}
+    uvicorn.run("server.main:app", host=host, port=port, reload=reload)

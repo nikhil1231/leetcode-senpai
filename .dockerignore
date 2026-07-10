@@ -8,5 +8,7 @@ revision.db
 node_modules/
 *.md
 .env.local
+.env
+secrets/
 *.json.key
 service-account*.json
