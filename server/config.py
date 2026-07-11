@@ -83,4 +83,7 @@ def init_firebase_admin():
         from firebase_admin import credentials
         cred = credentials.Certificate(GOOGLE_APPLICATION_CREDENTIALS)
     options = {"projectId": GCP_PROJECT} if GCP_PROJECT else None
-    return firebase_admin.initialize_app(cred, options)
+    try:
+        return firebase_admin.initialize_app(cred, options)
+    except ValueError:
+        return firebase_admin.get_app()

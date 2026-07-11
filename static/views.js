@@ -17,21 +17,31 @@
     html += goalBar(q.goal);
     html += mockCard(mock);
 
+    const recallLabel = (it) => {
+      if (it.grading_status === "pending") return "Grading...";
+      if (it.grading_status === "ready") return "View grade";
+      if (it.grading_status === "failed") return "Retry";
+      return "Recall";
+    };
     const item = (it) => `
-      <div class="box queue-card">
+      <div class="box queue-card ${it.kind === "new" ? "kind-new" : ""}" data-recall-card="${it.recall_attempt_id || ""}">
         <div class="meta">
           <div class="title-row">
             <h3>${escapeHtml(it.title)}</h3>
             ${badge(it.difficulty)}
             ${it.leech ? '<span class="tag is-danger is-light">leech</span>' : ""}
             ${it.mode === "recall" ? '<span class="tag is-link is-light">recall</span>' : ""}
+            ${it.grading_status === "pending" ? '<span class="tag recall-status-tag is-warning is-light">grading</span>' : ""}
+            ${it.grading_status === "ready" ? '<span class="tag recall-status-tag is-success is-light">grade ready</span>' : ""}
+            ${it.grading_status === "failed" ? '<span class="tag recall-status-tag is-danger is-light">failed</span>' : ""}
           </div>
-          <span class="sub">${escapeHtml(it.category || "")}</span>
+          ${it.kind === "new" || it.mode === "recall" ? "" : `<span class="sub">${escapeHtml(it.category || "")}</span>`}
           <span class="reason">${escapeHtml(it.reason)}${it.due_date ? " · due " + it.due_date : ""}</span>
         </div>
         <button class="button ${it.mode === "recall" ? "is-link" : "start"}" data-slug="${it.slug}" data-kind="${it.kind}" data-mode="${it.mode || ""}"
-          data-title="${escapeHtml(it.title)}" data-cat="${escapeHtml(it.category || "")}">
-          ${it.mode === "recall" ? "Recall" : "Start"}</button>
+          data-title="${escapeHtml(it.title)}" data-cat="${escapeHtml(it.category || "")}"
+          data-attempt="${it.recall_attempt_id || ""}" data-status="${it.grading_status || ""}">
+          ${it.mode === "recall" ? recallLabel(it) : "Start"}</button>
       </div>`;
 
     html += `<div class="section-title">Reviews due (${q.reviews.length})</div>`;
@@ -49,9 +59,15 @@
         </div>`).join("");
     }
     el.innerHTML = html;
+    const pendingRecallIds = q.reviews
+      .filter((it) => it.grading_status === "pending" && it.recall_attempt_id)
+      .map((it) => it.recall_attempt_id);
+    if (pendingRecallIds.length) App.startRecallStatusPolling(pendingRecallIds);
+    else App.stopRecallStatusPolling();
 
     $$("#tab-today button[data-slug][data-kind]").forEach((b) => b.addEventListener("click", () =>
-      App.startFlow(b.dataset.slug, b.dataset.kind, b.dataset.mode, b.dataset.title, b.dataset.cat)));
+      App.startFlow(b.dataset.slug, b.dataset.kind, b.dataset.mode, b.dataset.title, b.dataset.cat,
+        b.dataset.attempt || null, b.dataset.status || null)));
     $$("#tab-today .import-one").forEach((b) => b.addEventListener("click", async () => {
       b.disabled = true; b.textContent = "…";
       await api("/import/problem", "POST", { slug: b.dataset.slug });

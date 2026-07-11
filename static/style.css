@@ -102,6 +102,7 @@ main { padding: 24px; max-width: 980px; margin: 0 auto; }
 .queue-card .sub { color: var(--muted); font-size: 12px; }
 .reason { color: var(--accent); font-size: 12px; }
 .queue-card.expansion { border-style: dashed; }
+.queue-card.kind-new .reason { display: none; }
 .ratio { font-size: 11px; color: var(--green); }
 
 /* ---- overlay (modal) — bespoke so it doesn't collide with Bulma's .modal ---- */
@@ -236,6 +237,24 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .detail-meta { margin-bottom: 8px; }
 
 /* ---- recall grading --------------------------------------------------------- */
+.overlay-card.recall-wide { width: min(1120px, 96vw); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .85fr); gap: 10px 18px; align-items: start; }
+.overlay-card.recall-wide > h2,
+.overlay-card.recall-wide > #recall-problem { grid-column: 1 / -1; }
+.overlay-card.recall-wide > #recall-statement { grid-column: 1; grid-row: 3 / span 6; }
+.overlay-card.recall-wide > .help,
+.overlay-card.recall-wide > .label-sm,
+.overlay-card.recall-wide > #recall-text,
+.overlay-card.recall-wide > .columns,
+.overlay-card.recall-wide > #recall-grade,
+.overlay-card.recall-wide > #recall-actions { grid-column: 2; }
+.overlay-card.recall-wide > #recall-text { min-height: 180px; }
+.recall-statement { margin: 12px 0; max-height: 62vh; overflow: auto; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; line-height: 1.55; }
+.recall-statement p { margin: 0 0 10px; }
+.recall-statement pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+.recall-statement code { background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+.recall-statement ul, .recall-statement ol { margin: 8px 0 8px 18px; }
+.recall-statement table { width: 100%; margin: 8px 0; font-size: 12px; }
+.recall-statement td, .recall-statement th { border: 1px solid var(--border); padding: 6px; }
 .recall-grade { margin-top: 14px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
 .grade-score { font-size: 15px; }
 .recall-grade .missed { color: var(--amber); font-size: 13px; }
@@ -249,6 +268,20 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-block { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px 24px; color: var(--muted); font-size: 13px; }
 .loading-block .spinner { width: 22px; height: 22px; }
+
+@media (max-width: 860px) {
+  .overlay-card.recall-wide { grid-template-columns: 1fr; }
+  .overlay-card.recall-wide > h2,
+  .overlay-card.recall-wide > #recall-problem,
+  .overlay-card.recall-wide > #recall-statement,
+  .overlay-card.recall-wide > .help,
+  .overlay-card.recall-wide > .label-sm,
+  .overlay-card.recall-wide > #recall-text,
+  .overlay-card.recall-wide > .columns,
+  .overlay-card.recall-wide > #recall-grade,
+  .overlay-card.recall-wide > #recall-actions { grid-column: 1; grid-row: auto; }
+  .recall-statement { max-height: 38vh; }
+}
 
 /* ---- mock ------------------------------------------------------------------- */
 .mock-prob { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }

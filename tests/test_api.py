@@ -81,6 +81,71 @@ def test_recall_without_llm_uses_self_grade(client):
     assert body["review"]["slug"] == "two-sum"
 
 
+def test_recall_context_returns_prompt_without_requiring_hydration(client):
+    client.store.upsert_problem({
+        "slug": "two-sum",
+        "content_html": "<p>Given an array of integers...</p><pre>Example 1...</pre>",
+    })
+    r = client.get("/api/problem/two-sum/recall-context")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["title"] == "Two Sum"
+    assert body["category"] == "Arrays & Hashing"
+    assert "Example 1" in body["content_html"]
+
+
+def test_today_includes_unviewed_recall_state(client):
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
+    })
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 1, "source": "recall", "kind": "recall",
+        "approach": "hashmap", "grading_status": "pending",
+    })
+    reviews = client.get("/api/today").json()["reviews"]
+    item = next(r for r in reviews if r["slug"] == "two-sum")
+    assert item["recall_attempt_id"] == aid
+    assert item["grading_status"] == "pending"
+
+
+def test_async_recall_grading_and_ack(client, monkeypatch):
+    async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
+        return {"grade": 3, "feedback": "solid", "key_ideas_missed": []}
+
+    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.coach, "grade_recall", fake_grade)
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
+    })
+    r = client.post("/api/review/recall", json={
+        "slug": "two-sum", "recall_text": "hashmap of complements",
+        "complexity_time": "O(n)",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["grading_status"] == "pending"
+    assert body["review"] is None
+
+    aid = body["attempt_id"]
+    result = client.get(f"/api/review/recall/{aid}").json()
+    assert result["grading_status"] == "ready"
+    assert result["recall_grade"]["grade"] == 3
+
+    ack = client.post(f"/api/review/recall/{aid}/ack")
+    assert ack.status_code == 200
+    assert client.store.get_attempt(aid)["grading_status"] == "viewed"
+    assert client.store.get_review("two-sum")["due_date"] != "2000-01-01"
+
+
+def test_pending_solved_modal_excludes_recalls(client):
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999999, "source": "recall",
+        "kind": "recall", "confidence": None, "approach": "hashmap",
+        "grading_status": "pending",
+    })
+    assert client.get("/api/pending").json()["pending"] == []
+
+
 def test_packs_progress(client):
     r = client.get("/api/packs")
     packs = {p["name"]: p for p in r.json()}

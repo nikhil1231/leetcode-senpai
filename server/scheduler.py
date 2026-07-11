@@ -339,6 +339,8 @@ def _goal_progress(attempts, settings, today_d):
         d = dt.datetime.fromtimestamp(ts).date()
         if d.isocalendar()[:2] != (year, week):
             continue
+        if a.get("kind") == "recall" and a.get("grading_status") in ("pending", "ready", "failed"):
+            continue
         if a.get("kind") in ("review", "recall"):
             r_done += 1
         else:
@@ -375,6 +377,8 @@ def _xp_today(attempts, today_d):
         if not ts or dt.datetime.fromtimestamp(ts).date() != today_d:
             continue
         kind = a.get("kind")
+        if kind == "recall" and a.get("grading_status") in ("pending", "ready", "failed"):
+            continue
         xp += 5 if kind == "recall" else (20 if a.get("source") in ("auto", "manual") and kind != "review" else 10)
     return xp
 

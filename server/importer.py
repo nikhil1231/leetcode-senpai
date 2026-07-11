@@ -71,6 +71,7 @@ def _problem_doc(slug, existing, meta, category, packs_list):
             "dislikes": meta.get("dislikes"),
             "like_ratio": meta.get("like_ratio"),
             "ac_rate": meta.get("ac_rate"),
+            "content_html": meta.get("content_html") or existing.get("content_html"),
             "paid_only": meta.get("paid_only"),
             "similar_slugs": meta.get("similar_slugs") or existing.get("similar_slugs", []),
         })

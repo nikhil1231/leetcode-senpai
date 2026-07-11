@@ -76,6 +76,7 @@ query questionData($titleSlug: String!) {
     likes
     dislikes
     stats
+    content
     similarQuestions
     topicTags { name slug }
   }
@@ -164,6 +165,7 @@ async def question(slug, auth=None):
         "dislikes": dislikes,
         "like_ratio": like_ratio,
         "ac_rate": _ac_rate(q.get("stats")),
+        "content_html": q.get("content"),
         "similar_slugs": _similar_slugs(q.get("similarQuestions")),
     }
 

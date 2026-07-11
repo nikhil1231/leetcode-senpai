@@ -124,6 +124,8 @@ def _pending(store):
     cutoff = time.time() - PENDING_MAX_AGE_SEC
     out = []
     for a in store.list_attempts():
+        if a.get("kind") == "recall" or a.get("source") == "recall":
+            continue
         if a.get("confidence") is not None or a.get("source") == "backfill":
             continue
         if (a.get("solved_at") or 0) < cutoff:
@@ -148,6 +150,78 @@ async def _prep_problem_bg(uid, slug):
     await coach.ensure_canonical(store, slug)
 
 
+async def _grade_recall_bg(uid, attempt_id):
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt:
+        return
+    store.update_attempt(attempt_id, {
+        "grading_status": "pending",
+        "grading_started_at": int(time.time()),
+        "grading_error": None,
+    })
+    try:
+        graded = await coach.grade_recall(
+            store, attempt["slug"], attempt.get("approach") or "",
+            attempt.get("complexity_time"), attempt.get("complexity_space"),
+        )
+        store.update_attempt(attempt_id, {
+            "grading_status": "ready",
+            "recall_grade": graded or {"grade": 0, "feedback": "No grade returned."},
+            "grading_completed_at": int(time.time()),
+        })
+    except Exception as exc:
+        store.update_attempt(attempt_id, {
+            "grading_status": "failed",
+            "grading_error": str(exc),
+            "grading_completed_at": int(time.time()),
+        })
+
+
+def _latest_unviewed_recall_by_slug(store):
+    out = {}
+    for a in store.list_attempts():
+        if a.get("kind") != "recall":
+            continue
+        status = a.get("grading_status")
+        if status not in ("pending", "ready", "failed"):
+            continue
+        slug = a.get("slug")
+        if not slug:
+            continue
+        prev = out.get(slug)
+        if not prev or (a.get("solved_at") or 0) >= (prev.get("solved_at") or 0):
+            out[slug] = a
+    return out
+
+
+def _with_recall_state(queue, store):
+    pending = _latest_unviewed_recall_by_slug(store)
+    for item in queue.get("reviews", []):
+        if item.get("mode") != "recall":
+            continue
+        attempt = pending.get(item["slug"])
+        if not attempt:
+            continue
+        item["recall_attempt_id"] = attempt.get("id")
+        item["grading_status"] = attempt.get("grading_status")
+    return queue
+
+
+def _recall_attempt_payload(store, attempt_id):
+    attempt = store.get_attempt(attempt_id)
+    if not attempt or attempt.get("kind") != "recall":
+        return None
+    prob = store.get_problem(attempt["slug"]) or {}
+    return {
+        **attempt,
+        "title": prob.get("title", attempt["slug"]),
+        "difficulty": prob.get("difficulty"),
+        "category": prob.get("neetcode_category"),
+        "url": prob.get("url"),
+    }
+
+
 # ---- dashboard ------------------------------------------------------------------
 @app.get("/api/overview")
 def api_overview(uid: str = Depends(auth.require_user)):
@@ -161,10 +235,11 @@ def api_overview(uid: str = Depends(auth.require_user)):
 @app.get("/api/today")
 def api_today(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
-    return scheduler.build_daily_queue(
+    queue = scheduler.build_daily_queue(
         store.list_problems(), store.list_attempts(), store.list_reviews(),
         store.get_settings(), enrichments=store.list_enrichments(),
     )
+    return _with_recall_state(queue, store)
 
 
 @app.get("/api/topics")
@@ -375,16 +450,14 @@ async def api_recall(body: RecallSubmit, bg: BackgroundTasks,
     store = get_store(uid)
     if not store.get_problem(body.slug):
         raise HTTPException(404, "unknown problem")
-    graded = await coach.grade_recall(store, body.slug, body.recall_text,
-                                      body.complexity_time, body.complexity_space)
-    # LLM grade -> 0..3; user's confirmed confidence overrides when provided.
-    grade = graded["grade"] if graded else None
-    if body.confidence is not None:
-        conf = body.confidence
-        indep = "solo"
-    else:
-        conf = None
-        indep = None
+    if body.confidence is not None and body.confidence not in (1, 2, 3):
+        raise HTTPException(400, "confidence must be 1..3")
+    is_manual = body.confidence is not None or not llm.enabled()
+    if is_manual and body.confidence is None:
+        raise HTTPException(400, "confidence is required when recall grading is manual")
+    conf = body.confidence if body.confidence is not None else None
+    indep = "solo" if body.confidence is not None else None
+    status = "viewed" if is_manual else "pending"
     aid = store.add_attempt({
         "slug": body.slug, "solved_at": int(time.time()), "time_taken_sec": None,
         "runtime_percentile": None, "memory_percentile": None, "lang": None,
@@ -392,18 +465,53 @@ async def api_recall(body: RecallSubmit, bg: BackgroundTasks,
         "confidence": conf, "independence": indep,
         "mistake_note": None, "approach": body.recall_text,
         "complexity_time": body.complexity_time, "complexity_space": body.complexity_space,
-        "source": "recall", "kind": "recall",
+        "source": "recall", "kind": "recall", "grading_status": status,
+        "recall_grade": None, "grading_error": None,
     })
+    if not is_manual:
+        bg.add_task(_grade_recall_bg, uid, aid)
+        return {"ok": True, "attempt_id": aid, "grading_status": "pending",
+                "review": None, "graded": None}
+
     current = store.get_review(body.slug)
     if current:
         current = {**current, "slug": body.slug}
-    if body.confidence is not None:
-        new_state = scheduler.advance_review(current, body.confidence, "solo")
-    else:
-        new_state = scheduler.advance_review(current, None, None, grade=grade or 0)
+    new_state = scheduler.advance_review(current, body.confidence, "solo")
     new_state["slug"] = body.slug
     store.upsert_review(body.slug, new_state)
-    return {"ok": True, "attempt_id": aid, "review": new_state, "graded": graded}
+    return {"ok": True, "attempt_id": aid, "review": new_state, "graded": None}
+
+
+@app.get("/api/review/recall/{attempt_id}")
+def api_recall_result(attempt_id: str, uid: str = Depends(auth.require_user)):
+    payload = _recall_attempt_payload(get_store(uid), attempt_id)
+    if not payload:
+        raise HTTPException(404, "no such recall")
+    return payload
+
+
+@app.post("/api/review/recall/{attempt_id}/ack")
+def api_recall_ack(attempt_id: str, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt or attempt.get("kind") != "recall":
+        raise HTTPException(404, "no such recall")
+    if attempt.get("grading_status") != "ready" or not attempt.get("recall_grade"):
+        raise HTTPException(400, "recall grade is not ready")
+    slug = attempt["slug"]
+    current = store.get_review(slug)
+    if current:
+        current = {**current, "slug": slug}
+    grade = (attempt.get("recall_grade") or {}).get("grade", 0)
+    new_state = scheduler.advance_review(current, None, None, grade=grade or 0)
+    new_state["slug"] = slug
+    store.upsert_review(slug, new_state)
+    store.update_attempt(attempt_id, {
+        "grading_status": "viewed",
+        "confidence": grade,
+        "independence": "solo",
+    })
+    return {"ok": True, "review": new_state}
 
 
 # ---- problems + discover --------------------------------------------------------
@@ -427,6 +535,44 @@ def api_problems(search: str = "", category: str = "", uid: str = Depends(auth.r
                     "due_date": r.get("due_date"), "leech": r.get("leech")})
     out.sort(key=lambda p: p.get("frontend_id") or 9999)
     return out
+
+
+@app.get("/api/problem/{slug}/recall-context")
+async def api_recall_context(slug: str, uid: str = Depends(auth.require_user),
+                             lc=Depends(auth.leetcode_auth)):
+    store = get_store(uid)
+    p = store.get_problem(slug)
+    if not p:
+        raise HTTPException(404, "unknown problem")
+    if not p.get("content_html"):
+        try:
+            meta = await leetcode.question(slug, lc)
+        except Exception:
+            meta = None
+        if meta and meta.get("content_html"):
+            store.upsert_problem({
+                "slug": slug,
+                "content_html": meta.get("content_html"),
+                "frontend_id": meta.get("frontend_id") or p.get("frontend_id"),
+                "title": meta.get("title") or p.get("title"),
+                "difficulty": meta.get("difficulty") or p.get("difficulty"),
+                "leetcode_tags": meta.get("tags") or p.get("leetcode_tags", []),
+                "likes": meta.get("likes"),
+                "dislikes": meta.get("dislikes"),
+                "like_ratio": meta.get("like_ratio"),
+                "ac_rate": meta.get("ac_rate"),
+                "paid_only": meta.get("paid_only"),
+                "similar_slugs": meta.get("similar_slugs") or p.get("similar_slugs", []),
+            })
+            p = store.get_problem(slug) or p
+    return {
+        "slug": slug,
+        "title": p.get("title", slug),
+        "difficulty": p.get("difficulty"),
+        "url": p.get("url") or f"https://leetcode.com/problems/{slug}/",
+        "category": p.get("neetcode_category"),
+        "content_html": p.get("content_html"),
+    }
 
 
 @app.get("/api/packs")

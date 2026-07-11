@@ -55,6 +55,23 @@ const cxOptions = (sel) => COMPLEXITIES.map((c) =>
 // Reusable async-loading indicator (matches the recall grading spinner).
 const loader = (msg = "Loading…") =>
   `<div class="loading-block"><span class="spinner"></span><span>${escapeHtml(msg)}</span></div>`;
+const sanitizeProblemHtml = (html) => {
+  if (!html) return "";
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const allowed = new Set([
+    "P", "PRE", "CODE", "STRONG", "B", "EM", "I", "UL", "OL", "LI", "BR",
+    "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "SUP", "SUB", "SPAN",
+  ]);
+  template.content.querySelectorAll("*").forEach((el) => {
+    if (!allowed.has(el.tagName)) {
+      el.replaceWith(...Array.from(el.childNodes));
+      return;
+    }
+    Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name));
+  });
+  return template.innerHTML;
+};
 
 window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader, COMPLEXITIES };
 
@@ -64,6 +81,8 @@ let timerInterval = null;
 let pollInterval = null;
 let currentAttempt = null;
 let currentRecall = null;
+let recallStatusInterval = null;
+let pendingRecallPollIds = new Set();
 let pendingStart = null;
 let categories = [];
 let llmEnabled = false;
@@ -112,8 +131,8 @@ async function loadOverview() {
 }
 
 // ---- session start flow --------------------------------------------------------
-async function startFlow(slug, kind, mode, title, category) {
-  if (mode === "recall") return openRecall(slug, title, category);
+async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
+  if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
   pendingStart = { slug, kind };
   $("#predict-problem").textContent = title ? `${title}` : slug;
   const cats = categories.length ? categories : (await loadCategories());
@@ -313,10 +332,13 @@ function offerSimilar(sim) {
 }
 
 // ---- recall modal --------------------------------------------------------------
-function openRecall(slug, title, category) {
-  currentRecall = { slug, title, category };
+async function openRecall(slug, title, category, attemptId = null, gradingStatus = null) {
+  currentRecall = { slug, title, category, attempt_id: attemptId, grading_status: gradingStatus };
   stopRecallGrading();
-  $("#recall-problem").textContent = `${title || slug}${category ? " · " + category : ""}`;
+  $("#recall-problem").textContent = title || slug;
+  $("#recall-statement").innerHTML = loader("Loading problem prompt...");
+  const help = $("#recall-statement").nextElementSibling;
+  if (help) help.textContent = "No coding. Read the prompt, identify the pattern, then recall the method.";
   $("#recall-text").value = "";
   $("#recall-text").disabled = false;
   $("#recall-time").disabled = false;
@@ -330,11 +352,98 @@ function openRecall(slug, title, category) {
      <button id="btn-submit-recall" class="button is-primary">${llmEnabled ? "Check my recall" : "Grade & schedule"}</button>`;
   wireRecallButtons();
   $("#recall-modal").classList.remove("hidden");
+  try {
+    const ctx = await api(`/problem/${encodeURIComponent(slug)}/recall-context`);
+    currentRecall = { ...currentRecall, ...ctx };
+    $("#recall-problem").textContent = ctx.title || title || slug;
+    const html = sanitizeProblemHtml(ctx.content_html);
+    $("#recall-statement").innerHTML = html ||
+      `<p class="small">Prompt unavailable. <a href="${ctx.url || `https://leetcode.com/problems/${slug}/`}" target="_blank" rel="noopener">Open on LeetCode</a>.</p>`;
+  } catch (e) {
+    $("#recall-statement").innerHTML =
+      `<p class="small">Prompt unavailable. <a href="https://leetcode.com/problems/${slug}/" target="_blank" rel="noopener">Open on LeetCode</a>.</p>`;
+  }
+  if (attemptId) {
+    await loadRecallAttempt(attemptId);
+  }
 }
 
 function wireRecallButtons() {
   $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
   $("#btn-submit-recall").addEventListener("click", submitRecall);
+}
+
+async function loadRecallAttempt(attemptId) {
+  let a;
+  try {
+    a = await api(`/review/recall/${attemptId}`);
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  currentRecall = { ...currentRecall, ...a, attempt_id: attemptId, category: a.category || currentRecall.category };
+  $("#recall-text").value = a.approach || "";
+  $("#recall-time").value = a.complexity_time || "";
+  $("#recall-space").value = a.complexity_space || "";
+  if (a.grading_status === "pending") {
+    setRecallInputsDisabled(true);
+    $("#recall-grade").classList.remove("hidden");
+    $("#recall-grade").innerHTML = `<div class="grading"><span class="spinner"></span><span class="grading-text">Grading in the background...</span></div>`;
+    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Close</button>`;
+    $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
+  } else if (a.grading_status === "ready") {
+    setRecallInputsDisabled(true);
+    renderRecallGrade(a.recall_grade, true);
+  } else if (a.grading_status === "failed") {
+    setRecallInputsDisabled(false);
+    $("#recall-grade").classList.remove("hidden");
+    $("#recall-grade").innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(a.grading_error || "Unknown error")}</p>`;
+    $("#btn-submit-recall").textContent = "Retry grading";
+  }
+}
+
+function setRecallInputsDisabled(disabled) {
+  $("#recall-text").disabled = disabled;
+  $("#recall-time").disabled = disabled;
+  $("#recall-space").disabled = disabled;
+}
+
+function renderRecallGrade(g, needsAck = false) {
+  g = g || {};
+  stopRecallGrading();
+  $("#recall-grade").classList.remove("hidden");
+  $("#recall-grade").innerHTML = `
+    <div class="grade-score">Recall grade: <b>${g.grade}/3</b></div>
+    ${g.feedback ? `<p>${escapeHtml(g.feedback)}</p>` : ""}
+    ${g.key_ideas_missed && g.key_ideas_missed.length ?
+      `<p class="missed"><b>You missed:</b> ${g.key_ideas_missed.map(escapeHtml).join("; ")}</p>` : ""}
+    ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
+    <p class="small">${needsAck ? "Click Done to schedule the next review." : "Scheduled next review accordingly."}</p>`;
+  if (needsAck) {
+    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-ghost">Close</button>
+      <button id="btn-ack-recall" class="button is-primary">Done</button>`;
+    $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
+    $("#btn-ack-recall").addEventListener("click", ackRecall);
+  } else {
+    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;
+    $("#btn-close-recall").addEventListener("click", () => {
+      $("#recall-modal").classList.add("hidden"); loadOverview(); render(currentActiveTab());
+    });
+  }
+}
+
+async function ackRecall() {
+  if (!currentRecall.attempt_id) return;
+  try {
+    await api(`/review/recall/${currentRecall.attempt_id}/ack`, "POST");
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  $("#recall-modal").classList.add("hidden");
+  toast("Recall scheduled.");
+  loadOverview();
+  render(currentActiveTab());
 }
 
 async function submitRecall() {
@@ -367,6 +476,14 @@ async function submitRecall() {
     return;
   }
   stopRecallGrading();
+  if (r.grading_status === "pending") {
+    $("#recall-modal").classList.add("hidden");
+    toast("Recall is grading in the background.");
+    loadOverview();
+    render(currentActiveTab());
+    startRecallStatusPolling([r.attempt_id]);
+    return;
+  }
   if (r.graded) {
     const g = r.graded;
     $("#recall-grade").classList.remove("hidden");
@@ -375,6 +492,7 @@ async function submitRecall() {
       ${g.feedback ? `<p>${escapeHtml(g.feedback)}</p>` : ""}
       ${g.key_ideas_missed && g.key_ideas_missed.length ?
         `<p class="missed"><b>You missed:</b> ${g.key_ideas_missed.map(escapeHtml).join("; ")}</p>` : ""}
+      ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
       <p class="small">Scheduled next review accordingly.</p>`;
     $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;
     $("#btn-close-recall").addEventListener("click", () => {
@@ -385,6 +503,55 @@ async function submitRecall() {
     toast("Recall logged ✅");
     loadOverview(); render(currentActiveTab());
   }
+}
+
+function startRecallStatusPolling(ids = []) {
+  ids.forEach((id) => id && pendingRecallPollIds.add(id));
+  if (!pendingRecallPollIds.size || recallStatusInterval) return;
+  recallStatusInterval = setInterval(pollRecallStatuses, 5000);
+  pollRecallStatuses();
+}
+
+function stopRecallStatusPolling() {
+  if (recallStatusInterval) clearInterval(recallStatusInterval);
+  recallStatusInterval = null;
+  pendingRecallPollIds.clear();
+}
+
+async function pollRecallStatuses() {
+  if (currentActiveTab() !== "today") return;
+  const ids = Array.from(pendingRecallPollIds);
+  if (!ids.length) { stopRecallStatusPolling(); return; }
+  await Promise.all(ids.map(async (id) => {
+    try {
+      const attempt = await api(`/review/recall/${id}`);
+      patchRecallCard(attempt);
+      if (attempt.grading_status !== "pending") pendingRecallPollIds.delete(id);
+    } catch (e) {
+      pendingRecallPollIds.delete(id);
+    }
+  }));
+  if (!pendingRecallPollIds.size) stopRecallStatusPolling();
+}
+
+function patchRecallCard(attempt) {
+  const card = document.querySelector(`[data-recall-card="${attempt.id}"]`);
+  if (!card) return;
+  const titleRow = card.querySelector(".title-row");
+  const btn = card.querySelector("button[data-attempt]");
+  if (!titleRow || !btn) return;
+  titleRow.querySelectorAll(".recall-status-tag").forEach((el) => el.remove());
+  const status = attempt.grading_status || "";
+  const tag = document.createElement("span");
+  tag.className = "tag recall-status-tag " + (
+    status === "ready" ? "is-success is-light" :
+    status === "failed" ? "is-danger is-light" :
+    "is-warning is-light"
+  );
+  tag.textContent = status === "ready" ? "grade ready" : status === "failed" ? "failed" : "grading";
+  titleRow.appendChild(tag);
+  btn.dataset.status = status;
+  btn.textContent = status === "ready" ? "View grade" : status === "failed" ? "Retry" : "Grading...";
 }
 
 let recallGradeTimer = null;
@@ -536,7 +703,8 @@ function showUserChip(email) {
 
 // expose for views.js
 window.App = { startFlow, openDetail, openRecall, startMock, loadOverview, render,
-  currentActiveTab, api, runSweep, get llmEnabled() { return llmEnabled; } };
+  currentActiveTab, api, runSweep, startRecallStatusPolling, stopRecallStatusPolling,
+  get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------
 // Deferred to DOMContentLoaded so views.js (loaded after this file) has defined

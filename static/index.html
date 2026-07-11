@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeetCode Revision</title>
   <link rel="stylesheet" href="/bulma.min.css" />
-  <link rel="stylesheet" href="/style.css?v=3" />
+  <link rel="stylesheet" href="/style.css?v=5" />
 </head>
 <body>
   <!-- Sign-in gate -->
@@ -132,9 +132,10 @@
 
   <!-- Approach-recall modal -->
   <div id="recall-modal" class="overlay hidden">
-    <div class="overlay-card box" role="dialog" aria-modal="true">
+    <div class="overlay-card box recall-wide" role="dialog" aria-modal="true">
       <h2 class="title is-5">Quick recall</h2>
       <p class="small" id="recall-problem"></p>
+      <div id="recall-statement" class="recall-statement"></div>
       <p class="help">No coding — just recall the approach from memory in under 3 minutes.</p>
       <label class="label-sm">How would you solve it? Key idea + the crucial trick.</label>
       <textarea id="recall-text" class="textarea" rows="4" placeholder="Describe the approach…"></textarea>
@@ -170,8 +171,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="/firebase-config.js"></script>
-  <script src="/charts.js?v=3"></script>
-  <script src="/app.js?v=3"></script>
-  <script src="/views.js?v=3"></script>
+  <script src="/charts.js?v=5"></script>
+  <script src="/app.js?v=5"></script>
+  <script src="/views.js?v=5"></script>
 </body>
 </html>
