@@ -173,15 +173,22 @@ async def _grade_recall_bg(uid, attempt_id):
         "grading_error": None,
     })
     try:
-        graded = await coach.grade_recall(
+        graded, err = await coach.grade_recall(
             store, attempt["slug"], attempt.get("approach") or "",
             attempt.get("complexity_time"), attempt.get("complexity_space"),
         )
-        store.update_attempt(attempt_id, {
-            "grading_status": "ready",
-            "recall_grade": graded or {"grade": 0, "feedback": "No grade returned."},
-            "grading_completed_at": int(time.time()),
-        })
+        if graded:
+            store.update_attempt(attempt_id, {
+                "grading_status": "ready",
+                "recall_grade": graded,
+                "grading_completed_at": int(time.time()),
+            })
+        else:
+            store.update_attempt(attempt_id, {
+                "grading_status": "failed",
+                "grading_error": err or "grading returned no result",
+                "grading_completed_at": int(time.time()),
+            })
     except Exception as exc:
         store.update_attempt(attempt_id, {
             "grading_status": "failed",

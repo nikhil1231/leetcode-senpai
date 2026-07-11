@@ -71,17 +71,19 @@ async def grade_followup(store, slug, question, answer):
 async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=None):
     """Grade an approach-recall against the user's past code + canonical ideas.
 
-    Returns a dict {grade, key_ideas_hit, key_ideas_missed, feedback} or None
-    when the LLM is disabled (caller falls back to manual self-grade).
+    Returns (result, error): result is a dict {grade, key_ideas_hit,
+    key_ideas_missed, feedback} or None; error is a human-readable reason when
+    the grade could not be produced. When the LLM is disabled both are None
+    (caller falls back to manual self-grade).
     """
     if not llm.enabled():
-        return None
+        return None, None
     past = [a for a in store.attempts_for_slug(slug) if a.get("code")]
     past_code = past[-1]["code"] if past else None
     canonical = await ensure_canonical(store, slug)
     canon_ideas = ", ".join((canonical or {}).get("key_ideas", [])) if canonical else None
     p = store.get_problem(slug) or {}
-    return await llm.extract("grade_recall", {
+    return await llm.extract_or_error("grade_recall", {
         "title": p.get("title", slug), "category": p.get("neetcode_category"),
         "canonical": canon_ideas, "past_code": past_code,
         "recall_text": recall_text, "recall_time": recall_time, "recall_space": recall_space,

@@ -15,11 +15,14 @@ mode, validates against the schema, and hands back a plain dict.
 """
 import asyncio
 import json
+import logging
 from typing import Callable, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from . import config
+
+log = logging.getLogger(__name__)
 
 MISTAKE_TAGS = [
     "misread", "wrong_pattern", "off_by_one", "edge_case",
@@ -225,6 +228,28 @@ def _get_client():
     return _client
 
 
+def _strip_defaults(node):
+    """Recursively drop `default` keys from a JSON schema in place.
+
+    The Gemini API rejects any response schema that carries default values
+    ("Default value is not supported in the response schema"), but our pydantic
+    models use defaults so validation stays lenient when the model omits a
+    field. Sending a defaults-free copy keeps both sides happy.
+    """
+    if isinstance(node, dict):
+        node.pop("default", None)
+        for v in node.values():
+            _strip_defaults(v)
+    elif isinstance(node, list):
+        for v in node:
+            _strip_defaults(v)
+    return node
+
+
+def _gemini_schema(schema) -> dict:
+    return _strip_defaults(schema.model_json_schema())
+
+
 def _raw_generate(model: str, system: str, prompt: str, schema) -> Optional[str]:
     """The single transport choke point. Returns a JSON string or None.
 
@@ -238,28 +263,44 @@ def _raw_generate(model: str, system: str, prompt: str, schema) -> Optional[str]
         config=types.GenerateContentConfig(
             system_instruction=system,
             response_mime_type="application/json",
-            response_schema=schema,
+            response_schema=_gemini_schema(schema),
             temperature=0.2,
         ),
     )
     return resp.text
 
 
-async def extract(task_name: str, payload: dict) -> Optional[dict]:
-    """Run a registered task. Never raises — returns a validated dict or None."""
+async def extract_or_error(
+    task_name: str, payload: dict
+) -> tuple[Optional[dict], Optional[str]]:
+    """Run a registered task, returning (result, error_message).
+
+    Same work as `extract` but surfaces WHY a task produced no result instead of
+    swallowing it. Still never raises to callers; the error is logged (with a
+    traceback on real exceptions) and returned as a human-readable string so a
+    feature that wants diagnosability (e.g. recall grading) can show it.
+    """
     if not enabled():
-        return None
+        return None, "LLM disabled (no GEMINI_API_KEY)"
     task = TASKS.get(task_name)
     if task is None:
-        return None
+        return None, f"unknown task {task_name}"
     try:
         prompt = task.build(payload)
         raw = await asyncio.to_thread(
             _raw_generate, config.LLM_MODEL, task.system, prompt, task.schema
         )
-        if not raw:
-            return None
+        if not raw or not raw.strip():
+            log.warning("LLM task %s returned an empty response", task_name)
+            return None, "model returned an empty response (possibly truncated by the thinking budget)"
         data = json.loads(raw)
-        return task.schema.model_validate(data).model_dump()
-    except Exception:
-        return None
+        return task.schema.model_validate(data).model_dump(), None
+    except Exception as exc:
+        log.warning("LLM task %s failed", task_name, exc_info=True)
+        return None, f"{type(exc).__name__}: {exc}"
+
+
+async def extract(task_name: str, payload: dict) -> Optional[dict]:
+    """Run a registered task. Never raises — returns a validated dict or None."""
+    result, _ = await extract_or_error(task_name, payload)
+    return result
