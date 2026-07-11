@@ -688,11 +688,18 @@ async function runSweep() {
 async function startApp() {
   if (appStarted) return;
   appStarted = true;
-  await loadOverview();
-  await loadCategories();
-  await refreshActive();
-  await refreshPending();
+  // Fire the independent startup requests concurrently instead of awaiting them
+  // one-by-one. Serializing them meant the page waited on 4 round-trips
+  // end-to-end (header, then a blank gap) before the Today queue even started
+  // loading. render("today") paints its own loader immediately and fetches
+  // /today in parallel with the rest.
   render("today");
+  await Promise.all([
+    loadOverview(),
+    loadCategories(),
+    refreshActive(),
+    refreshPending(),
+  ]);
   if (llmEnabled) runSweep();
 }
 

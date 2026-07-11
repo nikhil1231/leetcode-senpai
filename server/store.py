@@ -15,9 +15,57 @@ Collections:
   users/{uid}/mocks/{id}               mock-interview sets + scores
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
+import threading
+import time as _time
+
 from . import config
 
 _firestore_app = None
+
+# ---- single-flight snapshot cache -----------------------------------------------
+# Every endpoint re-streams whole collections (problems/attempts/reviews/…), and
+# the dashboard fires ~7 of them concurrently at page load. Each `.stream()` is a
+# 200–450ms round-trip to live Firestore, so those bursts stacked up to multi-
+# second loads. Data is tiny and single-user, so we cache the whole-collection
+# reads for a few seconds.
+#
+# Crucially this is *single-flight*: because the startup requests all fire at
+# once, a plain TTL cache would let every one of them miss and fetch in parallel
+# (no benefit). Instead the first caller to need a key fetches while the rest
+# block on a per-key lock and then read the warm entry. Writes invalidate the
+# affected key so reads never serve stale data past a mutation.
+_CACHE_TTL = 5.0
+_cache = {}            # key -> (expires_at, value)
+_cache_locks = {}      # key -> Lock
+_cache_guard = threading.Lock()
+
+
+def _cache_lock_for(key):
+    with _cache_guard:
+        lk = _cache_locks.get(key)
+        if lk is None:
+            lk = _cache_locks[key] = threading.Lock()
+        return lk
+
+
+def _cached(key, loader):
+    now = _time.time()
+    hit = _cache.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    with _cache_lock_for(key):
+        # Re-check: another thread may have populated it while we waited.
+        hit = _cache.get(key)
+        now = _time.time()
+        if hit and hit[0] > now:
+            return hit[1]
+        value = loader()
+        _cache[key] = (now + _CACHE_TTL, value)
+        return value
+
+
+def _invalidate(key):
+    _cache.pop(key, None)
 
 
 def get_store(uid):
@@ -43,7 +91,12 @@ class FirestoreStore:
 
     # ---- problems (global) --------------------------------------------------
     def list_problems(self):
-        return [d.to_dict() for d in self.db.collection("problems").stream()]
+        # Global catalog; cache key is not per-user.
+        cached = _cached(
+            ("problems",),
+            lambda: [d.to_dict() for d in self.db.collection("problems").stream()],
+        )
+        return list(cached)
 
     def get_problem(self, slug):
         snap = self.db.collection("problems").document(slug).get()
@@ -51,18 +104,21 @@ class FirestoreStore:
 
     def upsert_problem(self, doc):
         self.db.collection("problems").document(doc["slug"]).set(doc, merge=True)
+        _invalidate(("problems",))
 
     # ---- attempts -----------------------------------------------------------
     def _attempts(self):
         return self._user_ref().collection("attempts")
 
     def list_attempts(self):
-        out = []
-        for d in self._attempts().stream():
-            item = d.to_dict()
-            item["id"] = d.id
-            out.append(item)
-        return out
+        def load():
+            out = []
+            for d in self._attempts().stream():
+                item = d.to_dict()
+                item["id"] = d.id
+                out.append(item)
+            return out
+        return list(_cached(("attempts", self.uid), load))
 
     def get_attempt(self, aid):
         snap = self._attempts().document(aid).get()
@@ -75,10 +131,12 @@ class FirestoreStore:
     def add_attempt(self, doc):
         ref = self._attempts().document()
         ref.set(doc)
+        _invalidate(("attempts", self.uid))
         return ref.id
 
     def update_attempt(self, aid, fields):
         self._attempts().document(aid).update(fields)
+        _invalidate(("attempts", self.uid))
 
     def find_attempt_by_submission(self, submission_id):
         q = self._attempts().where("submission_id", "==", submission_id).limit(1)
@@ -102,7 +160,11 @@ class FirestoreStore:
         return self._user_ref().collection("reviews")
 
     def list_reviews(self):
-        return [d.to_dict() for d in self._reviews().stream()]
+        cached = _cached(
+            ("reviews", self.uid),
+            lambda: [d.to_dict() for d in self._reviews().stream()],
+        )
+        return list(cached)
 
     def get_review(self, slug):
         snap = self._reviews().document(slug).get()
@@ -110,6 +172,7 @@ class FirestoreStore:
 
     def upsert_review(self, slug, doc):
         self._reviews().document(slug).set({**doc, "slug": slug})
+        _invalidate(("reviews", self.uid))
 
     # ---- sessions -----------------------------------------------------------
     def _sessions(self):
@@ -158,9 +221,14 @@ class FirestoreStore:
 
     def upsert_enrichment(self, attempt_id, doc):
         self._enrichments().document(attempt_id).set({**doc, "attempt_id": attempt_id})
+        _invalidate(("enrichments", self.uid))
 
     def list_enrichments(self):
-        return [d.to_dict() for d in self._enrichments().stream()]
+        cached = _cached(
+            ("enrichments", self.uid),
+            lambda: [d.to_dict() for d in self._enrichments().stream()],
+        )
+        return list(cached)
 
     # ---- reports (weekly coach) ---------------------------------------------
     def _reports(self):
@@ -219,24 +287,30 @@ class FirestoreStore:
         return out
 
     # ---- settings + flags ---------------------------------------------------
+    def _user_doc(self):
+        # settings and flags live on the same user doc and are both read on most
+        # page loads; cache the single fetch so we don't round-trip twice.
+        return _cached(
+            ("userdoc", self.uid),
+            lambda: (self._user_ref().get().to_dict() or {}),
+        )
+
     def get_settings(self):
-        snap = self._user_ref().get()
-        stored = (snap.to_dict() or {}).get("settings", {}) if snap.exists else {}
+        stored = self._user_doc().get("settings", {})
         return {**config.DEFAULT_SETTINGS, **stored}
 
     def update_settings(self, fields):
-        snap = self._user_ref().get()
-        current = (snap.to_dict() or {}).get("settings", {}) if snap.exists else {}
+        current = self._user_doc().get("settings", {})
         self._user_ref().set({"settings": {**current, **fields}}, merge=True)
+        _invalidate(("userdoc", self.uid))
 
     def get_flags(self):
-        snap = self._user_ref().get()
-        return (snap.to_dict() or {}).get("flags", {}) if snap.exists else {}
+        return dict(self._user_doc().get("flags", {}))
 
     def set_flag(self, key, value):
-        snap = self._user_ref().get()
-        current = (snap.to_dict() or {}).get("flags", {}) if snap.exists else {}
+        current = self._user_doc().get("flags", {})
         self._user_ref().set({"flags": {**current, key: value}}, merge=True)
+        _invalidate(("userdoc", self.uid))
 
 
 def _slugify(text):

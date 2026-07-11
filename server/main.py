@@ -7,6 +7,7 @@ gracefully when GEMINI_API_KEY is unset.
 """
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -106,6 +107,17 @@ def _problem_map(store):
 
 def _enrichment_map(store):
     return {e["attempt_id"]: e for e in store.list_enrichments()}
+
+
+def _gather(*fns):
+    """Run independent (blocking Firestore) reads concurrently, preserving order.
+
+    The dashboard endpoints each pull several whole collections; issued serially
+    that's a chain of round-trips. Fanning them out across a small threadpool
+    collapses the chain to roughly the single slowest read.
+    """
+    with ThreadPoolExecutor(max_workers=len(fns)) as ex:
+        return [f.result() for f in [ex.submit(fn) for fn in fns]]
 
 
 def _effective_tags(e):
@@ -226,7 +238,9 @@ def _recall_attempt_payload(store, attempt_id):
 @app.get("/api/overview")
 def api_overview(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
-    ov = scheduler.overview(store.list_problems(), store.list_attempts(), store.list_reviews())
+    problems, attempts, reviews = _gather(
+        store.list_problems, store.list_attempts, store.list_reviews)
+    ov = scheduler.overview(problems, attempts, reviews)
     ov["newly_mastered"] = gamify.check_mastery_moments(store)
     ov["llm_enabled"] = llm.enabled()
     return ov
@@ -235,9 +249,11 @@ def api_overview(uid: str = Depends(auth.require_user)):
 @app.get("/api/today")
 def api_today(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
+    problems, attempts, reviews, enrichments, settings = _gather(
+        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_enrichments, store.get_settings)
     queue = scheduler.build_daily_queue(
-        store.list_problems(), store.list_attempts(), store.list_reviews(),
-        store.get_settings(), enrichments=store.list_enrichments(),
+        problems, attempts, reviews, settings, enrichments=enrichments,
     )
     return _with_recall_state(queue, store)
 
