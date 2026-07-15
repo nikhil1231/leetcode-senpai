@@ -262,6 +262,20 @@ def api_today(uid: str = Depends(auth.require_user)):
     queue = scheduler.build_daily_queue(
         problems, attempts, reviews, settings, enrichments=enrichments,
     )
+    exclude_slugs = {
+        item["slug"] for item in queue.get("reviews", []) + queue.get("new", [])
+        if item.get("slug")
+    }
+    active = store.latest_active_session()
+    if active and active.get("slug"):
+        exclude_slugs.add(active["slug"])
+    for item in _pending(store):
+        if item.get("slug"):
+            exclude_slugs.add(item["slug"])
+    queue["drills"] = scheduler.build_drill_lane(
+        problems, attempts, reviews, settings, enrichments=enrichments,
+        exclude_slugs=exclude_slugs,
+    )
     return _with_recall_state(queue, store)
 
 
