@@ -96,3 +96,34 @@ def test_full_solve_mode_for_long_interval_cards():
     q = scheduler.build_daily_queue(problems, attempts, reviews,
                                     {"review_limit": 5, "new_limit": 0}, today=today)
     assert q["reviews"][0]["mode"] == "full"
+
+
+def _ts(day):
+    return int(dt.datetime.combine(day, dt.time(hour=12)).timestamp())
+
+
+def test_goal_progress_excludes_drill_attempts_from_weekly_goals():
+    today = dt.date(2026, 1, 10)
+    attempts = [
+        {"slug": "two-sum", "solved_at": _ts(today), "kind": "review"},
+        {"slug": "3sum", "solved_at": _ts(today), "kind": "recall",
+         "grading_status": "viewed"},
+        {"slug": "valid-anagram", "solved_at": _ts(today), "kind": "adhoc",
+         "source": "manual"},
+        {"slug": "contains-duplicate", "solved_at": _ts(today), "kind": "drill",
+         "source": "auto"},
+        {"slug": "old-drill", "solved_at": _ts(today - dt.timedelta(days=8)),
+         "kind": "drill", "source": "auto"},
+    ]
+
+    goal = scheduler._goal_progress(attempts, {
+        "goal_reviews_per_week": 4,
+        "goal_new_per_week": 3,
+    }, today)
+
+    assert goal == {
+        "reviews_done": 2,
+        "reviews_goal": 4,
+        "new_done": 1,
+        "new_goal": 3,
+    }
