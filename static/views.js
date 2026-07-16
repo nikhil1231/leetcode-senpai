@@ -12,10 +12,11 @@
       api("/mock/status").catch(() => ({})),
     ]);
 
-    let html = "";
-    html += await weeklyReportBanner(reportWrap.report);
-    html += goalBar(q.goal);
-    html += mockCard(mock);
+    const prepHtml = [
+      await weeklyReportBanner(reportWrap.report),
+      goalBar(q.goal),
+      mockCard(mock),
+    ].filter(Boolean).join("");
 
     const recallLabel = (it) => {
       if (it.grading_status === "pending") return "Grading...";
@@ -47,25 +48,59 @@
       </div>`;
     };
 
-    html += `<div class="section-title">Reviews due (${q.reviews.length})</div>`;
-    html += q.reviews.length ? q.reviews.map(item).join("") : "<p class='empty'>No reviews due — nice.</p>";
-    html += `<div class="section-title">New problems (${q.new.length})</div>`;
-    html += q.new.length ? q.new.map(item).join("") : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>";
-    if (q.drills && q.drills.length) {
-      html += `<div class="section-title">Focused drills (${q.drills.length})</div>`;
-      html += q.drills.map(item).join("");
-    }
-    if (q.expansion && q.expansion.length) {
-      html += `<div class="section-title">Grow your library <span class="help-inline">topics you've cleared</span></div>`;
-      html += q.expansion.map((x) => `
+    const section = (title, count, desc, body, extraClass = "") => `
+      <section class="today-section ${extraClass}">
+        <div class="today-section-head">
+          <div>
+            <div class="section-title">${title} (${count})</div>
+            <p class="section-desc">${desc}</p>
+          </div>
+        </div>
+        ${body}
+      </section>`;
+    const reviews = section(
+      "Reviews due",
+      q.reviews.length,
+      "Problems the scheduler wants reinforced today, including quick recalls when a full re-solve is not needed.",
+      q.reviews.length ? q.reviews.map(item).join("") : "<p class='empty'>No reviews due — nice.</p>",
+      "today-section-primary"
+    );
+    const newProblems = section(
+      "New problems",
+      q.new.length,
+      "Fresh practice selected to expand coverage without crowding out spaced repetition.",
+      q.new.length ? q.new.map(item).join("") : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>"
+    );
+    const drills = q.drills && q.drills.length ? section(
+      "Focused drills",
+      q.drills.length,
+      "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
+      q.drills.map(item).join("")
+    ) : "";
+    const expansion = q.expansion && q.expansion.length ? section(
+      "Grow your library",
+      q.expansion.length,
+      "Optional high-quality imports from topics you have started to clear.",
+      q.expansion.map((x) => `
         <div class="box queue-card expansion">
           <div class="meta"><div class="title-row"><h3>${escapeHtml(x.title)}</h3>${badge(x.difficulty)}
             ${x.like_ratio ? `<span class="ratio">${Math.round(x.like_ratio * 100)}%👍</span>` : ""}</div>
             <span class="reason">${escapeHtml(x.reason)} · ${escapeHtml(x.category)}</span></div>
           <button class="button is-primary is-small import-one" data-slug="${x.slug}">Import</button>
-        </div>`).join("");
-    }
-    el.innerHTML = html;
+        </div>`).join("")
+    ) : "";
+    el.innerHTML = `
+      <div class="today-shell">
+        ${prepHtml ? `<div class="today-prep">${prepHtml}</div>` : ""}
+        <div class="today-grid">
+          ${reviews}
+          <div class="today-side">
+            ${newProblems}
+            ${drills}
+          </div>
+        </div>
+        ${expansion ? `<div class="today-expansion">${expansion}</div>` : ""}
+      </div>`;
     const pendingRecallIds = q.reviews
       .filter((it) => it.grading_status === "pending" && it.recall_attempt_id)
       .map((it) => it.recall_attempt_id);
