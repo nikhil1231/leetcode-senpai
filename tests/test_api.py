@@ -3,6 +3,8 @@
 No Firestore, no network, no LLM key — exercises the request/response plumbing
 and the graceful-degradation paths.
 """
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -44,6 +46,20 @@ def test_today_has_new_and_sections(client):
     body = r.json()
     assert "new" in body and "reviews" in body and "drills" in body
     assert "expansion" in body and "goal" in body
+    assert set(body["goal"]) == {"reviews_done", "reviews_goal", "new_done", "new_goal"}
+
+
+def test_today_goal_excludes_drill_attempts(client):
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
+        "kind": "drill", "confidence": 3, "independence": "solo",
+    })
+
+    goal = client.get("/api/today").json()["goal"]
+
+    assert goal["reviews_done"] == 0
+    assert goal["new_done"] == 0
+    assert set(goal) == {"reviews_done", "reviews_goal", "new_done", "new_goal"}
 
 
 def test_today_drills_exclude_review_new_active_and_pending(client):
