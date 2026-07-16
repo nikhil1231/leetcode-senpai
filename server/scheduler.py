@@ -528,7 +528,17 @@ def overview(problems, attempts, reviews, today=None):
         "total_attempts": len(attempts), "due_reviews": due,
         "leeches": leeches, "streak": _streak(dates, today_d),
         "xp_today": _xp_today(attempts, today_d),
+        "drills_today": _drills_today(attempts, today_d),
     }
+
+
+def _drills_today(attempts, today_d):
+    return sum(
+        1 for a in attempts
+        if a.get("kind") == "drill"
+        and a.get("solved_at")
+        and dt.datetime.fromtimestamp(a["solved_at"]).date() == today_d
+    )
 
 
 def _xp_today(attempts, today_d):
