@@ -44,7 +44,8 @@ def test_overview(client):
 def test_today_has_new_and_sections(client):
     r = client.get("/api/today")
     body = r.json()
-    assert "new" in body and "reviews" in body and "expansion" in body and "goal" in body
+    assert "new" in body and "reviews" in body and "drills" in body
+    assert "expansion" in body and "goal" in body
     assert set(body["goal"]) == {"reviews_done", "reviews_goal", "new_done", "new_goal"}
 
 
@@ -59,6 +60,57 @@ def test_today_goal_excludes_drill_attempts(client):
     assert goal["reviews_done"] == 0
     assert goal["new_done"] == 0
     assert set(goal) == {"reviews_done", "reviews_goal", "new_done", "new_goal"}
+
+
+def test_today_drills_exclude_review_new_active_and_pending(client):
+    for slug, title, diff, cat in [
+        ("valid-parentheses", "Valid Parentheses", "Easy", "Stack"),
+        ("binary-search", "Binary Search", "Easy", "Binary Search"),
+        ("contains-duplicate", "Contains Duplicate", "Easy", "Arrays & Hashing"),
+        ("best-time-to-buy-and-sell-stock",
+         "Best Time to Buy and Sell Stock", "Easy", "Sliding Window"),
+        ("product-of-array-except-self", "Product of Array Except Self", "Medium", "Arrays & Hashing"),
+    ]:
+        client.store.upsert_problem({
+            "slug": slug, "title": title, "difficulty": diff,
+            "neetcode_category": cat, "in_library": True,
+            "packs": ["neetcode150"], "url": f"https://lc/{slug}",
+            "similar_slugs": [],
+        })
+    client.store.upsert_review("valid-parentheses", {
+        "slug": "valid-parentheses", "due_date": "2000-01-01",
+        "interval_days": 5, "fail_count": 3, "leech": 1,
+    })
+    client.store.add_attempt({
+        "slug": "contains-duplicate", "solved_at": 9999999999,
+        "source": "auto", "kind": "adhoc", "confidence": None,
+    })
+    client.post("/api/session/start", json={
+        "slug": "binary-search", "kind": "drill",
+    })
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999900,
+        "source": "manual", "kind": "adhoc", "confidence": 1,
+        "independence": "solution",
+    })
+
+    body = client.get("/api/today").json()
+    blocked = {i["slug"] for i in body["reviews"] + body["new"]}
+    blocked.update({"binary-search", "contains-duplicate"})
+    assert {i["slug"] for i in body["drills"]}.isdisjoint(blocked)
+
+
+def test_today_drills_can_use_local_signal_without_llm(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda: False)
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999900,
+        "source": "manual", "kind": "adhoc", "confidence": 1,
+        "independence": "solution",
+    })
+
+    body = client.get("/api/today").json()
+    assert body["drills"]
+    assert all(item["kind"] == "drill" for item in body["drills"])
 
 
 def test_manual_attempt_creates_review_and_history(client):

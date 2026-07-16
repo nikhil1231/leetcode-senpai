@@ -206,6 +206,164 @@ def mistake_density(problems, attempts, enrichments, days=30, today=None):
     return {cat: round(v / peak, 3) for cat, v in raw.items()}
 
 
+# ---- drill lane -----------------------------------------------------------------
+_DIFFICULTY_ORDER = {"Easy": 0, "Medium": 1, "Hard": 2, "Unknown": 3}
+_PREDICTION_MISSES = {"wrong", "partial"}
+
+
+def build_drill_lane(
+    problems,
+    attempts,
+    reviews,
+    settings=None,
+    today=None,
+    enrichments=None,
+    exclude_slugs=None,
+):
+    """Return 0..3 in-library drill candidates from local practice signal only."""
+    today_d = _today(today)
+    settings = settings or {}
+    exclude_slugs = set(exclude_slugs or ())
+    prob_by_slug = {p["slug"]: p for p in problems if _in_library(p)}
+    if not prob_by_slug:
+        return []
+
+    attempts_by_slug = {}
+    for a in attempts:
+        attempts_by_slug.setdefault(a.get("slug"), []).append(a)
+    reviews_by_slug = {r.get("slug"): r for r in reviews}
+    stats = {s["category"]: s for s in topic_stats(problems, attempts)}
+    mistakes = mistake_density(problems, attempts, enrichments, today=today_d)
+    pred_misses = _prediction_misses_by_category(problems, attempts, enrichments)
+    struggles = _recent_struggles_by_category(problems, attempts, today_d)
+
+    has_signal = (
+        any(r.get("leech") for r in reviews)
+        or any(struggles.values())
+        or bool(mistakes)
+        or any(pred_misses.values())
+    )
+    if not has_signal:
+        return []
+
+    candidates = []
+    for slug, p in prob_by_slug.items():
+        if slug in exclude_slugs:
+            continue
+        cat = p.get("neetcode_category")
+        review = reviews_by_slug.get(slug, {})
+        problem_attempts = attempts_by_slug.get(slug, [])
+        score, reason = _drill_score(
+            p, problem_attempts, review, stats.get(cat, {}), mistakes,
+            pred_misses, struggles, settings,
+        )
+        if score <= 0:
+            continue
+        candidates.append((p, score, reason, int(bool(review.get("leech"))),
+                           int(review.get("fail_count") or 0)))
+
+    candidates.sort(key=_drill_sort_key)
+    out = []
+    used_cats = set()
+    for cand in candidates:
+        if len(out) >= 3:
+            break
+        cat = cand[0].get("neetcode_category")
+        if cat in used_cats:
+            continue
+        used_cats.add(cat)
+        out.append(_drill_item(*cand[:3]))
+    if len(out) < 3:
+        have = {i["slug"] for i in out}
+        for cand in candidates:
+            if len(out) >= 3:
+                break
+            if cand[0]["slug"] not in have:
+                out.append(_drill_item(*cand[:3]))
+    return out
+
+
+def _prediction_misses_by_category(problems, attempts, enrichments):
+    cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
+    attempt_by_id = {a.get("id"): a for a in attempts}
+    raw = {}
+    for e in enrichments or []:
+        if e.get("prediction_verdict") not in _PREDICTION_MISSES:
+            continue
+        a = attempt_by_id.get(e.get("attempt_id"), {})
+        cat = cat_of.get(a.get("slug") or e.get("slug"))
+        if cat:
+            raw[cat] = raw.get(cat, 0) + 1
+    return raw
+
+
+def _recent_struggles_by_category(problems, attempts, today):
+    cutoff = int((dt.datetime.combine(today, dt.time()) - dt.timedelta(days=30)).timestamp())
+    cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
+    raw = {}
+    for a in attempts:
+        ts = a.get("solved_at")
+        if ts is not None and ts < cutoff:
+            continue
+        if not (a.get("confidence") is not None and a.get("confidence") <= 1
+                or a.get("independence") in ("hints", "solution")):
+            continue
+        cat = cat_of.get(a.get("slug"))
+        if cat:
+            raw[cat] = raw.get(cat, 0) + 1
+    return raw
+
+
+def _drill_score(p, attempts, review, stats, mistakes, pred_misses, struggles, settings):
+    cat = p.get("neetcode_category")
+    leech = int(bool(review.get("leech")))
+    fail_count = int(review.get("fail_count") or 0)
+    unattempted = 0 if attempts else 1
+    weak = stats.get("weakness", 0.0)
+    coverage_gap = 1 - stats.get("coverage", 0.0)
+    mistake = mistakes.get(cat, 0.0)
+    pred = pred_misses.get(cat, 0)
+    struggle = struggles.get(cat, 0)
+    leech_score = settings.get("drill_leech_weight", 3.0) * leech
+    fail_score = settings.get("drill_fail_weight", 0.4) * fail_count
+    mistake_score = settings.get("drill_mistake_weight", 1.8) * mistake
+    pred_score = settings.get("drill_prediction_weight", 1.5) * pred
+    struggle_score = settings.get("drill_struggle_weight", 1.4) * struggle
+    weak_score = settings.get("drill_weakness_weight", 0.7) * weak
+    breadth_score = settings.get("drill_breadth_weight", 0.5) * coverage_gap * unattempted
+
+    score = (
+        leech_score + fail_score + mistake_score + pred_score
+        + struggle_score + weak_score + breadth_score
+    )
+    signals = [
+        (leech_score, "Leech drill"),
+        (mistake_score, f"Recent mistakes in {cat}"),
+        (pred_score, f"Prediction misses in {cat}"),
+        (struggle_score, f"Recent struggle in {cat}"),
+        (weak_score + breadth_score, "Weak topic coverage"),
+    ]
+    reason = max(signals, key=lambda x: (x[0], x[1]))[1]
+    return round(score, 3), reason
+
+
+def _drill_sort_key(cand):
+    p, score, _reason, leech, fail_count = cand
+    difficulty = p.get("difficulty", "Unknown")
+    return (-score, -leech, -fail_count,
+            _DIFFICULTY_ORDER.get(difficulty, _DIFFICULTY_ORDER["Unknown"]),
+            p["slug"])
+
+
+def _drill_item(p, score, reason):
+    return {
+        "slug": p["slug"], "title": p.get("title", p["slug"]),
+        "difficulty": p.get("difficulty", "Unknown"),
+        "category": p.get("neetcode_category"), "url": p.get("url"),
+        "kind": "drill", "score": round(score, 3), "reason": reason,
+    }
+
+
 # ---- daily queue ----------------------------------------------------------------
 def build_daily_queue(problems, attempts, reviews, settings, today=None, enrichments=None):
     today_d = _today(today)
