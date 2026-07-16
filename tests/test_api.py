@@ -38,6 +38,7 @@ def test_overview(client):
     r = client.get("/api/overview")
     assert r.status_code == 200
     assert "solved" in r.json()
+    assert r.json()["drills_today"] == 0
     assert r.json()["llm_enabled"] is False
 
 
