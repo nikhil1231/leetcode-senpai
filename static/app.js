@@ -119,11 +119,15 @@ function render(tab) {
 async function loadOverview() {
   const o = await api("/overview");
   llmEnabled = o.llm_enabled;
+  const drillsToday = o.drills_today > 0
+    ? `<span>Drills <b>${o.drills_today}</b></span>`
+    : "";
   $("#overview").innerHTML = `
     <span>Solved <b>${o.solved}</b>/${o.total_problems}</span>
     <span>Due <b>${o.due_reviews}</b></span>
     <span>Streak <b>${o.streak}</b>🔥</span>
     <span>XP today <b>${o.xp_today}</b></span>
+    ${drillsToday}
     <span>Leeches <b>${o.leeches}</b></span>
     ${llmEnabled ? '<span class="ai-on">✨ Coach on</span>' : '<span class="ai-off">Coach off</span>'}`;
   (o.newly_mastered || []).forEach((m) =>

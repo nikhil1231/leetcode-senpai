@@ -148,6 +148,26 @@ def test_goal_progress_excludes_drill_attempts_from_weekly_goals():
     }
 
 
+def test_overview_counts_drills_today_separately():
+    today = dt.date(2026, 1, 10)
+    attempts = [
+        {"slug": "two-sum", "solved_at": _ts(today), "kind": "drill",
+         "source": "auto"},
+        {"slug": "3sum", "solved_at": _ts(today - dt.timedelta(days=1)),
+         "kind": "drill", "source": "auto"},
+        {"slug": "valid-anagram", "solved_at": _ts(today), "kind": "adhoc",
+         "source": "manual"},
+    ]
+
+    ov = scheduler.overview(_problems(), attempts, [], today=today)
+
+    assert ov["drills_today"] == 1
+    assert ov["solved"] == 3
+    assert ov["due_reviews"] == 0
+    assert ov["leeches"] == 0
+    assert ov["xp_today"] == 40
+
+
 def test_drill_lane_no_local_signal_returns_empty():
     assert scheduler.build_drill_lane(_drill_problems(), [], [], today=dt.date(2026, 1, 10)) == []
 
