@@ -81,8 +81,6 @@ let timerInterval = null;
 let pollInterval = null;
 let currentAttempt = null;
 let currentRecall = null;
-let recallStatusInterval = null;
-let pendingRecallPollIds = new Set();
 let pendingStart = null;
 let categories = [];
 let llmEnabled = false;
@@ -392,12 +390,15 @@ async function loadRecallAttempt(attemptId) {
   if (a.grading_status === "pending") {
     setRecallInputsDisabled(true);
     $("#recall-grade").classList.remove("hidden");
-    $("#recall-grade").innerHTML = `<div class="grading"><span class="spinner"></span><span class="grading-text">Grading in the background...</span></div>`;
+    $("#recall-grade").innerHTML = `<p class="small">This recall is still grading. Try again in a moment.</p>`;
     $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Close</button>`;
     $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
   } else if (a.grading_status === "ready") {
     setRecallInputsDisabled(true);
-    renderRecallGrade(a.recall_grade, true);
+    renderRecallGrade(a.recall_grade);
+  } else if (a.grading_status === "viewed") {
+    setRecallInputsDisabled(true);
+    renderRecallGrade(a.recall_grade);
   } else if (a.grading_status === "failed") {
     setRecallInputsDisabled(false);
     $("#recall-grade").classList.remove("hidden");
@@ -412,7 +413,7 @@ function setRecallInputsDisabled(disabled) {
   $("#recall-space").disabled = disabled;
 }
 
-function renderRecallGrade(g, needsAck = false) {
+function renderRecallGrade(g) {
   g = g || {};
   stopRecallGrading();
   $("#recall-grade").classList.remove("hidden");
@@ -422,20 +423,13 @@ function renderRecallGrade(g, needsAck = false) {
     ${g.key_ideas_missed && g.key_ideas_missed.length ?
       `<p class="missed"><b>You missed:</b> ${g.key_ideas_missed.map(escapeHtml).join("; ")}</p>` : ""}
     ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
-    <p class="small">${needsAck ? "Click Done to schedule the next review." : "Scheduled next review accordingly."}</p>
+    <p class="small">Scheduled next review accordingly.</p>
     ${currentRecall.attempt_id ? recallClarificationHtml() : ""}`;
   wireRecallClarification();
-  if (needsAck) {
-    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-ghost">Close</button>
-      <button id="btn-ack-recall" class="button is-primary">Done</button>`;
-    $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
-    $("#btn-ack-recall").addEventListener("click", ackRecall);
-  } else {
-    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;
-    $("#btn-close-recall").addEventListener("click", () => {
-      $("#recall-modal").classList.add("hidden"); loadOverview(); render(currentActiveTab());
-    });
-  }
+  $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;
+  $("#btn-close-recall").addEventListener("click", () => {
+    $("#recall-modal").classList.add("hidden"); loadOverview(); render(currentActiveTab());
+  });
 }
 
 function recallClarificationHtml() {
@@ -474,20 +468,6 @@ async function askRecallClarification() {
   }
 }
 
-async function ackRecall() {
-  if (!currentRecall.attempt_id) return;
-  try {
-    await api(`/review/recall/${currentRecall.attempt_id}/ack`, "POST");
-  } catch (e) {
-    toast(e.message);
-    return;
-  }
-  $("#recall-modal").classList.add("hidden");
-  toast("Recall scheduled.");
-  loadOverview();
-  render(currentActiveTab());
-}
-
 async function submitRecall() {
   const text = $("#recall-text").value.trim();
   const body = {
@@ -518,82 +498,24 @@ async function submitRecall() {
     return;
   }
   stopRecallGrading();
-  if (r.grading_status === "pending") {
-    $("#recall-modal").classList.add("hidden");
-    toast("Recall is grading in the background.");
-    loadOverview();
-    render(currentActiveTab());
-    startRecallStatusPolling([r.attempt_id]);
+  currentRecall.attempt_id = r.attempt_id;
+  if (r.grading_status === "failed") {
+    setRecallInputsDisabled(false);
+    $("#recall-grade").classList.remove("hidden");
+    $("#recall-grade").innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(r.grading_error || "Unknown error")}</p>`;
+    $("#recall-actions").innerHTML =
+      `<button id="btn-close-recall" class="button is-ghost">Cancel</button>
+       <button id="btn-submit-recall" class="button is-primary">Retry grading</button>`;
+    wireRecallButtons();
     return;
   }
   if (r.graded) {
-    const g = r.graded;
-    $("#recall-grade").classList.remove("hidden");
-    $("#recall-grade").innerHTML = `
-      <div class="grade-score">Recall grade: <b>${g.grade}/3</b></div>
-      ${g.feedback ? `<p>${escapeHtml(g.feedback)}</p>` : ""}
-      ${g.key_ideas_missed && g.key_ideas_missed.length ?
-        `<p class="missed"><b>You missed:</b> ${g.key_ideas_missed.map(escapeHtml).join("; ")}</p>` : ""}
-      ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
-      <p class="small">Scheduled next review accordingly.</p>`;
-    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;
-    $("#btn-close-recall").addEventListener("click", () => {
-      $("#recall-modal").classList.add("hidden"); loadOverview(); render(currentActiveTab());
-    });
+    renderRecallGrade(r.graded);
   } else {
     $("#recall-modal").classList.add("hidden");
     toast("Recall logged ✅");
     loadOverview(); render(currentActiveTab());
   }
-}
-
-function startRecallStatusPolling(ids = []) {
-  ids.forEach((id) => id && pendingRecallPollIds.add(id));
-  if (!pendingRecallPollIds.size || recallStatusInterval) return;
-  recallStatusInterval = setInterval(pollRecallStatuses, 5000);
-  pollRecallStatuses();
-}
-
-function stopRecallStatusPolling() {
-  if (recallStatusInterval) clearInterval(recallStatusInterval);
-  recallStatusInterval = null;
-  pendingRecallPollIds.clear();
-}
-
-async function pollRecallStatuses() {
-  if (currentActiveTab() !== "today") return;
-  const ids = Array.from(pendingRecallPollIds);
-  if (!ids.length) { stopRecallStatusPolling(); return; }
-  await Promise.all(ids.map(async (id) => {
-    try {
-      const attempt = await api(`/review/recall/${id}`);
-      patchRecallCard(attempt);
-      if (attempt.grading_status !== "pending") pendingRecallPollIds.delete(id);
-    } catch (e) {
-      pendingRecallPollIds.delete(id);
-    }
-  }));
-  if (!pendingRecallPollIds.size) stopRecallStatusPolling();
-}
-
-function patchRecallCard(attempt) {
-  const card = document.querySelector(`[data-recall-card="${attempt.id}"]`);
-  if (!card) return;
-  const titleRow = card.querySelector(".title-row");
-  const btn = card.querySelector("button[data-attempt]");
-  if (!titleRow || !btn) return;
-  titleRow.querySelectorAll(".recall-status-tag").forEach((el) => el.remove());
-  const status = attempt.grading_status || "";
-  const tag = document.createElement("span");
-  tag.className = "tag recall-status-tag " + (
-    status === "ready" ? "is-success is-light" :
-    status === "failed" ? "is-danger is-light" :
-    "is-warning is-light"
-  );
-  tag.textContent = status === "ready" ? "grade ready" : status === "failed" ? "failed" : "grading";
-  titleRow.appendChild(tag);
-  btn.dataset.status = status;
-  btn.textContent = status === "ready" ? "View grade" : status === "failed" ? "Retry" : "Grading...";
 }
 
 let recallGradeTimer = null;
@@ -752,8 +674,7 @@ function showUserChip(email) {
 
 // expose for views.js
 window.App = { startFlow, openDetail, openRecall, startMock, loadOverview, render,
-  currentActiveTab, api, runSweep, startRecallStatusPolling, stopRecallStatusPolling,
-  get llmEnabled() { return llmEnabled; } };
+  currentActiveTab, api, runSweep, get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------
 // Deferred to DOMContentLoaded so views.js (loaded after this file) has defined
