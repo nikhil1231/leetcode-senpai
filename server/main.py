@@ -102,6 +102,10 @@ class FollowupGrade(BaseModel):
     answer: str
 
 
+class RecallClarify(BaseModel):
+    question: str
+
+
 # ---- helpers --------------------------------------------------------------------
 def _problem_map(store):
     return {p["slug"]: p for p in store.list_problems()}
@@ -527,6 +531,26 @@ def api_recall_result(attempt_id: str, uid: str = Depends(auth.require_user)):
     if not payload:
         raise HTTPException(404, "no such recall")
     return payload
+
+
+@app.post("/api/review/recall/{attempt_id}/clarify")
+async def api_recall_clarify(attempt_id: str, body: RecallClarify,
+                             uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt or attempt.get("kind") != "recall":
+        raise HTTPException(404, "no such recall")
+    if attempt.get("grading_status") not in ("ready", "viewed") or not attempt.get("recall_grade"):
+        raise HTTPException(400, "recall grade is not ready")
+    if not llm.enabled():
+        raise HTTPException(400, "Recall clarification is unavailable without Gemini.")
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(400, "question is required")
+    result = await coach.clarify_recall(store, attempt, question)
+    if not result or not result.get("reply"):
+        raise HTTPException(400, "Recall clarification is unavailable.")
+    return {"reply": result["reply"]}
 
 
 @app.post("/api/review/recall/{attempt_id}/ack")

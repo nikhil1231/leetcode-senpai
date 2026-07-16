@@ -75,7 +75,7 @@ body {
 .ai-on { color: var(--green); }
 .ai-off { color: var(--muted); }
 
-main { padding: 24px; max-width: 980px; margin: 0 auto; }
+main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 
 .tab.hidden, .hidden { display: none !important; }
 
@@ -88,6 +88,40 @@ main { padding: 24px; max-width: 980px; margin: 0 auto; }
 
 /* ---- queue / cards ---------------------------------------------------------- */
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 24px 0 10px; }
+.today-shell { display: flex; flex-direction: column; gap: 18px; }
+.today-prep {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.today-prep .notification,
+.today-prep .goals { margin-bottom: 0; }
+.today-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
+  gap: 20px;
+  align-items: start;
+}
+.today-side { display: flex; flex-direction: column; gap: 18px; }
+.today-section {
+  min-width: 0;
+  padding-top: 2px;
+}
+.today-section .section-title { margin: 0 0 4px; }
+.today-section-primary {
+  border-right: 1px solid var(--border);
+  padding-right: 20px;
+}
+.section-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+.today-expansion {
+  border-top: 1px solid var(--border);
+  padding-top: 2px;
+}
 .queue-card {
   display: flex;
   justify-content: space-between;
@@ -264,6 +298,10 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .recall-grade { margin-top: 14px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
 .grade-score { font-size: 15px; }
 .recall-grade .missed { color: var(--amber); font-size: 13px; }
+.recall-clarify { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.recall-clarify textarea { min-height: 68px; resize: vertical; }
+.recall-clarify-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+.recall-clarify-reply { margin-top: 10px; white-space: pre-wrap; }
 .grading { display: flex; align-items: center; gap: 12px; padding: 6px 2px; }
 .grading-text { color: var(--muted); font-size: 13px; animation: gradetext 1.4s ease-in-out infinite; }
 @keyframes gradetext { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
@@ -276,6 +314,15 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .loading-block .spinner { width: 22px; height: 22px; }
 
 @media (max-width: 860px) {
+  main { padding: 18px 14px; }
+  .today-grid { grid-template-columns: 1fr; gap: 18px; }
+  .today-section-primary {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+    padding-bottom: 8px;
+  }
+  .queue-card { align-items: flex-start; }
   .overlay-card.recall-wide { grid-template-columns: 1fr; }
   .overlay-card.recall-wide > h2,
   .overlay-card.recall-wide > #recall-problem,
