@@ -69,6 +69,8 @@ class SettingsUpdate(BaseModel):
     poll_interval_seconds: int | None = None
     review_limit: int | None = None
     new_limit: int | None = None
+    drill_limit: int | None = None
+    drill_min_signal: float | None = None
     weakness_weight: float | None = None
     breadth_weight: float | None = None
     mistake_weight: float | None = None
