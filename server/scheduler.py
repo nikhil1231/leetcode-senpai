@@ -499,8 +499,11 @@ def _goal_progress(attempts, settings, today_d):
             continue
         if a.get("kind") == "recall" and a.get("grading_status") in ("pending", "ready", "failed"):
             continue
-        if a.get("kind") in ("review", "recall"):
+        kind = a.get("kind")
+        if kind in ("review", "recall"):
             r_done += 1
+        elif kind == "drill":
+            continue
         else:
             n_done += 1
     return {
