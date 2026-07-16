@@ -297,3 +297,92 @@ def test_drill_lane_ordering_is_deterministic():
         _drill_problems(), attempts, reviews, settings=settings,
         exclude_slugs={"group-anagrams"}, today=dt.date(2026, 1, 10))
     assert [d["slug"] for d in drills[:2]] == ["two-sum", "valid-anagram"]
+
+
+def test_drill_lane_tied_scores_ignore_problem_input_order():
+    today = dt.date(2026, 1, 10)
+    attempts = [
+        {"slug": "arrays-b", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today)},
+        {"slug": "sliding-a", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today)},
+        {"slug": "trees-a", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today)},
+    ]
+    settings = {
+        "drill_leech_weight": 0,
+        "drill_fail_weight": 0,
+        "drill_mistake_weight": 0,
+        "drill_prediction_weight": 0,
+        "drill_struggle_weight": 1,
+        "drill_weakness_weight": 0,
+        "drill_breadth_weight": 0,
+    }
+    problems = [
+        {"slug": "trees-a", "title": "Trees A", "difficulty": "Easy",
+         "neetcode_category": "Trees", "in_library": True, "url": "u"},
+        {"slug": "arrays-b", "title": "Arrays B", "difficulty": "Easy",
+         "neetcode_category": "Arrays & Hashing", "in_library": True, "url": "u"},
+        {"slug": "arrays-a", "title": "Arrays A", "difficulty": "Easy",
+         "neetcode_category": "Arrays & Hashing", "in_library": True, "url": "u"},
+        {"slug": "sliding-a", "title": "Sliding A", "difficulty": "Easy",
+         "neetcode_category": "Sliding Window", "in_library": True, "url": "u"},
+    ]
+
+    orders = [
+        [d["slug"] for d in scheduler.build_drill_lane(
+            variant, attempts, [], settings=settings, today=today)]
+        for variant in (problems, list(reversed(problems)), [problems[i] for i in (2, 0, 3, 1)])
+    ]
+
+    assert orders == [
+        ["arrays-a", "sliding-a", "trees-a"],
+        ["arrays-a", "sliding-a", "trees-a"],
+        ["arrays-a", "sliding-a", "trees-a"],
+    ]
+
+
+def test_drill_lane_tied_scores_prefer_recent_relevant_signal():
+    today = dt.date(2026, 1, 10)
+    problems = [
+        {"slug": "two-sum", "title": "Two Sum", "difficulty": "Easy",
+         "neetcode_category": "Arrays & Hashing", "in_library": True, "url": "u"},
+        {"slug": "invert-tree", "title": "Invert Tree", "difficulty": "Easy",
+         "neetcode_category": "Trees", "in_library": True, "url": "u"},
+    ]
+    attempts = [
+        {"slug": "two-sum", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today - dt.timedelta(days=5))},
+        {"slug": "invert-tree", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today - dt.timedelta(days=1))},
+    ]
+    settings = {
+        "drill_leech_weight": 0,
+        "drill_fail_weight": 0,
+        "drill_mistake_weight": 0,
+        "drill_prediction_weight": 0,
+        "drill_struggle_weight": 1,
+        "drill_weakness_weight": 0,
+        "drill_breadth_weight": 0,
+    }
+
+    drills = scheduler.build_drill_lane(
+        problems, attempts, [], settings=settings, today=today)
+
+    assert [d["slug"] for d in drills[:2]] == ["invert-tree", "two-sum"]
+
+
+def test_drill_tie_break_does_not_change_daily_review_or_new_ordering():
+    today = dt.date(2026, 1, 10)
+    problems = _problems()
+    attempts = [{"slug": "two-sum", "confidence": 3, "independence": "solo"}]
+    reviews = [
+        {"slug": "3sum", "due_date": "2026-01-03", "interval_days": 30, "leech": 0},
+        {"slug": "two-sum", "due_date": "2026-01-02", "interval_days": 30, "leech": 1},
+    ]
+
+    q = scheduler.build_daily_queue(
+        problems, attempts, reviews, {"review_limit": 5, "new_limit": 2}, today=today)
+
+    assert [r["slug"] for r in q["reviews"]] == ["two-sum", "3sum"]
+    assert [n["slug"] for n in q["new"]] == ["valid-anagram"]

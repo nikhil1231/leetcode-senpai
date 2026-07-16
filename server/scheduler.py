@@ -209,6 +209,7 @@ def mistake_density(problems, attempts, enrichments, days=30, today=None):
 # ---- drill lane -----------------------------------------------------------------
 _DIFFICULTY_ORDER = {"Easy": 0, "Medium": 1, "Hard": 2, "Unknown": 3}
 _PREDICTION_MISSES = {"wrong", "partial"}
+_CATEGORY_ORDER = {cat: i for i, cat in enumerate(CATEGORY_ORDER)}
 
 
 def build_drill_lane(
@@ -236,6 +237,9 @@ def build_drill_lane(
     mistakes = mistake_density(problems, attempts, enrichments, today=today_d)
     pred_misses = _prediction_misses_by_category(problems, attempts, enrichments)
     struggles = _recent_struggles_by_category(problems, attempts, today_d)
+    latest_signal = _latest_relevant_signal_by_category(
+        problems, attempts, enrichments, today_d,
+    )
 
     has_signal = (
         any(r.get("leech") for r in reviews)
@@ -261,7 +265,8 @@ def build_drill_lane(
             continue
         candidates.append((p, score, reason, reason_codes, signals,
                            int(bool(review.get("leech"))),
-                           int(review.get("fail_count") or 0)))
+                           int(review.get("fail_count") or 0),
+                           latest_signal.get(cat, 0)))
 
     candidates.sort(key=_drill_sort_key)
     out = []
@@ -312,6 +317,30 @@ def _recent_struggles_by_category(problems, attempts, today):
         cat = cat_of.get(a.get("slug"))
         if cat:
             raw[cat] = raw.get(cat, 0) + 1
+    return raw
+
+
+def _latest_relevant_signal_by_category(problems, attempts, enrichments, today):
+    cutoff = int((dt.datetime.combine(today, dt.time()) - dt.timedelta(days=30)).timestamp())
+    cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
+    enr_by_attempt = {e.get("attempt_id"): e for e in (enrichments or [])}
+    raw = {}
+    for a in attempts:
+        ts = a.get("solved_at") or 0
+        if ts < cutoff:
+            continue
+        cat = cat_of.get(a.get("slug"))
+        if not cat:
+            continue
+        e = enr_by_attempt.get(a.get("id"), {})
+        tags = (e.get("user_overrides") or {}).get("tags") or e.get("mistake_tags") or []
+        pred_miss = e.get("prediction_verdict") in _PREDICTION_MISSES
+        struggle = (
+            a.get("confidence") is not None and a.get("confidence") <= 1
+            or a.get("independence") in ("hints", "solution")
+        )
+        if tags or pred_miss or struggle:
+            raw[cat] = max(raw.get(cat, 0), ts)
     return raw
 
 
@@ -396,10 +425,14 @@ def _drill_signals(
 
 
 def _drill_sort_key(cand):
-    p, score, _reason, _reason_codes, _signals, leech, fail_count = cand
+    p, score, _reason, _reason_codes, _signals, leech, fail_count, latest_signal = cand
     difficulty = p.get("difficulty", "Unknown")
+    cat = p.get("neetcode_category")
     return (-score, -leech, -fail_count,
+            -latest_signal,
             _DIFFICULTY_ORDER.get(difficulty, _DIFFICULTY_ORDER["Unknown"]),
+            _CATEGORY_ORDER.get(cat, len(_CATEGORY_ORDER)),
+            p.get("title", p["slug"]).casefold(),
             p["slug"])
 
 
