@@ -103,6 +103,11 @@ main { padding: 24px; max-width: 980px; margin: 0 auto; }
 .reason { color: var(--accent); font-size: 12px; }
 .queue-card.expansion { border-style: dashed; }
 .queue-card.kind-new .reason { display: none; }
+.queue-card.kind-drill {
+  border-left: 3px solid var(--green);
+  background: rgba(53, 196, 122, .06);
+}
+.queue-card.kind-drill .reason { color: var(--green); }
 .ratio { font-size: 11px; color: var(--green); }
 
 /* ---- overlay (modal) — bespoke so it doesn't collide with Bulma's .modal ---- */
