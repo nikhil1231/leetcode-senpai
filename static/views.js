@@ -387,11 +387,13 @@
       <div class="settings-row">
         <div class="settings-field"><label>Reviews / day</label><input id="cfg-review" class="input" type="number" value="${c.review_limit}" /></div>
         <div class="settings-field"><label>New / day</label><input id="cfg-new" class="input" type="number" value="${c.new_limit}" /></div>
+        <div class="settings-field"><label>Drills / day</label><input id="cfg-drill" class="input" type="number" value="${c.drill_limit}" /></div>
       </div>
       <div class="settings-row">
         <div class="settings-field"><label>Weakness weight</label><input id="cfg-weak" class="input" type="number" step="0.1" value="${c.weakness_weight}" /></div>
         <div class="settings-field"><label>Breadth weight</label><input id="cfg-breadth" class="input" type="number" step="0.1" value="${c.breadth_weight}" /></div>
         <div class="settings-field"><label>Mistake weight</label><input id="cfg-mistake" class="input" type="number" step="0.1" value="${c.mistake_weight}" /></div>
+        <div class="settings-field"><label>Min drill signal</label><input id="cfg-drill-signal" class="input" type="number" step="0.01" value="${c.drill_min_signal}" /></div>
       </div>
       <div class="section-title">Weekly goals</div>
       <div class="settings-row">
@@ -425,6 +427,7 @@
     $("#btn-save-sched").addEventListener("click", async () => {
       await api("/config", "POST", {
         review_limit: +$("#cfg-review").value, new_limit: +$("#cfg-new").value,
+        drill_limit: +$("#cfg-drill").value, drill_min_signal: +$("#cfg-drill-signal").value,
         weakness_weight: +$("#cfg-weak").value, breadth_weight: +$("#cfg-breadth").value,
         mistake_weight: +$("#cfg-mistake").value,
         goal_reviews_per_week: +$("#cfg-grev").value, goal_new_per_week: +$("#cfg-gnew").value,
