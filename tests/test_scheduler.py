@@ -179,7 +179,9 @@ def test_drill_lane_uses_non_due_leech_review():
         _drill_problems(), attempts, reviews, today=dt.date(2026, 1, 10))
     assert drills[0]["slug"] == "two-sum"
     assert drills[0]["kind"] == "drill"
-    assert drills[0]["reason"] == "Leech drill"
+    assert "leech" in drills[0]["reason_codes"]
+    assert drills[0]["signals"]["leech"] is True
+    assert drills[0]["signals"]["fail_count"] == 3
 
 
 def test_drill_lane_prediction_misses_affect_scoring():
@@ -194,8 +196,26 @@ def test_drill_lane_prediction_misses_affect_scoring():
         _drill_problems(), attempts, [], enrichments=enrichments,
         today=dt.date(2026, 1, 10))
     tree = next(d for d in drills if d["category"] == "Trees")
-    assert tree["reason"] == "Prediction misses in Trees"
+    assert "prediction_miss" in tree["reason_codes"]
+    assert tree["signals"]["prediction_miss"] is True
+    assert tree["signals"]["prediction_misses"] == 1
     assert tree["score"] > next(d for d in drills if d["category"] == "Sliding Window")["score"]
+
+
+def test_drill_lane_mistake_density_reason_code():
+    attempts = [
+        {"id": "a1", "slug": "invert-tree", "confidence": 3, "independence": "solo",
+         "solved_at": 1768000000},
+    ]
+    enrichments = [{"attempt_id": "a1", "mistake_tags": ["base-case"], "severity": 2}]
+
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), attempts, [], enrichments=enrichments,
+        today=dt.date(2026, 1, 10))
+
+    tree = next(d for d in drills if d["category"] == "Trees")
+    assert "recent_mistakes" in tree["reason_codes"]
+    assert tree["signals"]["mistake_density"] == 1.0
 
 
 def test_drill_lane_enrichments_absent_still_uses_attempt_signal():
@@ -206,7 +226,50 @@ def test_drill_lane_enrichments_absent_still_uses_attempt_signal():
         today=dt.date(2026, 1, 10))
     assert drills
     assert drills[0]["category"] == "Sliding Window"
-    assert drills[0]["reason"] == "Recent struggle in Sliding Window"
+    assert "recent_mistakes" in drills[0]["reason_codes"]
+    assert drills[0]["signals"]["recent_struggles"] == 1
+
+
+def test_drill_lane_weak_topic_reason_code():
+    reviews = [{"slug": "two-sum", "due_date": "2026-02-01", "fail_count": 3, "leech": 1}]
+    settings = {
+        "drill_leech_weight": 0,
+        "drill_fail_weight": 0,
+        "drill_mistake_weight": 0,
+        "drill_prediction_weight": 0,
+        "drill_struggle_weight": 0,
+        "drill_weakness_weight": 1,
+        "drill_breadth_weight": 0,
+    }
+
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), [], reviews, settings=settings,
+        today=dt.date(2026, 1, 10))
+
+    assert drills
+    assert all(d["reason_codes"] == ["weak_topic"] for d in drills)
+    assert all(d["signals"]["weakness"] == 1.0 for d in drills)
+
+
+def test_drill_lane_unattempted_coverage_reason_code():
+    reviews = [{"slug": "two-sum", "due_date": "2026-02-01", "fail_count": 3, "leech": 1}]
+    settings = {
+        "drill_leech_weight": 0,
+        "drill_fail_weight": 0,
+        "drill_mistake_weight": 0,
+        "drill_prediction_weight": 0,
+        "drill_struggle_weight": 0,
+        "drill_weakness_weight": 0,
+        "drill_breadth_weight": 1,
+    }
+
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), [], reviews, settings=settings,
+        today=dt.date(2026, 1, 10))
+
+    assert drills
+    assert all(d["reason_codes"] == ["unattempted_coverage"] for d in drills)
+    assert all(d["signals"]["unattempted_coverage"] == 1.0 for d in drills)
 
 
 def test_drill_lane_exclude_slugs_prevents_duplicates():

@@ -253,13 +253,14 @@ def build_drill_lane(
         cat = p.get("neetcode_category")
         review = reviews_by_slug.get(slug, {})
         problem_attempts = attempts_by_slug.get(slug, [])
-        score, reason = _drill_score(
+        score, reason, reason_codes, signals = _drill_score(
             p, problem_attempts, review, stats.get(cat, {}), mistakes,
             pred_misses, struggles, settings,
         )
         if score <= 0:
             continue
-        candidates.append((p, score, reason, int(bool(review.get("leech"))),
+        candidates.append((p, score, reason, reason_codes, signals,
+                           int(bool(review.get("leech"))),
                            int(review.get("fail_count") or 0)))
 
     candidates.sort(key=_drill_sort_key)
@@ -272,14 +273,14 @@ def build_drill_lane(
         if cat in used_cats:
             continue
         used_cats.add(cat)
-        out.append(_drill_item(*cand[:3]))
+        out.append(_drill_item(*cand[:5]))
     if len(out) < 3:
         have = {i["slug"] for i in out}
         for cand in candidates:
             if len(out) >= 3:
                 break
             if cand[0]["slug"] not in have:
-                out.append(_drill_item(*cand[:3]))
+                out.append(_drill_item(*cand[:5]))
     return out
 
 
@@ -336,31 +337,79 @@ def _drill_score(p, attempts, review, stats, mistakes, pred_misses, struggles, s
         leech_score + fail_score + mistake_score + pred_score
         + struggle_score + weak_score + breadth_score
     )
-    signals = [
+    display_signals = [
         (leech_score, "Leech drill"),
         (mistake_score, f"Recent mistakes in {cat}"),
         (pred_score, f"Prediction misses in {cat}"),
         (struggle_score, f"Recent struggle in {cat}"),
         (weak_score + breadth_score, "Weak topic coverage"),
     ]
-    reason = max(signals, key=lambda x: (x[0], x[1]))[1]
-    return round(score, 3), reason
+    reason = max(display_signals, key=lambda x: (x[0], x[1]))[1]
+    reason_codes = _drill_reason_codes(
+        leech_score, fail_score, mistake_score, pred_score, struggle_score,
+        weak_score, breadth_score,
+    )
+    signals = _drill_signals(
+        leech, fail_count, weak, coverage_gap, unattempted, mistake, pred, struggle,
+    )
+    return round(score, 3), reason, reason_codes, signals
+
+
+def _drill_reason_codes(
+    leech_score, fail_score, mistake_score, pred_score, struggle_score,
+    weak_score, breadth_score,
+):
+    codes = []
+    if leech_score > 0:
+        codes.append("leech")
+    if fail_score > 0 or mistake_score > 0 or struggle_score > 0:
+        codes.append("recent_mistakes")
+    if pred_score > 0:
+        codes.append("prediction_miss")
+    if weak_score > 0:
+        codes.append("weak_topic")
+    if breadth_score > 0:
+        codes.append("unattempted_coverage")
+    return codes
+
+
+def _drill_signals(
+    leech, fail_count, weakness, coverage_gap, unattempted, mistake, pred, struggle,
+):
+    signals = {}
+    if leech:
+        signals["leech"] = True
+    if fail_count:
+        signals["fail_count"] = fail_count
+    if weakness:
+        signals["weakness"] = round(weakness, 3)
+    if mistake:
+        signals["mistake_density"] = round(mistake, 3)
+    if pred:
+        signals["prediction_miss"] = True
+        signals["prediction_misses"] = pred
+    if struggle:
+        signals["recent_struggles"] = struggle
+    if unattempted and coverage_gap:
+        signals["unattempted_coverage"] = round(coverage_gap, 3)
+    return signals
 
 
 def _drill_sort_key(cand):
-    p, score, _reason, leech, fail_count = cand
+    p, score, _reason, _reason_codes, _signals, leech, fail_count = cand
     difficulty = p.get("difficulty", "Unknown")
     return (-score, -leech, -fail_count,
             _DIFFICULTY_ORDER.get(difficulty, _DIFFICULTY_ORDER["Unknown"]),
             p["slug"])
 
 
-def _drill_item(p, score, reason):
+def _drill_item(p, score, reason, reason_codes, signals):
     return {
         "slug": p["slug"], "title": p.get("title", p["slug"]),
         "difficulty": p.get("difficulty", "Unknown"),
         "category": p.get("neetcode_category"), "url": p.get("url"),
         "kind": "drill", "score": round(score, 3), "reason": reason,
+        "reason_codes": reason_codes, "signals": signals,
     }
 
 
