@@ -283,7 +283,20 @@ def test_enrich_sweep_no_llm(client):
 
 
 def test_config_roundtrip(client):
-    client.post("/api/config", json={"review_limit": 9, "mistake_weight": 0.3})
+    defaults = client.get("/api/config").json()
+    assert defaults["drill_limit"] == 3
+    assert defaults["drill_min_signal"] == 0.35
+
+    client.post("/api/config", json={
+        "review_limit": 9,
+        "new_limit": 2,
+        "drill_limit": 4,
+        "drill_min_signal": 0.5,
+        "mistake_weight": 0.3,
+    })
     cfg = client.get("/api/config").json()
     assert cfg["review_limit"] == 9
+    assert cfg["new_limit"] == 2
+    assert cfg["drill_limit"] == 4
+    assert cfg["drill_min_signal"] == 0.5
     assert cfg["mistake_weight"] == 0.3
