@@ -230,6 +230,7 @@ main { padding: 24px; max-width: 980px; margin: 0 auto; }
 .hist-row { cursor: pointer; }
 .type-filter { margin-bottom: 14px; }
 .tag.type-recall { background: transparent; border: 1px solid var(--accent); color: var(--accent); }
+.tag.type-drill { background: rgba(53, 196, 122, .08); border: 1px solid rgba(53, 196, 122, .55); color: var(--green); }
 .tag.type-solve { background: transparent; border: 1px solid var(--border); color: var(--muted); }
 .mtag { display: inline-block; background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-size: 10px; color: var(--amber); }
 .pat { color: var(--muted); font-style: italic; }
