@@ -422,7 +422,9 @@ function renderRecallGrade(g, needsAck = false) {
     ${g.key_ideas_missed && g.key_ideas_missed.length ?
       `<p class="missed"><b>You missed:</b> ${g.key_ideas_missed.map(escapeHtml).join("; ")}</p>` : ""}
     ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
-    <p class="small">${needsAck ? "Click Done to schedule the next review." : "Scheduled next review accordingly."}</p>`;
+    <p class="small">${needsAck ? "Click Done to schedule the next review." : "Scheduled next review accordingly."}</p>
+    ${currentRecall.attempt_id ? recallClarificationHtml() : ""}`;
+  wireRecallClarification();
   if (needsAck) {
     $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-ghost">Close</button>
       <button id="btn-ack-recall" class="button is-primary">Done</button>`;
@@ -433,6 +435,42 @@ function renderRecallGrade(g, needsAck = false) {
     $("#btn-close-recall").addEventListener("click", () => {
       $("#recall-modal").classList.add("hidden"); loadOverview(); render(currentActiveTab());
     });
+  }
+}
+
+function recallClarificationHtml() {
+  return `<div class="recall-clarify">
+    <label class="label-sm" for="recall-clarify-text">Ask about this grade</label>
+    <textarea id="recall-clarify-text" class="textarea" rows="2" placeholder="What should I clarify about the answer or grade?"></textarea>
+    <div class="recall-clarify-actions">
+      <button id="btn-recall-clarify" class="button is-small is-link">Ask</button>
+    </div>
+    <div id="recall-clarify-reply" class="small recall-clarify-reply hidden"></div>
+  </div>`;
+}
+
+function wireRecallClarification() {
+  const btn = $("#btn-recall-clarify");
+  if (btn) btn.addEventListener("click", askRecallClarification);
+}
+
+async function askRecallClarification() {
+  const input = $("#recall-clarify-text");
+  const reply = $("#recall-clarify-reply");
+  const btn = $("#btn-recall-clarify");
+  const question = (input && input.value || "").trim();
+  if (!question) { toast("Ask a clarification question first."); return; }
+  if (!currentRecall.attempt_id) return;
+  btn.disabled = true;
+  reply.classList.remove("hidden");
+  reply.textContent = "Asking Gemini...";
+  try {
+    const r = await api(`/review/recall/${currentRecall.attempt_id}/clarify`, "POST", { question });
+    reply.textContent = r.reply || "No clarification returned.";
+  } catch (e) {
+    reply.textContent = e.message || "Recall clarification is unavailable.";
+  } finally {
+    btn.disabled = false;
   }
 }
 

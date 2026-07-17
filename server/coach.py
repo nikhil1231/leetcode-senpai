@@ -90,6 +90,22 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
     })
 
 
+async def clarify_recall(store, attempt, question):
+    """Answer a one-off clarification question about a completed recall grade."""
+    if not llm.enabled():
+        return None
+    p = store.get_problem(attempt["slug"]) or {}
+    return await llm.extract("clarify_recall", {
+        "title": p.get("title", attempt["slug"]),
+        "category": p.get("neetcode_category"),
+        "recall_text": attempt.get("approach"),
+        "recall_time": attempt.get("complexity_time"),
+        "recall_space": attempt.get("complexity_space"),
+        "recall_grade": attempt.get("recall_grade"),
+        "question": question,
+    })
+
+
 # ---- weekly coach report --------------------------------------------------------
 def iso_week_key(d=None):
     d = d or dt.date.today()
