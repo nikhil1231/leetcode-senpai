@@ -198,6 +198,7 @@ def test_drill_lane_prediction_misses_affect_scoring():
     tree = next(d for d in drills if d["category"] == "Trees")
     assert "prediction_miss" in tree["reason_codes"]
     assert tree["signals"]["prediction_miss"] is True
+    assert tree["category"] not in tree["reason"]
     assert tree["signals"]["prediction_misses"] == 1
     assert tree["score"] > next(d for d in drills if d["category"] == "Sliding Window")["score"]
 
@@ -215,6 +216,7 @@ def test_drill_lane_mistake_density_reason_code():
 
     tree = next(d for d in drills if d["category"] == "Trees")
     assert "recent_mistakes" in tree["reason_codes"]
+    assert tree["category"] not in tree["reason"]
     assert tree["signals"]["mistake_density"] == 1.0
 
 

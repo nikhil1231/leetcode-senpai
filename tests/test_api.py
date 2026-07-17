@@ -474,6 +474,26 @@ def test_enrich_sweep_no_llm(client):
     assert r.json()["llm"] is False
 
 
+def test_index_injects_content_derived_asset_version(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    ver = main.asset_version()
+    assert "__ASSET_VER__" not in r.text
+    assert f"/style.css?v={ver}" in r.text
+    assert f"/charts.js?v={ver}" in r.text
+    assert f"/app.js?v={ver}" in r.text
+    assert f"/views.js?v={ver}" in r.text
+
+
+def test_asset_version_changes_when_an_asset_changes(tmp_path, monkeypatch):
+    for name in ("style.css", "charts.js", "app.js", "views.js"):
+        (tmp_path / name).write_text("", encoding="utf-8")
+    monkeypatch.setattr(main, "STATIC_DIR", str(tmp_path))
+    before = main.asset_version()
+    (tmp_path / "views.js").write_text("console.log('changed')", encoding="utf-8")
+    assert main.asset_version() != before
+
+
 def test_config_roundtrip(client):
     defaults = client.get("/api/config").json()
     assert defaults["drill_limit"] == 3

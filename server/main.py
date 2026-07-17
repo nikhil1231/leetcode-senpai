@@ -5,12 +5,13 @@ transiently. The Gemini-powered coaching layer degrades gracefully when
 GEMINI_API_KEY is unset; most coaching jobs run off the critical path, while
 recall grading intentionally waits so the review is scheduled immediately.
 """
+import hashlib
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -752,9 +753,25 @@ def api_me(uid: str = Depends(auth.require_user)):
 
 
 # ---- static frontend ------------------------------------------------------------
+_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js")
+
+
+def asset_version():
+    h = hashlib.sha1()
+    for name in _VERSIONED_ASSETS:
+        try:
+            with open(os.path.join(STATIC_DIR, name), "rb") as fh:
+                h.update(fh.read())
+        except OSError:
+            continue
+    return h.hexdigest()[:8]
+
+
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as fh:
+        html = fh.read()
+    return HTMLResponse(html.replace("__ASSET_VER__", asset_version()))
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")

@@ -368,10 +368,10 @@ def _drill_score(p, attempts, review, stats, mistakes, pred_misses, struggles, s
     )
     display_signals = [
         (leech_score, "Leech drill"),
-        (mistake_score, f"Recent mistakes in {cat}"),
-        (pred_score, f"Prediction misses in {cat}"),
-        (struggle_score, f"Recent struggle in {cat}"),
-        (weak_score + breadth_score, "Weak topic coverage"),
+        (mistake_score, "Recent mistakes"),
+        (pred_score, "Prediction misses"),
+        (struggle_score, "Recent struggle"),
+        (weak_score + breadth_score, "Coverage gap"),
     ]
     reason = max(display_signals, key=lambda x: (x[0], x[1]))[1]
     reason_codes = _drill_reason_codes(
