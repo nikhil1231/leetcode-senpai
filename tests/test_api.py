@@ -47,6 +47,7 @@ def test_today_has_new_and_sections(client):
     body = r.json()
     assert "new" in body and "reviews" in body and "drills" in body
     assert "expansion" in body and "goal" in body
+    assert body["drills"] == []
     assert set(body["goal"]) == {"reviews_done", "reviews_goal", "new_done", "new_goal"}
 
 
@@ -112,6 +113,8 @@ def test_today_drills_can_use_local_signal_without_llm(client, monkeypatch):
     body = client.get("/api/today").json()
     assert body["drills"]
     assert all(item["kind"] == "drill" for item in body["drills"])
+    assert all(item["reason_codes"] for item in body["drills"])
+    assert all("signals" in item for item in body["drills"])
 
 
 def _add_problem(store, slug, title, difficulty, category):

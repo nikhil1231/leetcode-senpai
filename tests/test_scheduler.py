@@ -179,7 +179,9 @@ def test_drill_lane_uses_non_due_leech_review():
         _drill_problems(), attempts, reviews, today=dt.date(2026, 1, 10))
     assert drills[0]["slug"] == "two-sum"
     assert drills[0]["kind"] == "drill"
-    assert drills[0]["reason"] == "Leech drill"
+    assert "leech" in drills[0]["reason_codes"]
+    assert drills[0]["signals"]["leech"] is True
+    assert drills[0]["signals"]["fail_count"] == 3
 
 
 def test_drill_lane_prediction_misses_affect_scoring():
@@ -194,8 +196,26 @@ def test_drill_lane_prediction_misses_affect_scoring():
         _drill_problems(), attempts, [], enrichments=enrichments,
         today=dt.date(2026, 1, 10))
     tree = next(d for d in drills if d["category"] == "Trees")
-    assert tree["reason"] == "Prediction misses in Trees"
+    assert "prediction_miss" in tree["reason_codes"]
+    assert tree["signals"]["prediction_miss"] is True
+    assert tree["signals"]["prediction_misses"] == 1
     assert tree["score"] > next(d for d in drills if d["category"] == "Sliding Window")["score"]
+
+
+def test_drill_lane_mistake_density_reason_code():
+    attempts = [
+        {"id": "a1", "slug": "invert-tree", "confidence": 3, "independence": "solo",
+         "solved_at": 1768000000},
+    ]
+    enrichments = [{"attempt_id": "a1", "mistake_tags": ["base-case"], "severity": 2}]
+
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), attempts, [], enrichments=enrichments,
+        today=dt.date(2026, 1, 10))
+
+    tree = next(d for d in drills if d["category"] == "Trees")
+    assert "recent_mistakes" in tree["reason_codes"]
+    assert tree["signals"]["mistake_density"] == 1.0
 
 
 def test_drill_lane_enrichments_absent_still_uses_attempt_signal():
@@ -206,7 +226,50 @@ def test_drill_lane_enrichments_absent_still_uses_attempt_signal():
         today=dt.date(2026, 1, 10))
     assert drills
     assert drills[0]["category"] == "Sliding Window"
-    assert drills[0]["reason"] == "Recent struggle in Sliding Window"
+    assert "recent_mistakes" in drills[0]["reason_codes"]
+    assert drills[0]["signals"]["recent_struggles"] == 1
+
+
+def test_drill_lane_weak_topic_reason_code():
+    reviews = [{"slug": "two-sum", "due_date": "2026-02-01", "fail_count": 3, "leech": 1}]
+    settings = {
+        "drill_leech_weight": 0,
+        "drill_fail_weight": 0,
+        "drill_mistake_weight": 0,
+        "drill_prediction_weight": 0,
+        "drill_struggle_weight": 0,
+        "drill_weakness_weight": 1,
+        "drill_breadth_weight": 0,
+    }
+
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), [], reviews, settings=settings,
+        today=dt.date(2026, 1, 10))
+
+    assert drills
+    assert all(d["reason_codes"] == ["weak_topic"] for d in drills)
+    assert all(d["signals"]["weakness"] == 1.0 for d in drills)
+
+
+def test_drill_lane_unattempted_coverage_reason_code():
+    reviews = [{"slug": "two-sum", "due_date": "2026-02-01", "fail_count": 3, "leech": 1}]
+    settings = {
+        "drill_leech_weight": 0,
+        "drill_fail_weight": 0,
+        "drill_mistake_weight": 0,
+        "drill_prediction_weight": 0,
+        "drill_struggle_weight": 0,
+        "drill_weakness_weight": 0,
+        "drill_breadth_weight": 1,
+    }
+
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), [], reviews, settings=settings,
+        today=dt.date(2026, 1, 10))
+
+    assert drills
+    assert all(d["reason_codes"] == ["unattempted_coverage"] for d in drills)
+    assert all(d["signals"]["unattempted_coverage"] == 1.0 for d in drills)
 
 
 def test_drill_lane_exclude_slugs_prevents_duplicates():
@@ -234,3 +297,92 @@ def test_drill_lane_ordering_is_deterministic():
         _drill_problems(), attempts, reviews, settings=settings,
         exclude_slugs={"group-anagrams"}, today=dt.date(2026, 1, 10))
     assert [d["slug"] for d in drills[:2]] == ["two-sum", "valid-anagram"]
+
+
+def test_drill_lane_tied_scores_ignore_problem_input_order():
+    today = dt.date(2026, 1, 10)
+    attempts = [
+        {"slug": "arrays-b", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today)},
+        {"slug": "sliding-a", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today)},
+        {"slug": "trees-a", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today)},
+    ]
+    settings = {
+        "drill_leech_weight": 0,
+        "drill_fail_weight": 0,
+        "drill_mistake_weight": 0,
+        "drill_prediction_weight": 0,
+        "drill_struggle_weight": 1,
+        "drill_weakness_weight": 0,
+        "drill_breadth_weight": 0,
+    }
+    problems = [
+        {"slug": "trees-a", "title": "Trees A", "difficulty": "Easy",
+         "neetcode_category": "Trees", "in_library": True, "url": "u"},
+        {"slug": "arrays-b", "title": "Arrays B", "difficulty": "Easy",
+         "neetcode_category": "Arrays & Hashing", "in_library": True, "url": "u"},
+        {"slug": "arrays-a", "title": "Arrays A", "difficulty": "Easy",
+         "neetcode_category": "Arrays & Hashing", "in_library": True, "url": "u"},
+        {"slug": "sliding-a", "title": "Sliding A", "difficulty": "Easy",
+         "neetcode_category": "Sliding Window", "in_library": True, "url": "u"},
+    ]
+
+    orders = [
+        [d["slug"] for d in scheduler.build_drill_lane(
+            variant, attempts, [], settings=settings, today=today)]
+        for variant in (problems, list(reversed(problems)), [problems[i] for i in (2, 0, 3, 1)])
+    ]
+
+    assert orders == [
+        ["arrays-a", "sliding-a", "trees-a"],
+        ["arrays-a", "sliding-a", "trees-a"],
+        ["arrays-a", "sliding-a", "trees-a"],
+    ]
+
+
+def test_drill_lane_tied_scores_prefer_recent_relevant_signal():
+    today = dt.date(2026, 1, 10)
+    problems = [
+        {"slug": "two-sum", "title": "Two Sum", "difficulty": "Easy",
+         "neetcode_category": "Arrays & Hashing", "in_library": True, "url": "u"},
+        {"slug": "invert-tree", "title": "Invert Tree", "difficulty": "Easy",
+         "neetcode_category": "Trees", "in_library": True, "url": "u"},
+    ]
+    attempts = [
+        {"slug": "two-sum", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today - dt.timedelta(days=5))},
+        {"slug": "invert-tree", "confidence": 1, "independence": "hints",
+         "solved_at": _ts(today - dt.timedelta(days=1))},
+    ]
+    settings = {
+        "drill_leech_weight": 0,
+        "drill_fail_weight": 0,
+        "drill_mistake_weight": 0,
+        "drill_prediction_weight": 0,
+        "drill_struggle_weight": 1,
+        "drill_weakness_weight": 0,
+        "drill_breadth_weight": 0,
+    }
+
+    drills = scheduler.build_drill_lane(
+        problems, attempts, [], settings=settings, today=today)
+
+    assert [d["slug"] for d in drills[:2]] == ["invert-tree", "two-sum"]
+
+
+def test_drill_tie_break_does_not_change_daily_review_or_new_ordering():
+    today = dt.date(2026, 1, 10)
+    problems = _problems()
+    attempts = [{"slug": "two-sum", "confidence": 3, "independence": "solo"}]
+    reviews = [
+        {"slug": "3sum", "due_date": "2026-01-03", "interval_days": 30, "leech": 0},
+        {"slug": "two-sum", "due_date": "2026-01-02", "interval_days": 30, "leech": 1},
+    ]
+
+    q = scheduler.build_daily_queue(
+        problems, attempts, reviews, {"review_limit": 5, "new_limit": 2}, today=today)
+
+    assert [r["slug"] for r in q["reviews"]] == ["two-sum", "3sum"]
+    assert [n["slug"] for n in q["new"]] == ["valid-anagram"]
