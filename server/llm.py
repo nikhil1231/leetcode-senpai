@@ -1,4 +1,4 @@
-"""Gemini enrichment core — text in, validated JSON out.
+"""LLM enrichment core — text in, validated JSON out.
 
 Design rules (from the V2 plan):
   * The LLM is NEVER in the critical path. `extract()` returns None on any
@@ -6,8 +6,8 @@ Design rules (from the V2 plan):
     to callers. Features check `enabled()` and degrade instead of breaking.
   * Raw text stays the source of truth; whatever this returns is derived data,
     stamped elsewhere with PROMPT_VERSION so it can be re-run cheaply.
-  * The transport is swappable. Today it's the direct google-genai SDK; the
-    single choke point is `_raw_generate()`, which tests monkeypatch.
+  * The transport is swappable. OpenAI and Gemini share the single
+    `_raw_generate()` choke point, which tests monkeypatch.
 
 Each task registers a pydantic response schema + a prompt builder. `extract`
 picks the task by name, builds the prompt, calls the model in structured-output
@@ -18,6 +18,7 @@ import json
 import logging
 from typing import Callable, Literal, Optional
 
+import httpx
 from pydantic import BaseModel, Field
 
 from . import config
@@ -213,8 +214,35 @@ def _trunc(code, limit=2000):
 
 
 # ---- public API -----------------------------------------------------------------
-def enabled() -> bool:
-    return bool(config.GEMINI_API_KEY)
+def _selected(settings: Optional[dict] = None) -> tuple[str, str]:
+    settings = settings or {}
+    provider = (settings.get("llm_provider") or config.LLM_PROVIDER or "openai").lower()
+    model = settings.get("llm_model") or config.LLM_MODEL
+
+    # Compatibility for existing Gemini-only local/dev environments: if no
+    # per-user choice has been stored and OpenAI has no key, keep Gemini alive.
+    if (
+        provider == "openai"
+        and not config.OPENAI_API_KEY
+        and config.GEMINI_API_KEY
+        and not settings.get("llm_provider")
+    ):
+        return "gemini", "gemini-2.5-flash"
+    return provider, model
+
+
+def enabled(settings: Optional[dict] = None) -> bool:
+    provider, _ = _selected(settings)
+    if provider == "openai":
+        return bool(config.OPENAI_API_KEY)
+    if provider == "gemini":
+        return bool(config.GEMINI_API_KEY)
+    return False
+
+
+def current_model(settings: Optional[dict] = None) -> dict:
+    provider, model = _selected(settings)
+    return {"provider": provider, "model": model, "enabled": enabled(settings)}
 
 
 _client = None
@@ -250,11 +278,53 @@ def _gemini_schema(schema) -> dict:
     return _strip_defaults(schema.model_json_schema())
 
 
-def _raw_generate(model: str, system: str, prompt: str, schema) -> Optional[str]:
+def _openai_schema(schema) -> dict:
+    return {
+        "type": "json_schema",
+        "name": schema.__name__,
+        "strict": False,
+        "schema": schema.model_json_schema(),
+    }
+
+
+def _response_text(resp: dict) -> Optional[str]:
+    if resp.get("output_text"):
+        return resp["output_text"]
+    for item in resp.get("output", []) or []:
+        for part in item.get("content", []) or []:
+            if isinstance(part, dict) and part.get("text"):
+                return part["text"]
+    return None
+
+
+def _raw_generate(provider: str, model: str, system: str, prompt: str, schema) -> Optional[str]:
     """The single transport choke point. Returns a JSON string or None.
 
     Tests monkeypatch this to avoid network calls.
     """
+    if provider == "openai":
+        resp = httpx.post(
+            "https://api.openai.com/v1/responses",
+            headers={
+                "Authorization": f"Bearer {config.OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "instructions": system,
+                "input": prompt,
+                "text": {"format": _openai_schema(schema)},
+                "temperature": 0.2,
+                "store": False,
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        return _response_text(resp.json())
+
+    if provider != "gemini":
+        raise ValueError(f"unsupported LLM provider {provider}")
+
     from google.genai import types
     client = _get_client()
     resp = client.models.generate_content(
@@ -271,7 +341,7 @@ def _raw_generate(model: str, system: str, prompt: str, schema) -> Optional[str]
 
 
 async def extract_or_error(
-    task_name: str, payload: dict
+    task_name: str, payload: dict, settings: Optional[dict] = None
 ) -> tuple[Optional[dict], Optional[str]]:
     """Run a registered task, returning (result, error_message).
 
@@ -280,15 +350,17 @@ async def extract_or_error(
     traceback on real exceptions) and returned as a human-readable string so a
     feature that wants diagnosability (e.g. recall grading) can show it.
     """
-    if not enabled():
-        return None, "LLM disabled (no GEMINI_API_KEY)"
+    if not enabled(settings):
+        selected = current_model(settings)
+        return None, f"LLM disabled (no API key for {selected['provider']})"
     task = TASKS.get(task_name)
     if task is None:
         return None, f"unknown task {task_name}"
     try:
         prompt = task.build(payload)
+        provider, model = _selected(settings)
         raw = await asyncio.to_thread(
-            _raw_generate, config.LLM_MODEL, task.system, prompt, task.schema
+            _raw_generate, provider, model, task.system, prompt, task.schema
         )
         if not raw or not raw.strip():
             log.warning("LLM task %s returned an empty response", task_name)
@@ -300,7 +372,9 @@ async def extract_or_error(
         return None, f"{type(exc).__name__}: {exc}"
 
 
-async def extract(task_name: str, payload: dict) -> Optional[dict]:
+async def extract(
+    task_name: str, payload: dict, settings: Optional[dict] = None
+) -> Optional[dict]:
     """Run a registered task. Never raises — returns a validated dict or None."""
-    result, _ = await extract_or_error(task_name, payload)
+    result, _ = await extract_or_error(task_name, payload, settings=settings)
     return result

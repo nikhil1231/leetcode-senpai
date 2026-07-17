@@ -86,6 +86,8 @@ let pendingRecallPollIds = new Set();
 let pendingStart = null;
 let categories = [];
 let llmEnabled = false;
+let llmProvider = "";
+let llmModel = "";
 let nudgeShown = {};
 
 // ---- sign-in gate --------------------------------------------------------------
@@ -119,13 +121,16 @@ function render(tab) {
 async function loadOverview() {
   const o = await api("/overview");
   llmEnabled = o.llm_enabled;
+  llmProvider = o.llm_provider || "";
+  llmModel = o.llm_model || "";
+  const coachLabel = llmModel ? `${llmProvider}/${llmModel}` : "coach";
   $("#overview").innerHTML = `
     <span>Solved <b>${o.solved}</b>/${o.total_problems}</span>
     <span>Due <b>${o.due_reviews}</b></span>
     <span>Streak <b>${o.streak}</b>🔥</span>
     <span>XP today <b>${o.xp_today}</b></span>
     <span>Leeches <b>${o.leeches}</b></span>
-    ${llmEnabled ? '<span class="ai-on">✨ Coach on</span>' : '<span class="ai-off">Coach off</span>'}`;
+    ${llmEnabled ? `<span class="ai-on">Coach on: ${escapeHtml(coachLabel)}</span>` : '<span class="ai-off">Coach off</span>'}`;
   (o.newly_mastered || []).forEach((m) =>
     toast(`🎉 Topic mastered: ${m.category}!`));
 }
@@ -224,7 +229,7 @@ $("#btn-hint").addEventListener("click", async () => {
     const panel = $("#hint-panel");
     panel.classList.remove("hidden");
     if (r.hint == null) {
-      panel.innerHTML = `<p class="small">${llmEnabled ? "No hints available for this one." : "Hints need the coach (Gemini) enabled."}</p>`;
+      panel.innerHTML = `<p class="small">${llmEnabled ? "No hints available for this one." : "Hints need the coach enabled."}</p>`;
       return;
     }
     const existing = panel.querySelector(".hint-list");
