@@ -1,24 +1,30 @@
 param(
-    [string]$TaskName = "LeetCode Revision"
+    [string]$TaskName = "Leetcode Senpai"
 )
 
 $ErrorActionPreference = "Stop"
 
 $removed = $false
-
-& schtasks.exe /Query /TN $TaskName | Out-Null
-if ($LASTEXITCODE -eq 0) {
-    & schtasks.exe /Delete /TN $TaskName /F | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to remove scheduled task '$TaskName'."
-    }
-    $removed = $true
+$taskNames = @($TaskName)
+if ($TaskName -eq "Leetcode Senpai") {
+    $taskNames += "LeetCode Revision"
 }
 
-$startupShortcut = Join-Path ([Environment]::GetFolderPath("Startup")) "$TaskName.lnk"
-if (Test-Path -LiteralPath $startupShortcut) {
-    Remove-Item -LiteralPath $startupShortcut -Force
-    $removed = $true
+foreach ($name in $taskNames) {
+    & schtasks.exe /Query /TN $name | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        & schtasks.exe /Delete /TN $name /F | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to remove scheduled task '$name'."
+        }
+        $removed = $true
+    }
+
+    $startupShortcut = Join-Path ([Environment]::GetFolderPath("Startup")) "$name.lnk"
+    if (Test-Path -LiteralPath $startupShortcut) {
+        Remove-Item -LiteralPath $startupShortcut -Force
+        $removed = $true
+    }
 }
 
 if ($removed) {

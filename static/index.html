@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LeetCode Revision</title>
+  <title>Leetcode Senpai</title>
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
@@ -16,7 +16,7 @@
   <div id="signin-gate" class="overlay hidden">
     <div class="overlay-card box signin has-text-centered">
       <img class="signin-logo" src="/app-icon.png" alt="" aria-hidden="true" />
-      <h2 class="title is-4">LeetCode Revision</h2>
+      <h2 class="title is-4">Leetcode Senpai</h2>
       <p class="small">Sign in with your allow-listed Google account.</p>
       <button id="btn-signin" class="button is-primary mt-4">Sign in with Google</button>
       <p id="signin-error" class="help is-danger"></p>
@@ -28,7 +28,7 @@
       <div class="header-top">
         <h1 class="app-title title is-5 mb-0">
           <img class="app-logo" src="/app-icon.png" alt="" aria-hidden="true" />
-          <span>LeetCode Revision</span>
+          <span>Leetcode Senpai</span>
           <span class="tag is-link is-light">v2</span>
         </h1>
         <div id="user-chip"></div>
@@ -48,21 +48,28 @@
       <div id="overview" class="overview"></div>
     </header>
 
-    <!-- Active session banner (timer + hint ladder) -->
-    <div id="active-banner" class="banner hidden">
-      <div class="banner-info">
-        <span class="dot"></span>
-        <strong id="active-title"></strong>
-        <span id="active-timer" class="timer">00:00</span>
+    <!-- Active session focus mode (timer + hint ladder) -->
+    <section id="active-run" class="active-run hidden" aria-live="polite">
+      <div class="active-run-inner">
+        <div class="active-copy">
+          <div class="active-kicker"><span class="dot"></span><span id="active-status">Current run</span></div>
+          <h2 id="active-title"></h2>
+          <p id="active-kind" class="small"></p>
+        </div>
+        <div class="active-clock" aria-label="Elapsed solving time">
+          <span>Elapsed</span>
+          <strong id="active-timer" class="timer active-timer">00:00</strong>
+        </div>
+        <div class="active-actions">
+          <button id="btn-hint" class="button hint-btn">Reveal hint 1 of 3</button>
+          <button id="btn-pause-session" class="button is-ghost">Pause</button>
+          <a id="active-link" class="button is-primary" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
+          <button id="btn-cancel-session" class="button is-ghost">Cancel run</button>
+        </div>
+        <div id="hint-panel" class="hint-panel hidden"></div>
+        <div id="nudge" class="nudge hidden"></div>
       </div>
-      <div class="banner-actions">
-        <button id="btn-hint" class="button is-small hint-btn">💡 Stuck?</button>
-        <a id="active-link" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
-        <button id="btn-cancel-session" class="button is-small is-ghost">Cancel</button>
-      </div>
-    </div>
-    <div id="hint-panel" class="hint-panel hidden"></div>
-    <div id="nudge" class="nudge hidden"></div>
+    </section>
 
     <main>
       <section id="tab-today" class="tab"></section>
@@ -78,8 +85,11 @@
 
   <!-- Pre-solve prediction modal -->
   <div id="predict-modal" class="overlay hidden">
-    <div class="overlay-card box" role="dialog" aria-modal="true">
-      <h2 class="title is-5">Before you start</h2>
+    <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="predict-heading">
+      <div class="modal-titlebar">
+        <h2 class="title is-5" id="predict-heading">Before you start</h2>
+        <button id="btn-close-predict" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+      </div>
       <p class="small" id="predict-problem"></p>
       <label class="label-sm">Which pattern do you think this is? <span class="help-inline">(trains recognition — skippable)</span></label>
       <div class="pill-grid" id="predict-cats"></div>
