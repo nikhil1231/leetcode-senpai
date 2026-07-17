@@ -59,6 +59,15 @@ class RecallResult(BaseModel):
     feedback: str = ""
 
 
+class SolutionGrade(BaseModel):
+    score: int = Field(0, ge=0, le=5, description="1 barely works … 5 optimal & clean")
+    optimal: bool = False
+    analysis: str = ""  # detailed read of the approach + complexity
+    improvements: list[str] = Field(default_factory=list)  # empty when already optimal
+    inferred_time: str = ""
+    inferred_space: str = ""
+
+
 class RecallClarification(BaseModel):
     reply: str = ""
 
@@ -140,6 +149,26 @@ TASKS: dict[str, Task] = {
             f"Solver claimed time={p.get('claim_time') or '?'}, space={p.get('claim_space') or '?'}.\n"
             f"--- current code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}\n"
             + (f"--- previous accepted code ---\n{_trunc(p.get('prev_code'))}\n" if p.get('prev_code') else "")
+        ),
+    ),
+    "grade_solution": Task(
+        SolutionGrade,
+        "You grade an accepted coding-interview solution out of 5 on optimality and "
+        "clarity, comparing against the canonical optimal approach. Score 5 only if "
+        "the complexity is optimal AND the code is clean/idiomatic; 3-4 for a correct "
+        "but suboptimal or messy solution; 1-2 for brute force or hard-to-read code. "
+        "Set optimal=true only when time & space match the canonical optimum. When "
+        "not optimal, list concrete, specific improvements (fewer passes, better data "
+        "structure, drop the extra space, etc.); leave improvements empty when it is "
+        "already optimal. analysis: a tight but detailed read of the approach and its "
+        "time/space. Also infer the solution's actual time/space complexity.",
+        lambda p: (
+            f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
+            f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
+            f"Canonical optimal complexity: time={p.get('canon_time') or '?'}, "
+            f"space={p.get('canon_space') or '?'}.\n"
+            f"Solver claimed time={p.get('claim_time') or '?'}, space={p.get('claim_space') or '?'}.\n"
+            f"--- their accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
         ),
     ),
     "grade_recall": Task(

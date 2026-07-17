@@ -137,6 +137,12 @@ def _effective_tags(e):
 # can still be annotated from there.
 PENDING_MAX_AGE_SEC = 12 * 3600
 
+# Auto-grade only genuinely fresh solves; older un-graded solves can still be
+# graded on demand from the modal.
+RECENT_SOLVE_WINDOW_SEC = 120
+# Bump to re-generate stored solution grades after a prompt/schema change.
+SOLUTION_PROMPT_VERSION = 1
+
 
 def _pending(store):
     pm = _problem_map(store)
@@ -161,6 +167,41 @@ def _pending(store):
 
 async def _enrich_bg(uid, attempt_id):
     await enrich.enrich_attempt(get_store(uid), attempt_id)
+
+
+async def _grade_solution(store, attempt):
+    """Grade an attempt's code and persist the result. Returns the response dict
+    the modal expects: {grading_status, graded, grading_error}. Never raises."""
+    code = attempt.get("code")
+    if not code:
+        store.update_attempt(attempt["id"], {"solution_grading_status": "skipped"})
+        return {"grading_status": "skipped", "graded": None, "grading_error": None}
+    try:
+        graded, err = await coach.grade_solution(
+            store, attempt["slug"], code, attempt.get("lang"),
+            attempt.get("complexity_time"), attempt.get("complexity_space"),
+        )
+    except Exception as exc:  # defensive; coach already swallows LLM errors
+        graded, err = None, str(exc)
+    if not graded:
+        store.update_attempt(attempt["id"], {
+            "solution_grading_status": "failed",
+            "solution_grading_error": err or "grading returned no result",
+        })
+        return {"grading_status": "failed", "graded": None,
+                "grading_error": err or "grading returned no result"}
+    store.update_attempt(attempt["id"], {
+        "solution_grade": {**graded, "prompt_version": SOLUTION_PROMPT_VERSION},
+        "solution_grading_status": "viewed", "solution_grading_error": None,
+    })
+    return {"grading_status": "viewed", "graded": graded, "grading_error": None}
+
+
+async def _grade_solution_bg(uid, attempt_id):
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if attempt:
+        await _grade_solution(store, attempt)
 
 
 async def _prep_problem_bg(uid, slug):
@@ -323,10 +364,21 @@ async def api_session_hint(uid: str = Depends(auth.require_user)):
 
 
 @app.post("/api/poll")
-async def api_poll(uid: str = Depends(auth.require_user), lc=Depends(auth.leetcode_auth)):
+async def api_poll(bg: BackgroundTasks, uid: str = Depends(auth.require_user),
+                   lc=Depends(auth.leetcode_auth)):
     store = get_store(uid)
     username = store.get_settings().get("username")
     new_ids = await poller.check_active_sessions(store, username, lc)
+    # Kick off solution grading for freshly-detected solves, off the critical
+    # path. Only genuinely recent solves with code are auto-graded; the submission
+    # dedup in the poller guarantees each solve is graded at most once.
+    if llm.enabled():
+        now = time.time()
+        for aid in new_ids:
+            a = store.get_attempt(aid)
+            if (a and a.get("code")
+                    and (a.get("solved_at") or 0) >= now - RECENT_SOLVE_WINDOW_SEC):
+                bg.add_task(_grade_solution_bg, uid, aid)
     return {"new_attempts": new_ids, "pending": _pending(store)}
 
 
@@ -366,7 +418,12 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     current = store.get_review(slug)
     if current:
         current = {**current, "slug": slug}
-    new_state = scheduler.advance_review(current, body.confidence, body.independence)
+    # Fold the LLM's /5 solution grade into scheduling when it's already landed;
+    # otherwise schedule on the self-assessment alone (LLM never blocks scheduling).
+    graded = attempt.get("solution_grade") or {}
+    solution_score = graded.get("score") if graded else None
+    new_state = scheduler.advance_review(
+        current, body.confidence, body.independence, solution_score=solution_score)
     new_state["slug"] = slug
     store.upsert_review(slug, new_state)
     if llm.enabled():
@@ -375,6 +432,19 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     if scheduler.quality(body.confidence, body.independence) < 3:
         suggestion = _similar_suggestion(store, slug)
     return {"ok": True, "review": new_state, "similar": suggestion}
+
+
+@app.post("/api/attempt/{attempt_id}/grade-solution")
+async def api_grade_solution(attempt_id: str, uid: str = Depends(auth.require_user)):
+    """On-demand solution grading — used by the modal to grade a solve that wasn't
+    auto-graded (stale) or to retry after a failure. Awaits the LLM synchronously
+    like recall grading so the modal can render the result immediately."""
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt:
+        raise HTTPException(404, "no such attempt")
+    result = await _grade_solution(store, attempt)
+    return {"ok": True, **result}
 
 
 @app.post("/api/attempt/manual")

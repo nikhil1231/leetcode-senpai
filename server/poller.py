@@ -1,7 +1,7 @@
 """On-demand solve detection. Serverless-friendly: no background loop — the
 frontend calls this (via /api/poll) every few seconds while a session is active.
 """
-from . import leetcode
+from . import leetcode, llm
 
 
 async def check_active_sessions(store, username, auth=None):
@@ -52,6 +52,10 @@ async def _record_solve(store, session, match, auth):
     except Exception:
         wrong = None
 
+    code = details.get("code") if details else None
+    # Flag the solution as awaiting an LLM grade so the modal shows a spinner the
+    # moment it opens; the actual grading runs off the critical path (see main.py).
+    grading_status = "pending" if (code and llm.enabled()) else None
     aid = store.add_attempt({
         "slug": session["slug"], "solved_at": match["timestamp"],
         "time_taken_sec": time_taken,
@@ -59,7 +63,7 @@ async def _record_solve(store, session, match, auth):
         "memory_percentile": details.get("memory_percentile") if details else None,
         "lang": details.get("lang") if details else None,
         "wrong_before_ac": wrong, "submission_id": match["id"],
-        "code": details.get("code") if details else None,
+        "code": code,
         "confidence": None, "independence": None, "mistake_note": None,
         "approach": None, "source": "auto", "kind": session.get("kind", "adhoc"),
         # carry the pre-solve prediction + hint usage from the session
@@ -67,6 +71,7 @@ async def _record_solve(store, session, match, auth):
         "predicted_approach": session.get("predicted_approach"),
         "hint_level_used": session.get("hint_level", 0),
         "complexity_time": None, "complexity_space": None,
+        "solution_grading_status": grading_status,
     })
     store.update_session(session["id"], {"status": "completed", "attempt_id": aid})
     return aid

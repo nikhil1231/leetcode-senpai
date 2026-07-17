@@ -298,6 +298,10 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .recall-grade { margin-top: 14px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
 .grade-score { font-size: 15px; }
 .recall-grade .missed { color: var(--amber); font-size: 13px; }
+.recall-grade ul.improvements { margin: 4px 0 2px 18px; font-size: 13px; }
+.recall-grade ul.improvements li { margin: 2px 0; }
+.recall-grade .grade-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+.tag.grade-optimal { background: rgba(53, 196, 122, .18); color: var(--green); border: 1px solid var(--green); font-weight: 600; }
 .recall-clarify { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .recall-clarify textarea { min-height: 68px; resize: vertical; }
 .recall-clarify-actions { display: flex; justify-content: flex-end; margin-top: 8px; }

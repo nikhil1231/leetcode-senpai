@@ -512,3 +512,123 @@ def test_config_roundtrip(client):
     assert cfg["drill_limit"] == 4
     assert cfg["drill_min_signal"] == 0.5
     assert cfg["mistake_weight"] == 0.3
+
+
+# ---- solution grading -----------------------------------------------------------
+def test_grade_solution_endpoint_success(client, monkeypatch):
+    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None):
+        return {"score": 4, "optimal": False, "analysis": "one-pass hashmap",
+                "improvements": ["drop the second scan"],
+                "inferred_time": "O(n)", "inferred_space": "O(n)"}, None
+
+    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
+        "kind": "adhoc", "confidence": None, "code": "class Solution: pass",
+        "lang": "python3", "solution_grading_status": "pending",
+    })
+    r = client.post(f"/api/attempt/{aid}/grade-solution")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["grading_status"] == "viewed"
+    assert body["graded"]["score"] == 4
+    stored = client.store.get_attempt(aid)
+    assert stored["solution_grading_status"] == "viewed"
+    assert stored["solution_grade"]["score"] == 4
+    assert stored["solution_grade"]["prompt_version"] == main.SOLUTION_PROMPT_VERSION
+
+
+def test_grade_solution_endpoint_failure(client, monkeypatch):
+    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None):
+        return None, "AuthError: invalid API key"
+
+    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
+        "kind": "adhoc", "confidence": None, "code": "class Solution: pass",
+    })
+    r = client.post(f"/api/attempt/{aid}/grade-solution")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["grading_status"] == "failed"
+    assert body["grading_error"] == "AuthError: invalid API key"
+    assert client.store.get_attempt(aid)["solution_grading_status"] == "failed"
+
+
+def test_grade_solution_skips_without_code(client):
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "manual",
+        "kind": "adhoc", "confidence": None, "code": None,
+    })
+    r = client.post(f"/api/attempt/{aid}/grade-solution")
+    assert r.status_code == 200
+    assert r.json()["grading_status"] == "skipped"
+
+
+def test_annotate_folds_solution_grade_into_schedule(client):
+    # A poor LLM grade stored on the attempt drags the scheduled quality below
+    # the self-assessment-only value.
+    graded = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
+        "kind": "adhoc", "confidence": None,
+        "solution_grade": {"score": 0, "prompt_version": main.SOLUTION_PROMPT_VERSION},
+    })
+    r = client.post(f"/api/attempt/{graded}/annotate", json={
+        "confidence": 3, "independence": "solo"})
+    assert r.status_code == 200
+    # solution_quality(3,"solo",0) == 3, vs quality(3,"solo") == 5
+    assert r.json()["review"]["quality"] == 3
+
+    ungraded = client.store.add_attempt({
+        "slug": "3sum", "solved_at": int(time.time()), "source": "auto",
+        "kind": "adhoc", "confidence": None,
+    })
+    r2 = client.post(f"/api/attempt/{ungraded}/annotate", json={
+        "confidence": 3, "independence": "solo"})
+    assert r2.json()["review"]["quality"] == 5  # self-assessment only
+
+
+def test_poll_auto_grades_fresh_solve_and_is_idempotent(client, monkeypatch):
+    calls = []
+
+    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None):
+        calls.append(slug)
+        return {"score": 5, "optimal": True, "analysis": "optimal",
+                "improvements": [], "inferred_time": "O(n)",
+                "inferred_space": "O(n)"}, None
+
+    async def fake_recent_ac(username, limit, auth=None):
+        active = client.get("/api/session/active").json()["active"]
+        return [{"id": "sub-1", "titleSlug": "two-sum",
+                 "timestamp": active["started_at"] + 5}]
+
+    async def fake_submission_details(submission_id, auth=None):
+        return {"runtime_percentile": 90.0, "memory_percentile": 80.0,
+                "lang": "python3", "code": "class Solution: pass"}
+
+    async def fake_wrong(slug, started_at, ended_at, auth=None):
+        return 0
+
+    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
+    monkeypatch.setattr(main.poller.leetcode, "recent_ac", fake_recent_ac)
+    monkeypatch.setattr(main.poller.leetcode, "submission_details", fake_submission_details)
+    monkeypatch.setattr(main.poller.leetcode, "wrong_attempts_between", fake_wrong)
+
+    client.post("/api/session/start", json={"slug": "two-sum", "kind": "adhoc"})
+
+    first = client.post("/api/poll").json()
+    assert len(first["new_attempts"]) == 1
+    aid = first["new_attempts"][0]
+    # background grade task ran (TestClient runs BackgroundTasks synchronously)
+    assert calls == ["two-sum"]
+    stored = client.store.get_attempt(aid)
+    assert stored["solution_grading_status"] == "viewed"
+    assert stored["solution_grade"]["score"] == 5
+
+    # a second poll over the same submission must not re-detect or re-grade
+    second = client.post("/api/poll").json()
+    assert second["new_attempts"] == []
+    assert calls == ["two-sum"]

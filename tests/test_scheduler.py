@@ -55,6 +55,32 @@ def test_recall_grade_mapping():
     assert scheduler.recall_quality(3) >= 4
 
 
+def test_solution_quality_blends_self_and_llm():
+    # quality(3,"solo") == 5; blended 50/50 with the mapped LLM score
+    assert scheduler.solution_quality(3, "solo", 5) == 5       # (5 + 5) / 2
+    assert scheduler.solution_quality(3, "solo", 0) == 3       # (5 + 1) / 2
+    assert scheduler.solution_quality(1, "solo", 0) == 2       # (3 + 1) / 2
+    # no LLM score -> pure self-assessment
+    assert scheduler.solution_quality(3, "solo", None) == scheduler.quality(3, "solo")
+
+
+def test_advance_review_uses_blended_solution_quality():
+    graded = scheduler.advance_review(_card(), 3, "solo", solution_score=0)
+    assert graded["quality"] == 3  # blended below the self-only 5
+    plain = scheduler.advance_review(_card(), 3, "solo")
+    assert plain["quality"] == scheduler.quality(3, "solo")
+
+
+def test_low_llm_grade_can_force_a_reset():
+    # a strong self-report but a poor LLM grade drags quality below passing,
+    # shortening the interval instead of extending it
+    self_only = scheduler.advance_review(_card(interval_days=30), 1, "hints")
+    blended = scheduler.advance_review(
+        _card(interval_days=30), 1, "hints", solution_score=0)
+    assert blended["interval_days"] < self_only["interval_days"]
+    assert blended["fail_count"] == 1
+
+
 def _problems():
     return [
         {"slug": "two-sum", "title": "Two Sum", "difficulty": "Easy",

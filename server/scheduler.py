@@ -14,6 +14,7 @@ from .neetcode150 import CATEGORY_ORDER
 
 CONF_TO_Q = {1: 3, 2: 4, 3: 5}  # low / medium / high on SM-2's 0..5 scale
 RECALL_TO_Q = {0: 1, 1: 3, 2: 4, 3: 5}  # recall grade -> quality
+SOLUTION_TO_Q = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 5}  # LLM /5 solution score -> quality
 RECALL_INTERVAL_CAP = 21  # cards shorter than this are reviewed by recall, not full solve
 
 
@@ -50,6 +51,19 @@ def recall_quality(grade):
     return RECALL_TO_Q.get(grade, 4)
 
 
+def solution_quality(confidence, independence, solution_score):
+    """Blend the user's self-assessment with the LLM's 0..5 solution grade.
+
+    The self-assessment (how the solve *felt*) stays a co-equal signal; the LLM
+    read of the code nudges it. Returns a rounded 50/50 average on the SM-2 0..5
+    scale. Falls back to self-assessment alone when the score is missing.
+    """
+    q = quality(confidence, independence)
+    if solution_score is None:
+        return q
+    return round((q + SOLUTION_TO_Q.get(solution_score, q)) / 2)
+
+
 # ---- SM-2 -----------------------------------------------------------------------
 def seed_review(slug, today=None):
     """Neutral review card for a backfilled solve with no annotation."""
@@ -64,13 +78,20 @@ def seed_review(slug, today=None):
     }
 
 
-def advance_review(current, confidence, independence, today=None, grade=None):
+def advance_review(current, confidence, independence, today=None, grade=None,
+                   solution_score=None):
     """Return the next review card state. `current` may be None (first solve).
 
-    Pass `grade` (0..3) for approach-recall reviews; otherwise confidence +
-    independence are graded normally.
+    Pass `grade` (0..3) for approach-recall reviews. Pass `solution_score` (0..5)
+    to blend the LLM's code grade with the confidence/independence self-assessment;
+    otherwise confidence + independence are graded normally.
     """
-    q = recall_quality(grade) if grade is not None else quality(confidence, independence)
+    if grade is not None:
+        q = recall_quality(grade)
+    elif solution_score is not None:
+        q = solution_quality(confidence, independence, solution_score)
+    else:
+        q = quality(confidence, independence)
     if config.SCHEDULER == "fsrs":
         from . import fsrs_engine
         return fsrs_engine.advance_review(current, q, today=_today(today))

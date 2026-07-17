@@ -90,6 +90,30 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
     })
 
 
+async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_space=None):
+    """Grade an accepted solution's code against the canonical optimal approach.
+
+    Returns (result, error): result is a dict {score, optimal, analysis,
+    improvements, inferred_time, inferred_space} or None; error is a
+    human-readable reason when no grade could be produced. When the LLM is
+    disabled both are None (the solve is already logged and scheduled).
+    """
+    if not llm.enabled() or not code:
+        return None, None
+    canonical = await ensure_canonical(store, slug)
+    canon_ideas = ", ".join((canonical or {}).get("key_ideas", [])) if canonical else None
+    p = store.get_problem(slug) or {}
+    return await llm.extract_or_error("grade_solution", {
+        "title": p.get("title", slug), "difficulty": p.get("difficulty"),
+        "category": p.get("neetcode_category"),
+        "canonical": canon_ideas,
+        "canon_time": (canonical or {}).get("time"),
+        "canon_space": (canonical or {}).get("space"),
+        "code": code, "lang": lang,
+        "claim_time": claim_time, "claim_space": claim_space,
+    })
+
+
 async def clarify_recall(store, attempt, question):
     """Answer a one-off clarification question about a completed recall grade."""
     if not llm.enabled():

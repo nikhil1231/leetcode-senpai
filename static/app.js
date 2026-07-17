@@ -299,6 +299,143 @@ function openAnnotate(attempt) {
   $("#annotate-note").value = "";
   $("#annotate-approach").value = "";
   $("#annotate-modal").classList.remove("hidden");
+  initAnnotateGrade(attempt);
+}
+
+// ---- solution grading (inside the annotate modal) ------------------------------
+let annotateGradeTimer = null;
+let annotateGradePoll = null;
+
+function initAnnotateGrade(attempt) {
+  const panel = $("#annotate-grade");
+  stopAnnotateGrading();
+  if (annotateGradePoll) { clearTimeout(annotateGradePoll); annotateGradePoll = null; }
+  panel.classList.add("hidden");
+  panel.innerHTML = "";
+  if (!llmEnabled || !attempt.code) return;
+  const status = attempt.solution_grading_status;
+  if (status === "viewed" && attempt.solution_grade) {
+    renderSolutionGrade(attempt.solution_grade);
+  } else if (status === "pending") {
+    showAnnotateGrading([
+      "Reading your solution…",
+      "Checking the complexity…",
+      "Comparing against the optimal approach…",
+      "Grading…",
+    ]);
+    pollSolutionGrade(attempt.id);
+  } else if (status === "failed") {
+    renderSolutionGradeError(attempt.solution_grading_error, attempt.id);
+  } else if (status !== "skipped") {
+    showGradeButton(attempt.id);  // stale solve — grade on demand
+  }
+}
+
+function showAnnotateGrading(messages) {
+  const g = $("#annotate-grade");
+  g.classList.remove("hidden");
+  g.innerHTML = `<div class="grading"><span class="spinner"></span>
+    <span class="grading-text">${escapeHtml(messages[0])}</span></div>`;
+  stopAnnotateGrading();
+  let i = 0;
+  if (messages.length > 1) {
+    annotateGradeTimer = setInterval(() => {
+      i = (i + 1) % messages.length;
+      const t = g.querySelector(".grading-text");
+      if (t) t.textContent = messages[i];
+    }, 1400);
+  }
+}
+function stopAnnotateGrading() {
+  if (annotateGradeTimer) { clearInterval(annotateGradeTimer); annotateGradeTimer = null; }
+}
+
+async function pollSolutionGrade(attemptId, tries = 0) {
+  // Stop if the modal closed or a different solve is showing.
+  if (!currentAttempt || currentAttempt.id !== attemptId
+      || $("#annotate-modal").classList.contains("hidden")) {
+    stopAnnotateGrading();
+    return;
+  }
+  if (tries > 30) {  // ~60s ceiling
+    renderSolutionGradeError("Grading is taking longer than expected.", attemptId);
+    return;
+  }
+  let a;
+  try {
+    a = await api(`/attempt/${attemptId}`);
+  } catch (e) {
+    annotateGradePoll = setTimeout(() => pollSolutionGrade(attemptId, tries + 1), 2000);
+    return;
+  }
+  const status = a.solution_grading_status;
+  if (status === "viewed" && a.solution_grade) {
+    if (currentAttempt) currentAttempt.solution_grade = a.solution_grade;
+    renderSolutionGrade(a.solution_grade);
+  } else if (status === "failed") {
+    renderSolutionGradeError(a.solution_grading_error, attemptId);
+  } else if (status === "skipped") {
+    stopAnnotateGrading();
+    $("#annotate-grade").classList.add("hidden");
+  } else {
+    annotateGradePoll = setTimeout(() => pollSolutionGrade(attemptId, tries + 1), 2000);
+  }
+}
+
+function renderSolutionGrade(g) {
+  g = g || {};
+  stopAnnotateGrading();
+  const panel = $("#annotate-grade");
+  panel.classList.remove("hidden");
+  const imp = (g.improvements || []).filter(Boolean);
+  const hasCx = g.inferred_time || g.inferred_space;
+  panel.innerHTML = `
+    <div class="grade-score">Solution grade: <b>${g.score}/5</b>${
+      g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
+    ${g.analysis ? `<p>${escapeHtml(g.analysis)}</p>` : ""}
+    ${hasCx ? `<p class="small"><b>Complexity:</b> time ${escapeHtml(g.inferred_time || "?")}, space ${escapeHtml(g.inferred_space || "?")}</p>` : ""}
+    ${imp.length ? `<p class="missed"><b>Improve:</b></p><ul class="improvements">${
+      imp.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : ""}`;
+}
+
+function renderSolutionGradeError(err, attemptId) {
+  stopAnnotateGrading();
+  const panel = $("#annotate-grade");
+  panel.classList.remove("hidden");
+  panel.innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
+    <div class="grade-actions"><button id="btn-grade-solution" class="button is-small is-link">Retry grading</button></div>`;
+  wireGradeButton(attemptId);
+}
+
+function showGradeButton(attemptId) {
+  const panel = $("#annotate-grade");
+  panel.classList.remove("hidden");
+  panel.innerHTML =
+    `<div class="grade-actions"><button id="btn-grade-solution" class="button is-small is-link">Grade my solution</button></div>`;
+  wireGradeButton(attemptId);
+}
+
+function wireGradeButton(attemptId) {
+  const btn = $("#btn-grade-solution");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    showAnnotateGrading(["Grading your solution…"]);
+    let r;
+    try {
+      r = await api(`/attempt/${attemptId}/grade-solution`, "POST");
+    } catch (e) {
+      renderSolutionGradeError(e.message, attemptId);
+      return;
+    }
+    if (r.grading_status === "viewed" && r.graded) {
+      if (currentAttempt) currentAttempt.solution_grade = r.graded;
+      renderSolutionGrade(r.graded);
+    } else if (r.grading_status === "skipped") {
+      $("#annotate-grade").classList.add("hidden");
+    } else {
+      renderSolutionGradeError(r.grading_error, attemptId);
+    }
+  });
 }
 
 function selectPill(group, val) {
@@ -309,6 +446,8 @@ $$("#indep-group button").forEach((b) => b.addEventListener("click", () => selec
 
 function closeAnnotate() {
   $("#annotate-modal").classList.add("hidden");
+  stopAnnotateGrading();
+  if (annotateGradePoll) { clearTimeout(annotateGradePoll); annotateGradePoll = null; }
   currentAttempt = null;
 }
 $("#btn-close-annotate").addEventListener("click", closeAnnotate);
