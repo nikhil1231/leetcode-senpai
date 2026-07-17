@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeetCode Revision</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <link rel="stylesheet" href="/bulma.min.css" />
   <link rel="stylesheet" href="/style.css?v=__ASSET_VER__" />
 </head>
@@ -11,6 +15,7 @@
   <!-- Sign-in gate -->
   <div id="signin-gate" class="overlay hidden">
     <div class="overlay-card box signin has-text-centered">
+      <img class="signin-logo" src="/app-icon.png" alt="" aria-hidden="true" />
       <h2 class="title is-4">LeetCode Revision</h2>
       <p class="small">Sign in with your allow-listed Google account.</p>
       <button id="btn-signin" class="button is-primary mt-4">Sign in with Google</button>
@@ -21,7 +26,11 @@
   <div id="app" class="hidden">
     <header class="app-header">
       <div class="header-top">
-        <h1 class="title is-5 mb-0">LeetCode Revision <span class="tag is-link is-light">v2</span></h1>
+        <h1 class="app-title title is-5 mb-0">
+          <img class="app-logo" src="/app-icon.png" alt="" aria-hidden="true" />
+          <span>LeetCode Revision</span>
+          <span class="tag is-link is-light">v2</span>
+        </h1>
         <div id="user-chip"></div>
       </div>
       <div class="tabs" id="tabs">
