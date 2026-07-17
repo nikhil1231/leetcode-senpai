@@ -59,6 +59,10 @@ class RecallResult(BaseModel):
     feedback: str = ""
 
 
+class RecallClarification(BaseModel):
+    reply: str = ""
+
+
 class HintLadder(BaseModel):
     hints: list[str] = Field(default_factory=list, description="exactly 3, escalating; rung 3 outlines the approach")
 
@@ -150,6 +154,19 @@ TASKS: dict[str, Task] = {
             f"Their past accepted approach (code):\n{_trunc(p.get('past_code'), 1200)}\n"
             f"--- their recall now ---\n{p.get('recall_text')}\n"
             f"Stated complexity: time={p.get('recall_time') or '?'}, space={p.get('recall_space') or '?'}"
+        ),
+    ),
+    "clarify_recall": Task(
+        RecallClarification,
+        "You are clarifying a completed from-memory recall grade. Answer only the "
+        "solver's question about their answer or the grading. Do not re-grade, "
+        "reschedule, or introduce new scoring. Keep the reply under 80 words.",
+        lambda p: (
+            f"Problem: {p.get('title')} ({p.get('category')}).\n"
+            f"Recall answer: {p.get('recall_text') or '(blank)'}\n"
+            f"Stated complexity: time={p.get('recall_time') or '?'}, space={p.get('recall_space') or '?'}\n"
+            f"Grade JSON: {json.dumps(p.get('recall_grade') or {}, indent=2)}\n"
+            f"Question: {p.get('question')}"
         ),
     ),
     "hint_ladder": Task(

@@ -341,6 +341,44 @@ def test_async_recall_grading_and_ack(client, monkeypatch):
     assert client.store.get_review("two-sum")["due_date"] != "2000-01-01"
 
 
+def test_recall_clarification_requires_llm(client):
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 1, "source": "recall", "kind": "recall",
+        "approach": "hashmap", "grading_status": "ready",
+        "recall_grade": {"grade": 2, "feedback": "mostly there"},
+    })
+
+    r = client.post(f"/api/review/recall/{aid}/clarify", json={"question": "What was missing?"})
+
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Recall clarification is unavailable without Gemini."
+
+
+def test_recall_clarification_does_not_update_attempt_or_review(client, monkeypatch):
+    async def fake_clarify(store, attempt, question):
+        return {"reply": "Mention the complement lookup invariant."}
+
+    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.coach, "clarify_recall", fake_clarify)
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
+    })
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 1, "source": "recall", "kind": "recall",
+        "approach": "hashmap", "complexity_time": "O(n)", "grading_status": "ready",
+        "recall_grade": {"grade": 2, "feedback": "mostly there"},
+    })
+    before_attempt = client.store.get_attempt(aid)
+    before_review = client.store.get_review("two-sum")
+
+    r = client.post(f"/api/review/recall/{aid}/clarify", json={"question": "What was missing?"})
+
+    assert r.status_code == 200
+    assert r.json()["reply"] == "Mention the complement lookup invariant."
+    assert client.store.get_attempt(aid) == before_attempt
+    assert client.store.get_review("two-sum") == before_review
+
+
 def test_async_recall_grading_failure_surfaces_error(client, monkeypatch):
     async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
         return None, "AuthError: invalid API key"
