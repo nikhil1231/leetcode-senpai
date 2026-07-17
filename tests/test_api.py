@@ -104,7 +104,7 @@ def test_today_drills_exclude_review_new_active_and_pending(client):
 
 
 def test_today_drills_can_use_local_signal_without_llm(client, monkeypatch):
-    monkeypatch.setattr(main.llm, "enabled", lambda: False)
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
     client.store.add_attempt({
         "slug": "two-sum", "solved_at": 9999999900,
         "source": "manual", "kind": "adhoc", "confidence": 1,
@@ -337,7 +337,9 @@ def test_recall_grading_waits_and_schedules(client, monkeypatch):
     assert result["grading_status"] == "viewed"
     assert result["recall_grade"]["grade"] == 3
     assert client.store.get_review("two-sum")["due_date"] != "2000-01-01"
-    assert client.post(f"/api/review/recall/{aid}/ack").status_code == 404
+    # Sync grading (issue #23) removed the separate ack step: no such route.
+    # The StaticFiles mount fields unknown POST paths as 405, plain-missing as 404.
+    assert client.post(f"/api/review/recall/{aid}/ack").status_code in (404, 405)
 
 
 def test_recall_clarification_requires_llm(client):
@@ -357,7 +359,7 @@ def test_recall_clarification_does_not_update_attempt_or_review(client, monkeypa
     async def fake_clarify(store, attempt, question):
         return {"reply": "Mention the complement lookup invariant."}
 
-    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     monkeypatch.setattr(main.coach, "clarify_recall", fake_clarify)
     client.store.upsert_review("two-sum", {
         "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
@@ -571,7 +573,7 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
                 "improvements": ["drop the second scan"],
                 "inferred_time": "O(n)", "inferred_space": "O(n)"}, None
 
-    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
     aid = client.store.add_attempt({
         "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
@@ -593,7 +595,7 @@ def test_grade_solution_endpoint_failure(client, monkeypatch):
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None):
         return None, "AuthError: invalid API key"
 
-    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
     aid = client.store.add_attempt({
         "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
@@ -661,7 +663,7 @@ def test_poll_auto_grades_fresh_solve_and_is_idempotent(client, monkeypatch):
     async def fake_wrong(slug, started_at, ended_at, auth=None):
         return 0
 
-    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
     monkeypatch.setattr(main.poller.leetcode, "recent_ac", fake_recent_ac)
     monkeypatch.setattr(main.poller.leetcode, "submission_details", fake_submission_details)
