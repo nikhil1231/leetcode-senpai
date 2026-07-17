@@ -101,12 +101,6 @@
         </div>
         ${expansion ? `<div class="today-expansion">${expansion}</div>` : ""}
       </div>`;
-    const pendingRecallIds = q.reviews
-      .filter((it) => it.grading_status === "pending" && it.recall_attempt_id)
-      .map((it) => it.recall_attempt_id);
-    if (pendingRecallIds.length) App.startRecallStatusPolling(pendingRecallIds);
-    else App.stopRecallStatusPolling();
-
     $$("#tab-today button[data-slug][data-kind]").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, b.dataset.kind, b.dataset.mode, b.dataset.title, b.dataset.cat,
         b.dataset.attempt || null, b.dataset.status || null)));

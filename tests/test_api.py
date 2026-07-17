@@ -312,7 +312,7 @@ def test_today_includes_unviewed_recall_state(client):
     assert item["grading_status"] == "pending"
 
 
-def test_async_recall_grading_and_ack(client, monkeypatch):
+def test_recall_grading_waits_and_schedules(client, monkeypatch):
     async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
         return {"grade": 3, "feedback": "solid", "key_ideas_missed": []}, None
 
@@ -327,18 +327,16 @@ def test_async_recall_grading_and_ack(client, monkeypatch):
     })
     assert r.status_code == 200
     body = r.json()
-    assert body["grading_status"] == "pending"
-    assert body["review"] is None
+    assert body["grading_status"] == "viewed"
+    assert body["review"]["slug"] == "two-sum"
+    assert body["graded"]["grade"] == 3
 
     aid = body["attempt_id"]
     result = client.get(f"/api/review/recall/{aid}").json()
-    assert result["grading_status"] == "ready"
+    assert result["grading_status"] == "viewed"
     assert result["recall_grade"]["grade"] == 3
-
-    ack = client.post(f"/api/review/recall/{aid}/ack")
-    assert ack.status_code == 200
-    assert client.store.get_attempt(aid)["grading_status"] == "viewed"
     assert client.store.get_review("two-sum")["due_date"] != "2000-01-01"
+    assert client.post(f"/api/review/recall/{aid}/ack").status_code == 404
 
 
 def test_recall_clarification_requires_llm(client):
@@ -379,7 +377,7 @@ def test_recall_clarification_does_not_update_attempt_or_review(client, monkeypa
     assert client.store.get_review("two-sum") == before_review
 
 
-def test_async_recall_grading_failure_surfaces_error(client, monkeypatch):
+def test_recall_grading_failure_surfaces_error(client, monkeypatch):
     async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
         return None, "AuthError: invalid API key"
 
@@ -389,16 +387,37 @@ def test_async_recall_grading_failure_surfaces_error(client, monkeypatch):
         "slug": "two-sum", "recall_text": "hashmap of complements",
     })
     assert r.status_code == 200
-    aid = r.json()["attempt_id"]
+    body = r.json()
+    assert body["grading_status"] == "failed"
+    assert body["grading_error"] == "AuthError: invalid API key"
+    aid = body["attempt_id"]
 
     result = client.get(f"/api/review/recall/{aid}").json()
     assert result["grading_status"] == "failed"
     assert result["grading_error"] == "AuthError: invalid API key"
     assert result["recall_grade"] is None
 
-    # A failed grade must not be ackable (no phantom-0 poisoning the scheduler).
-    ack = client.post(f"/api/review/recall/{aid}/ack")
-    assert ack.status_code == 400
+
+def test_latest_viewed_recall_hides_older_failed_attempt(client):
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
+    })
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 1, "source": "recall", "kind": "recall",
+        "approach": "old failed", "grading_status": "failed",
+        "grading_error": "old error",
+    })
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 2, "source": "recall", "kind": "recall",
+        "approach": "new viewed", "grading_status": "viewed",
+        "recall_grade": {"grade": 3, "feedback": "solid"},
+    })
+
+    reviews = client.get("/api/today").json()["reviews"]
+    item = next(r for r in reviews if r["slug"] == "two-sum")
+
+    assert "recall_attempt_id" not in item
+    assert "grading_status" not in item
 
 
 def test_pending_solved_modal_excludes_recalls(client):
