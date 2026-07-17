@@ -308,7 +308,7 @@
       if (r.can_generate) {
         html += `<button id="pb-gen" class="button is-primary mt-3">${r.playbook ? "Regenerate" : "Generate playbook"}</button>`;
       } else if (!App.llmEnabled) {
-        html += `<p class="small">Enable the coach (Gemini) to synthesize playbooks.</p>`;
+        html += `<p class="small">Enable the coach to synthesize playbooks.</p>`;
       }
       body.innerHTML = html;
       $("#pb-gen") && $("#pb-gen").addEventListener("click", async () => {
@@ -408,6 +408,14 @@
     el.innerHTML = loader("Loading settings…");
     const c = await api("/config");
     const hasCookie = !!localStorage.getItem("lc_session");
+    const llmOptions = c.llm_options || {};
+    const providerOptions = Object.keys(llmOptions);
+    const provider = c.llm_provider || providerOptions[0] || "openai";
+    const model = c.llm_model || (llmOptions[provider] || [])[0] || "";
+    const providerSelect = providerOptions.map((p) =>
+      `<option value="${escapeHtml(p)}"${p === provider ? " selected" : ""}>${escapeHtml(p)}</option>`).join("");
+    const modelSelect = (llmOptions[provider] || []).map((m) =>
+      `<option value="${escapeHtml(m)}"${m === model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("");
     el.innerHTML = `
       <div class="section-title">LeetCode account</div>
       <div class="settings-field"><label>Username</label><input id="cfg-username" class="input" value="${escapeHtml(c.username || "")}" /></div>
@@ -420,6 +428,13 @@
         <input id="cfg-csrf" class="input" type="password" placeholder="${localStorage.getItem('lc_csrf') ? '••• leave blank to keep' : 'paste csrftoken'}" /></div>
       <div class="buttons"><button class="button is-primary" id="btn-save-cfg">Save</button>
         <button class="button is-ghost" id="btn-clear-cookie">Clear cookie</button></div>
+
+      <div class="section-title">Coach model</div>
+      <div class="settings-row">
+        <div class="settings-field"><label>Provider</label><div class="select is-fullwidth"><select id="cfg-llm-provider">${providerSelect}</select></div></div>
+        <div class="settings-field"><label>Model</label><div class="select is-fullwidth"><select id="cfg-llm-model">${modelSelect}</select></div></div>
+      </div>
+      <p class="help">API keys stay in environment variables. OpenAI uses OPENAI_API_KEY; Gemini uses GEMINI_API_KEY or GOOGLE_API_KEY. Current status: ${c.llm_enabled ? "enabled" : "disabled"}.</p>
 
       <div class="section-title">Scheduling &amp; weighting</div>
       <div class="settings-row">
@@ -470,8 +485,15 @@
         mistake_weight: +$("#cfg-mistake").value,
         goal_reviews_per_week: +$("#cfg-grev").value, goal_new_per_week: +$("#cfg-gnew").value,
         discover_min_like_ratio: +$("#cfg-ratio").value, discover_min_votes: +$("#cfg-votes").value,
+        llm_provider: $("#cfg-llm-provider").value, llm_model: $("#cfg-llm-model").value,
       });
       toast("Settings saved");
+      App.loadOverview();
+    });
+    $("#cfg-llm-provider").addEventListener("change", () => {
+      const p = $("#cfg-llm-provider").value;
+      $("#cfg-llm-model").innerHTML = (llmOptions[p] || []).map((m) =>
+        `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
     });
     $("#btn-backfill").addEventListener("click", async () => {
       $("#settings-status").innerHTML = '<span class="spinner spinner-sm"></span> Backfilling…';
@@ -482,7 +504,7 @@
     $("#btn-sweep").addEventListener("click", async () => {
       $("#settings-status").innerHTML = '<span class="spinner spinner-sm"></span> Enriching…';
       const r = await api("/enrich/sweep", "POST", { limit: 20 });
-      $("#settings-status").textContent = r.llm ? `Enriched ${r.enriched}, ${r.remaining} remaining.` : "Coach (Gemini) not enabled.";
+      $("#settings-status").textContent = r.llm ? `Enriched ${r.enriched}, ${r.remaining} remaining.` : "Coach not enabled.";
     });
   }
 

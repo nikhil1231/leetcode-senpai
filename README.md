@@ -3,7 +3,7 @@
 A personal tool to rebuild LeetCode skills. It auto-logs your solves, then
 **coaches** them: it grows your library with community-vetted problems, trains
 pattern recognition, turns every free-text note into structured signal with
-Gemini, and schedules what to do next with FSRS spaced repetition + topic and
+an LLM coach, and schedules what to do next with FSRS spaced repetition + topic and
 mistake weighting.
 
 Auto-logging works by polling LeetCode's GraphQL API for your accepted
@@ -14,7 +14,7 @@ submissions — no browser extension.
   or browse the whole problem set filtered to only highly-liked problems
   (like-ratio + vote thresholds). Smart expansion suggests the next great
   problem when you clear a topic.
-- **Coaching layer (Gemini Flash, optional)** — classifies what went wrong,
+- **Coaching layer (OpenAI GPT-5.6 Luna by default, Gemini optional)** — classifies what went wrong,
   grades your up-front pattern predictions, generates per-problem hint ladders,
   grades from-memory recall against your own past code, writes a weekly report
   and per-topic playbooks. All off the critical path; degrades gracefully with
@@ -38,7 +38,7 @@ Browser (static SPA on Firebase Hosting)
    │  Google sign-in -> ID token (Bearer)         LeetCode cookie (localStorage)
    ▼                                               sent as X-LC-* headers
 Cloud Run  ── FastAPI (server/) ──► Firestore (Admin SDK, per-user data)
-   │                              └► Gemini API (enrichment, off critical path)
+   │                              └► LLM API (enrichment, off critical path)
    └── calls LeetCode GraphQL using the cookie (transient, never stored)
 ```
 - **Firestore is locked** (`firestore.rules` deny-all); all access is through the
@@ -47,7 +47,7 @@ Cloud Run  ── FastAPI (server/) ──► Firestore (Admin SDK, per-user dat
   every request (`server/auth.py`).
 - **The LeetCode session cookie** lives only in your browser's `localStorage`,
   is sent per-request as a header, and is never persisted or logged server-side.
-- **Gemini output is derived data**, never the source of truth. Raw notes/code
+- **LLM output is derived data**, never the source of truth. Raw notes/code
   are kept; enrichments are stamped with a prompt version and re-runnable.
 
 ```
@@ -57,7 +57,7 @@ server/           FastAPI backend (containerized for Cloud Run)
   store.py        Firestore store (Firestore-only)
   scheduler.py    pure queue/topic/mistake logic (no I/O)
   fsrs_engine.py  FSRS review engine (behind scheduler's interface)
-  llm.py          Gemini extract() abstraction + task registry
+  llm.py          provider-swappable extract() abstraction + task registry
   enrich.py       per-attempt enrichment pipeline + sweep
   coach.py        hints, recall grading, weekly report, playbooks
   insights.py     pure analytics for the Insights tab
@@ -86,11 +86,14 @@ AUTH_MODE=local \
 GOOGLE_APPLICATION_CREDENTIALS=/path/key.json \
 GOOGLE_CLOUD_PROJECT=your-project \
 DEV_UID=<your-firebase-uid> \
-GEMINI_API_KEY=<optional — unlocks the coaching layer> \
+OPENAI_API_KEY=<optional — unlocks the coaching layer> \
+LLM_PROVIDER=openai \
+LLM_MODEL=gpt-5.6-luna \
 python run.py
 ```
-Open http://127.0.0.1:8000. Without `GEMINI_API_KEY` everything still works; the
-LLM-powered features degrade gracefully. In **Settings** set your username +
+Open http://127.0.0.1:8000. Without the selected provider's API key everything still works; the
+LLM-powered features degrade gracefully. In **Settings** set your username,
+coach provider/model, and
 `LEETCODE_SESSION` cookie; in **Discover** import a pack and backfill history.
 
 ### Run on startup
@@ -130,7 +133,7 @@ The repo also includes a `Dockerfile` for the app image and `docker-compose.yml`
 for Docker supervision.
 
 1. Keep app secrets in `.env.local` as above (`GOOGLE_CLOUD_PROJECT`, `DEV_UID`,
-   optional `GEMINI_API_KEY`, etc.).
+   optional `OPENAI_API_KEY`, `GEMINI_API_KEY`, etc.).
 2. Copy `.env.example` to `.env` and set `FIREBASE_SERVICE_ACCOUNT_JSON` to the
    host path of your Firebase service-account key.
 3. Start it:

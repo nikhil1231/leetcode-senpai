@@ -316,7 +316,7 @@ def test_recall_grading_waits_and_schedules(client, monkeypatch):
     async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
         return {"grade": 3, "feedback": "solid", "key_ideas_missed": []}, None
 
-    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     monkeypatch.setattr(main.coach, "grade_recall", fake_grade)
     client.store.upsert_review("two-sum", {
         "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
@@ -381,7 +381,7 @@ def test_recall_grading_failure_surfaces_error(client, monkeypatch):
     async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
         return None, "AuthError: invalid API key"
 
-    monkeypatch.setattr(main.llm, "enabled", lambda: True)
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     monkeypatch.setattr(main.coach, "grade_recall", fake_grade)
     r = client.post("/api/review/recall", json={
         "slug": "two-sum", "recall_text": "hashmap of complements",
@@ -505,6 +505,8 @@ def test_config_roundtrip(client):
         "drill_limit": 4,
         "drill_min_signal": 0.5,
         "mistake_weight": 0.3,
+        "llm_provider": "openai",
+        "llm_model": "gpt-5.6-luna",
     })
     cfg = client.get("/api/config").json()
     assert cfg["review_limit"] == 9
@@ -512,6 +514,9 @@ def test_config_roundtrip(client):
     assert cfg["drill_limit"] == 4
     assert cfg["drill_min_signal"] == 0.5
     assert cfg["mistake_weight"] == 0.3
+    assert cfg["llm_provider"] == "openai"
+    assert cfg["llm_model"] == "gpt-5.6-luna"
+    assert "llm_options" in cfg
 
 
 # ---- solution grading -----------------------------------------------------------

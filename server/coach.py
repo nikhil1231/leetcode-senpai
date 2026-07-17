@@ -17,12 +17,13 @@ async def ensure_hint_ladder(store, slug):
     p = store.get_problem(slug) or {}
     if p.get("hint_ladder"):
         return p["hint_ladder"]
-    if not llm.enabled():
+    settings = store.get_settings()
+    if not llm.enabled(settings):
         return None
     res = await llm.extract("hint_ladder", {
         "slug": slug, "title": p.get("title", slug),
         "difficulty": p.get("difficulty"), "category": p.get("neetcode_category"),
-    })
+    }, settings=settings)
     hints = (res or {}).get("hints") or []
     if hints:
         store.upsert_problem({"slug": slug, "hint_ladder": hints})
@@ -33,12 +34,13 @@ async def ensure_canonical(store, slug):
     p = store.get_problem(slug) or {}
     if p.get("canonical_summary"):
         return p["canonical_summary"]
-    if not llm.enabled():
+    settings = store.get_settings()
+    if not llm.enabled(settings):
         return None
     res = await llm.extract("canonical_summary", {
         "slug": slug, "title": p.get("title", slug),
         "difficulty": p.get("difficulty"), "category": p.get("neetcode_category"),
-    })
+    }, settings=settings)
     if res:
         store.upsert_problem({"slug": slug, "canonical_summary": res})
     return res
@@ -48,12 +50,13 @@ async def ensure_followups(store, slug):
     p = store.get_problem(slug) or {}
     if p.get("followups"):
         return p["followups"]
-    if not llm.enabled():
+    settings = store.get_settings()
+    if not llm.enabled(settings):
         return None
     res = await llm.extract("followups", {
         "title": p.get("title", slug), "difficulty": p.get("difficulty"),
         "category": p.get("neetcode_category"),
-    })
+    }, settings=settings)
     qs = (res or {}).get("questions") or []
     if qs:
         store.upsert_problem({"slug": slug, "followups": qs})
@@ -64,7 +67,7 @@ async def grade_followup(store, slug, question, answer):
     p = store.get_problem(slug) or {}
     return await llm.extract("grade_followup", {
         "title": p.get("title", slug), "question": question, "answer": answer,
-    })
+    }, settings=store.get_settings())
 
 
 # ---- recall grading -------------------------------------------------------------
@@ -76,7 +79,8 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
     the grade could not be produced. When the LLM is disabled both are None
     (caller falls back to manual self-grade).
     """
-    if not llm.enabled():
+    settings = store.get_settings()
+    if not llm.enabled(settings):
         return None, None
     past = [a for a in store.attempts_for_slug(slug) if a.get("code")]
     past_code = past[-1]["code"] if past else None
@@ -87,7 +91,7 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
         "title": p.get("title", slug), "category": p.get("neetcode_category"),
         "canonical": canon_ideas, "past_code": past_code,
         "recall_text": recall_text, "recall_time": recall_time, "recall_space": recall_space,
-    })
+    }, settings=settings)
 
 
 async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_space=None):
@@ -180,9 +184,10 @@ async def weekly_report(store, d=None, force=False):
         if existing:
             return existing
     rows = _gather_week_data(store, d)
-    if not rows or not llm.enabled():
+    settings = store.get_settings()
+    if not rows or not llm.enabled(settings):
         return None
-    res = await llm.extract("weekly_report", {"data": rows})
+    res = await llm.extract("weekly_report", {"data": rows}, settings=settings)
     if not res:
         return None
     report = {
@@ -226,12 +231,13 @@ async def synthesize_playbook(store, category, force=False):
     if existing and not force:
         if count - existing.get("attempt_count_at_generation", 0) < 3:
             return existing
-    if not llm.enabled():
+    settings = store.get_settings()
+    if not llm.enabled(settings):
         return existing
     rows = _gather_category_data(store, category)
     if not rows:
         return existing
-    res = await llm.extract("playbook", {"category": category, "data": rows})
+    res = await llm.extract("playbook", {"category": category, "data": rows}, settings=settings)
     if not res or not res.get("content_md"):
         return existing
     doc = {

@@ -34,11 +34,27 @@ GOOGLE_APPLICATION_CREDENTIALS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"
 # reads/writes your existing users/{uid} data.
 DEV_UID = os.environ.get("DEV_UID", "local-dev")
 
-# ---- LLM (Gemini) ---------------------------------------------------------------
-# Enrichment/coaching layer. Optional: when GEMINI_API_KEY is unset, every
-# LLM-dependent feature degrades gracefully instead of erroring.
+# ---- LLM -----------------------------------------------------------------------
+# Enrichment/coaching layer. Optional: when the selected provider's API key is
+# unset, every LLM-dependent feature degrades gracefully instead of erroring.
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-LLM_MODEL = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai").lower()
+LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-5.6-luna")
+
+LLM_OPTIONS = {
+    "openai": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+    ],
+    "gemini": [
+        "gemini-3.5-flash",
+        "gemini-3.1-pro-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+    ],
+}
 
 # ---- Scheduler ------------------------------------------------------------------
 # "fsrs" (modern, fits your review history) or "sm2" (legacy escape hatch).
@@ -60,6 +76,9 @@ DEFAULT_SETTINGS = {
     # Discover defaults.
     "discover_min_like_ratio": 0.85,
     "discover_min_votes": 500,
+    # LLM provider/model selection. API keys still come from environment vars.
+    "llm_provider": LLM_PROVIDER,
+    "llm_model": LLM_MODEL,
 }
 
 

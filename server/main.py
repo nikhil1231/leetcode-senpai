@@ -1,9 +1,10 @@
 """FastAPI app: authenticated REST API + static frontend (V2).
 
 Firestore-only. The LeetCode cookie arrives per-request as a header and is used
-transiently. The Gemini-powered coaching layer degrades gracefully when
-GEMINI_API_KEY is unset; most coaching jobs run off the critical path, while
-recall grading intentionally waits so the review is scheduled immediately.
+transiently. The LLM-powered coaching layer (enrichment, hints, recall grading,
+weekly reports, playbooks) degrades gracefully when the selected provider's API
+key is unset; most coaching jobs run off the critical path, while recall grading
+intentionally waits so the review is scheduled immediately.
 """
 import hashlib
 import os
@@ -78,6 +79,8 @@ class SettingsUpdate(BaseModel):
     goal_reviews_per_week: int | None = None
     goal_new_per_week: int | None = None
     discover_min_like_ratio: float | None = None
+    llm_provider: str | None = None
+    llm_model: str | None = None
     discover_min_votes: int | None = None
 
 
@@ -258,11 +261,14 @@ def _recall_attempt_payload(store, attempt_id):
 @app.get("/api/overview")
 def api_overview(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
-    problems, attempts, reviews = _gather(
-        store.list_problems, store.list_attempts, store.list_reviews)
+    problems, attempts, reviews, settings = _gather(
+        store.list_problems, store.list_attempts, store.list_reviews, store.get_settings)
     ov = scheduler.overview(problems, attempts, reviews)
     ov["newly_mastered"] = gamify.check_mastery_moments(store)
-    ov["llm_enabled"] = llm.enabled()
+    selected = llm.current_model(settings)
+    ov["llm_enabled"] = selected["enabled"]
+    ov["llm_provider"] = selected["provider"]
+    ov["llm_model"] = selected["model"]
     return ov
 
 
@@ -319,7 +325,7 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "predicted_category": body.predicted_category,
         "predicted_approach": body.predicted_approach,
     })
-    if llm.enabled():
+    if llm.enabled(store.get_settings()):
         bg.add_task(_prep_problem_bg, uid, body.slug)
     return {"session_id": sid, "slug": body.slug, "url": prob["url"], "started_at": started}
 
@@ -336,7 +342,7 @@ def api_session_active(uid: str = Depends(auth.require_user)):
         "kind": s.get("kind"), "elapsed_sec": int(time.time()) - s["started_at"],
         "title": prob.get("title", s["slug"]), "url": prob.get("url"),
         "hint_level": s.get("hint_level", 0),
-        "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(),
+        "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(store.get_settings()),
     }}
 
 
@@ -356,7 +362,7 @@ async def api_session_hint(uid: str = Depends(auth.require_user)):
     ladder = await coach.ensure_hint_ladder(store, s["slug"])
     if not ladder:
         return {"hint": None, "level": s.get("hint_level", 0),
-                "exhausted": True, "llm": llm.enabled()}
+                "exhausted": True, "llm": llm.enabled(store.get_settings())}
     level = min(len(ladder), s.get("hint_level", 0) + 1)
     store.update_session(s["id"], {"hint_level": level})
     return {"hint": ladder[level - 1], "level": level, "total": len(ladder),
@@ -426,7 +432,7 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
         current, body.confidence, body.independence, solution_score=solution_score)
     new_state["slug"] = slug
     store.upsert_review(slug, new_state)
-    if llm.enabled():
+    if llm.enabled(store.get_settings()):
         bg.add_task(_enrich_bg, uid, attempt_id)
     suggestion = None
     if scheduler.quality(body.confidence, body.independence) < 3:
@@ -468,7 +474,7 @@ def api_manual(body: ManualAttempt, bg: BackgroundTasks, uid: str = Depends(auth
     new_state = scheduler.advance_review(current, body.confidence, body.independence)
     new_state["slug"] = body.slug
     store.upsert_review(body.slug, new_state)
-    if llm.enabled():
+    if llm.enabled(store.get_settings()):
         bg.add_task(_enrich_bg, uid, aid)
     return {"ok": True, "attempt_id": aid, "review": new_state}
 
@@ -530,7 +536,7 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
         raise HTTPException(404, "unknown problem")
     if body.confidence is not None and body.confidence not in (1, 2, 3):
         raise HTTPException(400, "confidence must be 1..3")
-    is_manual = body.confidence is not None or not llm.enabled()
+    is_manual = body.confidence is not None or not llm.enabled(store.get_settings())
     if is_manual and body.confidence is None:
         raise HTTPException(400, "confidence is required when recall grading is manual")
     conf = body.confidence if body.confidence is not None else None
@@ -745,7 +751,8 @@ def api_report_latest(uid: str = Depends(auth.require_user)):
 @app.post("/api/report/weekly")
 async def api_report_weekly(uid: str = Depends(auth.require_user)):
     r = await coach.weekly_report(get_store(uid), force=True)
-    return {"report": r, "llm": llm.enabled()}
+    store = get_store(uid)
+    return {"report": r, "llm": llm.enabled(store.get_settings())}
 
 
 # ---- playbooks ------------------------------------------------------------------
@@ -756,13 +763,14 @@ def api_playbook(category: str, uid: str = Depends(auth.require_user)):
     count = coach.category_attempt_count(store, category)
     stale = bool(pb) and (count - pb.get("attempt_count_at_generation", 0) >= 3)
     return {"playbook": pb, "attempt_count": count, "stale": stale,
-            "can_generate": count > 0 and llm.enabled()}
+            "can_generate": count > 0 and llm.enabled(store.get_settings())}
 
 
 @app.post("/api/playbook/{category}/regenerate")
 async def api_playbook_regen(category: str, uid: str = Depends(auth.require_user)):
     pb = await coach.synthesize_playbook(get_store(uid), category, force=True)
-    return {"playbook": pb, "llm": llm.enabled()}
+    store = get_store(uid)
+    return {"playbook": pb, "llm": llm.enabled(store.get_settings())}
 
 
 # ---- follow-ups -----------------------------------------------------------------
@@ -806,20 +814,43 @@ def api_mock_list(uid: str = Depends(auth.require_user)):
 # ---- settings -------------------------------------------------------------------
 @app.get("/api/config")
 def api_get_config(uid: str = Depends(auth.require_user)):
-    return get_store(uid).get_settings()
+    settings = get_store(uid).get_settings()
+    selected = llm.current_model(settings)
+    return {
+        **settings,
+        "llm_enabled": selected["enabled"],
+        "llm_options": config.LLM_OPTIONS,
+    }
 
 
 @app.post("/api/config")
 def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    provider = updates.get("llm_provider")
+    model = updates.get("llm_model")
+    if provider is not None:
+        provider = provider.lower()
+        if provider not in config.LLM_OPTIONS:
+            raise HTTPException(400, "unsupported LLM provider")
+        updates["llm_provider"] = provider
+    effective_provider = provider or store.get_settings().get("llm_provider")
+    if provider is not None and model is None:
+        current_model = store.get_settings().get("llm_model")
+        if current_model not in config.LLM_OPTIONS[provider]:
+            updates["llm_model"] = config.LLM_OPTIONS[provider][0]
+    if model is not None and model not in config.LLM_OPTIONS.get(effective_provider, []):
+        raise HTTPException(400, "unsupported model for provider")
     store.update_settings(updates)
     return store.get_settings()
 
 
 @app.get("/api/me")
 def api_me(uid: str = Depends(auth.require_user)):
-    return {"uid": uid, "local_mode": config.local_mode(), "llm_enabled": llm.enabled()}
+    settings = get_store(uid).get_settings()
+    selected = llm.current_model(settings)
+    return {"uid": uid, "local_mode": config.local_mode(), "llm_enabled": selected["enabled"],
+            "llm_provider": selected["provider"], "llm_model": selected["model"]}
 
 
 # ---- static frontend ------------------------------------------------------------

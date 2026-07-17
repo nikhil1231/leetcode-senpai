@@ -8,19 +8,30 @@ from server import llm
 
 @pytest.fixture
 def enable_llm(monkeypatch):
-    monkeypatch.setattr(llm.config, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(llm.config, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(llm.config, "GEMINI_API_KEY", None)
 
 
 def test_disabled_without_key(monkeypatch):
+    monkeypatch.setattr(llm.config, "OPENAI_API_KEY", None)
     monkeypatch.setattr(llm.config, "GEMINI_API_KEY", None)
     assert llm.enabled() is False
 
 
 @pytest.mark.asyncio
 async def test_extract_returns_none_when_disabled(monkeypatch):
+    monkeypatch.setattr(llm.config, "OPENAI_API_KEY", None)
     monkeypatch.setattr(llm.config, "GEMINI_API_KEY", None)
     out = await llm.extract("classify_mistake", {"note": "x"})
     assert out is None
+
+
+def test_gemini_settings_can_enable_gemini_key(monkeypatch):
+    monkeypatch.setattr(llm.config, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(llm.config, "GEMINI_API_KEY", "test-key")
+    settings = {"llm_provider": "gemini", "llm_model": "gemini-2.5-flash"}
+    assert llm.enabled(settings) is True
+    assert llm.current_model(settings)["provider"] == "gemini"
 
 
 @pytest.mark.asyncio

@@ -30,7 +30,8 @@ def _prev_code(store, attempt):
 async def enrich_attempt(store, attempt_id):
     """Run all applicable LLM tasks for one attempt and persist a single
     enrichment doc. Returns the doc (or None if nothing ran / LLM disabled)."""
-    if not llm.enabled():
+    settings = store.get_settings()
+    if not llm.enabled(settings):
         return None
     attempt = store.get_attempt(attempt_id)
     if not attempt:
@@ -41,9 +42,11 @@ async def enrich_attempt(store, attempt_id):
         "difficulty": problem.get("difficulty"),
         "category": problem.get("neetcode_category"),
     }
+    selected = llm.current_model(settings)
     doc = {
         "slug": attempt["slug"], "prompt_version": PROMPT_VERSION,
-        "model": llm.config.LLM_MODEL, "created_at": int(time.time()),
+        "provider": selected["provider"], "model": selected["model"],
+        "created_at": int(time.time()),
         "status": "ok",
     }
 
@@ -53,7 +56,7 @@ async def enrich_attempt(store, attempt_id):
     if note or indep in ("hints", "solution"):
         mistake = await llm.extract("classify_mistake", {
             **pctx, "note": note, "approach": attempt.get("approach"), "independence": indep,
-        })
+        }, settings=settings)
         if mistake:
             doc.update({
                 "mistake_tags": mistake["tags"], "mistake_phase": mistake["phase"],
@@ -68,7 +71,7 @@ async def enrich_attempt(store, attempt_id):
             "prev_code": _prev_code(store, attempt),
             "claim_time": attempt.get("complexity_time"),
             "claim_space": attempt.get("complexity_space"),
-        })
+        }, settings=settings)
         if analysis:
             doc.update({
                 "pattern_used": analysis["pattern_used"],
@@ -85,7 +88,7 @@ async def enrich_attempt(store, attempt_id):
             **pctx, "predicted_category": predicted,
             "predicted_approach": attempt.get("predicted_approach"),
             "pattern_used": doc.get("pattern_used"),
-        })
+        }, settings=settings)
         if pred:
             doc.update({"prediction_verdict": pred["verdict"],
                         "prediction_note": pred["note"]})
@@ -112,7 +115,8 @@ def needs_enrichment(store):
 async def sweep(store, limit=10):
     """Enrich up to `limit` attempts that are missing/stale. This is also the
     re-run mechanism after a prompt improvement (bump PROMPT_VERSION)."""
-    if not llm.enabled():
+    settings = store.get_settings()
+    if not llm.enabled(settings):
         return {"enriched": 0, "remaining": 0, "llm": False}
     ids = needs_enrichment(store)
     todo = ids[:limit]
