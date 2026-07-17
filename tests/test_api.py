@@ -114,6 +114,138 @@ def test_today_drills_can_use_local_signal_without_llm(client, monkeypatch):
     assert all(item["kind"] == "drill" for item in body["drills"])
 
 
+def _add_problem(store, slug, title, difficulty, category):
+    store.upsert_problem({
+        "slug": slug, "title": title, "difficulty": difficulty,
+        "neetcode_category": category, "in_library": True,
+        "packs": ["neetcode150"], "url": f"https://lc/{slug}",
+        "similar_slugs": [],
+    })
+
+
+def test_today_drill_lifecycle_cross_flow(client, monkeypatch):
+    for slug, title, diff, cat in [
+        ("valid-parentheses", "Valid Parentheses", "Easy", "Stack"),
+        ("binary-search", "Binary Search", "Easy", "Binary Search"),
+        ("contains-duplicate", "Contains Duplicate", "Easy", "Arrays & Hashing"),
+        ("best-time-to-buy-and-sell-stock",
+         "Best Time to Buy and Sell Stock", "Easy", "Sliding Window"),
+        ("invert-tree", "Invert Tree", "Easy", "Trees"),
+    ]:
+        _add_problem(client.store, slug, title, diff, cat)
+
+    client.store.upsert_review("valid-parentheses", {
+        "slug": "valid-parentheses", "due_date": "2000-01-01",
+        "interval_days": 40, "fail_count": 4, "leech": 1,
+    })
+    for slug in ("binary-search", "contains-duplicate", "two-sum"):
+        client.store.upsert_review(slug, {
+            "slug": slug, "due_date": "2999-01-01",
+            "interval_days": 10, "fail_count": 4, "leech": 1,
+        })
+
+    for slug in ("valid-parentheses", "binary-search", "contains-duplicate", "two-sum"):
+        aid = client.store.add_attempt({
+            "slug": slug, "solved_at": 1, "source": "auto", "kind": "adhoc",
+            "confidence": 1, "independence": "solution",
+        })
+        if slug == "two-sum":
+            client.store.upsert_enrichment(aid, {
+                "slug": slug, "prediction_verdict": "wrong",
+                "mistake_tags": ["pattern"],
+            })
+
+    client.post("/api/session/start", json={
+        "slug": "binary-search", "kind": "drill",
+    })
+    pending_id = client.store.add_attempt({
+        "slug": "contains-duplicate", "solved_at": int(time.time()),
+        "source": "auto", "kind": "adhoc", "confidence": None,
+        "independence": None,
+    })
+
+    initial = client.get("/api/today").json()
+    assert initial["reviews"] and initial["new"] and initial["drills"]
+    review_slugs = {i["slug"] for i in initial["reviews"]}
+    new_slugs = {i["slug"] for i in initial["new"]}
+    drill_slugs = {i["slug"] for i in initial["drills"]}
+    assert drill_slugs.isdisjoint(review_slugs)
+    assert drill_slugs.isdisjoint(new_slugs)
+    assert "binary-search" not in drill_slugs
+    assert "contains-duplicate" not in drill_slugs
+    assert client.store.get_attempt(pending_id)["confidence"] is None
+
+    drill = next(i for i in initial["drills"] if i["slug"] == "3sum")
+    goal_before = initial["goal"]
+    started = client.post("/api/session/start", json={
+        "slug": drill["slug"], "kind": "drill",
+        "predicted_category": drill["category"],
+    }).json()
+    assert started["slug"] == drill["slug"]
+
+    active = client.get("/api/session/active").json()["active"]
+    assert active["slug"] == drill["slug"]
+    assert active["kind"] == "drill"
+    assert active["title"] == "3Sum"
+    assert active["url"] == "https://lc/3sum"
+    assert active["hint_level"] == 0
+    assert active["elapsed_sec"] >= 0
+
+    async def fake_recent_ac(username, limit, auth=None):
+        return [{
+            "id": "drill-submission-1",
+            "titleSlug": drill["slug"],
+            "timestamp": active["started_at"] + 5,
+        }]
+
+    async def fake_submission_details(submission_id, auth=None):
+        return {
+            "runtime_percentile": 80.0, "memory_percentile": 70.0,
+            "lang": "python3", "code": "class Solution: pass",
+        }
+
+    async def fake_wrong_attempts_between(slug, started_at, ended_at, auth=None):
+        return 1
+
+    monkeypatch.setattr(main.poller.leetcode, "recent_ac", fake_recent_ac)
+    monkeypatch.setattr(main.poller.leetcode, "submission_details", fake_submission_details)
+    monkeypatch.setattr(
+        main.poller.leetcode, "wrong_attempts_between", fake_wrong_attempts_between)
+
+    polled = client.post("/api/poll").json()
+    assert len(polled["new_attempts"]) == 1
+    attempt_id = polled["new_attempts"][0]
+    assert any(item["id"] == attempt_id and item["kind"] == "drill"
+               for item in polled["pending"])
+
+    annotated = client.post(f"/api/attempt/{attempt_id}/annotate", json={
+        "confidence": 3, "independence": "solo",
+        "complexity_time": "O(n)", "complexity_space": "O(1)",
+    })
+    assert annotated.status_code == 200
+
+    refreshed = client.get("/api/today").json()
+    assert drill["slug"] not in {i["slug"] for i in refreshed["drills"]}
+    assert refreshed["goal"]["new_done"] == goal_before["new_done"]
+    assert refreshed["goal"]["reviews_done"] == goal_before["reviews_done"]
+
+    history_row = next(h for h in client.get("/api/history").json()
+                       if h["id"] == attempt_id)
+    assert history_row["kind"] == "drill"
+    assert history_row["source"] == "auto"
+    assert history_row["slug"] == drill["slug"]
+    assert history_row["predicted_category"] == drill["category"]
+
+    detail = client.get(f"/api/attempt/{attempt_id}").json()
+    assert detail["kind"] == "drill"
+    assert detail["title"] == "3Sum"
+    assert detail["time_taken_sec"] == 5
+    assert detail["lang"] == "python3"
+    assert detail["code"] == "class Solution: pass"
+    assert detail["complexity_time"] == "O(n)"
+    assert detail["enrichment"] is None
+
+
 def test_manual_attempt_creates_review_and_history(client):
     r = client.post("/api/attempt/manual", json={
         "slug": "two-sum", "confidence": 3, "independence": "solo",
@@ -283,7 +415,20 @@ def test_enrich_sweep_no_llm(client):
 
 
 def test_config_roundtrip(client):
-    client.post("/api/config", json={"review_limit": 9, "mistake_weight": 0.3})
+    defaults = client.get("/api/config").json()
+    assert defaults["drill_limit"] == 3
+    assert defaults["drill_min_signal"] == 0.35
+
+    client.post("/api/config", json={
+        "review_limit": 9,
+        "new_limit": 2,
+        "drill_limit": 4,
+        "drill_min_signal": 0.5,
+        "mistake_weight": 0.3,
+    })
     cfg = client.get("/api/config").json()
     assert cfg["review_limit"] == 9
+    assert cfg["new_limit"] == 2
+    assert cfg["drill_limit"] == 4
+    assert cfg["drill_min_signal"] == 0.5
     assert cfg["mistake_weight"] == 0.3
