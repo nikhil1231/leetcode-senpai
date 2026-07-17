@@ -23,8 +23,10 @@
       if (it.grading_status === "failed") return "Retry";
       return "Recall";
     };
-    const item = (it) => `
-      <div class="box queue-card ${it.kind === "new" ? "kind-new" : ""}" data-recall-card="${it.recall_attempt_id || ""}">
+    const item = (it) => {
+      const kindClass = it.kind === "new" ? "kind-new" : it.kind === "drill" ? "kind-drill" : "";
+      return `
+      <div class="box queue-card ${kindClass}" data-recall-card="${it.recall_attempt_id || ""}">
         <div class="meta">
           <div class="title-row">
             <h3>${escapeHtml(it.title)}</h3>
@@ -43,11 +45,16 @@
           data-attempt="${it.recall_attempt_id || ""}" data-status="${it.grading_status || ""}">
           ${it.mode === "recall" ? recallLabel(it) : "Start"}</button>
       </div>`;
+    };
 
     html += `<div class="section-title">Reviews due (${q.reviews.length})</div>`;
     html += q.reviews.length ? q.reviews.map(item).join("") : "<p class='empty'>No reviews due — nice.</p>";
     html += `<div class="section-title">New problems (${q.new.length})</div>`;
     html += q.new.length ? q.new.map(item).join("") : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>";
+    if (q.drills && q.drills.length) {
+      html += `<div class="section-title">Focused drills (${q.drills.length})</div>`;
+      html += q.drills.map(item).join("");
+    }
     if (q.expansion && q.expansion.length) {
       html += `<div class="section-title">Grow your library <span class="help-inline">topics you've cleared</span></div>`;
       html += q.expansion.map((x) => `
