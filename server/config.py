@@ -49,6 +49,8 @@ DEFAULT_SETTINGS = {
     "poll_interval_seconds": 20,
     "review_limit": 5,
     "new_limit": 2,
+    "drill_limit": 3,
+    "drill_min_signal": 0.35,
     "weakness_weight": 0.6,
     "breadth_weight": 0.4,
     "mistake_weight": 0.2,
