@@ -135,6 +135,7 @@ async function loadOverview() {
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
+  if (kind === "drill") return startSession({ slug, kind });
   pendingStart = { slug, kind };
   $("#predict-problem").textContent = title ? `${title}` : slug;
   const cats = categories.length ? categories : (await loadCategories());
@@ -146,6 +147,16 @@ async function startFlow(slug, kind, mode, title, category, recallAttemptId, gra
   }));
   $("#predict-approach").value = "";
   $("#predict-modal").classList.remove("hidden");
+}
+
+async function startSession(body) {
+  const s = await api("/session/start", "POST", body);
+  window.open(s.url, "_blank", "noopener");
+  nudgeShown = {};
+  await refreshActive();
+  loadOverview();
+  render(currentActiveTab());
+  toast("Timer started — solve it on LeetCode, it'll auto-log.");
 }
 
 async function loadCategories() {
@@ -165,11 +176,7 @@ async function doStart(withPrediction) {
     body.predicted_category = sel ? sel.dataset.cat : null;
     body.predicted_approach = $("#predict-approach").value || null;
   }
-  const s = await api("/session/start", "POST", body);
-  window.open(s.url, "_blank", "noopener");
-  nudgeShown = {};
-  await refreshActive();
-  toast("Timer started — solve it on LeetCode, it'll auto-log.");
+  await startSession(body);
 }
 $("#btn-do-predict").addEventListener("click", () => doStart(true));
 $("#btn-skip-predict").addEventListener("click", () => doStart(false));
@@ -246,6 +253,7 @@ function startPolling() {
         openAnnotate(res.pending[0]);
         await refreshActive();
         loadOverview();
+        render(currentActiveTab());
       }
     } catch (e) { /* transient */ }
   }, 4000);
