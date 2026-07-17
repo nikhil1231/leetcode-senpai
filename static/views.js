@@ -38,7 +38,7 @@
             ${it.grading_status === "ready" ? '<span class="tag recall-status-tag is-success is-light">grade ready</span>' : ""}
             ${it.grading_status === "failed" ? '<span class="tag recall-status-tag is-danger is-light">failed</span>' : ""}
           </div>
-          ${it.kind === "new" || it.mode === "recall" ? "" : `<span class="sub">${escapeHtml(it.category || "")}</span>`}
+          ${it.kind === "new" || it.kind === "drill" || it.mode === "recall" ? "" : `<span class="sub">${escapeHtml(it.category || "")}</span>`}
           <span class="reason">${escapeHtml(it.reason)}${it.due_date ? " · due " + it.due_date : ""}</span>
         </div>
         <button class="button ${it.mode === "recall" ? "is-link" : "start"}" data-slug="${it.slug}" data-kind="${it.kind}" data-mode="${it.mode || ""}"
