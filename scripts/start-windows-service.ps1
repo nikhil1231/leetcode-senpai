@@ -18,7 +18,7 @@ $env:UVICORN_RELOAD = "false"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::AppendAllText(
     $stdoutLog,
-    "$(Get-Date -Format o) starting LeetCode Revision from $repoRoot`r`n",
+    "$(Get-Date -Format o) starting Leetcode Senpai from $repoRoot`r`n",
     $utf8NoBom
 )
 

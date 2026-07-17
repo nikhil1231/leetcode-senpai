@@ -89,6 +89,7 @@ let llmEnabled = false;
 let llmProvider = "";
 let llmModel = "";
 let nudgeShown = {};
+let pauseRequestId = 0;
 
 // ---- sign-in gate --------------------------------------------------------------
 function showSignIn(msg) {
@@ -161,7 +162,9 @@ async function loadCategories() {
 
 async function doStart(withPrediction) {
   $("#predict-modal").classList.add("hidden");
+  if (!pendingStart) return;
   const { slug, kind } = pendingStart;
+  pendingStart = null;
   const body = { slug, kind };
   if (withPrediction) {
     const sel = $("#predict-cats button.sel");
@@ -176,32 +179,89 @@ async function doStart(withPrediction) {
 }
 $("#btn-do-predict").addEventListener("click", () => doStart(true));
 $("#btn-skip-predict").addEventListener("click", () => doStart(false));
+$("#btn-close-predict").addEventListener("click", () => {
+  pendingStart = null;
+  $("#predict-modal").classList.add("hidden");
+});
 
 // ---- active session / timer / hints / nudges -----------------------------------
 async function refreshActive() {
   const { active } = await api("/session/active");
+  const previousId = activeSession && activeSession.session_id;
   activeSession = active;
-  const banner = $("#active-banner");
+  const run = $("#active-run");
   if (active) {
-    banner.classList.remove("hidden");
+    run.classList.remove("hidden");
     $("#active-title").textContent = active.title;
     $("#active-link").href = active.url;
-    $("#btn-hint").classList.toggle("hidden", !active.hints_available);
-    startTimer(active.started_at);
+    $("#active-kind").textContent = active.kind === "mock"
+      ? "Mock interview problem"
+      : "Solve this problem before returning to the rest of the dashboard.";
+    if (previousId !== active.session_id) {
+      $("#hint-panel").innerHTML = "";
+      $("#hint-panel").classList.add("hidden");
+      $("#nudge").classList.add("hidden");
+    }
+    setDashboardLocked(true);
+    setHintButton(active);
+    setPauseButton(active);
+    startTimer(active);
     startPolling();
   } else {
-    banner.classList.add("hidden");
+    run.classList.add("hidden");
     $("#hint-panel").classList.add("hidden");
     $("#nudge").classList.add("hidden");
+    setDashboardLocked(false);
     stopTimer();
     stopPolling();
   }
 }
 
-function startTimer(startedAt) {
+function setDashboardLocked(locked) {
+  document.body.classList.toggle("has-active-session", locked);
+  ["#tabs", "#overview", "#user-chip", "main"].forEach((sel) => {
+    const el = $(sel);
+    if (!el) return;
+    if (locked) {
+      el.setAttribute("inert", "");
+      el.setAttribute("aria-hidden", "true");
+    } else {
+      el.removeAttribute("inert");
+      el.removeAttribute("aria-hidden");
+    }
+  });
+}
+
+function setHintButton(active) {
+  const btn = $("#btn-hint");
+  const total = active.hint_total || 3;
+  const used = active.hint_level || 0;
+  const next = Math.min(total, used + 1);
+  btn.classList.toggle("hidden", !active.hints_available);
+  btn.disabled = !active.hints_available || used >= total;
+  btn.textContent = used >= total ? `All ${total} hints revealed` : `Reveal hint ${next} of ${total}`;
+}
+
+function setPauseButton(active) {
+  const btn = $("#btn-pause-session");
+  btn.textContent = active.is_paused ? "Resume" : "Pause";
+  btn.classList.toggle("is-primary", active.is_paused);
+  btn.classList.toggle("is-ghost", !active.is_paused);
+  btn.setAttribute("aria-pressed", active.is_paused ? "true" : "false");
+  $("#active-run").classList.toggle("is-paused", active.is_paused);
+  $("#active-status").textContent = active.is_paused ? "Run paused" : "Current run";
+}
+
+function startTimer(session) {
   stopTimer();
+  const baseElapsed = session.elapsed_sec || 0;
+  const baseWall = Math.floor(Date.now() / 1000);
+  session._timerBaseElapsed = baseElapsed;
+  session._timerBaseWall = baseWall;
   const tick = () => {
-    const elapsed = Math.floor(Date.now() / 1000) - startedAt;
+    const elapsed = session.is_paused
+      ? baseElapsed
+      : baseElapsed + Math.max(0, Math.floor(Date.now() / 1000) - baseWall);
     $("#active-timer").textContent = fmtTime(elapsed);
     checkNudges(elapsed);
   };
@@ -209,6 +269,14 @@ function startTimer(startedAt) {
   timerInterval = setInterval(tick, 1000);
 }
 function stopTimer() { if (timerInterval) clearInterval(timerInterval); timerInterval = null; }
+
+function activeElapsedSeconds(session = activeSession) {
+  if (!session) return 0;
+  const baseElapsed = session._timerBaseElapsed ?? session.elapsed_sec ?? 0;
+  if (session.is_paused) return baseElapsed;
+  const baseWall = session._timerBaseWall ?? Math.floor(Date.now() / 1000);
+  return baseElapsed + Math.max(0, Math.floor(Date.now() / 1000) - baseWall);
+}
 
 function checkNudges(elapsed) {
   const n = $("#nudge");
@@ -224,19 +292,41 @@ function checkNudges(elapsed) {
 }
 
 $("#btn-hint").addEventListener("click", async () => {
+  if (!activeSession) return;
+  const btn = $("#btn-hint");
+  const previousText = btn.textContent;
+  const next = (activeSession.hint_level || 0) + 1;
+  btn.disabled = true;
+  btn.textContent = `Revealing hint ${next}...`;
   try {
     const r = await api("/session/hint", "POST");
     const panel = $("#hint-panel");
     panel.classList.remove("hidden");
     if (r.hint == null) {
       panel.innerHTML = `<p class="small">${llmEnabled ? "No hints available for this one." : "Hints need the coach enabled."}</p>`;
+      btn.textContent = previousText;
+      btn.disabled = false;
       return;
     }
+    activeSession = {
+      ...activeSession,
+      hint_level: r.level,
+      hint_total: r.total || activeSession.hint_total || 3,
+    };
     const existing = panel.querySelector(".hint-list");
-    const item = `<div class="hint-item"><b>Hint ${r.level}/${r.total || 3}</b> ${escapeHtml(r.hint)}</div>`;
+    const item = `<div class="hint-item" data-hint-level="${r.level}"><b>Hint ${r.level} of ${r.total || 3}</b> ${escapeHtml(r.hint)}</div>`;
+    if (existing && existing.querySelector(`[data-hint-level="${r.level}"]`)) {
+      setHintButton(activeSession);
+      return;
+    }
     if (existing) existing.insertAdjacentHTML("beforeend", item);
     else panel.innerHTML = `<div class="hint-list">${item}</div>`;
-  } catch (e) { toast(e.message); }
+    setHintButton(activeSession);
+  } catch (e) {
+    btn.textContent = previousText;
+    btn.disabled = false;
+    toast(e.message);
+  }
 });
 
 function startPolling() {
@@ -261,8 +351,46 @@ async function refreshPending() {
 }
 
 $("#btn-cancel-session").addEventListener("click", async () => {
+  pauseRequestId++;
   await api("/session/cancel", "POST");
   await refreshActive();
+});
+
+$("#btn-pause-session").addEventListener("click", async () => {
+  if (!activeSession) return;
+  const paused = !activeSession.is_paused;
+  const requestId = ++pauseRequestId;
+  const previous = { ...activeSession };
+  const elapsed = activeElapsedSeconds(activeSession);
+  activeSession = {
+    ...activeSession,
+    is_paused: paused,
+    elapsed_sec: elapsed,
+    paused_at: paused ? Math.floor(Date.now() / 1000) : null,
+  };
+  setPauseButton(activeSession);
+  startTimer(activeSession);
+  try {
+    const r = await api("/session/pause", "POST", { paused });
+    if (requestId !== pauseRequestId || !activeSession) return;
+    activeSession = {
+      ...activeSession,
+      is_paused: r.is_paused,
+      paused_at: r.paused_at,
+      paused_sec: r.paused_sec,
+      elapsed_sec: r.elapsed_sec ?? elapsed,
+    };
+    setPauseButton(activeSession);
+    startTimer(activeSession);
+    toast(paused ? "Timer paused." : "Timer resumed.");
+  } catch (e) {
+    if (requestId === pauseRequestId) {
+      activeSession = previous;
+      setPauseButton(activeSession);
+      startTimer(activeSession);
+    }
+    toast(e.message);
+  }
 });
 
 // ---- annotation modal ----------------------------------------------------------

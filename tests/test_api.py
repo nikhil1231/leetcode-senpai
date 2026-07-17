@@ -3,10 +3,12 @@
 No Firestore, no network, no LLM key — exercises the request/response plumbing
 and the graceful-degradation paths.
 """
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
-from server import auth, main
+from server import auth, main, poller
 from tests.fake_store import FakeStore
 
 
@@ -187,6 +189,50 @@ def test_session_start_and_hint_degrades(client):
     r = client.post("/api/session/hint")  # no LLM, no cached ladder
     assert r.status_code == 200
     assert r.json()["hint"] is None
+
+
+def test_session_pause_resume_adjusts_elapsed(client, monkeypatch):
+    clock = {"now": 1000}
+    monkeypatch.setattr(main.time, "time", lambda: clock["now"])
+
+    client.post("/api/session/start", json={"slug": "two-sum"})
+    clock["now"] = 1060
+    active = client.get("/api/session/active").json()["active"]
+    assert active["elapsed_sec"] == 60
+    assert active["is_paused"] is False
+
+    r = client.post("/api/session/pause", json={"paused": True})
+    assert r.status_code == 200
+    clock["now"] = 1120
+    active = client.get("/api/session/active").json()["active"]
+    assert active["elapsed_sec"] == 60
+    assert active["is_paused"] is True
+
+    r = client.post("/api/session/pause", json={"paused": False})
+    assert r.status_code == 200
+    clock["now"] = 1150
+    active = client.get("/api/session/active").json()["active"]
+    assert active["elapsed_sec"] == 90
+    assert active["is_paused"] is False
+
+
+def test_poller_records_solve_time_excluding_pause(client, monkeypatch):
+    async def no_details(*args, **kwargs):
+        raise RuntimeError("skip")
+
+    monkeypatch.setattr(poller.leetcode, "submission_details", no_details)
+    monkeypatch.setattr(poller.leetcode, "wrong_attempts_between", no_details)
+    sid = client.store.add_session({
+        "slug": "two-sum", "started_at": 1000, "status": "active",
+        "paused_at": None, "paused_sec": 120, "kind": "adhoc",
+    })
+    session = client.store.get_session(sid)
+    match = {"id": "sub1", "titleSlug": "two-sum", "timestamp": 1400}
+
+    aid = asyncio.run(poller._record_solve(client.store, session, match, None))
+
+    assert client.store.get_attempt(aid)["time_taken_sec"] == 280
+    assert client.store.get_session(sid)["status"] == "completed"
 
 
 def test_insights_shape(client):

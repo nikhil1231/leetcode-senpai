@@ -21,7 +21,7 @@ from .store import get_store
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(ROOT, "static")
 
-app = FastAPI(title="LeetCode Revision V2")
+app = FastAPI(title="Leetcode Senpai V2")
 
 
 # ---- request models -------------------------------------------------------------
@@ -30,6 +30,10 @@ class StartSession(BaseModel):
     kind: str = "adhoc"
     predicted_category: str | None = None
     predicted_approach: str | None = None
+
+
+class PauseSession(BaseModel):
+    paused: bool
 
 
 class Annotate(BaseModel):
@@ -75,9 +79,9 @@ class SettingsUpdate(BaseModel):
     goal_reviews_per_week: int | None = None
     goal_new_per_week: int | None = None
     discover_min_like_ratio: float | None = None
+    discover_min_votes: int | None = None
     llm_provider: str | None = None
     llm_model: str | None = None
-    discover_min_votes: int | None = None
 
 
 class ImportPack(BaseModel):
@@ -294,6 +298,7 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
     sid = store.add_session({
         "slug": body.slug, "started_at": started, "status": "active",
         "kind": body.kind, "attempt_id": None, "hint_level": 0,
+        "paused_at": None, "paused_sec": 0,
         "predicted_category": body.predicted_category,
         "predicted_approach": body.predicted_approach,
     })
@@ -309,13 +314,47 @@ def api_session_active(uid: str = Depends(auth.require_user)):
     if not s:
         return {"active": None}
     prob = store.get_problem(s["slug"]) or {}
+    hint_ladder = prob.get("hint_ladder") or []
+    now = int(time.time())
+    paused_sec = s.get("paused_sec", 0) or 0
+    paused_at = s.get("paused_at")
+    if paused_at:
+        paused_sec += max(0, now - paused_at)
     return {"active": {
         "session_id": s["id"], "slug": s["slug"], "started_at": s["started_at"],
-        "kind": s.get("kind"), "elapsed_sec": int(time.time()) - s["started_at"],
+        "kind": s.get("kind"), "elapsed_sec": max(0, now - s["started_at"] - paused_sec),
+        "paused_at": paused_at, "paused_sec": s.get("paused_sec", 0) or 0,
+        "is_paused": bool(paused_at),
         "title": prob.get("title", s["slug"]), "url": prob.get("url"),
         "hint_level": s.get("hint_level", 0),
+        "hint_total": len(hint_ladder) if hint_ladder else 3,
         "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(store.get_settings()),
     }}
+
+
+@app.post("/api/session/pause")
+def api_session_pause(body: PauseSession, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    s = store.latest_active_session()
+    if not s:
+        raise HTTPException(400, "no active session")
+    now = int(time.time())
+    paused_sec = s.get("paused_sec", 0) or 0
+    paused_at = s.get("paused_at")
+    if body.paused:
+        if not paused_at:
+            store.update_session(s["id"], {"paused_at": now})
+            paused_at = now
+    else:
+        if paused_at:
+            paused_sec += max(0, now - paused_at)
+            store.update_session(s["id"], {"paused_at": None, "paused_sec": paused_sec})
+            paused_at = None
+    effective_paused_sec = paused_sec + (max(0, now - paused_at) if paused_at else 0)
+    elapsed_sec = max(0, now - s["started_at"] - effective_paused_sec)
+    return {"ok": True, "paused_at": paused_at, "paused_sec": paused_sec,
+            "elapsed_sec": elapsed_sec,
+            "is_paused": bool(paused_at)}
 
 
 @app.post("/api/session/cancel")

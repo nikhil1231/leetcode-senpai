@@ -1,4 +1,4 @@
-# LeetCode Revision (V2)
+# Leetcode Senpai (V2)
 
 A personal tool to rebuild LeetCode skills. It auto-logs your solves, then
 **coaches** them: it grows your library with community-vetted problems, trains

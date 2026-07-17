@@ -1,5 +1,5 @@
 param(
-    [string]$TaskName = "LeetCode Revision",
+    [string]$TaskName = "Leetcode Senpai",
     [switch]$AtStartup
 )
 
@@ -30,7 +30,7 @@ if ($LASTEXITCODE -ne 0) {
     $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$startScript`""
     $shortcut.WorkingDirectory = $repoRoot
     $shortcut.WindowStyle = 7
-    $shortcut.Description = "Starts the LeetCode Revision local FastAPI service."
+    $shortcut.Description = "Starts the Leetcode Senpai local FastAPI service."
     $shortcut.Save()
 
     Start-Process `

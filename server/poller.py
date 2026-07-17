@@ -38,7 +38,11 @@ async def _record_solve(store, session, match, auth):
         store.update_session(session["id"], {"status": "completed", "attempt_id": dup["id"]})
         return None
 
-    time_taken = max(0, match["timestamp"] - session["started_at"])
+    paused_sec = session.get("paused_sec", 0) or 0
+    paused_at = session.get("paused_at")
+    if paused_at:
+        paused_sec += max(0, match["timestamp"] - paused_at)
+    time_taken = max(0, match["timestamp"] - session["started_at"] - paused_sec)
     details = None
     wrong = None
     try:

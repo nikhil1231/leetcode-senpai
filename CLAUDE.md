@@ -1,4 +1,4 @@
-# LeetCode Senpai — engineering conventions
+# Leetcode Senpai — engineering conventions
 
 Personal, local-first SWE-interview prep app: FastAPI (Python) backend in `server/`,
 vanilla-JS frontend in `static/`. Single user (Nikhil). **Read the code before changing
