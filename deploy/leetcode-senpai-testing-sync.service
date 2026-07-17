@@ -1,0 +1,7 @@
+[Unit]
+Description=Sync leetcode-senpai testing checkout to integration head
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/Documents/Programming/Learning/leetcode-testing/deploy/sync-integration.sh --restart

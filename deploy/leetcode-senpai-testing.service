@@ -1,0 +1,15 @@
+[Unit]
+Description=Leetcode Senpai (testing branch, LAN)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Documents/Programming/Learning/leetcode-testing
+# Land on the current integration head before starting. `-` so a sync hiccup
+# (e.g. main repo mid-rebuild) never blocks the server from coming up.
+ExecStartPre=-%h/Documents/Programming/Learning/leetcode-testing/deploy/sync-integration.sh
+ExecStart=%h/Documents/Programming/Learning/leetcode-testing/.venv/bin/python run.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
