@@ -293,11 +293,13 @@
   }
 
   // ---- History -----------------------------------------------------------------
-  let historyFilter = "all"; // all | solve | recall — persists across re-renders
-  const historyType = (r) => (r.kind === "recall" ? "recall" : "solve");
-  const typeTag = (t) => (t === "recall"
-    ? '<span class="tag type-recall">recall</span>'
-    : '<span class="tag type-solve">solve</span>');
+  let historyFilter = "all"; // all | solve | drill | recall — persists across re-renders
+  const historyType = (r) => (r.kind === "recall" ? "recall" : r.kind === "drill" ? "drill" : "solve");
+  const typeTag = (t) => {
+    if (t === "recall") return '<span class="tag type-recall">recall</span>';
+    if (t === "drill") return '<span class="tag type-drill">drill</span>';
+    return '<span class="tag type-solve">solve</span>';
+  };
 
   async function renderHistory() {
     const el = $("#tab-history");
@@ -310,13 +312,13 @@
       const m = { correct: "✓", partial: "~", wrong: "✗" }[r.prediction_verdict] || "";
       return `<span class="pred pred-${r.prediction_verdict}" title="pattern prediction ${r.prediction_verdict}">${m}</span>`;
     };
-    const counts = { all: rows.length, solve: 0, recall: 0 };
+    const counts = { all: rows.length, solve: 0, drill: 0, recall: 0 };
     rows.forEach((r) => { counts[historyType(r)]++; });
     const fbtn = (f, label) =>
       `<button class="button is-small" data-f="${f}">${label} <span class="ml-1 has-text-grey">${counts[f]}</span></button>`;
     el.innerHTML = `
       <div class="buttons has-addons type-filter" id="history-filter">
-        ${fbtn("all", "All")}${fbtn("solve", "Completions")}${fbtn("recall", "Recalls")}
+        ${fbtn("all", "All")}${fbtn("solve", "Completions")}${fbtn("drill", "Drills")}${fbtn("recall", "Recalls")}
       </div>
       <table class="table is-app is-fullwidth is-hoverable">
       <thead><tr><th>Problem</th><th>Type</th><th>Topic</th><th>When</th><th>Time</th><th>Conf</th><th>How</th><th>Coach read</th></tr></thead>
