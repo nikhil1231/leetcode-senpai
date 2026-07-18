@@ -70,6 +70,29 @@ async def grade_followup(store, slug, question, answer):
     }, settings=store.get_settings())
 
 
+async def grade_prediction(store, slug, predicted_category, predicted_approach=None,
+                           pattern_used=None):
+    """Grade a pattern prediction against problem metadata/canonical ideas.
+
+    Returns a PredictionResult-shaped dict or None. The prompt itself lives in
+    llm.py so sprint submissions and solve-session enrichment share wording.
+    """
+    settings = store.get_settings()
+    if not llm.enabled(settings):
+        return None
+    canonical = await ensure_canonical(store, slug)
+    canon_ideas = ", ".join((canonical or {}).get("key_ideas", [])) if canonical else None
+    p = store.get_problem(slug) or {}
+    return await llm.extract("grade_prediction", {
+        "title": p.get("title", slug),
+        "category": p.get("neetcode_category"),
+        "canonical": canon_ideas,
+        "predicted_category": predicted_category,
+        "predicted_approach": predicted_approach,
+        "pattern_used": pattern_used,
+    }, settings=settings)
+
+
 # ---- recall grading -------------------------------------------------------------
 async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=None):
     """Grade an approach-recall against the user's past code + canonical ideas.

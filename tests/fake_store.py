@@ -20,6 +20,7 @@ class FakeStore:
         self.reports = {}
         self.playbooks = {}
         self.mocks = {}
+        self.sprint_rounds = {}
         self.settings = {}
         self.flags = {}
 
@@ -148,6 +149,29 @@ class FakeStore:
         out = [dict(m) for m in self.mocks.values()]
         out.sort(key=lambda m: m.get("started_at") or 0, reverse=True)
         return out
+
+    # sprint rounds
+    def get_sprint_round(self, rid):
+        r = self.sprint_rounds.get(rid)
+        return dict(r) if r else None
+
+    def add_sprint_round(self, doc):
+        rid = uuid.uuid4().hex[:12]
+        self.sprint_rounds[rid] = {**doc, "id": rid}
+        return rid
+
+    def update_sprint_round(self, rid, fields):
+        if rid in self.sprint_rounds:
+            self.sprint_rounds[rid].update(fields)
+
+    def list_sprint_rounds(self):
+        out = [dict(r) for r in self.sprint_rounds.values()]
+        out.sort(key=lambda r: r.get("started_at") or 0, reverse=True)
+        return out
+
+    def latest_active_sprint_round(self):
+        active = [r for r in self.list_sprint_rounds() if r.get("status") == "active"]
+        return active[0] if active else None
 
     # settings + flags
     def get_settings(self):

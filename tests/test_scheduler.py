@@ -1,7 +1,7 @@
 """Scheduler behavior tests — the invariants that must hold across SM-2 and FSRS."""
 import datetime as dt
 
-from server import scheduler
+from server import insights, scheduler
 
 
 def _card(**kw):
@@ -114,6 +114,23 @@ def _drill_problems():
     ]
 
 
+def _sprint_problems():
+    return [
+        {"slug": "two-sum", "title": "Two Sum", "difficulty": "Easy",
+         "neetcode_category": "Arrays & Hashing", "in_library": True, "url": "u"},
+        {"slug": "group-anagrams", "title": "Group Anagrams", "difficulty": "Medium",
+         "neetcode_category": "Arrays & Hashing", "in_library": True, "url": "u"},
+        {"slug": "longest-substring", "title": "Longest Substring", "difficulty": "Medium",
+         "neetcode_category": "Sliding Window", "in_library": True, "url": "u"},
+        {"slug": "invert-tree", "title": "Invert Tree", "difficulty": "Easy",
+         "neetcode_category": "Trees", "in_library": True, "url": "u"},
+        {"slug": "diameter-tree", "title": "Diameter Tree", "difficulty": "Easy",
+         "neetcode_category": "Trees", "in_library": True, "url": "u"},
+        {"slug": "external-cache", "title": "External Cache", "difficulty": "Easy",
+         "neetcode_category": "Stack", "in_library": False, "url": "u"},
+    ]
+
+
 def test_daily_queue_returns_new_when_nothing_solved():
     q = scheduler.build_daily_queue(_problems(), [], [], {"new_limit": 2, "review_limit": 5})
     assert len(q["new"]) >= 1
@@ -157,6 +174,8 @@ def test_goal_progress_excludes_drill_attempts_from_weekly_goals():
          "source": "manual"},
         {"slug": "contains-duplicate", "solved_at": _ts(today), "kind": "drill",
          "source": "auto"},
+        {"slug": "sprint-rep", "solved_at": _ts(today), "kind": "sprint",
+         "source": "sprint"},
         {"slug": "old-drill", "solved_at": _ts(today - dt.timedelta(days=8)),
          "kind": "drill", "source": "auto"},
     ]
@@ -183,6 +202,8 @@ def test_overview_counts_drills_today_separately():
          "kind": "drill", "source": "auto"},
         {"slug": "valid-anagram", "solved_at": _ts(today), "kind": "adhoc",
          "source": "manual"},
+        {"slug": "sprint-rep", "solved_at": _ts(today), "kind": "sprint",
+         "source": "sprint"},
     ]
 
     ov = scheduler.overview(_problems(), attempts, [], today=today)
@@ -192,6 +213,50 @@ def test_overview_counts_drills_today_separately():
     assert ov["due_reviews"] == 0
     assert ov["leeches"] == 0
     assert ov["xp_today"] == 40
+
+
+def test_sprint_attempts_do_not_inflate_topic_solved_or_mastery():
+    today = dt.date(2026, 1, 10)
+    attempts = [
+        {"id": "s1", "slug": "two-sum", "solved_at": _ts(today),
+         "kind": "sprint", "source": "sprint", "confidence": 3,
+         "independence": "solo", "runtime_percentile": 99},
+    ]
+    enrichments = [{"attempt_id": "s1", "prediction_verdict": "correct"}]
+
+    arrays = next(
+        s for s in scheduler.topic_stats(_problems(), attempts, enrichments)
+        if s["category"] == "Arrays & Hashing"
+    )
+
+    assert arrays["solved"] == 0
+    assert arrays["coverage"] == 0.0
+    assert arrays["avg_confidence"] is None
+    assert arrays["independence_rate"] is None
+    assert arrays["avg_runtime_percentile"] is None
+    assert arrays["mastery"] == 0.0
+    assert arrays["sprint_reps"] == 1
+    assert arrays["sprint_correct"] == 1
+    assert arrays["sprint_partial"] == 0
+    assert arrays["sprint_wrong"] == 0
+    assert arrays["sprint_accuracy"] == 1.0
+
+
+def test_sprint_attempts_do_not_count_as_pace_solves_or_new_candidates():
+    today = dt.date(2026, 1, 10)
+    attempts = [
+        {"id": "s1", "slug": "two-sum", "solved_at": _ts(today),
+         "kind": "sprint", "source": "sprint"},
+    ]
+
+    pace = insights.pace_projection(_problems(), attempts, today=today)
+    queue = scheduler.build_daily_queue(
+        _problems(), attempts, [], {"new_limit": 3, "review_limit": 0}, today=today)
+
+    assert pace["solved"] == 0
+    assert pace["remaining"] == 3
+    assert pace["rate_per_week"] == 0.0
+    assert any(item["slug"] == "two-sum" for item in queue["new"])
 
 
 def test_drill_lane_no_local_signal_returns_empty():
@@ -414,3 +479,74 @@ def test_drill_tie_break_does_not_change_daily_review_or_new_ordering():
 
     assert [r["slug"] for r in q["reviews"]] == ["two-sum", "3sum"]
     assert [n["slug"] for n in q["new"]] == ["valid-anagram"]
+
+
+def test_sprint_round_weights_weak_and_mistake_heavy_categories():
+    today = dt.date(2026, 1, 10)
+    attempts = [
+        {"id": "a1", "slug": "invert-tree", "confidence": 1,
+         "independence": "solution", "solved_at": _ts(today)},
+        {"id": "a2", "slug": "two-sum", "confidence": 3,
+         "independence": "solo", "solved_at": _ts(today)},
+    ]
+    reviews = [{"slug": "invert-tree", "due_date": "2026-02-01",
+                "fail_count": 2, "leech": 1}]
+    enrichments = [{"attempt_id": "a1", "mistake_tags": ["base-case"],
+                    "severity": 2, "prediction_verdict": "wrong"}]
+
+    sprints = scheduler.build_sprint_round(
+        _sprint_problems(), attempts, reviews, {"sprint_round_size": 5},
+        today=today, enrichments=enrichments)
+
+    assert sprints[0]["category"] == "Trees"
+    assert sprints[0]["kind"] == "sprint"
+    assert sprints[0]["score"] > next(s for s in sprints if s["slug"] == "two-sum")["score"]
+    assert {"slug", "title", "difficulty", "category", "url", "kind", "score",
+            "reason", "reason_codes", "signals"} <= set(sprints[0])
+    assert "recent_mistakes" in sprints[0]["reason_codes"]
+    assert "prediction_miss" in sprints[0]["reason_codes"]
+    assert sprints[0]["signals"]["mistake_density"] == 1.0
+    assert sprints[0]["signals"]["prediction_misses"] == 1
+
+
+def test_sprint_round_backfills_unattempted_when_signal_is_sparse():
+    today = dt.date(2026, 1, 10)
+    attempts = [{"slug": "invert-tree", "confidence": 1, "independence": "hints",
+                 "solved_at": _ts(today)}]
+
+    sprints = scheduler.build_sprint_round(
+        _sprint_problems(), attempts, [], {"sprint_round_size": 5}, today=today)
+
+    assert len(sprints) == 5
+    assert any(s["slug"] == "invert-tree" for s in sprints)
+    assert any(s["signals"].get("unattempted") for s in sprints)
+    assert all(s["slug"] != "external-cache" for s in sprints)
+
+
+def test_sprint_round_broad_fallback_tie_order_ignores_input_order():
+    today = dt.date(2026, 1, 10)
+    problems = _sprint_problems()
+    expected = ["two-sum", "group-anagrams", "longest-substring", "diameter-tree"]
+
+    orders = [
+        [s["slug"] for s in scheduler.build_sprint_round(
+            variant, [], [], {"sprint_round_size": 4}, today=today)]
+        for variant in (
+            problems,
+            list(reversed(problems)),
+            [problems[i] for i in (3, 1, 5, 0, 4, 2)],
+        )
+    ]
+
+    assert orders == [expected, expected, expected]
+    assert all(s["reason"] == "Broad coverage" for s in scheduler.build_sprint_round(
+        problems, [], [], {"sprint_round_size": 4}, today=today))
+
+
+def test_sprint_round_respects_exclude_slugs():
+    sprints = scheduler.build_sprint_round(
+        _sprint_problems(), [], [], {"sprint_round_size": 5},
+        exclude_slugs={"two-sum", "diameter-tree"}, today=dt.date(2026, 1, 10))
+
+    assert all(s["slug"] not in {"two-sum", "diameter-tree"} for s in sprints)
+    assert len(sprints) == 3

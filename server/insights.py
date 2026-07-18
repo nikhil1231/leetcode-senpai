@@ -75,7 +75,7 @@ def time_to_solve_trend(problems, attempts, today=None):
     """Weekly median solve time (minutes) per difficulty."""
     diff_of = {p["slug"]: p.get("difficulty", "Unknown") for p in problems}
     by_diff_week = {}
-    for a in attempts:
+    for a in scheduler._solved_attempts(attempts):
         t = a.get("time_taken_sec")
         ts = a.get("solved_at")
         if not t or not ts:
@@ -98,10 +98,11 @@ def pace_projection(problems, attempts, today=None, window_days=14):
     """Project library-completion date from the recent new-solve rate."""
     today = _today(today)
     total = sum(1 for p in problems if scheduler._in_library(p))
-    solved = len({a["slug"] for a in attempts})
+    solved_attempts = scheduler._solved_attempts(attempts)
+    solved = len({a["slug"] for a in solved_attempts})
     remaining = max(0, total - solved)
     cutoff = int((dt.datetime.combine(today, dt.time()) - dt.timedelta(days=window_days)).timestamp())
-    recent_new = len({a["slug"] for a in attempts
+    recent_new = len({a["slug"] for a in solved_attempts
                       if (a.get("solved_at") or 0) >= cutoff})
     rate = recent_new / window_days  # problems/day
     if rate <= 0 or remaining == 0:
@@ -121,7 +122,8 @@ def failure_modes(enrichments, days=None, attempts=None, today=None):
     if days is not None and attempts is not None:
         today = _today(today)
         cutoff = int((dt.datetime.combine(today, dt.time()) - dt.timedelta(days=days)).timestamp())
-        keep = {a["id"] for a in attempts if (a.get("solved_at") or 0) >= cutoff}
+        keep = {a["id"] for a in scheduler._solved_attempts(attempts)
+                if (a.get("solved_at") or 0) >= cutoff}
     counts = {}
     for e in enrichments:
         if keep is not None and e.get("attempt_id") not in keep:
@@ -136,7 +138,9 @@ def prediction_accuracy(problems, attempts, enrichments):
     """Per category: correct / partial / wrong counts from prediction verdicts."""
     cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
     attempt_cat = {a["id"]: cat_of.get(a["slug"]) for a in attempts}
+    attempt_kind = {a["id"]: a.get("kind") or "unknown" for a in attempts}
     out = {}
+    by_kind = {}
     total = {"correct": 0, "partial": 0, "wrong": 0}
     for e in enrichments:
         v = e.get("prediction_verdict")
@@ -148,9 +152,13 @@ def prediction_accuracy(problems, attempts, enrichments):
         row = out.setdefault(cat, {"correct": 0, "partial": 0, "wrong": 0})
         row[v] += 1
         total[v] += 1
+        kind = attempt_kind.get(e.get("attempt_id"), "unknown")
+        kind_row = by_kind.setdefault(kind, {"correct": 0, "partial": 0, "wrong": 0})
+        kind_row[v] += 1
     graded = sum(total.values())
     overall = round(total["correct"] / graded, 3) if graded else None
-    return {"by_category": out, "overall_correct_rate": overall, "graded": graded}
+    return {"by_category": out, "overall_correct_rate": overall, "graded": graded,
+            "by_kind": by_kind, "sprint_graded": sum(by_kind.get("sprint", {}).values())}
 
 
 # ---- mock score trend -----------------------------------------------------------

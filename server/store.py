@@ -13,6 +13,7 @@ Collections:
   users/{uid}/reports/{iso_week}       weekly coach reports
   users/{uid}/playbooks/{category}     synthesized per-category cheat sheets
   users/{uid}/mocks/{id}               mock-interview sets + scores
+  users/{uid}/sprint_rounds/{id}       sprint-rep round state
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
 import threading
@@ -285,6 +286,39 @@ class FirestoreStore:
             out.append(item)
         out.sort(key=lambda m: m.get("started_at") or 0, reverse=True)
         return out
+
+    # ---- sprint rounds ------------------------------------------------------
+    def _sprint_rounds(self):
+        return self._user_ref().collection("sprint_rounds")
+
+    def get_sprint_round(self, rid):
+        snap = self._sprint_rounds().document(rid).get()
+        if not snap.exists:
+            return None
+        item = snap.to_dict()
+        item["id"] = snap.id
+        return item
+
+    def add_sprint_round(self, doc):
+        ref = self._sprint_rounds().document()
+        ref.set(doc)
+        return ref.id
+
+    def update_sprint_round(self, rid, fields):
+        self._sprint_rounds().document(rid).update(fields)
+
+    def list_sprint_rounds(self):
+        out = []
+        for d in self._sprint_rounds().stream():
+            item = d.to_dict()
+            item["id"] = d.id
+            out.append(item)
+        out.sort(key=lambda r: r.get("started_at") or 0, reverse=True)
+        return out
+
+    def latest_active_sprint_round(self):
+        active = [r for r in self.list_sprint_rounds() if r.get("status") == "active"]
+        return active[0] if active else None
 
     # ---- settings + flags ---------------------------------------------------
     def _user_doc(self):

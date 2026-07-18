@@ -172,6 +172,20 @@
     </div>
   </div>
 
+  <!-- Sprint runner modal -->
+  <div id="sprint-modal" class="overlay hidden">
+    <div class="overlay-card box sprint-wide" role="dialog" aria-modal="true" aria-labelledby="sprint-heading">
+      <div class="modal-titlebar">
+        <div>
+          <h2 class="title is-5" id="sprint-heading">Sprint round</h2>
+          <p id="sprint-progress" class="small"></p>
+        </div>
+        <button id="btn-close-sprint" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+      </div>
+      <div id="sprint-body"></div>
+    </div>
+  </div>
+
   <!-- Attempt detail (solution archive) modal -->
   <div id="detail-modal" class="overlay hidden">
     <div class="overlay-card box wide" role="dialog" aria-modal="true">

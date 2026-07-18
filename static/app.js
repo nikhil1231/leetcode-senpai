@@ -29,8 +29,28 @@ const api = async (path, method = "GET", body) => {
     showSignIn("Session expired or not authorized. Sign in again.");
     throw new Error("auth");
   }
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(apiErrorMessage(payload.detail) || res.statusText);
+  }
   return res.json();
+};
+
+const apiErrorMessage = (detail) => {
+  if (!detail) return "";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(apiErrorMessage).filter(Boolean).join("; ");
+  }
+  if (typeof detail === "object") {
+    if (detail.msg) {
+      const loc = Array.isArray(detail.loc) ? detail.loc.join(".") : detail.loc;
+      return loc ? `${loc}: ${detail.msg}` : detail.msg;
+    }
+    if (detail.message) return detail.message;
+    return JSON.stringify(detail);
+  }
+  return String(detail);
 };
 
 const fmtTime = (s) => {
@@ -88,6 +108,8 @@ let llmProvider = "";
 let llmModel = "";
 let nudgeShown = {};
 let pauseRequestId = 0;
+let sprintRound = null;
+let sprintTimer = null;
 
 // ---- sign-in gate --------------------------------------------------------------
 function showSignIn(msg) {
@@ -837,6 +859,260 @@ function pickSelfGrade() {
   });
 }
 
+// ---- sprint runner -------------------------------------------------------------
+async function startSprint() {
+  $("#sprint-modal").classList.remove("hidden");
+  $("#sprint-progress").textContent = "";
+  $("#sprint-body").innerHTML = loader("Building sprint round...");
+  stopSprintTimer();
+  let r;
+  try {
+    r = await api("/sprint/start", "POST", {});
+  } catch (e) {
+    $("#sprint-body").innerHTML = `<p class="missed"><b>Could not start sprint:</b> ${escapeHtml(e.message)}</p>`;
+    toast(e.message);
+    return;
+  }
+  sprintRound = {
+    round_id: r.round_id,
+    reps: r.reps || [],
+    llm_enabled: !!r.llm_enabled,
+    index: 0,
+    results: [],
+    repStartedAt: 0,
+    finishing: false,
+  };
+  if (!sprintRound.reps.length) {
+    $("#sprint-body").innerHTML = "<p class='empty'>No sprint reps available. Import more problems or finish a few attempts first.</p>";
+    return;
+  }
+  await loadCategories();
+  renderSprintRep();
+}
+
+function closeSprint() {
+  stopSprintTimer();
+  $("#sprint-modal").classList.add("hidden");
+}
+
+function renderSprintRep() {
+  if (!sprintRound) return;
+  stopSprintTimer();
+  if (sprintRound.index >= sprintRound.reps.length) {
+    renderSprintSummary();
+    return;
+  }
+  const rep = sprintRound.reps[sprintRound.index];
+  sprintRound.repStartedAt = Math.floor(Date.now() / 1000);
+  $("#sprint-progress").textContent = `Rep ${sprintRound.index + 1} of ${sprintRound.reps.length}`;
+  const sprintCats = categories.includes(rep.category) || !rep.category
+    ? categories
+    : [rep.category, ...categories];
+  const opts = sprintCats.map((c) =>
+    `<option value="${escapeHtml(c)}"${c === rep.category ? " selected" : ""}>${escapeHtml(c)}</option>`).join("");
+  const statement = sanitizeProblemHtml(rep.content_html);
+  $("#sprint-body").innerHTML = `
+    <div class="sprint-layout">
+      <section class="sprint-statement">
+        <div class="sprint-problem-head">
+          <div>
+            <h3>${escapeHtml(rep.title || rep.slug)}</h3>
+            <div class="small">${escapeHtml(rep.reason || "")}</div>
+          </div>
+          <div class="sprint-head-tags">${badge(rep.difficulty)}<span class="sprint-countdown" id="sprint-countdown">01:00</span></div>
+        </div>
+        <div class="recall-statement sprint-prompt">${statement || "<p class='small'>Prompt unavailable for this rep.</p>"}</div>
+      </section>
+      <section class="sprint-answer">
+        <label class="label-sm">Pattern / category</label>
+        <div class="select is-fullwidth"><select id="sprint-category">${opts}</select></div>
+        <label class="label-sm">Why</label>
+        <input id="sprint-why" class="input" type="text" placeholder="One line: key signal in the statement" />
+        <div id="sprint-verdict" class="recall-grade hidden"></div>
+        <div class="overlay-actions" id="sprint-actions">
+          <button id="btn-skip-sprint-rep" class="button is-ghost">Skip</button>
+          <button id="btn-submit-sprint-rep" class="button is-primary">Submit rep</button>
+        </div>
+      </section>
+    </div>`;
+  $("#btn-submit-sprint-rep").addEventListener("click", () => submitSprintRep());
+  $("#btn-skip-sprint-rep").addEventListener("click", skipSprintRep);
+  startSprintTimer();
+}
+
+function startSprintTimer() {
+  const tick = () => {
+    if (!sprintRound) return;
+    const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - sprintRound.repStartedAt);
+    const left = Math.max(0, 60 - elapsed);
+    const el = $("#sprint-countdown");
+    if (el) {
+      el.textContent = fmtTime(left);
+      el.classList.toggle("is-expired", left === 0);
+    }
+  };
+  tick();
+  sprintTimer = setInterval(tick, 1000);
+}
+
+function stopSprintTimer() {
+  if (sprintTimer) clearInterval(sprintTimer);
+  sprintTimer = null;
+}
+
+async function submitSprintRep() {
+  if (!sprintRound) return;
+  const rep = sprintRound.reps[sprintRound.index];
+  const predicted = $("#sprint-category").value;
+  const why = $("#sprint-why").value.trim();
+  if (!predicted) { toast("Pick a category."); return; }
+  if (!why) { toast("Add a one-line why."); return; }
+  const btn = $("#btn-submit-sprint-rep");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner spinner-sm"></span> Saving...';
+  }
+  let r;
+  try {
+    r = await api("/sprint/submit", "POST", {
+      round_id: sprintRound.round_id,
+      slug: rep.slug,
+      predicted_category: predicted,
+      why,
+    });
+  } catch (e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Submit rep";
+    }
+    toast(e.message);
+    return;
+  }
+  sprintRound.results.push({
+    slug: r.slug,
+    title: rep.title || r.slug,
+    actual_category: r.actual_category || rep.category || "Unknown",
+    predicted_category: predicted,
+    why,
+    attempt_id: r.attempt_id,
+    grading_status: r.grading_status || "pending",
+  });
+  renderSprintSubmitted(rep);
+}
+
+function skipSprintRep() {
+  if (!sprintRound) return;
+  sprintRound.results.push({
+    slug: (sprintRound.reps[sprintRound.index] || {}).slug,
+    title: (sprintRound.reps[sprintRound.index] || {}).title,
+    skipped: true,
+  });
+  sprintRound.index++;
+  renderSprintRep();
+}
+
+function renderSprintSubmitted(rep) {
+  if (!sprintRound) return;
+  stopSprintTimer();
+  const isLast = sprintRound.index >= sprintRound.reps.length - 1;
+  const saved = sprintRound.results[sprintRound.results.length - 1] || {};
+  $("#sprint-progress").textContent = `Rep ${sprintRound.index + 1} of ${sprintRound.reps.length}`;
+  $("#sprint-verdict").classList.remove("hidden");
+  $("#sprint-verdict").innerHTML = `
+    <div class="grade-score">Saved sprint answer</div>
+    <p class="small"><b>Prediction:</b> ${escapeHtml(saved.predicted_category || "")}</p>
+    <p class="small"><b>Why:</b> ${escapeHtml(saved.why || "")}</p>
+    <p class="small">Progress is saved. Finish now to complete the sprint early with ${sprintRound.results.length} submitted answer${sprintRound.results.length === 1 ? "" : "s"}.</p>`;
+  $("#sprint-actions").innerHTML = `
+    <button id="btn-finish-sprint" class="button is-ghost">Finish</button>
+    <button id="btn-next-sprint-rep" class="button is-primary">${isLast ? "Grade sprint" : "Next"}</button>`;
+  $("#btn-next-sprint-rep").addEventListener("click", () => {
+    if (!sprintRound) return;
+    sprintRound.index++;
+    renderSprintRep();
+  });
+  $("#btn-finish-sprint").addEventListener("click", finishSprintEarly);
+}
+
+function finishSprintEarly() {
+  if (!sprintRound || sprintRound.finishing) return;
+  sprintRound.finishing = true;
+  sprintRound.index = sprintRound.reps.length;
+  renderSprintSummary();
+}
+
+async function renderSprintSummary() {
+  stopSprintTimer();
+  $("#sprint-progress").textContent = "Grading";
+  $("#sprint-body").innerHTML = loader("Grading sprint answers...");
+  let graded = [];
+  try {
+    const r = await api("/sprint/grade", "POST", { round_id: sprintRound.round_id });
+    graded = r.results || [];
+  } catch (e) {
+    $("#sprint-body").innerHTML = `<p class="missed"><b>Could not grade sprint:</b> ${escapeHtml(e.message)}</p>
+      <div class="overlay-actions"><button id="btn-done-sprint" class="button is-primary">Done</button></div>`;
+    $("#btn-done-sprint").addEventListener("click", closeSprint);
+    toast(e.message);
+    return;
+  }
+  const byAttempt = Object.fromEntries(graded.map((r) => [r.attempt_id, r]));
+  sprintRound.results = (sprintRound.results || []).map((r) => (
+    r.skipped || !r.attempt_id ? r : { ...r, ...(byAttempt[r.attempt_id] || {}) }
+  ));
+  const counts = { correct: 0, partial: 0, wrong: 0, unknown: 0, skipped: 0 };
+  const weak = {};
+  (sprintRound.results || []).forEach((r) => {
+    if (r.skipped) {
+      counts.skipped++;
+      return;
+    }
+    const v = counts[r.verdict] == null ? "unknown" : r.verdict;
+    counts[v]++;
+    if ((v === "partial" || v === "wrong" || v === "unknown") && r.actual_category) {
+      weak[r.actual_category] = (weak[r.actual_category] || 0) + 1;
+    }
+  });
+  const weakRows = Object.entries(weak).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const answerRows = (sprintRound.results || []).map((r) => {
+    if (r.skipped) {
+      return `<li><b>${escapeHtml(r.title || r.slug)}</b><div class="small">Skipped</div></li>`;
+    }
+    const verdict = r.verdict || "unknown";
+    return `<li>
+      <b>${escapeHtml(r.title || r.slug)}</b>
+      <div class="small">Answer: ${escapeHtml(r.predicted_category || "")} — ${escapeHtml(r.why || "")}</div>
+      <div class="small">Actual: ${escapeHtml(r.actual_category || "Unknown")} · Verdict: <span class="pred-${escapeHtml(verdict)}">${escapeHtml(verdict)}</span></div>
+      ${r.note ? `<div class="small">${escapeHtml(r.note)}</div>` : ""}
+    </li>`;
+  }).join("");
+  $("#sprint-progress").textContent = "Complete";
+  $("#sprint-body").innerHTML = `
+    <div class="sprint-summary">
+      <div class="sprint-summary-grid">
+        ${Object.entries(counts).map(([k, v]) => `<div><b>${v}</b><span>${escapeHtml(k)}</span></div>`).join("")}
+      </div>
+      <h3>Weakest categories</h3>
+      ${weakRows.length ? `<ul>${weakRows.map(([cat, n]) => `<li>${escapeHtml(cat)} <span class="small">${n} miss${n === 1 ? "" : "es"}</span></li>`).join("")}</ul>` : "<p class='empty'>No misses this round.</p>"}
+      <h3>Answers</h3>
+      ${answerRows ? `<ul>${answerRows}</ul>` : "<p class='empty'>No submitted answers.</p>"}
+      <div class="overlay-actions"><button id="btn-done-sprint" class="button is-primary">Done</button></div>
+    </div>`;
+  refreshAfterSprint();
+  $("#btn-done-sprint").addEventListener("click", closeSprint);
+}
+
+function refreshAfterSprint() {
+  loadOverview();
+  if (window.Views) {
+    window.Views.renderToday();
+    window.Views.renderHistory();
+    window.Views.renderInsights();
+  }
+}
+
+$("#btn-close-sprint").addEventListener("click", closeSprint);
+
 // ---- attempt detail (solution archive) -----------------------------------------
 async function openDetail(attemptId) {
   $("#detail-body").innerHTML = loader("Loading attempt…");
@@ -850,6 +1126,25 @@ async function openDetail(attemptId) {
     return;
   }
   const e = a.enrichment || {};
+  if (a.kind === "sprint") {
+    const verdict = e.prediction_verdict || "ungraded";
+    const body = `
+      <h2>${escapeHtml(a.title || a.slug)} ${a.difficulty ? badge(a.difficulty) : ""}</h2>
+      <div class="detail-meta small">${escapeHtml(a.neetcode_category || "")} · ${a.solved_at ? new Date(a.solved_at * 1000).toLocaleString() : ""}</div>
+      <div class="facts">
+        <b>Sprint rep</b>
+        ${a.round_id ? `Round <b>${escapeHtml(a.round_id)}</b>` : ""}
+        ${a.predicted_category ? `Prediction <b>${escapeHtml(a.predicted_category)}</b>` : ""}
+      </div>
+      ${a.neetcode_category ? `<p><b>Prompt category:</b> ${escapeHtml(a.neetcode_category)}</p>` : ""}
+      ${a.predicted_category ? `<p><b>Your prediction:</b> ${escapeHtml(a.predicted_category)}</p>` : ""}
+      ${a.approach || a.predicted_approach ? `<p><b>Why:</b> ${escapeHtml(a.approach || a.predicted_approach)}</p>` : ""}
+      <p><b>Verdict:</b> <span class="pred-${escapeHtml(verdict)}">${escapeHtml(verdict)}</span></p>
+      ${e.prediction_note ? `<p><b>Note:</b> ${escapeHtml(e.prediction_note)}</p>` : ""}`;
+    $("#detail-body").innerHTML = body;
+    $("#detail-modal").classList.remove("hidden");
+    return;
+  }
   const tags = (e.user_overrides && e.user_overrides.tags) || e.mistake_tags || [];
   const body = `
     <h2>${escapeHtml(a.title || a.slug)} ${a.difficulty ? badge(a.difficulty) : ""}</h2>
@@ -953,7 +1248,7 @@ function showUserChip(email) {
 }
 
 // expose for views.js
-window.App = { startFlow, openDetail, openRecall, startMock, loadOverview, render,
+window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOverview, render,
   currentActiveTab, api, runSweep, get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------

@@ -34,6 +34,16 @@ def test_gemini_settings_can_enable_gemini_key(monkeypatch):
     assert llm.current_model(settings)["provider"] == "gemini"
 
 
+def test_openai_schema_is_strict_and_default_free():
+    schema = llm._openai_schema(llm.PredictionResult)
+
+    assert schema["strict"] is True
+    body = schema["schema"]
+    assert body["required"] == ["verdict", "note"]
+    assert body["additionalProperties"] is False
+    assert "default" not in json.dumps(body)
+
+
 @pytest.mark.asyncio
 async def test_extract_validates_good_json(enable_llm, monkeypatch):
     payload_json = json.dumps({

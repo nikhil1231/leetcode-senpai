@@ -36,6 +36,14 @@ def _in_library(p):
     return bool(p.get("in_neetcode150", True))
 
 
+def _is_sprint_attempt(a):
+    return a.get("kind") == "sprint"
+
+
+def _solved_attempts(attempts):
+    return [a for a in attempts if not _is_sprint_attempt(a)]
+
+
 # ---- confidence / grade ---------------------------------------------------------
 def quality(confidence, independence):
     if independence == "solution":
@@ -133,7 +141,7 @@ def _mean(xs, default):
     return sum(xs) / len(xs) if xs else default
 
 
-def topic_stats(problems, attempts):
+def topic_stats(problems, attempts, enrichments=None):
     """Per NeetCode category: coverage, avg confidence, independence rate,
     avg % beaten, mastery/weakness. Ordered weakest first."""
     by_cat = {}
@@ -142,15 +150,28 @@ def topic_stats(problems, attempts):
             continue
         c = by_cat.setdefault(
             p["neetcode_category"],
-            {"total": 0, "solved": set(), "confs": [], "indep": [], "rt": []},
+            {"total": 0, "solved": set(), "confs": [], "indep": [], "rt": [],
+             "sprint_reps": 0, "sprint_correct": 0, "sprint_partial": 0,
+             "sprint_wrong": 0},
         )
         c["total"] += 1
 
     cat_of = {p["slug"]: p["neetcode_category"] for p in problems}
+    enr_by_attempt = {e.get("attempt_id"): e for e in (enrichments or [])}
     for a in attempts:
         cat = cat_of.get(a["slug"])
         c = by_cat.get(cat)
         if not c:
+            continue
+        if _is_sprint_attempt(a):
+            c["sprint_reps"] += 1
+            verdict = (enr_by_attempt.get(a.get("id")) or {}).get("prediction_verdict")
+            if verdict == "correct":
+                c["sprint_correct"] += 1
+            elif verdict == "partial":
+                c["sprint_partial"] += 1
+            elif verdict == "wrong":
+                c["sprint_wrong"] += 1
             continue
         c["solved"].add(a["slug"])
         if a.get("confidence") is not None:
@@ -173,14 +194,26 @@ def topic_stats(problems, attempts):
         avg_rt = _mean(c["rt"], None)
         conf_norm = (avg_conf - 1) / 2
         mastery = 0.5 * conf_norm + 0.5 * independence if solved else 0.0
-        out.append({
+        row = {
             "category": cat, "total": total, "solved": solved,
             "coverage": round(coverage, 3),
             "avg_confidence": round(avg_conf, 2) if c["confs"] else None,
             "independence_rate": round(independence, 2) if c["indep"] else None,
             "avg_runtime_percentile": round(avg_rt, 1) if avg_rt is not None else None,
             "mastery": round(mastery, 3), "weakness": round(1.0 - mastery, 3),
-        })
+        }
+        if c["sprint_reps"]:
+            graded = c["sprint_correct"] + c["sprint_partial"] + c["sprint_wrong"]
+            row.update({
+                "sprint_reps": c["sprint_reps"],
+                "sprint_correct": c["sprint_correct"],
+                "sprint_partial": c["sprint_partial"],
+                "sprint_wrong": c["sprint_wrong"],
+                "sprint_accuracy": (
+                    round(c["sprint_correct"] / graded, 3) if graded else None
+                ),
+            })
+        out.append(row)
     out.sort(key=lambda x: (x["weakness"], 1 - x["coverage"]), reverse=True)
     return out
 
@@ -207,7 +240,7 @@ def mistake_density(problems, attempts, enrichments, days=30, today=None):
     cat_of = {p["slug"]: p["neetcode_category"] for p in problems}
     enr_by_attempt = {e.get("attempt_id"): e for e in (enrichments or [])}
     raw = {}
-    for a in attempts:
+    for a in _solved_attempts(attempts):
         if (a.get("solved_at") or 0) < cutoff:
             continue
         cat = cat_of.get(a["slug"])
@@ -251,7 +284,7 @@ def build_drill_lane(
         return []
 
     attempts_by_slug = {}
-    for a in attempts:
+    for a in _solved_attempts(attempts):
         attempts_by_slug.setdefault(a.get("slug"), []).append(a)
     reviews_by_slug = {r.get("slug"): r for r in reviews}
     stats = {s["category"]: s for s in topic_stats(problems, attempts)}
@@ -310,6 +343,55 @@ def build_drill_lane(
     return out
 
 
+def build_sprint_round(
+    problems,
+    attempts,
+    reviews,
+    settings=None,
+    today=None,
+    enrichments=None,
+    exclude_slugs=None,
+):
+    """Return statement-only sprint reps from in-library problems.
+
+    Unlike the focused drill lane, sprint rounds always backfill from the
+    imported library when local weakness signal is sparse or absent.
+    """
+    today_d = _today(today)
+    settings = settings or {}
+    exclude_slugs = set(exclude_slugs or ())
+    limit = settings.get("sprint_round_size", 30)
+    if limit <= 0:
+        return []
+
+    prob_by_slug = {p["slug"]: p for p in problems if _in_library(p)}
+    if not prob_by_slug:
+        return []
+
+    attempts_by_slug = {}
+    for a in _solved_attempts(attempts):
+        attempts_by_slug.setdefault(a.get("slug"), []).append(a)
+    reviews_by_slug = {r.get("slug"): r for r in reviews}
+    stats = {s["category"]: s for s in topic_stats(problems, attempts)}
+    mistakes = mistake_density(problems, attempts, enrichments, today=today_d)
+    pred_misses = _prediction_misses_by_category(problems, attempts, enrichments)
+    struggles = _recent_struggles_by_category(problems, attempts, today_d)
+
+    candidates = []
+    for slug, p in prob_by_slug.items():
+        if slug in exclude_slugs:
+            continue
+        cat = p.get("neetcode_category")
+        score, reason, reason_codes, signals = _sprint_score(
+            p, attempts_by_slug.get(slug, []), reviews_by_slug.get(slug, {}),
+            stats.get(cat, {}), mistakes, pred_misses, struggles, settings,
+        )
+        candidates.append((p, score, reason, reason_codes, signals))
+
+    candidates.sort(key=_sprint_sort_key)
+    return [_sprint_item(*cand) for cand in candidates[:limit]]
+
+
 def _prediction_misses_by_category(problems, attempts, enrichments):
     cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
     attempt_by_id = {a.get("id"): a for a in attempts}
@@ -324,11 +406,125 @@ def _prediction_misses_by_category(problems, attempts, enrichments):
     return raw
 
 
+def _sprint_score(p, attempts, review, stats, mistakes, pred_misses, struggles, settings):
+    cat = p.get("neetcode_category")
+    leech = int(bool(review.get("leech")))
+    fail_count = int(review.get("fail_count") or 0)
+    unattempted = 0 if attempts else 1
+    weak = stats.get("weakness", 0.0) if stats.get("solved", 0) else 0.0
+    coverage_gap = 1 - stats.get("coverage", 0.0)
+    mistake = mistakes.get(cat, 0.0)
+    pred = pred_misses.get(cat, 0)
+    struggle = struggles.get(cat, 0)
+
+    leech_score = settings.get("sprint_leech_weight", 3.0) * leech
+    fail_score = settings.get("sprint_fail_weight", 0.45) * fail_count
+    mistake_score = settings.get("sprint_mistake_weight", 2.0) * mistake
+    pred_score = settings.get("sprint_prediction_weight", 1.6) * pred
+    struggle_score = settings.get("sprint_struggle_weight", 1.5) * struggle
+    weak_score = settings.get("sprint_weakness_weight", 0.8) * weak
+    breadth_score = settings.get("sprint_breadth_weight", 0.35) * coverage_gap
+    unattempted_score = settings.get("sprint_unattempted_weight", 0.2) * unattempted
+    base_score = settings.get("sprint_broad_weight", 0.05)
+
+    score = (
+        base_score + leech_score + fail_score + mistake_score + pred_score
+        + struggle_score + weak_score + breadth_score + unattempted_score
+    )
+    reason_scores = [
+        (leech_score, "Leech review state"),
+        (fail_score, "Repeated review failures"),
+        (mistake_score, "Recent mistake density"),
+        (pred_score, "Prediction misses"),
+        (struggle_score, "Recent low-confidence solve"),
+        (weak_score, "Weak topic"),
+        (breadth_score + unattempted_score + base_score, "Broad coverage"),
+    ]
+    reason = max(reason_scores, key=lambda x: (x[0], x[1]))[1]
+    reason_codes = _sprint_reason_codes(
+        leech_score, fail_score, mistake_score, pred_score, struggle_score,
+        weak_score, breadth_score, unattempted_score,
+    )
+    signals = _sprint_signals(
+        leech, fail_count, weak, coverage_gap, unattempted, mistake, pred, struggle,
+    )
+    return round(score, 3), reason, reason_codes, signals
+
+
+def _sprint_reason_codes(
+    leech_score, fail_score, mistake_score, pred_score, struggle_score,
+    weak_score, breadth_score, unattempted_score,
+):
+    codes = []
+    if leech_score > 0:
+        codes.append("leech")
+    if fail_score > 0:
+        codes.append("fail_count")
+    if mistake_score > 0:
+        codes.append("recent_mistakes")
+    if pred_score > 0:
+        codes.append("prediction_miss")
+    if struggle_score > 0:
+        codes.append("recent_struggle")
+    if weak_score > 0:
+        codes.append("weak_topic")
+    if breadth_score > 0 or unattempted_score > 0:
+        codes.append("broad_coverage")
+    if not codes:
+        codes.append("broad_coverage")
+    return codes
+
+
+def _sprint_signals(
+    leech, fail_count, weakness, coverage_gap, unattempted, mistake, pred, struggle,
+):
+    signals = {}
+    if leech:
+        signals["leech"] = True
+    if fail_count:
+        signals["fail_count"] = fail_count
+    if weakness:
+        signals["weakness"] = round(weakness, 3)
+    if coverage_gap:
+        signals["coverage_gap"] = round(coverage_gap, 3)
+    if unattempted:
+        signals["unattempted"] = True
+    if mistake:
+        signals["mistake_density"] = round(mistake, 3)
+    if pred:
+        signals["prediction_miss"] = True
+        signals["prediction_misses"] = pred
+    if struggle:
+        signals["recent_struggles"] = struggle
+    return signals
+
+
+def _sprint_sort_key(cand):
+    p, score, _reason, _reason_codes, _signals = cand
+    difficulty = p.get("difficulty", "Unknown")
+    cat = p.get("neetcode_category")
+    return (-score,
+            _CATEGORY_ORDER.get(cat, len(_CATEGORY_ORDER)),
+            _DIFFICULTY_ORDER.get(difficulty, _DIFFICULTY_ORDER["Unknown"]),
+            p.get("title", p["slug"]).casefold(),
+            p["slug"])
+
+
+def _sprint_item(p, score, reason, reason_codes, signals):
+    return {
+        "slug": p["slug"], "title": p.get("title", p["slug"]),
+        "difficulty": p.get("difficulty", "Unknown"),
+        "category": p.get("neetcode_category"), "url": p.get("url"),
+        "kind": "sprint", "score": round(score, 3), "reason": reason,
+        "reason_codes": reason_codes, "signals": signals,
+    }
+
+
 def _recent_struggles_by_category(problems, attempts, today):
     cutoff = int((dt.datetime.combine(today, dt.time()) - dt.timedelta(days=30)).timestamp())
     cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
     raw = {}
-    for a in attempts:
+    for a in _solved_attempts(attempts):
         ts = a.get("solved_at")
         if ts is not None and ts < cutoff:
             continue
@@ -346,7 +542,7 @@ def _latest_relevant_signal_by_category(problems, attempts, enrichments, today):
     cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
     enr_by_attempt = {e.get("attempt_id"): e for e in (enrichments or [])}
     raw = {}
-    for a in attempts:
+    for a in _solved_attempts(attempts):
         ts = a.get("solved_at") or 0
         if ts < cutoff:
             continue
@@ -480,7 +676,8 @@ def build_daily_queue(problems, attempts, reviews, settings, today=None, enrichm
     prob_by_slug = {p["slug"]: p for p in problems}
     stats = {s["category"]: s for s in topic_stats(problems, attempts)}
     mistakes = mistake_density(problems, attempts, enrichments, today=today_d)
-    attempted = {a["slug"] for a in attempts}
+    solved_attempts = _solved_attempts(attempts)
+    attempted = {a["slug"] for a in solved_attempts}
     solved_per_cat = {}
     for slug in attempted:
         cat = prob_by_slug.get(slug, {}).get("neetcode_category")
@@ -603,6 +800,8 @@ def _goal_progress(attempts, settings, today_d):
         if a.get("kind") == "recall" and a.get("grading_status") in ("pending", "ready", "failed"):
             continue
         kind = a.get("kind")
+        if kind == "sprint":
+            continue
         if kind in ("review", "recall"):
             r_done += 1
         elif kind == "drill":
@@ -619,12 +818,13 @@ def _goal_progress(attempts, settings, today_d):
 def overview(problems, attempts, reviews, today=None):
     today_d = _today(today)
     total_problems = sum(1 for p in problems if _in_library(p))
-    solved = len({a["slug"] for a in attempts})
+    solved_attempts = _solved_attempts(attempts)
+    solved = len({a["slug"] for a in solved_attempts})
     due = sum(1 for r in reviews if r.get("due_date") and r["due_date"] <= _iso(today_d))
     leeches = sum(1 for r in reviews if r.get("leech"))
     dates = {
         dt.datetime.fromtimestamp(a["solved_at"]).date()
-        for a in attempts if a.get("solved_at")
+        for a in solved_attempts if a.get("solved_at")
     }
     return {
         "total_problems": total_problems, "solved": solved,
@@ -651,6 +851,8 @@ def _xp_today(attempts, today_d):
         if not ts or dt.datetime.fromtimestamp(ts).date() != today_d:
             continue
         kind = a.get("kind")
+        if kind == "sprint":
+            continue
         if kind == "recall" and a.get("grading_status") in ("pending", "ready", "failed"):
             continue
         xp += 5 if kind == "recall" else (20 if a.get("source") in ("auto", "manual") and kind != "review" else 10)

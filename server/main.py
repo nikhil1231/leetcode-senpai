@@ -6,15 +6,16 @@ weekly reports, playbooks) degrades gracefully when the selected provider's API
 key is unset; most coaching jobs run off the critical path, while recall grading
 intentionally waits so the review is scheduled immediately.
 """
+import datetime as dt
 import hashlib
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import (auth, coach, config, enrich, gamify, importer, insights,
                leetcode, llm, mock, packs, poller, scheduler)
@@ -64,6 +65,23 @@ class RecallSubmit(BaseModel):
     complexity_time: str | None = None
     complexity_space: str | None = None
     confidence: int | None = None  # user's confirmed self-grade (overrides LLM)
+
+
+class SprintStart(BaseModel):
+    limit: int | None = None
+    exclude_slugs: list[str] = Field(default_factory=list)
+
+
+class SprintSubmit(BaseModel):
+    round_id: str
+    slug: str
+    predicted_category: str
+    why: str
+    self_verdict: str | None = None
+
+
+class SprintGrade(BaseModel):
+    round_id: str
 
 
 class OverrideTags(BaseModel):
@@ -149,6 +167,8 @@ PENDING_MAX_AGE_SEC = 12 * 3600
 RECENT_SOLVE_WINDOW_SEC = 120
 # Bump to re-generate stored solution grades after a prompt/schema change.
 SOLUTION_PROMPT_VERSION = 1
+DRILL_CACHE_FLAG = "pattern_sprint_drills"
+DRILL_CACHE_TARGET = 3
 
 
 def _pending(store):
@@ -156,7 +176,7 @@ def _pending(store):
     cutoff = time.time() - PENDING_MAX_AGE_SEC
     out = []
     for a in store.list_attempts():
-        if a.get("kind") == "recall" or a.get("source") == "recall":
+        if a.get("kind") in ("recall", "sprint") or a.get("source") in ("recall", "sprint"):
             continue
         if a.get("confidence") is not None or a.get("source") == "backfill":
             continue
@@ -170,6 +190,94 @@ def _pending(store):
         })
     out.sort(key=lambda a: a.get("solved_at") or 0, reverse=True)
     return out
+
+
+def _today_iso():
+    return dt.date.today().isoformat()
+
+
+def _drill_exclude_slugs(store, queue):
+    exclude = {
+        item["slug"] for item in queue.get("reviews", []) + queue.get("new", [])
+        if item.get("slug")
+    }
+    active = store.latest_active_session()
+    if active and active.get("slug"):
+        exclude.add(active["slug"])
+    for item in _pending(store):
+        if item.get("slug"):
+            exclude.add(item["slug"])
+    return exclude
+
+
+def _build_drills(store, exclude_slugs):
+    problems, attempts, reviews, enrichments, settings = _gather(
+        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_enrichments, store.get_settings)
+    return scheduler.build_drill_lane(
+        problems, attempts, reviews, settings, enrichments=enrichments,
+        exclude_slugs=exclude_slugs,
+    )
+
+
+def _cached_drills(store, exclude_slugs):
+    cache = store.get_flags().get(DRILL_CACHE_FLAG) or {}
+    drills = [
+        item for item in cache.get("drills", [])
+        if item.get("slug") and item["slug"] not in exclude_slugs
+    ]
+    fresh = cache.get("date") == _today_iso()
+    return drills, fresh
+
+
+def _refresh_drill_cache(uid, exclude_slugs=None):
+    store = get_store(uid)
+    drills = _build_drills(store, set(exclude_slugs or ()))[:DRILL_CACHE_TARGET]
+    store.set_flag(DRILL_CACHE_FLAG, {
+        "date": _today_iso(),
+        "refreshed_at": int(time.time()),
+        "drills": drills,
+    })
+
+
+def _replace_completed_drill_cache(uid, completed_slug):
+    store = get_store(uid)
+    cache = store.get_flags().get(DRILL_CACHE_FLAG) or {}
+    cached = [d for d in cache.get("drills", []) if d.get("slug") != completed_slug]
+    target = max(len(cache.get("drills", [])), DRILL_CACHE_TARGET)
+
+    problems, attempts, reviews, enrichments, settings = _gather(
+        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_enrichments, store.get_settings)
+    queue = scheduler.build_daily_queue(
+        problems, attempts, reviews, settings, enrichments=enrichments,
+    )
+    exclude = _drill_exclude_slugs(store, queue) | {d["slug"] for d in cached}
+    replacements = scheduler.build_drill_lane(
+        problems, attempts, reviews, settings, enrichments=enrichments,
+        exclude_slugs=exclude | {completed_slug},
+    )
+    if len(cached) + len(replacements) < target:
+        replacements += scheduler.build_drill_lane(
+            problems, attempts, reviews, settings, enrichments=enrichments,
+            exclude_slugs=exclude,
+        )
+
+    seen = {d["slug"] for d in cached}
+    for item in replacements:
+        slug = item.get("slug")
+        if not slug or slug in seen:
+            continue
+        cached.append(item)
+        seen.add(slug)
+        if len(cached) >= target:
+            break
+
+    store.set_flag(DRILL_CACHE_FLAG, {
+        "date": _today_iso(),
+        "refreshed_at": int(time.time()),
+        "drills": cached[:target],
+    })
 
 
 async def _enrich_bg(uid, attempt_id):
@@ -261,6 +369,53 @@ def _recall_attempt_payload(store, attempt_id):
     }
 
 
+async def _hydrate_problem_content(store, slug, lc):
+    p = store.get_problem(slug)
+    if not p:
+        return None
+    if not p.get("content_html"):
+        try:
+            meta = await leetcode.question(slug, lc)
+        except Exception:
+            meta = None
+        if meta and meta.get("content_html"):
+            store.upsert_problem({
+                "slug": slug,
+                "content_html": meta.get("content_html"),
+                "frontend_id": meta.get("frontend_id") or p.get("frontend_id"),
+                "title": meta.get("title") or p.get("title"),
+                "difficulty": meta.get("difficulty") or p.get("difficulty"),
+                "leetcode_tags": meta.get("tags") or p.get("leetcode_tags", []),
+                "likes": meta.get("likes"),
+                "dislikes": meta.get("dislikes"),
+                "like_ratio": meta.get("like_ratio"),
+                "ac_rate": meta.get("ac_rate"),
+                "paid_only": meta.get("paid_only"),
+                "similar_slugs": meta.get("similar_slugs") or p.get("similar_slugs", []),
+            })
+            p = store.get_problem(slug) or p
+    return p
+
+
+def _one_line(text):
+    return " ".join((text or "").splitlines()).strip()
+
+
+def _canonical_key_ideas(problem):
+    canonical = (problem or {}).get("canonical_summary") or {}
+    return [str(i) for i in (canonical.get("key_ideas") or []) if str(i).strip()]
+
+
+def _sprint_fallback(actual_category, key_ideas=None, grading_error=None):
+    return {
+        "status": "needs_self_grade",
+        "actual_category": actual_category,
+        "key_ideas": key_ideas or [],
+        "message": "LLM grading unavailable; compare your prediction to the actual category.",
+        "grading_error": grading_error,
+    }
+
+
 # ---- dashboard ------------------------------------------------------------------
 @app.get("/api/overview")
 def api_overview(uid: str = Depends(auth.require_user)):
@@ -277,7 +432,7 @@ def api_overview(uid: str = Depends(auth.require_user)):
 
 
 @app.get("/api/today")
-def api_today(uid: str = Depends(auth.require_user)):
+def api_today(bg: BackgroundTasks, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     problems, attempts, reviews, enrichments, settings = _gather(
         store.list_problems, store.list_attempts, store.list_reviews,
@@ -285,27 +440,30 @@ def api_today(uid: str = Depends(auth.require_user)):
     queue = scheduler.build_daily_queue(
         problems, attempts, reviews, settings, enrichments=enrichments,
     )
-    exclude_slugs = {
-        item["slug"] for item in queue.get("reviews", []) + queue.get("new", [])
-        if item.get("slug")
-    }
-    active = store.latest_active_session()
-    if active and active.get("slug"):
-        exclude_slugs.add(active["slug"])
-    for item in _pending(store):
-        if item.get("slug"):
-            exclude_slugs.add(item["slug"])
-    queue["drills"] = scheduler.build_drill_lane(
-        problems, attempts, reviews, settings, enrichments=enrichments,
-        exclude_slugs=exclude_slugs,
-    )
+    exclude_slugs = _drill_exclude_slugs(store, queue)
+    drills, fresh = _cached_drills(store, exclude_slugs)
+    if drills:
+        queue["drills"] = drills[:DRILL_CACHE_TARGET]
+        if not fresh:
+            bg.add_task(_refresh_drill_cache, uid, exclude_slugs)
+    else:
+        queue["drills"] = scheduler.build_drill_lane(
+            problems, attempts, reviews, settings, enrichments=enrichments,
+            exclude_slugs=exclude_slugs,
+        )
+        store.set_flag(DRILL_CACHE_FLAG, {
+            "date": _today_iso(),
+            "refreshed_at": int(time.time()),
+            "drills": queue["drills"][:DRILL_CACHE_TARGET],
+        })
     return _with_recall_state(queue, store)
 
 
 @app.get("/api/topics")
 def api_topics(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
-    return scheduler.topic_stats(store.list_problems(), store.list_attempts())
+    return scheduler.topic_stats(
+        store.list_problems(), store.list_attempts(), store.list_enrichments())
 
 
 @app.get("/api/insights")
@@ -473,6 +631,8 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     store.upsert_review(slug, new_state)
     if llm.enabled(store.get_settings()):
         bg.add_task(_enrich_bg, uid, attempt_id)
+    if attempt.get("kind") == "drill":
+        bg.add_task(_replace_completed_drill_cache, uid, slug)
     suggestion = None
     if scheduler.quality(body.confidence, body.independence) < 3:
         suggestion = _similar_suggestion(store, slug)
@@ -550,21 +710,327 @@ def api_history(limit: int = 50, uid: str = Depends(auth.require_user)):
     for a in rows:
         p = pm.get(a["slug"], {})
         e = em.get(a.get("id"), {})
-        out.append({
+        common = {
             "id": a.get("id"), "slug": a["slug"], "solved_at": a.get("solved_at"),
+            "kind": a.get("kind"), "source": a.get("source"),
+            "title": p.get("title", a["slug"]),
+            "difficulty": p.get("difficulty"), "neetcode_category": p.get("neetcode_category"),
+            "actual_category": p.get("neetcode_category"), "url": p.get("url"),
+        }
+        if a.get("kind") == "sprint":
+            out.append({
+                **common,
+                "round_id": a.get("round_id"),
+                "predicted_category": a.get("predicted_category"),
+                "approach": a.get("approach") or a.get("predicted_approach"),
+                "predicted_approach": a.get("predicted_approach") or a.get("approach"),
+                "prediction_verdict": e.get("prediction_verdict"),
+                "prediction_note": e.get("prediction_note"),
+            })
+            continue
+        out.append({
+            **common,
             "time_taken_sec": a.get("time_taken_sec"),
             "runtime_percentile": a.get("runtime_percentile"), "lang": a.get("lang"),
             "confidence": a.get("confidence"), "independence": a.get("independence"),
-            "mistake_note": a.get("mistake_note"), "kind": a.get("kind"),
-            "source": a.get("source"), "title": p.get("title", a["slug"]),
-            "difficulty": p.get("difficulty"), "neetcode_category": p.get("neetcode_category"),
-            "url": p.get("url"), "has_code": bool(a.get("code")),
+            "mistake_note": a.get("mistake_note"), "has_code": bool(a.get("code")),
             "mistake_tags": _effective_tags(e),
             "pattern_used": e.get("pattern_used"),
             "predicted_category": a.get("predicted_category"),
             "prediction_verdict": e.get("prediction_verdict"),
+            "prediction_note": e.get("prediction_note"),
         })
     return out
+
+
+# ---- sprint reps ----------------------------------------------------------------
+SPRINT_REP_SECONDS = 60
+SPRINT_GRADING_PROMPT = "sprint_prediction_grading"
+SPRINT_GRADING_PROMPT_VERSION = 1
+
+
+async def _warm_sprint_canonicals_bg(uid, slugs):
+    store = get_store(uid)
+    for slug in slugs:
+        try:
+            await coach.ensure_canonical(store, slug)
+        except Exception:
+            continue
+
+
+async def _grade_sprint_prediction(problem, body: SprintSubmit, why: str, settings):
+    key_ideas = _canonical_key_ideas(problem)
+    canonical = ", ".join(key_ideas) if key_ideas else None
+    return await llm.extract_or_error("grade_prediction", {
+        "title": problem.get("title", body.slug),
+        "category": problem.get("neetcode_category"),
+        "canonical": canonical,
+        "predicted_category": body.predicted_category,
+        "predicted_approach": why,
+        "pattern_used": problem.get("neetcode_category"),
+    }, settings=settings)
+
+
+async def _check_sprint_llm(settings):
+    selected = llm.current_model(settings)
+    if not selected["enabled"]:
+        raise HTTPException(503, f"LLM disabled (no API key for {selected['provider']})")
+    result, err = await llm.extract_or_error("grade_prediction", {
+        "title": "Sprint readiness check",
+        "category": "Arrays & Hashing",
+        "canonical": "Use a hash set or hash map for membership.",
+        "predicted_category": "Arrays & Hashing",
+        "predicted_approach": "Use hashing for fast lookups.",
+        "pattern_used": "Arrays & Hashing",
+    }, settings=settings)
+    if not result:
+        raise HTTPException(503, f"LLM readiness check failed: {err or 'no response'}")
+    return selected
+
+
+def _sprint_round_item(rep):
+    return {
+        "slug": rep["slug"],
+        "title": rep.get("title", rep["slug"]),
+        "category": rep.get("category"),
+        "difficulty": rep.get("difficulty"),
+        "url": rep.get("url"),
+    }
+
+
+def _close_active_sprint_rounds(store, now):
+    for round_doc in store.list_sprint_rounds():
+        if round_doc.get("status") != "active":
+            continue
+        finished = (round_doc.get("current_index") or 0) >= len(round_doc.get("items") or [])
+        store.update_sprint_round(round_doc["id"], {
+            "status": "finished" if finished else "abandoned",
+            "finished_at": now,
+        })
+
+
+def _update_sprint_round_progress(store, round_id, slug, attempt_id):
+    if not round_id or not attempt_id:
+        return
+    round_doc = store.get_sprint_round(round_id)
+    if not round_doc:
+        return
+    items = round_doc.get("items") or []
+    next_index = round_doc.get("current_index") or 0
+    for i, item in enumerate(items):
+        if item.get("slug") == slug:
+            next_index = max(next_index, i + 1)
+            break
+    attempt_ids = list(round_doc.get("attempt_ids") or [])
+    if attempt_id and attempt_id not in attempt_ids:
+        attempt_ids.append(attempt_id)
+    fields = {"current_index": next_index, "attempt_ids": attempt_ids}
+    if round_doc.get("status") == "active" and items and next_index >= len(items):
+        fields.update({"status": "finished", "finished_at": int(time.time())})
+    store.update_sprint_round(round_id, fields)
+
+
+@app.post("/api/sprint/start")
+async def api_sprint_start(bg: BackgroundTasks,
+                           body: SprintStart = Body(default_factory=SprintStart),
+                           uid: str = Depends(auth.require_user),
+                           lc=Depends(auth.leetcode_auth)):
+    store = get_store(uid)
+    problems, attempts, reviews, enrichments, settings = _gather(
+        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_enrichments, store.get_settings)
+    sprint_settings = dict(settings)
+    if body.limit is not None:
+        if body.limit <= 0:
+            raise HTTPException(400, "limit must be positive")
+        sprint_settings["sprint_round_size"] = body.limit
+    reps = scheduler.build_sprint_round(
+        problems, attempts, reviews, sprint_settings,
+        enrichments=enrichments, exclude_slugs=body.exclude_slugs,
+    )
+    selected = None
+    if reps:
+        selected = await _check_sprint_llm(settings)
+    for rep in reps:
+        p = await _hydrate_problem_content(store, rep["slug"], lc)
+        if p and p.get("content_html"):
+            rep["content_html"] = p.get("content_html")
+    now = int(time.time())
+    _close_active_sprint_rounds(store, now)
+    status = "active" if reps else "finished"
+    round_id = store.add_sprint_round({
+        "started_at": now,
+        "finished_at": None if reps else now,
+        "status": status,
+        "rep_seconds": SPRINT_REP_SECONDS,
+        "items": [_sprint_round_item(rep) for rep in reps],
+        "current_index": 0,
+        "attempt_ids": [],
+    })
+    if selected and reps:
+        bg.add_task(_warm_sprint_canonicals_bg, uid, [rep["slug"] for rep in reps])
+    return {
+        "round_id": round_id,
+        "reps": reps,
+        "llm_enabled": bool(selected and selected["enabled"]),
+    }
+
+
+@app.get("/api/sprint/active")
+def api_sprint_active(uid: str = Depends(auth.require_user)):
+    active = get_store(uid).latest_active_sprint_round()
+    return {"active": active}
+
+
+@app.post("/api/sprint/{round_id}/abandon")
+def api_sprint_abandon(round_id: str, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    round_doc = store.get_sprint_round(round_id)
+    if not round_doc:
+        raise HTTPException(404, "no such sprint round")
+    if round_doc.get("status") == "active":
+        store.update_sprint_round(round_id, {
+            "status": "abandoned",
+            "finished_at": int(time.time()),
+        })
+        round_doc = store.get_sprint_round(round_id)
+    return {"round": round_doc}
+
+
+@app.post("/api/sprint/submit")
+async def api_sprint_submit(body: SprintSubmit, uid: str = Depends(auth.require_user)):
+    verdicts = {"correct", "partial", "wrong", "unknown"}
+    if body.self_verdict is not None and body.self_verdict not in verdicts:
+        raise HTTPException(400, "self_verdict must be correct, partial, wrong, or unknown")
+    why = _one_line(body.why)
+    if not body.predicted_category.strip():
+        raise HTTPException(400, "predicted_category is required")
+    store = get_store(uid)
+    p = store.get_problem(body.slug)
+    if not p:
+        raise HTTPException(404, "unknown problem")
+
+    actual = p.get("neetcode_category")
+    aid = _add_sprint_attempt(store, body, why)
+    store.upsert_enrichment(aid, {
+        "slug": body.slug,
+        "prediction_verdict": None,
+        "prediction_note": None,
+        "prompt": SPRINT_GRADING_PROMPT,
+        "prompt_version": SPRINT_GRADING_PROMPT_VERSION,
+        "created_at": int(time.time()),
+        "status": "pending",
+    })
+    _update_sprint_round_progress(store, body.round_id, body.slug, aid)
+
+    return {
+        "ok": True,
+        "attempt_id": aid,
+        "round_id": body.round_id,
+        "slug": body.slug,
+        "actual_category": actual,
+        "verdict": None,
+        "note": None,
+        "grading_status": "pending",
+        "grading_error": None,
+        "fallback": None,
+    }
+
+
+@app.post("/api/sprint/grade")
+async def api_sprint_grade(body: SprintGrade, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    round_doc = store.get_sprint_round(body.round_id)
+    attempt_ids = (round_doc or {}).get("attempt_ids") or []
+    if not round_doc:
+        attempt_ids = [
+            a["id"] for a in store.list_attempts()
+            if a.get("kind") == "sprint" and a.get("round_id") == body.round_id
+        ]
+    if not attempt_ids:
+        if round_doc:
+            store.update_sprint_round(body.round_id, {
+                "status": "finished",
+                "finished_at": int(time.time()),
+                "current_index": len(round_doc.get("items") or []),
+            })
+            return {"ok": True, "round_id": body.round_id, "results": []}
+        raise HTTPException(404, "no such sprint round")
+    settings = store.get_settings()
+    selected = await _check_sprint_llm(settings)
+    results = []
+    for aid in attempt_ids:
+        attempt = store.get_attempt(aid)
+        if not attempt or attempt.get("kind") != "sprint":
+            continue
+        p = store.get_problem(attempt.get("slug"))
+        if not p:
+            continue
+        submit = SprintSubmit(
+            round_id=body.round_id,
+            slug=attempt["slug"],
+            predicted_category=attempt.get("predicted_category") or "",
+            why=attempt.get("predicted_approach") or attempt.get("approach") or "",
+        )
+        graded, grading_error = await _grade_sprint_prediction(
+            p, submit, submit.why, settings)
+        enrichment = {
+            "slug": attempt["slug"],
+            "provider": selected["provider"],
+            "model": selected["model"],
+            "prompt": SPRINT_GRADING_PROMPT,
+            "prompt_version": SPRINT_GRADING_PROMPT_VERSION,
+            "created_at": int(time.time()),
+        }
+        if graded:
+            enrichment.update({
+                "prediction_verdict": graded.get("verdict"),
+                "prediction_note": graded.get("note"),
+                "status": "ok",
+            })
+        else:
+            enrichment.update({
+                "prediction_verdict": "unknown",
+                "prediction_note": grading_error or "grading returned no result",
+                "status": "failed",
+                "grading_error": grading_error,
+            })
+        store.upsert_enrichment(aid, enrichment)
+        results.append({
+            "attempt_id": aid,
+            "round_id": body.round_id,
+            "slug": attempt["slug"],
+            "actual_category": p.get("neetcode_category"),
+            "predicted_category": attempt.get("predicted_category"),
+            "why": attempt.get("predicted_approach") or attempt.get("approach"),
+            "verdict": enrichment.get("prediction_verdict"),
+            "note": enrichment.get("prediction_note"),
+            "grading_status": enrichment.get("status"),
+            "grading_error": enrichment.get("grading_error"),
+        })
+    if round_doc:
+        store.update_sprint_round(body.round_id, {
+            "status": "finished",
+            "finished_at": int(time.time()),
+            "current_index": len(round_doc.get("items") or []),
+        })
+    return {"ok": True, "round_id": body.round_id, "results": results}
+
+
+def _add_sprint_attempt(store, body: SprintSubmit, why: str):
+    now = int(time.time())
+    return store.add_attempt({
+        "slug": body.slug, "solved_at": now,
+        "time_taken_sec": None, "runtime_percentile": None,
+        "memory_percentile": None, "lang": None, "wrong_before_ac": None,
+        "submission_id": None, "code": None,
+        "confidence": None, "independence": None, "mistake_note": None,
+        "approach": why, "predicted_approach": why,
+        "complexity_time": None, "complexity_space": None,
+        "source": "sprint", "kind": "sprint",
+        "round_id": body.round_id,
+        "predicted_category": body.predicted_category,
+    })
 
 
 # ---- recall reviews -------------------------------------------------------------
@@ -694,30 +1160,9 @@ def api_problems(search: str = "", category: str = "", uid: str = Depends(auth.r
 async def api_recall_context(slug: str, uid: str = Depends(auth.require_user),
                              lc=Depends(auth.leetcode_auth)):
     store = get_store(uid)
-    p = store.get_problem(slug)
+    p = await _hydrate_problem_content(store, slug, lc)
     if not p:
         raise HTTPException(404, "unknown problem")
-    if not p.get("content_html"):
-        try:
-            meta = await leetcode.question(slug, lc)
-        except Exception:
-            meta = None
-        if meta and meta.get("content_html"):
-            store.upsert_problem({
-                "slug": slug,
-                "content_html": meta.get("content_html"),
-                "frontend_id": meta.get("frontend_id") or p.get("frontend_id"),
-                "title": meta.get("title") or p.get("title"),
-                "difficulty": meta.get("difficulty") or p.get("difficulty"),
-                "leetcode_tags": meta.get("tags") or p.get("leetcode_tags", []),
-                "likes": meta.get("likes"),
-                "dislikes": meta.get("dislikes"),
-                "like_ratio": meta.get("like_ratio"),
-                "ac_rate": meta.get("ac_rate"),
-                "paid_only": meta.get("paid_only"),
-                "similar_slugs": meta.get("similar_slugs") or p.get("similar_slugs", []),
-            })
-            p = store.get_problem(slug) or p
     return {
         "slug": slug,
         "title": p.get("title", slug),

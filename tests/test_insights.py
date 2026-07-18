@@ -75,6 +75,28 @@ def test_prediction_accuracy_overall():
     assert acc["overall_correct_rate"] == 0.5
 
 
+def test_prediction_accuracy_includes_sprint_verdicts_by_canonical_category():
+    problems = _problems()
+    attempts = [
+        {"id": "s1", "slug": "two-sum", "kind": "sprint",
+         "predicted_category": "Two Pointers"},
+        {"id": "a1", "slug": "3sum", "kind": "adhoc",
+         "predicted_category": "Arrays & Hashing"},
+    ]
+    enr = [
+        {"attempt_id": "s1", "prediction_verdict": "wrong"},
+        {"attempt_id": "a1", "prediction_verdict": "correct"},
+    ]
+
+    acc = insights.prediction_accuracy(problems, attempts, enr)
+
+    assert acc["graded"] == 2
+    assert acc["sprint_graded"] == 1
+    assert acc["by_category"]["Arrays & Hashing"]["wrong"] == 1
+    assert acc["by_category"]["Two Pointers"]["correct"] == 1
+    assert acc["by_kind"]["sprint"]["wrong"] == 1
+
+
 def test_mock_assemble_three(store):
     for p in _problems():
         store.upsert_problem(p)

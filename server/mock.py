@@ -24,7 +24,7 @@ def assemble(store, today=None):
     attempts = store.list_attempts()
     reviews = store.list_reviews()
     pm = {p["slug"]: p for p in problems}
-    attempted = {a["slug"] for a in attempts}
+    attempted = {a["slug"] for a in scheduler._solved_attempts(attempts)}
     stats = scheduler.topic_stats(problems, attempts)  # weakest first
     picks = []
 

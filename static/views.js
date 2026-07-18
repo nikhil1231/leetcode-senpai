@@ -71,12 +71,25 @@
       "Fresh practice selected to expand coverage without crowding out spaced repetition.",
       q.new.length ? q.new.map(item).join("") : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>"
     );
+    const sprintAction = `
+      <div class="sprint-card">
+        <div>
+          <div class="section-title">Sprint round</div>
+          <p class="section-desc">Statement-only pattern reps. Sixty seconds each, no LeetCode tab.</p>
+        </div>
+        <button id="btn-start-sprint" class="button is-primary">Start sprint</button>
+      </div>`;
     const drills = q.drills && q.drills.length ? section(
       "Focused drills",
       q.drills.length,
       "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
-      q.drills.map(item).join("")
-    ) : "";
+      sprintAction + q.drills.map(item).join("")
+    ) : section(
+      "Focused drills",
+      0,
+      "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
+      sprintAction + "<p class='empty'>No focused drills queued.</p>"
+    );
     const expansion = q.expansion && q.expansion.length ? section(
       "Grow your library",
       q.expansion.length,
@@ -116,6 +129,7 @@
       renderToday();
     });
     $("#btn-start-mock") && $("#btn-start-mock").addEventListener("click", () => App.startMock());
+    $("#btn-start-sprint") && $("#btn-start-sprint").addEventListener("click", () => App.startSprint());
   }
 
   async function weeklyReportBanner(report) {
@@ -322,10 +336,11 @@
   }
 
   // ---- History -----------------------------------------------------------------
-  let historyFilter = "all"; // all | solve | drill | recall — persists across re-renders
-  const historyType = (r) => (r.kind === "recall" ? "recall" : r.kind === "drill" ? "drill" : "solve");
+  let historyFilter = "all"; // all | solve | drill | sprint | recall — persists across re-renders
+  const historyType = (r) => (r.kind === "recall" ? "recall" : r.kind === "sprint" ? "sprint" : r.kind === "drill" ? "drill" : "solve");
   const typeTag = (t) => {
     if (t === "recall") return '<span class="tag type-recall">recall</span>';
+    if (t === "sprint") return '<span class="tag type-sprint">sprint</span>';
     if (t === "drill") return '<span class="tag type-drill">drill</span>';
     return '<span class="tag type-solve">solve</span>';
   };
@@ -341,13 +356,23 @@
       const m = { correct: "✓", partial: "~", wrong: "✗" }[r.prediction_verdict] || "";
       return `<span class="pred pred-${r.prediction_verdict}" title="pattern prediction ${r.prediction_verdict}">${m}</span>`;
     };
-    const counts = { all: rows.length, solve: 0, drill: 0, recall: 0 };
+    const coachRead = (r) => {
+      if (r.kind === "sprint") {
+        const parts = [];
+        if (r.predicted_category) parts.push(`<span class="pat">predicted ${escapeHtml(r.predicted_category)}</span>`);
+        if (r.prediction_note) parts.push(escapeHtml(r.prediction_note));
+        return parts.join(" ");
+      }
+      return `${(r.mistake_tags || []).map((t) => `<span class="mtag">${escapeHtml(t)}</span>`).join(" ")}
+        ${r.pattern_used ? `<span class="pat">${escapeHtml(r.pattern_used)}</span>` : ""}`;
+    };
+    const counts = { all: rows.length, solve: 0, drill: 0, sprint: 0, recall: 0 };
     rows.forEach((r) => { counts[historyType(r)]++; });
     const fbtn = (f, label) =>
       `<button class="button is-small" data-f="${f}">${label} <span class="ml-1 has-text-grey">${counts[f]}</span></button>`;
     el.innerHTML = `
       <div class="buttons has-addons type-filter" id="history-filter">
-        ${fbtn("all", "All")}${fbtn("solve", "Completions")}${fbtn("drill", "Drills")}${fbtn("recall", "Recalls")}
+        ${fbtn("all", "All")}${fbtn("solve", "Completions")}${fbtn("drill", "Drills")}${fbtn("sprint", "Sprints")}${fbtn("recall", "Recalls")}
       </div>
       <table class="table is-app is-fullwidth is-hoverable">
       <thead><tr><th>Problem</th><th>Type</th><th>Topic</th><th>When</th><th>Time</th><th>Conf</th><th>How</th><th>Coach read</th></tr></thead>
@@ -357,15 +382,14 @@
         <tr class="hist-row" data-id="${r.id}" data-type="${t}">
           <td><a href="${r.url}" target="_blank" onclick="event.stopPropagation()">${escapeHtml(r.title)}</a> ${badge(r.difficulty)} ${predBadge(r)}</td>
           <td>${typeTag(t)}</td>
-          <td class="small">${escapeHtml(r.neetcode_category || "")}</td>
+          <td class="small">${escapeHtml(r.actual_category || r.neetcode_category || "")}</td>
           <td class="small">${r.solved_at ? new Date(r.solved_at * 1000).toLocaleDateString() : "—"}</td>
           <td>${fmtTime(r.time_taken_sec)}</td>
           <td>${confLabel(r.confidence)}</td>
           <td class="small">${r.independence || "—"}</td>
-          <td class="small">${(r.mistake_tags || []).map((t) => `<span class="mtag">${escapeHtml(t)}</span>`).join(" ")}
-            ${r.pattern_used ? `<span class="pat">${escapeHtml(r.pattern_used)}</span>` : ""}</td>
+          <td class="small">${coachRead(r)}</td>
         </tr>`; }).join("")}</tbody></table>
-      <p class="small">Click a row for code, diffs &amp; the coach's full read.</p>`;
+      <p class="small">Click a row for its saved practice detail.</p>`;
 
     const applyFilter = () => {
       $$("#tab-history .hist-row").forEach((tr) =>

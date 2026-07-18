@@ -134,6 +134,7 @@ TASKS: dict[str, Task] = {
         "right family, wrong variant. Keep note under 15 words.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('category')}).\n"
+            f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
             f"Predicted pattern: {p.get('predicted_category')}\n"
             f"Predicted approach: {p.get('predicted_approach') or '(none)'}\n"
             f"Actual pattern used (from their code): {p.get('pattern_used') or p.get('category')}"
@@ -324,12 +325,28 @@ def _gemini_schema(schema) -> dict:
     return _strip_defaults(schema.model_json_schema())
 
 
+def _openai_strict_schema(node):
+    """Normalize Pydantic JSON Schema to OpenAI structured-output constraints."""
+    if isinstance(node, dict):
+        node.pop("default", None)
+        if node.get("type") == "object":
+            props = node.get("properties") or {}
+            node["required"] = list(props.keys())
+            node["additionalProperties"] = False
+        for v in node.values():
+            _openai_strict_schema(v)
+    elif isinstance(node, list):
+        for v in node:
+            _openai_strict_schema(v)
+    return node
+
+
 def _openai_schema(schema) -> dict:
     return {
         "type": "json_schema",
         "name": schema.__name__,
-        "strict": False,
-        "schema": schema.model_json_schema(),
+        "strict": True,
+        "schema": _openai_strict_schema(schema.model_json_schema()),
     }
 
 
@@ -360,12 +377,14 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema) -
                 "instructions": system,
                 "input": prompt,
                 "text": {"format": _openai_schema(schema)},
-                "temperature": 0.2,
                 "store": False,
             },
             timeout=60,
         )
-        resp.raise_for_status()
+        if resp.is_error:
+            raise RuntimeError(
+                f"OpenAI {resp.status_code}: {resp.text[:1000] or resp.reason_phrase}"
+            )
         return _response_text(resp.json())
 
     if provider != "gemini":

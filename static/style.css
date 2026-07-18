@@ -153,6 +153,19 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 }
 .queue-card.kind-drill .reason { color: var(--green); }
 .ratio { font-size: 11px; color: var(--green); }
+.sprint-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(79, 140, 255, .42);
+  border-radius: 8px;
+  background: rgba(79, 140, 255, .08);
+}
+.sprint-card .section-title { margin: 0 0 4px; color: var(--accent); }
+.sprint-card .section-desc { margin: 0; }
 
 /* ---- overlay (modal) — bespoke so it doesn't collide with Bulma's .modal ---- */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
@@ -332,6 +345,7 @@ body.has-active-session #user-chip {
 .type-filter { margin-bottom: 14px; }
 .tag.type-recall { background: transparent; border: 1px solid var(--accent); color: var(--accent); }
 .tag.type-drill { background: rgba(53, 196, 122, .08); border: 1px solid rgba(53, 196, 122, .55); color: var(--green); }
+.tag.type-sprint { background: rgba(240, 180, 41, .12); border: 1px solid rgba(240, 180, 41, .65); color: var(--amber); }
 .tag.type-solve { background: transparent; border: 1px solid var(--border); color: var(--muted); }
 .mtag { display: inline-block; background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-size: 10px; color: var(--amber); }
 .pat { color: var(--muted); font-style: italic; }
@@ -377,6 +391,57 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .grading-text { color: var(--muted); font-size: 13px; animation: gradetext 1.4s ease-in-out infinite; }
 @keyframes gradetext { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
 
+/* ---- sprint runner --------------------------------------------------------- */
+.overlay-card.sprint-wide { width: min(1180px, 96vw); }
+.sprint-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr);
+  gap: 18px;
+  align-items: start;
+}
+.sprint-problem-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+.sprint-problem-head h3 { margin: 0 0 4px; font-size: 20px; line-height: 1.2; }
+.sprint-head-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.sprint-countdown {
+  min-width: 66px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 5px 8px;
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.sprint-countdown.is-expired { color: var(--red); border-color: var(--red); }
+.sprint-prompt { max-height: 64vh; }
+.sprint-answer {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px;
+}
+.sprint-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(80px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.sprint-summary-grid div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel2);
+  padding: 12px;
+}
+.sprint-summary-grid b { display: block; font-size: 24px; line-height: 1; }
+.sprint-summary-grid span { color: var(--muted); font-size: 12px; text-transform: capitalize; }
+.sprint-summary h3 { margin: 6px 0 8px; font-size: 14px; }
+.sprint-summary ul { margin-left: 18px; }
+
 /* spinners + async loading indicator */
 .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
 .spinner-sm { width: 12px; height: 12px; border-width: 2px; vertical-align: -1px; margin-right: 4px; }
@@ -414,6 +479,11 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
   .overlay-card.recall-wide > #recall-grade,
   .overlay-card.recall-wide > #recall-actions { grid-column: 1; grid-row: auto; }
   .recall-statement { max-height: 38vh; }
+  .sprint-card { align-items: flex-start; flex-direction: column; }
+  .sprint-card .button { width: 100%; }
+  .sprint-layout { grid-template-columns: 1fr; }
+  .sprint-prompt { max-height: 38vh; }
+  .sprint-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---- mock ------------------------------------------------------------------- */

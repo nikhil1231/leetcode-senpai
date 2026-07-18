@@ -35,6 +35,14 @@ def client(monkeypatch):
     main.app.dependency_overrides.clear()
 
 
+def _enable_sprint_llm(monkeypatch, verdict="correct", note="ok"):
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        return {"verdict": verdict, "note": note}, None
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_extract_or_error)
+
+
 def test_overview(client):
     r = client.get("/api/overview")
     assert r.status_code == 200
@@ -116,6 +124,84 @@ def test_today_drills_can_use_local_signal_without_llm(client, monkeypatch):
     assert all(item["kind"] == "drill" for item in body["drills"])
     assert all(item["reason_codes"] for item in body["drills"])
     assert all("signals" in item for item in body["drills"])
+
+
+def test_today_reuses_fresh_pattern_sprint_cache(client):
+    cached = {
+        "slug": "two-sum", "title": "Two Sum", "difficulty": "Easy",
+        "category": "Arrays & Hashing", "url": "https://lc/two-sum",
+        "kind": "drill", "score": 9, "reason": "cached",
+        "reason_codes": ["leech"], "signals": {"leech": True},
+    }
+    client.store.set_flag(main.DRILL_CACHE_FLAG, {
+        "date": main._today_iso(),
+        "refreshed_at": int(time.time()),
+        "drills": [cached],
+    })
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999900,
+        "source": "manual", "kind": "adhoc", "confidence": 1,
+        "independence": "solution",
+    })
+
+    body = client.get("/api/today").json()
+
+    assert body["drills"] == [cached]
+
+
+def test_annotating_drill_swaps_completed_pattern_sprint_question(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    for slug, title, diff, cat in [
+        ("valid-parentheses", "Valid Parentheses", "Easy", "Stack"),
+        ("binary-search", "Binary Search", "Easy", "Binary Search"),
+        ("contains-duplicate", "Contains Duplicate", "Easy", "Arrays & Hashing"),
+    ]:
+        client.store.upsert_problem({
+            "slug": slug, "title": title, "difficulty": diff,
+            "neetcode_category": cat, "in_library": True,
+            "packs": ["neetcode150"], "url": f"https://lc/{slug}",
+            "similar_slugs": [],
+        })
+    cached = [
+        {
+            "slug": "valid-anagram", "title": "Valid Anagram", "difficulty": "Easy",
+            "category": "Arrays & Hashing", "url": "https://lc/valid-anagram",
+            "kind": "drill", "score": 9, "reason": "cached",
+            "reason_codes": ["recent_mistakes"], "signals": {"recent_struggles": 1},
+        },
+        {
+            "slug": "binary-search", "title": "Binary Search", "difficulty": "Easy",
+            "category": "Binary Search", "url": "https://lc/binary-search",
+            "kind": "drill", "score": 8, "reason": "cached",
+            "reason_codes": ["recent_mistakes"], "signals": {"recent_struggles": 1},
+        },
+    ]
+    client.store.set_flag(main.DRILL_CACHE_FLAG, {
+        "date": main._today_iso(),
+        "refreshed_at": int(time.time()),
+        "drills": cached,
+    })
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999900,
+        "source": "manual", "kind": "adhoc", "confidence": 1,
+        "independence": "solution",
+    })
+    attempt_id = client.store.add_attempt({
+        "slug": "valid-anagram", "solved_at": int(time.time()),
+        "source": "auto", "kind": "drill", "confidence": None,
+        "independence": None,
+    })
+
+    r = client.post(f"/api/attempt/{attempt_id}/annotate", json={
+        "confidence": 3, "independence": "solo",
+    })
+
+    assert r.status_code == 200
+    drills = client.store.get_flags()[main.DRILL_CACHE_FLAG]["drills"]
+    slugs = [d["slug"] for d in drills]
+    assert "valid-anagram" not in slugs
+    assert "binary-search" in slugs
+    assert len(slugs) >= 2
 
 
 def _add_problem(store, slug, title, difficulty, category):
@@ -299,6 +385,322 @@ def test_recall_context_returns_prompt_without_requiring_hydration(client):
     assert "Example 1" in body["content_html"]
 
 
+def test_sprint_start_returns_reps_and_stored_content(client, monkeypatch):
+    _enable_sprint_llm(monkeypatch)
+    client.store.upsert_problem({
+        "slug": "two-sum",
+        "content_html": "<p>Given integers...</p>",
+    })
+
+    r = client.post("/api/sprint/start", json={"limit": 2})
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["round_id"]
+    assert len(body["reps"]) == 2
+    assert body["llm_enabled"] is True
+    assert all(rep["kind"] == "sprint" for rep in body["reps"])
+    two_sum = next(rep for rep in body["reps"] if rep["slug"] == "two-sum")
+    assert two_sum["content_html"] == "<p>Given integers...</p>"
+
+
+def test_sprint_start_accepts_empty_post_body(client, monkeypatch):
+    _enable_sprint_llm(monkeypatch)
+    r = client.post("/api/sprint/start")
+
+    assert r.status_code == 200
+    assert r.json()["round_id"]
+
+
+def test_sprint_start_requires_responding_llm(client, monkeypatch):
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        return None, "AuthError: invalid API key"
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_extract_or_error)
+
+    r = client.post("/api/sprint/start", json={"limit": 1})
+
+    assert r.status_code == 503
+    assert "LLM readiness check failed" in r.json()["detail"]
+
+
+def test_sprint_round_can_be_fetched_and_abandoned(client, monkeypatch):
+    _enable_sprint_llm(monkeypatch)
+    started = client.post("/api/sprint/start", json={"limit": 2})
+    assert started.status_code == 200
+    round_id = started.json()["round_id"]
+
+    active = client.get("/api/sprint/active").json()["active"]
+    assert active["id"] == round_id
+    assert active["status"] == "active"
+    assert active["current_index"] == 0
+    assert [i["slug"] for i in active["items"]] == [
+        r["slug"] for r in started.json()["reps"]
+    ]
+    assert set(active["items"][0]) == {"slug", "title", "category", "difficulty", "url"}
+
+    abandoned = client.post(f"/api/sprint/{round_id}/abandon")
+    assert abandoned.status_code == 200
+    assert abandoned.json()["round"]["status"] == "abandoned"
+    assert client.get("/api/sprint/active").json()["active"] is None
+
+
+def test_sprint_start_abandons_prior_round_without_touching_solve_session_or_reviews(client, monkeypatch):
+    _enable_sprint_llm(monkeypatch)
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
+    })
+    before_review = client.store.get_review("two-sum")
+    session = client.post("/api/session/start", json={
+        "slug": "two-sum", "kind": "adhoc",
+    }).json()
+
+    first = client.post("/api/sprint/start", json={"limit": 1}).json()
+    second = client.post("/api/sprint/start", json={"limit": 1}).json()
+
+    old_round = client.store.get_sprint_round(first["round_id"])
+    assert old_round["status"] == "abandoned"
+    assert client.get("/api/sprint/active").json()["active"]["id"] == second["round_id"]
+    assert client.get("/api/session/active").json()["active"]["session_id"] == session["session_id"]
+    assert client.store.get_review("two-sum") == before_review
+    assert len(client.store.list_active_sessions()) == 1
+
+
+def test_sprint_submit_saves_answer_then_round_grade_enriches_attempt(client, monkeypatch):
+    seen = {}
+
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        seen["task_name"] = task_name
+        seen["payload"] = payload
+        return {"verdict": "correct", "note": "Matches hashmap pattern."}, None
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_extract_or_error)
+    client.store.upsert_problem({
+        "slug": "two-sum",
+        "canonical_summary": {
+            "key_ideas": ["Hash complements as you scan", "Return when target - n exists"],
+        },
+    })
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
+        "fail_count": 2,
+    })
+    before_review = client.store.get_review("two-sum")
+
+    r = client.post("/api/sprint/submit", json={
+        "round_id": "round-1",
+        "slug": "two-sum",
+        "predicted_category": "Arrays & Hashing",
+        "why": "Use a hashmap of complements.\nNo sorting needed.",
+    })
+
+    assert r.status_code == 200
+    body = r.json()
+    aid = body["attempt_id"]
+    assert body["actual_category"] == "Arrays & Hashing"
+    assert body["verdict"] is None
+    assert body["note"] is None
+    assert body["grading_status"] == "pending"
+    assert client.store.get_review("two-sum") == before_review
+
+    attempt = client.store.get_attempt(aid)
+    assert attempt["kind"] == "sprint"
+    assert attempt["source"] == "sprint"
+    assert attempt["time_taken_sec"] is None
+    assert attempt["code"] is None
+    assert attempt["confidence"] is None
+    assert attempt["independence"] is None
+    assert attempt["predicted_category"] == "Arrays & Hashing"
+    assert attempt["approach"] == "Use a hashmap of complements. No sorting needed."
+    assert attempt["predicted_approach"] == attempt["approach"]
+
+    enrichment = client.store.get_enrichment(aid)
+    assert enrichment["status"] == "pending"
+
+    graded = client.post("/api/sprint/grade", json={"round_id": "round-1"})
+    assert graded.status_code == 200
+    graded_body = graded.json()["results"][0]
+    assert graded_body["attempt_id"] == aid
+    assert graded_body["verdict"] == "correct"
+    assert graded_body["note"] == "Matches hashmap pattern."
+    assert seen["task_name"] == "grade_prediction"
+    assert seen["payload"]["category"] == "Arrays & Hashing"
+    assert seen["payload"]["canonical"] == (
+        "Hash complements as you scan, Return when target - n exists"
+    )
+    assert seen["payload"]["predicted_approach"] == "Use a hashmap of complements. No sorting needed."
+
+    enrichment = client.store.get_enrichment(aid)
+    assert enrichment["prediction_verdict"] == "correct"
+    assert enrichment["slug"] == "two-sum"
+    assert enrichment["provider"]
+    assert enrichment["model"]
+    assert enrichment["prompt"] == main.SPRINT_GRADING_PROMPT
+    assert enrichment["prompt_version"] == main.SPRINT_GRADING_PROMPT_VERSION
+
+    history_row = next(h for h in client.get("/api/history").json() if h["id"] == aid)
+    assert history_row["kind"] == "sprint"
+    assert history_row["source"] == "sprint"
+    assert history_row["round_id"] == "round-1"
+    assert history_row["predicted_category"] == "Arrays & Hashing"
+    assert history_row["approach"] == "Use a hashmap of complements. No sorting needed."
+    assert history_row["prediction_verdict"] == "correct"
+    assert history_row["prediction_note"] == "Matches hashmap pattern."
+    assert history_row["actual_category"] == "Arrays & Hashing"
+    for solve_only in (
+        "time_taken_sec", "runtime_percentile", "lang", "confidence",
+        "independence", "mistake_note", "has_code", "mistake_tags", "pattern_used",
+    ):
+        assert solve_only not in history_row
+
+    accuracy = client.get("/api/insights").json()["prediction_accuracy"]
+    assert accuracy["graded"] == 1
+    assert accuracy["overall_correct_rate"] == 1.0
+    assert accuracy["by_category"]["Arrays & Hashing"]["correct"] == 1
+    assert accuracy["by_kind"]["sprint"]["correct"] == 1
+    assert accuracy["sprint_graded"] == 1
+
+    topics = client.get("/api/topics").json()
+    arrays = next(t for t in topics if t["category"] == "Arrays & Hashing")
+    assert arrays["sprint_reps"] == 1
+    assert arrays["sprint_correct"] == 1
+    assert arrays["sprint_accuracy"] == 1.0
+
+
+def test_sprint_submit_grades_with_category_only_when_canonical_missing(client, monkeypatch):
+    seen = {}
+
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        seen["task_name"] = task_name
+        seen["payload"] = payload
+        return {"verdict": "partial", "note": "Right family, wrong detail."}, None
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_extract_or_error)
+
+    submitted = client.post("/api/sprint/submit", json={
+        "round_id": "round-category-only",
+        "slug": "valid-anagram",
+        "predicted_category": "Arrays & Hashing",
+        "why": "Counts characters.",
+    })
+
+    assert submitted.status_code == 200
+    r = client.post("/api/sprint/grade", json={"round_id": "round-category-only"})
+    assert r.status_code == 200
+    body = r.json()["results"][0]
+    assert body["verdict"] == "partial"
+    assert seen["task_name"] == "grade_prediction"
+    assert seen["payload"]["category"] == "Arrays & Hashing"
+    assert seen["payload"]["canonical"] is None
+
+
+def test_sprint_round_grade_marks_failed_result_when_llm_grading_fails(client, monkeypatch):
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        if payload.get("title") == "Sprint readiness check":
+            return {"verdict": "correct", "note": "ready"}, None
+        return None, "OpenAI 400: unsupported temperature"
+
+    async def fake_ready(task_name, payload, settings=None):
+        return {"verdict": "correct", "note": "ready"}, None
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_ready)
+
+    submitted = client.post("/api/sprint/submit", json={
+        "round_id": "round-llm-error",
+        "slug": "two-sum",
+        "predicted_category": "Arrays & Hashing",
+        "why": "Use complements in a hashmap.",
+    })
+    assert submitted.status_code == 200
+
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_extract_or_error)
+    saved = client.post("/api/sprint/grade", json={"round_id": "round-llm-error"})
+
+    assert saved.status_code == 200
+    body = saved.json()["results"][0]
+    assert body["verdict"] == "unknown"
+    assert body["grading_status"] == "failed"
+    assert body["grading_error"] == "OpenAI 400: unsupported temperature"
+
+
+def test_sprint_submit_requires_no_llm_until_round_grade(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    client.store.upsert_problem({
+        "slug": "3sum",
+        "canonical_summary": {
+            "key_ideas": ["Sort first", "Fix one value then scan with two pointers"],
+        },
+    })
+    client.store.upsert_review("3sum", {
+        "slug": "3sum", "due_date": "2000-01-01", "interval_days": 5,
+    })
+    before_review = client.store.get_review("3sum")
+
+    r = client.post("/api/sprint/submit", json={
+        "round_id": "round-2",
+        "slug": "3sum",
+        "predicted_category": "Sliding Window",
+        "why": "Try to maintain a shrinking window.",
+        "self_verdict": "wrong",
+    })
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["actual_category"] == "Two Pointers"
+    assert body["verdict"] is None
+    assert body["grading_status"] == "pending"
+    assert body["fallback"] is None
+    assert client.store.get_review("3sum") == before_review
+    enrichment = client.store.get_enrichment(body["attempt_id"])
+    assert enrichment["prediction_verdict"] is None
+    assert enrichment["status"] == "pending"
+    assert enrichment["prompt"] == main.SPRINT_GRADING_PROMPT
+    assert enrichment["prompt_version"] == main.SPRINT_GRADING_PROMPT_VERSION
+
+
+def test_sprint_submit_updates_round_progress_without_active_solve_session(client, monkeypatch):
+    _enable_sprint_llm(monkeypatch)
+    started = client.post("/api/sprint/start", json={"limit": 1}).json()
+    slug = started["reps"][0]["slug"]
+
+    r = client.post("/api/sprint/submit", json={
+        "round_id": started["round_id"],
+        "slug": slug,
+        "predicted_category": "Arrays & Hashing",
+        "why": "Look for indexed membership.",
+        "self_verdict": "correct",
+    })
+
+    assert r.status_code == 200
+    round_doc = client.store.get_sprint_round(started["round_id"])
+    assert round_doc["status"] == "finished"
+    assert round_doc["current_index"] == 1
+    assert round_doc["attempt_ids"] == [r.json()["attempt_id"]]
+    assert client.get("/api/session/active").json()["active"] is None
+
+
+def test_sprint_grade_requires_responding_llm(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    before = len(client.store.list_attempts())
+
+    r = client.post("/api/sprint/submit", json={
+        "round_id": "round-preview",
+        "slug": "3sum",
+        "predicted_category": "Sliding Window",
+        "why": "Try to maintain a shrinking window.",
+    })
+
+    assert r.status_code == 200
+    assert len(client.store.list_attempts()) == before + 1
+    graded = client.post("/api/sprint/grade", json={"round_id": "round-preview"})
+    assert graded.status_code == 503
+    assert "LLM disabled" in graded.json()["detail"]
+
+
 def test_today_includes_unviewed_recall_state(client):
     client.store.upsert_review("two-sum", {
         "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
@@ -428,6 +830,15 @@ def test_pending_solved_modal_excludes_recalls(client):
         "slug": "two-sum", "solved_at": 9999999999, "source": "recall",
         "kind": "recall", "confidence": None, "approach": "hashmap",
         "grading_status": "pending",
+    })
+    assert client.get("/api/pending").json()["pending"] == []
+
+
+def test_pending_solved_modal_excludes_sprints(client):
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999999, "source": "sprint",
+        "kind": "sprint", "confidence": None, "approach": "hashmap",
+        "round_id": "round-1", "predicted_category": "Arrays & Hashing",
     })
     assert client.get("/api/pending").json()["pending"] == []
 
