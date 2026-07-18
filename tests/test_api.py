@@ -715,6 +715,21 @@ def test_today_includes_unviewed_recall_state(client):
     assert item["grading_status"] == "pending"
 
 
+def test_today_hides_completed_recall_from_current_sprint(client):
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
+    })
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "recall",
+        "kind": "recall", "approach": "hashmap", "grading_status": "viewed",
+        "recall_grade": {"grade": 3, "feedback": "solid"},
+    })
+
+    reviews = client.get("/api/today").json()["reviews"]
+
+    assert "two-sum" not in {r["slug"] for r in reviews}
+
+
 def test_recall_grading_waits_and_schedules(client, monkeypatch):
     async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
         return {"grade": 3, "feedback": "solid", "key_ideas_missed": []}, None

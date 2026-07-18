@@ -737,7 +737,7 @@ function renderRecallGrade(g) {
 function recallClarificationHtml() {
   return `<div class="recall-clarify">
     <label class="label-sm" for="recall-clarify-text">Ask about this grade</label>
-    <textarea id="recall-clarify-text" class="textarea" rows="2" placeholder="What should I clarify about the answer or grade?"></textarea>
+    <textarea id="recall-clarify-text" class="textarea" rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="What should I clarify about the answer or grade?"></textarea>
     <div class="recall-clarify-actions">
       <button id="btn-recall-clarify" class="button is-small is-link">Ask</button>
     </div>

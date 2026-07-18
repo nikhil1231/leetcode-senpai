@@ -325,7 +325,7 @@ async def _prep_problem_bg(uid, slug):
     await coach.ensure_canonical(store, slug)
 
 
-def _latest_unviewed_recall_by_slug(store):
+def _latest_recall_by_slug(store):
     latest = {}
     for a in store.list_attempts():
         if a.get("kind") != "recall":
@@ -336,22 +336,34 @@ def _latest_unviewed_recall_by_slug(store):
         prev = latest.get(slug)
         if not prev or (a.get("solved_at") or 0) >= (prev.get("solved_at") or 0):
             latest[slug] = a
-    return {
-        slug: attempt for slug, attempt in latest.items()
-        if attempt.get("grading_status") in ("pending", "ready", "failed")
-    }
+    return latest
+
+
+def _is_today(ts):
+    if not ts:
+        return False
+    return time.strftime("%Y-%m-%d", time.localtime(ts)) == time.strftime("%Y-%m-%d")
 
 
 def _with_recall_state(queue, store):
-    pending = _latest_unviewed_recall_by_slug(store)
+    latest = _latest_recall_by_slug(store)
+    reviews = []
     for item in queue.get("reviews", []):
         if item.get("mode") != "recall":
+            reviews.append(item)
             continue
-        attempt = pending.get(item["slug"])
+        attempt = latest.get(item["slug"])
         if not attempt:
+            reviews.append(item)
             continue
-        item["recall_attempt_id"] = attempt.get("id")
-        item["grading_status"] = attempt.get("grading_status")
+        status = attempt.get("grading_status")
+        if status in ("ready", "viewed") and _is_today(attempt.get("solved_at")):
+            continue
+        if status in ("pending", "failed", "ready"):
+            item["recall_attempt_id"] = attempt.get("id")
+            item["grading_status"] = status
+        reviews.append(item)
+    queue["reviews"] = reviews
     return queue
 
 
