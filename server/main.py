@@ -6,6 +6,7 @@ weekly reports, playbooks) degrades gracefully when the selected provider's API
 key is unset; most coaching jobs run off the critical path, while recall grading
 intentionally waits so the review is scheduled immediately.
 """
+import datetime as dt
 import hashlib
 import os
 import time
@@ -149,6 +150,8 @@ PENDING_MAX_AGE_SEC = 12 * 3600
 RECENT_SOLVE_WINDOW_SEC = 120
 # Bump to re-generate stored solution grades after a prompt/schema change.
 SOLUTION_PROMPT_VERSION = 1
+DRILL_CACHE_FLAG = "pattern_sprint_drills"
+DRILL_CACHE_TARGET = 3
 
 
 def _pending(store):
@@ -170,6 +173,94 @@ def _pending(store):
         })
     out.sort(key=lambda a: a.get("solved_at") or 0, reverse=True)
     return out
+
+
+def _today_iso():
+    return dt.date.today().isoformat()
+
+
+def _drill_exclude_slugs(store, queue):
+    exclude = {
+        item["slug"] for item in queue.get("reviews", []) + queue.get("new", [])
+        if item.get("slug")
+    }
+    active = store.latest_active_session()
+    if active and active.get("slug"):
+        exclude.add(active["slug"])
+    for item in _pending(store):
+        if item.get("slug"):
+            exclude.add(item["slug"])
+    return exclude
+
+
+def _build_drills(store, exclude_slugs):
+    problems, attempts, reviews, enrichments, settings = _gather(
+        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_enrichments, store.get_settings)
+    return scheduler.build_drill_lane(
+        problems, attempts, reviews, settings, enrichments=enrichments,
+        exclude_slugs=exclude_slugs,
+    )
+
+
+def _cached_drills(store, exclude_slugs):
+    cache = store.get_flags().get(DRILL_CACHE_FLAG) or {}
+    drills = [
+        item for item in cache.get("drills", [])
+        if item.get("slug") and item["slug"] not in exclude_slugs
+    ]
+    fresh = cache.get("date") == _today_iso()
+    return drills, fresh
+
+
+def _refresh_drill_cache(uid, exclude_slugs=None):
+    store = get_store(uid)
+    drills = _build_drills(store, set(exclude_slugs or ()))[:DRILL_CACHE_TARGET]
+    store.set_flag(DRILL_CACHE_FLAG, {
+        "date": _today_iso(),
+        "refreshed_at": int(time.time()),
+        "drills": drills,
+    })
+
+
+def _replace_completed_drill_cache(uid, completed_slug):
+    store = get_store(uid)
+    cache = store.get_flags().get(DRILL_CACHE_FLAG) or {}
+    cached = [d for d in cache.get("drills", []) if d.get("slug") != completed_slug]
+    target = max(len(cache.get("drills", [])), DRILL_CACHE_TARGET)
+
+    problems, attempts, reviews, enrichments, settings = _gather(
+        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_enrichments, store.get_settings)
+    queue = scheduler.build_daily_queue(
+        problems, attempts, reviews, settings, enrichments=enrichments,
+    )
+    exclude = _drill_exclude_slugs(store, queue) | {d["slug"] for d in cached}
+    replacements = scheduler.build_drill_lane(
+        problems, attempts, reviews, settings, enrichments=enrichments,
+        exclude_slugs=exclude | {completed_slug},
+    )
+    if len(cached) + len(replacements) < target:
+        replacements += scheduler.build_drill_lane(
+            problems, attempts, reviews, settings, enrichments=enrichments,
+            exclude_slugs=exclude,
+        )
+
+    seen = {d["slug"] for d in cached}
+    for item in replacements:
+        slug = item.get("slug")
+        if not slug or slug in seen:
+            continue
+        cached.append(item)
+        seen.add(slug)
+        if len(cached) >= target:
+            break
+
+    store.set_flag(DRILL_CACHE_FLAG, {
+        "date": _today_iso(),
+        "refreshed_at": int(time.time()),
+        "drills": cached[:target],
+    })
 
 
 async def _enrich_bg(uid, attempt_id):
@@ -277,7 +368,7 @@ def api_overview(uid: str = Depends(auth.require_user)):
 
 
 @app.get("/api/today")
-def api_today(uid: str = Depends(auth.require_user)):
+def api_today(bg: BackgroundTasks, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     problems, attempts, reviews, enrichments, settings = _gather(
         store.list_problems, store.list_attempts, store.list_reviews,
@@ -285,20 +376,22 @@ def api_today(uid: str = Depends(auth.require_user)):
     queue = scheduler.build_daily_queue(
         problems, attempts, reviews, settings, enrichments=enrichments,
     )
-    exclude_slugs = {
-        item["slug"] for item in queue.get("reviews", []) + queue.get("new", [])
-        if item.get("slug")
-    }
-    active = store.latest_active_session()
-    if active and active.get("slug"):
-        exclude_slugs.add(active["slug"])
-    for item in _pending(store):
-        if item.get("slug"):
-            exclude_slugs.add(item["slug"])
-    queue["drills"] = scheduler.build_drill_lane(
-        problems, attempts, reviews, settings, enrichments=enrichments,
-        exclude_slugs=exclude_slugs,
-    )
+    exclude_slugs = _drill_exclude_slugs(store, queue)
+    drills, fresh = _cached_drills(store, exclude_slugs)
+    if drills:
+        queue["drills"] = drills[:DRILL_CACHE_TARGET]
+        if not fresh:
+            bg.add_task(_refresh_drill_cache, uid, exclude_slugs)
+    else:
+        queue["drills"] = scheduler.build_drill_lane(
+            problems, attempts, reviews, settings, enrichments=enrichments,
+            exclude_slugs=exclude_slugs,
+        )
+        store.set_flag(DRILL_CACHE_FLAG, {
+            "date": _today_iso(),
+            "refreshed_at": int(time.time()),
+            "drills": queue["drills"][:DRILL_CACHE_TARGET],
+        })
     return _with_recall_state(queue, store)
 
 
@@ -473,6 +566,8 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     store.upsert_review(slug, new_state)
     if llm.enabled(store.get_settings()):
         bg.add_task(_enrich_bg, uid, attempt_id)
+    if attempt.get("kind") == "drill":
+        bg.add_task(_replace_completed_drill_cache, uid, slug)
     suggestion = None
     if scheduler.quality(body.confidence, body.independence) < 3:
         suggestion = _similar_suggestion(store, slug)

@@ -118,6 +118,84 @@ def test_today_drills_can_use_local_signal_without_llm(client, monkeypatch):
     assert all("signals" in item for item in body["drills"])
 
 
+def test_today_reuses_fresh_pattern_sprint_cache(client):
+    cached = {
+        "slug": "two-sum", "title": "Two Sum", "difficulty": "Easy",
+        "category": "Arrays & Hashing", "url": "https://lc/two-sum",
+        "kind": "drill", "score": 9, "reason": "cached",
+        "reason_codes": ["leech"], "signals": {"leech": True},
+    }
+    client.store.set_flag(main.DRILL_CACHE_FLAG, {
+        "date": main._today_iso(),
+        "refreshed_at": int(time.time()),
+        "drills": [cached],
+    })
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999900,
+        "source": "manual", "kind": "adhoc", "confidence": 1,
+        "independence": "solution",
+    })
+
+    body = client.get("/api/today").json()
+
+    assert body["drills"] == [cached]
+
+
+def test_annotating_drill_swaps_completed_pattern_sprint_question(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    for slug, title, diff, cat in [
+        ("valid-parentheses", "Valid Parentheses", "Easy", "Stack"),
+        ("binary-search", "Binary Search", "Easy", "Binary Search"),
+        ("contains-duplicate", "Contains Duplicate", "Easy", "Arrays & Hashing"),
+    ]:
+        client.store.upsert_problem({
+            "slug": slug, "title": title, "difficulty": diff,
+            "neetcode_category": cat, "in_library": True,
+            "packs": ["neetcode150"], "url": f"https://lc/{slug}",
+            "similar_slugs": [],
+        })
+    cached = [
+        {
+            "slug": "valid-anagram", "title": "Valid Anagram", "difficulty": "Easy",
+            "category": "Arrays & Hashing", "url": "https://lc/valid-anagram",
+            "kind": "drill", "score": 9, "reason": "cached",
+            "reason_codes": ["recent_mistakes"], "signals": {"recent_struggles": 1},
+        },
+        {
+            "slug": "binary-search", "title": "Binary Search", "difficulty": "Easy",
+            "category": "Binary Search", "url": "https://lc/binary-search",
+            "kind": "drill", "score": 8, "reason": "cached",
+            "reason_codes": ["recent_mistakes"], "signals": {"recent_struggles": 1},
+        },
+    ]
+    client.store.set_flag(main.DRILL_CACHE_FLAG, {
+        "date": main._today_iso(),
+        "refreshed_at": int(time.time()),
+        "drills": cached,
+    })
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999900,
+        "source": "manual", "kind": "adhoc", "confidence": 1,
+        "independence": "solution",
+    })
+    attempt_id = client.store.add_attempt({
+        "slug": "valid-anagram", "solved_at": int(time.time()),
+        "source": "auto", "kind": "drill", "confidence": None,
+        "independence": None,
+    })
+
+    r = client.post(f"/api/attempt/{attempt_id}/annotate", json={
+        "confidence": 3, "independence": "solo",
+    })
+
+    assert r.status_code == 200
+    drills = client.store.get_flags()[main.DRILL_CACHE_FLAG]["drills"]
+    slugs = [d["slug"] for d in drills]
+    assert "valid-anagram" not in slugs
+    assert "binary-search" in slugs
+    assert len(slugs) >= 2
+
+
 def _add_problem(store, slug, title, difficulty, category):
     store.upsert_problem({
         "slug": slug, "title": title, "difficulty": difficulty,
