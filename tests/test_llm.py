@@ -92,13 +92,15 @@ async def test_recall_schema_clamps(enable_llm, monkeypatch):
 async def test_grade_solution_validates_good_json(enable_llm, monkeypatch):
     payload_json = json.dumps({
         "score": 4, "optimal": False, "analysis": "one-pass hashmap",
-        "improvements": ["drop the second scan"],
+        "positives": ["right data structure"],
+        "negatives": ["drop the second scan"],
         "inferred_time": "O(n)", "inferred_space": "O(n)",
     })
     monkeypatch.setattr(llm, "_raw_generate", lambda *a, **k: payload_json)
     out = await llm.extract("grade_solution", {"code": "class Solution: pass"})
     assert out["score"] == 4
-    assert out["improvements"] == ["drop the second scan"]
+    assert out["positives"] == ["right data structure"]
+    assert out["negatives"] == ["drop the second scan"]
     assert out["inferred_time"] == "O(n)"
 
 

@@ -162,11 +162,8 @@ def _effective_tags(e):
 # can still be annotated from there.
 PENDING_MAX_AGE_SEC = 12 * 3600
 
-# Auto-grade only genuinely fresh solves; older un-graded solves can still be
-# graded on demand from the modal.
-RECENT_SOLVE_WINDOW_SEC = 120
 # Bump to re-generate stored solution grades after a prompt/schema change.
-SOLUTION_PROMPT_VERSION = 1
+SOLUTION_PROMPT_VERSION = 2
 DRILL_CACHE_FLAG = "pattern_sprint_drills"
 DRILL_CACHE_TARGET = 3
 
@@ -360,6 +357,8 @@ async def _grade_solution(store, attempt):
         graded, err = await coach.grade_solution(
             store, attempt["slug"], code, attempt.get("lang"),
             attempt.get("complexity_time"), attempt.get("complexity_space"),
+            attempt.get("confidence"), attempt.get("independence"),
+            attempt.get("mistake_note"), attempt.get("approach"),
         )
     except Exception as exc:  # defensive; coach already swallows LLM errors
         graded, err = None, str(exc)
@@ -370,18 +369,13 @@ async def _grade_solution(store, attempt):
         })
         return {"grading_status": "failed", "graded": None,
                 "grading_error": err or "grading returned no result"}
+    if graded.get("negatives") and not graded.get("improvements"):
+        graded = {**graded, "improvements": graded.get("negatives") or []}
     store.update_attempt(attempt["id"], {
         "solution_grade": {**graded, "prompt_version": SOLUTION_PROMPT_VERSION},
         "solution_grading_status": "viewed", "solution_grading_error": None,
     })
     return {"grading_status": "viewed", "graded": graded, "grading_error": None}
-
-
-async def _grade_solution_bg(uid, attempt_id):
-    store = get_store(uid)
-    attempt = store.get_attempt(attempt_id)
-    if attempt:
-        await _grade_solution(store, attempt)
 
 
 async def _prep_problem_bg(uid, slug):
@@ -649,16 +643,6 @@ async def api_poll(bg: BackgroundTasks, uid: str = Depends(auth.require_user),
     store = get_store(uid)
     username = store.get_settings().get("username")
     new_ids = await poller.check_active_sessions(store, username, lc)
-    # Kick off solution grading for freshly-detected solves, off the critical
-    # path. Only genuinely recent solves with code are auto-graded; the submission
-    # dedup in the poller guarantees each solve is graded at most once.
-    if llm.enabled():
-        now = time.time()
-        for aid in new_ids:
-            a = store.get_attempt(aid)
-            if (a and a.get("code")
-                    and (a.get("solved_at") or 0) >= now - RECENT_SOLVE_WINDOW_SEC):
-                bg.add_task(_grade_solution_bg, uid, aid)
     return {"new_attempts": new_ids, "pending": _pending(store)}
 
 
@@ -725,6 +709,8 @@ async def api_grade_solution(attempt_id: str, uid: str = Depends(auth.require_us
     attempt = store.get_attempt(attempt_id)
     if not attempt:
         raise HTTPException(404, "no such attempt")
+    if attempt.get("confidence") is None or attempt.get("independence") is None:
+        raise HTTPException(400, "self-assessment is required before solution grading")
     result = await _grade_solution(store, attempt)
     return {"ok": True, **result}
 

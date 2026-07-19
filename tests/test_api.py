@@ -1417,17 +1417,30 @@ def test_config_roundtrip(client):
 
 # ---- solution grading -----------------------------------------------------------
 def test_grade_solution_endpoint_success(client, monkeypatch):
-    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None):
+    seen = {}
+
+    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
+                         self_confidence=None, self_independence=None, self_note=None,
+                         self_approach=None):
+        seen.update({
+            "self_confidence": self_confidence,
+            "self_independence": self_independence,
+            "self_note": self_note,
+            "self_approach": self_approach,
+        })
         return {"score": 4, "optimal": False, "analysis": "one-pass hashmap",
-                "improvements": ["drop the second scan"],
+                "positives": ["Uses the right lookup structure"],
+                "negatives": ["Needs a cleaner early return"],
                 "inferred_time": "O(n)", "inferred_space": "O(n)"}, None
 
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
     aid = client.store.add_attempt({
         "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
-        "kind": "adhoc", "confidence": None, "code": "class Solution: pass",
-        "lang": "python3", "solution_grading_status": "pending",
+        "kind": "adhoc", "confidence": 3, "independence": "solo",
+        "mistake_note": "missed edge case", "approach": "hashmap",
+        "code": "class Solution: pass", "lang": "python3",
+        "solution_grading_status": None,
     })
     r = client.post(f"/api/attempt/{aid}/grade-solution")
     assert r.status_code == 200
@@ -1438,17 +1451,27 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
     assert stored["solution_grading_status"] == "viewed"
     assert stored["solution_grade"]["score"] == 4
     assert stored["solution_grade"]["prompt_version"] == main.SOLUTION_PROMPT_VERSION
+    assert stored["solution_grade"]["improvements"] == ["Needs a cleaner early return"]
+    assert seen == {
+        "self_confidence": 3,
+        "self_independence": "solo",
+        "self_note": "missed edge case",
+        "self_approach": "hashmap",
+    }
 
 
 def test_grade_solution_endpoint_failure(client, monkeypatch):
-    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None):
+    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
+                         self_confidence=None, self_independence=None, self_note=None,
+                         self_approach=None):
         return None, "AuthError: invalid API key"
 
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
     aid = client.store.add_attempt({
         "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
-        "kind": "adhoc", "confidence": None, "code": "class Solution: pass",
+        "kind": "adhoc", "confidence": 2, "independence": "hints",
+        "code": "class Solution: pass",
     })
     r = client.post(f"/api/attempt/{aid}/grade-solution")
     assert r.status_code == 200
@@ -1461,11 +1484,23 @@ def test_grade_solution_endpoint_failure(client, monkeypatch):
 def test_grade_solution_skips_without_code(client):
     aid = client.store.add_attempt({
         "slug": "two-sum", "solved_at": int(time.time()), "source": "manual",
-        "kind": "adhoc", "confidence": None, "code": None,
+        "kind": "adhoc", "confidence": 2, "independence": "solo", "code": None,
     })
     r = client.post(f"/api/attempt/{aid}/grade-solution")
     assert r.status_code == 200
     assert r.json()["grading_status"] == "skipped"
+
+
+def test_grade_solution_requires_self_assessment(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
+        "kind": "adhoc", "confidence": None, "independence": None,
+        "code": "class Solution: pass",
+    })
+    r = client.post(f"/api/attempt/{aid}/grade-solution")
+    assert r.status_code == 400
+    assert "self-assessment" in r.json()["detail"]
 
 
 def test_annotate_folds_solution_grade_into_schedule(client):
@@ -1491,10 +1526,12 @@ def test_annotate_folds_solution_grade_into_schedule(client):
     assert r2.json()["review"]["quality"] == 5  # self-assessment only
 
 
-def test_poll_auto_grades_fresh_solve_and_is_idempotent(client, monkeypatch):
+def test_poll_records_fresh_solve_without_grading_before_annotation(client, monkeypatch):
     calls = []
 
-    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None):
+    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
+                         self_confidence=None, self_independence=None, self_note=None,
+                         self_approach=None):
         calls.append(slug)
         return {"score": 5, "optimal": True, "analysis": "optimal",
                 "improvements": [], "inferred_time": "O(n)",
@@ -1523,13 +1560,12 @@ def test_poll_auto_grades_fresh_solve_and_is_idempotent(client, monkeypatch):
     first = client.post("/api/poll").json()
     assert len(first["new_attempts"]) == 1
     aid = first["new_attempts"][0]
-    # background grade task ran (TestClient runs BackgroundTasks synchronously)
-    assert calls == ["two-sum"]
+    assert calls == []
     stored = client.store.get_attempt(aid)
-    assert stored["solution_grading_status"] == "viewed"
-    assert stored["solution_grade"]["score"] == 5
+    assert stored["solution_grading_status"] is None
+    assert stored.get("solution_grade") is None
 
     # a second poll over the same submission must not re-detect or re-grade
     second = client.post("/api/poll").json()
     assert second["new_attempts"] == []
-    assert calls == ["two-sum"]
+    assert calls == []

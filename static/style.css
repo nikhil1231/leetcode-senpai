@@ -188,6 +188,7 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
 .overlay-card { width: 460px; max-width: 92vw; max-height: 92vh; overflow-y: auto; }
 .overlay-card.wide { width: 720px; }
+.overlay-card.annotate-wide { width: min(760px, 96vw); }
 .overlay-card h2 { margin: 0 0 12px; }
 .modal-titlebar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .modal-titlebar h2 { margin-bottom: 0; }
@@ -461,11 +462,18 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .recall-statement td, .recall-statement th { border: 1px solid var(--border); padding: 6px; }
 .recall-grade { margin-top: 14px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
 .grade-score { font-size: 15px; }
+.grade-analysis { margin: 8px 0 6px; line-height: 1.45; }
 .recall-grade .missed { color: var(--amber); font-size: 13px; }
 .recall-grade ul.improvements { margin: 4px 0 2px 18px; font-size: 13px; }
 .recall-grade ul.improvements li { margin: 2px 0; }
 .recall-grade .grade-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
 .tag.grade-optimal { background: rgba(53, 196, 122, .18); color: var(--green); border: 1px solid var(--green); font-weight: 600; }
+.grade-bullets { margin-top: 10px; font-size: 13px; }
+.grade-bullets b { display: block; margin-bottom: 3px; }
+.grade-bullets ul { margin: 0 0 0 18px; }
+.grade-bullets li { margin: 3px 0; }
+.grade-positives { color: var(--green); }
+.grade-negatives { color: var(--amber); }
 .recall-clarify { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .recall-clarify textarea { min-height: 68px; resize: vertical; }
 .recall-clarify-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
