@@ -1352,11 +1352,32 @@ def api_me(uid: str = Depends(auth.require_user)):
     settings = get_store(uid).get_settings()
     selected = llm.current_model(settings)
     return {"uid": uid, "local_mode": config.local_mode(), "llm_enabled": selected["enabled"],
-            "llm_provider": selected["provider"], "llm_model": selected["model"]}
+            "llm_provider": selected["provider"], "llm_model": selected["model"],
+            "code_updated_at": code_updated_at()}
 
 
 # ---- static frontend ------------------------------------------------------------
 _VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js")
+_CODE_UPDATED_DIRS = ("server", "static")
+_CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
+
+
+def code_updated_at():
+    latest = 0.0
+    for dirname in _CODE_UPDATED_DIRS:
+        root_dir = os.path.join(ROOT, dirname)
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+            for filename in filenames:
+                if os.path.splitext(filename)[1] not in _CODE_UPDATED_EXTS:
+                    continue
+                path = os.path.join(dirpath, filename)
+                try:
+                    latest = max(latest, os.path.getmtime(path))
+                except OSError:
+                    continue
+    updated = dt.datetime.fromtimestamp(latest or time.time(), dt.timezone.utc)
+    return {"iso": updated.isoformat(), "epoch": int(updated.timestamp())}
 
 
 def asset_version():

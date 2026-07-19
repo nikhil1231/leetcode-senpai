@@ -51,6 +51,13 @@ def test_overview(client):
     assert r.json()["llm_enabled"] is False
 
 
+def test_me_includes_code_updated_at(client):
+    body = client.get("/api/me").json()
+    assert body["uid"] == "test"
+    assert body["code_updated_at"]["iso"]
+    assert isinstance(body["code_updated_at"]["epoch"], int)
+
+
 def test_today_has_new_and_sections(client):
     r = client.get("/api/today")
     body = r.json()
@@ -985,6 +992,28 @@ def test_asset_version_changes_when_an_asset_changes(tmp_path, monkeypatch):
     before = main.asset_version()
     (tmp_path / "views.js").write_text("console.log('changed')", encoding="utf-8")
     assert main.asset_version() != before
+
+
+def test_code_updated_at_uses_latest_front_or_backend_mtime(tmp_path, monkeypatch):
+    server_dir = tmp_path / "server"
+    static_dir = tmp_path / "static"
+    server_dir.mkdir()
+    static_dir.mkdir()
+    old = server_dir / "main.py"
+    new = static_dir / "app.js"
+    old.write_text("old", encoding="utf-8")
+    new.write_text("new", encoding="utf-8")
+    old_ts = 1_700_000_000
+    new_ts = 1_700_000_123
+    import os
+    os.utime(old, (old_ts, old_ts))
+    os.utime(new, (new_ts, new_ts))
+    monkeypatch.setattr(main, "ROOT", str(tmp_path))
+
+    updated = main.code_updated_at()
+
+    assert updated["epoch"] == new_ts
+    assert updated["iso"].startswith("2023-11-14T22:15:23")
 
 
 def test_config_roundtrip(client):

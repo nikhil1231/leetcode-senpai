@@ -64,7 +64,26 @@ body {
   object-fit: cover;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .12);
 }
-#user-chip { display: flex; align-items: center; gap: 10px; }
+#user-chip {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.last-updated {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.user-identity {
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Bulma tabs, themed to the app's muted/accent scheme. */
 #tabs { margin-bottom: 0; }
@@ -459,6 +478,8 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
   .queue-card { align-items: flex-start; }
   .app-header { padding-left: 16px; padding-right: 16px; }
   .header-top { gap: 12px; }
+  #user-chip { max-width: 58%; }
+  .user-identity { max-width: 100%; }
   .app-logo { width: 30px; height: 30px; flex-basis: 30px; border-radius: 7px; }
   .active-run { padding: 28px 16px; min-height: calc(100vh - 108px); }
   .active-run-inner { grid-template-columns: 1fr; gap: 16px; }
