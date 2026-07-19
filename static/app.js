@@ -110,6 +110,8 @@ let nudgeShown = {};
 let pauseRequestId = 0;
 let sprintRound = null;
 let sprintTimer = null;
+let userEmail = "";
+let appMeta = null;
 
 // ---- sign-in gate --------------------------------------------------------------
 function showSignIn(msg) {
@@ -1234,6 +1236,7 @@ async function startApp() {
   // /today in parallel with the rest.
   render("today");
   await Promise.all([
+    loadAppMeta(),
     loadOverview(),
     loadCategories(),
     refreshActive(),
@@ -1242,9 +1245,46 @@ async function startApp() {
   if (llmEnabled) runSweep();
 }
 
+function formatUpdatedAt(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+async function loadAppMeta() {
+  try {
+    appMeta = await api("/me");
+    renderUserChip();
+  } catch (e) { /* auth errors are handled by api(); keep the header usable */ }
+}
+
+function renderUserChip() {
+  const updated = formatUpdatedAt(appMeta && appMeta.code_updated_at && appMeta.code_updated_at.iso);
+  const updatedHtml = updated
+    ? `<span class="last-updated" title="${escapeHtml(updated)}">Updated ${escapeHtml(updated)}</span>`
+    : "";
+  const identity = userEmail || "local mode";
+  const signout = userEmail
+    ? '<button id="btn-signout" class="button is-ghost is-small">Sign out</button>'
+    : "";
+  $("#user-chip").innerHTML = `
+    ${updatedHtml}
+    <span class="small user-identity">${escapeHtml(identity)}</span>
+    ${signout}`;
+  const btn = $("#btn-signout");
+  if (btn) btn.addEventListener("click", () => firebase.auth().signOut());
+}
+
 function showUserChip(email) {
-  $("#user-chip").innerHTML = `<span class="small">${email}</span> <button id="btn-signout" class="button is-ghost is-small">Sign out</button>`;
-  $("#btn-signout").addEventListener("click", () => firebase.auth().signOut());
+  userEmail = email || "";
+  renderUserChip();
 }
 
 // expose for views.js
@@ -1257,7 +1297,7 @@ window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOv
 function boot() {
   if (LOCAL) {
     hideSignIn();
-    $("#user-chip").innerHTML = '<span class="small">local mode</span>';
+    renderUserChip();
     startApp();
     return;
   }
