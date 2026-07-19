@@ -13,6 +13,76 @@
     if (btn) btn.addEventListener("click", retry);
   }
 
+  const problemFilters = {
+    search: "",
+    category: "",
+    difficulty: "",
+    due_status: "all",
+    attempted: "all",
+    leech: "all",
+    sort: "number",
+  };
+  const staticDifficulties = ["Easy", "Medium", "Hard"];
+
+  async function loadProblemFacets() {
+    try {
+      return await api("/problems/facets");
+    } catch (e) {
+      let topicOptions = [];
+      try {
+        const topics = await api("/topics");
+        topicOptions = topics.map((t) => ({ value: t.category, count: t.total }));
+      } catch (ignored) {
+        topicOptions = [];
+      }
+      return {
+        categories: topicOptions,
+        difficulties: staticDifficulties.map((value) => ({ value })),
+        total: null,
+      };
+    }
+  }
+
+  function facetOptions(facets, selected) {
+    return facets.map((f) => {
+      const label = f.count == null ? f.value : `${f.value} (${f.count})`;
+      return `<option value="${escapeHtml(f.value)}"${f.value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    }).join("");
+  }
+
+  function problemQueryString() {
+    const query = new URLSearchParams();
+    const search = problemFilters.search.trim();
+    if (search) query.set("search", search);
+    if (problemFilters.category) query.set("category", problemFilters.category);
+    if (problemFilters.difficulty) query.set("difficulty", problemFilters.difficulty);
+    if (problemFilters.due_status !== "all") query.set("due_status", problemFilters.due_status);
+    if (problemFilters.attempted !== "all") query.set("attempted", problemFilters.attempted);
+    if (problemFilters.leech !== "all") query.set("leech", problemFilters.leech);
+    if (problemFilters.sort !== "number") query.set("sort", problemFilters.sort);
+    const encoded = query.toString();
+    return encoded ? `?${encoded}` : "";
+  }
+
+  function hasActiveProblemFilters() {
+    return !!problemFilters.search.trim() || problemFilters.category || problemFilters.difficulty ||
+      problemFilters.due_status !== "all" || problemFilters.attempted !== "all" ||
+      problemFilters.leech !== "all";
+  }
+
+  function shortLocalDate(ts) {
+    if (ts == null) return "-";
+    const d = new Date(Number(ts) * 1000);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function compactState(state) {
+    const label = (state || "-").replace(/_/g, " ");
+    const cls = state ? ` state-${String(state).replace(/_/g, "-")}` : "";
+    return `<span class="tag problem-state${cls}">${escapeHtml(label)}</span>`;
+  }
+
   // ---- Today -------------------------------------------------------------------
   async function renderToday() {
     const el = $("#tab-today");
@@ -436,20 +506,110 @@
   async function renderProblems() {
     const el = $("#tab-problems");
     el.innerHTML = loader("Loading problems…");
-    const rows = await api("/problems");
-    if (!rows.length) { el.innerHTML = "<p class='empty'>No problems imported. Go to Discover.</p>"; return; }
-    el.innerHTML = `<table class="table is-app is-fullwidth is-hoverable">
-      <thead><tr><th>#</th><th>Problem</th><th>Topic</th><th>Diff</th><th>Attempts</th><th>Next review</th><th></th></tr></thead>
-      <tbody>${rows.map((r) => `
+    let facets;
+    try {
+      facets = await loadProblemFacets();
+    } catch (e) {
+      showLoadError(el, renderProblems);
+      return;
+    }
+    const totalLabel = facets.total == null ? "" : `<span class="small">${facets.total} in library</span>`;
+    el.innerHTML = `<div class="problems-toolbar">
+      <div class="control problems-search"><input id="problems-search" class="input" placeholder="Search title, slug, or #" value="${escapeHtml(problemFilters.search)}" /></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-category">
+        <option value="">Any topic</option>${facetOptions(facets.categories || [], problemFilters.category)}
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-difficulty">
+        <option value="">Any difficulty</option>${facetOptions(facets.difficulties || [], problemFilters.difficulty)}
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-due-status">
+        <option value="all"${problemFilters.due_status === "all" ? " selected" : ""}>Any due status</option>
+        <option value="due"${problemFilters.due_status === "due" ? " selected" : ""}>Due</option>
+        <option value="upcoming"${problemFilters.due_status === "upcoming" ? " selected" : ""}>Upcoming</option>
+        <option value="unscheduled"${problemFilters.due_status === "unscheduled" ? " selected" : ""}>Unscheduled</option>
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-attempted">
+        <option value="all"${problemFilters.attempted === "all" ? " selected" : ""}>Any attempts</option>
+        <option value="attempted"${problemFilters.attempted === "attempted" ? " selected" : ""}>Attempted</option>
+        <option value="unattempted"${problemFilters.attempted === "unattempted" ? " selected" : ""}>Unattempted</option>
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-leech">
+        <option value="all"${problemFilters.leech === "all" ? " selected" : ""}>Any leech</option>
+        <option value="only"${problemFilters.leech === "only" ? " selected" : ""}>Leech only</option>
+        <option value="exclude"${problemFilters.leech === "exclude" ? " selected" : ""}>Hide leech</option>
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-sort">
+        <option value="number"${problemFilters.sort === "number" ? " selected" : ""}>Sort by #</option>
+        <option value="title"${problemFilters.sort === "title" ? " selected" : ""}>Sort by title</option>
+        <option value="difficulty"${problemFilters.sort === "difficulty" ? " selected" : ""}>Sort by difficulty</option>
+        <option value="due_date"${problemFilters.sort === "due_date" ? " selected" : ""}>Sort by next review</option>
+        <option value="last_attempt"${problemFilters.sort === "last_attempt" ? " selected" : ""}>Sort by last attempt</option>
+        <option value="attempts"${problemFilters.sort === "attempts" ? " selected" : ""}>Sort by attempts</option>
+      </select></div></div>
+      ${totalLabel}
+    </div>
+    <div id="problems-results"></div>`;
+
+    const reload = () => loadProblemResults();
+    let searchTimer = null;
+    $("#problems-search").addEventListener("input", (e) => {
+      problemFilters.search = e.target.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(reload, 180);
+    });
+    [
+      ["#problems-category", "category"],
+      ["#problems-difficulty", "difficulty"],
+      ["#problems-due-status", "due_status"],
+      ["#problems-attempted", "attempted"],
+      ["#problems-leech", "leech"],
+      ["#problems-sort", "sort"],
+    ].forEach(([selector, key]) => {
+      $(selector).addEventListener("change", (e) => {
+        problemFilters[key] = e.target.value;
+        reload();
+      });
+    });
+    await loadProblemResults();
+  }
+
+  async function loadProblemResults() {
+    const box = $("#problems-results");
+    if (!box) return;
+    box.innerHTML = loader("Loading problems…");
+    let rows;
+    try {
+      rows = await api(`/problems${problemQueryString()}`);
+    } catch (e) {
+      showLoadError(box, loadProblemResults);
+      return;
+    }
+    if (!rows.length && !hasActiveProblemFilters()) {
+      box.innerHTML = "<p class='empty'>No problems imported. Go to Discover.</p>";
+      return;
+    }
+    if (!rows.length) {
+      box.innerHTML = "<p class='empty'>No matching problems for the current search/filter combination.</p>";
+      return;
+    }
+    box.innerHTML = `<table class="table is-app is-fullwidth is-hoverable problems-table">
+      <thead><tr><th>#</th><th>Problem</th><th>Topic</th><th>Diff</th><th>Attempts</th><th>Next review</th><th>Last attempt</th><th>State</th><th>Leech</th><th></th></tr></thead>
+      <tbody>${rows.map((r) => {
+        const category = r.neetcode_category || r.category || "";
+        return `
         <tr>
-          <td class="small">${r.frontend_id || ""}</td>
-          <td><a href="${r.url}" target="_blank">${escapeHtml(r.title)}</a> ${r.leech ? '<span class="tag is-danger is-light">leech</span>' : ""}</td>
-          <td class="small">${escapeHtml(r.neetcode_category || "")}</td>
-          <td>${badge(r.difficulty)}</td>
-          <td>${r.attempt_count}</td>
-          <td class="small">${r.due_date || "—"}</td>
-          <td><button class="button start is-small" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(r.neetcode_category || "")}">Start</button></td>
-        </tr>`).join("")}</tbody></table>`;
+          <td class="small problem-number" data-label="#">${escapeHtml(r.frontend_id || "-")}</td>
+          <td data-label="Problem"><a href="${r.url}" target="_blank">${escapeHtml(r.title)}</a></td>
+          <td class="small" data-label="Topic">${escapeHtml(category || "-")}</td>
+          <td data-label="Diff">${badge(r.difficulty)}</td>
+          <td data-label="Attempts">${r.attempt_count || 0}</td>
+          <td class="small" data-label="Next review">${escapeHtml(r.due_date || "-")}</td>
+          <td class="small" data-label="Last attempt">${shortLocalDate(r.last_attempt_at)}</td>
+          <td data-label="State">${compactState(r.mastery_state)}</td>
+          <td data-label="Leech">${r.leech ? '<span class="tag is-danger is-light">leech</span>' : '<span class="small">-</span>'}</td>
+          <td class="problem-action"><button class="button start is-small" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(category)}">Start</button></td>
+        </tr>`;
+      }).join("")}</tbody></table>`;
     $$("#tab-problems .start").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, "adhoc", "", b.dataset.title, b.dataset.cat)));
   }

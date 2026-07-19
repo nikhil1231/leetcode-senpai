@@ -17,13 +17,14 @@ from tests.fake_store import FakeStore
 def client(monkeypatch):
     shared = FakeStore("test")
     # seed a small library
-    for slug, title, diff, cat in [
-        ("two-sum", "Two Sum", "Easy", "Arrays & Hashing"),
-        ("3sum", "3Sum", "Medium", "Two Pointers"),
-        ("valid-anagram", "Valid Anagram", "Easy", "Arrays & Hashing"),
+    for frontend_id, slug, title, diff, cat in [
+        (1, "two-sum", "Two Sum", "Easy", "Arrays & Hashing"),
+        (15, "3sum", "3Sum", "Medium", "Two Pointers"),
+        (242, "valid-anagram", "Valid Anagram", "Easy", "Arrays & Hashing"),
     ]:
         shared.upsert_problem({"slug": slug, "title": title, "difficulty": diff,
                                "neetcode_category": cat, "in_library": True,
+                               "frontend_id": frontend_id,
                                "packs": ["neetcode150"], "url": f"https://lc/{slug}",
                                "similar_slugs": []})
     monkeypatch.setattr(main, "get_store", lambda uid: shared)
@@ -49,6 +50,13 @@ def test_overview(client):
     assert "solved" in r.json()
     assert r.json()["drills_today"] == 0
     assert r.json()["llm_enabled"] is False
+
+
+def test_me_includes_code_updated_at(client):
+    body = client.get("/api/me").json()
+    assert body["uid"] == "test"
+    assert body["code_updated_at"]["iso"]
+    assert isinstance(body["code_updated_at"]["epoch"], int)
 
 
 def test_today_has_new_and_sections(client):
@@ -224,13 +232,191 @@ def test_annotating_drill_swaps_completed_pattern_sprint_question(client, monkey
     assert len(slugs) >= 2
 
 
-def _add_problem(store, slug, title, difficulty, category):
+def _add_problem(store, slug, title, difficulty, category, frontend_id=None):
     store.upsert_problem({
         "slug": slug, "title": title, "difficulty": difficulty,
         "neetcode_category": category, "in_library": True,
+        "frontend_id": frontend_id,
         "packs": ["neetcode150"], "url": f"https://lc/{slug}",
         "similar_slugs": [],
     })
+
+
+def _seed_problem_picker_state(store):
+    _add_problem(store, "median-of-two-sorted-arrays",
+                 "Median of Two Sorted Arrays", "Hard", "Binary Search", 4)
+    _add_problem(store, "merge-intervals", "Merge Intervals", "Medium", "Intervals", 56)
+    _add_problem(store, "word-search", "Word Search", "Medium", "Backtracking", 79)
+    _add_problem(store, "reverse-linked-list", "Reverse Linked List", "Easy", "Linked List", 206)
+    _add_problem(store, "outside-library", "Outside Library", "Easy", "Arrays & Hashing", 999)
+    store.upsert_problem({"slug": "outside-library", "in_library": False})
+
+    store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "leech": 0,
+    })
+    store.upsert_review("3sum", {
+        "slug": "3sum", "due_date": "2999-01-01", "leech": 1,
+    })
+    store.upsert_review("merge-intervals", {
+        "slug": "merge-intervals", "due_date": "2030-01-01", "leech": 0,
+    })
+    store.upsert_review("word-search", {
+        "slug": "word-search", "due_date": "2000-02-01", "leech": 0,
+    })
+
+    store.add_attempt({"slug": "two-sum", "solved_at": 100, "kind": "adhoc", "source": "manual"})
+    store.add_attempt({"slug": "two-sum", "solved_at": 999, "kind": "sprint", "source": "sprint"})
+    store.add_attempt({"slug": "valid-anagram", "solved_at": 500, "kind": "sprint", "source": "sprint"})
+    store.add_attempt({"slug": "3sum", "solved_at": 300, "kind": "adhoc", "source": "manual"})
+    store.add_attempt({"slug": "3sum", "solved_at": 400, "kind": "review", "source": "auto"})
+    store.add_attempt({"slug": "merge-intervals", "solved_at": 200, "kind": "adhoc", "source": "manual"})
+
+
+def _problem_slugs(client, query=""):
+    return [p["slug"] for p in client.get(f"/api/problems{query}").json()]
+
+
+def test_problems_response_fields_support_start_button(client):
+    _seed_problem_picker_state(client.store)
+
+    row = next(p for p in client.get("/api/problems?search=two-sum").json()
+               if p["slug"] == "two-sum")
+
+    assert row["slug"] == "two-sum"
+    assert row["title"] == "Two Sum"
+    assert row["url"] == "https://lc/two-sum"
+    assert row["neetcode_category"] == "Arrays & Hashing"
+    assert row["attempt_count"] == 1
+    assert row["last_attempt_at"] == 100
+    assert row["due_date"] == "2000-01-01"
+    assert row["leech"] == 0
+    assert row["mastery_state"] == "review_due"
+
+
+def test_problems_combines_filters_and_excludes_non_library(client):
+    _seed_problem_picker_state(client.store)
+
+    rows = client.get(
+        "/api/problems?search=sum&category=Arrays%20%26%20Hashing"
+        "&difficulty=Easy&due_status=due&leech=exclude&attempted=attempted"
+    ).json()
+
+    assert [p["slug"] for p in rows] == ["two-sum"]
+    assert "outside-library" not in _problem_slugs(client)
+
+
+def test_problem_facets_count_only_library_problems_in_stable_order(client):
+    _seed_problem_picker_state(client.store)
+    _add_problem(client.store, "custom-hard", "Custom Hard", "Hard", "Zeta Custom", 1001)
+    _add_problem(client.store, "custom-weird", "Custom Weird", "Very Hard", "Alpha Custom", 1002)
+    client.store.upsert_problem({
+        "slug": "external-medium", "title": "External Medium",
+        "difficulty": "Medium", "neetcode_category": "Arrays & Hashing",
+        "in_library": False,
+    })
+    client.store.upsert_problem({
+        "slug": "empty-facets", "title": "Empty Facets",
+        "difficulty": "", "neetcode_category": "", "in_library": True,
+    })
+
+    body = client.get("/api/problems/facets").json()
+
+    assert body["total"] == 10
+    assert body["categories"] == [
+        {"value": "Arrays & Hashing", "count": 2},
+        {"value": "Two Pointers", "count": 1},
+        {"value": "Binary Search", "count": 1},
+        {"value": "Linked List", "count": 1},
+        {"value": "Backtracking", "count": 1},
+        {"value": "Intervals", "count": 1},
+        {"value": "Alpha Custom", "count": 1},
+        {"value": "Zeta Custom", "count": 1},
+    ]
+    assert body["difficulties"] == [
+        {"value": "Easy", "count": 3},
+        {"value": "Medium", "count": 3},
+        {"value": "Hard", "count": 2},
+        {"value": "Very Hard", "count": 1},
+    ]
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("?search=3su", ["3sum"]),
+    ("?search=Valid", ["valid-anagram"]),
+    ("?search=242", ["valid-anagram"]),
+])
+def test_problems_search_matches_slug_title_or_frontend_id(client, query, expected):
+    _seed_problem_picker_state(client.store)
+
+    assert _problem_slugs(client, query) == expected
+
+
+def test_problems_attempted_filters_ignore_sprint_reps(client):
+    _seed_problem_picker_state(client.store)
+
+    attempted = set(_problem_slugs(client, "?attempted=attempted"))
+    unattempted = set(_problem_slugs(client, "?attempted=unattempted"))
+
+    assert {"two-sum", "3sum", "merge-intervals"} <= attempted
+    assert "valid-anagram" not in attempted
+    assert {"valid-anagram", "word-search", "reverse-linked-list",
+            "median-of-two-sorted-arrays"} <= unattempted
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("?due_status=due", ["two-sum", "word-search"]),
+    ("?due_status=upcoming", ["3sum", "merge-intervals"]),
+    ("?due_status=unscheduled", [
+        "median-of-two-sorted-arrays", "reverse-linked-list", "valid-anagram",
+    ]),
+])
+def test_problems_due_status_filters(client, query, expected):
+    _seed_problem_picker_state(client.store)
+
+    assert _problem_slugs(client, query) == expected
+
+
+def test_problems_leech_filters_and_mastery_state(client):
+    _seed_problem_picker_state(client.store)
+
+    only = client.get("/api/problems?leech=only").json()
+    excluded = _problem_slugs(client, "?leech=exclude")
+
+    assert [p["slug"] for p in only] == ["3sum"]
+    assert only[0]["mastery_state"] == "leech"
+    assert "3sum" not in excluded
+
+
+@pytest.mark.parametrize("sort,expected", [
+    ("number", [
+        "two-sum", "median-of-two-sorted-arrays", "3sum", "merge-intervals",
+        "word-search", "reverse-linked-list", "valid-anagram",
+    ]),
+    ("title", [
+        "3sum", "median-of-two-sorted-arrays", "merge-intervals",
+        "reverse-linked-list", "two-sum", "valid-anagram", "word-search",
+    ]),
+    ("difficulty", [
+        "two-sum", "reverse-linked-list", "valid-anagram", "3sum",
+        "merge-intervals", "word-search", "median-of-two-sorted-arrays",
+    ]),
+    ("due_date", [
+        "two-sum", "word-search", "merge-intervals", "3sum",
+        "median-of-two-sorted-arrays", "reverse-linked-list", "valid-anagram",
+    ]),
+    ("last_attempt", [
+        "3sum", "merge-intervals", "two-sum", "median-of-two-sorted-arrays",
+        "word-search", "reverse-linked-list", "valid-anagram",
+    ]),
+    ("attempts", [
+        "3sum", "two-sum", "merge-intervals", "median-of-two-sorted-arrays",
+        "word-search", "reverse-linked-list", "valid-anagram",
+    ]),
+])
+def test_problems_sort_modes(client, sort, expected):
+    _seed_problem_picker_state(client.store)
+
+    assert _problem_slugs(client, f"?sort={sort}") == expected
 
 
 def test_today_drill_lifecycle_cross_flow(client, monkeypatch):
@@ -985,6 +1171,28 @@ def test_asset_version_changes_when_an_asset_changes(tmp_path, monkeypatch):
     before = main.asset_version()
     (tmp_path / "views.js").write_text("console.log('changed')", encoding="utf-8")
     assert main.asset_version() != before
+
+
+def test_code_updated_at_uses_latest_front_or_backend_mtime(tmp_path, monkeypatch):
+    server_dir = tmp_path / "server"
+    static_dir = tmp_path / "static"
+    server_dir.mkdir()
+    static_dir.mkdir()
+    old = server_dir / "main.py"
+    new = static_dir / "app.js"
+    old.write_text("old", encoding="utf-8")
+    new.write_text("new", encoding="utf-8")
+    old_ts = 1_700_000_000
+    new_ts = 1_700_000_123
+    import os
+    os.utime(old, (old_ts, old_ts))
+    os.utime(new, (new_ts, new_ts))
+    monkeypatch.setattr(main, "ROOT", str(tmp_path))
+
+    updated = main.code_updated_at()
+
+    assert updated["epoch"] == new_ts
+    assert updated["iso"].startswith("2023-11-14T22:15:23")
 
 
 def test_config_roundtrip(client):

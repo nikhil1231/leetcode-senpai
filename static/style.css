@@ -64,7 +64,26 @@ body {
   object-fit: cover;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .12);
 }
-#user-chip { display: flex; align-items: center; gap: 10px; }
+#user-chip {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.last-updated {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.user-identity {
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Bulma tabs, themed to the app's muted/accent scheme. */
 #tabs { margin-bottom: 0; }
@@ -220,6 +239,34 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .conf-1 { color: var(--red); }
 .conf-2 { color: var(--amber); }
 .conf-3 { color: var(--green); }
+
+/* ---- problems --------------------------------------------------------------- */
+.problems-toolbar {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.4fr) repeat(6, minmax(130px, 1fr)) auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.problems-toolbar .small { white-space: nowrap; justify-self: end; }
+.problems-search { min-width: 0; }
+.problems-table td { white-space: nowrap; }
+.problems-table td:nth-child(2) {
+  min-width: 180px;
+  white-space: normal;
+}
+.problem-number { font-variant-numeric: tabular-nums; }
+.problem-action { text-align: right; }
+.problem-state {
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.problem-state.state-leech { background: rgba(242, 109, 109, .16); color: var(--red); border: 1px solid rgba(242, 109, 109, .58); }
+.problem-state.state-review-due { background: rgba(240, 180, 41, .16); color: var(--amber); border: 1px solid rgba(240, 180, 41, .58); }
+.problem-state.state-reviewing { background: rgba(79, 140, 255, .16); color: var(--accent); border: 1px solid rgba(79, 140, 255, .58); }
+.problem-state.state-learning { background: rgba(53, 196, 122, .14); color: var(--green); border: 1px solid rgba(53, 196, 122, .48); }
+.problem-state.state-unattempted { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
 
 /* ---- difficulty chips (coloured background) --------------------------------- */
 .tag.diff-easy { background: rgba(53, 196, 122, .18); color: var(--easy); border: 1px solid var(--easy); font-weight: 600; }
@@ -459,6 +506,8 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
   .queue-card { align-items: flex-start; }
   .app-header { padding-left: 16px; padding-right: 16px; }
   .header-top { gap: 12px; }
+  #user-chip { max-width: 58%; }
+  .user-identity { max-width: 100%; }
   .app-logo { width: 30px; height: 30px; flex-basis: 30px; border-radius: 7px; }
   .active-run { padding: 28px 16px; min-height: calc(100vh - 108px); }
   .active-run-inner { grid-template-columns: 1fr; gap: 16px; }
@@ -482,6 +531,46 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
   .sprint-layout { grid-template-columns: 1fr; }
   .sprint-prompt { max-height: 38vh; }
   .sprint-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .problems-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .problems-toolbar .small { justify-self: start; }
+  .problems-table,
+  .problems-table thead,
+  .problems-table tbody,
+  .problems-table tr,
+  .problems-table td { display: block; }
+  .problems-table thead { display: none; }
+  .problems-table tr {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+  }
+  .problems-table tr:hover td { background: transparent; }
+  .problems-table td {
+    border: 0;
+    padding: 5px 0;
+    white-space: normal;
+  }
+  .problems-table td:not(.problem-action) {
+    display: grid;
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+  }
+  .problems-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+  .problems-table td:nth-child(2) { min-width: 0; }
+  .problem-action { padding-top: 10px; text-align: left; }
+  .problem-action .button { width: 100%; }
 }
 
 /* ---- mock ------------------------------------------------------------------- */

@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (auth, coach, config, enrich, gamify, importer, insights,
-               leetcode, llm, mock, packs, poller, scheduler)
+               leetcode, llm, mock, neetcode150, packs, poller, scheduler)
 from .store import get_store
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -194,6 +194,65 @@ def _pending(store):
 
 def _today_iso():
     return dt.date.today().isoformat()
+
+
+def _is_sprint_attempt(a):
+    return a.get("kind") == "sprint" or a.get("source") == "sprint"
+
+
+def _problem_mastery_state(attempt_count, review, today):
+    if review.get("leech"):
+        return "leech"
+    due_date = review.get("due_date")
+    if attempt_count == 0:
+        return "unattempted"
+    if due_date and due_date <= today:
+        return "review_due"
+    if due_date:
+        return "reviewing"
+    return "learning"
+
+
+def _problem_due_status(review, today):
+    due_date = review.get("due_date")
+    if not due_date:
+        return "unscheduled"
+    return "due" if due_date <= today else "upcoming"
+
+
+def _problem_sort_key(sort):
+    difficulty_order = {"Easy": 0, "Medium": 1, "Hard": 2}
+
+    def number_key(p):
+        return (p.get("frontend_id") is None, p.get("frontend_id") or 9999,
+                p.get("title", "").lower(), p.get("slug", ""))
+
+    if sort == "title":
+        return lambda p: (p.get("title", "").lower(), number_key(p))
+    if sort == "difficulty":
+        return lambda p: (difficulty_order.get(p.get("difficulty"), 99), number_key(p))
+    if sort == "due_date":
+        return lambda p: (p.get("due_date") is None, p.get("due_date") or "", number_key(p))
+    if sort == "last_attempt":
+        return lambda p: (p.get("last_attempt_at") is None,
+                          -(p.get("last_attempt_at") or 0), number_key(p))
+    if sort == "attempts":
+        return lambda p: (-p.get("attempt_count", 0), number_key(p))
+    return number_key
+
+
+def _facet_rows(counts, order):
+    indexed = {value: i for i, value in enumerate(order)}
+    return [
+        {"value": value, "count": count}
+        for value, count in sorted(
+            counts.items(),
+            key=lambda item: (
+                indexed.get(item[0], len(indexed)),
+                item[0].lower(),
+            ),
+        )
+    ]
 
 
 def _drill_exclude_slugs(store, queue):
@@ -1152,25 +1211,87 @@ async def api_recall_clarify(attempt_id: str, body: RecallClarify,
 
 
 # ---- problems + discover --------------------------------------------------------
-@app.get("/api/problems")
-def api_problems(search: str = "", category: str = "", uid: str = Depends(auth.require_user)):
+@app.get("/api/problems/facets")
+def api_problem_facets(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
-    reviews = {r["slug"]: r for r in store.list_reviews()}
-    counts = {}
-    for a in store.list_attempts():
-        counts[a["slug"]] = counts.get(a["slug"], 0) + 1
-    out = []
+    categories = {}
+    difficulties = {}
+    total = 0
     for p in store.list_problems():
         if not scheduler._in_library(p):
             continue
-        if search and search.lower() not in p.get("title", "").lower():
+        total += 1
+        category = p.get("neetcode_category")
+        if category:
+            categories[category] = categories.get(category, 0) + 1
+        difficulty = p.get("difficulty")
+        if difficulty:
+            difficulties[difficulty] = difficulties.get(difficulty, 0) + 1
+    return {
+        "categories": _facet_rows(categories, neetcode150.CATEGORY_ORDER),
+        "difficulties": _facet_rows(difficulties, ["Easy", "Medium", "Hard"]),
+        "total": total,
+    }
+
+
+@app.get("/api/problems")
+def api_problems(search: str = "", category: str = "", difficulty: str = "",
+                 due_status: str = "all", leech: str = "all",
+                 attempted: str = "all", sort: str = "number",
+                 uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    today = _today_iso()
+    reviews = {r["slug"]: r for r in store.list_reviews()}
+    counts = {}
+    latest = {}
+    for a in store.list_attempts():
+        if _is_sprint_attempt(a):
             continue
+        slug = a.get("slug")
+        if not slug:
+            continue
+        counts[slug] = counts.get(slug, 0) + 1
+        ts = a.get("solved_at")
+        if ts is not None and (latest.get(slug) is None or ts > latest[slug]):
+            latest[slug] = ts
+    out = []
+    q = search.strip().lower()
+    for p in store.list_problems():
+        if not scheduler._in_library(p):
+            continue
+        slug = p.get("slug")
+        r = reviews.get(slug, {})
+        attempt_count = counts.get(slug, 0)
+        row = {
+            **p, "attempt_count": attempt_count,
+            "due_date": r.get("due_date"), "leech": r.get("leech"),
+            "last_attempt_at": latest.get(slug),
+            "mastery_state": _problem_mastery_state(attempt_count, r, today),
+        }
+        if q:
+            haystack = (
+                p.get("title", ""), p.get("slug", ""),
+                str(p.get("frontend_id") or ""),
+            )
+            if not any(q in str(part).lower() for part in haystack):
+                continue
         if category and p.get("neetcode_category") != category:
             continue
-        r = reviews.get(p["slug"], {})
-        out.append({**p, "attempt_count": counts.get(p["slug"], 0),
-                    "due_date": r.get("due_date"), "leech": r.get("leech")})
-    out.sort(key=lambda p: p.get("frontend_id") or 9999)
+        if difficulty and p.get("difficulty") != difficulty:
+            continue
+        if due_status in {"due", "upcoming", "unscheduled"}:
+            if _problem_due_status(r, today) != due_status:
+                continue
+        if leech == "only" and not r.get("leech"):
+            continue
+        if leech == "exclude" and r.get("leech"):
+            continue
+        if attempted == "attempted" and attempt_count == 0:
+            continue
+        if attempted == "unattempted" and attempt_count > 0:
+            continue
+        out.append(row)
+    out.sort(key=_problem_sort_key(sort))
     return out
 
 
@@ -1352,11 +1473,32 @@ def api_me(uid: str = Depends(auth.require_user)):
     settings = get_store(uid).get_settings()
     selected = llm.current_model(settings)
     return {"uid": uid, "local_mode": config.local_mode(), "llm_enabled": selected["enabled"],
-            "llm_provider": selected["provider"], "llm_model": selected["model"]}
+            "llm_provider": selected["provider"], "llm_model": selected["model"],
+            "code_updated_at": code_updated_at()}
 
 
 # ---- static frontend ------------------------------------------------------------
 _VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js")
+_CODE_UPDATED_DIRS = ("server", "static")
+_CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
+
+
+def code_updated_at():
+    latest = 0.0
+    for dirname in _CODE_UPDATED_DIRS:
+        root_dir = os.path.join(ROOT, dirname)
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+            for filename in filenames:
+                if os.path.splitext(filename)[1] not in _CODE_UPDATED_EXTS:
+                    continue
+                path = os.path.join(dirpath, filename)
+                try:
+                    latest = max(latest, os.path.getmtime(path))
+                except OSError:
+                    continue
+    updated = dt.datetime.fromtimestamp(latest or time.time(), dt.timezone.utc)
+    return {"iso": updated.isoformat(), "epoch": int(updated.timestamp())}
 
 
 def asset_version():
