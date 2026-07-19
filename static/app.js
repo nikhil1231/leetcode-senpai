@@ -889,12 +889,32 @@ async function startSprint() {
     return;
   }
   await loadCategories();
-  renderSprintRep();
+  renderSprintIntro();
 }
 
 function closeSprint() {
   stopSprintTimer();
   $("#sprint-modal").classList.add("hidden");
+}
+
+function renderSprintIntro() {
+  if (!sprintRound) return;
+  stopSprintTimer();
+  $("#sprint-progress").textContent = `${sprintRound.reps.length} reps ready`;
+  $("#sprint-body").innerHTML = `
+    <div class="sprint-intro">
+      <h3>Pattern sprint rules</h3>
+      <p>Read each statement without opening LeetCode, choose the pattern, and add one short reason for the signal you noticed.</p>
+      <ul>
+        <li>You get 60 seconds per prompt.</li>
+        <li>Next saves your answer and immediately moves on.</li>
+        <li>Skip leaves the rep unanswered; Finish grades the answers saved so far.</li>
+      </ul>
+      <div class="overlay-actions">
+        <button id="btn-begin-sprint" class="button is-primary">Start</button>
+      </div>
+    </div>`;
+  $("#btn-begin-sprint").addEventListener("click", renderSprintRep);
 }
 
 function renderSprintRep() {
@@ -909,9 +929,11 @@ function renderSprintRep() {
   $("#sprint-progress").textContent = `Rep ${sprintRound.index + 1} of ${sprintRound.reps.length}`;
   const sprintCats = categories.includes(rep.category) || !rep.category
     ? categories
-    : [rep.category, ...categories];
-  const opts = sprintCats.map((c) =>
-    `<option value="${escapeHtml(c)}"${c === rep.category ? " selected" : ""}>${escapeHtml(c)}</option>`).join("");
+    : [...categories, rep.category].sort((a, b) => a.localeCompare(b));
+  const opts = [
+    '<option value="" selected disabled>Choose category</option>',
+    ...sprintCats.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`),
+  ].join("");
   const statement = sanitizeProblemHtml(rep.content_html);
   $("#sprint-body").innerHTML = `
     <div class="sprint-layout">
@@ -930,15 +952,16 @@ function renderSprintRep() {
         <div class="select is-fullwidth"><select id="sprint-category">${opts}</select></div>
         <label class="label-sm">Why</label>
         <input id="sprint-why" class="input" type="text" placeholder="One line: key signal in the statement" />
-        <div id="sprint-verdict" class="recall-grade hidden"></div>
         <div class="overlay-actions" id="sprint-actions">
           <button id="btn-skip-sprint-rep" class="button is-ghost">Skip</button>
-          <button id="btn-submit-sprint-rep" class="button is-primary">Submit rep</button>
+          <button id="btn-finish-sprint" class="button is-ghost">Finish</button>
+          <button id="btn-submit-sprint-rep" class="button is-primary">Next</button>
         </div>
       </section>
     </div>`;
   $("#btn-submit-sprint-rep").addEventListener("click", () => submitSprintRep());
   $("#btn-skip-sprint-rep").addEventListener("click", skipSprintRep);
+  $("#btn-finish-sprint").addEventListener("click", finishSprintEarly);
   startSprintTimer();
 }
 
@@ -985,7 +1008,7 @@ async function submitSprintRep() {
   } catch (e) {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Submit rep";
+      btn.textContent = "Next";
     }
     toast(e.message);
     return;
@@ -999,7 +1022,8 @@ async function submitSprintRep() {
     attempt_id: r.attempt_id,
     grading_status: r.grading_status || "pending",
   });
-  renderSprintSubmitted(rep);
+  sprintRound.index++;
+  renderSprintRep();
 }
 
 function skipSprintRep() {
@@ -1011,29 +1035,6 @@ function skipSprintRep() {
   });
   sprintRound.index++;
   renderSprintRep();
-}
-
-function renderSprintSubmitted(rep) {
-  if (!sprintRound) return;
-  stopSprintTimer();
-  const isLast = sprintRound.index >= sprintRound.reps.length - 1;
-  const saved = sprintRound.results[sprintRound.results.length - 1] || {};
-  $("#sprint-progress").textContent = `Rep ${sprintRound.index + 1} of ${sprintRound.reps.length}`;
-  $("#sprint-verdict").classList.remove("hidden");
-  $("#sprint-verdict").innerHTML = `
-    <div class="grade-score">Saved sprint answer</div>
-    <p class="small"><b>Prediction:</b> ${escapeHtml(saved.predicted_category || "")}</p>
-    <p class="small"><b>Why:</b> ${escapeHtml(saved.why || "")}</p>
-    <p class="small">Progress is saved. Finish now to complete the sprint early with ${sprintRound.results.length} submitted answer${sprintRound.results.length === 1 ? "" : "s"}.</p>`;
-  $("#sprint-actions").innerHTML = `
-    <button id="btn-finish-sprint" class="button is-ghost">Finish</button>
-    <button id="btn-next-sprint-rep" class="button is-primary">${isLast ? "Grade sprint" : "Next"}</button>`;
-  $("#btn-next-sprint-rep").addEventListener("click", () => {
-    if (!sprintRound) return;
-    sprintRound.index++;
-    renderSprintRep();
-  });
-  $("#btn-finish-sprint").addEventListener("click", finishSprintEarly);
 }
 
 function finishSprintEarly() {

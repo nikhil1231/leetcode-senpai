@@ -438,6 +438,14 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 
 /* ---- sprint runner --------------------------------------------------------- */
 .overlay-card.sprint-wide { width: min(1180px, 96vw); }
+.sprint-intro {
+  max-width: 620px;
+  margin: 8px auto 0;
+}
+.sprint-intro h3 { margin: 0 0 8px; font-size: 20px; line-height: 1.2; }
+.sprint-intro p { color: var(--muted); margin-bottom: 12px; }
+.sprint-intro ul { margin-left: 18px; color: var(--text); }
+.sprint-intro li { margin: 6px 0; }
 .sprint-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr);
