@@ -550,3 +550,65 @@ def test_sprint_round_respects_exclude_slugs():
 
     assert all(s["slug"] not in {"two-sum", "diameter-tree"} for s in sprints)
     assert len(sprints) == 3
+
+
+# ---- drill / sprint cooldown ----------------------------------------------------
+def _cooldown_settings():
+    # isolate the cooldown: no breadth/weakness pull from unattempted problems
+    return {"drill_breadth_weight": 0, "drill_weakness_weight": 0}
+
+
+def test_drill_lane_cools_down_recently_drilled_problem():
+    today = dt.date(2026, 1, 10)
+    reviews = [{"slug": "invert-tree", "due_date": "2026-02-01",
+                "fail_count": 3, "leech": 1}]
+    attempts = [{"id": "d1", "slug": "invert-tree", "confidence": 3,
+                 "independence": "solo", "solved_at": _ts(today), "kind": "drill"}]
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), attempts, reviews, settings=_cooldown_settings(),
+        today=today)
+    assert drills == []  # the only signal is on a just-drilled problem
+
+
+def test_drill_lane_old_drill_is_off_cooldown():
+    today = dt.date(2026, 1, 10)
+    reviews = [{"slug": "invert-tree", "due_date": "2026-02-01",
+                "fail_count": 3, "leech": 1}]
+    attempts = [{"id": "d1", "slug": "invert-tree", "confidence": 3,
+                 "independence": "solo",
+                 "solved_at": _ts(today - dt.timedelta(days=9)), "kind": "drill"}]
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), attempts, reviews, settings=_cooldown_settings(),
+        today=today)
+    assert any(d["slug"] == "invert-tree" for d in drills)
+
+
+def test_drill_lane_cooldown_ignores_real_solve_struggles():
+    # A struggle on a real solve must still surface as a drill — the cooldown only
+    # debounces reps served through the drill flow (kind == "drill").
+    today = dt.date(2026, 1, 10)
+    attempts = [{"id": "s1", "slug": "invert-tree", "confidence": 1,
+                 "independence": "solution", "solved_at": _ts(today),
+                 "kind": "adhoc"}]
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), attempts, [], settings=_cooldown_settings(),
+        today=today)
+    assert any(d["slug"] == "invert-tree" for d in drills)
+
+
+def test_sprint_round_cools_down_recent_reps():
+    today = dt.date(2026, 1, 10)
+    attempts = [{"id": "sp1", "slug": "two-sum", "kind": "sprint",
+                 "solved_at": _ts(today)}]
+    sprints = scheduler.build_sprint_round(
+        _sprint_problems(), attempts, [], {"sprint_round_size": 5}, today=today)
+    assert all(s["slug"] != "two-sum" for s in sprints)
+
+
+def test_sprint_round_old_rep_is_off_cooldown():
+    today = dt.date(2026, 1, 10)
+    attempts = [{"id": "sp1", "slug": "two-sum", "kind": "sprint",
+                 "solved_at": _ts(today - dt.timedelta(days=9))}]
+    sprints = scheduler.build_sprint_round(
+        _sprint_problems(), attempts, [], {"sprint_round_size": 5}, today=today)
+    assert any(s["slug"] == "two-sum" for s in sprints)

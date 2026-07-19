@@ -207,6 +207,12 @@ def _drill_exclude_slugs(store, queue):
     for item in _pending(store):
         if item.get("slug"):
             exclude.add(item["slug"])
+    # Recently-drilled problems are on cooldown — keep them out of the cached drill
+    # lane too, so a just-completed drill can't linger for the rest of the day.
+    settings = store.get_settings()
+    recent_drills = [a for a in store.list_attempts() if a.get("kind") == "drill"]
+    exclude |= scheduler._recently_attempted_slugs(
+        recent_drills, dt.date.today(), settings.get("drill_cooldown_days", 7))
     return exclude
 
 

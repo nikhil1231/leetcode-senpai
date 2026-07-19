@@ -153,10 +153,10 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 }
 .queue-card.kind-drill .reason { color: var(--green); }
 .ratio { font-size: 11px; color: var(--green); }
+.sprint-section .section-title { color: var(--accent); }
 .sprint-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
   padding: 12px 14px;
@@ -164,8 +164,6 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
   border-radius: 8px;
   background: rgba(79, 140, 255, .08);
 }
-.sprint-card .section-title { margin: 0 0 4px; color: var(--accent); }
-.sprint-card .section-desc { margin: 0; }
 
 /* ---- overlay (modal) — bespoke so it doesn't collide with Bulma's .modal ---- */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }

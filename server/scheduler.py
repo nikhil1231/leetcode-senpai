@@ -44,6 +44,21 @@ def _solved_attempts(attempts):
     return [a for a in attempts if not _is_sprint_attempt(a)]
 
 
+def _recently_attempted_slugs(attempts, today, days):
+    """Slugs with an attempt in the last `days` — a cooldown so drills and sprint
+    rounds don't re-serve a problem the moment it's been practiced."""
+    if days <= 0:
+        return set()
+    cutoff = int((dt.datetime.combine(today, dt.time())
+                  - dt.timedelta(days=days)).timestamp())
+    recent = set()
+    for a in attempts:
+        ts = a.get("solved_at")
+        if ts is not None and ts >= cutoff and a.get("slug"):
+            recent.add(a["slug"])
+    return recent
+
+
 # ---- confidence / grade ---------------------------------------------------------
 def quality(confidence, independence):
     if independence == "solution":
@@ -283,8 +298,15 @@ def build_drill_lane(
     if not prob_by_slug:
         return []
 
+    solved = _solved_attempts(attempts)
+    # Don't put a problem straight back on the drill treadmill: once it's been
+    # drilled, cool it down for a few days. Struggles on *real* solves still feed
+    # the lane — this only debounces reps served through the drill flow itself.
+    exclude_slugs |= _recently_attempted_slugs(
+        [a for a in solved if a.get("kind") == "drill"],
+        today_d, settings.get("drill_cooldown_days", 7))
     attempts_by_slug = {}
-    for a in _solved_attempts(attempts):
+    for a in solved:
         attempts_by_slug.setdefault(a.get("slug"), []).append(a)
     reviews_by_slug = {r.get("slug"): r for r in reviews}
     stats = {s["category"]: s for s in topic_stats(problems, attempts)}
@@ -368,6 +390,11 @@ def build_sprint_round(
     if not prob_by_slug:
         return []
 
+    # Once a rep has been done (and graded) it drops out of the pool until the
+    # cooldown lapses, so a fresh round doesn't re-serve just-answered reps.
+    sprint_attempts = [a for a in attempts if _is_sprint_attempt(a)]
+    exclude_slugs |= _recently_attempted_slugs(
+        sprint_attempts, today_d, settings.get("sprint_cooldown_days", 7))
     attempts_by_slug = {}
     for a in _solved_attempts(attempts):
         attempts_by_slug.setdefault(a.get("slug"), []).append(a)

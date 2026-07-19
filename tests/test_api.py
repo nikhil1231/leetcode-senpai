@@ -126,6 +126,26 @@ def test_today_drills_can_use_local_signal_without_llm(client, monkeypatch):
     assert all("signals" in item for item in body["drills"])
 
 
+def test_today_excludes_recently_drilled_problem(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    # a real-solve struggle makes Arrays & Hashing a drill target
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()),
+        "source": "manual", "kind": "adhoc", "confidence": 1,
+        "independence": "solution",
+    })
+    before = {d["slug"] for d in client.get("/api/today").json()["drills"]}
+    assert "two-sum" in before
+
+    # completing it through the drill flow (no annotation) should cool it down
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()),
+        "source": "auto", "kind": "drill", "confidence": None, "independence": None,
+    })
+    after = {d["slug"] for d in client.get("/api/today").json()["drills"]}
+    assert "two-sum" not in after
+
+
 def test_today_reuses_fresh_pattern_sprint_cache(client):
     cached = {
         "slug": "two-sum", "title": "Two Sum", "difficulty": "Easy",

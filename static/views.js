@@ -3,14 +3,30 @@
   const { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader } = window.H;
   const App = window.App, Charts = window.Charts;
 
+  // Replace a stuck loader with a retry affordance when a fetch fails (e.g. the
+  // dev server briefly restarts) so a view never hangs on the spinner forever.
+  function showLoadError(el, retry) {
+    el.innerHTML = `<div class="empty load-error">
+      <p>Couldn't reach the server. It may be restarting.</p>
+      <button class="button is-small retry-load">Retry</button></div>`;
+    const btn = el.querySelector(".retry-load");
+    if (btn) btn.addEventListener("click", retry);
+  }
+
   // ---- Today -------------------------------------------------------------------
   async function renderToday() {
     const el = $("#tab-today");
     el.innerHTML = loader("Loading your queue…");
-    const [q, reportWrap, mock] = await Promise.all([
-      api("/today"), api("/report/latest").catch(() => ({ report: null })),
-      api("/mock/status").catch(() => ({})),
-    ]);
+    let q, reportWrap, mock;
+    try {
+      [q, reportWrap, mock] = await Promise.all([
+        api("/today"), api("/report/latest").catch(() => ({ report: null })),
+        api("/mock/status").catch(() => ({})),
+      ]);
+    } catch (e) {
+      showLoadError(el, renderToday);
+      return;
+    }
 
     const prepHtml = [
       await weeklyReportBanner(reportWrap.report),
@@ -71,24 +87,23 @@
       "Fresh practice selected to expand coverage without crowding out spaced repetition.",
       q.new.length ? q.new.map(item).join("") : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>"
     );
-    const sprintAction = `
-      <div class="sprint-card">
-        <div>
-          <div class="section-title">Sprint round</div>
-          <p class="section-desc">Statement-only pattern reps. Sixty seconds each, no LeetCode tab.</p>
+    const sprint = `
+      <section class="today-section sprint-section">
+        <div class="today-section-head">
+          <div>
+            <div class="section-title">Sprint round</div>
+            <p class="section-desc">Statement-only pattern reps. Sixty seconds each, no LeetCode tab.</p>
+          </div>
         </div>
-        <button id="btn-start-sprint" class="button is-primary">Start sprint</button>
-      </div>`;
-    const drills = q.drills && q.drills.length ? section(
+        <div class="sprint-card">
+          <button id="btn-start-sprint" class="button is-primary">Start sprint</button>
+        </div>
+      </section>`;
+    const drills = section(
       "Focused drills",
-      q.drills.length,
+      q.drills ? q.drills.length : 0,
       "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
-      sprintAction + q.drills.map(item).join("")
-    ) : section(
-      "Focused drills",
-      0,
-      "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
-      sprintAction + "<p class='empty'>No focused drills queued.</p>"
+      q.drills && q.drills.length ? q.drills.map(item).join("") : "<p class='empty'>No focused drills queued.</p>"
     );
     const expansion = q.expansion && q.expansion.length ? section(
       "Grow your library",
@@ -109,6 +124,7 @@
           ${reviews}
           <div class="today-side">
             ${newProblems}
+            ${sprint}
             ${drills}
           </div>
         </div>
@@ -253,7 +269,13 @@
   async function renderInsights() {
     const el = $("#tab-insights");
     el.innerHTML = loader("Crunching your stats…");
-    const d = await api("/insights");
+    let d;
+    try {
+      d = await api("/insights");
+    } catch (e) {
+      showLoadError(el, renderInsights);
+      return;
+    }
     const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v, color: "var(--red)" }));
     const pa = d.prediction_accuracy || {};
     el.innerHTML = `
@@ -348,7 +370,13 @@
   async function renderHistory() {
     const el = $("#tab-history");
     el.innerHTML = loader("Loading history…");
-    const rows = await api("/history?limit=100");
+    let rows;
+    try {
+      rows = await api("/history?limit=100");
+    } catch (e) {
+      showLoadError(el, renderHistory);
+      return;
+    }
     if (!rows.length) { el.innerHTML = "<p class='empty'>No attempts logged yet.</p>"; return; }
     const confLabel = (c) => (c == null ? "—" : `<span class="conf-${c}">${["", "Low", "Med", "High"][c]}</span>`);
     const predBadge = (r) => {
