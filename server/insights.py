@@ -161,6 +161,138 @@ def prediction_accuracy(problems, attempts, enrichments):
             "by_kind": by_kind, "sprint_graded": sum(by_kind.get("sprint", {}).values())}
 
 
+# ---- confidence calibration -----------------------------------------------------
+def confidence_calibration(problems, attempts, reviews=None):
+    """Compare self-assessed solve quality with stored objective grades by topic."""
+    min_graded = 3
+    cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
+    title_of = {p["slug"]: p.get("title") or p["slug"] for p in problems}
+    by_cat = {}
+    latest_self_by_slug = {}
+    included = 0
+    for a in scheduler._solved_attempts(attempts):
+        slug = a.get("slug")
+        cat = cat_of.get(slug)
+        if not cat or a.get("solved_at") is None:
+            continue
+        if a.get("confidence") is None or a.get("independence") is None:
+            continue
+
+        self_q = scheduler.quality(a.get("confidence"), a.get("independence"))
+        prev = latest_self_by_slug.get(slug)
+        if prev is None or (a.get("solved_at") or 0) > prev["solved_at"]:
+            latest_self_by_slug[slug] = {
+                "self_quality": self_q,
+                "solved_at": a.get("solved_at") or 0,
+            }
+        objective = []
+        solution_grade = a.get("solution_grade") or {}
+        if solution_grade.get("score") in scheduler.SOLUTION_TO_Q:
+            objective.append(scheduler.SOLUTION_TO_Q[solution_grade["score"]])
+        recall_grade = a.get("recall_grade") or {}
+        if recall_grade.get("grade") is not None:
+            objective.append(scheduler.recall_quality(recall_grade["grade"]))
+        if not objective:
+            continue
+
+        objective_q = sum(objective) / len(objective)
+        row = by_cat.setdefault(cat, {"self": [], "objective": [], "examples": []})
+        row["self"].append(self_q)
+        row["objective"].append(objective_q)
+        example_objective = None
+        example_source = None
+        if a.get("kind") == "recall" and recall_grade.get("grade") is not None:
+            example_objective = scheduler.recall_quality(recall_grade["grade"])
+            example_source = "recall_grade"
+        elif solution_grade.get("score") in scheduler.SOLUTION_TO_Q:
+            example_objective = scheduler.SOLUTION_TO_Q[solution_grade["score"]]
+            example_source = "solution_grade"
+        elif recall_grade.get("grade") is not None:
+            example_objective = scheduler.recall_quality(recall_grade["grade"])
+            example_source = "recall_grade"
+        if example_source is not None:
+            gap = round(self_q - example_objective, 2)
+            if gap > 0:
+                row["examples"].append({
+                    "slug": slug,
+                    "title": title_of.get(slug, slug),
+                    "self_quality": round(self_q, 2),
+                    "objective_quality": round(example_objective, 2),
+                    "gap": gap,
+                    "source": example_source,
+                    "solved_at": a.get("solved_at") or 0,
+                })
+        included += 1
+
+    for r in reviews or []:
+        slug = r.get("slug")
+        cat = cat_of.get(slug)
+        if not cat:
+            continue
+        fail_count = r.get("fail_count") or 0
+        if fail_count <= 0:
+            continue
+        row = by_cat.setdefault(cat, {"self": [], "objective": [], "examples": []})
+        review_q = 1 if r.get("leech") == 1 else 2
+        row["objective"].extend([review_q] * fail_count)
+        row["review_failures"] = row.get("review_failures", 0) + fail_count
+        row["leech_count"] = row.get("leech_count", 0) + (1 if r.get("leech") == 1 else 0)
+        latest_self = latest_self_by_slug.get(slug)
+        if latest_self:
+            gap = round(latest_self["self_quality"] - review_q, 2)
+            if gap > 0:
+                row["examples"].append({
+                    "slug": slug,
+                    "title": title_of.get(slug, slug),
+                    "self_quality": round(latest_self["self_quality"], 2),
+                    "objective_quality": round(review_q, 2),
+                    "gap": gap,
+                    "source": "review_failure",
+                    "solved_at": latest_self["solved_at"],
+                })
+
+    rows = []
+    for cat, values in by_cat.items():
+        if not values["self"] or not values["objective"]:
+            continue
+        self_q = round(sum(values["self"]) / len(values["self"]), 2)
+        objective_q = round(sum(values["objective"]) / len(values["objective"]), 2)
+        gap = round(self_q - objective_q, 2)
+        examples = sorted(
+            values.get("examples", []),
+            key=lambda e: (-e["gap"], -e["solved_at"], e["slug"]),
+        )
+        examples = [{k: e[k] for k in (
+            "slug", "title", "self_quality", "objective_quality", "gap", "source"
+        )} for e in examples[:3]]
+        overconfident = gap >= 1.0
+        row = {
+            "category": cat,
+            "self_quality": self_q,
+            "objective_quality": objective_q,
+            "gap": gap,
+            "graded_attempts": len(values["self"]),
+            "review_failures": values.get("review_failures", 0),
+            "leech_count": values.get("leech_count", 0),
+            "overconfident": overconfident,
+        }
+        if overconfident:
+            row["examples"] = examples
+        rows.append(row)
+    rows.sort(key=lambda r: (-r["gap"], r["category"]))
+    status = "ok" if included >= min_graded else "not_enough_data"
+    most_overrated = None
+    if status == "ok":
+        most_overrated = next((r for r in rows if r["overconfident"]), None)
+    return {
+        "status": status,
+        "graded_attempts": included,
+        "min_graded_attempts": min_graded,
+        "most_overrated_topic": most_overrated,
+        "categories": rows,
+    }
+
+
 # ---- mock score trend -----------------------------------------------------------
 def mock_score_trend(mocks):
     done = [m for m in mocks if m.get("score") is not None and m.get("finished_at")]
@@ -184,5 +316,6 @@ def build(store, today=None):
         "failure_modes": failure_modes(enrichments, days=30, attempts=attempts, today=today),
         "failure_modes_all": failure_modes(enrichments),
         "prediction_accuracy": prediction_accuracy(problems, attempts, enrichments),
+        "confidence_calibration": confidence_calibration(problems, attempts, reviews),
         "mock_trend": mock_score_trend(mocks),
     }

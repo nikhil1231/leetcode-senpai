@@ -348,6 +348,7 @@
     }
     const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v, color: "var(--red)" }));
     const pa = d.prediction_accuracy || {};
+    const calibration = d.confidence_calibration;
     el.innerHTML = `
       <div class="columns">
         <div class="column"><div class="panel-box"><h3>Review forecast (30 days)</h3>${Charts.forecast(d.forecast)}</div></div>
@@ -361,6 +362,7 @@
         <div class="column"><div class="panel-box"><h3>Failure modes (30 days)</h3>${fm.length ? Charts.bars(fm) : "<p class='empty'>No structured mistakes yet — the coach fills this in.</p>"}</div></div>
         <div class="column"><div class="panel-box"><h3>Pattern recognition</h3>${predHtml(pa)}</div></div>
       </div>
+      <div class="panel-box"><h3>Confidence calibration</h3>${calibrationHtml(calibration)}</div>
       <div class="panel-box"><h3>Mock score trend</h3>${mockTrendHtml(d.mock_trend)}</div>`;
   }
 
@@ -381,6 +383,89 @@
     });
     return `<div class="pace-big">${Math.round((pa.overall_correct_rate || 0) * 100)}%</div>
       <div class="small">overall correct (${pa.graded} graded)</div>${Charts.bars(rows, { max: 100 })}`;
+  }
+
+  function calibrationHtml(calibration) {
+    const rows = (calibration && calibration.categories) || [];
+    const graded = calibration && calibration.graded_attempts != null ? calibration.graded_attempts : 0;
+    const min = calibration && calibration.min_graded_attempts;
+    const count = min != null ? `${graded}/${min} graded solves` : plural(graded, "graded solve");
+    const categoryCount = rows.length ? ` · ${plural(rows.length, "graded category", "graded categories")}` : "";
+    const countHtml = `<div class="small">${escapeHtml(count + categoryCount)}</div>`;
+    if (!calibration || calibration.status === "not_enough_data" || !rows.length) {
+      return `<div class="calibration-panel"><div class="empty calibration-empty"><div>Not enough graded data</div>${countHtml}</div></div>`;
+    }
+    const top = calibration.most_overrated_topic && calibration.most_overrated_topic.category;
+    const topHtml = top
+      ? `<div><div class="small">Most overrated topic</div><div class="name">${escapeHtml(top)}</div></div>`
+      : `<div><div class="small">Most overrated topic</div><div class="name">No overrated topic flagged yet</div></div>`;
+    const chartRows = rows.map((r) => ({
+      label: r.category.replace(/ .*/, ""),
+      hint: `${r.category}: self ${quality(r.self_quality)}, objective ${quality(r.objective_quality)}, gap ${gap(r.gap)}; ${calibrationEvidenceText(r)}`,
+      values: [
+        { label: "self", value: r.self_quality || 0, display: quality(r.self_quality), color: "var(--accent)" },
+        { label: "obj", value: r.objective_quality || 0, display: quality(r.objective_quality), color: "var(--green)" },
+      ],
+      meta: `${calibrationEvidenceHtml(r)}<span class="tag ${r.overconfident ? "is-warning is-light" : "is-light"}">gap ${escapeHtml(gap(r.gap))}</span>`,
+    }));
+    return `<div class="calibration-panel"><div class="calibration-topline">${topHtml}${countHtml}</div>${Charts.groupedBars(chartRows, { max: 5 })}${calibrationExamplesHtml(rows)}</div>`;
+  }
+
+  function calibrationExamplesHtml(rows) {
+    const groups = rows.filter((r) => r.overconfident && (r.examples || []).length);
+    if (!groups.length) return "";
+    return `<div class="calibration-examples">${groups.map((r) => `
+      <div class="calibration-example-group">
+        <div class="small">${escapeHtml(r.category)} examples</div>
+        ${(r.examples || []).map((ex) => `
+          <div class="calibration-example-row" title="${escapeHtml(ex.slug)}">
+            <span class="calibration-example-title">${escapeHtml(ex.title || ex.slug)}</span>
+            <span class="calibration-example-meta">self ${escapeHtml(quality(ex.self_quality))} · obj ${escapeHtml(quality(ex.objective_quality))} · gap ${escapeHtml(gap(ex.gap))} · ${escapeHtml(sourceLabel(ex.source))}</span>
+          </div>`).join("")}
+      </div>`).join("")}</div>`;
+  }
+
+  function calibrationEvidenceText(r) {
+    const parts = [plural(r.graded_attempts || 0, "graded solve")];
+    if (r.review_failures) parts.push(plural(r.review_failures, "review failure"));
+    if (r.leech_count) parts.push(plural(r.leech_count, "leech"));
+    return parts.join(", ");
+  }
+
+  function calibrationEvidenceHtml(r) {
+    const parts = [
+      `<span class="calibration-evidence-chip">${escapeHtml(plural(r.graded_attempts || 0, "graded solve"))}</span>`,
+    ];
+    if (r.review_failures) {
+      parts.push(`<span class="calibration-evidence-chip is-stale">${escapeHtml(plural(r.review_failures, "review failure"))}</span>`);
+    }
+    if (r.leech_count) {
+      parts.push(`<span class="calibration-evidence-chip is-stale">${escapeHtml(plural(r.leech_count, "leech"))}</span>`);
+    }
+    return `<span class="calibration-evidence">${parts.join("")}</span>`;
+  }
+
+  function plural(n, one, many) {
+    const count = Number(n) || 0;
+    return `${count} ${count === 1 ? one : (many || one + "s")}`;
+  }
+
+  function quality(v) {
+    return v == null ? "-" : Number(v).toFixed(1);
+  }
+
+  function gap(v) {
+    if (v == null) return "-";
+    const n = Number(v);
+    return `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
+  }
+
+  function sourceLabel(source) {
+    return {
+      solution_grade: "solution",
+      recall_grade: "recall",
+      review_failure: "review",
+    }[source] || source || "objective";
   }
 
   function mockTrendHtml(trend) {

@@ -3,6 +3,8 @@
 No Firestore, no network, no LLM key — exercises the request/response plumbing
 and the graceful-degradation paths.
 """
+import copy
+import json
 import time
 import asyncio
 
@@ -11,6 +13,20 @@ from fastapi.testclient import TestClient
 
 from server import auth, main, poller
 from tests.fake_store import FakeStore
+
+
+def _canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _practice_state_snapshot(store):
+    return {
+        "attempts": _canonical(store.attempts),
+        "reviews": _canonical(store.reviews),
+        "enrichments": _canonical(store.enrichments),
+        "flags": _canonical(store.flags),
+        "settings": _canonical(store.settings),
+    }
 
 
 @pytest.fixture
@@ -1135,8 +1151,187 @@ def test_insights_shape(client):
         "time_taken_sec": 600})
     body = client.get("/api/insights").json()
     for k in ["forecast", "mastery_radar", "time_trend", "pace",
-              "failure_modes", "prediction_accuracy", "mock_trend"]:
+              "failure_modes", "prediction_accuracy", "confidence_calibration",
+              "mock_trend"]:
         assert k in body
+
+
+def test_insights_confidence_calibration_sparse_state(client):
+    for slug in ("two-sum", "3sum"):
+        client.store.add_attempt({
+            "slug": slug, "solved_at": 1000, "source": "manual", "kind": "adhoc",
+            "confidence": 3, "independence": "solo",
+        })
+
+    body = client.get("/api/insights").json()
+
+    for k in ["forecast", "mastery_radar", "time_trend", "pace",
+              "failure_modes", "prediction_accuracy", "confidence_calibration",
+              "mock_trend"]:
+        assert k in body
+    calibration = body["confidence_calibration"]
+    assert calibration == {
+        "status": "not_enough_data",
+        "graded_attempts": 0,
+        "min_graded_attempts": 3,
+        "most_overrated_topic": None,
+        "categories": [],
+    }
+
+
+def test_insights_confidence_calibration_populated_contract(client):
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 1000, "source": "manual",
+        "kind": "adhoc", "confidence": 3, "independence": "solo",
+        "solution_grade": {"score": 0, "feedback": "missed edge cases"},
+    })
+    client.store.add_attempt({
+        "slug": "valid-anagram", "solved_at": 2000, "source": "manual",
+        "kind": "adhoc", "confidence": 3, "independence": "solo",
+        "solution_grade": {"score": 1, "feedback": "partial"},
+        "recall_grade": {"grade": 3, "feedback": "remembered approach"},
+    })
+    client.store.add_attempt({
+        "slug": "3sum", "solved_at": 3000, "source": "recall",
+        "kind": "recall", "confidence": 2, "independence": "hints",
+        "recall_grade": {"grade": 3, "feedback": "complete"},
+    })
+
+    calibration = client.get("/api/insights").json()["confidence_calibration"]
+
+    assert calibration["status"] == "ok"
+    assert calibration["graded_attempts"] == 3
+    assert calibration["min_graded_attempts"] == 3
+    assert calibration["most_overrated_topic"] == {
+        "category": "Arrays & Hashing",
+        "self_quality": 5.0,
+        "objective_quality": 2.25,
+        "gap": 2.75,
+        "graded_attempts": 2,
+        "review_failures": 0,
+        "leech_count": 0,
+        "overconfident": True,
+        "examples": [
+            {
+                "slug": "two-sum",
+                "title": "Two Sum",
+                "self_quality": 5,
+                "objective_quality": 1,
+                "gap": 4,
+                "source": "solution_grade",
+            },
+            {
+                "slug": "valid-anagram",
+                "title": "Valid Anagram",
+                "self_quality": 5,
+                "objective_quality": 2,
+                "gap": 3,
+                "source": "solution_grade",
+            },
+        ],
+    }
+    assert calibration["categories"] == [
+        {
+            "category": "Arrays & Hashing",
+            "self_quality": 5.0,
+            "objective_quality": 2.25,
+            "gap": 2.75,
+            "graded_attempts": 2,
+            "review_failures": 0,
+            "leech_count": 0,
+            "overconfident": True,
+            "examples": [
+                {
+                    "slug": "two-sum",
+                    "title": "Two Sum",
+                    "self_quality": 5,
+                    "objective_quality": 1,
+                    "gap": 4,
+                    "source": "solution_grade",
+                },
+                {
+                    "slug": "valid-anagram",
+                    "title": "Valid Anagram",
+                    "self_quality": 5,
+                    "objective_quality": 2,
+                    "gap": 3,
+                    "source": "solution_grade",
+                },
+            ],
+        },
+        {
+            "category": "Two Pointers",
+            "self_quality": 3.0,
+            "objective_quality": 5.0,
+            "gap": -2.0,
+            "graded_attempts": 1,
+            "review_failures": 0,
+            "leech_count": 0,
+            "overconfident": False,
+        },
+    ]
+
+
+def test_api_insights_confidence_calibration_is_read_only(client, monkeypatch):
+    def unexpected_call(*args, **kwargs):
+        raise AssertionError("insights must not invoke coach/LLM/scheduler advancement")
+
+    monkeypatch.setattr(main.llm, "enabled", unexpected_call)
+    monkeypatch.setattr(main.llm, "extract_or_error", unexpected_call)
+    monkeypatch.setattr(main.coach, "grade_solution", unexpected_call)
+    monkeypatch.setattr(main.coach, "grade_recall", unexpected_call)
+    monkeypatch.setattr(main.coach, "ensure_hint_ladder", unexpected_call)
+    monkeypatch.setattr(main.coach, "ensure_canonical", unexpected_call)
+    monkeypatch.setattr(main.scheduler, "advance_review", unexpected_call)
+    monkeypatch.setattr(main.scheduler, "seed_review", unexpected_call)
+
+    aid1 = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 1000, "source": "manual",
+        "kind": "adhoc", "confidence": 3, "independence": "solo",
+        "solution_grade": {"score": 0, "feedback": "missed edge cases"},
+        "code": "class Solution: pass",
+    })
+    aid2 = client.store.add_attempt({
+        "slug": "valid-anagram", "solved_at": 2000, "source": "manual",
+        "kind": "adhoc", "confidence": 3, "independence": "solo",
+        "solution_grade": {"score": 1},
+        "recall_grade": {"grade": 0},
+    })
+    client.store.add_attempt({
+        "slug": "3sum", "solved_at": 3000, "source": "recall",
+        "kind": "recall", "confidence": 2, "independence": "hints",
+        "recall_grade": {"grade": 3},
+    })
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2026-01-01", "reps": 4,
+        "ease": 2.1, "interval_days": 8, "last_reviewed": "2025-12-24",
+        "fail_count": 2, "leech": 0,
+    })
+    client.store.upsert_review("valid-anagram", {
+        "slug": "valid-anagram", "due_date": "2026-01-02", "reps": 1,
+        "ease": 2.5, "interval_days": 3, "last_reviewed": "2025-12-30",
+        "fail_count": 1, "leech": 1,
+    })
+    client.store.upsert_enrichment(aid1, {
+        "slug": "two-sum", "prediction_verdict": "wrong",
+        "mistake_tags": ["edge_case"], "provider": "cached",
+    })
+    client.store.upsert_enrichment(aid2, {
+        "slug": "valid-anagram", "prediction_verdict": "partial",
+        "user_overrides": {"tags": ["frequency"]},
+    })
+    client.store.set_flag("drill_cache", {
+        "date": "2026-01-01",
+        "drills": [{"slug": "two-sum", "score": 9}],
+    })
+    client.store.update_settings({"review_limit": 9})
+    before = copy.deepcopy(_practice_state_snapshot(client.store))
+
+    r = client.get("/api/insights")
+
+    assert r.status_code == 200
+    assert r.json()["confidence_calibration"]["status"] == "ok"
+    assert _practice_state_snapshot(client.store) == before
 
 
 def test_mock_start_and_finish(client):

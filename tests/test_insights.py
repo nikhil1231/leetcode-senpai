@@ -1,4 +1,5 @@
 """Insights + mock + gamify pure-logic tests."""
+import copy
 import datetime as dt
 import time
 
@@ -95,6 +96,320 @@ def test_prediction_accuracy_includes_sprint_verdicts_by_canonical_category():
     assert acc["by_category"]["Arrays & Hashing"]["wrong"] == 1
     assert acc["by_category"]["Two Pointers"]["correct"] == 1
     assert acc["by_kind"]["sprint"]["wrong"] == 1
+
+
+def test_confidence_calibration_detects_overconfident_category_and_top():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 0}},
+        {"id": "2", "slug": "valid-anagram", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 1}},
+        {"id": "3", "slug": "3sum", "solved_at": 3, "confidence": 2,
+         "independence": "hints", "solution_grade": {"score": 4}},
+    ]
+
+    cal = insights.confidence_calibration(_problems(), attempts)
+
+    assert cal["status"] == "ok"
+    assert cal["graded_attempts"] == 3
+    assert cal["min_graded_attempts"] == 3
+    assert cal["most_overrated_topic"]["category"] == "Arrays & Hashing"
+    assert cal["categories"][0] == {
+        "category": "Arrays & Hashing",
+        "self_quality": 5.0,
+        "objective_quality": 1.5,
+        "gap": 3.5,
+        "graded_attempts": 2,
+        "review_failures": 0,
+        "leech_count": 0,
+        "overconfident": True,
+        "examples": [
+            {
+                "slug": "two-sum",
+                "title": "Two Sum",
+                "self_quality": 5,
+                "objective_quality": 1,
+                "gap": 4,
+                "source": "solution_grade",
+            },
+            {
+                "slug": "valid-anagram",
+                "title": "Valid Anagram",
+                "self_quality": 5,
+                "objective_quality": 2,
+                "gap": 3,
+                "source": "solution_grade",
+            },
+        ],
+    }
+    assert cal["categories"][1]["category"] == "Two Pointers"
+    assert cal["categories"][1]["overconfident"] is False
+
+
+def test_confidence_calibration_uses_solution_grade_mapping():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 3}},
+        {"id": "2", "slug": "valid-anagram", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5}},
+        {"id": "3", "slug": "3sum", "solved_at": 3, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 0}},
+    ]
+
+    cal = insights.confidence_calibration(_problems(), attempts)
+
+    arrays = next(r for r in cal["categories"] if r["category"] == "Arrays & Hashing")
+    assert arrays["objective_quality"] == 4.5
+    assert arrays["gap"] == 0.5
+    two_pointers = next(r for r in cal["categories"] if r["category"] == "Two Pointers")
+    assert two_pointers["objective_quality"] == 1.0
+
+
+def test_confidence_calibration_uses_recall_grade_mapping():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo", "recall_grade": {"grade": 0}},
+        {"id": "2", "slug": "valid-anagram", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "recall_grade": {"grade": 3}},
+        {"id": "3", "slug": "3sum", "solved_at": 3, "confidence": 3,
+         "independence": "solo", "recall_grade": {"grade": 2}},
+    ]
+
+    cal = insights.confidence_calibration(_problems(), attempts)
+
+    arrays = next(r for r in cal["categories"] if r["category"] == "Arrays & Hashing")
+    assert arrays["objective_quality"] == 3.0
+    two_pointers = next(r for r in cal["categories"] if r["category"] == "Two Pointers")
+    assert two_pointers["objective_quality"] == 4.0
+
+
+def test_confidence_calibration_averages_multiple_objective_signals_per_attempt():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 0},
+         "recall_grade": {"grade": 3}},
+        {"id": "2", "slug": "valid-anagram", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 4}},
+        {"id": "3", "slug": "3sum", "solved_at": 3, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 4}},
+    ]
+
+    cal = insights.confidence_calibration(_problems(), attempts)
+
+    arrays = next(r for r in cal["categories"] if r["category"] == "Arrays & Hashing")
+    assert arrays["objective_quality"] == 4.0
+    assert arrays["gap"] == 1.0
+
+
+def test_confidence_calibration_ignores_unusable_attempts():
+    attempts = [
+        {"id": "ungraded", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo"},
+        {"id": "missing-self", "slug": "two-sum", "solved_at": 2,
+         "solution_grade": {"score": 0}},
+        {"id": "missing-category", "slug": "unknown", "solved_at": 3, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 0}},
+        {"id": "sprint", "slug": "two-sum", "solved_at": 4, "confidence": 3,
+         "independence": "solo", "kind": "sprint", "solution_grade": {"score": 0}},
+        {"id": "unsolved", "slug": "two-sum", "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 0}},
+        {"id": "included", "slug": "3sum", "solved_at": 5, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 4}},
+    ]
+
+    cal = insights.confidence_calibration(_problems(), attempts)
+
+    assert cal["graded_attempts"] == 1
+    assert cal["categories"] == [{
+        "category": "Two Pointers",
+        "self_quality": 5.0,
+        "objective_quality": 5.0,
+        "gap": 0.0,
+        "graded_attempts": 1,
+        "review_failures": 0,
+        "leech_count": 0,
+        "overconfident": False,
+    }]
+
+
+def test_confidence_calibration_sparse_data_keeps_rows_without_top():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 0}},
+        {"id": "2", "slug": "3sum", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 0}},
+    ]
+
+    cal = insights.confidence_calibration(_problems(), attempts)
+
+    assert cal["status"] == "not_enough_data"
+    assert cal["graded_attempts"] == 2
+    assert len(cal["categories"]) == 2
+    assert all(r["overconfident"] for r in cal["categories"])
+    assert cal["most_overrated_topic"] is None
+
+
+def test_confidence_calibration_review_failures_make_topic_more_overrated():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5}},
+        {"id": "2", "slug": "valid-anagram", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5}},
+        {"id": "3", "slug": "3sum", "solved_at": 3, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5}},
+    ]
+    reviews = [
+        {"slug": "two-sum", "fail_count": 2, "leech": 0},
+        {"slug": "valid-anagram", "fail_count": 1, "leech": 1},
+    ]
+
+    base = insights.confidence_calibration(_problems(), attempts)
+    adjusted = insights.confidence_calibration(_problems(), attempts, reviews)
+
+    base_arrays = next(r for r in base["categories"] if r["category"] == "Arrays & Hashing")
+    adjusted_arrays = next(r for r in adjusted["categories"]
+                           if r["category"] == "Arrays & Hashing")
+    assert base_arrays["gap"] == 0.0
+    assert adjusted_arrays["review_failures"] == 3
+    assert adjusted_arrays["leech_count"] == 1
+    assert adjusted_arrays["objective_quality"] == 3.0
+    assert adjusted_arrays["gap"] == 2.0
+
+
+def test_confidence_calibration_examples_ordering_cap_and_sources():
+    problems = [
+        {"slug": "alpha", "title": "Alpha", "neetcode_category": "Arrays & Hashing"},
+        {"slug": "bravo", "title": "Bravo", "neetcode_category": "Arrays & Hashing"},
+        {"slug": "charlie", "title": "Charlie", "neetcode_category": "Arrays & Hashing"},
+        {"slug": "delta", "title": "Delta", "neetcode_category": "Arrays & Hashing"},
+        {"slug": "echo", "title": "Echo", "neetcode_category": "Arrays & Hashing"},
+    ]
+    attempts = [
+        {"id": "1", "slug": "delta", "kind": "adhoc", "solved_at": 100,
+         "confidence": 3, "independence": "solo", "solution_grade": {"score": 1}},
+        {"id": "2", "slug": "alpha", "kind": "adhoc", "solved_at": 200,
+         "confidence": 3, "independence": "solo", "solution_grade": {"score": 0}},
+        {"id": "3", "slug": "bravo", "kind": "adhoc", "solved_at": 300,
+         "confidence": 3, "independence": "solo", "solution_grade": {"score": 0}},
+        {"id": "4", "slug": "charlie", "kind": "recall", "solved_at": 300,
+         "confidence": 3, "independence": "solo", "recall_grade": {"grade": 0}},
+        {"id": "5", "slug": "echo", "kind": "adhoc", "solved_at": 400,
+         "confidence": 3, "independence": "solo", "solution_grade": {"score": 5}},
+    ]
+
+    cal = insights.confidence_calibration(problems, attempts)
+    examples = cal["categories"][0]["examples"]
+
+    assert len(examples) == 3
+    assert [e["slug"] for e in examples] == ["bravo", "charlie", "alpha"]
+    assert [e["source"] for e in examples] == [
+        "solution_grade", "recall_grade", "solution_grade"
+    ]
+
+
+def test_confidence_calibration_examples_include_review_failure_without_private_fields():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5},
+         "code": "secret code", "notes": "private notes",
+         "llm_analysis": "private analysis"},
+        {"id": "2", "slug": "valid-anagram", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5}},
+        {"id": "3", "slug": "3sum", "solved_at": 3, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5}},
+    ]
+    reviews = [{"slug": "two-sum", "fail_count": 1, "leech": 1}]
+
+    cal = insights.confidence_calibration(_problems(), attempts, reviews)
+    arrays = next(r for r in cal["categories"] if r["category"] == "Arrays & Hashing")
+    review_example = next(e for e in arrays["examples"] if e["source"] == "review_failure")
+
+    assert review_example == {
+        "slug": "two-sum",
+        "title": "Two Sum",
+        "self_quality": 5,
+        "objective_quality": 1,
+        "gap": 4,
+        "source": "review_failure",
+    }
+    assert set(review_example) == {
+        "slug", "title", "self_quality", "objective_quality", "gap", "source"
+    }
+
+
+def test_confidence_calibration_does_not_mutate_inputs():
+    problems = copy.deepcopy(_problems())
+    attempts = [
+        {"id": "1", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 0}},
+        {"id": "2", "slug": "valid-anagram", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "recall_grade": {"grade": 0}},
+        {"id": "3", "slug": "3sum", "solved_at": 3, "confidence": 2,
+         "independence": "hints", "solution_grade": {"score": 4}},
+    ]
+    reviews = [
+        {"slug": "two-sum", "fail_count": 2, "leech": 0},
+        {"slug": "valid-anagram", "fail_count": 1, "leech": 1},
+    ]
+    before = {
+        "problems": copy.deepcopy(problems),
+        "attempts": copy.deepcopy(attempts),
+        "reviews": copy.deepcopy(reviews),
+    }
+
+    insights.confidence_calibration(problems, attempts, reviews)
+
+    assert problems == before["problems"]
+    assert attempts == before["attempts"]
+    assert reviews == before["reviews"]
+
+
+def test_build_does_not_mutate_store_loaded_practice_data(store):
+    for problem in _problems():
+        store.upsert_problem(copy.deepcopy(problem))
+    aid = store.add_attempt({
+        "slug": "two-sum", "solved_at": 1, "confidence": 3,
+        "independence": "solo", "solution_grade": {"score": 0},
+    })
+    store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2026-01-01",
+        "fail_count": 1, "leech": 1,
+    })
+    store.upsert_enrichment(aid, {
+        "slug": "two-sum", "mistake_tags": ["edge_case"],
+        "user_overrides": {"tags": ["math"]},
+    })
+    before = {
+        "problems": copy.deepcopy(store.problems),
+        "attempts": copy.deepcopy(store.attempts),
+        "reviews": copy.deepcopy(store.reviews),
+        "enrichments": copy.deepcopy(store.enrichments),
+    }
+
+    insights.build(store, today=dt.date(2026, 1, 10))
+
+    assert store.problems == before["problems"]
+    assert store.attempts == before["attempts"]
+    assert store.reviews == before["reviews"]
+    assert store.enrichments == before["enrichments"]
+
+
+def test_confidence_calibration_self_only_category_stays_insufficient():
+    attempts = [
+        {"id": "self-only", "slug": "two-sum", "solved_at": 1, "confidence": 3,
+         "independence": "solo"},
+        {"id": "graded", "slug": "3sum", "solved_at": 2, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5}},
+    ]
+    reviews = [{"slug": "valid-anagram", "fail_count": 0, "leech": 0}]
+
+    cal = insights.confidence_calibration(_problems(), attempts, reviews)
+
+    assert cal["status"] == "not_enough_data"
+    assert cal["graded_attempts"] == 1
+    assert [r["category"] for r in cal["categories"]] == ["Two Pointers"]
+    assert cal["categories"][0]["review_failures"] == 0
+    assert cal["most_overrated_topic"] is None
 
 
 def test_mock_assemble_three(store):
