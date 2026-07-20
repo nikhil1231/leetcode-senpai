@@ -245,6 +245,43 @@ def test_insights_shape(client):
         assert k in body
 
 
+def test_delete_problem_requires_confirmation_and_cleans_queue_state(client):
+    client.store.upsert_review("valid-anagram", {
+        "slug": "valid-anagram", "due_date": "2000-01-01", "interval_days": 5,
+    })
+    sid = client.store.add_session({
+        "slug": "valid-anagram", "started_at": 1000, "status": "active",
+        "paused_at": None, "paused_sec": 0, "kind": "adhoc",
+    })
+
+    bad = client.request("DELETE", "/api/problem/valid-anagram", json={
+        "confirm_slug": "Valid Anagram",
+    })
+    assert bad.status_code == 400
+    assert client.store.get_problem("valid-anagram") is not None
+
+    res = client.request("DELETE", "/api/problem/valid-anagram", json={
+        "confirm_slug": "valid-anagram",
+    })
+    assert res.status_code == 200
+    assert res.json()["deleted_review"] is True
+    assert client.store.get_problem("valid-anagram") is None
+    assert client.store.get_review("valid-anagram") is None
+    assert client.store.get_session(sid)["status"] == "cancelled"
+
+
+def test_delete_problem_refuses_when_attempts_exist(client):
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 1, "source": "manual", "kind": "adhoc",
+    })
+
+    res = client.request("DELETE", "/api/problem/two-sum", json={
+        "confirm_slug": "two-sum",
+    })
+    assert res.status_code == 409
+    assert client.store.get_problem("two-sum") is not None
+
+
 def test_mock_start_and_finish(client):
     start = client.post("/api/mock/start").json()
     assert len(start["problems"]) >= 1

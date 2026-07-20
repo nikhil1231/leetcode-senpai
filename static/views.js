@@ -343,9 +343,13 @@
   }
 
   // ---- Problems ----------------------------------------------------------------
+  let pendingDeleteProblem = null;
+  let deleteProblemModalBound = false;
+
   async function renderProblems() {
     const el = $("#tab-problems");
     el.innerHTML = loader("Loading problems…");
+    bindDeleteProblemModal();
     const rows = await api("/problems");
     if (!rows.length) { el.innerHTML = "<p class='empty'>No problems imported. Go to Discover.</p>"; return; }
     el.innerHTML = `<table class="table is-app is-fullwidth is-hoverable">
@@ -358,10 +362,72 @@
           <td>${badge(r.difficulty)}</td>
           <td>${r.attempt_count}</td>
           <td class="small">${r.due_date || "—"}</td>
-          <td><button class="button start is-small" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(r.neetcode_category || "")}">Start</button></td>
+          <td><div class="problem-actions">
+            <button class="button start is-small" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(r.neetcode_category || "")}">Start</button>
+            ${r.attempt_count ? "" : `<button class="button is-ghost is-small icon-button problem-delete" type="button"
+              data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" aria-label="Remove ${escapeHtml(r.title)}" title="Remove from database">&times;</button>`}
+          </div></td>
         </tr>`).join("")}</tbody></table>`;
     $$("#tab-problems .start").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, "adhoc", "", b.dataset.title, b.dataset.cat)));
+    $$("#tab-problems .problem-delete").forEach((b) => b.addEventListener("click", () => openDeleteProblem(b)));
+  }
+
+  function bindDeleteProblemModal() {
+    if (deleteProblemModalBound) return;
+    deleteProblemModalBound = true;
+    $("#btn-close-delete-problem").addEventListener("click", closeDeleteProblem);
+    $("#btn-cancel-delete-problem").addEventListener("click", closeDeleteProblem);
+    $("#btn-confirm-delete-problem").addEventListener("click", confirmDeleteProblem);
+  }
+
+  function openDeleteProblem(btn) {
+    pendingDeleteProblem = {
+      slug: btn.dataset.slug,
+      title: btn.dataset.title || btn.dataset.slug,
+      button: btn,
+    };
+    $("#delete-problem-copy").textContent =
+      `Remove "${pendingDeleteProblem.title}" from the problem database? This also removes its review card and cancels an active run.`;
+    $("#delete-problem-confirm").value = "";
+    $("#delete-problem-confirm").placeholder = pendingDeleteProblem.slug;
+    $("#delete-problem-error").classList.add("hidden");
+    $("#delete-problem-modal").classList.remove("hidden");
+    $("#delete-problem-confirm").focus();
+  }
+
+  function closeDeleteProblem() {
+    pendingDeleteProblem = null;
+    $("#delete-problem-modal").classList.add("hidden");
+  }
+
+  async function confirmDeleteProblem() {
+    if (!pendingDeleteProblem) return;
+    const slug = pendingDeleteProblem.slug;
+    const typed = $("#delete-problem-confirm").value.trim();
+    if (typed !== slug) {
+      const err = $("#delete-problem-error");
+      err.textContent = "Slug did not match.";
+      err.classList.remove("hidden");
+      return;
+    }
+    const { title, button } = pendingDeleteProblem;
+    button.disabled = true;
+    $("#btn-confirm-delete-problem").disabled = true;
+    try {
+      await api(`/problem/${encodeURIComponent(slug)}`, "DELETE", { confirm_slug: slug });
+      closeDeleteProblem();
+      toast(`Removed ${title}.`);
+      App.loadOverview();
+      renderProblems();
+    } catch (e) {
+      const err = $("#delete-problem-error");
+      err.textContent = e.message;
+      err.classList.remove("hidden");
+      button.disabled = false;
+    } finally {
+      $("#btn-confirm-delete-problem").disabled = false;
+    }
   }
 
   // ---- Settings ----------------------------------------------------------------

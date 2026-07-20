@@ -93,6 +93,10 @@ class ImportProblem(BaseModel):
     slug: str
 
 
+class DeleteProblem(BaseModel):
+    confirm_slug: str
+
+
 class HistoryOpts(BaseModel):
     limit: int = 20
 
@@ -602,6 +606,31 @@ def api_problems(search: str = "", category: str = "", uid: str = Depends(auth.r
                     "due_date": r.get("due_date"), "leech": r.get("leech")})
     out.sort(key=lambda p: p.get("frontend_id") or 9999)
     return out
+
+
+@app.delete("/api/problem/{slug}")
+def api_delete_problem(slug: str, body: DeleteProblem, uid: str = Depends(auth.require_user)):
+    if body.confirm_slug != slug:
+        raise HTTPException(400, "confirmation slug did not match")
+    store = get_store(uid)
+    problem = store.get_problem(slug)
+    if not problem:
+        raise HTTPException(404, "unknown problem")
+    attempts = store.attempts_for_slug(slug)
+    if attempts:
+        raise HTTPException(409, "problem has attempts; not deleting solve history")
+
+    had_review = bool(store.get_review(slug))
+    store.delete_problem(slug)
+    store.delete_review(slug)
+    cancelled_sessions = store.cancel_active_sessions(slug=slug)
+    return {
+        "ok": True,
+        "slug": slug,
+        "title": problem.get("title", slug),
+        "deleted_review": had_review,
+        "cancelled_sessions": cancelled_sessions,
+    }
 
 
 @app.get("/api/problem/{slug}/recall-context")
