@@ -150,6 +150,8 @@ def _pending(store):
             continue
         if a.get("confidence") is not None or a.get("source") == "backfill":
             continue
+        if a.get("annotation_dismissed_at"):
+            continue
         if (a.get("solved_at") or 0) < cutoff:
             continue
         p = pm.get(a["slug"], {})
@@ -437,6 +439,18 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     if scheduler.quality(body.confidence, body.independence) < 3:
         suggestion = _similar_suggestion(store, slug)
     return {"ok": True, "review": new_state, "similar": suggestion}
+
+
+@app.post("/api/attempt/{attempt_id}/dismiss-annotation")
+def api_dismiss_annotation(attempt_id: str, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt:
+        raise HTTPException(404, "no such attempt")
+    if attempt.get("kind") == "recall" or attempt.get("source") == "recall":
+        raise HTTPException(400, "recalls do not use solved annotations")
+    store.update_attempt(attempt_id, {"annotation_dismissed_at": int(time.time())})
+    return {"ok": True}
 
 
 @app.post("/api/attempt/manual")

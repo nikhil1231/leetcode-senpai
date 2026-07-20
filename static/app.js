@@ -395,7 +395,17 @@ function closeAnnotate() {
   $("#annotate-modal").classList.add("hidden");
   currentAttempt = null;
 }
-$("#btn-close-annotate").addEventListener("click", closeAnnotate);
+async function dismissAnnotate() {
+  const attempt = currentAttempt;
+  closeAnnotate();
+  if (!attempt || !attempt.id) return;
+  try {
+    await api(`/attempt/${attempt.id}/dismiss-annotation`, "POST");
+  } catch (e) {
+    toast(e.message);
+  }
+}
+$("#btn-close-annotate").addEventListener("click", dismissAnnotate);
 
 $("#btn-save-annotate").addEventListener("click", async () => {
   const confidence = Number($("#conf-group button.sel").dataset.val);

@@ -170,6 +170,28 @@ def test_pending_solved_modal_excludes_recalls(client):
     assert client.get("/api/pending").json()["pending"] == []
 
 
+def test_dismissed_solved_modal_stops_reprompting(client):
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999999, "source": "auto",
+        "kind": "adhoc", "confidence": None,
+    })
+    assert client.get("/api/pending").json()["pending"][0]["id"] == aid
+
+    r = client.post(f"/api/attempt/{aid}/dismiss-annotation")
+    assert r.status_code == 200
+    assert client.store.get_attempt(aid)["annotation_dismissed_at"]
+    assert client.get("/api/pending").json()["pending"] == []
+
+
+def test_dismiss_annotation_rejects_recalls(client):
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 9999999999, "source": "recall",
+        "kind": "recall", "confidence": None,
+    })
+    r = client.post(f"/api/attempt/{aid}/dismiss-annotation")
+    assert r.status_code == 400
+
+
 def test_packs_progress(client):
     r = client.get("/api/packs")
     packs = {p["name"]: p for p in r.json()}
