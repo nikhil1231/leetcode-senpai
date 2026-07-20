@@ -114,6 +114,8 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .button.is-ghost:hover { color: var(--text); border-color: var(--muted); }
 .button.start { background: var(--green); color: #06210f; border: none; font-weight: 600; }
 .button.start:hover { filter: brightness(1.05); color: #06210f; }
+.button.problem-delete { color: var(--muted); opacity: .55; }
+.button.problem-delete:hover { color: var(--red); border-color: var(--red); opacity: 1; }
 
 /* ---- queue / cards ---------------------------------------------------------- */
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 24px 0 10px; }
@@ -240,6 +242,7 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .conf-1 { color: var(--red); }
 .conf-2 { color: var(--amber); }
 .conf-3 { color: var(--green); }
+.problem-actions { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ---- problems --------------------------------------------------------------- */
 .problems-toolbar {

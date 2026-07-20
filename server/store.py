@@ -107,6 +107,10 @@ class FirestoreStore:
         self.db.collection("problems").document(doc["slug"]).set(doc, merge=True)
         _invalidate(("problems",))
 
+    def delete_problem(self, slug):
+        self.db.collection("problems").document(slug).delete()
+        _invalidate(("problems",))
+
     # ---- attempts -----------------------------------------------------------
     def _attempts(self):
         return self._user_ref().collection("attempts")
@@ -175,6 +179,10 @@ class FirestoreStore:
         self._reviews().document(slug).set({**doc, "slug": slug})
         _invalidate(("reviews", self.uid))
 
+    def delete_review(self, slug):
+        self._reviews().document(slug).delete()
+        _invalidate(("reviews", self.uid))
+
     # ---- sessions -----------------------------------------------------------
     def _sessions(self):
         return self._user_ref().collection("sessions")
@@ -208,9 +216,14 @@ class FirestoreStore:
     def update_session(self, sid, fields):
         self._sessions().document(sid).update(fields)
 
-    def cancel_active_sessions(self):
+    def cancel_active_sessions(self, slug=None):
+        cancelled = 0
         for d in self._sessions().where("status", "==", "active").stream():
+            if slug and d.to_dict().get("slug") != slug:
+                continue
             d.reference.update({"status": "cancelled"})
+            cancelled += 1
+        return cancelled
 
     # ---- enrichments (LLM-derived) ------------------------------------------
     def _enrichments(self):

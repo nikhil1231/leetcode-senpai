@@ -83,6 +83,24 @@
     </main>
   </div>
 
+  <!-- Problem deletion confirmation modal -->
+  <div id="delete-problem-modal" class="overlay hidden">
+    <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="delete-problem-heading">
+      <div class="modal-titlebar">
+        <h2 class="title is-5" id="delete-problem-heading">Remove problem</h2>
+        <button id="btn-close-delete-problem" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+      </div>
+      <p class="small" id="delete-problem-copy"></p>
+      <label class="label-sm">Type the slug to confirm</label>
+      <input id="delete-problem-confirm" class="input" type="text" autocomplete="off" />
+      <p class="help is-danger hidden" id="delete-problem-error"></p>
+      <div class="overlay-actions">
+        <button id="btn-cancel-delete-problem" class="button is-ghost" type="button">Cancel</button>
+        <button id="btn-confirm-delete-problem" class="button is-danger" type="button">Remove</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Post-solve annotation modal -->
   <div id="annotate-modal" class="overlay hidden">
     <div class="overlay-card box annotate-wide" role="dialog" aria-modal="true" aria-labelledby="annotate-heading">
