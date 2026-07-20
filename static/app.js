@@ -101,8 +101,8 @@ let timerInterval = null;
 let pollInterval = null;
 let currentAttempt = null;
 let currentRecall = null;
-let pendingStart = null;
-let categories = [];
+let recallStatusInterval = null;
+let pendingRecallPollIds = new Set();
 let llmEnabled = false;
 let llmProvider = "";
 let llmModel = "";
@@ -110,6 +110,7 @@ let nudgeShown = {};
 let pauseRequestId = 0;
 let sprintRound = null;
 let sprintTimer = null;
+let categories = [];
 let userEmail = "";
 let appMeta = null;
 
@@ -165,18 +166,7 @@ async function loadOverview() {
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
-  if (kind === "drill") return startSession({ slug, kind });
-  pendingStart = { slug, kind };
-  $("#predict-problem").textContent = title ? `${title}` : slug;
-  const cats = categories.length ? categories : (await loadCategories());
-  $("#predict-cats").innerHTML = cats.map((c) =>
-    `<button data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("");
-  $$("#predict-cats button").forEach((b) => b.addEventListener("click", () => {
-    $$("#predict-cats button").forEach((x) => x.classList.remove("sel"));
-    b.classList.add("sel");
-  }));
-  $("#predict-approach").value = "";
-  $("#predict-modal").classList.remove("hidden");
+  return startSession({ slug, kind });
 }
 
 async function startSession(body) {
@@ -188,34 +178,6 @@ async function startSession(body) {
   render(currentActiveTab());
   toast("Timer started — solve it on LeetCode, it'll auto-log.");
 }
-
-async function loadCategories() {
-  try {
-    const topics = await api("/topics");
-    categories = topics.map((t) => t.category);
-  } catch (e) { categories = []; }
-  return categories;
-}
-
-async function doStart(withPrediction) {
-  $("#predict-modal").classList.add("hidden");
-  if (!pendingStart) return;
-  const { slug, kind } = pendingStart;
-  pendingStart = null;
-  const body = { slug, kind };
-  if (withPrediction) {
-    const sel = $("#predict-cats button.sel");
-    body.predicted_category = sel ? sel.dataset.cat : null;
-    body.predicted_approach = $("#predict-approach").value || null;
-  }
-  await startSession(body);
-}
-$("#btn-do-predict").addEventListener("click", () => doStart(true));
-$("#btn-skip-predict").addEventListener("click", () => doStart(false));
-$("#btn-close-predict").addEventListener("click", () => {
-  pendingStart = null;
-  $("#predict-modal").classList.add("hidden");
-});
 
 // ---- active session / timer / hints / nudges -----------------------------------
 async function refreshActive() {
@@ -881,6 +843,16 @@ function pickSelfGrade() {
 }
 
 // ---- sprint runner -------------------------------------------------------------
+async function loadCategories() {
+  try {
+    const topics = await api("/topics");
+    categories = topics.map((t) => t.category);
+  } catch (e) {
+    categories = [];
+  }
+  return categories;
+}
+
 async function startSprint() {
   $("#sprint-modal").classList.remove("hidden");
   $("#sprint-progress").textContent = "";
@@ -1258,7 +1230,6 @@ async function startApp() {
   await Promise.all([
     loadAppMeta(),
     loadOverview(),
-    loadCategories(),
     refreshActive(),
     refreshPending(),
   ]);

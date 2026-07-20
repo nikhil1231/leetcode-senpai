@@ -83,25 +83,6 @@
     </main>
   </div>
 
-  <!-- Pre-solve prediction modal -->
-  <div id="predict-modal" class="overlay hidden">
-    <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="predict-heading">
-      <div class="modal-titlebar">
-        <h2 class="title is-5" id="predict-heading">Before you start</h2>
-        <button id="btn-close-predict" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
-      </div>
-      <p class="small" id="predict-problem"></p>
-      <label class="label-sm">Which pattern do you think this is? <span class="help-inline">(trains recognition — skippable)</span></label>
-      <div class="pill-grid" id="predict-cats"></div>
-      <label class="label-sm">Approach in one sentence (optional)</label>
-      <input id="predict-approach" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sort then two pointers inward" />
-      <div class="overlay-actions">
-        <button id="btn-skip-predict" class="button is-ghost">Skip &amp; start</button>
-        <button id="btn-do-predict" class="button is-primary">Lock in &amp; start</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Post-solve annotation modal -->
   <div id="annotate-modal" class="overlay hidden">
     <div class="overlay-card box annotate-wide" role="dialog" aria-modal="true" aria-labelledby="annotate-heading">
