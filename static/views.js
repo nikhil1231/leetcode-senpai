@@ -232,7 +232,7 @@
   }
 
   function predHtml(pa) {
-    if (!pa.graded) return "<p class='empty'>Make pattern predictions when you Start problems — accuracy shows here.</p>";
+    if (!pa.graded) return "<p class='empty'>Pattern sprints now train this directly. No pre-solve predictions are collected.</p>";
     const rows = Object.entries(pa.by_category || {}).map(([cat, r]) => {
       const tot = r.correct + r.partial + r.wrong;
       return { label: cat.replace(/ .*/, ""), value: Math.round((r.correct / tot) * 100), display: Math.round((r.correct / tot) * 100) + "%", color: "var(--green)" };

@@ -83,8 +83,6 @@ let currentAttempt = null;
 let currentRecall = null;
 let recallStatusInterval = null;
 let pendingRecallPollIds = new Set();
-let pendingStart = null;
-let categories = [];
 let llmEnabled = false;
 let llmProvider = "";
 let llmModel = "";
@@ -139,50 +137,13 @@ async function loadOverview() {
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
-  pendingStart = { slug, kind };
-  $("#predict-problem").textContent = title ? `${title}` : slug;
-  const cats = categories.length ? categories : (await loadCategories());
-  $("#predict-cats").innerHTML = cats.map((c) =>
-    `<button data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("");
-  $$("#predict-cats button").forEach((b) => b.addEventListener("click", () => {
-    $$("#predict-cats button").forEach((x) => x.classList.remove("sel"));
-    b.classList.add("sel");
-  }));
-  $("#predict-approach").value = "";
-  $("#predict-modal").classList.remove("hidden");
-}
-
-async function loadCategories() {
-  try {
-    const topics = await api("/topics");
-    categories = topics.map((t) => t.category);
-  } catch (e) { categories = []; }
-  return categories;
-}
-
-async function doStart(withPrediction) {
-  $("#predict-modal").classList.add("hidden");
-  if (!pendingStart) return;
-  const { slug, kind } = pendingStart;
-  pendingStart = null;
   const body = { slug, kind };
-  if (withPrediction) {
-    const sel = $("#predict-cats button.sel");
-    body.predicted_category = sel ? sel.dataset.cat : null;
-    body.predicted_approach = $("#predict-approach").value || null;
-  }
   const s = await api("/session/start", "POST", body);
   window.open(s.url, "_blank", "noopener");
   nudgeShown = {};
   await refreshActive();
   toast("Timer started — solve it on LeetCode, it'll auto-log.");
 }
-$("#btn-do-predict").addEventListener("click", () => doStart(true));
-$("#btn-skip-predict").addEventListener("click", () => doStart(false));
-$("#btn-close-predict").addEventListener("click", () => {
-  pendingStart = null;
-  $("#predict-modal").classList.add("hidden");
-});
 
 // ---- active session / timer / hints / nudges -----------------------------------
 async function refreshActive() {
@@ -829,7 +790,6 @@ async function startApp() {
   render("today");
   await Promise.all([
     loadOverview(),
-    loadCategories(),
     refreshActive(),
     refreshPending(),
   ]);
