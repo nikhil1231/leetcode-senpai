@@ -455,36 +455,29 @@ function openAnnotate(attempt) {
   $("#annotate-space").innerHTML = cxOptions("");
   $("#annotate-note").value = "";
   $("#annotate-approach").value = "";
+  const saveBtn = $("#btn-save-annotate");
+  saveBtn.textContent = "Save";
+  delete saveBtn.dataset.saved;
+  saveBtn.disabled = false;
   $("#annotate-modal").classList.remove("hidden");
   initAnnotateGrade(attempt);
 }
 
 // ---- solution grading (inside the annotate modal) ------------------------------
 let annotateGradeTimer = null;
-let annotateGradePoll = null;
 
 function initAnnotateGrade(attempt) {
   const panel = $("#annotate-grade");
   stopAnnotateGrading();
-  if (annotateGradePoll) { clearTimeout(annotateGradePoll); annotateGradePoll = null; }
   panel.classList.add("hidden");
   panel.innerHTML = "";
   if (!llmEnabled || !attempt.code) return;
+  if (attempt.confidence == null || !attempt.independence) return;
   const status = attempt.solution_grading_status;
   if (status === "viewed" && attempt.solution_grade) {
     renderSolutionGrade(attempt.solution_grade);
-  } else if (status === "pending") {
-    showAnnotateGrading([
-      "Reading your solution…",
-      "Checking the complexity…",
-      "Comparing against the optimal approach…",
-      "Grading…",
-    ]);
-    pollSolutionGrade(attempt.id);
   } else if (status === "failed") {
     renderSolutionGradeError(attempt.solution_grading_error, attempt.id);
-  } else if (status !== "skipped") {
-    showGradeButton(attempt.id);  // stale solve — grade on demand
   }
 }
 
@@ -507,52 +500,30 @@ function stopAnnotateGrading() {
   if (annotateGradeTimer) { clearInterval(annotateGradeTimer); annotateGradeTimer = null; }
 }
 
-async function pollSolutionGrade(attemptId, tries = 0) {
-  // Stop if the modal closed or a different solve is showing.
-  if (!currentAttempt || currentAttempt.id !== attemptId
-      || $("#annotate-modal").classList.contains("hidden")) {
-    stopAnnotateGrading();
-    return;
-  }
-  if (tries > 30) {  // ~60s ceiling
-    renderSolutionGradeError("Grading is taking longer than expected.", attemptId);
-    return;
-  }
-  let a;
-  try {
-    a = await api(`/attempt/${attemptId}`);
-  } catch (e) {
-    annotateGradePoll = setTimeout(() => pollSolutionGrade(attemptId, tries + 1), 2000);
-    return;
-  }
-  const status = a.solution_grading_status;
-  if (status === "viewed" && a.solution_grade) {
-    if (currentAttempt) currentAttempt.solution_grade = a.solution_grade;
-    renderSolutionGrade(a.solution_grade);
-  } else if (status === "failed") {
-    renderSolutionGradeError(a.solution_grading_error, attemptId);
-  } else if (status === "skipped") {
-    stopAnnotateGrading();
-    $("#annotate-grade").classList.add("hidden");
-  } else {
-    annotateGradePoll = setTimeout(() => pollSolutionGrade(attemptId, tries + 1), 2000);
-  }
-}
-
 function renderSolutionGrade(g) {
   g = g || {};
   stopAnnotateGrading();
   const panel = $("#annotate-grade");
   panel.classList.remove("hidden");
-  const imp = (g.improvements || []).filter(Boolean);
+  const positives = (g.positives || []).filter(Boolean);
+  const negatives = (g.negatives || g.improvements || []).filter(Boolean);
   const hasCx = g.inferred_time || g.inferred_space;
   panel.innerHTML = `
     <div class="grade-score">Solution grade: <b>${g.score}/5</b>${
       g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
-    ${g.analysis ? `<p>${escapeHtml(g.analysis)}</p>` : ""}
+    ${g.analysis ? `<p class="grade-analysis">${escapeHtml(g.analysis)}</p>` : ""}
     ${hasCx ? `<p class="small"><b>Complexity:</b> time ${escapeHtml(g.inferred_time || "?")}, space ${escapeHtml(g.inferred_space || "?")}</p>` : ""}
-    ${imp.length ? `<p class="missed"><b>Improve:</b></p><ul class="improvements">${
-      imp.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : ""}`;
+    ${positives.length ? `<div class="grade-bullets grade-positives"><b>Positives</b><ul>${
+      positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+    ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>Negatives</b><ul>${
+      negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}`;
+}
+
+function markAnnotateDone() {
+  const saveBtn = $("#btn-save-annotate");
+  saveBtn.textContent = "Done";
+  saveBtn.dataset.saved = "1";
+  saveBtn.disabled = false;
 }
 
 function renderSolutionGradeError(err, attemptId) {
@@ -561,14 +532,6 @@ function renderSolutionGradeError(err, attemptId) {
   panel.classList.remove("hidden");
   panel.innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
     <div class="grade-actions"><button id="btn-grade-solution" class="button is-small is-link">Retry grading</button></div>`;
-  wireGradeButton(attemptId);
-}
-
-function showGradeButton(attemptId) {
-  const panel = $("#annotate-grade");
-  panel.classList.remove("hidden");
-  panel.innerHTML =
-    `<div class="grade-actions"><button id="btn-grade-solution" class="button is-small is-link">Grade my solution</button></div>`;
   wireGradeButton(attemptId);
 }
 
@@ -587,12 +550,39 @@ function wireGradeButton(attemptId) {
     if (r.grading_status === "viewed" && r.graded) {
       if (currentAttempt) currentAttempt.solution_grade = r.graded;
       renderSolutionGrade(r.graded);
+      markAnnotateDone();
     } else if (r.grading_status === "skipped") {
       $("#annotate-grade").classList.add("hidden");
     } else {
       renderSolutionGradeError(r.grading_error, attemptId);
     }
   });
+}
+
+async function gradeSavedSolution(attemptId) {
+  showAnnotateGrading([
+    "Reading your saved self-assessment…",
+    "Checking the submitted solution…",
+    "Summarizing the grade…",
+  ]);
+  try {
+    const r = await api(`/attempt/${attemptId}/grade-solution`, "POST");
+    if (r.grading_status === "viewed" && r.graded) {
+      if (currentAttempt) currentAttempt.solution_grade = r.graded;
+      renderSolutionGrade(r.graded);
+      markAnnotateDone();
+      return true;
+    }
+    if (r.grading_status === "skipped") {
+      $("#annotate-grade").classList.add("hidden");
+      return true;
+    }
+    renderSolutionGradeError(r.grading_error, attemptId);
+    return false;
+  } catch (e) {
+    renderSolutionGradeError(e.message, attemptId);
+    return false;
+  }
 }
 
 function selectPill(group, val) {
@@ -604,23 +594,52 @@ $$("#indep-group button").forEach((b) => b.addEventListener("click", () => selec
 function closeAnnotate() {
   $("#annotate-modal").classList.add("hidden");
   stopAnnotateGrading();
-  if (annotateGradePoll) { clearTimeout(annotateGradePoll); annotateGradePoll = null; }
   currentAttempt = null;
 }
 $("#btn-close-annotate").addEventListener("click", closeAnnotate);
 
 $("#btn-save-annotate").addEventListener("click", async () => {
+  const saveBtn = $("#btn-save-annotate");
+  if (saveBtn.dataset.saved === "1") {
+    closeAnnotate();
+    return;
+  }
+  saveBtn.disabled = true;
+  const attemptId = currentAttempt.id;
   const confidence = Number($("#conf-group button.sel").dataset.val);
   const independence = $("#indep-group button.sel").dataset.val;
-  const r = await api(`/attempt/${currentAttempt.id}/annotate`, "POST", {
-    confidence, independence,
-    mistake_note: $("#annotate-note").value || null,
-    approach: $("#annotate-approach").value || null,
-    complexity_time: $("#annotate-time").value || null,
-    complexity_space: $("#annotate-space").value || null,
-  });
-  closeAnnotate();
-  toast(llmEnabled ? "Logged ✅ — coach is reading your notes…" : "Logged ✅");
+  let r;
+  try {
+    r = await api(`/attempt/${attemptId}/annotate`, "POST", {
+      confidence, independence,
+      mistake_note: $("#annotate-note").value || null,
+      approach: $("#annotate-approach").value || null,
+      complexity_time: $("#annotate-time").value || null,
+      complexity_space: $("#annotate-space").value || null,
+    });
+  } catch (e) {
+    saveBtn.disabled = false;
+    toast(e.message);
+    return;
+  }
+  if (currentAttempt) {
+    Object.assign(currentAttempt, {
+      confidence, independence,
+      mistake_note: $("#annotate-note").value || null,
+      approach: $("#annotate-approach").value || null,
+      complexity_time: $("#annotate-time").value || null,
+      complexity_space: $("#annotate-space").value || null,
+    });
+  }
+  toast(llmEnabled ? "Logged — grading your solution…" : "Logged");
+  if (llmEnabled && currentAttempt && currentAttempt.code) {
+    await gradeSavedSolution(attemptId);
+  } else {
+    closeAnnotate();
+  }
+  if (!$("#annotate-modal").classList.contains("hidden") && saveBtn.dataset.saved !== "1") {
+    saveBtn.disabled = false;
+  }
   if (r.similar) {
     setTimeout(() => offerSimilar(r.similar), 400);
   }

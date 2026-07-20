@@ -63,8 +63,10 @@ class RecallResult(BaseModel):
 class SolutionGrade(BaseModel):
     score: int = Field(0, ge=0, le=5, description="1 barely works … 5 optimal & clean")
     optimal: bool = False
-    analysis: str = ""  # detailed read of the approach + complexity
-    improvements: list[str] = Field(default_factory=list)  # empty when already optimal
+    analysis: str = ""  # 1-2 sentence summary of the submitted solution's quality
+    positives: list[str] = Field(default_factory=list)
+    negatives: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)  # legacy alias for negatives
     inferred_time: str = ""
     inferred_space: str = ""
 
@@ -159,16 +161,20 @@ TASKS: dict[str, Task] = {
         "clarity, comparing against the canonical optimal approach. Score 5 only if "
         "the complexity is optimal AND the code is clean/idiomatic; 3-4 for a correct "
         "but suboptimal or messy solution; 1-2 for brute force or hard-to-read code. "
-        "Set optimal=true only when time & space match the canonical optimum. When "
-        "not optimal, list concrete, specific improvements (fewer passes, better data "
-        "structure, drop the extra space, etc.); leave improvements empty when it is "
-        "already optimal. analysis: a tight but detailed read of the approach and its "
-        "time/space. Also infer the solution's actual time/space complexity.",
+        "Set optimal=true only when time & space match the canonical optimum. Keep "
+        "analysis to one or two concise sentences about the submitted solution's "
+        "quality, not a walkthrough. Put concise bullets in positives and negatives; "
+        "negatives should be empty when there are no meaningful issues. Also infer "
+        "the solution's actual time/space complexity.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
             f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
             f"Canonical optimal complexity: time={p.get('canon_time') or '?'}, "
             f"space={p.get('canon_space') or '?'}.\n"
+            f"Self-assessment: confidence={p.get('self_confidence') or '?'}, "
+            f"independence={p.get('self_independence') or '?'}.\n"
+            f"Solver note: {p.get('self_note') or '(none)'}\n"
+            f"Solver stated approach: {p.get('self_approach') or '(none)'}\n"
             f"Solver claimed time={p.get('claim_time') or '?'}, space={p.get('claim_space') or '?'}.\n"
             f"--- their accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
         ),
