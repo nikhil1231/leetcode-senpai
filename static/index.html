@@ -130,10 +130,7 @@
         <button data-val="solution">Read solution</button>
       </div>
 
-      <div class="columns is-mobile mt-2">
-        <div class="column field"><label class="label-sm">Time complexity</label><div class="select is-fullwidth"><select id="annotate-time"></select></div></div>
-        <div class="column field"><label class="label-sm">Space complexity</label><div class="select is-fullwidth"><select id="annotate-space"></select></div></div>
-      </div>
+      <div id="annotate-complexities" class="complexity-fields mt-2"></div>
 
       <label class="label-sm">What tripped you up? <span class="help-inline">(plain text — the coach structures it)</span></label>
       <input id="annotate-note" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. shrank the window before checking the count" />
@@ -159,10 +156,7 @@
       <p class="help">No coding — just recall the approach from memory in under 3 minutes.</p>
       <label class="label-sm">How would you solve it? Key idea + the crucial trick.</label>
       <textarea id="recall-text" class="textarea" rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Describe the approach…"></textarea>
-      <div class="columns is-mobile mt-2">
-        <div class="column field"><label class="label-sm">Time</label><div class="select is-fullwidth"><select id="recall-time"></select></div></div>
-        <div class="column field"><label class="label-sm">Space</label><div class="select is-fullwidth"><select id="recall-space"></select></div></div>
-      </div>
+      <div id="recall-complexities" class="complexity-fields mt-2"></div>
       <div id="recall-grade" class="recall-grade hidden"></div>
       <div class="overlay-actions" id="recall-actions">
         <button id="btn-close-recall" class="button is-ghost">Cancel</button>

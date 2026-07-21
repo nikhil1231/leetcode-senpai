@@ -198,6 +198,28 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .overlay-card .label-sm { display: block; margin: 16px 0 6px; font-size: 13px; color: var(--muted); }
 .overlay-card .field .label-sm { margin-top: 0; }
 .overlay-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 8px; }
+.complexity-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+.complexity-field { min-width: 0; }
+.complexity-field .label-sm { margin-top: 0; }
+.complexity-input { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
+.complexity-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.complexity-preset {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 2px 6px;
+}
+.complexity-preset:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.complexity-preset:disabled { cursor: not-allowed; opacity: .48; }
 .signin p { margin: 6px 0 18px; }
 .signin-logo {
   display: block;
@@ -452,7 +474,7 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .overlay-card.recall-wide > .help,
 .overlay-card.recall-wide > .label-sm,
 .overlay-card.recall-wide > #recall-text,
-.overlay-card.recall-wide > .columns,
+.overlay-card.recall-wide > .complexity-fields,
 .overlay-card.recall-wide > #recall-grade,
 .overlay-card.recall-wide > #recall-actions { grid-column: 2; }
 .overlay-card.recall-wide > #recall-text { min-height: 180px; }
@@ -579,9 +601,10 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
   .overlay-card.recall-wide > .help,
   .overlay-card.recall-wide > .label-sm,
   .overlay-card.recall-wide > #recall-text,
-  .overlay-card.recall-wide > .columns,
+  .overlay-card.recall-wide > .complexity-fields,
   .overlay-card.recall-wide > #recall-grade,
   .overlay-card.recall-wide > #recall-actions { grid-column: 1; grid-row: auto; }
+  .complexity-fields { grid-template-columns: 1fr; }
   .recall-statement { max-height: 38vh; }
   .sprint-card { align-items: flex-start; flex-direction: column; }
   .sprint-card .button { width: 100%; }
