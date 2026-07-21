@@ -55,10 +55,10 @@ class CodeAnalysis(BaseModel):
 
 class RecallResult(BaseModel):
     grade: int = Field(0, ge=0, le=3, description="0 blank/no valid method, 1 vague gist, 2 valid-but-suboptimal or missing the crucial trick, 3 optimal approach incl. trick")
-    optimal: bool = False  # true only if they recalled the canonical optimal approach
-    analysis: str = ""  # 1-2 sentence read of the recall
-    positives: list[str] = Field(default_factory=list)  # what they recalled correctly
-    negatives: list[str] = Field(default_factory=list)  # gaps / the better approach to learn
+    optimal: bool = Field(False, description="true only if they recalled the canonical optimal approach")
+    analysis: str = Field("", description="1-2 sentence read of the recall; ALWAYS fill this, even for a flawless recall")
+    positives: list[str] = Field(default_factory=list, description="what they recalled correctly, as concepts; at least one item for any non-blank answer")
+    negatives: list[str] = Field(default_factory=list, description="gaps or the better/target approach to learn; empty ONLY for a flawless optimal recall")
 
 
 class SolutionGrade(BaseModel):
@@ -196,8 +196,11 @@ TASKS: dict[str, Task] = {
         "positives, credit what they got right as CONCEPTS (the working idea, a "
         "valid alternative approach, correct complexity). In negatives, name the "
         "gaps as CONCEPTS — and when their method is valid but suboptimal, describe "
-        "the better/target approach and its key trick so they can learn it. Use the "
-        "canonical ideas and their past solution ONLY to identify the intended "
+        "the better/target approach and its key trick so they can learn it. ALWAYS "
+        "write the analysis and at least one positive for any non-blank answer — a "
+        "flawless 3/3 still gets its strengths named; leave negatives empty only "
+        "when the recall is already the optimal approach with nothing to add. Use "
+        "the canonical ideas and their past solution ONLY to identify the intended "
         "method, never as text to reproduce.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('category')}).\n"
