@@ -54,7 +54,7 @@ class CodeAnalysis(BaseModel):
 
 
 class RecallResult(BaseModel):
-    grade: int = Field(0, ge=0, le=3, description="0 blank, 1 vague, 2 mostly, 3 complete")
+    grade: int = Field(0, ge=0, le=3, description="0 blank/wrong pattern, 1 vague gist, 2 right method missing the crucial trick, 3 complete incl. trick")
     key_ideas_hit: list[str] = Field(default_factory=list)
     key_ideas_missed: list[str] = Field(default_factory=list)
     feedback: str = ""
@@ -181,14 +181,23 @@ TASKS: dict[str, Task] = {
     ),
     "grade_recall": Task(
         RecallResult,
-        "You grade a from-memory recall of how to solve a problem the solver has "
-        "seen before. Compare against their own past solution and the canonical "
-        "approach. grade: 0 blank/wrong, 1 vague gist, 2 mostly there, 3 complete "
-        "incl. the key trick. List concrete ideas hit and missed. Feedback <25 words.",
+        "You grade a from-memory recall of the METHOD for a problem the solver has "
+        "seen before. This is a NO-CODE exercise — grade the approach's gist, not "
+        "an implementation. Judge only whether they recalled: (a) the pattern / "
+        "data structure, (b) the core idea, (c) the one crucial trick that makes it "
+        "work, and (d) roughly-correct time/space complexity. IGNORE pseudocode "
+        "syntax, variable names, off-by-one / boundary bugs, and anything that only "
+        "matters when writing real code — they were told not to write code. Use "
+        "their past solution and the canonical ideas ONLY to identify the intended "
+        "method, never as text to reproduce. grade: 0 blank or wrong pattern, "
+        "1 vague gist, 2 right method but missing the crucial trick, 3 complete "
+        "incl. the crucial trick. State ideas hit and missed as CONCEPTS, not code "
+        "fixes. Feedback <25 words.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('category')}).\n"
             f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
-            f"Their past accepted approach (code):\n{_trunc(p.get('past_code'), 1200)}\n"
+            f"Their own past solution (reference only, to identify the intended "
+            f"method — do NOT grade its syntax):\n{_trunc(p.get('past_code'), 1200)}\n"
             f"--- their recall now ---\n{p.get('recall_text')}\n"
             f"Stated complexity: time={p.get('recall_time') or '?'}, space={p.get('recall_space') or '?'}"
         ),

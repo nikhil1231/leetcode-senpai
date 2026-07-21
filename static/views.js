@@ -698,13 +698,17 @@
           <td data-label="Leech">${r.leech ? '<span class="tag is-danger is-light">leech</span>' : '<span class="small">-</span>'}</td>
           <td class="problem-action"><div class="problem-actions">
             <button class="button start is-small" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(category)}">Start</button>
-            ${r.attempt_count ? "" : `<button class="button is-ghost is-small icon-button problem-delete" type="button"
+            ${r.attempt_count
+              ? `<button class="button recall-start is-small is-link is-light" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(category)}" title="Recall the method from memory">Recall</button>`
+              : `<button class="button is-ghost is-small icon-button problem-delete" type="button"
               data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" aria-label="Remove ${escapeHtml(r.title)}" title="Remove from database">&times;</button>`}
           </div></td>
         </tr>`;
       }).join("")}</tbody></table>`;
     $$("#tab-problems .start").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, "adhoc", "", b.dataset.title, b.dataset.cat)));
+    $$("#tab-problems .recall-start").forEach((b) => b.addEventListener("click", () =>
+      App.startFlow(b.dataset.slug, "adhoc", "recall", b.dataset.title, b.dataset.cat)));
     $$("#tab-problems .problem-delete").forEach((b) => b.addEventListener("click", () => openDeleteProblem(b)));
   }
 
