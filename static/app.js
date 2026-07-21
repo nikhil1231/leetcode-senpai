@@ -13,6 +13,12 @@ async function getToken() {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const COMPLEXITIES = ["", "O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)", "O(n^3)", "O(2^n)", "O(n!)"];
+const COMPLEXITY_PRESETS = ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)"];
+const COMPLEXITY_EXAMPLES = [
+  ...COMPLEXITIES.filter(Boolean),
+  "O(n + m)", "O(nm)", "O(n log k)", "O(k log n)", "O(V + E)", "O(E log V)",
+  "O(n sqrt n)", "O(log(min(n, m)))",
+];
 
 const api = async (path, method = "GET", body) => {
   const headers = { "Content-Type": "application/json" };
@@ -72,6 +78,50 @@ const diffTagClass = (d) => DIFF_TAG[d] || "";
 const badge = (d) => `<span class="tag ${diffTagClass(d)}">${d || "—"}</span>`;
 const cxOptions = (sel) => COMPLEXITIES.map((c) =>
   `<option value="${c}"${c === sel ? " selected" : ""}>${c || "—"}</option>`).join("");
+const complexityDatalist = (id) =>
+  `<datalist id="${id}">${COMPLEXITY_EXAMPLES.map((c) => `<option value="${c}"></option>`).join("")}</datalist>`;
+const complexityFieldHtml = ({ id, label, listId, placeholder }) => `
+  <div class="complexity-field">
+    <label class="label-sm" for="${id}">${label}</label>
+    <input id="${id}" class="input complexity-input" type="text" list="${listId}"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      inputmode="text" placeholder="${placeholder}" />
+    <div class="complexity-presets" data-for="${id}">
+      ${COMPLEXITY_PRESETS.map((c) => `<button type="button" class="complexity-preset" data-val="${c}">${c}</button>`).join("")}
+    </div>
+  </div>`;
+function renderComplexityFields(containerSel, { timeId, spaceId, timeLabel = "Time", spaceLabel = "Space" }) {
+  const root = $(containerSel);
+  if (!root) return;
+  const listId = `${root.id}-options`;
+  root.innerHTML = `
+    ${complexityDatalist(listId)}
+    ${complexityFieldHtml({ id: timeId, label: timeLabel, listId, placeholder: "O(n + m)" })}
+    ${complexityFieldHtml({ id: spaceId, label: spaceLabel, listId, placeholder: "O(1)" })}`;
+  root.querySelectorAll(".complexity-preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = $(`#${btn.parentElement.dataset.for}`);
+      if (!input || input.disabled) return;
+      input.value = btn.dataset.val;
+      input.focus();
+    });
+  });
+}
+const complexityValue = (id) => {
+  const input = $(`#${id}`);
+  return input && input.value.trim() ? input.value.trim() : null;
+};
+function setComplexityValue(id, value) {
+  const input = $(`#${id}`);
+  if (input) input.value = value || "";
+}
+function setComplexityDisabled(id, disabled) {
+  const input = $(`#${id}`);
+  if (!input) return;
+  input.disabled = disabled;
+  const field = input.closest(".complexity-field");
+  if (field) field.querySelectorAll(".complexity-preset").forEach((btn) => { btn.disabled = disabled; });
+}
 // Reusable async-loading indicator (matches the recall grading spinner).
 const loader = (msg = "Loading…") =>
   `<div class="loading-block"><span class="spinner"></span><span>${escapeHtml(msg)}</span></div>`;
@@ -94,6 +144,17 @@ const sanitizeProblemHtml = (html) => {
 };
 
 window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader, COMPLEXITIES };
+
+renderComplexityFields("#annotate-complexities", {
+  timeId: "annotate-time",
+  spaceId: "annotate-space",
+  timeLabel: "Time complexity",
+  spaceLabel: "Space complexity",
+});
+renderComplexityFields("#recall-complexities", {
+  timeId: "recall-time",
+  spaceId: "recall-space",
+});
 
 // ---- state ---------------------------------------------------------------------
 let activeSession = null;
@@ -413,8 +474,8 @@ function openAnnotate(attempt) {
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   selectPill("#conf-group", "2");
   selectPill("#indep-group", usedHints ? "hints" : "solo");
-  $("#annotate-time").innerHTML = cxOptions("");
-  $("#annotate-space").innerHTML = cxOptions("");
+  setComplexityValue("annotate-time", "");
+  setComplexityValue("annotate-space", "");
   $("#annotate-note").value = "";
   $("#annotate-approach").value = "";
   const saveBtn = $("#btn-save-annotate");
@@ -586,8 +647,8 @@ $("#btn-save-annotate").addEventListener("click", async () => {
       confidence, independence,
       mistake_note: $("#annotate-note").value || null,
       approach: $("#annotate-approach").value || null,
-      complexity_time: $("#annotate-time").value || null,
-      complexity_space: $("#annotate-space").value || null,
+      complexity_time: complexityValue("annotate-time"),
+      complexity_space: complexityValue("annotate-space"),
     });
   } catch (e) {
     saveBtn.disabled = false;
@@ -599,8 +660,8 @@ $("#btn-save-annotate").addEventListener("click", async () => {
       confidence, independence,
       mistake_note: $("#annotate-note").value || null,
       approach: $("#annotate-approach").value || null,
-      complexity_time: $("#annotate-time").value || null,
-      complexity_space: $("#annotate-space").value || null,
+      complexity_time: complexityValue("annotate-time"),
+      complexity_space: complexityValue("annotate-space"),
     });
   }
   toast(llmEnabled ? "Logged — grading your solution…" : "Logged");
@@ -638,10 +699,10 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
   if (help) help.textContent = "No coding. Read the prompt, identify the pattern, then recall the method.";
   $("#recall-text").value = "";
   $("#recall-text").disabled = false;
-  $("#recall-time").disabled = false;
-  $("#recall-space").disabled = false;
-  $("#recall-time").innerHTML = cxOptions("");
-  $("#recall-space").innerHTML = cxOptions("");
+  setComplexityDisabled("recall-time", false);
+  setComplexityDisabled("recall-space", false);
+  setComplexityValue("recall-time", "");
+  setComplexityValue("recall-space", "");
   $("#recall-grade").classList.add("hidden");
   $("#recall-grade").innerHTML = "";
   $("#recall-actions").innerHTML =
@@ -680,8 +741,8 @@ async function loadRecallAttempt(attemptId) {
   }
   currentRecall = { ...currentRecall, ...a, attempt_id: attemptId, category: a.category || currentRecall.category };
   $("#recall-text").value = a.approach || "";
-  $("#recall-time").value = a.complexity_time || "";
-  $("#recall-space").value = a.complexity_space || "";
+  setComplexityValue("recall-time", a.complexity_time);
+  setComplexityValue("recall-space", a.complexity_space);
   if (a.grading_status === "pending") {
     setRecallInputsDisabled(true);
     $("#recall-grade").classList.remove("hidden");
@@ -704,8 +765,8 @@ async function loadRecallAttempt(attemptId) {
 
 function setRecallInputsDisabled(disabled) {
   $("#recall-text").disabled = disabled;
-  $("#recall-time").disabled = disabled;
-  $("#recall-space").disabled = disabled;
+  setComplexityDisabled("recall-time", disabled);
+  setComplexityDisabled("recall-space", disabled);
 }
 
 function renderRecallGrade(g) {
@@ -767,8 +828,8 @@ async function submitRecall() {
   const text = $("#recall-text").value.trim();
   const body = {
     slug: currentRecall.slug, recall_text: text,
-    complexity_time: $("#recall-time").value || null,
-    complexity_space: $("#recall-space").value || null,
+    complexity_time: complexityValue("recall-time"),
+    complexity_space: complexityValue("recall-space"),
   };
   if (!llmEnabled) {
     // manual self-grade path: ask confidence via pills inline
@@ -818,8 +879,8 @@ function showRecallGrading(messages) {
   // lock the inputs, swap the actions for a disabled spinner, and animate a
   // status line that steps through `messages`.
   $("#recall-text").disabled = true;
-  $("#recall-time").disabled = true;
-  $("#recall-space").disabled = true;
+  setComplexityDisabled("recall-time", true);
+  setComplexityDisabled("recall-space", true);
   const g = $("#recall-grade");
   g.classList.remove("hidden");
   g.innerHTML = `<div class="grading"><span class="spinner"></span>
