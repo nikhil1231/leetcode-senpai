@@ -772,12 +772,18 @@ function setRecallInputsDisabled(disabled) {
 function renderRecallGrade(g) {
   g = g || {};
   stopRecallGrading();
+  const positives = (g.positives || g.key_ideas_hit || []).filter(Boolean);
+  const negatives = (g.negatives || g.key_ideas_missed || []).filter(Boolean);
+  const analysis = g.analysis || g.feedback || "";
   $("#recall-grade").classList.remove("hidden");
   $("#recall-grade").innerHTML = `
-    <div class="grade-score">Recall grade: <b>${g.grade}/3</b></div>
-    ${g.feedback ? `<p>${escapeHtml(g.feedback)}</p>` : ""}
-    ${g.key_ideas_missed && g.key_ideas_missed.length ?
-      `<p class="missed"><b>You missed:</b> ${g.key_ideas_missed.map(escapeHtml).join("; ")}</p>` : ""}
+    <div class="grade-score">Recall grade: <b>${g.grade}/3</b>${
+      g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
+    ${analysis ? `<p class="grade-analysis">${escapeHtml(analysis)}</p>` : ""}
+    ${positives.length ? `<div class="grade-bullets grade-positives"><b>Positives</b><ul>${
+      positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+    ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>Negatives</b><ul>${
+      negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
     ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
     <p class="small">Scheduled next review accordingly.</p>
     ${currentRecall.attempt_id ? recallClarificationHtml() : ""}`;

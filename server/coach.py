@@ -97,9 +97,9 @@ async def grade_prediction(store, slug, predicted_category, predicted_approach=N
 async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=None):
     """Grade an approach-recall against the user's past code + canonical ideas.
 
-    Returns (result, error): result is a dict {grade, key_ideas_hit,
-    key_ideas_missed, feedback} or None; error is a human-readable reason when
-    the grade could not be produced. When the LLM is disabled both are None
+    Returns (result, error): result is a dict {grade, optimal, analysis,
+    positives, negatives} or None; error is a human-readable reason when the
+    grade could not be produced. When the LLM is disabled both are None
     (caller falls back to manual self-grade).
     """
     settings = store.get_settings()

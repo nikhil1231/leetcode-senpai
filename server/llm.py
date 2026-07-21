@@ -54,10 +54,11 @@ class CodeAnalysis(BaseModel):
 
 
 class RecallResult(BaseModel):
-    grade: int = Field(0, ge=0, le=3, description="0 blank/wrong pattern, 1 vague gist, 2 right method missing the crucial trick, 3 complete incl. trick")
-    key_ideas_hit: list[str] = Field(default_factory=list)
-    key_ideas_missed: list[str] = Field(default_factory=list)
-    feedback: str = ""
+    grade: int = Field(0, ge=0, le=3, description="0 blank/no valid method, 1 vague gist, 2 valid-but-suboptimal or missing the crucial trick, 3 optimal approach incl. trick")
+    optimal: bool = False  # true only if they recalled the canonical optimal approach
+    analysis: str = ""  # 1-2 sentence read of the recall
+    positives: list[str] = Field(default_factory=list)  # what they recalled correctly
+    negatives: list[str] = Field(default_factory=list)  # gaps / the better approach to learn
 
 
 class SolutionGrade(BaseModel):
@@ -183,19 +184,24 @@ TASKS: dict[str, Task] = {
         RecallResult,
         "You grade a from-memory recall of the METHOD for a problem the solver has "
         "seen before. This is a NO-CODE exercise — grade the approach's gist, not "
-        "an implementation. Judge only whether they recalled: (a) the pattern / "
-        "data structure, (b) the core idea, (c) the one crucial trick that makes it "
-        "work, and (d) roughly-correct time/space complexity. IGNORE pseudocode "
-        "syntax, variable names, off-by-one / boundary bugs, and anything that only "
-        "matters when writing real code — they were told not to write code. Use "
-        "their past solution and the canonical ideas ONLY to identify the intended "
-        "method, never as text to reproduce. grade: 0 blank or wrong pattern, "
-        "1 vague gist, 2 right method but missing the crucial trick, 3 complete "
-        "incl. the crucial trick. State ideas hit and missed as CONCEPTS, not code "
-        "fixes. Feedback <25 words.",
+        "an implementation; IGNORE pseudocode syntax, variable names, and off-by-one "
+        "/ boundary bugs — they were told not to write code. A correct method that "
+        "actually solves the problem EARNS CREDIT even when it is not the canonical "
+        "optimal one; do NOT zero a valid alternative just because you expected a "
+        "different approach. grade: 0 only for a blank answer or a method that would "
+        "not produce correct results; 1 vague gist; 2 a valid method that solves it "
+        "but is suboptimal, OR the right approach missing its crucial trick; 3 the "
+        "optimal approach WITH its crucial trick. Set optimal=true only when they "
+        "recalled the canonical optimal approach. Write a 1-2 sentence analysis. In "
+        "positives, credit what they got right as CONCEPTS (the working idea, a "
+        "valid alternative approach, correct complexity). In negatives, name the "
+        "gaps as CONCEPTS — and when their method is valid but suboptimal, describe "
+        "the better/target approach and its key trick so they can learn it. Use the "
+        "canonical ideas and their past solution ONLY to identify the intended "
+        "method, never as text to reproduce.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('category')}).\n"
-            f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
+            f"Canonical optimal key ideas: {p.get('canonical') or '(unknown)'}\n"
             f"Their own past solution (reference only, to identify the intended "
             f"method — do NOT grade its syntax):\n{_trunc(p.get('past_code'), 1200)}\n"
             f"--- their recall now ---\n{p.get('recall_text')}\n"
