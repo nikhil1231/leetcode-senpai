@@ -1178,6 +1178,104 @@ def test_insights_shape(client):
         assert k in body
 
 
+def test_failure_mode_endpoint_returns_filtered_joined_attempts_newest_first(client):
+    old_id = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 2000, "source": "manual",
+        "kind": "adhoc", "time_taken_sec": 600, "confidence": 2,
+        "independence": "hints", "mistake_note": "loop ended one step early",
+    })
+    new_id = client.store.add_attempt({
+        "slug": "3sum", "solved_at": 3000, "source": "auto",
+        "kind": "review", "time_taken_sec": 900, "confidence": 1,
+        "independence": "solution", "mistake_note": "missed duplicate skip",
+    })
+    replaced_id = client.store.add_attempt({
+        "slug": "valid-anagram", "solved_at": 4000, "source": "manual",
+        "kind": "adhoc", "mistake_note": "model tag replaced",
+    })
+    client.store.upsert_problem({
+        "slug": "outside-library", "title": "Outside Library", "difficulty": "Easy",
+        "neetcode_category": "Stack", "in_library": False, "url": "https://lc/outside-library",
+    })
+    client.store.upsert_problem({
+        "slug": "missing-library-flag", "title": "Missing Library Flag", "difficulty": "Easy",
+        "neetcode_category": "Graphs", "url": "https://lc/missing-library-flag",
+    })
+    non_library_id = client.store.add_attempt({
+        "slug": "outside-library", "solved_at": 5000, "source": "manual", "kind": "adhoc",
+        "mistake_note": "not imported",
+    })
+    missing_flag_id = client.store.add_attempt({
+        "slug": "missing-library-flag", "solved_at": 6000, "source": "manual", "kind": "adhoc",
+        "mistake_note": "not explicitly imported",
+    })
+    for aid in (old_id, new_id, non_library_id, missing_flag_id):
+        client.store.upsert_enrichment(aid, {
+            "mistake_tags": ["off_by_one"],
+            "pattern_used": "hashmap",
+        })
+    client.store.upsert_enrichment(replaced_id, {
+        "mistake_tags": ["off_by_one"],
+        "user_overrides": {"tags": ["edge_case"]},
+        "pattern_used": "hashmap",
+    })
+
+    r = client.get("/api/failure-mode/off_by_one")
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "tag": "off_by_one",
+        "attempts": [
+            {
+                "id": new_id,
+                "slug": "3sum",
+                "solved_at": 3000,
+                "kind": "review",
+                "source": "auto",
+                "time_taken_sec": 900,
+                "confidence": 1,
+                "independence": "solution",
+                "mistake_note": "missed duplicate skip",
+                "mistake_tags": ["off_by_one"],
+                "title": "3Sum",
+                "difficulty": "Medium",
+                "category": "Two Pointers",
+                "url": "https://lc/3sum",
+            },
+            {
+                "id": old_id,
+                "slug": "two-sum",
+                "solved_at": 2000,
+                "kind": "adhoc",
+                "source": "manual",
+                "time_taken_sec": 600,
+                "confidence": 2,
+                "independence": "hints",
+                "mistake_note": "loop ended one step early",
+                "mistake_tags": ["off_by_one"],
+                "title": "Two Sum",
+                "difficulty": "Easy",
+                "category": "Arrays & Hashing",
+                "url": "https://lc/two-sum",
+            },
+        ],
+    }
+    assert client.get("/api/failure-mode/edge_case").json()["attempts"][0]["id"] == replaced_id
+
+
+def test_failure_mode_endpoint_unknown_or_empty_tag_returns_empty_attempts(client):
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 2000, "source": "manual",
+        "kind": "adhoc", "mistake_note": "loop ended one step early",
+    })
+    client.store.upsert_enrichment(aid, {"mistake_tags": ["off_by_one"]})
+
+    for tag in ("unknown", "edge_case"):
+        r = client.get(f"/api/failure-mode/{tag}")
+        assert r.status_code == 200
+        assert r.json() == {"tag": tag, "attempts": []}
+
+
 def test_insights_confidence_calibration_sparse_state(client):
     for slug in ("two-sum", "3sum"):
         client.store.add_attempt({

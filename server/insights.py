@@ -133,6 +133,40 @@ def failure_modes(enrichments, days=None, attempts=None, today=None):
     return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))
 
 
+def failure_mode_attempts(tag, problems, attempts, enrichments):
+    """Attempts annotated with a specific effective mistake tag, newest first."""
+    prob_by_slug = {p.get("slug"): p for p in problems if p.get("slug")}
+    attempt_by_id = {a.get("id"): a for a in attempts if a.get("id")}
+    rows = []
+    for e in enrichments:
+        if tag not in _tags_of(e):
+            continue
+        a = attempt_by_id.get(e.get("attempt_id"))
+        if not a:
+            continue
+        p = prob_by_slug.get(a.get("slug"))
+        if not p or p.get("in_library") is not True:
+            continue
+        rows.append({
+            "id": a.get("id"),
+            "slug": a.get("slug"),
+            "solved_at": a.get("solved_at"),
+            "kind": a.get("kind"),
+            "source": a.get("source"),
+            "time_taken_sec": a.get("time_taken_sec"),
+            "confidence": a.get("confidence"),
+            "independence": a.get("independence"),
+            "mistake_note": a.get("mistake_note"),
+            "mistake_tags": _tags_of(e),
+            "title": p.get("title", a.get("slug")),
+            "difficulty": p.get("difficulty"),
+            "category": p.get("neetcode_category"),
+            "url": p.get("url"),
+        })
+    rows.sort(key=lambda r: r.get("solved_at") or 0, reverse=True)
+    return rows
+
+
 # ---- prediction accuracy --------------------------------------------------------
 def prediction_accuracy(problems, attempts, enrichments):
     """Per category: correct / partial / wrong counts from prediction verdicts."""

@@ -548,6 +548,16 @@ def api_insights(uid: str = Depends(auth.require_user)):
     return insights.build(get_store(uid))
 
 
+@app.get("/api/failure-mode/{tag}")
+def api_failure_mode(tag: str, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    pm = _problem_map(store)
+    em = _enrichment_map(store)
+    attempts = insights.failure_mode_attempts(
+        tag, list(pm.values()), store.list_attempts(), list(em.values()))
+    return {"tag": tag, "attempts": attempts}
+
+
 # ---- sessions -------------------------------------------------------------------
 @app.post("/api/session/start")
 def api_session_start(body: StartSession, bg: BackgroundTasks,

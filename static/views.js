@@ -346,7 +346,12 @@
       showLoadError(el, renderInsights);
       return;
     }
-    const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v, color: "var(--red)" }));
+    const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({
+      rawTag: k,
+      label: k.replace(/_/g, " "),
+      value: v,
+      color: "var(--red)",
+    }));
     const pa = d.prediction_accuracy || {};
     const calibration = d.confidence_calibration;
     el.innerHTML = `
@@ -359,11 +364,90 @@
         <div class="column"><div class="panel-box"><h3>Time to solve (weekly median)</h3>${Charts.lines(d.time_trend, { yLabel: "min" })}</div></div>
       </div>
       <div class="columns">
-        <div class="column"><div class="panel-box"><h3>Failure modes (30 days)</h3>${fm.length ? Charts.bars(fm) : "<p class='empty'>No structured mistakes yet — the coach fills this in.</p>"}</div></div>
+        <div class="column"><div class="panel-box failure-mode-box"><h3>Failure modes (30 days)</h3>${failureModesHtml(fm)}</div></div>
         <div class="column"><div class="panel-box"><h3>Pattern recognition</h3>${predHtml(pa)}</div></div>
       </div>
       <div class="panel-box"><h3>Confidence calibration</h3>${calibrationHtml(calibration)}</div>
       <div class="panel-box"><h3>Mock score trend</h3>${mockTrendHtml(d.mock_trend)}</div>`;
+    bindFailureModeRows();
+  }
+
+  function failureModesHtml(rows) {
+    if (!rows.length) return "<p class='empty'>No structured mistakes yet — the coach fills this in.</p>";
+    return `${failureModeBars(rows)}
+      <div id="failure-mode-review" class="failure-mode-review">
+        <p class="empty">Select a mistake tag to review related attempts.</p>
+      </div>`;
+  }
+
+  function failureModeBars(data) {
+    const max = Math.max(...data.map((d) => d.value), 1);
+    const rows = data.map((d) => {
+      const w = Math.round((d.value / max) * 100);
+      return `<button type="button" class="chart-bar-row failure-mode-row" data-tag="${escapeHtml(d.rawTag)}"
+        title="${escapeHtml(d.rawTag)}: ${escapeHtml(d.value)} attempts">
+        <span class="chart-bar-label">${escapeHtml(d.label)}</span>
+        <span class="chart-bar-track"><span class="chart-bar-fill" style="width:${w}%;background:${d.color || "var(--accent)"}"></span></span>
+        <span class="chart-bar-val">${escapeHtml(d.value)}</span>
+      </button>`;
+    }).join("");
+    return `<div class="chart-bars failure-mode-bars">${rows}</div>`;
+  }
+
+  function bindFailureModeRows() {
+    $$("#tab-insights .failure-mode-row").forEach((b) => b.addEventListener("click", () => loadFailureMode(b)));
+  }
+
+  async function loadFailureMode(btn) {
+    const tag = btn.dataset.tag || "";
+    const panel = $("#failure-mode-review");
+    if (!panel || !tag) return;
+    $$("#tab-insights .failure-mode-row").forEach((b) => b.classList.toggle("is-active", b === btn));
+    panel.innerHTML = loader(`Loading ${tag.replace(/_/g, " ")} attempts…`);
+    let r;
+    try {
+      r = await api(`/failure-mode/${encodeURIComponent(tag)}`);
+    } catch (e) {
+      showLoadError(panel, () => loadFailureMode(btn));
+      return;
+    }
+    const attempts = (r.attempts || []).slice().sort((a, b) => (b.solved_at || 0) - (a.solved_at || 0));
+    panel.innerHTML = attempts.length
+      ? failureModeAttemptsHtml(tag, attempts)
+      : `<p class="empty">No saved attempts found for ${escapeHtml(tag.replace(/_/g, " "))}.</p>`;
+    $$("#failure-mode-review .failure-mode-detail").forEach((b) => b.addEventListener("click", () => App.openDetail(b.dataset.id)));
+    $$("#failure-mode-review .failure-mode-start").forEach((b) => b.addEventListener("click", () =>
+      App.startFlow(b.dataset.slug, "adhoc", "", b.dataset.title, b.dataset.cat)));
+  }
+
+  function failureModeAttemptsHtml(tag, attempts) {
+    return `<div class="failure-mode-review-head">
+      <div><b>${escapeHtml(tag.replace(/_/g, " "))}</b><div class="small">${plural(attempts.length, "tagged attempt")}</div></div>
+    </div>
+    <div class="failure-mode-attempts">${attempts.map(failureModeAttemptHtml).join("")}</div>`;
+  }
+
+  function failureModeAttemptHtml(a) {
+    const url = a.url || `https://leetcode.com/problems/${a.slug}/`;
+    const tags = (a.mistake_tags || []).map((t) => `<span class="mtag">${escapeHtml(t)}</span>`).join(" ");
+    return `<div class="failure-mode-attempt">
+      <div class="failure-mode-attempt-main">
+        <div class="failure-mode-title-row">
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(a.title || a.slug)}</a>
+          ${badge(a.difficulty)}
+        </div>
+        <div class="small">${shortLocalDate(a.solved_at)} · ${escapeHtml(a.category || "-")}</div>
+        ${a.mistake_note
+          ? `<div class="failure-mode-note">${escapeHtml(a.mistake_note)}</div>`
+          : `<div class="failure-mode-note is-muted">No mistake note saved.</div>`}
+        ${tags ? `<div class="failure-mode-tags">${tags}</div>` : ""}
+      </div>
+      <div class="failure-mode-actions">
+        <button class="button is-small failure-mode-detail" data-id="${escapeHtml(a.id)}">Detail</button>
+        <button class="button start is-small failure-mode-start" data-slug="${escapeHtml(a.slug)}"
+          data-title="${escapeHtml(a.title || a.slug)}" data-cat="${escapeHtml(a.category || "")}">Start</button>
+      </div>
+    </div>`;
   }
 
   function paceHtml(p) {

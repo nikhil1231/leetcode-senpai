@@ -1185,6 +1185,72 @@ function refreshAfterSprint() {
 $("#btn-close-sprint").addEventListener("click", closeSprint);
 
 // ---- attempt detail (solution archive) -----------------------------------------
+function detailGradeHtml(a) {
+  if (!a) return "";
+  if (a.kind === "recall" || a.source === "recall") {
+    return recallDetailGradeHtml(a.recall_grade, a.grading_status, a.grading_error);
+  }
+  return solutionDetailGradeHtml(
+    a.solution_grade, a.solution_grading_status, a.solution_grading_error);
+}
+
+function gradeListHtml(title, items, cls) {
+  const rows = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!rows.length) return "";
+  return `<div class="grade-bullets ${cls}"><b>${title}</b><ul>${
+    rows.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`;
+}
+
+function gradeItems(items) {
+  return Array.isArray(items) ? items.filter(Boolean) : [];
+}
+
+function gradeStatusHtml(status, err) {
+  if (status === "failed") {
+    return `<div class="recall-grade detail-grade">
+      <p class="missed"><b>Grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
+    </div>`;
+  }
+  return "";
+}
+
+function solutionDetailGradeHtml(g, status, err) {
+  if (!g || typeof g !== "object") return gradeStatusHtml(status, err);
+  const hasScore = g.score != null;
+  const hasCx = g.inferred_time || g.inferred_space;
+  const positives = gradeItems(g.positives);
+  const negatives = gradeItems(g.negatives).length ? gradeItems(g.negatives) : gradeItems(g.improvements);
+  if (!hasScore && !g.analysis && !g.feedback && !hasCx && !positives.length && !negatives.length) {
+    return gradeStatusHtml(status, err);
+  }
+  return `<div class="recall-grade detail-grade">
+    <div class="grade-score">Solution grade${hasScore ? `: <b>${escapeHtml(g.score)}/5</b>` : ""}${
+      g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
+    ${g.analysis || g.feedback ? `<p class="grade-analysis">${escapeHtml(g.analysis || g.feedback)}</p>` : ""}
+    ${hasCx ? `<p class="small"><b>Complexity:</b> time ${escapeHtml(g.inferred_time || "?")}, space ${escapeHtml(g.inferred_space || "?")}</p>` : ""}
+    ${gradeListHtml("Positives", positives, "grade-positives")}
+    ${gradeListHtml("Negatives", negatives, "grade-negatives")}
+    ${g.prompt_version != null ? `<p class="small">Prompt v${escapeHtml(g.prompt_version)}</p>` : ""}
+  </div>`;
+}
+
+function recallDetailGradeHtml(g, status, err) {
+  if (!g || typeof g !== "object") return gradeStatusHtml(status, err);
+  const hasGrade = g.grade != null;
+  const positives = gradeItems(g.positives);
+  const negatives = gradeItems(g.negatives);
+  if (!hasGrade && !g.analysis && !g.feedback && !positives.length && !negatives.length) {
+    return gradeStatusHtml(status, err);
+  }
+  return `<div class="recall-grade detail-grade">
+    <div class="grade-score">Recall grade${hasGrade ? `: <b>${escapeHtml(g.grade)}/3</b>` : ""}${
+      g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
+    ${g.analysis || g.feedback ? `<p class="grade-analysis">${escapeHtml(g.analysis || g.feedback)}</p>` : ""}
+    ${gradeListHtml("Positives", positives, "grade-positives")}
+    ${gradeListHtml("Negatives", negatives, "grade-negatives")}
+  </div>`;
+}
+
 async function openDetail(attemptId) {
   $("#detail-body").innerHTML = loader("Loading attempt…");
   $("#detail-modal").classList.remove("hidden");
@@ -1231,6 +1297,7 @@ async function openDetail(attemptId) {
     ${e.pattern_used ? `<p><b>Pattern used:</b> ${escapeHtml(e.pattern_used)} ${e.complexity_verdict && e.complexity_verdict !== "match" ? `<span class="warn-chip">${escapeHtml(e.complexity_verdict.replace("_", " "))}</span>` : ""}</p>` : ""}
     ${tags.length ? `<p><b>Mistakes:</b> ${tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
     ${e.diff_summary ? `<p><b>Since last time:</b> ${escapeHtml(e.diff_summary)}</p>` : ""}
+    ${detailGradeHtml(a)}
     ${a.code ? `<pre class="code">${escapeHtml(a.code)}</pre>` : `<p class="small">No stored code for this attempt.</p>`}`;
   $("#detail-body").innerHTML = body;
   $("#detail-modal").classList.remove("hidden");

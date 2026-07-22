@@ -64,6 +64,90 @@ def test_failure_modes_prefers_overrides():
     assert fm.get("off_by_one") == 1
 
 
+def test_failure_mode_attempts_newest_first_with_context():
+    problems = [
+        {**_problems()[0], "url": "https://lc/two-sum"},
+        {**_problems()[1], "url": "https://lc/3sum"},
+    ]
+    attempts = [
+        {"id": "old", "slug": "two-sum", "solved_at": 10, "kind": "adhoc",
+         "source": "manual", "time_taken_sec": 900, "confidence": 2,
+         "independence": "hints", "mistake_note": "missed empty input"},
+        {"id": "new", "slug": "3sum", "solved_at": 20, "kind": "drill",
+         "source": "auto", "time_taken_sec": 1200, "confidence": 1,
+         "independence": "solution", "mistake_note": "index boundary"},
+    ]
+    enrichments = [
+        {"attempt_id": "old", "mistake_tags": ["off_by_one"]},
+        {"attempt_id": "new", "mistake_tags": ["off_by_one"]},
+    ]
+
+    rows = insights.failure_mode_attempts("off_by_one", problems, attempts, enrichments)
+
+    assert [r["id"] for r in rows] == ["new", "old"]
+    assert rows[0] == {
+        "id": "new",
+        "slug": "3sum",
+        "solved_at": 20,
+        "kind": "drill",
+        "source": "auto",
+        "time_taken_sec": 1200,
+        "confidence": 1,
+        "independence": "solution",
+        "mistake_note": "index boundary",
+        "mistake_tags": ["off_by_one"],
+        "title": "3Sum",
+        "difficulty": "Medium",
+        "category": "Two Pointers",
+        "url": "https://lc/3sum",
+    }
+
+
+def test_failure_mode_attempts_overrides_win_over_model_tags():
+    attempts = [{"id": "1", "slug": "two-sum", "solved_at": 1}]
+    enrichments = [
+        {"attempt_id": "1", "mistake_tags": ["off_by_one"],
+         "user_overrides": {"tags": ["edge_case"]}},
+    ]
+
+    rows = insights.failure_mode_attempts("off_by_one", _problems(), attempts, enrichments)
+
+    assert rows == []
+    assert insights.failure_mode_attempts("edge_case", _problems(), attempts, enrichments)[0]["id"] == "1"
+
+
+def test_failure_mode_attempts_excludes_non_library_and_missing_problem_attempts():
+    problems = [
+        {**_problems()[0], "in_library": True},
+        {"slug": "candidate", "title": "Candidate", "difficulty": "Easy",
+         "neetcode_category": "Stack", "in_library": False},
+    ]
+    attempts = [
+        {"id": "keep", "slug": "two-sum", "solved_at": 3},
+        {"id": "drop-non-library", "slug": "candidate", "solved_at": 2},
+        {"id": "drop-missing", "slug": "missing", "solved_at": 1},
+    ]
+    enrichments = [
+        {"attempt_id": "keep", "mistake_tags": ["off_by_one"]},
+        {"attempt_id": "drop-non-library", "mistake_tags": ["off_by_one"]},
+        {"attempt_id": "drop-missing", "mistake_tags": ["off_by_one"]},
+        {"attempt_id": "no-attempt", "mistake_tags": ["off_by_one"]},
+    ]
+
+    rows = insights.failure_mode_attempts("off_by_one", problems, attempts, enrichments)
+
+    assert [r["id"] for r in rows] == ["keep"]
+
+
+def test_failure_mode_attempts_unknown_tag_empty():
+    attempts = [{"id": "1", "slug": "two-sum", "solved_at": 1}]
+    enrichments = [{"attempt_id": "1", "mistake_tags": ["off_by_one"]}]
+
+    rows = insights.failure_mode_attempts("unknown", _problems(), attempts, enrichments)
+
+    assert rows == []
+
+
 def test_prediction_accuracy_overall():
     problems = _problems()
     attempts = [{"id": "1", "slug": "two-sum"}, {"id": "2", "slug": "3sum"}]
