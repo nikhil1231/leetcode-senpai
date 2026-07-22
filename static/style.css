@@ -46,12 +46,21 @@ body {
 
 /* ---- header / tabs ---------------------------------------------------------- */
 .app-header {
-  padding: 16px 24px 0;
+  padding: 16px 0 0;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   position: sticky;
   top: 0;
   z-index: 10;
+}
+.header-top,
+#tabs,
+.overview {
+  max-width: 1180px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 24px;
+  padding-right: 24px;
 }
 .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .app-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -95,7 +104,7 @@ body {
 .overview {
   display: flex;
   gap: 18px;
-  padding: 10px 0;
+  padding: 10px 24px;
   font-size: 13px;
   color: var(--muted);
   flex-wrap: wrap;
@@ -583,7 +592,9 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
     padding-bottom: 8px;
   }
   .queue-card { align-items: flex-start; }
-  .app-header { padding-left: 16px; padding-right: 16px; }
+  .header-top,
+  #tabs,
+  .overview { padding-left: 14px; padding-right: 14px; }
   .header-top { gap: 12px; }
   #user-chip { max-width: 58%; }
   .user-identity { max-width: 100%; }
