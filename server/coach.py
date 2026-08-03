@@ -113,6 +113,8 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
     return await llm.extract_or_error("grade_recall", {
         "title": p.get("title", slug), "category": p.get("neetcode_category"),
         "canonical": canon_ideas, "past_code": past_code,
+        "canon_time": (canonical or {}).get("time"),
+        "canon_space": (canonical or {}).get("space"),
         "recall_text": recall_text, "recall_time": recall_time, "recall_space": recall_space,
     }, settings=settings)
 

@@ -54,8 +54,8 @@ class CodeAnalysis(BaseModel):
 
 
 class RecallResult(BaseModel):
-    grade: int = Field(0, ge=0, le=3, description="0 blank/no valid method, 1 vague gist, 2 valid-but-suboptimal or missing the crucial trick, 3 optimal approach incl. trick")
-    optimal: bool = Field(False, description="true only if they recalled the canonical optimal approach")
+    grade: int = Field(0, ge=0, le=3, description="0 blank/no valid method, 1 vague gist, 2 valid-but-suboptimal or missing the crucial trick, 3 optimal time and space complexity incl. trick")
+    optimal: bool = Field(False, description="true when their recalled method matches the canonical optimal time and space complexity")
     analysis: str = Field("", description="1-2 sentence read of the recall; ALWAYS fill this, even for a flawless recall")
     positives: list[str] = Field(default_factory=list, description="what they recalled correctly, as concepts; at least one item for any non-blank answer")
     negatives: list[str] = Field(default_factory=list, description="gaps or the better/target approach to learn; empty ONLY for a flawless optimal recall")
@@ -188,23 +188,31 @@ TASKS: dict[str, Task] = {
         "/ boundary bugs — they were told not to write code. A correct method that "
         "actually solves the problem EARNS CREDIT even when it is not the canonical "
         "optimal one; do NOT zero a valid alternative just because you expected a "
-        "different approach. grade: 0 only for a blank answer or a method that would "
-        "not produce correct results; 1 vague gist; 2 a valid method that solves it "
-        "but is suboptimal, OR the right approach missing its crucial trick; 3 the "
-        "optimal approach WITH its crucial trick. Set optimal=true only when they "
-        "recalled the canonical optimal approach. Write a 1-2 sentence analysis. In "
+        "different approach. Grade by the recalled method's time and space complexity "
+        "against the canonical optimum, not by whether it uses the canonical technique: "
+        "a non-canonical method with optimal time and space can earn 3/3. grade: 0 "
+        "only for a blank answer or a method that would not produce correct results; "
+        "1 vague gist; 2 a valid method that solves it but is suboptimal in time or "
+        "space, OR an optimal-family approach missing its crucial trick; 3 a correct "
+        "method with optimal time and space complexity WITH its crucial trick. Set "
+        "optimal=true when their recalled method matches the canonical optimal time "
+        "and space, even if it is a different approach. Write a 1-2 sentence analysis. In "
         "positives, credit what they got right as CONCEPTS (the working idea, a "
         "valid alternative approach, correct complexity). In negatives, name the "
-        "gaps as CONCEPTS — and when their method is valid but suboptimal, describe "
-        "the better/target approach and its key trick so they can learn it. ALWAYS "
+        "gaps as CONCEPTS — and when their method is valid but suboptimal or differs "
+        "from the canonical approach, you may describe the better/target or alternate "
+        "canonical approach and its key trick so they can learn it; do not mark down "
+        "solely for being non-canonical. ALWAYS "
         "write the analysis and at least one positive for any non-blank answer — a "
         "flawless 3/3 still gets its strengths named; leave negatives empty only "
-        "when the recall is already the optimal approach with nothing to add. Use "
+        "when the recall is already optimal with nothing useful to add. Use "
         "the canonical ideas and their past solution ONLY to identify the intended "
         "method, never as text to reproduce.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('category')}).\n"
             f"Canonical optimal key ideas: {p.get('canonical') or '(unknown)'}\n"
+            f"Canonical optimal complexity: time={p.get('canon_time') or '?'}, "
+            f"space={p.get('canon_space') or '?'}.\n"
             f"Their own past solution (reference only, to identify the intended "
             f"method — do NOT grade its syntax):\n{_trunc(p.get('past_code'), 1200)}\n"
             f"--- their recall now ---\n{p.get('recall_text')}\n"

@@ -3,7 +3,8 @@ import json
 
 import pytest
 
-from server import llm
+from server import coach, llm
+from tests.fake_store import FakeStore
 
 
 @pytest.fixture
@@ -86,6 +87,73 @@ async def test_recall_schema_clamps(enable_llm, monkeypatch):
                         lambda *a, **k: json.dumps({"grade": 9}))
     out = await llm.extract("grade_recall", {"recall_text": "x"})
     assert out is None
+
+
+@pytest.mark.asyncio
+async def test_recall_grades_noncanonical_optimal_by_complexity(enable_llm, monkeypatch):
+    seen = {}
+
+    def fake_generate(provider, model, system, prompt, schema):
+        seen["system"] = system
+        seen["prompt"] = prompt
+        return json.dumps({
+            "grade": 3,
+            "optimal": True,
+            "analysis": "optimal alternative",
+            "positives": ["optimal time and space"],
+            "negatives": [],
+        })
+
+    monkeypatch.setattr(llm, "_raw_generate", fake_generate)
+
+    out = await llm.extract("grade_recall", {
+        "title": "T",
+        "canonical": "two pointer sweep",
+        "canon_time": "O(n)",
+        "canon_space": "O(1)",
+        "recall_text": "use prefix extrema",
+        "recall_time": "O(n)",
+        "recall_space": "O(1)",
+    })
+
+    assert out["grade"] == 3
+    assert "not by whether it uses the canonical technique" in seen["system"]
+    assert (
+        "non-canonical method with optimal time and space can earn 3/3"
+        in seen["system"]
+    )
+    assert "Canonical optimal complexity: time=O(n), space=O(1)." in seen["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_coach_passes_canonical_complexity_to_recall_grading(monkeypatch):
+    store = FakeStore()
+    store.settings = {"llm_provider": "openai"}
+    store.upsert_problem({
+        "slug": "two-sum",
+        "title": "Two Sum",
+        "neetcode_category": "Arrays & Hashing",
+        "canonical_summary": {
+            "key_ideas": ["hash complements"],
+            "time": "O(n)",
+            "space": "O(n)",
+        },
+    })
+    captured = {}
+
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        captured["task_name"] = task_name
+        captured["payload"] = payload
+        return {"grade": 3}, None
+
+    monkeypatch.setattr(llm, "enabled", lambda settings=None: True)
+    monkeypatch.setattr(llm, "extract_or_error", fake_extract_or_error)
+
+    await coach.grade_recall(store, "two-sum", "hashmap", "O(n)", "O(n)")
+
+    assert captured["task_name"] == "grade_recall"
+    assert captured["payload"]["canon_time"] == "O(n)"
+    assert captured["payload"]["canon_space"] == "O(n)"
 
 
 @pytest.mark.asyncio
