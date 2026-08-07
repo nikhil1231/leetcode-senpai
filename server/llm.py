@@ -16,7 +16,7 @@ mode, validates against the schema, and hands back a plain dict.
 import asyncio
 import json
 import logging
-from typing import Callable, Literal, Optional
+from typing import Annotated, Callable, Literal, Optional
 
 import httpx
 from pydantic import BaseModel, Field
@@ -30,6 +30,7 @@ MISTAKE_TAGS = [
     "wrong_ds", "tle", "impl_bug", "syntax",
 ]
 COMPLEXITIES = ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)", "O(n^3)", "O(2^n)", "O(n!)"]
+ShortText = Annotated[str, Field(max_length=80)]
 
 
 # ---- response schemas -----------------------------------------------------------
@@ -43,6 +44,14 @@ class MistakeResult(BaseModel):
 class PredictionResult(BaseModel):
     verdict: Literal["correct", "partial", "wrong", "unknown"] = "unknown"
     note: str = ""
+
+
+class PlanCritiqueResult(BaseModel):
+    pattern_verdict: Literal["plausible", "unclear", "risky", "unknown"] = "unknown"
+    complexity_verdict: Literal["realistic", "optimistic", "pessimistic", "unknown"] = "unknown"
+    missing_edge_cases: list[ShortText] = Field(default_factory=list, max_length=3)
+    nudges: list[ShortText] = Field(default_factory=list, max_length=3)
+    overall_verdict: Literal["ready", "revise", "unknown"] = "unknown"
 
 
 class CodeAnalysis(BaseModel):
@@ -141,6 +150,27 @@ TASKS: dict[str, Task] = {
             f"Predicted pattern: {p.get('predicted_category')}\n"
             f"Predicted approach: {p.get('predicted_approach') or '(none)'}\n"
             f"Actual pattern used (from their code): {p.get('pattern_used') or p.get('category')}"
+        ),
+    ),
+    "critique_plan": Task(
+        PlanCritiqueResult,
+        "You are an advisory pre-code plan reviewer for coding-interview practice. "
+        "Judge whether the user's stated plan is plausible, whether their stated "
+        "complexity target is realistic, and which broad edge-case categories seem "
+        "unstated. STRICT NO-SOLUTION-LEAK RULE: do not reveal the algorithm, "
+        "step-by-step solution, code, pseudocode, decisive trick, invariant, or a "
+        "canonical pattern/category unless the user already stated it. Do not "
+        "correct the plan by giving the missing approach. Nudges must be questions "
+        "or checks the user can answer from their own plan. Keep every string under "
+        "12 words. Return at most 3 missing_edge_cases and at most 3 nudges.",
+        lambda p: (
+            f"Problem metadata: {p.get('title')} ({p.get('difficulty')}, "
+            f"{p.get('category')}). Slug: {p.get('slug')}.\n"
+            f"User predicted pattern: {p.get('predicted_category') or '(none)'}\n"
+            f"User approach: {p.get('predicted_approach') or '(none)'}\n"
+            f"Target complexity: time={p.get('complexity_target_time') or '?'}, "
+            f"space={p.get('complexity_target_space') or '?'}.\n"
+            f"Planned edge cases: {json.dumps(p.get('planned_edge_cases') or [])}"
         ),
     ),
     "analyze_code": Task(

@@ -26,6 +26,14 @@ async def test_extract_returns_none_when_disabled(monkeypatch):
     assert out is None
 
 
+@pytest.mark.asyncio
+async def test_critique_plan_returns_none_when_disabled(monkeypatch):
+    monkeypatch.setattr(llm.config, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(llm.config, "GEMINI_API_KEY", None)
+    out = await llm.extract("critique_plan", {"slug": "two-sum"})
+    assert out is None
+
+
 def test_gemini_settings_can_enable_gemini_key(monkeypatch):
     monkeypatch.setattr(llm.config, "OPENAI_API_KEY", None)
     monkeypatch.setattr(llm.config, "GEMINI_API_KEY", "test-key")
@@ -56,6 +64,28 @@ async def test_extract_validates_good_json(enable_llm, monkeypatch):
     })
     assert out["tags"] == ["off_by_one", "edge_case"]
     assert out["phase"] == "implementation"
+
+
+@pytest.mark.asyncio
+async def test_critique_plan_validates_good_json(enable_llm, monkeypatch):
+    payload_json = json.dumps({
+        "pattern_verdict": "plausible",
+        "complexity_verdict": "realistic",
+        "missing_edge_cases": ["empty input", "duplicates"],
+        "nudges": ["What happens with repeated values?"],
+        "overall_verdict": "revise",
+    })
+    monkeypatch.setattr(llm, "_raw_generate", lambda *a, **k: payload_json)
+    out = await llm.extract("critique_plan", {
+        "slug": "two-sum",
+        "title": "Two Sum",
+        "difficulty": "Easy",
+        "category": "Arrays & Hashing",
+    })
+    assert out["pattern_verdict"] == "plausible"
+    assert out["complexity_verdict"] == "realistic"
+    assert out["missing_edge_cases"] == ["empty input", "duplicates"]
+    assert out["overall_verdict"] == "revise"
 
 
 @pytest.mark.asyncio

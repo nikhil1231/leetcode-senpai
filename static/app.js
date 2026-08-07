@@ -125,6 +125,19 @@ function setComplexityDisabled(id, disabled) {
 // Reusable async-loading indicator (matches the recall grading spinner).
 const loader = (msg = "Loading…") =>
   `<div class="loading-block"><span class="spinner"></span><span>${escapeHtml(msg)}</span></div>`;
+const leetcodeProblemUrl = (slug) => `https://leetcode.com/problems/${encodeURIComponent(slug)}/`;
+const normalizeProblemAssetUrl = (src) => {
+  const raw = String(src || "").trim();
+  if (!raw) return "";
+  try {
+    const url = raw.startsWith("/")
+      ? new URL(raw, "https://assets.leetcode.com")
+      : new URL(raw, "https://leetcode.com");
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch (e) {
+    return "";
+  }
+};
 const sanitizeProblemHtml = (html) => {
   if (!html) return "";
   const template = document.createElement("template");
@@ -132,16 +145,46 @@ const sanitizeProblemHtml = (html) => {
   const allowed = new Set([
     "P", "PRE", "CODE", "STRONG", "B", "EM", "I", "UL", "OL", "LI", "BR",
     "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "SUP", "SUB", "SPAN",
+    "IMG",
   ]);
   template.content.querySelectorAll("*").forEach((el) => {
     if (!allowed.has(el.tagName)) {
       el.replaceWith(...Array.from(el.childNodes));
       return;
     }
+    if (el.tagName === "IMG") {
+      const src = normalizeProblemAssetUrl(el.getAttribute("src"));
+      const alt = el.getAttribute("alt") || "";
+      const width = el.getAttribute("width");
+      const height = el.getAttribute("height");
+      if (!src) {
+        el.remove();
+        return;
+      }
+      Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name));
+      el.setAttribute("src", src);
+      el.setAttribute("alt", alt);
+      el.setAttribute("loading", "lazy");
+      el.setAttribute("decoding", "async");
+      if (/^\d{1,4}$/.test(width || "")) el.setAttribute("width", width);
+      if (/^\d{1,4}$/.test(height || "")) el.setAttribute("height", height);
+      return;
+    }
     Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name));
   });
   return template.innerHTML;
 };
+function renderProblemStatement(containerSel, problem, slug) {
+  const root = $(containerSel);
+  if (!root) return;
+  const problemUrl = problem?.url || leetcodeProblemUrl(slug);
+  const body = sanitizeProblemHtml(problem?.content_html);
+  root.innerHTML = `
+    <div class="problem-statement-source">
+      <a href="${escapeHtml(problemUrl)}" target="_blank" rel="noopener">Open on LeetCode</a>
+    </div>
+    ${body || `<p class="small">Prompt unavailable.</p>`}`;
+}
 
 window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader, COMPLEXITIES };
 
@@ -150,6 +193,12 @@ renderComplexityFields("#annotate-complexities", {
   spaceId: "annotate-space",
   timeLabel: "Time complexity",
   spaceLabel: "Space complexity",
+});
+renderComplexityFields("#predict-complexities", {
+  timeId: "predict-time",
+  spaceId: "predict-space",
+  timeLabel: "Target time",
+  spaceLabel: "Target space",
 });
 renderComplexityFields("#recall-complexities", {
   timeId: "recall-time",
@@ -174,6 +223,8 @@ let sprintTimer = null;
 let categories = [];
 let userEmail = "";
 let appMeta = null;
+let pendingStart = null;
+let predictCritique = { shown: false, revised: false };
 
 // ---- sign-in gate --------------------------------------------------------------
 function showSignIn(msg) {
@@ -227,6 +278,7 @@ async function loadOverview() {
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
+  if (kind !== "mock") return openPredict({ slug, kind, title, category });
   return startSession({ slug, kind });
 }
 
@@ -239,6 +291,160 @@ async function startSession(body) {
   render(currentActiveTab());
   toast("Timer started — solve it on LeetCode, it'll auto-log.");
 }
+
+function renderPredictPatterns() {
+  const root = $("#predict-patterns");
+  if (!root) return;
+  const seen = new Set();
+  const opts = categories.filter((c) => {
+    const val = (c || "").trim();
+    if (!val || seen.has(val)) return false;
+    seen.add(val);
+    return true;
+  });
+  root.innerHTML = opts.length
+    ? opts.map((c) => `<button type="button" data-val="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("")
+    : `<input id="predict-category-freeform" class="input" type="text" autocomplete="off" placeholder="Pattern category" />`;
+  root.querySelectorAll("button").forEach((btn) => {
+    btn.classList.remove("sel");
+    btn.addEventListener("click", () => selectPill("#predict-patterns", btn.dataset.val));
+  });
+}
+
+async function openPredict(ctx) {
+  pendingStart = ctx;
+  predictCritique = { shown: false, revised: false };
+  $("#predict-problem").textContent = ctx.title || ctx.slug;
+  $("#predict-statement").innerHTML = loader("Loading problem prompt...");
+  $("#predict-approach").value = "";
+  setComplexityValue("predict-time", "");
+  setComplexityValue("predict-space", "");
+  $("#predict-edge-cases").value = "";
+  $("#predict-critique").classList.add("hidden");
+  $("#predict-critique").innerHTML = "";
+  $("#btn-skip-predict").textContent = "Skip";
+  $("#btn-start-predict").textContent = "Lock in & start";
+  if (!categories.length) await loadCategories();
+  renderPredictPatterns();
+  $("#predict-modal").classList.remove("hidden");
+  try {
+    const problem = await api(`/problem/${encodeURIComponent(ctx.slug)}/recall-context`);
+    $("#predict-problem").textContent = problem.title || ctx.title || ctx.slug;
+    renderProblemStatement("#predict-statement", problem, ctx.slug);
+  } catch (e) {
+    renderProblemStatement("#predict-statement", null, ctx.slug);
+  }
+}
+
+function closePredict() {
+  $("#predict-modal").classList.add("hidden");
+  pendingStart = null;
+  predictCritique = { shown: false, revised: false };
+}
+
+function selectedPredictionCategory() {
+  const selected = $("#predict-patterns button.sel");
+  if (selected) return selected.dataset.val || null;
+  const input = $("#predict-category-freeform");
+  return input && input.value.trim() ? input.value.trim() : null;
+}
+
+function plannedEdgeCases() {
+  return $("#predict-edge-cases").value
+    .split(/\n|;/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function currentPlanBody(ctx) {
+  return {
+    slug: ctx.slug,
+    kind: ctx.kind,
+    predicted_category: selectedPredictionCategory(),
+    predicted_approach: $("#predict-approach").value.trim() || null,
+    complexity_target_time: complexityValue("predict-time"),
+    complexity_target_space: complexityValue("predict-space"),
+    planned_edge_cases: plannedEdgeCases(),
+  };
+}
+
+function hasPlanSignal(body) {
+  return Boolean(
+    body.predicted_category ||
+    body.predicted_approach ||
+    body.complexity_target_time ||
+    body.complexity_target_space ||
+    body.planned_edge_cases.length
+  );
+}
+
+function renderPlanCritique(critique) {
+  const nudges = (critique.nudges || []).filter(Boolean);
+  const missing = (critique.missing_edge_cases || []).filter(Boolean);
+  const items = [
+    ...nudges.map((n) => `<li>${escapeHtml(n)}</li>`),
+    ...missing.map((m) => `<li>Check ${escapeHtml(m)}.</li>`),
+  ];
+  $("#predict-critique").innerHTML = `
+    <div class="plan-critique-title">
+      <span>Plan check</span>
+      <span>${escapeHtml(critique.overall_verdict || "unknown")}</span>
+    </div>
+    ${items.length ? `<ul>${items.join("")}</ul>` : `<p class="small">No specific revisions suggested.</p>`}
+    <p class="small">Revise once, or proceed with this plan.</p>`;
+  $("#predict-critique").classList.remove("hidden");
+  $("#btn-skip-predict").textContent = "Revise";
+  $("#btn-start-predict").textContent = "Proceed anyway";
+}
+
+async function critiquePlan(body) {
+  const { kind, ...plan } = body;
+  return api("/session/plan-critique", "POST", plan);
+}
+
+function reviseAfterCritique() {
+  predictCritique.revised = true;
+  $("#predict-critique").classList.add("hidden");
+  $("#btn-skip-predict").textContent = "Skip";
+  $("#btn-start-predict").textContent = "Lock in & start";
+}
+
+async function doStart(includePlan) {
+  if (!pendingStart) return;
+  const ctx = pendingStart;
+  const startBtn = $("#btn-start-predict");
+  const skipBtn = $("#btn-skip-predict");
+  const body = includePlan ? currentPlanBody(ctx) : { slug: ctx.slug, kind: ctx.kind };
+  if (includePlan && !predictCritique.shown && !predictCritique.revised && hasPlanSignal(body)) {
+    startBtn.disabled = true;
+    skipBtn.disabled = true;
+    startBtn.textContent = "Checking…";
+    try {
+      const r = await critiquePlan(body);
+      if (r && r.llm && r.critique) {
+        predictCritique.shown = true;
+        renderPlanCritique(r.critique);
+        return;
+      }
+    } catch (err) {
+      console.warn("plan critique unavailable", err);
+    } finally {
+      startBtn.disabled = false;
+      skipBtn.disabled = false;
+      if (!predictCritique.shown) startBtn.textContent = "Lock in & start";
+    }
+  }
+  closePredict();
+  await startSession(body);
+}
+
+$("#btn-close-predict").addEventListener("click", closePredict);
+$("#btn-skip-predict").addEventListener("click", () => {
+  if (predictCritique.shown && !predictCritique.revised) return reviseAfterCritique();
+  return doStart(false);
+});
+$("#btn-start-predict").addEventListener("click", () => doStart(true));
 
 // ---- active session / timer / hints / nudges -----------------------------------
 async function refreshActive() {
@@ -714,12 +920,9 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
     const ctx = await api(`/problem/${encodeURIComponent(slug)}/recall-context`);
     currentRecall = { ...currentRecall, ...ctx };
     $("#recall-problem").textContent = ctx.title || title || slug;
-    const html = sanitizeProblemHtml(ctx.content_html);
-    $("#recall-statement").innerHTML = html ||
-      `<p class="small">Prompt unavailable. <a href="${ctx.url || `https://leetcode.com/problems/${slug}/`}" target="_blank" rel="noopener">Open on LeetCode</a>.</p>`;
+    renderProblemStatement("#recall-statement", ctx, slug);
   } catch (e) {
-    $("#recall-statement").innerHTML =
-      `<p class="small">Prompt unavailable. <a href="https://leetcode.com/problems/${slug}/" target="_blank" rel="noopener">Open on LeetCode</a>.</p>`;
+    renderProblemStatement("#recall-statement", null, slug);
   }
   if (attemptId) {
     await loadRecallAttempt(attemptId);
@@ -1251,6 +1454,26 @@ function recallDetailGradeHtml(g, status, err) {
   </div>`;
 }
 
+function planReconciliationHtml(a) {
+  const r = a.plan_reconciliation || {};
+  const planned = r.planned_edge_cases || [];
+  const hasPlan = !!(r.target_time || r.target_space || planned.length);
+  if (!hasPlan) return "";
+  const hitLabel = (hit) => hit == null ? "unknown" : (hit ? "hit" : "miss");
+  const hitClass = (hit) => hit == null ? "is-light" : (hit ? "is-success is-light" : "is-warning is-light");
+  const cxLine = (label, target, actual, hit) => {
+    if (!target && !actual) return "";
+    return `<div class="small">${label} <b>${escapeHtml(target || "?")}</b> vs inferred <b>${escapeHtml(actual || "?")}</b> <span class="tag ${hitClass(hit)}">${hitLabel(hit)}</span></div>`;
+  };
+  return `<section class="detail-plan">
+    <h3>Plan vs actual</h3>
+    ${cxLine("Target time", r.target_time, r.inferred_time, r.complexity_time_hit)}
+    ${cxLine("Target space", r.target_space, r.inferred_space, r.complexity_space_hit)}
+    ${planned.length ? `<p class="small"><b>Planned edge cases:</b> ${planned.map((c) => `<span class="tag">${escapeHtml(c)}</span>`).join(" ")}</p>` : ""}
+    <p class="small"><b>Edge-case status:</b> ${escapeHtml(r.edge_case_summary || r.edge_case_status || "unknown")}</p>
+  </section>`;
+}
+
 async function openDetail(attemptId) {
   $("#detail-body").innerHTML = loader("Loading attempt…");
   $("#detail-modal").classList.remove("hidden");
@@ -1277,7 +1500,8 @@ async function openDetail(attemptId) {
       ${a.predicted_category ? `<p><b>Your prediction:</b> ${escapeHtml(a.predicted_category)}</p>` : ""}
       ${a.approach || a.predicted_approach ? `<p><b>Why:</b> ${escapeHtml(a.approach || a.predicted_approach)}</p>` : ""}
       <p><b>Verdict:</b> <span class="pred-${escapeHtml(verdict)}">${escapeHtml(verdict)}</span></p>
-      ${e.prediction_note ? `<p><b>Note:</b> ${escapeHtml(e.prediction_note)}</p>` : ""}`;
+      ${e.prediction_note ? `<p><b>Note:</b> ${escapeHtml(e.prediction_note)}</p>` : ""}
+      ${planReconciliationHtml(a)}`;
     $("#detail-body").innerHTML = body;
     $("#detail-modal").classList.remove("hidden");
     return;
@@ -1297,6 +1521,7 @@ async function openDetail(attemptId) {
     ${e.pattern_used ? `<p><b>Pattern used:</b> ${escapeHtml(e.pattern_used)} ${e.complexity_verdict && e.complexity_verdict !== "match" ? `<span class="warn-chip">${escapeHtml(e.complexity_verdict.replace("_", " "))}</span>` : ""}</p>` : ""}
     ${tags.length ? `<p><b>Mistakes:</b> ${tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
     ${e.diff_summary ? `<p><b>Since last time:</b> ${escapeHtml(e.diff_summary)}</p>` : ""}
+    ${planReconciliationHtml(a)}
     ${detailGradeHtml(a)}
     ${a.code ? `<pre class="code">${escapeHtml(a.code)}</pre>` : `<p class="small">No stored code for this attempt.</p>`}`;
   $("#detail-body").innerHTML = body;

@@ -27,8 +27,116 @@ def _median(xs):
     return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
 
 
+def _as_list(value):
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
 def _tags_of(enrichment):
-    return (enrichment.get("user_overrides") or {}).get("tags") or enrichment.get("mistake_tags") or []
+    return (_as_list((enrichment.get("user_overrides") or {}).get("tags"))
+            or _as_list(enrichment.get("mistake_tags")))
+
+
+def _norm_text(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _norm_complexity(value):
+    text = _norm_text(value)
+    return text.lower().replace(" ", "") if text else None
+
+
+def _planned_edge_cases(attempt):
+    raw = attempt.get("planned_edge_cases") or []
+    if isinstance(raw, str):
+        raw = raw.replace("\n", ",").split(",")
+    if not isinstance(raw, list):
+        return []
+    out = []
+    seen = set()
+    for item in raw:
+        text = _norm_text(item)
+        key = text.lower() if text else None
+        if key and key not in seen:
+            out.append(text)
+            seen.add(key)
+    return out
+
+
+def _edge_case_signal(attempt, enrichment):
+    enrichment = enrichment or {}
+    tags = [
+        str(t).lower()
+        for t in (
+            _as_list(enrichment.get("mistake_tags"))
+            + _as_list((enrichment.get("user_overrides") or {}).get("tags"))
+        )
+    ]
+    if "edge_case" in tags:
+        return True
+    text = " ".join(str(v or "").lower() for v in (
+        attempt.get("mistake_note"),
+        (enrichment or {}).get("mistake_summary"),
+    ))
+    return any(token in text for token in ("edge case", "edge-case", "edge_case"))
+
+
+def _hit_summary(label, target, actual, hit):
+    if not target and not actual:
+        return f"{label} unknown"
+    if not target:
+        return f"{label} target unknown; inferred {actual}"
+    if not actual:
+        return f"{label} target {target}; inferred unknown"
+    return f"{label} target {target} vs inferred {actual}: {'hit' if hit else 'miss'}"
+
+
+def reconcile_plan(attempt, enrichment=None):
+    """Compare a pre-solve plan with derived attempt data.
+
+    Edge-case status is intentionally simple: planned cases plus any explicit
+    edge_case mistake signal means missed; planned cases with no such signal
+    means caught; missing planned cases remain unknown.
+    """
+    enrichment = enrichment or {}
+    target_time = _norm_text(attempt.get("complexity_target_time"))
+    target_space = _norm_text(attempt.get("complexity_target_space"))
+    inferred_time = _norm_text(enrichment.get("inferred_time"))
+    inferred_space = _norm_text(enrichment.get("inferred_space"))
+    time_hit = (_norm_complexity(target_time) == _norm_complexity(inferred_time)
+                if target_time and inferred_time else None)
+    space_hit = (_norm_complexity(target_space) == _norm_complexity(inferred_space)
+                 if target_space and inferred_space else None)
+    planned = _planned_edge_cases(attempt)
+    edge_status = "unknown"
+    if planned:
+        edge_status = "missed" if _edge_case_signal(attempt, enrichment) else "caught"
+    edge_summary = (
+        "No planned edge cases recorded."
+        if not planned else
+        ("Planned edge cases were linked to an edge-case mistake."
+         if edge_status == "missed" else
+         "Planned edge cases had no edge-case mistake signal.")
+    )
+    return {
+        "complexity_time_hit": time_hit,
+        "complexity_space_hit": space_hit,
+        "target_time": target_time,
+        "inferred_time": inferred_time,
+        "target_space": target_space,
+        "inferred_space": inferred_space,
+        "planned_edge_cases": planned,
+        "edge_case_status": edge_status,
+        "complexity_summary": "; ".join((
+            _hit_summary("time", target_time, inferred_time, time_hit),
+            _hit_summary("space", target_space, inferred_space, space_hit),
+        )),
+        "edge_case_summary": edge_summary,
+    }
 
 
 # ---- review forecast ------------------------------------------------------------
@@ -173,6 +281,7 @@ def prediction_accuracy(problems, attempts, enrichments):
     cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
     attempt_cat = {a["id"]: cat_of.get(a["slug"]) for a in attempts}
     attempt_kind = {a["id"]: a.get("kind") or "unknown" for a in attempts}
+    enrichment_by_attempt = {e.get("attempt_id"): e for e in enrichments}
     out = {}
     by_kind = {}
     total = {"correct": 0, "partial": 0, "wrong": 0}
@@ -191,8 +300,51 @@ def prediction_accuracy(problems, attempts, enrichments):
         kind_row[v] += 1
     graded = sum(total.values())
     overall = round(total["correct"] / graded, 3) if graded else None
+    plan_quality = plan_quality_metrics(attempts, enrichment_by_attempt)
     return {"by_category": out, "overall_correct_rate": overall, "graded": graded,
-            "by_kind": by_kind, "sprint_graded": sum(by_kind.get("sprint", {}).values())}
+            "by_kind": by_kind, "sprint_graded": sum(by_kind.get("sprint", {}).values()),
+            "plan_quality": plan_quality}
+
+
+def _rate(hits, compared):
+    return round(hits / compared, 3) if compared else None
+
+
+def plan_quality_metrics(attempts, enrichment_by_attempt):
+    time_compared = time_hits = 0
+    space_compared = space_hits = 0
+    edge = {"planned": 0, "caught": 0, "missed": 0, "unknown": 0}
+    for a in attempts:
+        rec = reconcile_plan(a, enrichment_by_attempt.get(a.get("id")))
+        if rec["complexity_time_hit"] is not None:
+            time_compared += 1
+            time_hits += 1 if rec["complexity_time_hit"] else 0
+        if rec["complexity_space_hit"] is not None:
+            space_compared += 1
+            space_hits += 1 if rec["complexity_space_hit"] else 0
+        planned_count = len(rec["planned_edge_cases"])
+        if planned_count:
+            edge["planned"] += planned_count
+            edge[rec["edge_case_status"]] += 1
+    total_compared = time_compared + space_compared
+    total_hits = time_hits + space_hits
+    return {
+        "complexity": {
+            "time_compared": time_compared,
+            "time_hits": time_hits,
+            "time_misses": time_compared - time_hits,
+            "time_hit_rate": _rate(time_hits, time_compared),
+            "space_compared": space_compared,
+            "space_hits": space_hits,
+            "space_misses": space_compared - space_hits,
+            "space_hit_rate": _rate(space_hits, space_compared),
+            "compared": total_compared,
+            "hits": total_hits,
+            "misses": total_compared - total_hits,
+            "hit_rate": _rate(total_hits, total_compared),
+        },
+        "edge_cases": edge,
+    }
 
 
 # ---- confidence calibration -----------------------------------------------------

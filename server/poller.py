@@ -70,6 +70,9 @@ async def _record_solve(store, session, match, auth):
         # carry the pre-solve prediction + hint usage from the session
         "predicted_category": session.get("predicted_category"),
         "predicted_approach": session.get("predicted_approach"),
+        "complexity_target_time": session.get("complexity_target_time"),
+        "complexity_target_space": session.get("complexity_target_space"),
+        "planned_edge_cases": session.get("planned_edge_cases", []),
         "hint_level_used": session.get("hint_level", 0),
         "complexity_time": None, "complexity_space": None,
         "solution_grading_status": None,

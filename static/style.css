@@ -200,13 +200,41 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .overlay-card { width: 460px; max-width: 92vw; max-height: 92vh; overflow-y: auto; }
 .overlay-card.wide { width: 720px; }
 .overlay-card.annotate-wide { width: min(760px, 96vw); }
+.overlay-card.predict-wide { width: min(1120px, 96vw); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .85fr); gap: 10px 18px; align-items: start; }
 .overlay-card h2 { margin: 0 0 12px; }
 .modal-titlebar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .modal-titlebar h2 { margin-bottom: 0; }
 .icon-button { width: 32px; min-width: 32px; height: 32px; padding: 0; font-size: 20px; line-height: 1; }
 .overlay-card .label-sm { display: block; margin: 16px 0 6px; font-size: 13px; color: var(--muted); }
 .overlay-card .field .label-sm { margin-top: 0; }
+.overlay-card.predict-wide > .modal-titlebar { grid-column: 1 / -1; margin-bottom: 0; }
+.overlay-card.predict-wide > #predict-statement { grid-column: 1; margin-top: 12px; }
+.overlay-card.predict-wide > .predict-form { grid-column: 2; }
+.predict-form > .label-sm:first-child { margin-top: 12px; }
 .overlay-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 8px; }
+.plan-critique {
+  margin-top: 16px;
+  background: var(--panel2);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+.plan-critique-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.plan-critique-title span:last-child {
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.plan-critique ul { margin: 6px 0 0 18px; }
+.plan-critique li { margin: 3px 0; }
+.plan-critique .small { margin-top: 8px; }
 .complexity-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -603,6 +631,9 @@ body.has-active-session #user-chip {
 /* ---- detail modal ----------------------------------------------------------- */
 pre.code { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; max-height: 340px; font-size: 12px; }
 .detail-meta { margin-bottom: 8px; }
+.detail-plan { margin: 12px 0; }
+.detail-plan h3 { margin: 0 0 6px; font-size: 15px; }
+.plan-quality { margin-top: 10px; }
 
 /* ---- recall grading --------------------------------------------------------- */
 .overlay-card.recall-wide { width: min(1120px, 96vw); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .85fr); gap: 10px 18px; align-items: start; }
@@ -617,9 +648,12 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
 .overlay-card.recall-wide > #recall-actions { grid-column: 2; }
 .overlay-card.recall-wide > #recall-text { min-height: 180px; }
 .recall-statement { margin: 12px 0; max-height: 62vh; overflow: auto; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; line-height: 1.55; }
+.problem-statement-source { display: flex; justify-content: flex-end; margin: 0 0 12px; font-size: 12px; }
+.problem-statement-source a { color: var(--accent); }
 .recall-statement p { margin: 0 0 10px; }
 .recall-statement pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
 .recall-statement code { background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+.recall-statement img { display: block; max-width: 100%; height: auto; margin: 12px auto; border-radius: 6px; background: #fff; }
 .recall-statement ul, .recall-statement ol { margin: 8px 0 8px 18px; }
 .recall-statement table { width: 100%; margin: 8px 0; font-size: 12px; }
 .recall-statement td, .recall-statement th { border: 1px solid var(--border); padding: 6px; }
@@ -734,6 +768,10 @@ pre.code { background: var(--bg); border: 1px solid var(--border); border-radius
   .active-clock { justify-self: stretch; text-align: left; }
   .active-timer { font-size: 34px; }
   .active-actions .button { flex: 1 1 160px; }
+  .overlay-card.predict-wide { grid-template-columns: 1fr; }
+  .overlay-card.predict-wide > .modal-titlebar,
+  .overlay-card.predict-wide > #predict-statement,
+  .overlay-card.predict-wide > .predict-form { grid-column: 1; }
   .overlay-card.recall-wide { grid-template-columns: 1fr; }
   .overlay-card.recall-wide > h2,
   .overlay-card.recall-wide > #recall-problem,

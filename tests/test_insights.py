@@ -160,6 +160,56 @@ def test_prediction_accuracy_overall():
     assert acc["overall_correct_rate"] == 0.5
 
 
+def test_reconcile_plan_complexity_hit():
+    rec = insights.reconcile_plan(
+        {"complexity_target_time": "O(n)", "complexity_target_space": "O(1)"},
+        {"inferred_time": "O(n)", "inferred_space": "O(1)"},
+    )
+
+    assert rec["complexity_time_hit"] is True
+    assert rec["complexity_space_hit"] is True
+    assert "hit" in rec["complexity_summary"]
+
+
+def test_reconcile_plan_complexity_miss():
+    rec = insights.reconcile_plan(
+        {"complexity_target_time": "O(n)", "complexity_target_space": "O(1)"},
+        {"inferred_time": "O(n log n)", "inferred_space": "O(n)"},
+    )
+
+    assert rec["complexity_time_hit"] is False
+    assert rec["complexity_space_hit"] is False
+
+
+def test_reconcile_plan_no_enrichment_unknowns():
+    rec = insights.reconcile_plan({"planned_edge_cases": []}, None)
+
+    assert rec["complexity_time_hit"] is None
+    assert rec["complexity_space_hit"] is None
+    assert rec["planned_edge_cases"] == []
+    assert rec["edge_case_status"] == "unknown"
+
+
+def test_reconcile_plan_edge_cases_caught_without_edge_signal():
+    rec = insights.reconcile_plan(
+        {"planned_edge_cases": [" duplicates ", "duplicates", "empty input"]},
+        {"mistake_tags": ["implementation"]},
+    )
+
+    assert rec["planned_edge_cases"] == ["duplicates", "empty input"]
+    assert rec["edge_case_status"] == "caught"
+
+
+def test_reconcile_plan_edge_cases_missed_with_edge_signal():
+    rec = insights.reconcile_plan(
+        {"planned_edge_cases": ["duplicates"], "mistake_note": "Missed edge case"},
+        {"mistake_tags": ["edge_case"], "mistake_summary": "empty input failed"},
+    )
+
+    assert rec["edge_case_status"] == "missed"
+    assert "edge-case mistake" in rec["edge_case_summary"]
+
+
 def test_prediction_accuracy_includes_sprint_verdicts_by_canonical_category():
     problems = _problems()
     attempts = [
@@ -180,6 +230,33 @@ def test_prediction_accuracy_includes_sprint_verdicts_by_canonical_category():
     assert acc["by_category"]["Arrays & Hashing"]["wrong"] == 1
     assert acc["by_category"]["Two Pointers"]["correct"] == 1
     assert acc["by_kind"]["sprint"]["wrong"] == 1
+
+
+def test_prediction_accuracy_includes_plan_quality_metrics():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "kind": "adhoc",
+         "complexity_target_time": "O(n)", "complexity_target_space": "O(1)",
+         "planned_edge_cases": ["empty"]},
+        {"id": "2", "slug": "3sum", "kind": "sprint",
+         "complexity_target_time": "O(n^2)", "planned_edge_cases": ["duplicates"]},
+    ]
+    enr = [
+        {"attempt_id": "1", "prediction_verdict": "correct",
+         "inferred_time": "O(n)", "inferred_space": "O(n)"},
+        {"attempt_id": "2", "prediction_verdict": "wrong",
+         "inferred_time": "O(n^2)", "mistake_tags": ["edge_case"]},
+    ]
+
+    acc = insights.prediction_accuracy(_problems(), attempts, enr)
+
+    assert set(["by_category", "overall_correct_rate", "graded", "by_kind",
+                "sprint_graded"]).issubset(acc)
+    assert acc["plan_quality"]["complexity"]["compared"] == 3
+    assert acc["plan_quality"]["complexity"]["hits"] == 2
+    assert acc["plan_quality"]["complexity"]["hit_rate"] == 0.667
+    assert acc["plan_quality"]["edge_cases"] == {
+        "planned": 2, "caught": 1, "missed": 1, "unknown": 0,
+    }
 
 
 def test_confidence_calibration_detects_overconfident_category_and_top():

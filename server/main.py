@@ -33,6 +33,18 @@ class StartSession(BaseModel):
     kind: str = "adhoc"
     predicted_category: str | None = None
     predicted_approach: str | None = None
+    complexity_target_time: str | None = None
+    complexity_target_space: str | None = None
+    planned_edge_cases: list[str] = Field(default_factory=list)
+
+
+class PlanCritiqueRequest(BaseModel):
+    slug: str
+    predicted_category: str | None = None
+    predicted_approach: str | None = None
+    complexity_target_time: str | None = None
+    complexity_target_space: str | None = None
+    planned_edge_cases: list[str] = Field(default_factory=list)
 
 
 class PauseSession(BaseModel):
@@ -559,6 +571,31 @@ def api_failure_mode(tag: str, uid: str = Depends(auth.require_user)):
 
 
 # ---- sessions -------------------------------------------------------------------
+@app.post("/api/session/plan-critique")
+async def api_session_plan_critique(body: PlanCritiqueRequest,
+                                    uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    settings = store.get_settings()
+    if not llm.enabled(settings):
+        return {"ok": True, "llm": False, "critique": None}
+
+    prob = store.get_problem(body.slug)
+    if not prob:
+        raise HTTPException(404, "unknown problem")
+    critique = await llm.extract("critique_plan", {
+        "slug": body.slug,
+        "title": prob.get("title", body.slug),
+        "category": prob.get("neetcode_category") or prob.get("category"),
+        "difficulty": prob.get("difficulty"),
+        "predicted_category": body.predicted_category,
+        "predicted_approach": body.predicted_approach,
+        "complexity_target_time": body.complexity_target_time,
+        "complexity_target_space": body.complexity_target_space,
+        "planned_edge_cases": body.planned_edge_cases[:3],
+    }, settings=settings)
+    return {"ok": True, "llm": True, "critique": critique}
+
+
 @app.post("/api/session/start")
 def api_session_start(body: StartSession, bg: BackgroundTasks,
                       uid: str = Depends(auth.require_user)):
@@ -574,6 +611,9 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "paused_at": None, "paused_sec": 0,
         "predicted_category": body.predicted_category,
         "predicted_approach": body.predicted_approach,
+        "complexity_target_time": body.complexity_target_time,
+        "complexity_target_space": body.complexity_target_space,
+        "planned_edge_cases": body.planned_edge_cases,
     })
     if llm.enabled(store.get_settings()):
         bg.add_task(_prep_problem_bg, uid, body.slug)
@@ -783,9 +823,11 @@ def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
     if not a:
         raise HTTPException(404, "no such attempt")
     prob = store.get_problem(a["slug"]) or {}
+    enrichment = store.get_enrichment(attempt_id)
     return {**a, "title": prob.get("title"), "difficulty": prob.get("difficulty"),
             "neetcode_category": prob.get("neetcode_category"), "url": prob.get("url"),
-            "enrichment": store.get_enrichment(attempt_id)}
+            "enrichment": enrichment,
+            "plan_reconciliation": insights.reconcile_plan(a, enrichment)}
 
 
 @app.get("/api/history")

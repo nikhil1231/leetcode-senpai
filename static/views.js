@@ -465,8 +465,24 @@
       const tot = r.correct + r.partial + r.wrong;
       return { label: cat.replace(/ .*/, ""), value: Math.round((r.correct / tot) * 100), display: Math.round((r.correct / tot) * 100) + "%", color: "var(--green)" };
     });
+    const plan = planQualityHtml(pa.plan_quality);
     return `<div class="pace-big">${Math.round((pa.overall_correct_rate || 0) * 100)}%</div>
-      <div class="small">overall correct (${pa.graded} graded)</div>${Charts.bars(rows, { max: 100 })}`;
+      <div class="small">overall correct (${pa.graded} graded)</div>${Charts.bars(rows, { max: 100 })}${plan}`;
+  }
+
+  function planQualityHtml(pq) {
+    if (!pq) return "";
+    const cx = pq.complexity || {};
+    const edge = pq.edge_cases || {};
+    const lines = [];
+    if (cx.compared) {
+      lines.push(`complexity targets ${Math.round((cx.hit_rate || 0) * 100)}% hit (${cx.hits}/${cx.compared})`);
+    }
+    if (edge.planned) {
+      lines.push(`edge cases planned ${edge.planned}; caught ${edge.caught || 0}, missed ${edge.missed || 0}, unknown ${edge.unknown || 0}`);
+    }
+    if (!lines.length) return "";
+    return `<div class="small plan-quality">${lines.map(escapeHtml).join("<br>")}</div>`;
   }
 
   function calibrationHtml(calibration) {

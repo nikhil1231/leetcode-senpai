@@ -83,6 +83,41 @@
     </main>
   </div>
 
+  <!-- Pre-solve prediction modal -->
+  <div id="predict-modal" class="overlay hidden">
+    <div class="overlay-card box predict-wide" role="dialog" aria-modal="true" aria-labelledby="predict-heading">
+      <div class="modal-titlebar">
+        <div>
+          <h2 class="title is-5" id="predict-heading">Plan the solve</h2>
+          <p id="predict-problem" class="small"></p>
+        </div>
+        <button id="btn-close-predict" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+      </div>
+
+      <div id="predict-statement" class="recall-statement"></div>
+
+      <div class="predict-form">
+        <label class="label-sm">Pattern prediction</label>
+        <div class="pill-group predict-patterns" id="predict-patterns"></div>
+
+        <label class="label-sm" for="predict-approach">Approach</label>
+        <textarea id="predict-approach" class="textarea" rows="3" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Key idea, data structure, or invariant"></textarea>
+
+        <div id="predict-complexities" class="complexity-fields mt-2"></div>
+
+        <label class="label-sm" for="predict-edge-cases">1-3 edge cases you'll handle</label>
+        <textarea id="predict-edge-cases" class="textarea" rows="3" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="One per line"></textarea>
+
+        <div id="predict-critique" class="plan-critique hidden"></div>
+
+        <div class="overlay-actions">
+          <button id="btn-skip-predict" class="button is-ghost" type="button">Skip</button>
+          <button id="btn-start-predict" class="button is-primary" type="button">Lock in & start</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Problem deletion confirmation modal -->
   <div id="delete-problem-modal" class="overlay hidden">
     <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="delete-problem-heading">
