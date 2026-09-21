@@ -40,3 +40,22 @@ it — it is the source of truth.**
 
 `pytest` (see `pytest.ini`, `tests/`). Analytics and scheduling changes must keep or add
 pure unit tests that run without I/O. Prefer additive, backward-compatible data changes.
+
+## Repo topology — where changes land (read before committing)
+
+There are two checkouts of this project; they are NOT interchangeable:
+
+- `~/…/leetcode` — the **real repo**. Its `origin` is GitHub
+  (`github.com/nikhil1231/leetcode-senpai`); `main` is canonical. **Durable work goes
+  here, on `main`.** Land a change by fast-forwarding `main` to `origin/main`, applying
+  your commit, running the suite, and `git push origin main`.
+- `~/…/leetcode-testing` — the **LAN deploy target** (runs at `192.168.0.219:8000`). Its
+  git `origin` is the LOCAL `../leetcode`, not GitHub. A systemd service
+  (`sync-integration.sh`) periodically **hard-resets this checkout** to
+  `origin/integration/leetcode-senpai`. **Never commit here:** the reset wipes your commit,
+  and pushing is rejected anyway (that branch is checked out in the origin's worktree).
+
+A `ticket-runner` service continuously rebuilds `integration/leetcode-senpai` from `main`,
+and the deploy sync then pulls it into the LAN app — so a fix pushed to GitHub `main`
+reaches the running app with no manual deploy step. Don't hand-edit `integration` or the
+`ai/*` branches; they are ticket-runner-managed worktrees.

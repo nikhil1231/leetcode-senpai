@@ -114,29 +114,61 @@
 
   <!-- Pre-solve prediction modal -->
   <div id="predict-modal" class="overlay hidden">
-    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="predict-heading">
+    <div class="overlay-card box predict-wide" role="dialog" aria-modal="true" aria-labelledby="predict-heading">
       <div class="modal-titlebar">
         <div>
-          <h2 class="modal-title" id="predict-heading">Before you start</h2>
-          <p class="small" id="predict-problem"></p>
+          <h2 class="modal-title" id="predict-heading">Plan the solve</h2>
+          <p id="predict-problem" class="small"></p>
         </div>
-        <button id="btn-close-predict" class="button is-ghost icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+        <button id="btn-close-predict" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
       </div>
-      <label class="label-sm">Which pattern do you think this is? <span class="help-inline">trains recognition — skippable</span></label>
-      <div class="pill-grid" id="predict-cats"></div>
-      <label class="label-sm">Approach in one sentence <span class="help-inline">optional</span></label>
-      <input id="predict-approach" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sort then two pointers inward" />
+
+      <div id="predict-statement" class="recall-statement"></div>
+
+      <div class="predict-form">
+        <label class="label-sm">Pattern prediction</label>
+        <div class="pill-group predict-patterns" id="predict-patterns"></div>
+
+        <label class="label-sm" for="predict-approach">Approach</label>
+        <textarea id="predict-approach" class="textarea" rows="3" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Key idea, data structure, or invariant"></textarea>
+
+        <div id="predict-complexities" class="complexity-fields mt-2"></div>
+
+        <label class="label-sm" for="predict-edge-cases">1-3 edge cases you'll handle</label>
+        <textarea id="predict-edge-cases" class="textarea" rows="3" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="One per line"></textarea>
+
+        <div id="predict-critique" class="plan-critique hidden"></div>
+
+        <div class="overlay-actions">
+          <button id="btn-skip-predict" class="button is-ghost" type="button">Skip</button>
+          <button id="btn-start-predict" class="button is-primary" type="button">Lock in & start</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Problem deletion confirmation modal -->
+  <div id="delete-problem-modal" class="overlay hidden">
+    <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="delete-problem-heading">
+      <div class="modal-titlebar">
+        <h2 class="modal-title" id="delete-problem-heading">Remove problem</h2>
+        <button id="btn-close-delete-problem" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+      </div>
+      <p class="small" id="delete-problem-copy"></p>
+      <label class="label-sm">Type the slug to confirm</label>
+      <input id="delete-problem-confirm" class="input" type="text" autocomplete="off" />
+      <p class="help is-danger hidden" id="delete-problem-error"></p>
       <div class="overlay-actions">
-        <button id="btn-skip-predict" class="button is-ghost">Skip &amp; start</button>
-        <button id="btn-do-predict" class="button is-primary">Lock in &amp; start</button>
+        <button id="btn-cancel-delete-problem" class="button is-ghost" type="button">Cancel</button>
+        <button id="btn-confirm-delete-problem" class="button is-danger" type="button">Remove</button>
       </div>
     </div>
   </div>
 
   <!-- Post-solve annotation modal -->
   <div id="annotate-modal" class="overlay hidden">
-    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="annotate-heading">
-      <h2 class="modal-title celebrate" id="annotate-heading">Solved</h2>
+    <div class="overlay-card box annotate-wide" role="dialog" aria-modal="true" aria-labelledby="annotate-heading">
+      <h2 class="modal-title celebrate" id="annotate-heading">Solved!</h2>
       <div class="solved-problem">
         <div class="solved-problem-main">
           <a id="annotate-problem-link" href="#" target="_blank" rel="noopener">
@@ -162,10 +194,7 @@
         <button data-val="solution">Read solution</button>
       </div>
 
-      <div class="columns is-mobile mt-2">
-        <div class="column field"><label class="label-sm">Time complexity</label><div class="select is-fullwidth"><select id="annotate-time"></select></div></div>
-        <div class="column field"><label class="label-sm">Space complexity</label><div class="select is-fullwidth"><select id="annotate-space"></select></div></div>
-      </div>
+      <div id="annotate-complexities" class="complexity-fields mt-2"></div>
 
       <label class="label-sm">What tripped you up? <span class="help-inline">plain text — the coach structures it</span></label>
       <input id="annotate-note" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. shrank the window before checking the count" />
@@ -191,10 +220,7 @@
       <p class="help">No coding — just recall the approach from memory in under 3 minutes.</p>
       <label class="label-sm">How would you solve it? Key idea + the crucial trick.</label>
       <textarea id="recall-text" class="textarea" rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Describe the approach…"></textarea>
-      <div class="columns is-mobile mt-2">
-        <div class="column field"><label class="label-sm">Time</label><div class="select is-fullwidth"><select id="recall-time"></select></div></div>
-        <div class="column field"><label class="label-sm">Space</label><div class="select is-fullwidth"><select id="recall-space"></select></div></div>
-      </div>
+      <div id="recall-complexities" class="complexity-fields mt-2"></div>
       <div id="recall-grade" class="recall-grade hidden"></div>
       <div class="overlay-actions" id="recall-actions">
         <button id="btn-close-recall" class="button is-ghost">Cancel</button>

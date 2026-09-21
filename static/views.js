@@ -4,6 +4,86 @@
     beginRender } = window.H;
   const App = window.App, Charts = window.Charts;
 
+  // Replace a stuck loader with a retry affordance when a fetch fails (e.g. the
+  // dev server briefly restarts) so a view never hangs on the spinner forever.
+  function showLoadError(el, retry) {
+    el.innerHTML = `<div class="empty load-error">
+      <p>Couldn't reach the server. It may be restarting.</p>
+      <button class="button is-small retry-load">Retry</button></div>`;
+    const btn = el.querySelector(".retry-load");
+    if (btn) btn.addEventListener("click", retry);
+  }
+
+  const problemFilters = {
+    search: "",
+    category: "",
+    difficulty: "",
+    due_status: "all",
+    attempted: "all",
+    leech: "all",
+    sort: "number",
+  };
+  const staticDifficulties = ["Easy", "Medium", "Hard"];
+
+  async function loadProblemFacets() {
+    try {
+      return await api("/problems/facets");
+    } catch (e) {
+      let topicOptions = [];
+      try {
+        const topics = await api("/topics");
+        topicOptions = topics.map((t) => ({ value: t.category, count: t.total }));
+      } catch (ignored) {
+        topicOptions = [];
+      }
+      return {
+        categories: topicOptions,
+        difficulties: staticDifficulties.map((value) => ({ value })),
+        total: null,
+      };
+    }
+  }
+
+  function facetOptions(facets, selected) {
+    return facets.map((f) => {
+      const label = f.count == null ? f.value : `${f.value} (${f.count})`;
+      return `<option value="${escapeHtml(f.value)}"${f.value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    }).join("");
+  }
+
+  function problemQueryString() {
+    const query = new URLSearchParams();
+    const search = problemFilters.search.trim();
+    if (search) query.set("search", search);
+    if (problemFilters.category) query.set("category", problemFilters.category);
+    if (problemFilters.difficulty) query.set("difficulty", problemFilters.difficulty);
+    if (problemFilters.due_status !== "all") query.set("due_status", problemFilters.due_status);
+    if (problemFilters.attempted !== "all") query.set("attempted", problemFilters.attempted);
+    if (problemFilters.leech !== "all") query.set("leech", problemFilters.leech);
+    if (problemFilters.sort !== "number") query.set("sort", problemFilters.sort);
+    const encoded = query.toString();
+    return encoded ? `?${encoded}` : "";
+  }
+
+  function hasActiveProblemFilters() {
+    return !!problemFilters.search.trim() || problemFilters.category || problemFilters.difficulty ||
+      problemFilters.due_status !== "all" || problemFilters.attempted !== "all" ||
+      problemFilters.leech !== "all";
+  }
+
+  function shortLocalDate(ts) {
+    if (ts == null) return "-";
+    const d = new Date(Number(ts) * 1000);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function compactState(state) {
+    const label = (state || "-").replace(/_/g, " ");
+    const cls = state ? ` state-${String(state).replace(/_/g, "-")}` : "";
+    return `<span class="tag problem-state${cls}">${escapeHtml(label)}</span>`;
+  }
+
   // ---- Today -------------------------------------------------------------------
   const laneOf = (it) => (it.kind === "new" ? "new" : it.kind === "drill" ? "drill" : "review");
 
@@ -37,12 +117,18 @@
   async function renderToday() {
     const el = $("#tab-today");
     beginRender(el, "Loading your queue…");
-    const [q, reportWrap, mock, families, board] = await Promise.all([
-      api("/today"), api("/report/latest").catch(() => ({ report: null })),
-      api("/mock/status").catch(() => ({})),
-      api("/topics/tree").catch(() => []),
-      api("/reviews/schedule").catch(() => []),
-    ]);
+    let q, reportWrap, mock, families, board;
+    try {
+      [q, reportWrap, mock, families, board] = await Promise.all([
+        api("/today"), api("/report/latest").catch(() => ({ report: null })),
+        api("/mock/status").catch(() => ({})),
+        api("/topics/tree").catch(() => []),
+        api("/reviews/schedule").catch(() => []),
+      ]);
+    } catch (e) {
+      showLoadError(el, renderToday);
+      return;
+    }
 
     const prepHtml = [
       progressPanel(families),
@@ -405,9 +491,21 @@
   async function renderInsights() {
     const el = $("#tab-insights");
     beginRender(el, "Crunching your stats…");
-    const d = await api("/insights");
-    const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v, color: "var(--red)" }));
+    let d;
+    try {
+      d = await api("/insights");
+    } catch (e) {
+      showLoadError(el, renderInsights);
+      return;
+    }
+    const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({
+      rawTag: k,
+      label: k.replace(/_/g, " "),
+      value: v,
+      color: "var(--red)",
+    }));
     const pa = d.prediction_accuracy || {};
+    const calibration = d.confidence_calibration;
     el.innerHTML = `
       <div class="columns">
         <div class="column"><div class="panel-box"><h3>Review forecast (30 days)</h3>${Charts.forecast(d.forecast)}</div></div>
@@ -418,10 +516,90 @@
         <div class="column"><div class="panel-box"><h3>Time to solve (weekly median)</h3>${Charts.lines(d.time_trend, { yLabel: "min" })}</div></div>
       </div>
       <div class="columns">
-        <div class="column"><div class="panel-box"><h3>Failure modes (30 days)</h3>${fm.length ? Charts.bars(fm) : "<p class='empty'>No structured mistakes yet — the coach fills this in.</p>"}</div></div>
+        <div class="column"><div class="panel-box failure-mode-box"><h3>Failure modes (30 days)</h3>${failureModesHtml(fm)}</div></div>
         <div class="column"><div class="panel-box"><h3>Pattern recognition</h3>${predHtml(pa)}</div></div>
       </div>
+      <div class="panel-box"><h3>Confidence calibration</h3>${calibrationHtml(calibration)}</div>
       <div class="panel-box"><h3>Mock score trend</h3>${mockTrendHtml(d.mock_trend)}</div>`;
+    bindFailureModeRows();
+  }
+
+  function failureModesHtml(rows) {
+    if (!rows.length) return "<p class='empty'>No structured mistakes yet — the coach fills this in.</p>";
+    return `${failureModeBars(rows)}
+      <div id="failure-mode-review" class="failure-mode-review">
+        <p class="empty">Select a mistake tag to review related attempts.</p>
+      </div>`;
+  }
+
+  function failureModeBars(data) {
+    const max = Math.max(...data.map((d) => d.value), 1);
+    const rows = data.map((d) => {
+      const w = Math.round((d.value / max) * 100);
+      return `<button type="button" class="chart-bar-row failure-mode-row" data-tag="${escapeHtml(d.rawTag)}"
+        title="${escapeHtml(d.rawTag)}: ${escapeHtml(d.value)} attempts">
+        <span class="chart-bar-label">${escapeHtml(d.label)}</span>
+        <span class="chart-bar-track"><span class="chart-bar-fill" style="width:${w}%;background:${d.color || "var(--accent)"}"></span></span>
+        <span class="chart-bar-val">${escapeHtml(d.value)}</span>
+      </button>`;
+    }).join("");
+    return `<div class="chart-bars failure-mode-bars">${rows}</div>`;
+  }
+
+  function bindFailureModeRows() {
+    $$("#tab-insights .failure-mode-row").forEach((b) => b.addEventListener("click", () => loadFailureMode(b)));
+  }
+
+  async function loadFailureMode(btn) {
+    const tag = btn.dataset.tag || "";
+    const panel = $("#failure-mode-review");
+    if (!panel || !tag) return;
+    $$("#tab-insights .failure-mode-row").forEach((b) => b.classList.toggle("is-active", b === btn));
+    panel.innerHTML = loader(`Loading ${tag.replace(/_/g, " ")} attempts…`);
+    let r;
+    try {
+      r = await api(`/failure-mode/${encodeURIComponent(tag)}`);
+    } catch (e) {
+      showLoadError(panel, () => loadFailureMode(btn));
+      return;
+    }
+    const attempts = (r.attempts || []).slice().sort((a, b) => (b.solved_at || 0) - (a.solved_at || 0));
+    panel.innerHTML = attempts.length
+      ? failureModeAttemptsHtml(tag, attempts)
+      : `<p class="empty">No saved attempts found for ${escapeHtml(tag.replace(/_/g, " "))}.</p>`;
+    $$("#failure-mode-review .failure-mode-detail").forEach((b) => b.addEventListener("click", () => App.openDetail(b.dataset.id)));
+    $$("#failure-mode-review .failure-mode-start").forEach((b) => b.addEventListener("click", () =>
+      App.startFlow(b.dataset.slug, "adhoc", "", b.dataset.title, b.dataset.cat)));
+  }
+
+  function failureModeAttemptsHtml(tag, attempts) {
+    return `<div class="failure-mode-review-head">
+      <div><b>${escapeHtml(tag.replace(/_/g, " "))}</b><div class="small">${plural(attempts.length, "tagged attempt")}</div></div>
+    </div>
+    <div class="failure-mode-attempts">${attempts.map(failureModeAttemptHtml).join("")}</div>`;
+  }
+
+  function failureModeAttemptHtml(a) {
+    const url = a.url || `https://leetcode.com/problems/${a.slug}/`;
+    const tags = (a.mistake_tags || []).map((t) => `<span class="mtag">${escapeHtml(t)}</span>`).join(" ");
+    return `<div class="failure-mode-attempt">
+      <div class="failure-mode-attempt-main">
+        <div class="failure-mode-title-row">
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(a.title || a.slug)}</a>
+          ${badge(a.difficulty)}
+        </div>
+        <div class="small">${shortLocalDate(a.solved_at)} · ${escapeHtml(a.category || "-")}</div>
+        ${a.mistake_note
+          ? `<div class="failure-mode-note">${escapeHtml(a.mistake_note)}</div>`
+          : `<div class="failure-mode-note is-muted">No mistake note saved.</div>`}
+        ${tags ? `<div class="failure-mode-tags">${tags}</div>` : ""}
+      </div>
+      <div class="failure-mode-actions">
+        <button class="button is-small failure-mode-detail" data-id="${escapeHtml(a.id)}">Detail</button>
+        <button class="button start is-small failure-mode-start" data-slug="${escapeHtml(a.slug)}"
+          data-title="${escapeHtml(a.title || a.slug)}" data-cat="${escapeHtml(a.category || "")}">Start</button>
+      </div>
+    </div>`;
   }
 
   function paceHtml(p) {
@@ -434,13 +612,112 @@
   }
 
   function predHtml(pa) {
-    if (!pa.graded) return "<p class='empty'>Make pattern predictions when you Start problems — accuracy shows here.</p>";
+    if (!pa.graded) return "<p class='empty'>Pattern sprints now train this directly. No pre-solve predictions are collected.</p>";
     const rows = Object.entries(pa.by_category || {}).map(([cat, r]) => {
       const tot = r.correct + r.partial + r.wrong;
       return { label: cat.replace(/ .*/, ""), value: Math.round((r.correct / tot) * 100), display: Math.round((r.correct / tot) * 100) + "%", color: "var(--green)" };
     });
+    const plan = planQualityHtml(pa.plan_quality);
     return `<div class="pace-big">${Math.round((pa.overall_correct_rate || 0) * 100)}%</div>
-      <div class="small">overall correct (${pa.graded} graded)</div>${Charts.bars(rows, { max: 100 })}`;
+      <div class="small">overall correct (${pa.graded} graded)</div>${Charts.bars(rows, { max: 100 })}${plan}`;
+  }
+
+  function planQualityHtml(pq) {
+    if (!pq) return "";
+    const cx = pq.complexity || {};
+    const edge = pq.edge_cases || {};
+    const lines = [];
+    if (cx.compared) {
+      lines.push(`complexity targets ${Math.round((cx.hit_rate || 0) * 100)}% hit (${cx.hits}/${cx.compared})`);
+    }
+    if (edge.planned) {
+      lines.push(`edge cases planned ${edge.planned}; caught ${edge.caught || 0}, missed ${edge.missed || 0}, unknown ${edge.unknown || 0}`);
+    }
+    if (!lines.length) return "";
+    return `<div class="small plan-quality">${lines.map(escapeHtml).join("<br>")}</div>`;
+  }
+
+  function calibrationHtml(calibration) {
+    const rows = (calibration && calibration.categories) || [];
+    const graded = calibration && calibration.graded_attempts != null ? calibration.graded_attempts : 0;
+    const min = calibration && calibration.min_graded_attempts;
+    const count = min != null ? `${graded}/${min} graded solves` : plural(graded, "graded solve");
+    const categoryCount = rows.length ? ` · ${plural(rows.length, "graded category", "graded categories")}` : "";
+    const countHtml = `<div class="small">${escapeHtml(count + categoryCount)}</div>`;
+    if (!calibration || calibration.status === "not_enough_data" || !rows.length) {
+      return `<div class="calibration-panel"><div class="empty calibration-empty"><div>Not enough graded data</div>${countHtml}</div></div>`;
+    }
+    const top = calibration.most_overrated_topic && calibration.most_overrated_topic.category;
+    const topHtml = top
+      ? `<div><div class="small">Most overrated topic</div><div class="name">${escapeHtml(top)}</div></div>`
+      : `<div><div class="small">Most overrated topic</div><div class="name">No overrated topic flagged yet</div></div>`;
+    const chartRows = rows.map((r) => ({
+      label: r.category.replace(/ .*/, ""),
+      hint: `${r.category}: self ${quality(r.self_quality)}, objective ${quality(r.objective_quality)}, gap ${gap(r.gap)}; ${calibrationEvidenceText(r)}`,
+      values: [
+        { label: "self", value: r.self_quality || 0, display: quality(r.self_quality), color: "var(--accent)" },
+        { label: "obj", value: r.objective_quality || 0, display: quality(r.objective_quality), color: "var(--green)" },
+      ],
+      meta: `${calibrationEvidenceHtml(r)}<span class="tag ${r.overconfident ? "is-warning is-light" : "is-light"}">gap ${escapeHtml(gap(r.gap))}</span>`,
+    }));
+    return `<div class="calibration-panel"><div class="calibration-topline">${topHtml}${countHtml}</div>${Charts.groupedBars(chartRows, { max: 5 })}${calibrationExamplesHtml(rows)}</div>`;
+  }
+
+  function calibrationExamplesHtml(rows) {
+    const groups = rows.filter((r) => r.overconfident && (r.examples || []).length);
+    if (!groups.length) return "";
+    return `<div class="calibration-examples">${groups.map((r) => `
+      <div class="calibration-example-group">
+        <div class="small">${escapeHtml(r.category)} examples</div>
+        ${(r.examples || []).map((ex) => `
+          <div class="calibration-example-row" title="${escapeHtml(ex.slug)}">
+            <span class="calibration-example-title">${escapeHtml(ex.title || ex.slug)}</span>
+            <span class="calibration-example-meta">self ${escapeHtml(quality(ex.self_quality))} · obj ${escapeHtml(quality(ex.objective_quality))} · gap ${escapeHtml(gap(ex.gap))} · ${escapeHtml(sourceLabel(ex.source))}</span>
+          </div>`).join("")}
+      </div>`).join("")}</div>`;
+  }
+
+  function calibrationEvidenceText(r) {
+    const parts = [plural(r.graded_attempts || 0, "graded solve")];
+    if (r.review_failures) parts.push(plural(r.review_failures, "review failure"));
+    if (r.leech_count) parts.push(plural(r.leech_count, "leech"));
+    return parts.join(", ");
+  }
+
+  function calibrationEvidenceHtml(r) {
+    const parts = [
+      `<span class="calibration-evidence-chip">${escapeHtml(plural(r.graded_attempts || 0, "graded solve"))}</span>`,
+    ];
+    if (r.review_failures) {
+      parts.push(`<span class="calibration-evidence-chip is-stale">${escapeHtml(plural(r.review_failures, "review failure"))}</span>`);
+    }
+    if (r.leech_count) {
+      parts.push(`<span class="calibration-evidence-chip is-stale">${escapeHtml(plural(r.leech_count, "leech"))}</span>`);
+    }
+    return `<span class="calibration-evidence">${parts.join("")}</span>`;
+  }
+
+  function plural(n, one, many) {
+    const count = Number(n) || 0;
+    return `${count} ${count === 1 ? one : (many || one + "s")}`;
+  }
+
+  function quality(v) {
+    return v == null ? "-" : Number(v).toFixed(1);
+  }
+
+  function gap(v) {
+    if (v == null) return "-";
+    const n = Number(v);
+    return `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
+  }
+
+  function sourceLabel(source) {
+    return {
+      solution_grade: "solution",
+      recall_grade: "recall",
+      review_failure: "review",
+    }[source] || source || "objective";
   }
 
   function mockTrendHtml(trend) {
@@ -500,7 +777,13 @@
   async function renderHistory() {
     const el = $("#tab-history");
     beginRender(el, "Loading history…");
-    const rows = await api("/history?limit=100");
+    let rows;
+    try {
+      rows = await api("/history?limit=100");
+    } catch (e) {
+      showLoadError(el, renderHistory);
+      return;
+    }
     if (!rows.length) { el.innerHTML = "<p class='empty'>No attempts logged yet.</p>"; return; }
     const confLabel = (c) => (c == null ? "—" : `<span class="conf-${c}">${["", "Low", "Med", "High"][c]}</span>`);
     const predBadge = (r) => {
@@ -557,25 +840,185 @@
   }
 
   // ---- Problems ----------------------------------------------------------------
+  let pendingDeleteProblem = null;
+  let deleteProblemModalBound = false;
+
   async function renderProblems() {
     const el = $("#tab-problems");
     beginRender(el, "Loading problems…");
-    const rows = await api("/problems");
-    if (!rows.length) { el.innerHTML = "<p class='empty'>No problems imported. Go to Discover.</p>"; return; }
-    el.innerHTML = `<table class="table is-app is-fullwidth is-hoverable">
-      <thead><tr><th>#</th><th>Problem</th><th>Topic</th><th>Diff</th><th>Attempts</th><th>Next review</th><th></th></tr></thead>
-      <tbody>${rows.map((r) => `
+    bindDeleteProblemModal();
+    let facets;
+    try {
+      facets = await loadProblemFacets();
+    } catch (e) {
+      showLoadError(el, renderProblems);
+      return;
+    }
+    const totalLabel = facets.total == null ? "" : `<span class="small">${facets.total} in library</span>`;
+    el.innerHTML = `<div class="problems-toolbar">
+      <div class="control problems-search"><input id="problems-search" class="input" placeholder="Search title, slug, or #" value="${escapeHtml(problemFilters.search)}" /></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-category">
+        <option value="">Any topic</option>${facetOptions(facets.categories || [], problemFilters.category)}
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-difficulty">
+        <option value="">Any difficulty</option>${facetOptions(facets.difficulties || [], problemFilters.difficulty)}
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-due-status">
+        <option value="all"${problemFilters.due_status === "all" ? " selected" : ""}>Any due status</option>
+        <option value="due"${problemFilters.due_status === "due" ? " selected" : ""}>Due</option>
+        <option value="upcoming"${problemFilters.due_status === "upcoming" ? " selected" : ""}>Upcoming</option>
+        <option value="unscheduled"${problemFilters.due_status === "unscheduled" ? " selected" : ""}>Unscheduled</option>
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-attempted">
+        <option value="all"${problemFilters.attempted === "all" ? " selected" : ""}>Any attempts</option>
+        <option value="attempted"${problemFilters.attempted === "attempted" ? " selected" : ""}>Attempted</option>
+        <option value="unattempted"${problemFilters.attempted === "unattempted" ? " selected" : ""}>Unattempted</option>
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-leech">
+        <option value="all"${problemFilters.leech === "all" ? " selected" : ""}>Any leech</option>
+        <option value="only"${problemFilters.leech === "only" ? " selected" : ""}>Leech only</option>
+        <option value="exclude"${problemFilters.leech === "exclude" ? " selected" : ""}>Hide leech</option>
+      </select></div></div>
+      <div class="control"><div class="select is-fullwidth"><select id="problems-sort">
+        <option value="number"${problemFilters.sort === "number" ? " selected" : ""}>Sort by #</option>
+        <option value="title"${problemFilters.sort === "title" ? " selected" : ""}>Sort by title</option>
+        <option value="difficulty"${problemFilters.sort === "difficulty" ? " selected" : ""}>Sort by difficulty</option>
+        <option value="due_date"${problemFilters.sort === "due_date" ? " selected" : ""}>Sort by next review</option>
+        <option value="last_attempt"${problemFilters.sort === "last_attempt" ? " selected" : ""}>Sort by last attempt</option>
+        <option value="attempts"${problemFilters.sort === "attempts" ? " selected" : ""}>Sort by attempts</option>
+      </select></div></div>
+      ${totalLabel}
+    </div>
+    <div id="problems-results"></div>`;
+
+    const reload = () => loadProblemResults();
+    let searchTimer = null;
+    $("#problems-search").addEventListener("input", (e) => {
+      problemFilters.search = e.target.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(reload, 180);
+    });
+    [
+      ["#problems-category", "category"],
+      ["#problems-difficulty", "difficulty"],
+      ["#problems-due-status", "due_status"],
+      ["#problems-attempted", "attempted"],
+      ["#problems-leech", "leech"],
+      ["#problems-sort", "sort"],
+    ].forEach(([selector, key]) => {
+      $(selector).addEventListener("change", (e) => {
+        problemFilters[key] = e.target.value;
+        reload();
+      });
+    });
+    await loadProblemResults();
+  }
+
+  async function loadProblemResults() {
+    const box = $("#problems-results");
+    if (!box) return;
+    box.innerHTML = loader("Loading problems…");
+    let rows;
+    try {
+      rows = await api(`/problems${problemQueryString()}`);
+    } catch (e) {
+      showLoadError(box, loadProblemResults);
+      return;
+    }
+    if (!rows.length && !hasActiveProblemFilters()) {
+      box.innerHTML = "<p class='empty'>No problems imported. Go to Discover.</p>";
+      return;
+    }
+    if (!rows.length) {
+      box.innerHTML = "<p class='empty'>No matching problems for the current search/filter combination.</p>";
+      return;
+    }
+    box.innerHTML = `<table class="table is-app is-fullwidth is-hoverable problems-table">
+      <thead><tr><th>#</th><th>Problem</th><th>Topic</th><th>Diff</th><th>Attempts</th><th>Next review</th><th>Last attempt</th><th>State</th><th>Leech</th><th></th></tr></thead>
+      <tbody>${rows.map((r) => {
+        const category = r.neetcode_category || r.category || "";
+        return `
         <tr>
-          <td class="small">${r.frontend_id || ""}</td>
-          <td><a href="${r.url}" target="_blank">${escapeHtml(r.title)}</a> ${r.leech ? '<span class="tag is-danger is-light">leech</span>' : ""}</td>
-          <td class="small">${escapeHtml(r.neetcode_category || "")}</td>
-          <td>${badge(r.difficulty)}</td>
-          <td>${r.attempt_count}</td>
-          <td class="small">${r.due_date || "—"}</td>
-          <td><button class="button start is-small" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(r.neetcode_category || "")}">Start</button></td>
-        </tr>`).join("")}</tbody></table>`;
+          <td class="small problem-number" data-label="#">${escapeHtml(r.frontend_id || "-")}</td>
+          <td data-label="Problem"><a href="${r.url}" target="_blank">${escapeHtml(r.title)}</a></td>
+          <td class="small" data-label="Topic">${escapeHtml(category || "-")}</td>
+          <td data-label="Diff">${badge(r.difficulty)}</td>
+          <td data-label="Attempts">${r.attempt_count || 0}</td>
+          <td class="small" data-label="Next review">${escapeHtml(r.due_date || "-")}</td>
+          <td class="small" data-label="Last attempt">${shortLocalDate(r.last_attempt_at)}</td>
+          <td data-label="State">${compactState(r.mastery_state)}</td>
+          <td data-label="Leech">${r.leech ? '<span class="tag is-danger is-light">leech</span>' : '<span class="small">-</span>'}</td>
+          <td class="problem-action"><div class="problem-actions">
+            <button class="button start is-small" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(category)}">Start</button>
+            ${r.attempt_count
+              ? `<button class="button recall-start is-small is-link is-light" data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(category)}" title="Recall the method from memory">Recall</button>`
+              : `<button class="button is-ghost is-small icon-button problem-delete" type="button"
+              data-slug="${r.slug}" data-title="${escapeHtml(r.title)}" aria-label="Remove ${escapeHtml(r.title)}" title="Remove from database">&times;</button>`}
+          </div></td>
+        </tr>`;
+      }).join("")}</tbody></table>`;
     $$("#tab-problems .start").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, "adhoc", "", b.dataset.title, b.dataset.cat)));
+    $$("#tab-problems .recall-start").forEach((b) => b.addEventListener("click", () =>
+      App.startFlow(b.dataset.slug, "adhoc", "recall", b.dataset.title, b.dataset.cat)));
+    $$("#tab-problems .problem-delete").forEach((b) => b.addEventListener("click", () => openDeleteProblem(b)));
+  }
+
+  function bindDeleteProblemModal() {
+    if (deleteProblemModalBound) return;
+    deleteProblemModalBound = true;
+    $("#btn-close-delete-problem").addEventListener("click", closeDeleteProblem);
+    $("#btn-cancel-delete-problem").addEventListener("click", closeDeleteProblem);
+    $("#btn-confirm-delete-problem").addEventListener("click", confirmDeleteProblem);
+  }
+
+  function openDeleteProblem(btn) {
+    pendingDeleteProblem = {
+      slug: btn.dataset.slug,
+      title: btn.dataset.title || btn.dataset.slug,
+      button: btn,
+    };
+    $("#delete-problem-copy").textContent =
+      `Remove "${pendingDeleteProblem.title}" from the problem database? This also removes its review card and cancels an active run.`;
+    $("#delete-problem-confirm").value = "";
+    $("#delete-problem-confirm").placeholder = pendingDeleteProblem.slug;
+    $("#delete-problem-error").classList.add("hidden");
+    $("#delete-problem-modal").classList.remove("hidden");
+    $("#delete-problem-confirm").focus();
+  }
+
+  function closeDeleteProblem() {
+    pendingDeleteProblem = null;
+    $("#delete-problem-modal").classList.add("hidden");
+  }
+
+  async function confirmDeleteProblem() {
+    if (!pendingDeleteProblem) return;
+    const slug = pendingDeleteProblem.slug;
+    const typed = $("#delete-problem-confirm").value.trim();
+    if (typed !== slug) {
+      const err = $("#delete-problem-error");
+      err.textContent = "Slug did not match.";
+      err.classList.remove("hidden");
+      return;
+    }
+    const { title, button } = pendingDeleteProblem;
+    button.disabled = true;
+    $("#btn-confirm-delete-problem").disabled = true;
+    try {
+      await api(`/problem/${encodeURIComponent(slug)}`, "DELETE", { confirm_slug: slug });
+      closeDeleteProblem();
+      toast(`Removed ${title}.`);
+      App.loadOverview();
+      renderProblems();
+    } catch (e) {
+      const err = $("#delete-problem-error");
+      err.textContent = e.message;
+      err.classList.remove("hidden");
+      button.disabled = false;
+    } finally {
+      $("#btn-confirm-delete-problem").disabled = false;
+    }
   }
 
   // ---- Settings ----------------------------------------------------------------

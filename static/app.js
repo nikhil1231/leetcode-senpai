@@ -23,6 +23,12 @@ async function getToken() {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const COMPLEXITIES = ["", "O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)", "O(n^3)", "O(2^n)", "O(n!)"];
+const COMPLEXITY_PRESETS = ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)"];
+const COMPLEXITY_EXAMPLES = [
+  ...COMPLEXITIES.filter(Boolean),
+  "O(n + m)", "O(nm)", "O(n log k)", "O(k log n)", "O(V + E)", "O(E log V)",
+  "O(n sqrt n)", "O(log(min(n, m)))",
+];
 
 const api = async (path, method = "GET", body) => {
   // X-Requested-With marks this as a fetch, which is what makes the Cloudflare
@@ -92,6 +98,50 @@ const diffTagClass = (d) => DIFF_TAG[d] || "";
 const badge = (d) => `<span class="tag ${diffTagClass(d)}">${d || "—"}</span>`;
 const cxOptions = (sel) => COMPLEXITIES.map((c) =>
   `<option value="${c}"${c === sel ? " selected" : ""}>${c || "—"}</option>`).join("");
+const complexityDatalist = (id) =>
+  `<datalist id="${id}">${COMPLEXITY_EXAMPLES.map((c) => `<option value="${c}"></option>`).join("")}</datalist>`;
+const complexityFieldHtml = ({ id, label, listId, placeholder }) => `
+  <div class="complexity-field">
+    <label class="label-sm" for="${id}">${label}</label>
+    <input id="${id}" class="input complexity-input" type="text" list="${listId}"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      inputmode="text" placeholder="${placeholder}" />
+    <div class="complexity-presets" data-for="${id}">
+      ${COMPLEXITY_PRESETS.map((c) => `<button type="button" class="complexity-preset" data-val="${c}">${c}</button>`).join("")}
+    </div>
+  </div>`;
+function renderComplexityFields(containerSel, { timeId, spaceId, timeLabel = "Time", spaceLabel = "Space" }) {
+  const root = $(containerSel);
+  if (!root) return;
+  const listId = `${root.id}-options`;
+  root.innerHTML = `
+    ${complexityDatalist(listId)}
+    ${complexityFieldHtml({ id: timeId, label: timeLabel, listId, placeholder: "O(n + m)" })}
+    ${complexityFieldHtml({ id: spaceId, label: spaceLabel, listId, placeholder: "O(1)" })}`;
+  root.querySelectorAll(".complexity-preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = $(`#${btn.parentElement.dataset.for}`);
+      if (!input || input.disabled) return;
+      input.value = btn.dataset.val;
+      input.focus();
+    });
+  });
+}
+const complexityValue = (id) => {
+  const input = $(`#${id}`);
+  return input && input.value.trim() ? input.value.trim() : null;
+};
+function setComplexityValue(id, value) {
+  const input = $(`#${id}`);
+  if (input) input.value = value || "";
+}
+function setComplexityDisabled(id, disabled) {
+  const input = $(`#${id}`);
+  if (!input) return;
+  input.disabled = disabled;
+  const field = input.closest(".complexity-field");
+  if (field) field.querySelectorAll(".complexity-preset").forEach((btn) => { btn.disabled = disabled; });
+}
 // Reusable async-loading indicator (matches the recall grading spinner).
 const loader = (msg = "Loading…") =>
   `<div class="loading-block"><span class="spinner"></span><span>${escapeHtml(msg)}</span></div>`;
@@ -102,6 +152,19 @@ const loader = (msg = "Loading…") =>
 const beginRender = (el, msg) => {
   if (!el.childElementCount) el.innerHTML = loader(msg);
 };
+const leetcodeProblemUrl = (slug) => `https://leetcode.com/problems/${encodeURIComponent(slug)}/`;
+const normalizeProblemAssetUrl = (src) => {
+  const raw = String(src || "").trim();
+  if (!raw) return "";
+  try {
+    const url = raw.startsWith("/")
+      ? new URL(raw, "https://assets.leetcode.com")
+      : new URL(raw, "https://leetcode.com");
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch (e) {
+    return "";
+  }
+};
 const sanitizeProblemHtml = (html) => {
   if (!html) return "";
   const template = document.createElement("template");
@@ -109,19 +172,66 @@ const sanitizeProblemHtml = (html) => {
   const allowed = new Set([
     "P", "PRE", "CODE", "STRONG", "B", "EM", "I", "UL", "OL", "LI", "BR",
     "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "SUP", "SUB", "SPAN",
+    "IMG",
   ]);
   template.content.querySelectorAll("*").forEach((el) => {
     if (!allowed.has(el.tagName)) {
       el.replaceWith(...Array.from(el.childNodes));
       return;
     }
+    if (el.tagName === "IMG") {
+      const src = normalizeProblemAssetUrl(el.getAttribute("src"));
+      const alt = el.getAttribute("alt") || "";
+      const width = el.getAttribute("width");
+      const height = el.getAttribute("height");
+      if (!src) {
+        el.remove();
+        return;
+      }
+      Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name));
+      el.setAttribute("src", src);
+      el.setAttribute("alt", alt);
+      el.setAttribute("loading", "lazy");
+      el.setAttribute("decoding", "async");
+      if (/^\d{1,4}$/.test(width || "")) el.setAttribute("width", width);
+      if (/^\d{1,4}$/.test(height || "")) el.setAttribute("height", height);
+      return;
+    }
     Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name));
   });
   return template.innerHTML;
 };
+function renderProblemStatement(containerSel, problem, slug) {
+  const root = $(containerSel);
+  if (!root) return;
+  const problemUrl = problem?.url || leetcodeProblemUrl(slug);
+  const body = sanitizeProblemHtml(problem?.content_html);
+  root.innerHTML = `
+    <div class="problem-statement-source">
+      <a href="${escapeHtml(problemUrl)}" target="_blank" rel="noopener">Open on LeetCode</a>
+    </div>
+    ${body || `<p class="small">Prompt unavailable.</p>`}`;
+}
 
 window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader,
   beginRender, COMPLEXITIES };
+
+renderComplexityFields("#annotate-complexities", {
+  timeId: "annotate-time",
+  spaceId: "annotate-space",
+  timeLabel: "Time complexity",
+  spaceLabel: "Space complexity",
+});
+renderComplexityFields("#predict-complexities", {
+  timeId: "predict-time",
+  spaceId: "predict-space",
+  timeLabel: "Target time",
+  spaceLabel: "Target space",
+});
+renderComplexityFields("#recall-complexities", {
+  timeId: "recall-time",
+  spaceId: "recall-space",
+});
 
 // ---- state ---------------------------------------------------------------------
 let activeSession = null;
@@ -131,8 +241,8 @@ let pollInFlight = false;
 let currentAttempt = null;
 let currentRecall = null;
 let resolveSelfGrade = null;
-let pendingStart = null;
-let categories = [];
+let recallStatusInterval = null;
+let pendingRecallPollIds = new Set();
 let llmEnabled = false;
 let llmProvider = "";
 let llmModel = "";
@@ -140,6 +250,11 @@ let nudgeShown = {};
 let pauseRequestId = 0;
 let sprintRound = null;
 let sprintTimer = null;
+let categories = [];
+let userEmail = "";
+let appMeta = null;
+let pendingStart = null;
+let predictCritique = { shown: false, revised: false };
 
 // ---- sign-in gate --------------------------------------------------------------
 function showSignIn(msg) {
@@ -293,18 +408,8 @@ async function loadOverview({ force = false } = {}) {
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
-  if (kind === "drill") return startSession({ slug, kind });
-  pendingStart = { slug, kind };
-  $("#predict-problem").textContent = title ? `${title}` : slug;
-  const cats = categories.length ? categories : (await loadCategories());
-  $("#predict-cats").innerHTML = cats.map((c) =>
-    `<button data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("");
-  $$("#predict-cats button").forEach((b) => b.addEventListener("click", () => {
-    $$("#predict-cats button").forEach((x) => x.classList.remove("sel"));
-    b.classList.add("sel");
-  }));
-  $("#predict-approach").value = "";
-  $("#predict-modal").classList.remove("hidden");
+  if (kind !== "mock") return openPredict({ slug, kind, title, category });
+  return startSession({ slug, kind });
 }
 
 async function startSession(body) {
@@ -317,33 +422,159 @@ async function startSession(body) {
   toast("Timer started — solve it on LeetCode, it'll auto-log.");
 }
 
-async function loadCategories() {
-  try {
-    const topics = await api("/topics");
-    categories = topics.map((t) => t.category);
-  } catch (e) { categories = []; }
-  return categories;
+function renderPredictPatterns() {
+  const root = $("#predict-patterns");
+  if (!root) return;
+  const seen = new Set();
+  const opts = categories.filter((c) => {
+    const val = (c || "").trim();
+    if (!val || seen.has(val)) return false;
+    seen.add(val);
+    return true;
+  });
+  root.innerHTML = opts.length
+    ? opts.map((c) => `<button type="button" data-val="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("")
+    : `<input id="predict-category-freeform" class="input" type="text" autocomplete="off" placeholder="Pattern category" />`;
+  root.querySelectorAll("button").forEach((btn) => {
+    btn.classList.remove("sel");
+    btn.addEventListener("click", () => selectPill("#predict-patterns", btn.dataset.val));
+  });
 }
 
-async function doStart(withPrediction) {
-  $("#predict-modal").classList.add("hidden");
-  if (!pendingStart) return;
-  const { slug, kind } = pendingStart;
-  pendingStart = null;
-  const body = { slug, kind };
-  if (withPrediction) {
-    const sel = $("#predict-cats button.sel");
-    body.predicted_category = sel ? sel.dataset.cat : null;
-    body.predicted_approach = $("#predict-approach").value || null;
+async function openPredict(ctx) {
+  pendingStart = ctx;
+  predictCritique = { shown: false, revised: false };
+  $("#predict-problem").textContent = ctx.title || ctx.slug;
+  $("#predict-statement").innerHTML = loader("Loading problem prompt...");
+  $("#predict-approach").value = "";
+  setComplexityValue("predict-time", "");
+  setComplexityValue("predict-space", "");
+  $("#predict-edge-cases").value = "";
+  $("#predict-critique").classList.add("hidden");
+  $("#predict-critique").innerHTML = "";
+  $("#btn-skip-predict").textContent = "Skip";
+  $("#btn-start-predict").textContent = "Lock in & start";
+  if (!categories.length) await loadCategories();
+  renderPredictPatterns();
+  $("#predict-modal").classList.remove("hidden");
+  try {
+    const problem = await api(`/problem/${encodeURIComponent(ctx.slug)}/recall-context`);
+    $("#predict-problem").textContent = problem.title || ctx.title || ctx.slug;
+    renderProblemStatement("#predict-statement", problem, ctx.slug);
+  } catch (e) {
+    renderProblemStatement("#predict-statement", null, ctx.slug);
   }
+}
+
+function closePredict() {
+  $("#predict-modal").classList.add("hidden");
+  pendingStart = null;
+  predictCritique = { shown: false, revised: false };
+}
+
+function selectedPredictionCategory() {
+  const selected = $("#predict-patterns button.sel");
+  if (selected) return selected.dataset.val || null;
+  const input = $("#predict-category-freeform");
+  return input && input.value.trim() ? input.value.trim() : null;
+}
+
+function plannedEdgeCases() {
+  return $("#predict-edge-cases").value
+    .split(/\n|;/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function currentPlanBody(ctx) {
+  return {
+    slug: ctx.slug,
+    kind: ctx.kind,
+    predicted_category: selectedPredictionCategory(),
+    predicted_approach: $("#predict-approach").value.trim() || null,
+    complexity_target_time: complexityValue("predict-time"),
+    complexity_target_space: complexityValue("predict-space"),
+    planned_edge_cases: plannedEdgeCases(),
+  };
+}
+
+function hasPlanSignal(body) {
+  return Boolean(
+    body.predicted_category ||
+    body.predicted_approach ||
+    body.complexity_target_time ||
+    body.complexity_target_space ||
+    body.planned_edge_cases.length
+  );
+}
+
+function renderPlanCritique(critique) {
+  const nudges = (critique.nudges || []).filter(Boolean);
+  const missing = (critique.missing_edge_cases || []).filter(Boolean);
+  const items = [
+    ...nudges.map((n) => `<li>${escapeHtml(n)}</li>`),
+    ...missing.map((m) => `<li>Check ${escapeHtml(m)}.</li>`),
+  ];
+  $("#predict-critique").innerHTML = `
+    <div class="plan-critique-title">
+      <span>Plan check</span>
+      <span>${escapeHtml(critique.overall_verdict || "unknown")}</span>
+    </div>
+    ${items.length ? `<ul>${items.join("")}</ul>` : `<p class="small">No specific revisions suggested.</p>`}
+    <p class="small">Revise once, or proceed with this plan.</p>`;
+  $("#predict-critique").classList.remove("hidden");
+  $("#btn-skip-predict").textContent = "Revise";
+  $("#btn-start-predict").textContent = "Proceed anyway";
+}
+
+async function critiquePlan(body) {
+  const { kind, ...plan } = body;
+  return api("/session/plan-critique", "POST", plan);
+}
+
+function reviseAfterCritique() {
+  predictCritique.revised = true;
+  $("#predict-critique").classList.add("hidden");
+  $("#btn-skip-predict").textContent = "Skip";
+  $("#btn-start-predict").textContent = "Lock in & start";
+}
+
+async function doStart(includePlan) {
+  if (!pendingStart) return;
+  const ctx = pendingStart;
+  const startBtn = $("#btn-start-predict");
+  const skipBtn = $("#btn-skip-predict");
+  const body = includePlan ? currentPlanBody(ctx) : { slug: ctx.slug, kind: ctx.kind };
+  if (includePlan && !predictCritique.shown && !predictCritique.revised && hasPlanSignal(body)) {
+    startBtn.disabled = true;
+    skipBtn.disabled = true;
+    startBtn.textContent = "Checking…";
+    try {
+      const r = await critiquePlan(body);
+      if (r && r.llm && r.critique) {
+        predictCritique.shown = true;
+        renderPlanCritique(r.critique);
+        return;
+      }
+    } catch (err) {
+      console.warn("plan critique unavailable", err);
+    } finally {
+      startBtn.disabled = false;
+      skipBtn.disabled = false;
+      if (!predictCritique.shown) startBtn.textContent = "Lock in & start";
+    }
+  }
+  closePredict();
   await startSession(body);
 }
-$("#btn-do-predict").addEventListener("click", () => doStart(true));
-$("#btn-skip-predict").addEventListener("click", () => doStart(false));
-$("#btn-close-predict").addEventListener("click", () => {
-  pendingStart = null;
-  $("#predict-modal").classList.add("hidden");
+
+$("#btn-close-predict").addEventListener("click", closePredict);
+$("#btn-skip-predict").addEventListener("click", () => {
+  if (predictCritique.shown && !predictCritique.revised) return reviseAfterCritique();
+  return doStart(false);
 });
+$("#btn-start-predict").addEventListener("click", () => doStart(true));
 
 // ---- active session / timer / hints / nudges -----------------------------------
 async function refreshActive() {
@@ -584,40 +815,33 @@ function openAnnotate(attempt) {
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   selectPill("#conf-group", "2");
   selectPill("#indep-group", usedHints ? "hints" : "solo");
-  $("#annotate-time").innerHTML = cxOptions("");
-  $("#annotate-space").innerHTML = cxOptions("");
+  setComplexityValue("annotate-time", "");
+  setComplexityValue("annotate-space", "");
   $("#annotate-note").value = "";
   $("#annotate-approach").value = "";
+  const saveBtn = $("#btn-save-annotate");
+  saveBtn.textContent = "Save";
+  delete saveBtn.dataset.saved;
+  saveBtn.disabled = false;
   $("#annotate-modal").classList.remove("hidden");
   initAnnotateGrade(attempt);
 }
 
 // ---- solution grading (inside the annotate modal) ------------------------------
 let annotateGradeTimer = null;
-let annotateGradePoll = null;
 
 function initAnnotateGrade(attempt) {
   const panel = $("#annotate-grade");
   stopAnnotateGrading();
-  if (annotateGradePoll) { clearTimeout(annotateGradePoll); annotateGradePoll = null; }
   panel.classList.add("hidden");
   panel.innerHTML = "";
   if (!llmEnabled || !attempt.code) return;
+  if (attempt.confidence == null || !attempt.independence) return;
   const status = attempt.solution_grading_status;
   if (status === "viewed" && attempt.solution_grade) {
     renderSolutionGrade(attempt.solution_grade);
-  } else if (status === "pending") {
-    showAnnotateGrading([
-      "Reading your solution…",
-      "Checking the complexity…",
-      "Comparing against the optimal approach…",
-      "Grading…",
-    ]);
-    pollSolutionGrade(attempt.id);
   } else if (status === "failed") {
     renderSolutionGradeError(attempt.solution_grading_error, attempt.id);
-  } else if (status !== "skipped") {
-    showGradeButton(attempt.id);  // stale solve — grade on demand
   }
 }
 
@@ -640,52 +864,30 @@ function stopAnnotateGrading() {
   if (annotateGradeTimer) { clearInterval(annotateGradeTimer); annotateGradeTimer = null; }
 }
 
-async function pollSolutionGrade(attemptId, tries = 0) {
-  // Stop if the modal closed or a different solve is showing.
-  if (!currentAttempt || currentAttempt.id !== attemptId
-      || $("#annotate-modal").classList.contains("hidden")) {
-    stopAnnotateGrading();
-    return;
-  }
-  if (tries > 30) {  // ~60s ceiling
-    renderSolutionGradeError("Grading is taking longer than expected.", attemptId);
-    return;
-  }
-  let a;
-  try {
-    a = await api(`/attempt/${attemptId}`);
-  } catch (e) {
-    annotateGradePoll = setTimeout(() => pollSolutionGrade(attemptId, tries + 1), 2000);
-    return;
-  }
-  const status = a.solution_grading_status;
-  if (status === "viewed" && a.solution_grade) {
-    if (currentAttempt) currentAttempt.solution_grade = a.solution_grade;
-    renderSolutionGrade(a.solution_grade);
-  } else if (status === "failed") {
-    renderSolutionGradeError(a.solution_grading_error, attemptId);
-  } else if (status === "skipped") {
-    stopAnnotateGrading();
-    $("#annotate-grade").classList.add("hidden");
-  } else {
-    annotateGradePoll = setTimeout(() => pollSolutionGrade(attemptId, tries + 1), 2000);
-  }
-}
-
 function renderSolutionGrade(g) {
   g = g || {};
   stopAnnotateGrading();
   const panel = $("#annotate-grade");
   panel.classList.remove("hidden");
-  const imp = (g.improvements || []).filter(Boolean);
+  const positives = (g.positives || []).filter(Boolean);
+  const negatives = (g.negatives || g.improvements || []).filter(Boolean);
   const hasCx = g.inferred_time || g.inferred_space;
   panel.innerHTML = `
     <div class="grade-score">Solution grade: <b>${g.score}/5</b>${
       g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
-    ${g.analysis ? `<p>${escapeHtml(g.analysis)}</p>` : ""}
+    ${g.analysis ? `<p class="grade-analysis">${escapeHtml(g.analysis)}</p>` : ""}
     ${hasCx ? `<p class="small"><b>Complexity:</b> time ${escapeHtml(g.inferred_time || "?")}, space ${escapeHtml(g.inferred_space || "?")}</p>` : ""}
-    ${imp.length ? `<p class="missed"><b>Improve:</b></p><ul class="improvements">${
-      imp.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : ""}`;
+    ${positives.length ? `<div class="grade-bullets grade-positives"><b>Positives</b><ul>${
+      positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+    ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>Negatives</b><ul>${
+      negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}`;
+}
+
+function markAnnotateDone() {
+  const saveBtn = $("#btn-save-annotate");
+  saveBtn.textContent = "Done";
+  saveBtn.dataset.saved = "1";
+  saveBtn.disabled = false;
 }
 
 function renderSolutionGradeError(err, attemptId) {
@@ -694,14 +896,6 @@ function renderSolutionGradeError(err, attemptId) {
   panel.classList.remove("hidden");
   panel.innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
     <div class="grade-actions"><button id="btn-grade-solution" class="button is-small is-link">Retry grading</button></div>`;
-  wireGradeButton(attemptId);
-}
-
-function showGradeButton(attemptId) {
-  const panel = $("#annotate-grade");
-  panel.classList.remove("hidden");
-  panel.innerHTML =
-    `<div class="grade-actions"><button id="btn-grade-solution" class="button is-small is-link">Grade my solution</button></div>`;
   wireGradeButton(attemptId);
 }
 
@@ -720,12 +914,39 @@ function wireGradeButton(attemptId) {
     if (r.grading_status === "viewed" && r.graded) {
       if (currentAttempt) currentAttempt.solution_grade = r.graded;
       renderSolutionGrade(r.graded);
+      markAnnotateDone();
     } else if (r.grading_status === "skipped") {
       $("#annotate-grade").classList.add("hidden");
     } else {
       renderSolutionGradeError(r.grading_error, attemptId);
     }
   });
+}
+
+async function gradeSavedSolution(attemptId) {
+  showAnnotateGrading([
+    "Reading your saved self-assessment…",
+    "Checking the submitted solution…",
+    "Summarizing the grade…",
+  ]);
+  try {
+    const r = await api(`/attempt/${attemptId}/grade-solution`, "POST");
+    if (r.grading_status === "viewed" && r.graded) {
+      if (currentAttempt) currentAttempt.solution_grade = r.graded;
+      renderSolutionGrade(r.graded);
+      markAnnotateDone();
+      return true;
+    }
+    if (r.grading_status === "skipped") {
+      $("#annotate-grade").classList.add("hidden");
+      return true;
+    }
+    renderSolutionGradeError(r.grading_error, attemptId);
+    return false;
+  } catch (e) {
+    renderSolutionGradeError(e.message, attemptId);
+    return false;
+  }
 }
 
 function selectPill(group, val) {
@@ -737,38 +958,69 @@ $$("#indep-group button").forEach((b) => b.addEventListener("click", () => selec
 function closeAnnotate() {
   $("#annotate-modal").classList.add("hidden");
   stopAnnotateGrading();
-  if (annotateGradePoll) { clearTimeout(annotateGradePoll); annotateGradePoll = null; }
   currentAttempt = null;
 }
-$("#btn-close-annotate").addEventListener("click", closeAnnotate);
+async function dismissAnnotate() {
+  const attempt = currentAttempt;
+  closeAnnotate();
+  if (!attempt || !attempt.id) return;
+  try {
+    await api(`/attempt/${attempt.id}/dismiss-annotation`, "POST");
+  } catch (e) {
+    toast(e.message);
+  }
+}
+$("#btn-close-annotate").addEventListener("click", dismissAnnotate);
 
 $("#btn-save-annotate").addEventListener("click", async () => {
   if (!currentAttempt) return;
-  const btn = $("#btn-save-annotate");
-  if (btn.disabled) return;
-  btn.disabled = true;
+  const saveBtn = $("#btn-save-annotate");
+  if (saveBtn.dataset.saved === "1") {
+    closeAnnotate();
+    return;
+  }
+  // dataset.saved only covers a save that already landed. A second click while
+  // the first request is still in flight has to be dropped too, or one solve
+  // is logged twice.
+  if (saveBtn.disabled) return;
+  saveBtn.disabled = true;
+  const attemptId = currentAttempt.id;
+  const confidence = Number($("#conf-group button.sel").dataset.val);
+  const independence = $("#indep-group button.sel").dataset.val;
+  let r;
   try {
-    const confidence = Number($("#conf-group button.sel").dataset.val);
-    const independence = $("#indep-group button.sel").dataset.val;
-    const r = await api(`/attempt/${currentAttempt.id}/annotate`, "POST", {
+    r = await api(`/attempt/${attemptId}/annotate`, "POST", {
       confidence, independence,
       mistake_note: $("#annotate-note").value || null,
       approach: $("#annotate-approach").value || null,
-      complexity_time: $("#annotate-time").value || null,
-      complexity_space: $("#annotate-space").value || null,
+      complexity_time: complexityValue("annotate-time"),
+      complexity_space: complexityValue("annotate-space"),
     });
-    closeAnnotate();
-    toast(llmEnabled ? "Logged ✅ — coach is reading your notes…" : "Logged ✅");
-    if (r.similar) {
-      setTimeout(() => offerSimilar(r.similar), 400);
-    }
-    loadOverview();
-    render(currentActiveTab());
-    if (llmEnabled) setTimeout(runSweep, 2500);
   } catch (e) {
+    saveBtn.disabled = false;
     toast(e.message);
-  } finally {
-    btn.disabled = false;
+    return;
+  }
+  if (currentAttempt) {
+    Object.assign(currentAttempt, {
+      confidence, independence,
+      mistake_note: $("#annotate-note").value || null,
+      approach: $("#annotate-approach").value || null,
+      complexity_time: complexityValue("annotate-time"),
+      complexity_space: complexityValue("annotate-space"),
+    });
+  }
+  toast(llmEnabled ? "Logged — grading your solution…" : "Logged");
+  if (llmEnabled && currentAttempt && currentAttempt.code) {
+    await gradeSavedSolution(attemptId);
+  } else {
+    closeAnnotate();
+  }
+  if (!$("#annotate-modal").classList.contains("hidden") && saveBtn.dataset.saved !== "1") {
+    saveBtn.disabled = false;
+  }
+  if (r.similar) {
+    setTimeout(() => offerSimilar(r.similar), 400);
   }
 });
 
@@ -790,10 +1042,10 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
   if (help) help.textContent = "No coding. Read the prompt, identify the pattern, then recall the method.";
   $("#recall-text").value = "";
   $("#recall-text").disabled = false;
-  $("#recall-time").disabled = false;
-  $("#recall-space").disabled = false;
-  $("#recall-time").innerHTML = cxOptions("");
-  $("#recall-space").innerHTML = cxOptions("");
+  setComplexityDisabled("recall-time", false);
+  setComplexityDisabled("recall-space", false);
+  setComplexityValue("recall-time", "");
+  setComplexityValue("recall-space", "");
   $("#recall-grade").classList.add("hidden");
   $("#recall-grade").innerHTML = "";
   $("#recall-actions").innerHTML =
@@ -805,12 +1057,9 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
     const ctx = await api(`/problem/${encodeURIComponent(slug)}/recall-context`);
     currentRecall = { ...currentRecall, ...ctx };
     $("#recall-problem").textContent = ctx.title || title || slug;
-    const html = sanitizeProblemHtml(ctx.content_html);
-    $("#recall-statement").innerHTML = html ||
-      `<p class="small">Prompt unavailable. <a href="${ctx.url || `https://leetcode.com/problems/${slug}/`}" target="_blank" rel="noopener">Open on LeetCode</a>.</p>`;
+    renderProblemStatement("#recall-statement", ctx, slug);
   } catch (e) {
-    $("#recall-statement").innerHTML =
-      `<p class="small">Prompt unavailable. <a href="https://leetcode.com/problems/${slug}/" target="_blank" rel="noopener">Open on LeetCode</a>.</p>`;
+    renderProblemStatement("#recall-statement", null, slug);
   }
   if (attemptId) {
     await loadRecallAttempt(attemptId);
@@ -835,8 +1084,8 @@ async function loadRecallAttempt(attemptId) {
   }
   currentRecall = { ...currentRecall, ...a, attempt_id: attemptId, category: a.category || currentRecall.category };
   $("#recall-text").value = a.approach || "";
-  $("#recall-time").value = a.complexity_time || "";
-  $("#recall-space").value = a.complexity_space || "";
+  setComplexityValue("recall-time", a.complexity_time);
+  setComplexityValue("recall-space", a.complexity_space);
   if (a.grading_status === "pending") {
     setRecallInputsDisabled(true);
     $("#recall-grade").classList.remove("hidden");
@@ -859,19 +1108,25 @@ async function loadRecallAttempt(attemptId) {
 
 function setRecallInputsDisabled(disabled) {
   $("#recall-text").disabled = disabled;
-  $("#recall-time").disabled = disabled;
-  $("#recall-space").disabled = disabled;
+  setComplexityDisabled("recall-time", disabled);
+  setComplexityDisabled("recall-space", disabled);
 }
 
 function renderRecallGrade(g) {
   g = g || {};
   stopRecallGrading();
+  const positives = (g.positives || g.key_ideas_hit || []).filter(Boolean);
+  const negatives = (g.negatives || g.key_ideas_missed || []).filter(Boolean);
+  const analysis = g.analysis || g.feedback || "";
   $("#recall-grade").classList.remove("hidden");
   $("#recall-grade").innerHTML = `
-    <div class="grade-score">Recall grade: <b>${g.grade}/3</b></div>
-    ${g.feedback ? `<p>${escapeHtml(g.feedback)}</p>` : ""}
-    ${g.key_ideas_missed && g.key_ideas_missed.length ?
-      `<p class="missed"><b>You missed:</b> ${g.key_ideas_missed.map(escapeHtml).join("; ")}</p>` : ""}
+    <div class="grade-score">Recall grade: <b>${g.grade}/3</b>${
+      g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
+    ${analysis ? `<p class="grade-analysis">${escapeHtml(analysis)}</p>` : ""}
+    ${positives.length ? `<div class="grade-bullets grade-positives"><b>Positives</b><ul>${
+      positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+    ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>Negatives</b><ul>${
+      negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
     ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
     <p class="small">Scheduled next review accordingly.</p>
     ${currentRecall.attempt_id ? recallClarificationHtml() : ""}`;
@@ -922,8 +1177,8 @@ async function submitRecall() {
   const text = $("#recall-text").value.trim();
   const body = {
     slug: currentRecall.slug, recall_text: text,
-    complexity_time: $("#recall-time").value || null,
-    complexity_space: $("#recall-space").value || null,
+    complexity_time: complexityValue("recall-time"),
+    complexity_space: complexityValue("recall-space"),
   };
   if (!llmEnabled) {
     // manual self-grade path: ask confidence via pills inline
@@ -982,8 +1237,8 @@ function showRecallGrading(messages) {
   // lock the inputs, swap the actions for a disabled spinner, and animate a
   // status line that steps through `messages`.
   $("#recall-text").disabled = true;
-  $("#recall-time").disabled = true;
-  $("#recall-space").disabled = true;
+  setComplexityDisabled("recall-time", true);
+  setComplexityDisabled("recall-space", true);
   const g = $("#recall-grade");
   g.classList.remove("hidden");
   g.innerHTML = `<div class="grading"><span class="spinner"></span>
@@ -1020,6 +1275,16 @@ function pickSelfGrade() {
 }
 
 // ---- sprint runner -------------------------------------------------------------
+async function loadCategories() {
+  try {
+    const topics = await api("/topics");
+    categories = topics.map((t) => t.category);
+  } catch (e) {
+    categories = [];
+  }
+  return categories;
+}
+
 async function startSprint() {
   $("#sprint-modal").classList.remove("hidden");
   $("#sprint-progress").textContent = "";
@@ -1047,12 +1312,32 @@ async function startSprint() {
     return;
   }
   await loadCategories();
-  renderSprintRep();
+  renderSprintIntro();
 }
 
 function closeSprint() {
   stopSprintTimer();
   $("#sprint-modal").classList.add("hidden");
+}
+
+function renderSprintIntro() {
+  if (!sprintRound) return;
+  stopSprintTimer();
+  $("#sprint-progress").textContent = `${sprintRound.reps.length} reps ready`;
+  $("#sprint-body").innerHTML = `
+    <div class="sprint-intro">
+      <h3>Pattern sprint rules</h3>
+      <p>Read each statement without opening LeetCode, choose the pattern, and add one short reason for the signal you noticed.</p>
+      <ul>
+        <li>You get 60 seconds per prompt.</li>
+        <li>Next saves your answer and immediately moves on.</li>
+        <li>Skip leaves the rep unanswered; Finish grades the answers saved so far.</li>
+      </ul>
+      <div class="overlay-actions">
+        <button id="btn-begin-sprint" class="button is-primary">Start</button>
+      </div>
+    </div>`;
+  $("#btn-begin-sprint").addEventListener("click", renderSprintRep);
 }
 
 function renderSprintRep() {
@@ -1067,9 +1352,11 @@ function renderSprintRep() {
   $("#sprint-progress").textContent = `Rep ${sprintRound.index + 1} of ${sprintRound.reps.length}`;
   const sprintCats = categories.includes(rep.category) || !rep.category
     ? categories
-    : [rep.category, ...categories];
-  const opts = sprintCats.map((c) =>
-    `<option value="${escapeHtml(c)}"${c === rep.category ? " selected" : ""}>${escapeHtml(c)}</option>`).join("");
+    : [...categories, rep.category].sort((a, b) => a.localeCompare(b));
+  const opts = [
+    '<option value="" selected disabled>Choose category</option>',
+    ...sprintCats.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`),
+  ].join("");
   const statement = sanitizeProblemHtml(rep.content_html);
   $("#sprint-body").innerHTML = `
     <div class="sprint-layout">
@@ -1088,15 +1375,16 @@ function renderSprintRep() {
         <div class="select is-fullwidth"><select id="sprint-category">${opts}</select></div>
         <label class="label-sm">Why</label>
         <input id="sprint-why" class="input" type="text" placeholder="One line: key signal in the statement" />
-        <div id="sprint-verdict" class="recall-grade hidden"></div>
         <div class="overlay-actions" id="sprint-actions">
           <button id="btn-skip-sprint-rep" class="button is-ghost">Skip</button>
-          <button id="btn-submit-sprint-rep" class="button is-primary">Submit rep</button>
+          <button id="btn-finish-sprint" class="button is-ghost">Finish</button>
+          <button id="btn-submit-sprint-rep" class="button is-primary">Next</button>
         </div>
       </section>
     </div>`;
   $("#btn-submit-sprint-rep").addEventListener("click", () => submitSprintRep());
   $("#btn-skip-sprint-rep").addEventListener("click", skipSprintRep);
+  $("#btn-finish-sprint").addEventListener("click", finishSprintEarly);
   startSprintTimer();
 }
 
@@ -1143,7 +1431,7 @@ async function submitSprintRep() {
   } catch (e) {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Submit rep";
+      btn.textContent = "Next";
     }
     toast(e.message);
     return;
@@ -1157,7 +1445,8 @@ async function submitSprintRep() {
     attempt_id: r.attempt_id,
     grading_status: r.grading_status || "pending",
   });
-  renderSprintSubmitted(rep);
+  sprintRound.index++;
+  renderSprintRep();
 }
 
 function skipSprintRep() {
@@ -1169,29 +1458,6 @@ function skipSprintRep() {
   });
   sprintRound.index++;
   renderSprintRep();
-}
-
-function renderSprintSubmitted(rep) {
-  if (!sprintRound) return;
-  stopSprintTimer();
-  const isLast = sprintRound.index >= sprintRound.reps.length - 1;
-  const saved = sprintRound.results[sprintRound.results.length - 1] || {};
-  $("#sprint-progress").textContent = `Rep ${sprintRound.index + 1} of ${sprintRound.reps.length}`;
-  $("#sprint-verdict").classList.remove("hidden");
-  $("#sprint-verdict").innerHTML = `
-    <div class="grade-score">Saved sprint answer</div>
-    <p class="small"><b>Prediction:</b> ${escapeHtml(saved.predicted_category || "")}</p>
-    <p class="small"><b>Why:</b> ${escapeHtml(saved.why || "")}</p>
-    <p class="small">Progress is saved. Finish now to complete the sprint early with ${sprintRound.results.length} submitted answer${sprintRound.results.length === 1 ? "" : "s"}.</p>`;
-  $("#sprint-actions").innerHTML = `
-    <button id="btn-finish-sprint" class="button is-ghost">Finish</button>
-    <button id="btn-next-sprint-rep" class="button is-primary">${isLast ? "Grade sprint" : "Next"}</button>`;
-  $("#btn-next-sprint-rep").addEventListener("click", () => {
-    if (!sprintRound) return;
-    sprintRound.index++;
-    renderSprintRep();
-  });
-  $("#btn-finish-sprint").addEventListener("click", finishSprintEarly);
 }
 
 function finishSprintEarly() {
@@ -1272,6 +1538,92 @@ function refreshAfterSprint() {
 $("#btn-close-sprint").addEventListener("click", closeSprint);
 
 // ---- attempt detail (solution archive) -----------------------------------------
+function detailGradeHtml(a) {
+  if (!a) return "";
+  if (a.kind === "recall" || a.source === "recall") {
+    return recallDetailGradeHtml(a.recall_grade, a.grading_status, a.grading_error);
+  }
+  return solutionDetailGradeHtml(
+    a.solution_grade, a.solution_grading_status, a.solution_grading_error);
+}
+
+function gradeListHtml(title, items, cls) {
+  const rows = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!rows.length) return "";
+  return `<div class="grade-bullets ${cls}"><b>${title}</b><ul>${
+    rows.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`;
+}
+
+function gradeItems(items) {
+  return Array.isArray(items) ? items.filter(Boolean) : [];
+}
+
+function gradeStatusHtml(status, err) {
+  if (status === "failed") {
+    return `<div class="recall-grade detail-grade">
+      <p class="missed"><b>Grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
+    </div>`;
+  }
+  return "";
+}
+
+function solutionDetailGradeHtml(g, status, err) {
+  if (!g || typeof g !== "object") return gradeStatusHtml(status, err);
+  const hasScore = g.score != null;
+  const hasCx = g.inferred_time || g.inferred_space;
+  const positives = gradeItems(g.positives);
+  const negatives = gradeItems(g.negatives).length ? gradeItems(g.negatives) : gradeItems(g.improvements);
+  if (!hasScore && !g.analysis && !g.feedback && !hasCx && !positives.length && !negatives.length) {
+    return gradeStatusHtml(status, err);
+  }
+  return `<div class="recall-grade detail-grade">
+    <div class="grade-score">Solution grade${hasScore ? `: <b>${escapeHtml(g.score)}/5</b>` : ""}${
+      g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
+    ${g.analysis || g.feedback ? `<p class="grade-analysis">${escapeHtml(g.analysis || g.feedback)}</p>` : ""}
+    ${hasCx ? `<p class="small"><b>Complexity:</b> time ${escapeHtml(g.inferred_time || "?")}, space ${escapeHtml(g.inferred_space || "?")}</p>` : ""}
+    ${gradeListHtml("Positives", positives, "grade-positives")}
+    ${gradeListHtml("Negatives", negatives, "grade-negatives")}
+    ${g.prompt_version != null ? `<p class="small">Prompt v${escapeHtml(g.prompt_version)}</p>` : ""}
+  </div>`;
+}
+
+function recallDetailGradeHtml(g, status, err) {
+  if (!g || typeof g !== "object") return gradeStatusHtml(status, err);
+  const hasGrade = g.grade != null;
+  const positives = gradeItems(g.positives);
+  const negatives = gradeItems(g.negatives);
+  if (!hasGrade && !g.analysis && !g.feedback && !positives.length && !negatives.length) {
+    return gradeStatusHtml(status, err);
+  }
+  return `<div class="recall-grade detail-grade">
+    <div class="grade-score">Recall grade${hasGrade ? `: <b>${escapeHtml(g.grade)}/3</b>` : ""}${
+      g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
+    ${g.analysis || g.feedback ? `<p class="grade-analysis">${escapeHtml(g.analysis || g.feedback)}</p>` : ""}
+    ${gradeListHtml("Positives", positives, "grade-positives")}
+    ${gradeListHtml("Negatives", negatives, "grade-negatives")}
+  </div>`;
+}
+
+function planReconciliationHtml(a) {
+  const r = a.plan_reconciliation || {};
+  const planned = r.planned_edge_cases || [];
+  const hasPlan = !!(r.target_time || r.target_space || planned.length);
+  if (!hasPlan) return "";
+  const hitLabel = (hit) => hit == null ? "unknown" : (hit ? "hit" : "miss");
+  const hitClass = (hit) => hit == null ? "is-light" : (hit ? "is-success is-light" : "is-warning is-light");
+  const cxLine = (label, target, actual, hit) => {
+    if (!target && !actual) return "";
+    return `<div class="small">${label} <b>${escapeHtml(target || "?")}</b> vs inferred <b>${escapeHtml(actual || "?")}</b> <span class="tag ${hitClass(hit)}">${hitLabel(hit)}</span></div>`;
+  };
+  return `<section class="detail-plan">
+    <h3>Plan vs actual</h3>
+    ${cxLine("Target time", r.target_time, r.inferred_time, r.complexity_time_hit)}
+    ${cxLine("Target space", r.target_space, r.inferred_space, r.complexity_space_hit)}
+    ${planned.length ? `<p class="small"><b>Planned edge cases:</b> ${planned.map((c) => `<span class="tag">${escapeHtml(c)}</span>`).join(" ")}</p>` : ""}
+    <p class="small"><b>Edge-case status:</b> ${escapeHtml(r.edge_case_summary || r.edge_case_status || "unknown")}</p>
+  </section>`;
+}
+
 async function openDetail(attemptId) {
   $("#detail-body").innerHTML = loader("Loading attempt…");
   $("#detail-modal").classList.remove("hidden");
@@ -1298,7 +1650,8 @@ async function openDetail(attemptId) {
       ${a.predicted_category ? `<p><b>Your prediction:</b> ${escapeHtml(a.predicted_category)}</p>` : ""}
       ${a.approach || a.predicted_approach ? `<p><b>Why:</b> ${escapeHtml(a.approach || a.predicted_approach)}</p>` : ""}
       <p><b>Verdict:</b> <span class="pred-${escapeHtml(verdict)}">${escapeHtml(verdict)}</span></p>
-      ${e.prediction_note ? `<p><b>Note:</b> ${escapeHtml(e.prediction_note)}</p>` : ""}`;
+      ${e.prediction_note ? `<p><b>Note:</b> ${escapeHtml(e.prediction_note)}</p>` : ""}
+      ${planReconciliationHtml(a)}`;
     $("#detail-body").innerHTML = body;
     $("#detail-modal").classList.remove("hidden");
     return;
@@ -1318,6 +1671,8 @@ async function openDetail(attemptId) {
     ${e.pattern_used ? `<p><b>Pattern used:</b> ${escapeHtml(e.pattern_used)} ${e.complexity_verdict && e.complexity_verdict !== "match" ? `<span class="warn-chip">${escapeHtml(e.complexity_verdict.replace("_", " "))}</span>` : ""}</p>` : ""}
     ${tags.length ? `<p><b>Mistakes:</b> ${tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
     ${e.diff_summary ? `<p><b>Since last time:</b> ${escapeHtml(e.diff_summary)}</p>` : ""}
+    ${planReconciliationHtml(a)}
+    ${detailGradeHtml(a)}
     ${a.code ? `<pre class="code">${escapeHtml(a.code)}</pre>` : `<p class="small">No stored code for this attempt.</p>`}`;
   $("#detail-body").innerHTML = body;
   $("#detail-modal").classList.remove("hidden");
@@ -1392,17 +1747,59 @@ async function startApp() {
   // /today in parallel with the rest.
   render("today");
   await Promise.all([
+    loadAppMeta(),
     loadOverview(),
-    loadCategories(),
     refreshActive(),
     refreshPending(),
   ]);
   if (llmEnabled) runSweep();
 }
 
+function formatUpdatedAt(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+async function loadAppMeta() {
+  try {
+    appMeta = await api("/me");
+    renderUserChip();
+  } catch (e) { /* auth errors are handled by api(); keep the header usable */ }
+}
+
+function renderUserChip() {
+  const updated = formatUpdatedAt(appMeta && appMeta.code_updated_at && appMeta.code_updated_at.iso);
+  const updatedHtml = updated
+    ? `<span class="last-updated" title="${escapeHtml(updated)}">Updated ${escapeHtml(updated)}</span>`
+    : "";
+  // Under Access the edge owns the session, so signing out is a link to
+  // Cloudflare's logout endpoint rather than a Firebase call — the SDK is not
+  // even on the page in that mode.
+  const identity = ACCESS ? "Cloudflare Access" : (userEmail || "local mode");
+  const signout = ACCESS
+    ? '<a class="button is-ghost is-small" href="/cdn-cgi/access/logout">Sign out</a>'
+    : userEmail
+      ? '<button id="btn-signout" class="button is-ghost is-small">Sign out</button>'
+      : "";
+  $("#user-chip").innerHTML = `
+    ${updatedHtml}
+    <span class="small user-identity">${escapeHtml(identity)}</span>
+    ${signout}`;
+  const btn = $("#btn-signout");
+  if (btn) btn.addEventListener("click", () => firebase.auth().signOut());
+}
+
 function showUserChip(email) {
-  $("#user-chip").innerHTML = `<span class="small">${email}</span> <button id="btn-signout" class="button is-ghost is-small">Sign out</button>`;
-  $("#btn-signout").addEventListener("click", () => firebase.auth().signOut());
+  userEmail = email || "";
+  renderUserChip();
 }
 
 // expose for views.js
@@ -1415,10 +1812,7 @@ window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOv
 function boot() {
   if (LOCAL || ACCESS) {
     hideSignIn();
-    $("#user-chip").innerHTML = ACCESS
-      ? '<span class="small">Cloudflare Access</span> '
-        + '<a class="button is-ghost is-small" href="/cdn-cgi/access/logout">Sign out</a>'
-      : '<span class="small">local mode</span>';
+    renderUserChip();
     startApp();
     return;
   }

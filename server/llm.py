@@ -16,7 +16,7 @@ mode, validates against the schema, and hands back a plain dict.
 import asyncio
 import json
 import logging
-from typing import Callable, Literal, Optional
+from typing import Annotated, Callable, Literal, Optional
 
 import httpx
 from pydantic import BaseModel, Field
@@ -30,6 +30,7 @@ MISTAKE_TAGS = [
     "wrong_ds", "tle", "impl_bug", "syntax",
 ]
 COMPLEXITIES = ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)", "O(n^3)", "O(2^n)", "O(n!)"]
+ShortText = Annotated[str, Field(max_length=80)]
 
 
 # ---- response schemas -----------------------------------------------------------
@@ -45,6 +46,14 @@ class PredictionResult(BaseModel):
     note: str = ""
 
 
+class PlanCritiqueResult(BaseModel):
+    pattern_verdict: Literal["plausible", "unclear", "risky", "unknown"] = "unknown"
+    complexity_verdict: Literal["realistic", "optimistic", "pessimistic", "unknown"] = "unknown"
+    missing_edge_cases: list[ShortText] = Field(default_factory=list, max_length=3)
+    nudges: list[ShortText] = Field(default_factory=list, max_length=3)
+    overall_verdict: Literal["ready", "revise", "unknown"] = "unknown"
+
+
 class CodeAnalysis(BaseModel):
     pattern_used: str = ""
     inferred_time: str = ""
@@ -54,17 +63,20 @@ class CodeAnalysis(BaseModel):
 
 
 class RecallResult(BaseModel):
-    grade: int = Field(0, ge=0, le=3, description="0 blank, 1 vague, 2 mostly, 3 complete")
-    key_ideas_hit: list[str] = Field(default_factory=list)
-    key_ideas_missed: list[str] = Field(default_factory=list)
-    feedback: str = ""
+    grade: int = Field(0, ge=0, le=3, description="0 blank/no valid method, 1 vague gist, 2 valid-but-suboptimal or missing the crucial trick, 3 optimal approach incl. trick")
+    optimal: bool = Field(False, description="true only if they recalled the canonical optimal approach")
+    analysis: str = Field("", description="1-2 sentence read of the recall; ALWAYS fill this, even for a flawless recall")
+    positives: list[str] = Field(default_factory=list, description="what they recalled correctly, as concepts; at least one item for any non-blank answer")
+    negatives: list[str] = Field(default_factory=list, description="gaps or the better/target approach to learn; empty ONLY for a flawless optimal recall")
 
 
 class SolutionGrade(BaseModel):
     score: int = Field(0, ge=0, le=5, description="1 barely works … 5 optimal & clean")
     optimal: bool = False
-    analysis: str = ""  # detailed read of the approach + complexity
-    improvements: list[str] = Field(default_factory=list)  # empty when already optimal
+    analysis: str = ""  # 1-2 sentence summary of the submitted solution's quality
+    positives: list[str] = Field(default_factory=list)
+    negatives: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)  # legacy alias for negatives
     inferred_time: str = ""
     inferred_space: str = ""
 
@@ -140,6 +152,27 @@ TASKS: dict[str, Task] = {
             f"Actual pattern used (from their code): {p.get('pattern_used') or p.get('category')}"
         ),
     ),
+    "critique_plan": Task(
+        PlanCritiqueResult,
+        "You are an advisory pre-code plan reviewer for coding-interview practice. "
+        "Judge whether the user's stated plan is plausible, whether their stated "
+        "complexity target is realistic, and which broad edge-case categories seem "
+        "unstated. STRICT NO-SOLUTION-LEAK RULE: do not reveal the algorithm, "
+        "step-by-step solution, code, pseudocode, decisive trick, invariant, or a "
+        "canonical pattern/category unless the user already stated it. Do not "
+        "correct the plan by giving the missing approach. Nudges must be questions "
+        "or checks the user can answer from their own plan. Keep every string under "
+        "12 words. Return at most 3 missing_edge_cases and at most 3 nudges.",
+        lambda p: (
+            f"Problem metadata: {p.get('title')} ({p.get('difficulty')}, "
+            f"{p.get('category')}). Slug: {p.get('slug')}.\n"
+            f"User predicted pattern: {p.get('predicted_category') or '(none)'}\n"
+            f"User approach: {p.get('predicted_approach') or '(none)'}\n"
+            f"Target complexity: time={p.get('complexity_target_time') or '?'}, "
+            f"space={p.get('complexity_target_space') or '?'}.\n"
+            f"Planned edge cases: {json.dumps(p.get('planned_edge_cases') or [])}"
+        ),
+    ),
     "analyze_code": Task(
         CodeAnalysis,
         "You analyze an accepted solution. Identify the algorithmic pattern used, "
@@ -159,30 +192,51 @@ TASKS: dict[str, Task] = {
         "clarity, comparing against the canonical optimal approach. Score 5 only if "
         "the complexity is optimal AND the code is clean/idiomatic; 3-4 for a correct "
         "but suboptimal or messy solution; 1-2 for brute force or hard-to-read code. "
-        "Set optimal=true only when time & space match the canonical optimum. When "
-        "not optimal, list concrete, specific improvements (fewer passes, better data "
-        "structure, drop the extra space, etc.); leave improvements empty when it is "
-        "already optimal. analysis: a tight but detailed read of the approach and its "
-        "time/space. Also infer the solution's actual time/space complexity.",
+        "Set optimal=true only when time & space match the canonical optimum. Keep "
+        "analysis to one or two concise sentences about the submitted solution's "
+        "quality, not a walkthrough. Put concise bullets in positives and negatives; "
+        "negatives should be empty when there are no meaningful issues. Also infer "
+        "the solution's actual time/space complexity.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
             f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
             f"Canonical optimal complexity: time={p.get('canon_time') or '?'}, "
             f"space={p.get('canon_space') or '?'}.\n"
+            f"Self-assessment: confidence={p.get('self_confidence') or '?'}, "
+            f"independence={p.get('self_independence') or '?'}.\n"
+            f"Solver note: {p.get('self_note') or '(none)'}\n"
+            f"Solver stated approach: {p.get('self_approach') or '(none)'}\n"
             f"Solver claimed time={p.get('claim_time') or '?'}, space={p.get('claim_space') or '?'}.\n"
             f"--- their accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
         ),
     ),
     "grade_recall": Task(
         RecallResult,
-        "You grade a from-memory recall of how to solve a problem the solver has "
-        "seen before. Compare against their own past solution and the canonical "
-        "approach. grade: 0 blank/wrong, 1 vague gist, 2 mostly there, 3 complete "
-        "incl. the key trick. List concrete ideas hit and missed. Feedback <25 words.",
+        "You grade a from-memory recall of the METHOD for a problem the solver has "
+        "seen before. This is a NO-CODE exercise — grade the approach's gist, not "
+        "an implementation; IGNORE pseudocode syntax, variable names, and off-by-one "
+        "/ boundary bugs — they were told not to write code. A correct method that "
+        "actually solves the problem EARNS CREDIT even when it is not the canonical "
+        "optimal one; do NOT zero a valid alternative just because you expected a "
+        "different approach. grade: 0 only for a blank answer or a method that would "
+        "not produce correct results; 1 vague gist; 2 a valid method that solves it "
+        "but is suboptimal, OR the right approach missing its crucial trick; 3 the "
+        "optimal approach WITH its crucial trick. Set optimal=true only when they "
+        "recalled the canonical optimal approach. Write a 1-2 sentence analysis. In "
+        "positives, credit what they got right as CONCEPTS (the working idea, a "
+        "valid alternative approach, correct complexity). In negatives, name the "
+        "gaps as CONCEPTS — and when their method is valid but suboptimal, describe "
+        "the better/target approach and its key trick so they can learn it. ALWAYS "
+        "write the analysis and at least one positive for any non-blank answer — a "
+        "flawless 3/3 still gets its strengths named; leave negatives empty only "
+        "when the recall is already the optimal approach with nothing to add. Use "
+        "the canonical ideas and their past solution ONLY to identify the intended "
+        "method, never as text to reproduce.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('category')}).\n"
-            f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
-            f"Their past accepted approach (code):\n{_trunc(p.get('past_code'), 1200)}\n"
+            f"Canonical optimal key ideas: {p.get('canonical') or '(unknown)'}\n"
+            f"Their own past solution (reference only, to identify the intended "
+            f"method — do NOT grade its syntax):\n{_trunc(p.get('past_code'), 1200)}\n"
             f"--- their recall now ---\n{p.get('recall_text')}\n"
             f"Stated complexity: time={p.get('recall_time') or '?'}, space={p.get('recall_space') or '?'}"
         ),

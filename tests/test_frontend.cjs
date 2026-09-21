@@ -12,7 +12,14 @@ function app(fetch) {
   const node = (selector) => {
     if (!nodes.has(selector)) nodes.set(selector, {
       value: '', disabled: false, innerHTML: '', dataset: {}, listeners: {},
-      classList: { add() {}, remove() {}, toggle() {} },
+      // contains() answers false because the stub never hides anything, and
+      // querySelectorAll() answers empty because no node here has children:
+      // enough for code that decorates rendered markup to run without one.
+      classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+      querySelectorAll: () => [],
+      // No ancestors in a flat stub, so the callers that decorate a field's
+      // wrapper simply find nothing to decorate.
+      closest: () => null,
       addEventListener(event, handler) { this.listeners[event] = handler; },
     });
     return nodes.get(selector);

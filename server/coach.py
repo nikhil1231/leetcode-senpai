@@ -97,9 +97,9 @@ async def grade_prediction(store, slug, predicted_category, predicted_approach=N
 async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=None):
     """Grade an approach-recall against the user's past code + canonical ideas.
 
-    Returns (result, error): result is a dict {grade, key_ideas_hit,
-    key_ideas_missed, feedback} or None; error is a human-readable reason when
-    the grade could not be produced. When the LLM is disabled both are None
+    Returns (result, error): result is a dict {grade, optimal, analysis,
+    positives, negatives} or None; error is a human-readable reason when the
+    grade could not be produced. When the LLM is disabled both are None
     (caller falls back to manual self-grade).
     """
     settings = store.get_settings()
@@ -117,11 +117,13 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
     }, settings=settings)
 
 
-async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_space=None):
+async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_space=None,
+                         self_confidence=None, self_independence=None, self_note=None,
+                         self_approach=None):
     """Grade an accepted solution's code against the canonical optimal approach.
 
     Returns (result, error): result is a dict {score, optimal, analysis,
-    improvements, inferred_time, inferred_space} or None; error is a
+    positives, negatives, inferred_time, inferred_space} or None; error is a
     human-readable reason when no grade could be produced. When the LLM is
     disabled both are None (the solve is already logged and scheduled).
     """
@@ -138,6 +140,10 @@ async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_sp
         "canon_space": (canonical or {}).get("space"),
         "code": code, "lang": lang,
         "claim_time": claim_time, "claim_space": claim_space,
+        "self_confidence": self_confidence,
+        "self_independence": self_independence,
+        "self_note": self_note,
+        "self_approach": self_approach,
     })
 
 

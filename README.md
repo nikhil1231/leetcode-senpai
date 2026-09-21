@@ -15,14 +15,13 @@ submissions — no browser extension.
   (like-ratio + vote thresholds). Smart expansion suggests the next great
   problem when you clear a topic.
 - **Coaching layer (OpenAI GPT-5.6 Luna by default, Gemini optional)** — classifies what went wrong,
-  grades your up-front pattern predictions, generates per-problem hint ladders,
-  grades from-memory recall against your own past code, writes a weekly report
-  and per-topic playbooks. All off the critical path; degrades gracefully with
-  no API key.
-- **Pattern-recognition training** — predict the pattern before you start;
-  approach-recall reviews instead of full re-solves for short-interval cards.
+  generates per-problem hint ladders, grades from-memory recall against your own
+  past code, writes a weekly report and per-topic playbooks. All off the
+  critical path; degrades gracefully with no API key.
+- **Pattern-recognition training**: pattern sprints and approach-recall reviews
+  instead of full re-solves for short-interval cards.
 - **Insights** — review forecast, mastery radar (now vs 30 days ago), pace
-  projection, time-to-solve trends, failure-mode breakdown, prediction accuracy.
+  projection, time-to-solve trends, failure-mode breakdown, mock score trend.
 - **Mock interviews + gamification** — weekly 3-problem timed gauntlet with a
   score trend; weekly goals, daily XP, mastery moments.
 - **FSRS** scheduler (swappable back to SM-2 via `SCHEDULER=sm2`).

@@ -18,6 +18,28 @@
     return `<div class="chart-bars">${rows}</div>`;
   }
 
+  // Grouped horizontal bars: data = [{label, values:[{label, value, color}], hint, meta}].
+  function groupedBars(data, opts = {}) {
+    if (!data.length) return `<p class="empty">No data yet.</p>`;
+    const max = opts.max || Math.max(...data.flatMap((d) => d.values.map((v) => v.value)), 1);
+    const rows = data.map((d) => {
+      const bars = d.values.map((v) => {
+        const w = Math.round((v.value / max) * 100);
+        return `<span class="chart-group-item" title="${esc(v.label)} ${esc(v.display != null ? v.display : v.value)}">
+          <span class="chart-group-name">${esc(v.label)}</span>
+          <span class="chart-bar-track"><span class="chart-bar-fill" style="width:${w}%;background:${v.color || "var(--accent)"}"></span></span>
+          <span class="chart-bar-val">${esc(v.display != null ? v.display : v.value)}</span>
+        </span>`;
+      }).join("");
+      return `<div class="chart-group-row" title="${esc(d.hint || "")}">
+        <span class="chart-bar-label">${esc(d.label)}</span>
+        <span class="chart-group-bars">${bars}</span>
+        <span class="chart-group-meta">${d.meta || ""}</span>
+      </div>`;
+    }).join("");
+    return `<div class="chart-bars chart-grouped">${rows}</div>`;
+  }
+
   // Forecast strip: counts = [n...] over `days` days from start (ISO).
   function forecast(fc) {
     if (!fc || !fc.counts) return "";
@@ -88,5 +110,5 @@
       ${paths}</svg><div class="legend small">${legend}</div>`;
   }
 
-  window.Charts = { bars, forecast, radar, lines };
+  window.Charts = { bars, groupedBars, forecast, radar, lines };
 })();

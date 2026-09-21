@@ -37,6 +37,9 @@ class FakeStore:
         existing = self.problems.get(doc["slug"], {})
         self.problems[doc["slug"]] = {**existing, **doc}
 
+    def delete_problem(self, slug):
+        self.problems.pop(slug, None)
+
     # attempts
     def list_attempts(self):
         return [dict(a) for a in self.attempts.values()]
@@ -76,6 +79,9 @@ class FakeStore:
     def upsert_review(self, slug, doc):
         self.reviews[slug] = {**doc, "slug": slug}
 
+    def delete_review(self, slug):
+        self.reviews.pop(slug, None)
+
     # sessions
     def get_session(self, sid):
         s = self.sessions.get(sid)
@@ -98,10 +104,15 @@ class FakeStore:
         if sid in self.sessions:
             self.sessions[sid].update(fields)
 
-    def cancel_active_sessions(self):
+    def cancel_active_sessions(self, slug=None):
+        cancelled = 0
         for s in self.sessions.values():
             if s.get("status") == "active":
+                if slug and s.get("slug") != slug:
+                    continue
                 s["status"] = "cancelled"
+                cancelled += 1
+        return cancelled
 
     # enrichments
     def get_enrichment(self, attempt_id):

@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (auth, coach, config, enrich, gamify, importer, insights,
-               leetcode, llm, mock, packs, poller, scheduler)
+               leetcode, llm, mock, neetcode150, packs, poller, scheduler)
 from . import store as store_mod
 from .store import get_store
 
@@ -57,6 +57,18 @@ class StartSession(BaseModel):
     kind: str = "adhoc"
     predicted_category: str | None = None
     predicted_approach: str | None = None
+    complexity_target_time: str | None = None
+    complexity_target_space: str | None = None
+    planned_edge_cases: list[str] = Field(default_factory=list)
+
+
+class PlanCritiqueRequest(BaseModel):
+    slug: str
+    predicted_category: str | None = None
+    predicted_approach: str | None = None
+    complexity_target_time: str | None = None
+    complexity_target_space: str | None = None
+    planned_edge_cases: list[str] = Field(default_factory=list)
 
 
 class PauseSession(BaseModel):
@@ -139,6 +151,10 @@ class ImportProblem(BaseModel):
     slug: str
 
 
+class DeleteProblem(BaseModel):
+    confirm_slug: str
+
+
 class HistoryOpts(BaseModel):
     limit: int = 20
 
@@ -186,11 +202,8 @@ def _effective_tags(e):
 # can still be annotated from there.
 PENDING_MAX_AGE_SEC = 12 * 3600
 
-# Auto-grade only genuinely fresh solves; older un-graded solves can still be
-# graded on demand from the modal.
-RECENT_SOLVE_WINDOW_SEC = 120
 # Bump to re-generate stored solution grades after a prompt/schema change.
-SOLUTION_PROMPT_VERSION = 1
+SOLUTION_PROMPT_VERSION = 2
 DRILL_CACHE_FLAG = "pattern_sprint_drills"
 DRILL_CACHE_TARGET = 3
 
@@ -203,6 +216,8 @@ def _pending(store):
         if a.get("kind") in ("recall", "sprint") or a.get("source") in ("recall", "sprint"):
             continue
         if a.get("confidence") is not None or a.get("source") == "backfill":
+            continue
+        if a.get("annotation_dismissed_at"):
             continue
         if (a.get("solved_at") or 0) < cutoff:
             continue
@@ -220,6 +235,65 @@ def _today_iso():
     return dt.date.today().isoformat()
 
 
+def _is_sprint_attempt(a):
+    return a.get("kind") == "sprint" or a.get("source") == "sprint"
+
+
+def _problem_mastery_state(attempt_count, review, today):
+    if review.get("leech"):
+        return "leech"
+    due_date = review.get("due_date")
+    if attempt_count == 0:
+        return "unattempted"
+    if due_date and due_date <= today:
+        return "review_due"
+    if due_date:
+        return "reviewing"
+    return "learning"
+
+
+def _problem_due_status(review, today):
+    due_date = review.get("due_date")
+    if not due_date:
+        return "unscheduled"
+    return "due" if due_date <= today else "upcoming"
+
+
+def _problem_sort_key(sort):
+    difficulty_order = {"Easy": 0, "Medium": 1, "Hard": 2}
+
+    def number_key(p):
+        return (p.get("frontend_id") is None, p.get("frontend_id") or 9999,
+                p.get("title", "").lower(), p.get("slug", ""))
+
+    if sort == "title":
+        return lambda p: (p.get("title", "").lower(), number_key(p))
+    if sort == "difficulty":
+        return lambda p: (difficulty_order.get(p.get("difficulty"), 99), number_key(p))
+    if sort == "due_date":
+        return lambda p: (p.get("due_date") is None, p.get("due_date") or "", number_key(p))
+    if sort == "last_attempt":
+        return lambda p: (p.get("last_attempt_at") is None,
+                          -(p.get("last_attempt_at") or 0), number_key(p))
+    if sort == "attempts":
+        return lambda p: (-p.get("attempt_count", 0), number_key(p))
+    return number_key
+
+
+def _facet_rows(counts, order):
+    indexed = {value: i for i, value in enumerate(order)}
+    return [
+        {"value": value, "count": count}
+        for value, count in sorted(
+            counts.items(),
+            key=lambda item: (
+                indexed.get(item[0], len(indexed)),
+                item[0].lower(),
+            ),
+        )
+    ]
+
+
 def _drill_exclude_slugs(store, queue):
     exclude = {
         item["slug"] for item in queue.get("reviews", []) + queue.get("new", [])
@@ -231,6 +305,12 @@ def _drill_exclude_slugs(store, queue):
     for item in _pending(store):
         if item.get("slug"):
             exclude.add(item["slug"])
+    # Recently-drilled problems are on cooldown — keep them out of the cached drill
+    # lane too, so a just-completed drill can't linger for the rest of the day.
+    settings = store.get_settings()
+    recent_drills = [a for a in store.list_attempts() if a.get("kind") == "drill"]
+    exclude |= scheduler._recently_attempted_slugs(
+        recent_drills, dt.date.today(), settings.get("drill_cooldown_days", 7))
     return exclude
 
 
@@ -333,6 +413,8 @@ async def _grade_solution(store, attempt):
         graded, err = await coach.grade_solution(
             store, attempt["slug"], code, attempt.get("lang"),
             attempt.get("complexity_time"), attempt.get("complexity_space"),
+            attempt.get("confidence"), attempt.get("independence"),
+            attempt.get("mistake_note"), attempt.get("approach"),
         )
     except Exception as exc:  # defensive; coach already swallows LLM errors
         graded, err = None, str(exc)
@@ -343,18 +425,13 @@ async def _grade_solution(store, attempt):
         })
         return {"grading_status": "failed", "graded": None,
                 "grading_error": err or "grading returned no result"}
+    if graded.get("negatives") and not graded.get("improvements"):
+        graded = {**graded, "improvements": graded.get("negatives") or []}
     store.update_attempt(attempt["id"], {
         "solution_grade": {**graded, "prompt_version": SOLUTION_PROMPT_VERSION},
         "solution_grading_status": "viewed", "solution_grading_error": None,
     })
     return {"grading_status": "viewed", "graded": graded, "grading_error": None}
-
-
-async def _grade_solution_bg(uid, attempt_id):
-    store = get_store(uid)
-    attempt = store.get_attempt(attempt_id)
-    if attempt:
-        await _grade_solution(store, attempt)
 
 
 async def _prep_problem_bg(uid, slug):
@@ -562,7 +639,42 @@ def api_insights(uid: str = Depends(auth.require_user)):
     return insights.build(get_store(uid))
 
 
+@app.get("/api/failure-mode/{tag}")
+def api_failure_mode(tag: str, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    pm = _problem_map(store)
+    em = _enrichment_map(store)
+    attempts = insights.failure_mode_attempts(
+        tag, list(pm.values()), store.list_attempts(), list(em.values()))
+    return {"tag": tag, "attempts": attempts}
+
+
 # ---- sessions -------------------------------------------------------------------
+@app.post("/api/session/plan-critique")
+async def api_session_plan_critique(body: PlanCritiqueRequest,
+                                    uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    settings = store.get_settings()
+    if not llm.enabled(settings):
+        return {"ok": True, "llm": False, "critique": None}
+
+    prob = store.get_problem(body.slug)
+    if not prob:
+        raise HTTPException(404, "unknown problem")
+    critique = await llm.extract("critique_plan", {
+        "slug": body.slug,
+        "title": prob.get("title", body.slug),
+        "category": prob.get("neetcode_category") or prob.get("category"),
+        "difficulty": prob.get("difficulty"),
+        "predicted_category": body.predicted_category,
+        "predicted_approach": body.predicted_approach,
+        "complexity_target_time": body.complexity_target_time,
+        "complexity_target_space": body.complexity_target_space,
+        "planned_edge_cases": body.planned_edge_cases[:3],
+    }, settings=settings)
+    return {"ok": True, "llm": True, "critique": critique}
+
+
 @app.post("/api/session/start")
 def api_session_start(body: StartSession, bg: BackgroundTasks,
                       uid: str = Depends(auth.require_user)):
@@ -578,6 +690,9 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "paused_at": None, "paused_sec": 0,
         "predicted_category": body.predicted_category,
         "predicted_approach": body.predicted_approach,
+        "complexity_target_time": body.complexity_target_time,
+        "complexity_target_space": body.complexity_target_space,
+        "planned_edge_cases": body.planned_edge_cases,
     })
     if llm.enabled(store.get_settings()):
         bg.add_task(_prep_problem_bg, uid, body.slug)
@@ -663,16 +778,6 @@ async def api_poll(bg: BackgroundTasks, uid: str = Depends(auth.require_user),
     store = get_store(uid)
     username = store.get_settings().get("username")
     new_ids = await poller.check_active_sessions(store, username, lc)
-    # Kick off solution grading for freshly-detected solves, off the critical
-    # path. Only genuinely recent solves with code are auto-graded; the submission
-    # dedup in the poller guarantees each solve is graded at most once.
-    if llm.enabled():
-        now = time.time()
-        for aid in new_ids:
-            a = store.get_attempt(aid)
-            if (a and a.get("code")
-                    and (a.get("solved_at") or 0) >= now - RECENT_SOLVE_WINDOW_SEC):
-                bg.add_task(_grade_solution_bg, uid, aid)
     return {"new_attempts": new_ids, "pending": _pending(store)}
 
 
@@ -732,17 +837,29 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
 
 @app.post("/api/attempt/{attempt_id}/grade-solution")
 async def api_grade_solution(attempt_id: str, uid: str = Depends(auth.require_user)):
-    """On-demand solution grading — used by the modal to grade a solve that wasn't
+    """On-demand solution grading - used by the modal to grade a solve that wasn't
     auto-graded (stale) or to retry after a failure. Awaits the LLM synchronously
     like recall grading so the modal can render the result immediately."""
     store = get_store(uid)
     attempt = store.get_attempt(attempt_id)
     if not attempt:
         raise HTTPException(404, "no such attempt")
+    if attempt.get("confidence") is None or attempt.get("independence") is None:
+        raise HTTPException(400, "self-assessment is required before solution grading")
     result = await _grade_solution(store, attempt)
     return {"ok": True, **result}
 
 
+@app.post("/api/attempt/{attempt_id}/dismiss-annotation")
+def api_dismiss_annotation(attempt_id: str, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt:
+        raise HTTPException(404, "no such attempt")
+    if attempt.get("kind") == "recall" or attempt.get("source") == "recall":
+        raise HTTPException(400, "recalls do not use solved annotations")
+    store.update_attempt(attempt_id, {"annotation_dismissed_at": int(time.time())})
+    return {"ok": True}
 @app.post("/api/attempt/manual")
 def api_manual(body: ManualAttempt, bg: BackgroundTasks, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
@@ -785,9 +902,11 @@ def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
     if not a:
         raise HTTPException(404, "no such attempt")
     prob = store.get_problem(a["slug"]) or {}
+    enrichment = store.get_enrichment(attempt_id)
     return {**a, "title": prob.get("title"), "difficulty": prob.get("difficulty"),
             "neetcode_category": prob.get("neetcode_category"), "url": prob.get("url"),
-            "enrichment": store.get_enrichment(attempt_id)}
+            "enrichment": enrichment,
+            "plan_reconciliation": insights.reconcile_plan(a, enrichment)}
 
 
 @app.get("/api/history")
@@ -1225,26 +1344,113 @@ async def api_recall_clarify(attempt_id: str, body: RecallClarify,
 
 
 # ---- problems + discover --------------------------------------------------------
-@app.get("/api/problems")
-def api_problems(search: str = "", category: str = "", uid: str = Depends(auth.require_user)):
+@app.get("/api/problems/facets")
+def api_problem_facets(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
-    reviews = {r["slug"]: r for r in store.list_reviews()}
-    counts = {}
-    for a in store.list_attempts():
-        counts[a["slug"]] = counts.get(a["slug"], 0) + 1
-    out = []
+    categories = {}
+    difficulties = {}
+    total = 0
     for p in store.list_problems():
         if not scheduler._in_library(p):
             continue
-        if search and search.lower() not in p.get("title", "").lower():
+        total += 1
+        category = p.get("neetcode_category")
+        if category:
+            categories[category] = categories.get(category, 0) + 1
+        difficulty = p.get("difficulty")
+        if difficulty:
+            difficulties[difficulty] = difficulties.get(difficulty, 0) + 1
+    return {
+        "categories": _facet_rows(categories, neetcode150.CATEGORY_ORDER),
+        "difficulties": _facet_rows(difficulties, ["Easy", "Medium", "Hard"]),
+        "total": total,
+    }
+
+
+@app.get("/api/problems")
+def api_problems(search: str = "", category: str = "", difficulty: str = "",
+                 due_status: str = "all", leech: str = "all",
+                 attempted: str = "all", sort: str = "number",
+                 uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    today = _today_iso()
+    reviews = {r["slug"]: r for r in store.list_reviews()}
+    counts = {}
+    latest = {}
+    for a in store.list_attempts():
+        if _is_sprint_attempt(a):
             continue
+        slug = a.get("slug")
+        if not slug:
+            continue
+        counts[slug] = counts.get(slug, 0) + 1
+        ts = a.get("solved_at")
+        if ts is not None and (latest.get(slug) is None or ts > latest[slug]):
+            latest[slug] = ts
+    out = []
+    q = search.strip().lower()
+    for p in store.list_problems():
+        if not scheduler._in_library(p):
+            continue
+        slug = p.get("slug")
+        r = reviews.get(slug, {})
+        attempt_count = counts.get(slug, 0)
+        row = {
+            **p, "attempt_count": attempt_count,
+            "due_date": r.get("due_date"), "leech": r.get("leech"),
+            "last_attempt_at": latest.get(slug),
+            "mastery_state": _problem_mastery_state(attempt_count, r, today),
+        }
+        if q:
+            haystack = (
+                p.get("title", ""), p.get("slug", ""),
+                str(p.get("frontend_id") or ""),
+            )
+            if not any(q in str(part).lower() for part in haystack):
+                continue
         if category and p.get("neetcode_category") != category:
             continue
-        r = reviews.get(p["slug"], {})
-        out.append({**p, "attempt_count": counts.get(p["slug"], 0),
-                    "due_date": r.get("due_date"), "leech": r.get("leech")})
-    out.sort(key=lambda p: p.get("frontend_id") or 9999)
+        if difficulty and p.get("difficulty") != difficulty:
+            continue
+        if due_status in {"due", "upcoming", "unscheduled"}:
+            if _problem_due_status(r, today) != due_status:
+                continue
+        if leech == "only" and not r.get("leech"):
+            continue
+        if leech == "exclude" and r.get("leech"):
+            continue
+        if attempted == "attempted" and attempt_count == 0:
+            continue
+        if attempted == "unattempted" and attempt_count > 0:
+            continue
+        out.append(row)
+    out.sort(key=_problem_sort_key(sort))
     return out
+
+
+@app.delete("/api/problem/{slug}")
+def api_delete_problem(slug: str, body: DeleteProblem, uid: str = Depends(auth.require_user)):
+    if body.confirm_slug != slug:
+        raise HTTPException(400, "confirmation slug did not match")
+    store = get_store(uid)
+    problem = store.get_problem(slug)
+    if not problem:
+        raise HTTPException(404, "unknown problem")
+    attempts = store.attempts_for_slug(slug)
+    if attempts:
+        raise HTTPException(409, "problem has attempts; not deleting solve history")
+
+    had_review = bool(store.get_review(slug))
+    store.delete_problem(slug)
+    store.delete_review(slug)
+    cancelled_sessions = store.cancel_active_sessions(slug=slug)
+    return {
+        "ok": True,
+        "slug": slug,
+        "title": problem.get("title", slug),
+        "deleted_review": had_review,
+        "cancelled_sessions": cancelled_sessions,
+    }
 
 
 @app.get("/api/problem/{slug}/recall-context")
@@ -1426,7 +1632,8 @@ def api_me(uid: str = Depends(auth.require_user)):
     selected = llm.current_model(settings)
     return {"uid": uid, "local_mode": config.local_mode(),
             "auth_mode": config.AUTH_MODE, "llm_enabled": selected["enabled"],
-            "llm_provider": selected["provider"], "llm_model": selected["model"]}
+            "llm_provider": selected["provider"], "llm_model": selected["model"],
+            "code_updated_at": code_updated_at()}
 
 
 @app.get("/api/health")
@@ -1439,6 +1646,26 @@ def api_health():
 
 # ---- static frontend ------------------------------------------------------------
 _VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js")
+_CODE_UPDATED_DIRS = ("server", "static")
+_CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
+
+
+def code_updated_at():
+    latest = 0.0
+    for dirname in _CODE_UPDATED_DIRS:
+        root_dir = os.path.join(ROOT, dirname)
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+            for filename in filenames:
+                if os.path.splitext(filename)[1] not in _CODE_UPDATED_EXTS:
+                    continue
+                path = os.path.join(dirpath, filename)
+                try:
+                    latest = max(latest, os.path.getmtime(path))
+                except OSError:
+                    continue
+    updated = dt.datetime.fromtimestamp(latest or time.time(), dt.timezone.utc)
+    return {"iso": updated.isoformat(), "epoch": int(updated.timestamp())}
 
 
 def asset_version():
