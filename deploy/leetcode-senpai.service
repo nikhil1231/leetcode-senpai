@@ -4,9 +4,12 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# Serves the main checkout's working tree, so a deploy is a `git pull` plus a
-# restart rather than a build-and-ship.
-WorkingDirectory=%h/Documents/Programming/Learning/leetcode
+# Its own checkout, so a deploy is a `git pull` plus a restart rather than a
+# build-and-ship. Deliberately not the main checkout: that tree is where
+# ticket-runner builds `integration/leetcode-senpai`, and a live site pinned to
+# it would both show mid-build states and fight over which branch is checked
+# out. Same reasoning as the testing checkout next to it.
+WorkingDirectory=%h/Documents/Programming/Learning/leetcode-live
 ExecStart=%h/.local/bin/uv run --locked --no-dev run.py
 # Loopback only. cloudflared reaches it over localhost, so nothing on the LAN
 # or the tailnet can arrive without going through Access first. The testing

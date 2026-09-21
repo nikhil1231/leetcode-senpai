@@ -88,7 +88,28 @@ echo "Wrote $CONFIG_FILE -> http://localhost:$LOCAL_PORT"
 
 # Creates the proxied CNAME for the hostname. Safe to repeat; it updates an
 # existing record that already points at this tunnel.
-"$CLOUDFLARED" tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" || true
+#
+# --config matters. Without it cloudflared reads the default ~/.cloudflared/
+# config.yml, which on a box running a second tunnel names *that* tunnel, and
+# the record is created pointing at the wrong one.
+#
+# The hostname check matters more. When cert.pem does not cover the zone, this
+# command does not fail — it treats the hostname as a subdomain of a zone the
+# certificate *does* cover and cheerfully creates, say,
+# `leetcode.example.com.some-other-zone.net`. A silent wrong answer is worse
+# than an error, so the requested hostname has to appear in the output.
+route_output=$("$CLOUDFLARED" --config "$CONFIG_FILE" tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1 || true)
+echo "$route_output"
+if ! grep -qE "(^|[^.[:alnum:]-])${HOSTNAME//./\.}([^.[:alnum:]-]|$)" <<<"$route_output"; then
+    echo >&2
+    echo "DNS was not routed to $HOSTNAME." >&2
+    echo "Most likely ~/.cloudflared/cert.pem does not cover that zone. Either:" >&2
+    echo "  - re-run '$CLOUDFLARED tunnel login' and authorise the zone, or" >&2
+    echo "  - add the record by hand in the dashboard: CNAME $HOSTNAME ->" >&2
+    echo "    $UUID.cfargotunnel.com, proxied." >&2
+    echo "Check for a stray record before retrying." >&2
+    exit 1
+fi
 
 UNIT_DIR=$HOME/.config/systemd/user
 mkdir -p "$UNIT_DIR"
