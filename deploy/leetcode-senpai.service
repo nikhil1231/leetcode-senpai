@@ -1,5 +1,5 @@
 [Unit]
-Description=Leetcode Senpai (main checkout, public via Cloudflare Tunnel)
+Description=Leetcode Senpai (live checkout, public via Cloudflare Tunnel)
 After=network-online.target
 Wants=network-online.target
 
