@@ -1424,8 +1424,17 @@ def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
 def api_me(uid: str = Depends(auth.require_user)):
     settings = get_store(uid).get_settings()
     selected = llm.current_model(settings)
-    return {"uid": uid, "local_mode": config.local_mode(), "llm_enabled": selected["enabled"],
+    return {"uid": uid, "local_mode": config.local_mode(),
+            "auth_mode": config.AUTH_MODE, "llm_enabled": selected["enabled"],
             "llm_provider": selected["provider"], "llm_model": selected["model"]}
+
+
+@app.get("/api/health")
+def api_health():
+    """Liveness for deploys and the tunnel. Deliberately unauthenticated: it
+    reveals nothing but that the process is up, and a deploy has to be able to
+    ask that question without an identity."""
+    return {"ok": True, "auth_mode": config.AUTH_MODE}
 
 
 # ---- static frontend ------------------------------------------------------------
@@ -1472,11 +1481,14 @@ async def asset_cache_headers(request, call_next):
 def index():
     with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as fh:
         html = fh.read()
-    local = config.local_mode()
+    # Only the Firebase modes need a sign-in gate, and only they need the SDK
+    # that drives it. Under Access the edge signed the caller in before the
+    # request arrived; shipping the gate anyway would mean logging in twice.
+    gate = config.signin_required()
     html = (html
             .replace("__ASSET_VER__", asset_version())
-            .replace("__FIREBASE_SDK__", "" if local else _FIREBASE_SDK)
-            .replace("__LOCAL_MODE__", "true" if local else "false"))
+            .replace("__FIREBASE_SDK__", _FIREBASE_SDK if gate else "")
+            .replace("__AUTH_MODE__", config.AUTH_MODE))
     return HTMLResponse(html)
 
 

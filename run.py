@@ -49,4 +49,7 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8000"))
     reload = os.environ.get("UVICORN_RELOAD", "true").lower() in {"1", "true", "yes"}
-    run_local(host=host, port=port, reload=reload)
+    # PORT_STRICT=1 for anything a tunnel or a reverse proxy points at: fail on a
+    # busy port rather than starting on a different one nothing is routed to.
+    strict = os.environ.get("PORT_STRICT", "").lower() in {"1", "true", "yes"}
+    run_local(host=host, port=port, reload=reload, strict=strict)

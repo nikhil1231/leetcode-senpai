@@ -48,3 +48,23 @@ def test_bind_errors_other_than_busy_are_not_retried(monkeypatch):
 def test_invalid_port_is_rejected(port):
     with pytest.raises(ValueError):
         bind_available("127.0.0.1", port)
+
+
+def test_strict_refuses_a_busy_port_instead_of_moving():
+    """A tunnel's ingress rule names one port. Landing on a different one would
+    be a 502 whose cause is invisible from the outside, so strict runs fail."""
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        with pytest.raises(OSError) as error:
+            bind_available("127.0.0.1", port, strict=True)
+        assert error.value.errno == errno.EADDRINUSE
+
+
+def test_strict_still_binds_a_free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    with bind_available("127.0.0.1", port, strict=True) as selected:
+        assert selected.getsockname()[1] == port

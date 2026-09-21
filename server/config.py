@@ -10,8 +10,9 @@ service-account key (GOOGLE_APPLICATION_CREDENTIALS) and your real DEV_UID.
 """
 import os
 
-# Auth mode: "firebase" (verify ID token + allowlist) or "local" (bypass,
-# trusted caller — used for local dev against real Firestore).
+# Auth mode: "firebase" (verify ID token + allowlist), "access" (verify the
+# Cloudflare Access assertion the edge attaches — the tunnelled deployment), or
+# "local" (bypass, trusted caller — used for local dev against real Firestore).
 AUTH_MODE = os.environ.get("AUTH_MODE", "firebase").lower()
 
 # Comma-separated allowlist of Google emails permitted to use the app.
@@ -20,6 +21,18 @@ ALLOWED_EMAILS = [
     for e in os.environ.get("ALLOWED_EMAILS", "").split(",")
     if e.strip()
 ]
+
+# ---- Cloudflare Access ----------------------------------------------------------
+# Set when the app is reached through a Cloudflare Tunnel with an Access policy
+# in front of it. The team domain and audience tag together identify which
+# application's assertions to trust; leave either unset and nothing is enforced.
+ACCESS_TEAM_DOMAIN = (os.environ.get("ACCESS_TEAM_DOMAIN") or "").strip().lower()
+ACCESS_AUD = (os.environ.get("ACCESS_AUD") or "").strip()
+
+# The Firebase uid whose Firestore data a verified Access caller reads and
+# writes. Single-user app: a verified, allow-listed email *is* this account.
+# Defaults to DEV_UID so one variable covers both non-Firebase modes.
+ACCESS_UID = os.environ.get("ACCESS_UID") or os.environ.get("DEV_UID", "local-dev")
 
 # GCP project (set automatically on Cloud Run; needed for Firestore).
 GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCLOUD_PROJECT")
@@ -85,6 +98,21 @@ DEFAULT_SETTINGS = {
 def local_mode() -> bool:
     """True when browser authentication is bypassed (AUTH_MODE=local)."""
     return AUTH_MODE == "local"
+
+
+def access_mode() -> bool:
+    """True when Cloudflare Access assertions authenticate every request."""
+    return AUTH_MODE == "access"
+
+
+def signin_required() -> bool:
+    """True when the page must render its own Google sign-in gate.
+
+    Local mode has no gate, and under Access the edge has already signed the
+    caller in before the request reaches us — a second gate would just be a
+    second login.
+    """
+    return not (local_mode() or access_mode())
 
 
 def init_firebase_admin():

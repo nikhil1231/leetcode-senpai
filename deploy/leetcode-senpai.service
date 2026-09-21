@@ -1,0 +1,28 @@
+[Unit]
+Description=Leetcode Senpai (main checkout, public via Cloudflare Tunnel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Serves the main checkout's working tree, so a deploy is a `git pull` plus a
+# restart rather than a build-and-ship.
+WorkingDirectory=%h/Documents/Programming/Learning/leetcode
+ExecStart=%h/.local/bin/uv run --locked --no-dev run.py
+# Loopback only. cloudflared reaches it over localhost, so nothing on the LAN
+# or the tailnet can arrive without going through Access first. The testing
+# checkout on :8000 is the one to use from inside the house.
+Environment=HOST=127.0.0.1
+Environment=PORT=8200
+# The tunnel's ingress rule names 8200. A server that quietly moved to 8201
+# would be a 502 with no visible cause, so a busy port is a hard failure.
+Environment=PORT_STRICT=1
+Environment=UVICORN_RELOAD=false
+# Cloudflare Access verifies the caller at the edge and the app re-verifies the
+# signed assertion. ACCESS_* and the Firestore credentials live in .env.local,
+# which run.py loads and git ignores.
+Environment=AUTH_MODE=access
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -8,6 +8,9 @@ dependencies = [
     "uvicorn[standard]==0.34.0",
     "httpx==0.28.1",
     "firebase-admin==6.6.0",
+    # Used directly by server/access.py to verify Cloudflare Access assertions.
+    # firebase-admin pulls it in too, but an import deserves its own line.
+    "pyjwt[crypto]==2.14.0",
     "google-genai==1.9.0",
     "fsrs==4.1.1",
 ]

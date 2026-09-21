@@ -1,14 +1,20 @@
 // ---- auth / mode ---------------------------------------------------------------
-// The server states this outright (AUTH_MODE=local), and in that mode it omits
-// the Firebase SDK from the page entirely. The hostname/config checks stay as a
-// fallback for a page served without the placeholder substituted.
-const LOCAL = window.LOCAL_MODE === true ||
+// The server states the mode outright, and in the two modes with no sign-in gate
+// (local, access) it omits the Firebase SDK from the page entirely. The
+// hostname/config guesses below are only a fallback for a page served without
+// the placeholder substituted — when the server did say, it is believed.
+const SERVER_AUTH_MODE = ["local", "access", "firebase"].includes(window.AUTH_MODE)
+  ? window.AUTH_MODE : null;
+// Cloudflare Access authenticated the caller at the edge; the app carries no
+// token of its own and the assertion rides along as a cookie.
+const ACCESS = SERVER_AUTH_MODE === "access";
+const LOCAL = SERVER_AUTH_MODE === "local" || (SERVER_AUTH_MODE === null && (
   ["127.0.0.1", "localhost"].includes(window.location.hostname) ||
-  !window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey;
+  !window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey));
 let appStarted = false;
 
 async function getToken() {
-  if (LOCAL) return null;
+  if (LOCAL || ACCESS) return null;
   const u = firebase.auth().currentUser;
   return u ? await u.getIdToken() : null;
 }
@@ -19,7 +25,12 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const COMPLEXITIES = ["", "O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)", "O(n^3)", "O(2^n)", "O(n!)"];
 
 const api = async (path, method = "GET", body) => {
-  const headers = { "Content-Type": "application/json" };
+  // X-Requested-With marks this as a fetch, which is what makes the Cloudflare
+  // Access edge answer an expired session with a same-origin 401 instead of a
+  // cross-origin 302 out to Google. fetch follows that redirect and then cannot
+  // read the result, so a lapse would surface as a bare TypeError —
+  // indistinguishable from being offline, and the tab just fills with errors.
+  const headers = { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" };
   const token = await getToken();
   if (token) headers["Authorization"] = "Bearer " + token;
   const sess = localStorage.getItem("lc_session");
@@ -30,7 +41,7 @@ const api = async (path, method = "GET", body) => {
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch("/api" + path, opts);
   if (res.status === 401 || res.status === 403) {
-    showSignIn("Session expired or not authorized. Sign in again.");
+    handleAuthFailure(res.status);
     throw new Error("auth");
   }
   if (!res.ok) {
@@ -139,6 +150,26 @@ function showSignIn(msg) {
 function hideSignIn() {
   $("#signin-gate").classList.add("hidden");
   $("#app").classList.remove("hidden");
+}
+
+// Only auth.py returns 401 or 403, which is what makes the status safe to act
+// on. Under Access a 401 is a lapsed edge session: only a document load can
+// follow the chain out to Google and back, so reload. A 403 is the allowlist
+// turning away an identity the edge already verified — reloading that would
+// loop forever, so it says so and stops.
+function handleAuthFailure(status) {
+  if (!ACCESS) {
+    showSignIn("Session expired or not authorized. Sign in again.");
+    return;
+  }
+  if (status === 401) { window.location.reload(); return; }
+  $("#app").classList.add("hidden");
+  $("#signin-gate").classList.remove("hidden");
+  const btn = $("#btn-signin");
+  if (btn) btn.classList.add("hidden");
+  const sub = document.querySelector("#signin-gate .signin-sub");
+  if (sub) sub.textContent = "Signed in at the edge, but not allow-listed for this app.";
+  $("#signin-error").textContent = "Add the address to ALLOWED_EMAILS and restart the service.";
 }
 
 // ---- tabs / router -------------------------------------------------------------
@@ -1382,9 +1413,12 @@ window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOv
 // Deferred to DOMContentLoaded so views.js (loaded after this file) has defined
 // window.Views before the first render.
 function boot() {
-  if (LOCAL) {
+  if (LOCAL || ACCESS) {
     hideSignIn();
-    $("#user-chip").innerHTML = '<span class="small">local mode</span>';
+    $("#user-chip").innerHTML = ACCESS
+      ? '<span class="small">Cloudflare Access</span> '
+        + '<a class="button is-ghost is-small" href="/cdn-cgi/access/logout">Sign out</a>'
+      : '<span class="small">local mode</span>';
     startApp();
     return;
   }

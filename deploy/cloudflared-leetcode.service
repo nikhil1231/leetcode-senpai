@@ -1,0 +1,19 @@
+[Unit]
+Description=Cloudflare Tunnel for Leetcode Senpai
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Its own config file and its own tunnel, deliberately separate from the
+# HolaFresca tunnel on this box: each project's setup-tunnel.sh rewrites the
+# config it names, and sharing one file means one project's setup silently
+# drops the other's ingress rule.
+ExecStart=%h/.local/bin/cloudflared --no-autoupdate --config %h/.cloudflared/leetcode-senpai.yml tunnel run
+Restart=on-failure
+RestartSec=5
+# The connection is outbound, so a laptop that sleeps or changes network just
+# reconnects; failures here are transient far more often than they are fatal.
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=default.target
