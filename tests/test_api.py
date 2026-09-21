@@ -1110,3 +1110,14 @@ def test_poll_auto_grades_fresh_solve_and_is_idempotent(client, monkeypatch):
     second = client.post("/api/poll").json()
     assert second["new_attempts"] == []
     assert calls == ["two-sum"]
+
+
+@pytest.mark.parametrize("invalid", [
+    {"confidence": 0}, {"confidence": 4},
+    {"independence": "typo"}, {"time_taken_sec": -1},
+])
+def test_invalid_manual_attempt_does_not_write_history(client, invalid):
+    response = client.post("/api/attempt/manual", json={"slug": "two-sum", **invalid})
+    assert response.status_code == 422
+    assert client.store.list_attempts() == []
+    assert client.store.get_review("two-sum") is None

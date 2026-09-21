@@ -130,3 +130,27 @@ def test_mastery_moment_fires_once(store):
     assert any(m["category"] == "Arrays & Hashing" for m in first)
     second = gamify.check_mastery_moments(store)
     assert second == []  # doesn't fire twice
+
+
+def test_pace_counts_first_library_solves_only():
+    today = dt.date(2026, 1, 10)
+    old = int(dt.datetime(2025, 12, 1).timestamp())
+    recent = int(dt.datetime(2026, 1, 9).timestamp())
+    attempts = [
+        {"slug": "two-sum", "solved_at": recent},  # repeated solve
+        {"slug": "two-sum", "solved_at": old},
+        {"slug": "3sum", "solved_at": recent, "kind": "recall"},
+        {"slug": "valid-anagram", "solved_at": recent, "kind": "sprint"},
+        {"slug": "outside-library", "solved_at": recent},
+    ]
+    pace = insights.pace_projection(_problems(), attempts, today=today)
+    assert pace["solved"] == 1
+    assert pace["remaining"] == 2
+    assert pace["rate_per_week"] == 0
+    assert pace["eta"] is None
+
+    attempts.append({"slug": "3sum", "solved_at": recent})
+    pace = insights.pace_projection(_problems(), attempts, today=today)
+    assert pace["solved"] == 2
+    assert pace["rate_per_week"] == 0.5
+    assert pace["days_left"] == 14

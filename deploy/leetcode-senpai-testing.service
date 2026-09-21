@@ -7,7 +7,7 @@ WorkingDirectory=%h/Documents/Programming/Learning/leetcode-testing
 # Land on the current integration head before starting. `-` so a sync hiccup
 # (e.g. main repo mid-rebuild) never blocks the server from coming up.
 ExecStartPre=-%h/Documents/Programming/Learning/leetcode-testing/deploy/sync-integration.sh
-ExecStart=%h/Documents/Programming/Learning/leetcode-testing/.venv/bin/python run.py
+ExecStart=%h/.local/bin/uv run --locked --no-dev run.py
 Restart=on-failure
 RestartSec=5
 

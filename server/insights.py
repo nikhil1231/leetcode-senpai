@@ -97,13 +97,18 @@ def time_to_solve_trend(problems, attempts, today=None):
 def pace_projection(problems, attempts, today=None, window_days=14):
     """Project library-completion date from the recent new-solve rate."""
     today = _today(today)
-    total = sum(1 for p in problems if scheduler._in_library(p))
-    solved_attempts = scheduler._solved_attempts(attempts)
-    solved = len({a["slug"] for a in solved_attempts})
+    library = {p["slug"] for p in problems if scheduler._in_library(p)}
+    total = len(library)
+    first_solves = {}
+    for a in scheduler._solved_attempts(attempts):
+        if a["slug"] not in library or a.get("kind") == "recall" or a.get("source") == "recall":
+            continue
+        ts = a.get("solved_at") or 0
+        first_solves[a["slug"]] = min(first_solves.get(a["slug"], ts), ts)
+    solved = len(first_solves)
     remaining = max(0, total - solved)
     cutoff = int((dt.datetime.combine(today, dt.time()) - dt.timedelta(days=window_days)).timestamp())
-    recent_new = len({a["slug"] for a in solved_attempts
-                      if (a.get("solved_at") or 0) >= cutoff})
+    recent_new = sum(ts >= cutoff for ts in first_solves.values())
     rate = recent_new / window_days  # problems/day
     if rate <= 0 or remaining == 0:
         eta = None

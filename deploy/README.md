@@ -26,6 +26,10 @@ Runs the cumulative **Testing stack** of this app on the laptop at
 
 ## Install / update
 
+Install uv at `~/.local/bin/uv` (the default installer location), or adjust
+the executable paths in the service and sync script. In the testing checkout,
+run `uv sync --locked --no-dev` before enabling the service.
+
 ```sh
 cp deploy/*.service deploy/*.timer ~/.config/systemd/user/
 systemctl --user daemon-reload

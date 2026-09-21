@@ -69,7 +69,9 @@ def solution_quality(confidence, independence, solution_score):
     q = quality(confidence, independence)
     if solution_score is None:
         return q
-    return round((q + SOLUTION_TO_Q.get(solution_score, q)) / 2)
+    blended = round((q + SOLUTION_TO_Q.get(solution_score, q)) / 2)
+    # Correct code cannot demonstrate independent recall when help was needed.
+    return min(q, blended) if independence in ("hints", "solution") else blended
 
 
 # ---- SM-2 -----------------------------------------------------------------------

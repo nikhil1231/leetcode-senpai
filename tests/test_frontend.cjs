@@ -1,0 +1,117 @@
+// Run with node --test tests/test_frontend.cjs (no npm dependencies).
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+
+function app(fetch) {
+  const nodes = new Map();
+  const intervals = new Map();
+  let nextTimer = 1;
+  const node = (selector) => {
+    if (!nodes.has(selector)) nodes.set(selector, {
+      value: '', disabled: false, innerHTML: '', dataset: {}, listeners: {},
+      classList: { add() {}, remove() {}, toggle() {} },
+      addEventListener(event, handler) { this.listeners[event] = handler; },
+    });
+    return nodes.get(selector);
+  };
+  const context = vm.createContext({
+    window: { location: { hostname: 'localhost' } },
+    document: {
+      readyState: 'loading', addEventListener() {},
+      querySelector: node, querySelectorAll: () => [],
+    },
+    localStorage: { getItem: () => null }, fetch,
+    setInterval(fn) { const id = nextTimer++; intervals.set(id, fn); return id; },
+    clearInterval(id) { intervals.delete(id); },
+    setTimeout() {}, clearTimeout() {},
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/app.js'), 'utf8'), context);
+  return { node, intervals, run: (code) => vm.runInContext(code, context) };
+}
+const response = (body) => ({ ok: true, json: async () => body });
+
+test('slow solve polling never overlaps and resumes after failure', async () => {
+  let rejectRequest;
+  let calls = 0;
+  const ui = app(() => {
+    calls++;
+    if (calls === 1) return new Promise((resolve, reject) => { rejectRequest = reject; });
+    return response({ pending: [] });
+  });
+  ui.run('activeSession = { session_id: "one" }; startPolling()');
+  const tick = [...ui.intervals.values()][0];
+  const first = tick();
+  await tick();
+  assert.equal(calls, 1);
+  rejectRequest(new Error('offline'));
+  await first;
+  await tick();
+  assert.equal(calls, 2);
+});
+
+test('poll response from a cancelled session cannot reopen annotation', async () => {
+  let resolveRequest;
+  const ui = app(() => new Promise((resolve) => { resolveRequest = resolve; }));
+  ui.run('activeSession = { session_id: "one" }; startPolling()');
+  const request = [...ui.intervals.values()][0]();
+  await Promise.resolve();
+  await Promise.resolve();
+  ui.run('activeSession = null; stopPolling()');
+  resolveRequest(response({ pending: [{ id: 'old' }] }));
+  await request;
+  assert.equal(ui.run('currentAttempt'), null);
+});
+
+test('recall request failure preserves the draft and restores usable actions', async () => {
+  const ui = app(async () => { throw new Error('Network unavailable'); });
+  ui.run('currentRecall = { slug: "two-sum" }; llmEnabled = true');
+  ui.node('#recall-text').value = 'Use a complement map';
+  ui.node('#recall-time').value = 'O(n)';
+  await ui.run('submitRecall()');
+  assert.equal(ui.node('#recall-text').value, 'Use a complement map');
+  for (const field of ['text', 'time', 'space']) {
+    assert.equal(ui.node(`#recall-${field}`).disabled, false);
+  }
+  assert.match(ui.node('#recall-grade').innerHTML, /Network unavailable/);
+  assert.match(ui.node('#recall-actions').innerHTML, /Try again/);
+  assert.equal(typeof ui.node('#btn-submit-recall').listeners.click, 'function');
+  assert.equal(ui.intervals.size, 0);
+});
+
+test('cancelling self-grading resolves submission without saving a recall', async () => {
+  let calls = 0;
+  const ui = app(async () => { calls++; return response({}); });
+  ui.run('currentRecall = { slug: "two-sum" }; wireRecallButtons()');
+  const submission = ui.run('submitRecall()');
+  assert.equal(ui.node('#btn-submit-recall').disabled, true);
+  ui.node('#btn-close-recall').listeners.click();
+  await submission;
+  assert.equal(calls, 0);
+  assert.equal(ui.run('resolveSelfGrade'), null);
+  assert.equal(ui.node('#btn-submit-recall').disabled, false);
+});
+
+test('annotation rejects double-clicks and keeps notes on a failed save', async () => {
+  let rejectRequest;
+  let calls = 0;
+  const ui = app(() => {
+    calls++;
+    return new Promise((resolve, reject) => { rejectRequest = reject; });
+  });
+  ui.run('currentAttempt = { id: "attempt-one" }');
+  ui.node('#conf-group button.sel').dataset.val = '3';
+  ui.node('#indep-group button.sel').dataset.val = 'solo';
+  ui.node('#annotate-note').value = 'Remember duplicate values';
+  const save = ui.node('#btn-save-annotate').listeners.click;
+  const first = save();
+  await save();
+  assert.equal(calls, 1);
+  rejectRequest(new Error('offline'));
+  await first;
+  assert.equal(ui.node('#btn-save-annotate').disabled, false);
+  assert.equal(ui.node('#annotate-note').value, 'Remember duplicate values');
+  assert.equal(ui.run('currentAttempt.id'), 'attempt-one');
+});

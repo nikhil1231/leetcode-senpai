@@ -11,6 +11,7 @@ import hashlib
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Literal
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -50,9 +51,9 @@ class Annotate(BaseModel):
 
 class ManualAttempt(BaseModel):
     slug: str
-    time_taken_sec: int | None = None
-    confidence: int = 2
-    independence: str = "solo"
+    time_taken_sec: int | None = Field(default=None, ge=0)
+    confidence: int = Field(default=2, ge=1, le=3)
+    independence: Literal["solo", "hints", "solution"] = "solo"
     mistake_note: str | None = None
     approach: str | None = None
     complexity_time: str | None = None

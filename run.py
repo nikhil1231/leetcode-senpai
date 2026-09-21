@@ -8,7 +8,7 @@ your real Firestore data via a service-account key and your real UID:
     GOOGLE_CLOUD_PROJECT=your-project \
     DEV_UID=<your-firebase-uid> \
     GEMINI_API_KEY=<optional, unlocks the coaching layer> \
-    python run.py
+    uv run run.py
 
 Then open http://127.0.0.1:8000. Without GEMINI_API_KEY the app still runs; the
 LLM-powered features degrade gracefully.
@@ -20,7 +20,7 @@ into the Docker image (see .dockerignore / .gcloudignore).
 
 Against the Firestore emulator instead of live data:
     AUTH_MODE=local FIRESTORE_EMULATOR_HOST=localhost:8080 \
-    GOOGLE_CLOUD_PROJECT=demo python run.py
+    GOOGLE_CLOUD_PROJECT=demo uv run run.py
 """
 import os
 

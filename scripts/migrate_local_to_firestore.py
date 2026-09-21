@@ -11,7 +11,7 @@ Usage (from the repo root, with a service-account key):
     GOOGLE_APPLICATION_CREDENTIALS=/path/key.json \
     GOOGLE_CLOUD_PROJECT=your-project \
     DEV_UID=<your-firebase-uid> \
-    python scripts/migrate_local_to_firestore.py
+    uv run scripts/migrate_local_to_firestore.py
 
 By default the local "local-dev" user's data is written under DEV_UID. Pass
 --source-uid to pick a different source user from the JSON. local_data.json is

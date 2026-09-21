@@ -5,8 +5,8 @@
 # (~/Documents/Programming/Learning/leetcode), which is the testing checkout's
 # git `origin` -- so we sync from origin, not GitHub.
 #
-# Default: fetch + hard-reset the checkout to the integration head (+ pip
-# install if requirements.txt changed). With --restart, also restart the LAN
+# Default: fetch + hard-reset the checkout to the integration head and sync
+# dependencies from uv.lock. With --restart, also restart the LAN
 # service, but only when the head actually moved. Used both as the service's
 # ExecStartPre (no --restart, so a manual/boot start lands on head) and by the
 # sync timer (--restart, to pick up new deploys automatically).
@@ -24,15 +24,15 @@ before="$(git rev-parse HEAD)"
 git fetch --quiet origin "$branch"
 target="$(git rev-parse FETCH_HEAD)"
 
-if [ "$before" = "$target" ]; then
-  exit 0
+if [ "$before" != "$target" ]; then
+  git reset --hard --quiet "$target"
 fi
 
-git reset --hard --quiet "$target"
+# Also retry a failed dependency sync when the checkout is already up to date.
+"$HOME/.local/bin/uv" sync --locked --no-dev --quiet
 
-# Reinstall Python deps only when requirements.txt changed between the two heads.
-if ! git diff --quiet "$before" "$target" -- requirements.txt; then
-  ./.venv/bin/pip install --quiet --disable-pip-version-check -r requirements.txt
+if [ "$before" = "$target" ]; then
+  exit 0
 fi
 
 if [ "${1:-}" = "--restart" ]; then

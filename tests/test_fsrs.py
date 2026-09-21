@@ -57,3 +57,11 @@ def test_fsrs_migrates_legacy_sm2_card(monkeypatch):
     nxt = scheduler.advance_review(legacy, 4, "solo", today=dt.date(2026, 1, 1))
     assert "fsrs" in nxt
     assert nxt["interval_days"] >= 1
+
+
+@pytest.mark.parametrize("independence, expected", [("solution", 1), ("hints", 3)])
+def test_correct_code_does_not_erase_help_needed(engine, independence, expected):
+    card = scheduler.advance_review(None, 3, independence, solution_score=5,
+                                    today=dt.date(2026, 1, 1))
+    assert card["quality"] == expected
+    assert card["fail_count"] == (1 if independence == "solution" else 0)

@@ -75,10 +75,20 @@ tests/            pytest (scheduler, FSRS, discover, insights, API, llm)
 ```
 
 ## Run locally (Firestore-only)
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run:
+
 ```bash
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+uv sync --locked
+uv run run.py
 ```
+
+`uv run` manages the project environment automatically; no activation is needed.
+Python 3.12 is the default (`.python-version`). Dependencies live in
+`pyproject.toml`, with exact resolutions committed in `uv.lock`. Test tools are
+in the dev group; use `uv sync --locked --no-dev` for a runtime-only environment.
+Use `uv add <package>` (or `uv add --dev <package>`) to update dependencies and
+commit both files.
+
 The app needs Firestore. For local dev, bypass browser auth but point at your
 real Firestore data with a service-account key:
 ```bash
@@ -89,7 +99,7 @@ DEV_UID=<your-firebase-uid> \
 OPENAI_API_KEY=<optional — unlocks the coaching layer> \
 LLM_PROVIDER=openai \
 LLM_MODEL=gpt-5.6-luna \
-python run.py
+uv run run.py
 ```
 Open http://127.0.0.1:8000. Without the selected provider's API key everything still works; the
 LLM-powered features degrade gracefully. In **Settings** set your username,
@@ -106,8 +116,7 @@ local supervisor to start it after a restart.
 This is the simplest Windows-native option and does not require Docker Desktop.
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+uv sync --locked
 .\scripts\install-windows-startup-task.ps1
 ```
 
@@ -153,13 +162,14 @@ docker compose down
 ### Migrate old local_data.json
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/key.json GOOGLE_CLOUD_PROJECT=your-project \
-DEV_UID=<your-firebase-uid> python scripts/migrate_local_to_firestore.py
+DEV_UID=<your-firebase-uid> uv run scripts/migrate_local_to_firestore.py
 ```
 (`--dry-run` first to preview counts. Your `local_data.json` is left as backup.)
 
 ### Tests
 ```bash
-.venv\Scripts\python.exe -m pytest      # 56 tests, no Firestore/network needed
+uv run --locked pytest                 # no Firestore/network needed
+node --test tests/test_frontend.cjs       # UI flow regressions; no npm install needed
 ```
 
 ## (Legacy) run locally against real Firestore data
@@ -176,7 +186,7 @@ auth bypassed. Needs a service account key instead of Google sign-in:
    ```powershell
    $env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\key.json"
    $env:DEV_UID = "<your-firebase-uid>"
-   python run_local_firestore.py
+   uv run run_local_firestore.py
    ```
 
 This binds to `127.0.0.1` only — don't port-forward it, since auth is

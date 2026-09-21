@@ -99,8 +99,10 @@ window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, load
 let activeSession = null;
 let timerInterval = null;
 let pollInterval = null;
+let pollInFlight = false;
 let currentAttempt = null;
 let currentRecall = null;
+let resolveSelfGrade = null;
 let pendingStart = null;
 let categories = [];
 let llmEnabled = false;
@@ -362,9 +364,13 @@ $("#btn-hint").addEventListener("click", async () => {
 
 function startPolling() {
   stopPolling();
+  const sessionId = activeSession && activeSession.session_id;
   pollInterval = setInterval(async () => {
+    if (pollInFlight) return;
+    pollInFlight = true;
     try {
       const res = await api("/poll", "POST");
+      if (!activeSession || activeSession.session_id !== sessionId) return;
       if (res.pending && res.pending.length) {
         stopPolling();
         openAnnotate(res.pending[0]);
@@ -373,6 +379,7 @@ function startPolling() {
         render(currentActiveTab());
       }
     } catch (e) { /* transient */ }
+    finally { pollInFlight = false; }
   }, 4000);
 }
 function stopPolling() { if (pollInterval) clearInterval(pollInterval); pollInterval = null; }
@@ -608,23 +615,33 @@ function closeAnnotate() {
 $("#btn-close-annotate").addEventListener("click", closeAnnotate);
 
 $("#btn-save-annotate").addEventListener("click", async () => {
-  const confidence = Number($("#conf-group button.sel").dataset.val);
-  const independence = $("#indep-group button.sel").dataset.val;
-  const r = await api(`/attempt/${currentAttempt.id}/annotate`, "POST", {
-    confidence, independence,
-    mistake_note: $("#annotate-note").value || null,
-    approach: $("#annotate-approach").value || null,
-    complexity_time: $("#annotate-time").value || null,
-    complexity_space: $("#annotate-space").value || null,
-  });
-  closeAnnotate();
-  toast(llmEnabled ? "Logged ✅ — coach is reading your notes…" : "Logged ✅");
-  if (r.similar) {
-    setTimeout(() => offerSimilar(r.similar), 400);
+  if (!currentAttempt) return;
+  const btn = $("#btn-save-annotate");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const confidence = Number($("#conf-group button.sel").dataset.val);
+    const independence = $("#indep-group button.sel").dataset.val;
+    const r = await api(`/attempt/${currentAttempt.id}/annotate`, "POST", {
+      confidence, independence,
+      mistake_note: $("#annotate-note").value || null,
+      approach: $("#annotate-approach").value || null,
+      complexity_time: $("#annotate-time").value || null,
+      complexity_space: $("#annotate-space").value || null,
+    });
+    closeAnnotate();
+    toast(llmEnabled ? "Logged ✅ — coach is reading your notes…" : "Logged ✅");
+    if (r.similar) {
+      setTimeout(() => offerSimilar(r.similar), 400);
+    }
+    loadOverview();
+    render(currentActiveTab());
+    if (llmEnabled) setTimeout(runSweep, 2500);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
   }
-  loadOverview();
-  render(currentActiveTab());
-  if (llmEnabled) setTimeout(runSweep, 2500);
 });
 
 function offerSimilar(sim) {
@@ -673,7 +690,10 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
 }
 
 function wireRecallButtons() {
-  $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
+  $("#btn-close-recall").addEventListener("click", () => {
+    $("#recall-modal").classList.add("hidden");
+    if (resolveSelfGrade) { resolveSelfGrade(null); resolveSelfGrade = null; }
+  });
   $("#btn-submit-recall").addEventListener("click", submitRecall);
 }
 
@@ -779,7 +799,11 @@ async function submitRecall() {
   };
   if (!llmEnabled) {
     // manual self-grade path: ask confidence via pills inline
+    const submit = $("#btn-submit-recall");
+    if (submit.disabled) return;
+    submit.disabled = true;
     body.confidence = await pickSelfGrade();
+    submit.disabled = false;
     if (body.confidence == null) return;
     showRecallGrading(["Scheduling your next review…"]);
   } else {
@@ -796,7 +820,12 @@ async function submitRecall() {
     r = await api("/review/recall", "POST", body);
   } catch (e) {
     stopRecallGrading();
-    toast(e.message);
+    setRecallInputsDisabled(false);
+    $("#recall-grade").innerHTML = `<p class="missed">${escapeHtml(e.message)}</p>`;
+    $("#recall-actions").innerHTML =
+      `<button id="btn-close-recall" class="button is-ghost">Cancel</button>
+       <button id="btn-submit-recall" class="button is-primary">Try again</button>`;
+    wireRecallButtons();
     return;
   }
   stopRecallGrading();
@@ -849,13 +878,16 @@ function stopRecallGrading() {
 
 function pickSelfGrade() {
   return new Promise((resolve) => {
+    resolveSelfGrade = (value) => { resolveSelfGrade = null; resolve(value); };
     const g = $("#recall-grade");
     g.classList.remove("hidden");
     g.innerHTML = `<label>Self-grade your recall:</label>
       <div class="pill-group" id="recall-selfgrade">
         <button data-c="1">Low</button><button data-c="2">Med</button><button data-c="3">High</button></div>`;
     $$("#recall-selfgrade button").forEach((b) =>
-      b.addEventListener("click", () => resolve(Number(b.dataset.c))));
+      b.addEventListener("click", () => {
+        if (resolveSelfGrade) resolveSelfGrade(Number(b.dataset.c));
+      }));
   });
 }
 

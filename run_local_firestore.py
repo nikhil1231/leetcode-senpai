@@ -11,7 +11,7 @@ Optional:
 
     $env:GOOGLE_APPLICATION_CREDENTIALS = "C:\\path\\to\\key.json"
     $env:DEV_UID = "<your-firebase-uid>"
-    python run_local_firestore.py
+    uv run run_local_firestore.py
 Then open http://127.0.0.1:8000
 
 Binds to loopback only. Never expose this profile via port forwarding —
