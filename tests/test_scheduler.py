@@ -550,3 +550,234 @@ def test_sprint_round_respects_exclude_slugs():
 
     assert all(s["slug"] not in {"two-sum", "diameter-tree"} for s in sprints)
     assert len(sprints) == 3
+
+
+# ---- topic tree -----------------------------------------------------------------
+def _tree(attempts=(), enrichments=None):
+    return scheduler.topic_tree(_problems(), list(attempts), enrichments)
+
+
+def test_topic_tree_groups_categories_into_families_in_curriculum_order():
+    tree = _tree()
+
+    assert [f["family"] for f in tree] == ["Foundations"]
+    assert [t["category"] for t in tree[0]["topics"]] == ["Arrays & Hashing", "Two Pointers"]
+
+
+def test_topic_tree_omits_families_with_no_library_problems():
+    tree = _tree()
+
+    assert "Dynamic Programming" not in {f["family"] for f in tree}
+
+
+def test_topic_tree_family_totals_sum_their_topics():
+    attempts = [
+        {"id": "a1", "slug": "two-sum", "solved_at": _ts(dt.date(2026, 1, 10)),
+         "confidence": 3, "independence": "solo"},
+    ]
+
+    fam = _tree(attempts)[0]
+
+    assert fam["total"] == 3  # two Arrays & Hashing + one Two Pointers
+    assert fam["solved"] == 1
+    assert fam["coverage"] == round(1 / 3, 3)
+
+
+def test_topic_tree_family_mastery_is_solved_weighted_not_dragged_by_untouched_topics():
+    attempts = [
+        {"id": "a1", "slug": "two-sum", "solved_at": _ts(dt.date(2026, 1, 10)),
+         "confidence": 3, "independence": "solo"},
+    ]
+
+    fam = _tree(attempts)[0]
+    arrays = next(t for t in fam["topics"] if t["category"] == "Arrays & Hashing")
+    two_ptr = next(t for t in fam["topics"] if t["category"] == "Two Pointers")
+
+    assert arrays["mastery"] == 1.0
+    assert two_ptr["mastery"] == 0.0  # untouched
+    # Solved-weighted: only the solved topic contributes, so an untouched
+    # sibling does not halve the family's mastery.
+    assert fam["mastery"] == 1.0
+    assert fam["weakness"] == 0.0
+
+
+def test_topic_tree_family_mastery_is_zero_with_no_solves():
+    fam = _tree()[0]
+
+    assert fam["solved"] == 0
+    assert fam["mastery"] == 0.0
+    assert fam["coverage"] == 0.0
+
+
+def test_topic_tree_carries_topic_stats_rows_through_unchanged():
+    attempts = [
+        {"id": "s1", "slug": "two-sum", "solved_at": _ts(dt.date(2026, 1, 10)),
+         "kind": "sprint", "source": "sprint"},
+    ]
+    enrichments = [{"attempt_id": "s1", "prediction_verdict": "correct"}]
+
+    arrays = next(
+        t for t in _tree(attempts, enrichments)[0]["topics"]
+        if t["category"] == "Arrays & Hashing"
+    )
+
+    assert arrays["sprint_reps"] == 1
+    assert arrays["sprint_accuracy"] == 1.0
+    assert arrays["solved"] == 0  # sprints still don't count as solves
+
+
+def test_topic_tree_families_partition_every_known_category():
+    from server.neetcode150 import CATEGORY_FAMILIES, CATEGORY_ORDER
+
+    grouped = [c for cats in CATEGORY_FAMILIES.values() for c in cats]
+
+    assert grouped == CATEGORY_ORDER  # no gaps, no duplicates, same order
+
+
+# ---- review board segmentation --------------------------------------------------
+def _review(slug, due, **kw):
+    base = {"slug": slug, "due_date": due, "interval_days": 6, "leech": 0}
+    base.update(kw)
+    return base
+
+
+def _problem(slug, category="Arrays & Hashing"):
+    return {"slug": slug, "title": slug.replace("-", " ").title(),
+            "difficulty": "Medium", "neetcode_category": category,
+            "url": f"https://leetcode.com/problems/{slug}/"}
+
+
+TODAY = dt.date(2026, 9, 21)
+
+
+def _due(days_from_today):
+    return (TODAY + dt.timedelta(days=days_from_today)).isoformat()
+
+
+def test_review_bucket_keeps_a_card_due_for_a_whole_week():
+    # The point of the window: one slipped day must not turn a card overdue.
+    assert scheduler.review_bucket(0) == "due"
+    assert scheduler.review_bucket(1) == "due"
+    assert scheduler.review_bucket(scheduler.REVIEW_DUE_WINDOW_DAYS) == "due"
+    assert scheduler.review_bucket(scheduler.REVIEW_DUE_WINDOW_DAYS + 1) == "overdue"
+
+
+def test_review_bucket_splits_the_future_into_soon_week_and_later():
+    assert scheduler.review_bucket(-1) == "soon"
+    assert scheduler.review_bucket(-3) == "soon"
+    assert scheduler.review_bucket(-4) == "week"
+    assert scheduler.review_bucket(-7) == "week"
+    assert scheduler.review_bucket(-8) == "later"
+
+
+def test_review_schedule_groups_every_card_and_drops_empty_segments():
+    reviews = [
+        _review("a", _due(-20)),   # overdue
+        _review("b", _due(-2)),    # still due
+        _review("c", _due(0)),     # due today
+        _review("d", _due(2)),     # soon
+        _review("e", _due(30)),    # later
+    ]
+    problems = [_problem(s) for s in "abcde"]
+
+    segments = scheduler.review_schedule(problems, reviews, today=TODAY)
+
+    assert [s["key"] for s in segments] == ["overdue", "due", "soon", "later"]
+    assert {s["key"]: s["count"] for s in segments} == {
+        "overdue": 1, "due": 2, "soon": 1, "later": 1}
+    assert sum(s["count"] for s in segments) == len(reviews)
+
+
+def test_review_schedule_is_not_capped_by_the_daily_review_limit():
+    reviews = [_review(f"p{i}", _due(-1)) for i in range(25)]
+    problems = [_problem(f"p{i}") for i in range(25)]
+
+    segments = scheduler.review_schedule(problems, reviews, today=TODAY)
+
+    assert segments[0]["count"] == 25
+
+
+def test_review_schedule_puts_leeches_first_then_oldest_due():
+    reviews = [
+        _review("old", _due(-30)),
+        _review("leech", _due(-10), leech=1),
+        _review("older", _due(-40)),
+    ]
+    problems = [_problem(s) for s in ("old", "leech", "older")]
+
+    overdue = scheduler.review_schedule(problems, reviews, today=TODAY)[0]
+
+    assert [c["slug"] for c in overdue["items"]] == ["leech", "older", "old"]
+
+
+def test_review_schedule_carries_days_late_and_recall_mode():
+    reviews = [
+        _review("short", _due(-3), interval_days=6),
+        _review("long", _due(-3), interval_days=scheduler.RECALL_INTERVAL_CAP),
+    ]
+    problems = [_problem("short"), _problem("long")]
+
+    by_slug = {c["slug"]: c
+               for s in scheduler.review_schedule(problems, reviews, today=TODAY)
+               for c in s["items"]}
+
+    assert by_slug["short"]["days_late"] == 3
+    assert by_slug["short"]["mode"] == "recall"
+    assert by_slug["long"]["mode"] == "full"  # long intervals earn a full re-solve
+
+
+def test_review_schedule_skips_cards_with_no_or_broken_due_date():
+    reviews = [
+        _review("ok", _due(-1)),
+        _review("none", None),
+        _review("junk", "not-a-date"),
+    ]
+    problems = [_problem(s) for s in ("ok", "none", "junk")]
+
+    segments = scheduler.review_schedule(problems, reviews, today=TODAY)
+
+    assert sum(s["count"] for s in segments) == 1
+
+
+def test_review_schedule_falls_back_when_the_problem_is_missing():
+    segments = scheduler.review_schedule([], [_review("ghost", _due(0))], today=TODAY)
+
+    card = segments[0]["items"][0]
+    assert card["title"] == "ghost"
+    assert card["difficulty"] == "Unknown"
+
+
+# ---- store cache revisions (pure: no Firestore, no I/O) -------------------------
+def test_invalidating_a_key_bumps_only_that_revision():
+    from server import store
+
+    a, b = ("attempts", "u1"), ("reviews", "u1")
+    before_a = store._revisions.get(a, 0)
+    before_b = store._revisions.get(b, 0)
+
+    store._invalidate(a)
+
+    assert store._revisions[a] == before_a + 1
+    assert store._revisions.get(b, 0) == before_b
+
+
+def test_invalidating_drops_the_cached_value():
+    from server import store
+
+    key = ("problems",)
+    calls = []
+
+    def loader():
+        calls.append(1)
+        return ["x"]
+
+    store._invalidate(key)
+    assert store._cached(key, loader) == ["x"]
+    assert store._cached(key, loader) == ["x"]
+    assert len(calls) == 1          # second read served from cache
+
+    store._invalidate(key)
+    assert store._cached(key, loader) == ["x"]
+    assert len(calls) == 2          # write forced a refetch
+
+    store._invalidate(key)          # leave no warm entry behind for other tests

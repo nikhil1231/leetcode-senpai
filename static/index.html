@@ -3,97 +3,128 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0a0c11" />
   <title>Leetcode Senpai</title>
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/bulma.min.css" />
   <link rel="stylesheet" href="/style.css?v=__ASSET_VER__" />
 </head>
 <body>
+  <!-- Icon sprite: referenced by <use> in the nav so the markup stays readable. -->
+  <svg class="icon-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <g id="i-today"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></g>
+      <g id="i-discover"><circle cx="12" cy="12" r="8.5" /><path d="M15.4 8.6l-1.9 4.9-4.9 1.9 1.9-4.9z" /></g>
+      <g id="i-topics"><rect x="3.5" y="3.5" width="7" height="7" rx="2" /><rect x="13.5" y="3.5" width="7" height="7" rx="2" /><rect x="3.5" y="13.5" width="7" height="7" rx="2" /><rect x="13.5" y="13.5" width="7" height="7" rx="2" /></g>
+      <g id="i-insights"><path d="M4 19.5h16" /><path d="M7 19V11" /><path d="M12 19V5.5" /><path d="M17 19v-5" /></g>
+      <g id="i-playbook"><path d="M4 5.2A1.7 1.7 0 015.7 3.5H10a2.5 2.5 0 012.5 2.5v14A2 2 0 0010.5 18H4z" /><path d="M20.5 5.2a1.7 1.7 0 00-1.7-1.7H14.5A2.5 2.5 0 0012 6v14a2 2 0 012-2h6.5z" /></g>
+      <g id="i-history"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.3V12l3.2 2" /></g>
+      <g id="i-problems"><path d="M9 6.5h11M9 12h11M9 17.5h11" /><path d="M4.4 6.5h.01M4.4 12h.01M4.4 17.5h.01" /></g>
+      <g id="i-settings"><path d="M4 7.5h10M18 7.5h2M4 16.5h2M10 16.5h10" /><circle cx="16" cy="7.5" r="2.3" /><circle cx="8" cy="16.5" r="2.3" /></g>
+      <!-- sprint button glyph -->
+      <g id="i-drill"><path d="M13.2 3.2L6 13.4h5.2L10.8 20.8L18 10.6h-5.2z" /></g>
+    </defs>
+  </svg>
+
   <!-- Sign-in gate -->
   <div id="signin-gate" class="overlay hidden">
-    <div class="overlay-card box signin has-text-centered">
+    <div class="overlay-card signin">
       <img class="signin-logo" src="/app-icon.png" alt="" aria-hidden="true" />
-      <h2 class="title is-4">Leetcode Senpai</h2>
-      <p class="small">Sign in with your allow-listed Google account.</p>
-      <button id="btn-signin" class="button is-primary mt-4">Sign in with Google</button>
-      <p id="signin-error" class="help is-danger"></p>
+      <h2 class="signin-title">Leetcode Senpai</h2>
+      <p class="signin-sub">Sign in with your allow-listed Google account.</p>
+      <button id="btn-signin" class="button is-primary is-fullwidth is-lg">Sign in with Google</button>
+      <p id="signin-error" class="signin-error"></p>
     </div>
   </div>
 
-  <div id="app" class="hidden">
-    <header class="app-header">
-      <div class="header-top">
-        <h1 class="app-title title is-5 mb-0">
-          <img class="app-logo" src="/app-icon.png" alt="" aria-hidden="true" />
-          <span>Leetcode Senpai</span>
-          <span class="tag is-link is-light">v2</span>
-        </h1>
+  <div id="app" class="shell hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="app-logo" src="/app-icon.png" alt="" aria-hidden="true" />
+        <div class="brand-text">
+          <span class="brand-name">Leetcode Senpai</span>
+          <span class="brand-sub">Interview prep</span>
+        </div>
+      </div>
+
+      <nav class="nav" id="tabs" aria-label="Sections">
+        <ul>
+          <li class="is-active" data-tab="today"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-today" /></svg><span>Today</span></a></li>
+          <li data-tab="discover"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-discover" /></svg><span>Discover</span></a></li>
+          <li data-tab="topics"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-topics" /></svg><span>Topics</span></a></li>
+          <li data-tab="insights"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-insights" /></svg><span>Insights</span></a></li>
+          <li data-tab="playbook"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-playbook" /></svg><span>Playbook</span></a></li>
+          <li data-tab="history"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-history" /></svg><span>History</span></a></li>
+          <li data-tab="problems"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-problems" /></svg><span>Problems</span></a></li>
+          <li data-tab="settings"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-settings" /></svg><span>Settings</span></a></li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div id="coach-chip"></div>
         <div id="user-chip"></div>
       </div>
-      <div class="tabs" id="tabs">
-        <ul>
-          <li class="is-active" data-tab="today"><a>Today</a></li>
-          <li data-tab="discover"><a>Discover</a></li>
-          <li data-tab="topics"><a>Topics</a></li>
-          <li data-tab="insights"><a>Insights</a></li>
-          <li data-tab="playbook"><a>Playbook</a></li>
-          <li data-tab="history"><a>History</a></li>
-          <li data-tab="problems"><a>Problems</a></li>
-          <li data-tab="settings"><a>Settings</a></li>
-        </ul>
-      </div>
-      <div id="overview" class="overview"></div>
-    </header>
+    </aside>
 
-    <!-- Active session focus mode (timer + hint ladder) -->
-    <section id="active-run" class="active-run hidden" aria-live="polite">
-      <div class="active-run-inner">
-        <div class="active-copy">
+    <div class="content">
+      <header class="topbar">
+        <div class="topbar-lead">
+          <h1 id="page-title" class="page-title">Today</h1>
+          <p id="page-sub" class="page-sub">Your queue for the day</p>
+        </div>
+        <div id="overview" class="overview"></div>
+      </header>
+
+      <!-- Active session focus mode (timer + hint ladder) -->
+      <section id="active-run" class="active-run hidden" aria-live="polite">
+        <div class="active-run-inner">
           <div class="active-kicker"><span class="dot"></span><span id="active-status">Current run</span></div>
           <h2 id="active-title"></h2>
-          <p id="active-kind" class="small"></p>
+          <p id="active-kind" class="active-kind"></p>
+          <div class="active-clock" aria-label="Elapsed solving time">
+            <span class="active-clock-label">Elapsed</span>
+            <strong id="active-timer" class="timer active-timer">00:00</strong>
+          </div>
+          <div class="active-actions">
+            <a id="active-link" class="button is-primary is-lg" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
+            <button id="btn-hint" class="button hint-btn">Reveal hint 1 of 3</button>
+            <button id="btn-pause-session" class="button is-ghost">Pause</button>
+            <button id="btn-cancel-session" class="button is-ghost">Cancel run</button>
+          </div>
+          <div id="hint-panel" class="hint-panel hidden"></div>
+          <div id="nudge" class="nudge hidden"></div>
         </div>
-        <div class="active-clock" aria-label="Elapsed solving time">
-          <span>Elapsed</span>
-          <strong id="active-timer" class="timer active-timer">00:00</strong>
-        </div>
-        <div class="active-actions">
-          <button id="btn-hint" class="button hint-btn">Reveal hint 1 of 3</button>
-          <button id="btn-pause-session" class="button is-ghost">Pause</button>
-          <a id="active-link" class="button is-primary" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
-          <button id="btn-cancel-session" class="button is-ghost">Cancel run</button>
-        </div>
-        <div id="hint-panel" class="hint-panel hidden"></div>
-        <div id="nudge" class="nudge hidden"></div>
-      </div>
-    </section>
+      </section>
 
-    <main>
-      <section id="tab-today" class="tab"></section>
-      <section id="tab-discover" class="tab hidden"></section>
-      <section id="tab-topics" class="tab hidden"></section>
-      <section id="tab-insights" class="tab hidden"></section>
-      <section id="tab-playbook" class="tab hidden"></section>
-      <section id="tab-history" class="tab hidden"></section>
-      <section id="tab-problems" class="tab hidden"></section>
-      <section id="tab-settings" class="tab hidden"></section>
-    </main>
+      <main>
+        <section id="tab-today" class="tab"></section>
+        <section id="tab-discover" class="tab hidden"></section>
+        <section id="tab-topics" class="tab hidden"></section>
+        <section id="tab-insights" class="tab hidden"></section>
+        <section id="tab-playbook" class="tab hidden"></section>
+        <section id="tab-history" class="tab hidden"></section>
+        <section id="tab-problems" class="tab hidden"></section>
+        <section id="tab-settings" class="tab hidden"></section>
+      </main>
+    </div>
   </div>
 
   <!-- Pre-solve prediction modal -->
   <div id="predict-modal" class="overlay hidden">
-    <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="predict-heading">
+    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="predict-heading">
       <div class="modal-titlebar">
-        <h2 class="title is-5" id="predict-heading">Before you start</h2>
-        <button id="btn-close-predict" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+        <div>
+          <h2 class="modal-title" id="predict-heading">Before you start</h2>
+          <p class="small" id="predict-problem"></p>
+        </div>
+        <button id="btn-close-predict" class="button is-ghost icon-button" type="button" aria-label="Close" title="Close">&times;</button>
       </div>
-      <p class="small" id="predict-problem"></p>
-      <label class="label-sm">Which pattern do you think this is? <span class="help-inline">(trains recognition — skippable)</span></label>
+      <label class="label-sm">Which pattern do you think this is? <span class="help-inline">trains recognition — skippable</span></label>
       <div class="pill-grid" id="predict-cats"></div>
-      <label class="label-sm">Approach in one sentence (optional)</label>
+      <label class="label-sm">Approach in one sentence <span class="help-inline">optional</span></label>
       <input id="predict-approach" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sort then two pointers inward" />
       <div class="overlay-actions">
         <button id="btn-skip-predict" class="button is-ghost">Skip &amp; start</button>
@@ -104,8 +135,8 @@
 
   <!-- Post-solve annotation modal -->
   <div id="annotate-modal" class="overlay hidden">
-    <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="annotate-heading">
-      <h2 class="title is-5" id="annotate-heading">Solved!</h2>
+    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="annotate-heading">
+      <h2 class="modal-title celebrate" id="annotate-heading">Solved</h2>
       <div class="solved-problem">
         <div class="solved-problem-main">
           <a id="annotate-problem-link" href="#" target="_blank" rel="noopener">
@@ -114,8 +145,8 @@
           <span id="annotate-difficulty" class="tag hidden"></span>
         </div>
         <div id="annotate-problem-meta" class="solved-problem-meta"></div>
+        <div id="annotate-facts" class="facts"></div>
       </div>
-      <div id="annotate-facts" class="facts"></div>
 
       <label class="label-sm">How confident are you with this pattern?</label>
       <div class="pill-group" id="conf-group">
@@ -136,10 +167,10 @@
         <div class="column field"><label class="label-sm">Space complexity</label><div class="select is-fullwidth"><select id="annotate-space"></select></div></div>
       </div>
 
-      <label class="label-sm">What tripped you up? <span class="help-inline">(plain text — the coach structures it)</span></label>
+      <label class="label-sm">What tripped you up? <span class="help-inline">plain text — the coach structures it</span></label>
       <input id="annotate-note" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. shrank the window before checking the count" />
 
-      <label class="label-sm">Approach / pattern (optional)</label>
+      <label class="label-sm">Approach / pattern <span class="help-inline">optional</span></label>
       <input id="annotate-approach" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. monotonic stack" />
 
       <div id="annotate-grade" class="recall-grade hidden"></div>
@@ -153,8 +184,8 @@
 
   <!-- Approach-recall modal -->
   <div id="recall-modal" class="overlay hidden">
-    <div class="overlay-card box recall-wide" role="dialog" aria-modal="true">
-      <h2 class="title is-5">Quick recall</h2>
+    <div class="overlay-card recall-wide" role="dialog" aria-modal="true">
+      <h2 class="modal-title">Quick recall</h2>
       <p class="small" id="recall-problem"></p>
       <div id="recall-statement" class="recall-statement"></div>
       <p class="help">No coding — just recall the approach from memory in under 3 minutes.</p>
@@ -174,13 +205,13 @@
 
   <!-- Sprint runner modal -->
   <div id="sprint-modal" class="overlay hidden">
-    <div class="overlay-card box sprint-wide" role="dialog" aria-modal="true" aria-labelledby="sprint-heading">
+    <div class="overlay-card sprint-wide" role="dialog" aria-modal="true" aria-labelledby="sprint-heading">
       <div class="modal-titlebar">
         <div>
-          <h2 class="title is-5" id="sprint-heading">Sprint round</h2>
+          <h2 class="modal-title" id="sprint-heading">Sprint round</h2>
           <p id="sprint-progress" class="small"></p>
         </div>
-        <button id="btn-close-sprint" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+        <button id="btn-close-sprint" class="button is-ghost icon-button" type="button" aria-label="Close" title="Close">&times;</button>
       </div>
       <div id="sprint-body"></div>
     </div>
@@ -188,7 +219,7 @@
 
   <!-- Attempt detail (solution archive) modal -->
   <div id="detail-modal" class="overlay hidden">
-    <div class="overlay-card box wide" role="dialog" aria-modal="true">
+    <div class="overlay-card wide" role="dialog" aria-modal="true">
       <div id="detail-body"></div>
       <div class="overlay-actions"><button id="btn-close-detail" class="button is-ghost">Close</button></div>
     </div>
@@ -196,15 +227,15 @@
 
   <!-- Mock runner (full screen) -->
   <div id="mock-modal" class="overlay hidden">
-    <div class="overlay-card box wide" role="dialog" aria-modal="true">
+    <div class="overlay-card wide" role="dialog" aria-modal="true">
       <div id="mock-body"></div>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script>window.LOCAL_MODE = __LOCAL_MODE__;</script>
+  __FIREBASE_SDK__
   <script src="/firebase-config.js"></script>
   <script src="/charts.js?v=__ASSET_VER__"></script>
   <script src="/app.js?v=__ASSET_VER__"></script>

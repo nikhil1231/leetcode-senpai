@@ -6,26 +6,49 @@ weekly reports, playbooks) degrades gracefully when the selected provider's API
 key is unset; most coaching jobs run off the critical path, while recall grading
 intentionally waits so the review is scheduled immediately.
 """
+import contextlib
 import datetime as dt
 import hashlib
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (auth, coach, config, enrich, gamify, importer, insights,
                leetcode, llm, mock, packs, poller, scheduler)
+from . import store as store_mod
 from .store import get_store
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(ROOT, "static")
 
-app = FastAPI(title="Leetcode Senpai V2")
+
+@contextlib.asynccontextmanager
+async def lifespan(_app):
+    """Warm the store caches off the request path.
+
+    Only in local mode, where the uid is known up front and Firestore is a WAN
+    hop away; deployed, Firestore is in-region and the first request is cheap
+    anyway. Runs on a thread so the server starts serving immediately.
+    """
+    if config.local_mode():
+        threading.Thread(target=store_mod.warm, args=(config.DEV_UID,),
+                         daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Leetcode Senpai V2", lifespan=lifespan)
+
+# Responses are JSON and highly compressible — the problem catalog alone is
+# ~130KB of repetitive text. Costs nothing on loopback, matters a lot over wifi.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 # ---- request models -------------------------------------------------------------
@@ -231,14 +254,28 @@ def _cached_drills(store, exclude_slugs):
     return drills, fresh
 
 
-def _refresh_drill_cache(uid, exclude_slugs=None):
-    store = get_store(uid)
-    drills = _build_drills(store, set(exclude_slugs or ()))[:DRILL_CACHE_TARGET]
+def _store_drill_cache(store, drills):
+    """Persist today's drill lane — but only when it differs from what's stored.
+
+    /api/today is a read endpoint, yet it owns this cache. Rewriting an
+    identical flag on every load churns the revision counters the client watches
+    to decide whether anything changed, which would defeat its view cache
+    outright for anyone whose drill lane is legitimately empty.
+    """
+    payload = drills[:DRILL_CACHE_TARGET]
+    cache = store.get_flags().get(DRILL_CACHE_FLAG) or {}
+    if cache.get("date") == _today_iso() and cache.get("drills") == payload:
+        return
     store.set_flag(DRILL_CACHE_FLAG, {
         "date": _today_iso(),
         "refreshed_at": int(time.time()),
-        "drills": drills,
+        "drills": payload,
     })
+
+
+def _refresh_drill_cache(uid, exclude_slugs=None):
+    store = get_store(uid)
+    _store_drill_cache(store, _build_drills(store, set(exclude_slugs or ())))
 
 
 def _replace_completed_drill_cache(uid, completed_slug):
@@ -346,16 +383,17 @@ def _is_today(ts):
     return time.strftime("%Y-%m-%d", time.localtime(ts)) == time.strftime("%Y-%m-%d")
 
 
-def _with_recall_state(queue, store):
-    latest = _latest_recall_by_slug(store)
-    reviews = []
-    for item in queue.get("reviews", []):
+def _decorate_recall_items(items, latest):
+    """Attach in-flight recall state to review items, dropping ones already
+    recalled today. Shared by the daily queue and the full review board."""
+    out = []
+    for item in items:
         if item.get("mode") != "recall":
-            reviews.append(item)
+            out.append(item)
             continue
         attempt = latest.get(item["slug"])
         if not attempt:
-            reviews.append(item)
+            out.append(item)
             continue
         status = attempt.get("grading_status")
         if status in ("ready", "viewed") and _is_today(attempt.get("solved_at")):
@@ -363,8 +401,13 @@ def _with_recall_state(queue, store):
         if status in ("pending", "failed", "ready"):
             item["recall_attempt_id"] = attempt.get("id")
             item["grading_status"] = status
-        reviews.append(item)
-    queue["reviews"] = reviews
+        out.append(item)
+    return out
+
+
+def _with_recall_state(queue, store):
+    queue["reviews"] = _decorate_recall_items(
+        queue.get("reviews", []), _latest_recall_by_slug(store))
     return queue
 
 
@@ -430,6 +473,18 @@ def _sprint_fallback(actual_category, key_ideas=None, grading_error=None):
 
 
 # ---- dashboard ------------------------------------------------------------------
+@app.get("/api/rev")
+def api_rev(uid: str = Depends(auth.require_user)):
+    """Cheap freshness check — no Firestore, answered from process memory.
+
+    The client caches each rendered tab against this snapshot. An identical
+    snapshot proves nothing it is displaying has changed, so it can skip the
+    refetch entirely instead of guessing at a staleness window. `date` is in
+    here because the daily queue turns over at midnight without any write.
+    """
+    return {"rev": get_store(uid).revisions(), "date": _today_iso()}
+
+
 @app.get("/api/overview")
 def api_overview(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
@@ -464,18 +519,41 @@ def api_today(bg: BackgroundTasks, uid: str = Depends(auth.require_user)):
             problems, attempts, reviews, settings, enrichments=enrichments,
             exclude_slugs=exclude_slugs,
         )
-        store.set_flag(DRILL_CACHE_FLAG, {
-            "date": _today_iso(),
-            "refreshed_at": int(time.time()),
-            "drills": queue["drills"][:DRILL_CACHE_TARGET],
-        })
+        _store_drill_cache(store, queue["drills"])
     return _with_recall_state(queue, store)
+
+
+@app.get("/api/reviews/schedule")
+def api_review_schedule(uid: str = Depends(auth.require_user)):
+    """The whole review board, segmented by when each card is due.
+
+    /api/today caps reviews at review_limit — the right scope for a day's work,
+    but it makes the board look like it only ever holds five cards.
+    """
+    store = get_store(uid)
+    problems, reviews = _gather(store.list_problems, store.list_reviews)
+    segments = scheduler.review_schedule(problems, reviews)
+    latest = _latest_recall_by_slug(store)
+    out = []
+    for seg in segments:
+        items = _decorate_recall_items(seg["items"], latest)
+        if not items:
+            continue
+        out.append({**seg, "items": items, "count": len(items)})
+    return out
 
 
 @app.get("/api/topics")
 def api_topics(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     return scheduler.topic_stats(
+        store.list_problems(), store.list_attempts(), store.list_enrichments())
+
+
+@app.get("/api/topics/tree")
+def api_topics_tree(uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    return scheduler.topic_tree(
         store.list_problems(), store.list_attempts(), store.list_enrichments())
 
 
@@ -1365,11 +1443,41 @@ def asset_version():
     return h.hexdigest()[:8]
 
 
+# Loaded from gstatic on every page load (~300KB) but never used in local mode,
+# where boot() short-circuits before touching firebase at all.
+_FIREBASE_SDK = (
+    '<script src="https://www.gstatic.com/firebasejs/10.12.0/'
+    'firebase-app-compat.js"></script>\n  '
+    '<script src="https://www.gstatic.com/firebasejs/10.12.0/'
+    'firebase-auth-compat.js"></script>'
+)
+
+
+@app.middleware("http")
+async def asset_cache_headers(request, call_next):
+    resp = await call_next(request)
+    path = request.url.path.lstrip("/")
+    if path in _VERSIONED_ASSETS and request.query_params.get("v"):
+        # The URL carries a content hash, so this exact body can never change.
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path.endswith((".png", ".ico", ".svg")):
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+    elif request.url.path == "/":
+        # Must be revalidated, or a new asset version would never be picked up.
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @app.get("/")
 def index():
     with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as fh:
         html = fh.read()
-    return HTMLResponse(html.replace("__ASSET_VER__", asset_version()))
+    local = config.local_mode()
+    html = (html
+            .replace("__ASSET_VER__", asset_version())
+            .replace("__FIREBASE_SDK__", "" if local else _FIREBASE_SDK)
+            .replace("__LOCAL_MODE__", "true" if local else "false"))
+    return HTMLResponse(html)
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")

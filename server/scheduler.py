@@ -10,12 +10,13 @@ so SM-2 and FSRS share one interface; see fsrs_engine.py for the FSRS side.
 import datetime as dt
 
 from . import config
-from .neetcode150 import CATEGORY_ORDER
+from .neetcode150 import CATEGORY_FAMILIES, CATEGORY_ORDER, FAMILY_ORDER
 
 CONF_TO_Q = {1: 3, 2: 4, 3: 5}  # low / medium / high on SM-2's 0..5 scale
 RECALL_TO_Q = {0: 1, 1: 3, 2: 4, 3: 5}  # recall grade -> quality
 SOLUTION_TO_Q = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 5}  # LLM /5 solution score -> quality
 RECALL_INTERVAL_CAP = 21  # cards shorter than this are reviewed by recall, not full solve
+REVIEW_DUE_WINDOW_DAYS = 7  # a card stays "due" for this long before it counts as overdue
 
 
 def _today(today=None):
@@ -218,6 +219,39 @@ def topic_stats(problems, attempts, enrichments=None):
         out.append(row)
     out.sort(key=lambda x: (x["weakness"], 1 - x["coverage"]), reverse=True)
     return out
+
+
+def topic_tree(problems, attempts, enrichments=None):
+    """topic_stats grouped into curriculum families, in learning order.
+
+    The Topics map renders this: one section per family, topics inside it in
+    CATEGORY_ORDER (not weakest-first) so the view is a stable map of where you
+    are rather than a re-shuffling list of failures.
+
+    Family `coverage` is solved/total across the family. Family `mastery` is a
+    solved-weighted mean of its topics' mastery — i.e. the quality of the work
+    you have actually done, with breadth reported separately by coverage.
+    """
+    rows = {s["category"]: s for s in topic_stats(problems, attempts, enrichments)}
+    families = []
+    for family in FAMILY_ORDER:
+        topics = [rows[c] for c in CATEGORY_FAMILIES[family] if c in rows]
+        if not topics:
+            continue
+        total = sum(t["total"] for t in topics)
+        solved = sum(t["solved"] for t in topics)
+        weighted = sum(t["mastery"] * t["solved"] for t in topics)
+        mastery = weighted / solved if solved else 0.0
+        families.append({
+            "family": family,
+            "total": total,
+            "solved": solved,
+            "coverage": round(solved / total, 3) if total else 0.0,
+            "mastery": round(mastery, 3),
+            "weakness": round(1.0 - mastery, 3),
+            "topics": topics,
+        })
+    return families
 
 
 def _difficulty_gate(solved_in_cat):
@@ -663,6 +697,95 @@ def _drill_item(p, score, reason, reason_codes, signals):
         "kind": "drill", "score": round(score, 3), "reason": reason,
         "reason_codes": reason_codes, "signals": signals,
     }
+
+
+# ---- review board ---------------------------------------------------------------
+# Segment order is the order they are shown: what is late first, then what is
+# waiting, then what is coming.
+REVIEW_SEGMENTS = (
+    ("overdue", "Overdue"),
+    ("due", "Due now"),
+    ("soon", "Next 3 days"),
+    ("week", "Later this week"),
+    ("later", "Upcoming"),
+)
+
+
+def review_bucket(days_late, due_window_days=REVIEW_DUE_WINDOW_DAYS):
+    """Which segment a card belongs to. `days_late` is today minus its due date.
+
+    A card stays in "due" for a whole week after its due date rather than going
+    overdue the next morning: the schedule is a target, not a deadline, and a
+    board where one slipped day turns everything red stops carrying signal.
+    """
+    if days_late > due_window_days:
+        return "overdue"
+    if days_late >= 0:
+        return "due"
+    days_out = -days_late
+    if days_out <= 3:
+        return "soon"
+    if days_out <= 7:
+        return "week"
+    return "later"
+
+
+def review_card(review, problem, days_late):
+    """One review rendered for the board. Mirrors build_daily_queue's review items
+    so the same row renderer handles both."""
+    interval = review.get("interval_days") or 0
+    leech = bool(review.get("leech"))
+    mode = "full" if (leech or interval >= RECALL_INTERVAL_CAP) else "recall"
+    return {
+        "slug": review["slug"],
+        "title": problem.get("title", review["slug"]),
+        "difficulty": problem.get("difficulty", "Unknown"),
+        "category": problem.get("neetcode_category"),
+        "url": problem.get("url"),
+        "kind": "review",
+        "mode": mode,
+        "due_date": review.get("due_date"),
+        "interval_days": interval,
+        "leech": leech,
+        "days_late": days_late,
+        "reason": "Leech - full re-solve" if leech else (
+            "Quick recall" if mode == "recall" else "Full re-solve"),
+    }
+
+
+def review_schedule(problems, reviews, today=None, due_window_days=REVIEW_DUE_WINDOW_DAYS):
+    """Every scheduled review, grouped into time segments.
+
+    build_daily_queue caps a day's reviews at `review_limit`, which is the right
+    thing for the day's work but makes the board look like it only ever holds
+    five cards. This is the whole board: pure over plain data, no I/O.
+
+    Empty segments are dropped. Within a segment, leeches come first, then the
+    oldest due date — the same priority build_daily_queue applies.
+    """
+    today_d = _today(today)
+    prob_by_slug = {p["slug"]: p for p in problems}
+    grouped = {key: [] for key, _ in REVIEW_SEGMENTS}
+    for r in reviews:
+        due = r.get("due_date")
+        if not due or not r.get("slug"):
+            continue
+        try:
+            days_late = (today_d - dt.date.fromisoformat(due)).days
+        except (TypeError, ValueError):
+            continue
+        bucket = review_bucket(days_late, due_window_days)
+        grouped[bucket].append(
+            review_card(r, prob_by_slug.get(r["slug"], {}), days_late))
+
+    out = []
+    for key, label in REVIEW_SEGMENTS:
+        items = grouped[key]
+        if not items:
+            continue
+        items.sort(key=lambda c: (not c["leech"], c["due_date"]))
+        out.append({"key": key, "label": label, "count": len(items), "items": items})
+    return out
 
 
 # ---- daily queue ----------------------------------------------------------------

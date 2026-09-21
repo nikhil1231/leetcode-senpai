@@ -28,3 +28,6 @@ revision.db
 .claude/
 .DS_Store
 Thumbs.db
+
+# local data dumps from scripts/reschedule_reviews.py
+backups/

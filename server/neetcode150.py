@@ -211,3 +211,31 @@ def category_of(slug):
         if slug in slugs:
             return category
     return None
+
+
+# Families group the categories into the broad branches of the curriculum tree
+# (the Topics map renders one section per family). Family order, and the order
+# within each family, follow CATEGORY_ORDER so the map reads as the same rough
+# learning progression the rest of the app already assumes.
+CATEGORY_FAMILIES = {
+    "Foundations": [
+        "Arrays & Hashing", "Two Pointers", "Sliding Window", "Stack",
+        "Binary Search", "Linked List",
+    ],
+    "Trees & Heaps": ["Trees", "Tries", "Heap / Priority Queue"],
+    "Search & Graphs": ["Backtracking", "Graphs", "Advanced Graphs"],
+    "Dynamic Programming": ["1-D DP", "2-D DP"],
+    "Greedy & Math": ["Greedy", "Intervals", "Math & Geometry", "Bit Manipulation"],
+}
+
+FAMILY_ORDER = list(CATEGORY_FAMILIES.keys())
+
+OTHER_FAMILY = "Other"  # categories from non-NeetCode packs land here
+
+
+def family_of(category):
+    """The curriculum family a category belongs to, or OTHER_FAMILY."""
+    for family, categories in CATEGORY_FAMILIES.items():
+        if category in categories:
+            return family
+    return OTHER_FAMILY

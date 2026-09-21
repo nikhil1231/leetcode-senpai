@@ -4,6 +4,7 @@ The app itself is Firestore-only; this fake lets the pure logic (scheduler,
 insights, importer, endpoints) be exercised without credentials.
 """
 import uuid
+import zlib
 
 from server import config
 from server.store import _slugify
@@ -26,7 +27,8 @@ class FakeStore:
 
     # problems
     def list_problems(self):
-        return list(self.problems.values())
+        return [{k: v for k, v in p.items() if k != "content_html"}
+                for p in self.problems.values()]
 
     def get_problem(self, slug):
         return self.problems.get(slug)
@@ -185,3 +187,25 @@ class FakeStore:
 
     def set_flag(self, key, value):
         self.flags[key] = value
+
+    # revisions
+    def revisions(self):
+        """Content-derived, unlike the real store's write counters.
+
+        The fake has no invalidation hooks to piggyback on, and the contract the
+        client actually depends on is "changes if and only if the data changed",
+        which a fingerprint satisfies directly.
+        """
+        def fp(d):
+            return zlib.crc32(repr(sorted(d.items())).encode()) & 0xFFFFFFFF
+        return {
+            "problems": fp(self.problems),
+            "attempts": fp(self.attempts),
+            "reviews": fp(self.reviews),
+            "enrichments": fp(self.enrichments),
+            "sessions": fp(self.sessions),
+            "mocks": fp(self.mocks),
+            "sprint_rounds": fp(self.sprint_rounds),
+            "reports": fp(self.reports),
+            "userdoc": fp({"s": self.settings, "f": self.flags}),
+        }

@@ -1,20 +1,52 @@
 // Tab renderers. Exposed as window.Views. Uses window.H, window.App, window.Charts.
 (function () {
-  const { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader } = window.H;
+  const { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader,
+    beginRender } = window.H;
   const App = window.App, Charts = window.Charts;
 
   // ---- Today -------------------------------------------------------------------
+  const laneOf = (it) => (it.kind === "new" ? "new" : it.kind === "drill" ? "drill" : "review");
+
+  // In the queue, difficulty is a quiet coloured label rather than a filled chip:
+  // every row has one, so filling them all turns the list into confetti. Filled
+  // tags stay reserved for the exceptions (leech, recall, grading state).
+  const diffLabel = (d) =>
+    `<span class="q-diff diff-${String(d || "unknown").toLowerCase()}">${escapeHtml(d || "—")}</span>`;
+
+  // Due dates read as "due 25 Jul" rather than a raw ISO string. How late a card
+  // is only gets spelled out once it is genuinely overdue — inside the due
+  // window the segment header already says the card is waiting, and labelling a
+  // two-day slip "2d overdue" is the noise this board exists to remove.
+  function dueLabel(iso, todayIso, overdue) {
+    if (!iso) return null;
+    const due = new Date(iso + "T00:00:00");
+    if (isNaN(due)) return null;
+    const today = new Date((todayIso || new Date().toISOString().slice(0, 10)) + "T00:00:00");
+    const days = Math.round((today - due) / 86400000);
+    const short = due.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    if (overdue) return { text: `due ${short} \u00B7 ${days}d late`, overdue: true };
+    if (days === 0) return { text: "due today", overdue: false };
+    return { text: `due ${short}`, overdue: false };
+  }
+
+  // Segment accent: what is late reads hot, what is waiting reads warm, what is
+  // coming reads cool.
+  const SEGMENT_TONE = { overdue: "is-late", due: "is-now", soon: "is-soon" };
+  const SEGMENT_OPEN = new Set(["overdue", "due"]);
+
   async function renderToday() {
     const el = $("#tab-today");
-    el.innerHTML = loader("Loading your queue…");
-    const [q, reportWrap, mock] = await Promise.all([
+    beginRender(el, "Loading your queue…");
+    const [q, reportWrap, mock, families, board] = await Promise.all([
       api("/today"), api("/report/latest").catch(() => ({ report: null })),
       api("/mock/status").catch(() => ({})),
+      api("/topics/tree").catch(() => []),
+      api("/reviews/schedule").catch(() => []),
     ]);
 
     const prepHtml = [
+      progressPanel(families),
       await weeklyReportBanner(reportWrap.report),
-      goalBar(q.goal),
       mockCard(mock),
     ].filter(Boolean).join("");
 
@@ -24,83 +56,113 @@
       if (it.grading_status === "failed") return "Retry";
       return "Recall";
     };
-    const item = (it) => {
-      const kindClass = it.kind === "new" ? "kind-new" : it.kind === "drill" ? "kind-drill" : "";
+    const item = (it, overdue = false) => {
+      const lane = laneOf(it);
+      const due = dueLabel(it.due_date, q.date, overdue);
+      // The row shows each fact once. A review's mode ("Quick recall" / "Full
+      // re-solve") is already the button's label, so the meta line carries the
+      // topic and the due date instead; only drills lead with their reason,
+      // because that signal exists nowhere else on the row.
+      const meta = [], metaPlain = [];
+      const addMeta = (plain, html) => { metaPlain.push(plain); meta.push(html || escapeHtml(plain)); };
+      if (lane === "drill" && it.reason) addMeta(it.reason);
+      if (it.category) addMeta(it.category);
+      if (due) addMeta(due.text, `<span class="${due.overdue ? "is-overdue" : ""}">${due.text}</span>`);
+      const recall = it.mode === "recall";
       return `
-      <div class="box queue-card ${kindClass}" data-recall-card="${it.recall_attempt_id || ""}">
-        <div class="meta">
-          <div class="title-row">
-            <h3>${escapeHtml(it.title)}</h3>
-            ${badge(it.difficulty)}
-            ${it.leech ? '<span class="tag is-danger is-light">leech</span>' : ""}
-            ${it.mode === "recall" ? '<span class="tag is-link is-light">recall</span>' : ""}
-            ${it.grading_status === "pending" ? '<span class="tag recall-status-tag is-warning is-light">grading</span>' : ""}
-            ${it.grading_status === "ready" ? '<span class="tag recall-status-tag is-success is-light">grade ready</span>' : ""}
-            ${it.grading_status === "failed" ? '<span class="tag recall-status-tag is-danger is-light">failed</span>' : ""}
-          </div>
-          ${it.kind === "new" || it.kind === "drill" || it.mode === "recall" ? "" : `<span class="sub">${escapeHtml(it.category || "")}</span>`}
-          <span class="reason">${escapeHtml(it.reason)}${it.due_date ? " · due " + it.due_date : ""}</span>
+      <li class="q-row" data-recall-card="${it.recall_attempt_id || ""}">
+        <div class="q-main">
+          <h3 class="q-title">${escapeHtml(it.title)}</h3>
+          ${diffLabel(it.difficulty)}
+          ${it.leech ? '<span class="tag is-danger is-light">leech</span>' : ""}
+          ${it.grading_status === "pending" ? '<span class="tag recall-status-tag is-warning is-light">grading</span>' : ""}
+          ${it.grading_status === "ready" ? '<span class="tag recall-status-tag is-success is-light">grade ready</span>' : ""}
+          ${it.grading_status === "failed" ? '<span class="tag recall-status-tag is-danger is-light">failed</span>' : ""}
         </div>
-        <button class="button ${it.mode === "recall" ? "is-link" : "start"}" data-slug="${it.slug}" data-kind="${it.kind}" data-mode="${it.mode || ""}"
+        ${meta.length ? `<div class="q-meta" title="${escapeHtml(metaPlain.join(" · "))}">${
+          meta.map((m) => `<span>${m}</span>`).join("")}</div>` : ""}
+        <button class="button q-action ${recall ? "is-recall" : "is-start"}"
+          data-slug="${it.slug}" data-kind="${it.kind}" data-mode="${it.mode || ""}"
           data-title="${escapeHtml(it.title)}" data-cat="${escapeHtml(it.category || "")}"
           data-attempt="${it.recall_attempt_id || ""}" data-status="${it.grading_status || ""}">
-          ${it.mode === "recall" ? recallLabel(it) : "Start"}</button>
-      </div>`;
+          ${recall ? recallLabel(it) : "Start"}</button>
+      </li>`;
     };
+    const list = (rows) => `<ul class="q-list">${rows.join("")}</ul>`;
 
+    // Lane descriptions live in the header's tooltip rather than on the page:
+    // they are onboarding copy, and re-reading them every morning is friction.
     const section = (title, count, desc, body, extraClass = "") => `
       <section class="today-section ${extraClass}">
-        <div class="today-section-head">
-          <div>
-            <div class="section-title">${title} (${count})</div>
-            <p class="section-desc">${desc}</p>
-          </div>
-        </div>
+        <header class="section-head">
+          <h2 class="section-title" title="${escapeHtml(desc)}">${title}<span class="section-count">${count}</span></h2>
+        </header>
         ${body}
       </section>`;
+    // The review board shows every scheduled card, segmented by when it is due,
+    // instead of an unexplained top-five. What is actionable is expanded; what is
+    // merely coming up is one click away.
+    const segment = (seg) => `
+      <details class="q-seg ${SEGMENT_TONE[seg.key] || "is-later"}"${
+        SEGMENT_OPEN.has(seg.key) ? " open" : ""}>
+        <summary class="q-seg-head">
+          <span class="q-seg-caret" aria-hidden="true"></span>
+          <span class="q-seg-dot" aria-hidden="true"></span>
+          <span class="q-seg-label">${escapeHtml(seg.label)}</span>
+          <span class="q-seg-count">${seg.count}</span>
+        </summary>
+        ${list(seg.items.map((it) => item(it, seg.key === "overdue")))}
+      </details>`;
+    // "Reviews due" counts what is actually waiting; future segments are context.
+    const waiting = board
+      .filter((seg) => seg.key === "overdue" || seg.key === "due")
+      .reduce((n, seg) => n + seg.count, 0);
     const reviews = section(
       "Reviews due",
-      q.reviews.length,
-      "Problems the scheduler wants reinforced today, including quick recalls when a full re-solve is not needed.",
-      q.reviews.length ? q.reviews.map(item).join("") : "<p class='empty'>No reviews due — nice.</p>",
+      waiting,
+      "Every scheduled review, grouped by when it is due. A card stays in \u201cDue now\u201d for a week before it counts as overdue.",
+      board.length
+        ? `<div class="q-board">${board.map(segment).join("")}</div>`
+        : "<p class='empty'>No reviews scheduled yet — solve a few problems.</p>",
       "today-section-primary"
     );
     const newProblems = section(
       "New problems",
       q.new.length,
       "Fresh practice selected to expand coverage without crowding out spaced repetition.",
-      q.new.length ? q.new.map(item).join("") : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>"
+      q.new.length ? list(q.new.map(item)) : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>"
     );
     const sprintAction = `
-      <div class="sprint-card">
-        <div>
-          <div class="section-title">Sprint round</div>
-          <p class="section-desc">Statement-only pattern reps. Sixty seconds each, no LeetCode tab.</p>
-        </div>
-        <button id="btn-start-sprint" class="button is-primary">Start sprint</button>
-      </div>`;
-    const drills = q.drills && q.drills.length ? section(
+      <button id="btn-start-sprint" class="sprint-card" type="button">
+        <span class="sprint-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#i-drill" /></svg></span>
+        <span class="sprint-copy">
+          <span class="sprint-title">Sprint round</span>
+          <span class="sprint-sub">Pattern reps, 60 seconds each</span>
+        </span>
+        <span class="sprint-go" aria-hidden="true">›</span>
+      </button>`;
+    const drills = section(
       "Focused drills",
-      q.drills.length,
+      (q.drills && q.drills.length) || 0,
       "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
-      sprintAction + q.drills.map(item).join("")
-    ) : section(
-      "Focused drills",
-      0,
-      "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
-      sprintAction + "<p class='empty'>No focused drills queued.</p>"
+      sprintAction + (q.drills && q.drills.length
+        ? list(q.drills.map(item))
+        : "<p class='empty'>No focused drills queued.</p>")
     );
     const expansion = q.expansion && q.expansion.length ? section(
       "Grow your library",
       q.expansion.length,
       "Optional high-quality imports from topics you have started to clear.",
-      q.expansion.map((x) => `
-        <div class="box queue-card expansion">
-          <div class="meta"><div class="title-row"><h3>${escapeHtml(x.title)}</h3>${badge(x.difficulty)}
-            ${x.like_ratio ? `<span class="ratio">${Math.round(x.like_ratio * 100)}%👍</span>` : ""}</div>
-            <span class="reason">${escapeHtml(x.reason)} · ${escapeHtml(x.category)}</span></div>
-          <button class="button is-primary is-small import-one" data-slug="${x.slug}">Import</button>
-        </div>`).join("")
+      list(q.expansion.map((x) => `
+        <li class="q-row is-expansion">
+          <div class="q-main">
+            <h3 class="q-title">${escapeHtml(x.title)}</h3>
+            ${diffLabel(x.difficulty)}
+            ${x.like_ratio ? `<span class="tag is-success is-light">${Math.round(x.like_ratio * 100)}% liked</span>` : ""}
+          </div>
+          <div class="q-meta"><span>${escapeHtml(x.reason)}</span><span>${escapeHtml(x.category)}</span></div>
+          <button class="button q-action import-one" data-slug="${x.slug}">Import</button>
+        </li>`))
     ) : "";
     el.innerHTML = `
       <div class="today-shell">
@@ -128,53 +190,91 @@
       const r = await api("/report/weekly", "POST");
       renderToday();
     });
+    $("#btn-goto-topics") && $("#btn-goto-topics").addEventListener("click", () => App.goTab("topics"));
     $("#btn-start-mock") && $("#btn-start-mock").addEventListener("click", () => App.startMock());
     $("#btn-start-sprint") && $("#btn-start-sprint").addEventListener("click", () => App.startSprint());
+  }
+
+  // Library progress, summarised from the same tree the Topics map renders:
+  // overall coverage plus a per-family breakdown, so Today opens with a sense of
+  // where the work stands without a trip to another tab.
+  function progressPanel(families) {
+    if (!families || !families.length) return "";
+    const solved = families.reduce((n, f) => n + f.solved, 0);
+    const total = families.reduce((n, f) => n + f.total, 0);
+    if (!total) return "";
+    const weighted = families.reduce((n, f) => n + f.mastery * f.solved, 0);
+    const mastery = solved ? Math.round((weighted / solved) * 100) : 0;
+    const cleared = families.filter((f) => f.total && f.solved >= f.total).length;
+    const coverage = Math.round((solved / total) * 100);
+
+    const chip = (f) => `
+      <div class="fam-chip${f.total && f.solved >= f.total ? " is-complete" : ""}">
+        <div class="fam-chip-top">
+          <span class="fam-chip-name">${escapeHtml(f.family)}</span>
+          <span class="fam-chip-count">${f.solved}<em>/${f.total}</em></span>
+        </div>
+        <span class="bar"><span style="width:${Math.round(f.coverage * 100)}%"></span></span>
+      </div>`;
+
+    return `
+      <section class="progress-panel">
+        <div class="progress-lead">
+          <div class="progress-headline">
+            <h2 class="section-title">Library progress</h2>
+            <div class="progress-count">${solved}<em>/${total}</em></div>
+          </div>
+          <p class="progress-sub">${coverage}% covered · ${mastery}% mastery${
+            cleared ? ` · ${cleared} famil${cleared === 1 ? "y" : "ies"} cleared` : ""}</p>
+          <button id="btn-goto-topics" class="button is-ghost is-small" type="button">Topic map</button>
+        </div>
+        <span class="bar progress-overall"><span style="width:${coverage}%"></span></span>
+        <div class="fam-strip">${families.map(chip).join("")}</div>
+      </section>`;
   }
 
   async function weeklyReportBanner(report) {
     const thisWeek = isoWeek(new Date());
     if (!report || report.iso_week !== thisWeek) {
       if (!App.llmEnabled) return "";
-      return `<div class="notification report-banner is-flex is-justify-content-space-between is-align-items-center">
-        <div><b>Weekly coach report</b><p class="small">Get this week's diagnosis and focus plan.</p></div>
+      return `<div class="banner">
+        <span class="banner-icon" aria-hidden="true">\u{1F4CB}</span>
+        <div class="banner-body">
+          <div class="banner-title">Weekly coach report</div>
+          <p class="banner-sub">Get this week's diagnosis and focus plan.</p>
+        </div>
         <button id="btn-gen-report" class="button is-primary">Generate</button></div>`;
     }
-    return `<div class="notification is-info is-light report-banner report-ready">
-      <div><b>Weekly coach report</b>
-      <ul>${report.insights.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
-      ${report.focus_plan ? `<p class="focus"><b>Focus:</b> ${escapeHtml(report.focus_plan)}</p>` : ""}</div></div>`;
-  }
-
-  function goalBar(g) {
-    if (!g) return "";
-    const bar = (done, goal, label) => {
-      const pctv = Math.min(100, goal ? Math.round((done / goal) * 100) : 0);
-      return `<div class="goal"><span class="goal-label">${label} ${done}/${goal}</span>
-        <span class="goal-track"><span class="goal-fill" style="width:${pctv}%"></span></span></div>`;
-    };
-    return `<div class="goals">${bar(g.reviews_done, g.reviews_goal, "Reviews this week")}
-      ${bar(g.new_done, g.new_goal, "New this week")}</div>`;
+    return `<div class="banner is-report">
+      <span class="banner-icon" aria-hidden="true">\u{1F4CB}</span>
+      <div class="banner-body">
+        <div class="banner-title">Weekly coach report</div>
+        <ul>${report.insights.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
+        ${report.focus_plan ? `<p class="focus"><b>Focus:</b> ${escapeHtml(report.focus_plan)}</p>` : ""}
+      </div></div>`;
   }
 
   function mockCard(mock) {
     if (!mock || mock.active) {
-      if (mock && mock.active) return `<div class="notification mock-banner is-flex is-justify-content-space-between is-align-items-center">
-        <div><b>Mock in progress</b></div>
+      if (mock && mock.active) return `<div class="banner">
+        <span class="banner-icon" aria-hidden="true">\u{23F1}</span>
+        <div class="banner-body"><div class="banner-title">Mock in progress</div>
+          <p class="banner-sub">Pick up where you left off.</p></div>
         <button id="btn-start-mock" class="button is-primary">Resume</button></div>`;
       return "";
     }
     if (mock.taken_this_week) return "";
-    return `<div class="notification mock-banner is-flex is-justify-content-space-between is-align-items-center">
-      <div><b>Weekly mock interview</b>
-      <p class="small">60 min · 3 problems · exam conditions. Builds the trend that actually tracks readiness.</p></div>
+    return `<div class="banner">
+      <span class="banner-icon" aria-hidden="true">\u{23F1}</span>
+      <div class="banner-body"><div class="banner-title">Weekly mock interview</div>
+        <p class="banner-sub">60 min \u00B7 3 problems \u00B7 exam conditions. Builds the trend that actually tracks readiness.</p></div>
       <button id="btn-start-mock" class="button is-primary">Start mock</button></div>`;
   }
 
   // ---- Discover ----------------------------------------------------------------
   async function renderDiscover() {
     const el = $("#tab-discover");
-    el.innerHTML = loader("Loading packs…");
+    beginRender(el, "Loading packs…");
     const packs = await api("/packs");
     const packCards = packs.map((p) => `
       <div class="box pack-card">
@@ -229,30 +329,82 @@
     });
   }
 
-  // ---- Topics ------------------------------------------------------------------
+  // ---- Topics map --------------------------------------------------------------
+  const masteryColor = (m) => (m >= 0.66 ? "var(--green)" : m >= 0.33 ? "var(--amber)" : "var(--red)");
+
+  function progressBar(coverage) {
+    return `<div class="bar progress"><span style="width:${Math.round(coverage * 100)}%"></span></div>`;
+  }
+
+  function masteryPill(t) {
+    if (!t.solved) return `<span class="mastery-pill is-empty">not started</span>`;
+    return `<span class="mastery-pill" style="--pill:${masteryColor(t.mastery)}">${Math.round(t.mastery * 100)}% mastery</span>`;
+  }
+
+  function topicNode(t, focus) {
+    const meta = [
+      t.independence_rate != null ? `${Math.round(t.independence_rate * 100)}% solo` : null,
+      t.avg_confidence != null ? `conf ${t.avg_confidence}` : null,
+      t.sprint_accuracy != null ? `${Math.round(t.sprint_accuracy * 100)}% pattern` : null,
+    ].filter(Boolean).join(" · ");
+    return `
+      <div class="topic-node${t.solved === t.total && t.total ? " is-complete" : ""}">
+        <div class="topic-node-name">
+          ${escapeHtml(t.category)}
+          ${focus.has(t.category) ? `<span class="focus-chip">focus</span>` : ""}
+          ${meta ? `<div class="small">${meta}</div>` : ""}
+        </div>
+        <div class="topic-node-count">${t.solved}<span class="small">/${t.total}</span></div>
+        ${progressBar(t.coverage)}
+        ${masteryPill(t)}
+      </div>`;
+  }
+
   async function renderTopics() {
     const el = $("#tab-topics");
-    el.innerHTML = loader("Loading topics…");
-    const topics = await api("/topics");
-    if (!topics.length) { el.innerHTML = "<p class='empty'>No data yet. Import a pack and solve a few.</p>"; return; }
-    const color = (m) => (m >= 0.66 ? "var(--green)" : m >= 0.33 ? "var(--amber)" : "var(--red)");
-    el.innerHTML = `<div class="section-title">Topic mastery (weakest first)</div>` +
-      topics.map((t) => `
-        <div class="topic-row">
-          <div><div class="name">${escapeHtml(t.category)}</div>
-            <div class="small">${t.solved}/${t.total} solved
-              ${t.independence_rate != null ? "· " + Math.round(t.independence_rate * 100) + "% solo" : ""}
-              ${t.avg_confidence != null ? "· conf " + t.avg_confidence : ""}</div></div>
-          <div class="small">${Math.round(t.coverage * 100)}% cov</div>
-          <div class="bar"><span style="width:${Math.round(t.mastery * 100)}%;background:${color(t.mastery)}"></span></div>
-          <div class="small">mastery ${Math.round(t.mastery * 100)}%</div>
-        </div>`).join("");
+    beginRender(el, "Loading topics…");
+    const families = await api("/topics/tree");
+    if (!families.length) {
+      el.innerHTML = "<p class='empty'>No data yet. Import a pack and solve a few.</p>";
+      return;
+    }
+
+    // Weakness is annotated in place rather than re-sorting the map, so the
+    // tree stays a stable picture of where you are.
+    const focus = new Set(
+      families.flatMap((f) => f.topics).filter((t) => t.solved)
+        .sort((a, b) => b.weakness - a.weakness).slice(0, 3).map((t) => t.category)
+    );
+
+    const solved = families.reduce((n, f) => n + f.solved, 0);
+    const total = families.reduce((n, f) => n + f.total, 0);
+
+    el.innerHTML = `
+      <div class="topic-map-head">
+        <div>
+          <h2 class="section-title">Your map</h2>
+          <div class="topic-map-count">${solved}<span class="small">/${total} solved</span></div>
+        </div>
+        ${progressBar(total ? solved / total : 0)}
+      </div>` +
+      families.map((f) => `
+        <details class="family" open>
+          <summary>
+            <span class="family-name">${escapeHtml(f.family)}</span>
+            <span class="family-count small">${f.solved}/${f.total}</span>
+            ${progressBar(f.coverage)}
+            ${masteryPill(f)}
+          </summary>
+          <div class="family-body">
+            ${f.topics.map((t) => topicNode(t, focus)).join("")}
+          </div>
+        </details>`).join("");
   }
 
   // ---- Insights ----------------------------------------------------------------
   async function renderInsights() {
     const el = $("#tab-insights");
-    el.innerHTML = loader("Crunching your stats…");
+    beginRender(el, "Crunching your stats…");
     const d = await api("/insights");
     const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v, color: "var(--red)" }));
     const pa = d.prediction_accuracy || {};
@@ -299,7 +451,7 @@
   // ---- Playbook ----------------------------------------------------------------
   async function renderPlaybook() {
     const el = $("#tab-playbook");
-    el.innerHTML = loader("Loading playbooks…");
+    beginRender(el, "Loading playbooks…");
     const topics = await api("/topics");
     if (!topics.length) { el.innerHTML = "<p class='empty'>Solve some problems first.</p>"; return; }
     const opts = topics.map((t) => `<option value="${escapeHtml(t.category)}">${escapeHtml(t.category)}</option>`).join("");
@@ -347,7 +499,7 @@
 
   async function renderHistory() {
     const el = $("#tab-history");
-    el.innerHTML = loader("Loading history…");
+    beginRender(el, "Loading history…");
     const rows = await api("/history?limit=100");
     if (!rows.length) { el.innerHTML = "<p class='empty'>No attempts logged yet.</p>"; return; }
     const confLabel = (c) => (c == null ? "—" : `<span class="conf-${c}">${["", "Low", "Med", "High"][c]}</span>`);
@@ -407,7 +559,7 @@
   // ---- Problems ----------------------------------------------------------------
   async function renderProblems() {
     const el = $("#tab-problems");
-    el.innerHTML = loader("Loading problems…");
+    beginRender(el, "Loading problems…");
     const rows = await api("/problems");
     if (!rows.length) { el.innerHTML = "<p class='empty'>No problems imported. Go to Discover.</p>"; return; }
     el.innerHTML = `<table class="table is-app is-fullwidth is-hoverable">
@@ -429,7 +581,7 @@
   // ---- Settings ----------------------------------------------------------------
   async function renderSettings() {
     const el = $("#tab-settings");
-    el.innerHTML = loader("Loading settings…");
+    beginRender(el, "Loading settings…");
     const c = await api("/config");
     const hasCookie = !!localStorage.getItem("lc_session");
     const llmOptions = c.llm_options || {};

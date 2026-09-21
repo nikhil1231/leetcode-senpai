@@ -1,5 +1,9 @@
 // ---- auth / mode ---------------------------------------------------------------
-const LOCAL = ["127.0.0.1", "localhost"].includes(window.location.hostname) ||
+// The server states this outright (AUTH_MODE=local), and in that mode it omits
+// the Firebase SDK from the page entirely. The hostname/config checks stay as a
+// fallback for a page served without the placeholder substituted.
+const LOCAL = window.LOCAL_MODE === true ||
+  ["127.0.0.1", "localhost"].includes(window.location.hostname) ||
   !window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey;
 let appStarted = false;
 
@@ -33,6 +37,11 @@ const api = async (path, method = "GET", body) => {
     const payload = await res.json().catch(() => ({}));
     throw new Error(apiErrorMessage(payload.detail) || res.statusText);
   }
+  // A write has just changed the server's revision counters, so any in-flight
+  // freshness check is now answering about the world before it. Drop it, or a
+  // render kicked off straight after a mutation could conclude "nothing changed"
+  // from a reading taken a moment too early and leave stale rows on screen.
+  if (method !== "GET") revInFlight = null;
   return res.json();
 };
 
@@ -75,6 +84,13 @@ const cxOptions = (sel) => COMPLEXITIES.map((c) =>
 // Reusable async-loading indicator (matches the recall grading spinner).
 const loader = (msg = "Loading…") =>
   `<div class="loading-block"><span class="spinner"></span><span>${escapeHtml(msg)}</span></div>`;
+// A re-render must not blank the page first — replacing a drawn tab with a
+// spinner is what made every revisit feel like a full reload. Only an empty tab
+// gets the spinner; a refresh keeps what is on screen until the new markup is
+// ready (see .tab.is-refreshing, which dims it only if the wait is noticeable).
+const beginRender = (el, msg) => {
+  if (!el.childElementCount) el.innerHTML = loader(msg);
+};
 const sanitizeProblemHtml = (html) => {
   if (!html) return "";
   const template = document.createElement("template");
@@ -93,7 +109,8 @@ const sanitizeProblemHtml = (html) => {
   return template.innerHTML;
 };
 
-window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader, COMPLEXITIES };
+window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader,
+  beginRender, COMPLEXITIES };
 
 // ---- state ---------------------------------------------------------------------
 let activeSession = null;
@@ -125,39 +142,119 @@ function hideSignIn() {
 }
 
 // ---- tabs / router -------------------------------------------------------------
+// Each tab's topbar heading: the title doubles as "where am I", the subtitle says
+// what the tab is for, so no section needs to re-explain itself.
+const TAB_HEADINGS = {
+  today: ["Today", "Your queue for the day"],
+  discover: ["Discover", "Curated packs and highly-rated problems"],
+  topics: ["Topics", "Coverage and mastery across the map"],
+  insights: ["Insights", "What the data says about your prep"],
+  playbook: ["Playbook", "Synthesized cheat sheets per pattern"],
+  history: ["History", "Every attempt you have logged"],
+  problems: ["Problems", "Your imported library"],
+  settings: ["Settings", "Account, coach, and scheduling"],
+};
+function setPageHeading(tab) {
+  const [title, sub] = TAB_HEADINGS[tab] || TAB_HEADINGS.today;
+  $("#page-title").textContent = title;
+  $("#page-sub").textContent = sub;
+}
 $$("#tabs li").forEach((li) => {
   li.addEventListener("click", () => {
     $$("#tabs li").forEach((b) => b.classList.remove("is-active"));
     li.classList.add("is-active");
     $$(".tab").forEach((t) => t.classList.add("hidden"));
     $("#tab-" + li.dataset.tab).classList.remove("hidden");
+    setPageHeading(li.dataset.tab);
     render(li.dataset.tab);
   });
 });
 function currentActiveTab() { return $("#tabs li.is-active").dataset.tab; }
-function render(tab) {
-  const fn = window.Views["render" + tab.charAt(0).toUpperCase() + tab.slice(1)];
-  (fn || window.Views.renderToday)();
+// Programmatic navigation for in-page links (e.g. Today's "Topic map" button).
+function goTab(tab) {
+  const li = $(`#tabs li[data-tab="${tab}"]`);
+  if (li) li.click();
+}
+// ---- freshness ------------------------------------------------------------------
+// Drawing a tab costs several Firestore round-trips. Knowing whether it *needs*
+// drawing does not: /api/rev answers from server memory in ~2ms with a write
+// counter per collection. So a tab nothing has touched since it was drawn is
+// left exactly as it stands — no refetch, no spinner, and nothing shifting under
+// the cursor. This is why the cache can be aggressive without ever showing
+// stale data: we verify freshness rather than betting on a staleness window.
+let revInFlight = null;
+async function currentRev() {
+  if (revInFlight) return revInFlight;
+  // A single check serves every render kicked off in the same tick (page load
+  // fires five at once); the next user action gets a fresh one.
+  const mine = api("/rev")
+    .then((r) => JSON.stringify([r.rev, r.date]))
+    .catch(() => null);  // freshness unknown -> fall through and re-render
+  revInFlight = mine;
+  try { return await mine; }
+  finally {
+    // Expire at the end of the tick. Sharing within one tick is the point;
+    // holding it any longer would miss a background job's write.
+    if (revInFlight === mine) setTimeout(() => { revInFlight = null; }, 0);
+  }
+}
+
+const renderedRev = {};  // tab -> the revision its DOM was built from
+
+// `force` redraws regardless — for the rare case where the view depends on
+// something the server's counters don't cover.
+async function render(tab, { force = false } = {}) {
+  const el = $("#tab-" + tab);
+  const fn = window.Views["render" + tab.charAt(0).toUpperCase() + tab.slice(1)]
+    || window.Views.renderToday;
+  const drawn = el.childElementCount > 0;
+  // Sample the revision *before* fetching: a write landing mid-render must not
+  // be mistaken for one this render already reflects.
+  const rev = await currentRev();
+  if (!force && drawn && rev && renderedRev[tab] === rev) return;
+  if (drawn) el.classList.add("is-refreshing");
+  try {
+    await fn();
+    renderedRev[tab] = rev;
+  } finally {
+    el.classList.remove("is-refreshing");
+  }
 }
 
 // ---- overview ------------------------------------------------------------------
-async function loadOverview() {
+let overviewRev = null;
+async function loadOverview({ force = false } = {}) {
+  const rev = await currentRev();
+  if (!force && overviewRev && overviewRev === rev) return;
   const o = await api("/overview");
+  overviewRev = rev;
   llmEnabled = o.llm_enabled;
-  const drillsToday = o.drills_today > 0
-    ? `<span>Drills <b>${o.drills_today}</b></span>`
-    : "";
   llmProvider = o.llm_provider || "";
   llmModel = o.llm_model || "";
-  const coachLabel = llmModel ? `${llmProvider}/${llmModel}` : "coach";
-  $("#overview").innerHTML = `
-    <span>Solved <b>${o.solved}</b>/${o.total_problems}</span>
-    <span>Due <b>${o.due_reviews}</b></span>
-    <span>Streak <b>${o.streak}</b>🔥</span>
-    <span>XP today <b>${o.xp_today}</b></span>
-    ${drillsToday}
-    <span>Leeches <b>${o.leeches}</b></span>
-    ${llmEnabled ? `<span class="ai-on">Coach on: ${escapeHtml(coachLabel)}</span>` : '<span class="ai-off">Coach off</span>'}`;
+
+  // `optional` stats collapse first on narrow screens; `mod` tints the value
+  // when the number is something to act on (due reviews, leeches).
+  const stat = (label, value, { sub = "", mod = "", optional = false } = {}) => `
+    <div class="stat${mod ? " " + mod : ""}${optional ? " is-optional" : ""}">
+      <span class="stat-label">${label}</span>
+      <span class="stat-value">${value}${sub ? `<em>${sub}</em>` : ""}</span>
+    </div>`;
+  $("#overview").innerHTML = [
+    stat("Solved", o.solved, { sub: `/${o.total_problems}` }),
+    stat("Due", o.due_reviews, { mod: o.due_reviews ? "is-due" : "" }),
+    stat("Streak", `${o.streak}<em>🔥</em>`),
+    stat("XP today", o.xp_today, { optional: true }),
+    o.drills_today > 0 ? stat("Drills", o.drills_today, { optional: true }) : "",
+    stat("Leeches", o.leeches, { mod: o.leeches ? "is-alert" : "", optional: true }),
+  ].filter(Boolean).join("");
+
+  const coachLabel = llmModel ? `${llmProvider}/${llmModel}` : "not configured";
+  $("#coach-chip").innerHTML = `
+    <div class="coach-chip${llmEnabled ? " ai-on" : ""}" title="${escapeHtml(coachLabel)}">
+      <span class="coach-dot"></span>
+      <span class="coach-model">Coach ${llmEnabled ? escapeHtml(coachLabel) : "off"}</span>
+    </div>`;
+
   (o.newly_mastered || []).forEach((m) =>
     toast(`🎉 Topic mastered: ${m.category}!`));
 }
@@ -252,7 +349,7 @@ async function refreshActive() {
 
 function setDashboardLocked(locked) {
   document.body.classList.toggle("has-active-session", locked);
-  ["#tabs", "#overview", "#user-chip", "main"].forEach((sel) => {
+  ["#tabs", "#overview", "#user-chip", "#coach-chip", "main"].forEach((sel) => {
     const el = $(sel);
     if (!el) return;
     if (locked) {
@@ -451,7 +548,7 @@ function openAnnotate(attempt) {
   if (attempt.memory_percentile != null) facts.push(`Memory beats <b>${pct(attempt.memory_percentile)}</b>`);
   if (attempt.wrong_before_ac != null) facts.push(`Wrong subs <b>${attempt.wrong_before_ac}</b>`);
   if (attempt.lang) facts.push(`Lang <b>${attempt.lang}</b>`);
-  $("#annotate-facts").innerHTML = facts.join("");
+  $("#annotate-facts").innerHTML = facts.map((f) => `<span>${f}</span>`).join("");
   // default independence to "hints" if they used the hint ladder
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   selectPill("#conf-group", "2");
@@ -1136,11 +1233,9 @@ async function renderSprintSummary() {
 
 function refreshAfterSprint() {
   loadOverview();
-  if (window.Views) {
-    window.Views.renderToday();
-    window.Views.renderHistory();
-    window.Views.renderInsights();
-  }
+  // Only the visible tab needs redrawing now; the others are revalidated by
+  // their revision the next time they are opened.
+  render(currentActiveTab());
 }
 
 $("#btn-close-sprint").addEventListener("click", closeSprint);
@@ -1164,9 +1259,9 @@ async function openDetail(attemptId) {
       <h2>${escapeHtml(a.title || a.slug)} ${a.difficulty ? badge(a.difficulty) : ""}</h2>
       <div class="detail-meta small">${escapeHtml(a.neetcode_category || "")} · ${a.solved_at ? new Date(a.solved_at * 1000).toLocaleString() : ""}</div>
       <div class="facts">
-        <b>Sprint rep</b>
-        ${a.round_id ? `Round <b>${escapeHtml(a.round_id)}</b>` : ""}
-        ${a.predicted_category ? `Prediction <b>${escapeHtml(a.predicted_category)}</b>` : ""}
+        <span><b>Sprint rep</b></span>
+        ${a.round_id ? `<span>Round <b>${escapeHtml(a.round_id)}</b></span>` : ""}
+        ${a.predicted_category ? `<span>Prediction <b>${escapeHtml(a.predicted_category)}</b></span>` : ""}
       </div>
       ${a.neetcode_category ? `<p><b>Prompt category:</b> ${escapeHtml(a.neetcode_category)}</p>` : ""}
       ${a.predicted_category ? `<p><b>Your prediction:</b> ${escapeHtml(a.predicted_category)}</p>` : ""}
@@ -1182,10 +1277,10 @@ async function openDetail(attemptId) {
     <h2>${escapeHtml(a.title || a.slug)} ${a.difficulty ? badge(a.difficulty) : ""}</h2>
     <div class="detail-meta small">${escapeHtml(a.neetcode_category || "")} · ${a.solved_at ? new Date(a.solved_at * 1000).toLocaleString() : ""}</div>
     <div class="facts">
-      ${a.time_taken_sec != null ? `Time <b>${fmtTime(a.time_taken_sec)}</b>` : ""}
-      ${a.confidence ? `Conf <b>${["", "Low", "Med", "High"][a.confidence]}</b>` : ""}
-      ${a.independence ? `<b>${a.independence}</b>` : ""}
-      ${a.complexity_time ? `Time <b>${escapeHtml(a.complexity_time)}</b>` : ""}
+      ${a.time_taken_sec != null ? `<span>Time <b>${fmtTime(a.time_taken_sec)}</b></span>` : ""}
+      ${a.confidence ? `<span>Conf <b>${["", "Low", "Med", "High"][a.confidence]}</b></span>` : ""}
+      ${a.independence ? `<span><b>${a.independence}</b></span>` : ""}
+      ${a.complexity_time ? `<span>Time <b>${escapeHtml(a.complexity_time)}</b></span>` : ""}
     </div>
     ${a.approach ? `<p><b>Your approach:</b> ${escapeHtml(a.approach)}</p>` : ""}
     ${a.mistake_note ? `<p><b>Note:</b> ${escapeHtml(a.mistake_note)}</p>` : ""}
@@ -1281,7 +1376,7 @@ function showUserChip(email) {
 
 // expose for views.js
 window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOverview, render,
-  currentActiveTab, api, runSweep, get llmEnabled() { return llmEnabled; } };
+  currentActiveTab, goTab, api, runSweep, get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------
 // Deferred to DOMContentLoaded so views.js (loaded after this file) has defined

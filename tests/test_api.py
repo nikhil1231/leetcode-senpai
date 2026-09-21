@@ -1121,3 +1121,130 @@ def test_invalid_manual_attempt_does_not_write_history(client, invalid):
     assert response.status_code == 422
     assert client.store.list_attempts() == []
     assert client.store.get_review("two-sum") is None
+
+
+def test_topics_tree_endpoint_returns_families_with_nested_topics(client):
+    tree = client.get("/api/topics/tree").json()
+
+    assert [f["family"] for f in tree] == ["Foundations"]
+    foundations = tree[0]
+    assert [t["category"] for t in foundations["topics"]] == [
+        "Arrays & Hashing", "Two Pointers"]
+    assert foundations["total"] == 3
+    assert foundations["solved"] == 0
+    assert foundations["coverage"] == 0.0
+
+
+def test_topics_tree_tracks_solves_while_flat_topics_endpoint_still_works(client):
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "confidence": 3,
+        "independence": "solo", "source": "manual",
+    })
+
+    foundations = client.get("/api/topics/tree").json()[0]
+    arrays = next(t for t in foundations["topics"] if t["category"] == "Arrays & Hashing")
+
+    assert foundations["solved"] == 1
+    assert arrays["solved"] == 1
+    assert arrays["mastery"] == 1.0
+
+    flat = client.get("/api/topics").json()
+    assert {t["category"] for t in flat} == {"Arrays & Hashing", "Two Pointers"}
+
+
+# ---- review board ---------------------------------------------------------------
+def _iso_from_today(days):
+    import datetime as dt
+    return (dt.date.today() + dt.timedelta(days=days)).isoformat()
+
+
+def test_review_schedule_segments_every_card(client):
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": _iso_from_today(-30), "interval_days": 6,
+        "reps": 2, "ease": 2.5, "fail_count": 0, "leech": 0})
+    client.store.upsert_review("3sum", {
+        "slug": "3sum", "due_date": _iso_from_today(-1), "interval_days": 6,
+        "reps": 2, "ease": 2.5, "fail_count": 0, "leech": 0})
+    client.store.upsert_review("valid-anagram", {
+        "slug": "valid-anagram", "due_date": _iso_from_today(20), "interval_days": 30,
+        "reps": 3, "ease": 2.5, "fail_count": 0, "leech": 0})
+
+    segments = client.get("/api/reviews/schedule").json()
+
+    assert [s["key"] for s in segments] == ["overdue", "due", "later"]
+    assert sum(s["count"] for s in segments) == 3
+    assert segments[0]["items"][0]["title"] == "Two Sum"
+
+
+def test_review_schedule_is_empty_without_cards(client):
+    assert client.get("/api/reviews/schedule").json() == []
+
+
+def test_review_schedule_exceeds_the_daily_review_limit(client):
+    # The board must show everything, unlike /api/today's capped queue.
+    client.store.update_settings({"review_limit": 1})
+    for slug in ("two-sum", "3sum", "valid-anagram"):
+        client.store.upsert_review(slug, {
+            "slug": slug, "due_date": _iso_from_today(-2), "interval_days": 6,
+            "reps": 2, "ease": 2.5, "fail_count": 0, "leech": 0})
+
+    board = client.get("/api/reviews/schedule").json()
+    queue = client.get("/api/today").json()
+
+    assert sum(s["count"] for s in board) == 3
+    assert len(queue["reviews"]) == 1
+
+
+# ---- revision / freshness plumbing ----------------------------------------------
+def test_rev_is_stable_until_something_actually_changes(client):
+    # The first /api/today of the day legitimately writes: it establishes that
+    # day's drill lane. Everything after it must be pure reads.
+    client.get("/api/today")
+    first = client.get("/api/rev").json()
+    assert set(first) == {"rev", "date"}
+
+    client.get("/api/today")
+    client.get("/api/insights")
+    client.get("/api/history")
+    client.get("/api/problems")
+
+    # Reads must not move the counters, or the client would refetch forever and
+    # the view cache would never hit.
+    assert client.get("/api/rev").json() == first
+
+
+def test_repeat_today_loads_do_not_rewrite_an_unchanged_drill_lane(client):
+    client.get("/api/today")
+    before = client.get("/api/rev").json()["rev"]["userdoc"]
+    client.get("/api/today")
+    assert client.get("/api/rev").json()["rev"]["userdoc"] == before
+
+
+def test_rev_changes_after_a_write(client):
+    before = client.get("/api/rev").json()["rev"]
+    client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
+        "confidence": 3, "independence": "solo",
+    })
+    after = client.get("/api/rev").json()["rev"]
+    assert after != before
+    assert after["attempts"] != before["attempts"]
+    # Unrelated collections stay put, so an unaffected tab is not redrawn.
+    assert after["reviews"] == before["reviews"]
+
+
+def test_rev_carries_the_date_so_the_queue_rolls_over_at_midnight(client):
+    import datetime as dt
+    assert client.get("/api/rev").json()["date"] == dt.date.today().isoformat()
+
+
+def test_catalog_omits_problem_statements_but_single_reads_keep_them(client):
+    client.store.upsert_problem({"slug": "two-sum", "content_html": "<p>Given…</p>"})
+
+    listed = client.get("/api/problems").json()
+    two_sum = next(p for p in listed if p["slug"] == "two-sum")
+    assert "content_html" not in two_sum
+
+    # The one place it is actually needed still gets it.
+    detail = client.get("/api/problem/two-sum/recall-context").json()
+    assert detail["content_html"] == "<p>Given…</p>"
