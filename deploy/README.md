@@ -4,7 +4,7 @@ Two deployments run on the laptop, from two different checkouts:
 
 | | checkout | port | reached by |
 |---|---|---|---|
-| **Live** | `~/Documents/Programming/Learning/leetcode-live` | 127.0.0.1:8200 | `https://leetcode.nikhil.ing` through the tunnel |
+| **Live** | `~/Documents/Programming/Learning/leetcode` (on `main`) | 127.0.0.1:8200 | `https://leetcode.nikhil.ing` through the tunnel |
 | **Testing** | `~/Documents/Programming/Learning/leetcode-testing` | :8000 | the laptop / LAN |
 
 One server (`run.py`) serves both the API and the static frontend in each.
@@ -23,17 +23,13 @@ ticket-runner builds.
 
 ### Topology (laptop)
 
-- **This** checkout (`~/Documents/Programming/Learning/leetcode`) is where
-  ticket-runner builds `integration/leetcode-senpai` locally. Nothing serves it:
-  a live site pinned to a build tree shows mid-build states, and the two would
-  fight over which branch is checked out.
+- **This** checkout (`~/Documents/Programming/Learning/leetcode`) stays on
+  `main` and serves the public hostname on :8200. The integration branch is the
+  -testing checkout's job, not this one's.
 - A **separate** checkout `~/Documents/Programming/Learning/leetcode-testing`
   serves :8000. Its git `origin` is *this* local repo, so it fetches the
   integration branch directly. It has its own `.venv` and untracked
   `.env.local` (Firestore creds) — never reset away.
-- A third checkout `~/Documents/Programming/Learning/leetcode-live` serves the
-  public hostname on :8200. Its `origin` is GitHub, and it has its own
-  `.venv` and `.env.local`.
 - Not to be confused with the ticket-runner dashboard on **:4600**.
 
 ### Install / update
@@ -146,11 +142,11 @@ reports on the wrong one rather than complaining.
 
 ### Deploying
 
-The live site serves the live checkout's working tree, so a deploy is a `git
+The live site serves the main checkout's working tree, so a deploy is a `git
 pull` in that tree plus a restart:
 
 ```sh
-cd ~/Documents/Programming/Learning/leetcode-live
+cd ~/Documents/Programming/Learning/leetcode
 git pull
 ~/.local/bin/uv sync --locked --no-dev
 systemctl --user restart leetcode-senpai.service
