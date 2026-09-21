@@ -83,6 +83,10 @@ uv run run.py
 ```
 
 `uv run` manages the project environment automatically; no activation is needed.
+If the requested port is busy, local startup tries successive ports (8001, 8002,
+and so on) and prints the selected URL. This also works with auto-reload and
+`run_local_firestore.py`.
+
 Python 3.12 is the default (`.python-version`). Dependencies live in
 `pyproject.toml`, with exact resolutions committed in `uv.lock`. Test tools are
 in the dev group; use `uv sync --locked --no-dev` for a runtime-only environment.

@@ -30,7 +30,7 @@ if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
         "GOOGLE_APPLICATION_CREDENTIALS is required (path to a service account key JSON file)."
     )
 
-import uvicorn
+from server.launcher import run_local
 
 if __name__ == "__main__":
-    uvicorn.run("server.main:app", host="127.0.0.1", port=8000, reload=True)
+    run_local(host="127.0.0.1", port=8000, reload=True)
