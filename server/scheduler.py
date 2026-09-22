@@ -91,6 +91,11 @@ def solution_quality(confidence, independence, solution_score):
 
 
 # ---- SM-2 -----------------------------------------------------------------------
+# Where a card keeps the state it was advanced from, so a second grade on the
+# same day can replace that advance instead of compounding it.
+PRIOR_CARD_KEY = "prior_card"
+
+
 def seed_review(slug, today=None):
     """Neutral review card for a backfilled solve with no annotation."""
     if config.SCHEDULER == "fsrs":
@@ -111,6 +116,12 @@ def advance_review(current, confidence, independence, today=None, grade=None,
     Pass `grade` (0..3) for approach-recall reviews. Pass `solution_score` (0..5)
     to blend the LLM's code grade with the confidence/independence self-assessment;
     otherwise confidence + independence are graded normally.
+
+    A card moves once per day. Grading the same problem again today — a second
+    solve after a better submission, a recall on top of a solve — replaces that
+    day's advance rather than stacking another on top of it, so a problem you
+    revisited never ends up scheduled further out than one you nailed first time.
+    The last rating of the day is the one that stands.
     """
     if grade is not None:
         q = recall_quality(grade)
@@ -118,10 +129,32 @@ def advance_review(current, confidence, independence, today=None, grade=None,
         q = solution_quality(confidence, independence, solution_score)
     else:
         q = quality(confidence, independence)
+    today_d = _today(today)
+    prior = _rewind_todays_advance(current, today_d)
     if config.SCHEDULER == "fsrs":
         from . import fsrs_engine
-        return fsrs_engine.advance_review(current, q, today=_today(today))
-    return _advance_sm2(current, q, today=_today(today))
+        out = fsrs_engine.advance_review(prior, q, today=today_d)
+    else:
+        out = _advance_sm2(prior, q, today=today_d)
+    # What this advance was computed from, so the next one today can redo it.
+    # Stripped of its own snapshot, which keeps the nesting one deep.
+    out[PRIOR_CARD_KEY] = (
+        {k: v for k, v in prior.items() if k != PRIOR_CARD_KEY} if prior else None)
+    return out
+
+
+def _rewind_todays_advance(current, today_d):
+    """The card as it stood before today, if it has already moved today.
+
+    Cards written before this snapshot existed don't carry one, so they keep the
+    old stacking behaviour rather than being reset to a first review — a missing
+    snapshot means "unknown", never "there was nothing here".
+    """
+    if not current or current.get("last_reviewed") != _iso(today_d):
+        return current
+    if PRIOR_CARD_KEY not in current:
+        return current
+    return current[PRIOR_CARD_KEY]
 
 
 def _advance_sm2(current, q, today):

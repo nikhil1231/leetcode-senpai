@@ -15,6 +15,16 @@ def _no_polite_delay(monkeypatch):
     monkeypatch.setattr(importer, "POLITE_DELAY", 0)
 
 
+@pytest.fixture(autouse=True)
+def _no_fsrs_fuzz(monkeypatch):
+    """FSRS fuzzes intervals by design, so two identical advances land on
+    different dates. Off in tests, so they can say what a card should do."""
+    from fsrs import Scheduler
+
+    from server import fsrs_engine
+    monkeypatch.setattr(fsrs_engine, "_scheduler", Scheduler(enable_fuzzing=False))
+
+
 @pytest.fixture
 def store():
     return FakeStore()

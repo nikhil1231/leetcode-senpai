@@ -4,6 +4,7 @@ No Firestore, no network, no LLM key — exercises the request/response plumbing
 and the graceful-degradation paths.
 """
 import copy
+import datetime as dt
 import json
 import time
 import asyncio
@@ -2426,3 +2427,45 @@ def test_optimising_after_the_first_ac_stays_one_solve(client, monkeypatch):
     client.post("/api/poll")
     assert client.store.get_review("two-sum")["due_date"] == once["due_date"]
     assert len(client.get("/api/history").json()) == 1
+
+
+def test_rating_two_solves_of_one_problem_today_moves_the_card_once(client):
+    """The other half of the same story: you rate the slow solve, *then* land a
+    better one. That's a genuine second attempt — but it's still one day's work,
+    so the card must not be pushed out twice for it."""
+    slow = client.post("/api/attempt/manual", json={
+        "slug": "two-sum", "time_taken_sec": 900,
+        "confidence": 2, "independence": "hints",
+    }).json()
+    assert slow["ok"]
+    after_slow = copy.deepcopy(client.store.get_review("two-sum"))
+
+    fast = client.post("/api/attempt/manual", json={
+        "slug": "two-sum", "time_taken_sec": 300,
+        "confidence": 3, "independence": "solo",
+    }).json()
+    assert fast["ok"]
+    settled = client.store.get_review("two-sum")
+
+    # Both attempts are real history; only the scheduling is collapsed.
+    rows = [h for h in client.get("/api/history").json() if h["slug"] == "two-sum"]
+    assert len(rows) == 2
+
+    # The card sits where the second rating alone would put it, not one advance
+    # further on.
+    straight = main.scheduler.advance_review(
+        after_slow.get(main.scheduler.PRIOR_CARD_KEY), 3, "solo")
+    assert settled["due_date"] == straight["due_date"]
+    assert settled["fail_count"] == straight["fail_count"]
+
+
+def test_a_solve_tomorrow_still_advances_the_card(client, monkeypatch):
+    """Collapsing is per-day: the next day's practice moves the card as usual."""
+    client.post("/api/attempt/manual", json={
+        "slug": "two-sum", "confidence": 3, "independence": "solo"})
+    today = client.store.get_review("two-sum")
+
+    tomorrow = main.scheduler.advance_review(
+        {**today, "slug": "two-sum"}, 3, "solo",
+        today=dt.date.fromisoformat(today["last_reviewed"]) + dt.timedelta(days=1))
+    assert tomorrow["due_date"] > today["due_date"]
