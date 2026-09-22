@@ -893,16 +893,28 @@ function stopPolling() { if (pollInterval) clearInterval(pollInterval); pollInte
 // at, without ever starting a session for it.
 let lastDetectAt = 0;
 const DETECT_MIN_GAP_MS = 60000;
+// With the modal open the answer can still change under it — you AC'd, kept
+// optimising, and are coming back to rate the better version. Check more eagerly
+// there, since a stale sweep is what gets the wrong solve written to history.
+const DETECT_MODAL_GAP_MS = 5000;
 
 async function detectSolves({ force = false } = {}) {
-  // Don't talk over a modal the user is already filling in, and don't re-sweep
-  // on every flick back to the tab — the feed doesn't move that fast.
-  if (!$("#annotate-modal").classList.contains("hidden")) return;
-  if (!force && Date.now() - lastDetectAt < DETECT_MIN_GAP_MS) return;
+  // Don't re-sweep on every flick back to the tab — the feed doesn't move that fast.
+  const modalOpen = !$("#annotate-modal").classList.contains("hidden");
+  const gap = modalOpen ? DETECT_MODAL_GAP_MS : DETECT_MIN_GAP_MS;
+  if (!force && Date.now() - lastDetectAt < gap) return;
   lastDetectAt = Date.now();
   try {
     const res = await api("/poll", "POST");
-    if (res.pending && res.pending.length) openAnnotate(res.pending[0]);
+    const pending = res.pending || [];
+    if (!$("#annotate-modal").classList.contains("hidden")) {
+      // Never stack a second modal over one being filled in — but do restate
+      // this solve if a better submission has taken it over since it opened.
+      const fresh = currentAttempt && pending.find((p) => p.id === currentAttempt.id);
+      if (fresh && fresh.submission_id !== currentAttempt.submission_id) refreshAnnotate(fresh);
+    } else if (pending.length) {
+      openAnnotate(pending[0]);
+    }
     if (res.new_attempts && res.new_attempts.length) {
       loadOverview();
       render(currentActiveTab());
@@ -913,6 +925,9 @@ async function detectSolves({ force = false } = {}) {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") detectSolves();
 });
+// visibilitychange misses the case where the app was never hidden — a second
+// monitor, or LeetCode in its own window. Window focus covers coming back there.
+window.addEventListener("focus", () => detectSolves());
 
 $("#btn-cancel-session").addEventListener("click", async () => {
   pauseRequestId++;
@@ -970,18 +985,7 @@ function openAnnotate(attempt) {
   if (attempt.neetcode_category) meta.push(attempt.neetcode_category);
   if (attempt.slug) meta.push(attempt.slug);
   $("#annotate-problem-meta").textContent = meta.join(" · ");
-  const facts = [];
-  // A detected solve has no session clock — LeetCode reports when a submission
-  // was accepted, never when the problem was opened. Say that outright instead
-  // of rendering an em-dash where a time should be, and ask for one below.
-  const untimed = attempt.time_taken_sec == null && attempt.source === "detected";
-  if (untimed) facts.push("Solved <b>outside a session</b>");
-  else facts.push(`Time <b>${fmtTime(attempt.time_taken_sec)}</b>`);
-  if (attempt.runtime_percentile != null) facts.push(`Runtime beats <b>${pct(attempt.runtime_percentile)}</b>`);
-  if (attempt.memory_percentile != null) facts.push(`Memory beats <b>${pct(attempt.memory_percentile)}</b>`);
-  if (attempt.wrong_before_ac != null) facts.push(`Wrong subs <b>${attempt.wrong_before_ac}</b>`);
-  if (attempt.lang) facts.push(`Lang <b>${attempt.lang}</b>`);
-  $("#annotate-facts").innerHTML = facts.map((f) => `<span>${f}</span>`).join("");
+  renderAnnotateFacts(attempt);
   // default independence to "hints" if they used the hint ladder
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   selectPill("#conf-group", "2");
@@ -989,7 +993,6 @@ function openAnnotate(attempt) {
   setComplexityValue("annotate-time", "");
   setComplexityValue("annotate-space", "");
   $("#annotate-minutes").value = "";
-  $("#annotate-time-row").classList.toggle("hidden", !untimed);
   $("#annotate-library").classList.toggle("hidden", attempt.in_library !== false);
   const addBtn = $("#btn-annotate-add-library");
   addBtn.disabled = false;
@@ -1002,6 +1005,43 @@ function openAnnotate(attempt) {
   saveBtn.disabled = false;
   $("#annotate-modal").classList.remove("hidden");
   initAnnotateGrade(attempt);
+}
+
+// Rendered when the modal opens, and again whenever a better submission lands
+// for a solve still sitting here unrated.
+function renderAnnotateFacts(attempt) {
+  const facts = [];
+  // A detected solve has no session clock — LeetCode reports when a submission
+  // was accepted, never when the problem was opened. Say that outright instead
+  // of rendering an em-dash where a time should be, and ask for one below.
+  const untimed = attempt.time_taken_sec == null && attempt.source === "detected";
+  if (untimed) facts.push("Solved <b>outside a session</b>");
+  else facts.push(`Time <b>${fmtTime(attempt.time_taken_sec)}</b>`);
+  // The clock above covers the whole sitting once you've resubmitted, so the
+  // first AC is worth stating separately — the gap is how long the clean-up took.
+  if (attempt.resubmissions) {
+    facts.push(`Accepted subs <b>${attempt.resubmissions + 1}</b>`);
+    if (attempt.first_ac_time_taken_sec != null) {
+      facts.push(`First AC <b>${fmtTime(attempt.first_ac_time_taken_sec)}</b>`);
+    }
+  }
+  if (attempt.runtime_percentile != null) facts.push(`Runtime beats <b>${pct(attempt.runtime_percentile)}</b>`);
+  if (attempt.memory_percentile != null) facts.push(`Memory beats <b>${pct(attempt.memory_percentile)}</b>`);
+  if (attempt.wrong_before_ac != null) facts.push(`Wrong subs <b>${attempt.wrong_before_ac}</b>`);
+  if (attempt.lang) facts.push(`Lang <b>${attempt.lang}</b>`);
+  $("#annotate-facts").innerHTML = facts.map((f) => `<span>${f}</span>`).join("");
+  $("#annotate-time-row").classList.toggle("hidden", !untimed);
+}
+
+// You AC'd something suboptimal, left this modal open, and kept working until it
+// was clean. The server folded the better submission into the same attempt; the
+// modal is looking at stale facts and a grade of code you've since replaced.
+// Restate both. Anything typed is left alone — it's still the same problem.
+function refreshAnnotate(fresh) {
+  currentAttempt = { ...currentAttempt, ...fresh };
+  renderAnnotateFacts(currentAttempt);
+  initAnnotateGrade(currentAttempt);
+  toast("Picked up your newer submission for this one.");
 }
 
 // ---- solution grading (inside the annotate modal) ------------------------------
@@ -1883,6 +1923,8 @@ async function openDetail(attemptId) {
     <div class="detail-meta small">${escapeHtml(a.neetcode_category || "")} · ${a.solved_at ? new Date(a.solved_at * 1000).toLocaleString() : ""}</div>
     <div class="facts">
       ${a.time_taken_sec != null ? `<span>Time <b>${fmtTime(a.time_taken_sec)}</b></span>` : ""}
+      ${a.resubmissions ? `<span>Accepted subs <b>${a.resubmissions + 1}</b></span>` : ""}
+      ${a.first_ac_time_taken_sec != null ? `<span>First AC <b>${fmtTime(a.first_ac_time_taken_sec)}</b></span>` : ""}
       ${a.confidence ? `<span>Conf <b>${["", "Low", "Med", "High"][a.confidence]}</b></span>` : ""}
       ${a.independence ? `<span><b>${a.independence}</b></span>` : ""}
       ${a.complexity_time ? `<span>Time <b>${escapeHtml(a.complexity_time)}</b></span>` : ""}

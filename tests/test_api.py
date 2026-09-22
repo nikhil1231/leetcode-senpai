@@ -2355,3 +2355,74 @@ def test_resolve_reports_a_miss_instead_of_starting_something_wrong(client, monk
 
     assert r.status_code == 404
     assert "nope-not-real" in r.json()["detail"]
+
+
+def test_optimising_after_the_first_ac_stays_one_solve(client, monkeypatch):
+    """The real loop: start a session, AC something slow, keep going until it's
+    clean. Two accepted submissions, one piece of practice — so one attempt in
+    history, one prompt to rate, and one step forward on the review card."""
+    started = client.post("/api/session/start", json={
+        "slug": "two-sum", "kind": "adhoc",
+        "predicted_category": "Arrays & Hashing",
+    }).json()
+    t0 = started["started_at"]
+
+    feed = [{"id": "sub-slow", "titleSlug": "two-sum", "timestamp": t0 + 600}]
+    code = {"sub-slow": "brute force O(n^2)", "sub-fast": "hash map O(n)"}
+    percentile = {"sub-slow": 5.0, "sub-fast": 95.0}
+
+    async def fake_recent_ac(username, limit, auth=None):
+        return list(feed)
+
+    async def fake_submission_details(submission_id, auth=None):
+        return {"runtime_percentile": percentile[submission_id],
+                "memory_percentile": 50.0, "lang": "python3",
+                "code": code[submission_id]}
+
+    async def fake_wrong_attempts_between(slug, start_ts, end_ts, auth=None):
+        return 1
+
+    monkeypatch.setattr(main.poller.leetcode, "recent_ac", fake_recent_ac)
+    monkeypatch.setattr(main.poller.leetcode, "submission_details", fake_submission_details)
+    monkeypatch.setattr(
+        main.poller.leetcode, "wrong_attempts_between", fake_wrong_attempts_between)
+
+    first = client.post("/api/poll").json()
+    attempt_id = first["new_attempts"][0]
+    assert [p["id"] for p in first["pending"]] == [attempt_id]
+
+    # Modal is up on the slow solve; meanwhile the clean version lands.
+    feed.append({"id": "sub-fast", "titleSlug": "two-sum", "timestamp": t0 + 1500})
+    second = client.post("/api/poll").json()
+
+    # Same row, so the modal has something to refresh rather than a second one
+    # stacked behind it.
+    assert second["new_attempts"] == [attempt_id]
+    assert [p["id"] for p in second["pending"]] == [attempt_id]
+    assert len(client.get("/api/history").json()) == 1
+
+    detail = client.get(f"/api/attempt/{attempt_id}").json()
+    assert detail["submission_id"] == "sub-fast"
+    assert detail["code"] == "hash map O(n)"
+    assert detail["runtime_percentile"] == 95.0
+    assert detail["time_taken_sec"] == 1500      # the whole sitting
+    assert detail["first_ac_time_taken_sec"] == 600
+    assert detail["resubmissions"] == 1
+    assert detail["wrong_before_ac"] == 2        # 1 before each AC
+    # The session's prediction survives the hand-off.
+    assert detail["predicted_category"] == "Arrays & Hashing"
+
+    client.post(f"/api/attempt/{attempt_id}/annotate",
+                json={"confidence": 3, "independence": "solo"})
+    assert client.get("/api/pending").json()["pending"] == []
+    # The card moved exactly as far as one clean solve moves it — logging the
+    # second AC separately used to advance it twice for the same sitting.
+    review = client.store.get_review("two-sum")
+    once = main.scheduler.advance_review(None, 3, "solo")
+    assert review["interval_days"] == once["interval_days"]
+    assert review["due_date"] == once["due_date"]
+
+    # Nothing left to detect, so nothing further moves the card.
+    client.post("/api/poll")
+    assert client.store.get_review("two-sum")["due_date"] == once["due_date"]
+    assert len(client.get("/api/history").json()) == 1

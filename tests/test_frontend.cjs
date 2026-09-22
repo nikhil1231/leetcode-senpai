@@ -25,7 +25,7 @@ function app(fetch) {
     return nodes.get(selector);
   };
   const context = vm.createContext({
-    window: { location: { hostname: 'localhost' } },
+    window: { location: { hostname: 'localhost' }, addEventListener() {} },
     document: {
       readyState: 'loading', addEventListener() {},
       querySelector: node, querySelectorAll: () => [],
@@ -162,4 +162,38 @@ test('a failed problem lookup leaves nothing startable', async () => {
 
   assert.match(ui.node('#quickstart-result').innerHTML, /offline/);
   assert.equal(ui.node('#btn-start-quickstart').disabled, true);
+});
+
+test('a better submission restates the open modal without touching the draft', async () => {
+  // new_attempts is left out: the re-render it triggers needs more of a DOM than
+  // this stub has, and the modal is what's under test here.
+  const ui = app(async () => response({
+    pending: [{ id: 'attempt-one', submission_id: 2, source: 'auto',
+                time_taken_sec: 960, resubmissions: 1,
+                first_ac_time_taken_sec: 540, lang: 'python3' }],
+  }));
+  ui.run(`currentAttempt = { id: "attempt-one", submission_id: 1, source: "auto",
+                             time_taken_sec: 540 }`);
+  ui.node('#annotate-note').value = 'Forgot the hash map at first';
+  // The stub's classList.contains() answers false, i.e. the modal is open.
+  await ui.run('detectSolves({ force: true })');
+
+  assert.equal(ui.run('currentAttempt.submission_id'), 2);
+  const facts = ui.node('#annotate-facts').innerHTML;
+  assert.match(facts, /Time <b>16:00<\/b>/);      // the whole sitting, not the first AC
+  assert.match(facts, /First AC <b>09:00<\/b>/);  // which is kept alongside it
+  assert.match(facts, /Accepted subs <b>2<\/b>/);
+  // Nothing typed is thrown away, and no second modal is stacked on top.
+  assert.equal(ui.node('#annotate-note').value, 'Forgot the hash map at first');
+  assert.equal(ui.run('currentAttempt.id'), 'attempt-one');
+});
+
+test('an unchanged solve leaves the open modal alone', async () => {
+  const ui = app(async () => response({
+    pending: [{ id: 'attempt-one', submission_id: 1, time_taken_sec: 999 }],
+  }));
+  ui.run('currentAttempt = { id: "attempt-one", submission_id: 1, time_taken_sec: 540 }');
+  await ui.run('detectSolves({ force: true })');
+  assert.equal(ui.run('currentAttempt.time_taken_sec'), 540);
+  assert.equal(ui.node('#annotate-facts').innerHTML, '');
 });

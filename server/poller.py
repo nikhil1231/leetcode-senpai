@@ -7,6 +7,10 @@ Two passes over the same public feed of accepted submissions:
 solve carries a clock, a prediction and hint usage; `sweep_untracked_solves`
 picks up everything else, which is how a contest or random-browse solve reaches
 history at all.
+
+The sweep also folds a *better* submission into the solve it improves on rather
+than logging it twice — see `_same_sitting`. AC'ing something suboptimal and
+then carrying on until it's clean is one piece of practice, not two.
 """
 import time
 
@@ -22,6 +26,11 @@ SWEEP_LOOKBACK_SEC = config.PENDING_MAX_AGE_SEC
 
 # Settings key holding the newest AC timestamp the sweep has already considered.
 WATERMARK_KEY = "last_solve_sweep_ts"
+
+# How far either side of a logged solve another AC for the same problem still
+# counts as the same sitting. Long enough to cover an AC, a coffee, and a rewrite;
+# short enough that tonight's re-solve of this morning's problem is its own attempt.
+SAME_SITTING_SEC = 2 * 3600
 
 
 async def check_active_sessions(store, username, auth=None):
@@ -101,9 +110,108 @@ async def _record_solve(store, session, match, auth):
     return aid
 
 
+# ---- same-sitting folding ---------------------------------------------------
+# Derived rows (recalls, sprints, backfills) aren't sittings anything folds into.
+_NOT_A_SITTING = ("recall", "sprint")
+
+
+def _latest_solve(store, slug):
+    """The most recent real solve on record for `slug`, or None."""
+    best = None
+    for a in store.attempts_for_slug(slug):
+        if a.get("kind") in _NOT_A_SITTING or a.get("source") in _NOT_A_SITTING:
+            continue
+        if a.get("source") == "backfill":
+            continue
+        if best is None or (a.get("solved_at") or 0) >= (best.get("solved_at") or 0):
+            best = a
+    return best
+
+
+def _same_sitting(store, slug, ts):
+    """Decide whether this AC belongs to a solve already on record.
+
+    Returns `(attempt, is_better)`. `attempt` is the row this AC is part of;
+    `is_better` says whether it should take that row over (a later, cleaner
+    submission) or is merely already represented by it (an earlier AC the sweep
+    is only now catching up with — logging it would invent a second solve out of
+    the same sitting, and with it a second review advance the card never earned).
+
+    A later AC only continues a sitting while the solve is still sitting unrated
+    in the annotate queue: rating it is the user saying they're done with it, so
+    anything after that is a genuine re-solve and gets its own row.
+    """
+    prior = _latest_solve(store, slug)
+    if not prior:
+        return None, False
+    solved_at = prior.get("solved_at") or 0
+    if abs(ts - solved_at) > SAME_SITTING_SEC:
+        return None, False
+    if ts < solved_at:
+        return prior, False
+    if prior.get("confidence") is not None or prior.get("annotation_dismissed_at"):
+        return None, False
+    return prior, True
+
+
+async def _record_supersede(store, prior, match, auth):
+    """Take a better submission over the solve it improves on, in place.
+
+    The row keeps its identity — its session clock, its prediction, its place in
+    the annotate queue — and gains the submission that actually represents the
+    work. What the first AC cost is kept alongside rather than overwritten: "AC
+    in 9 minutes, clean in 24" is the interesting shape of that sitting, and
+    invariant 5 says the history it already holds doesn't get thrown away.
+    """
+    slug = prior["slug"]
+    prev_ts = prior.get("solved_at") or match["timestamp"]
+    elapsed = max(0, match["timestamp"] - prev_ts)
+    try:
+        details = await leetcode.submission_details(match["id"], auth)
+    except Exception:
+        details = None
+
+    fields = {
+        "submission_id": match["id"], "solved_at": match["timestamp"],
+        # Percentiles and code describe a submission, so they move with it. When
+        # the details lookup fails they go blank rather than keep describing the
+        # code this one replaced — grading degrades to unavailable, not to wrong.
+        "runtime_percentile": details.get("runtime_percentile") if details else None,
+        "memory_percentile": details.get("memory_percentile") if details else None,
+        "code": details.get("code") if details else None,
+        "lang": (details.get("lang") if details else None) or prior.get("lang"),
+        # Any stored grade was of code that no longer exists here.
+        "solution_grade": None, "solution_grading_status": None,
+        "solution_grading_error": None,
+        "resubmissions": (prior.get("resubmissions") or 0) + 1,
+        # Set once, on the first improvement, and carried from there.
+        "first_ac_at": prior.get("first_ac_at") or prev_ts,
+        "first_ac_time_taken_sec": (
+            prior.get("first_ac_time_taken_sec") if prior.get("first_ac_at")
+            else prior.get("time_taken_sec")),
+    }
+    # The session is over by now, so it can't be paused: the gap between the two
+    # ACs is wall-clock time spent on the problem, and belongs on the clock.
+    if prior.get("time_taken_sec") is not None:
+        fields["time_taken_sec"] = prior["time_taken_sec"] + elapsed
+    # Same for anything that failed on the way to the better version.
+    if prior.get("wrong_before_ac") is not None:
+        try:
+            extra = await leetcode.wrong_attempts_between(
+                slug, prev_ts, match["timestamp"], auth)
+        except Exception:
+            extra = None
+        if extra:
+            fields["wrong_before_ac"] = prior["wrong_before_ac"] + extra
+
+    store.update_attempt(prior["id"], fields)
+    return prior["id"]
+
+
 async def sweep_untracked_solves(store, username, auth=None):
     """Log accepted submissions with no attempt behind them — problems solved
-    outside a tracked session. Returns the list of newly-created attempt ids.
+    outside a tracked session. Returns the list of attempt ids the pass touched:
+    newly-created ones, plus any existing row a better submission was folded into.
 
     A watermark over the newest AC seen keeps this from re-walking the same feed
     (and from dumping months of history into the annotate queue on first run);
@@ -133,7 +241,13 @@ async def sweep_untracked_solves(store, username, auth=None):
         watermark = max(watermark, r["timestamp"])
         if r["timestamp"] < floor or r["id"] in seen or r["titleSlug"] in live:
             continue
-        new_ids.append(await _record_untracked(store, r, auth))
+        prior, better = _same_sitting(store, r["titleSlug"], r["timestamp"])
+        if prior and not better:
+            continue  # the solve on record already speaks for this submission
+        if prior:
+            new_ids.append(await _record_supersede(store, prior, r, auth))
+        else:
+            new_ids.append(await _record_untracked(store, r, auth))
     # Only on a move. During a live session this runs every few seconds, and a
     # settings write per tick would be a Firestore round-trip and a cache
     # invalidation each time — enough to make every open tab redraw on a timer.
