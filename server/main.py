@@ -6,6 +6,7 @@ weekly reports, playbooks) degrades gracefully when the selected provider's API
 key is unset; most coaching jobs run off the critical path, while recall grading
 intentionally waits so the review is scheduled immediately.
 """
+import asyncio
 import contextlib
 import datetime as dt
 import hashlib
@@ -796,6 +797,21 @@ async def api_session_hint(uid: str = Depends(auth.require_user)):
             "exhausted": level >= len(ladder)}
 
 
+# One detection pass per user at a time. The session timer and a focus-triggered
+# sweep both land here, and each pass awaits LeetCode between checking whether a
+# submission is logged and logging it — overlapping, they logged it twice. Keyed
+# by loop as well: an asyncio.Lock belongs to the loop it was first awaited on.
+_poll_locks = {}
+
+
+def _poll_lock(uid):
+    key = (id(asyncio.get_running_loop()), uid)
+    lock = _poll_locks.get(key)
+    if lock is None:
+        lock = _poll_locks[key] = asyncio.Lock()
+    return lock
+
+
 @app.post("/api/poll")
 async def api_poll(bg: BackgroundTasks, uid: str = Depends(auth.require_user),
                    lc=Depends(auth.leetcode_auth)):
@@ -806,11 +822,12 @@ async def api_poll(bg: BackgroundTasks, uid: str = Depends(auth.require_user),
     app. Both swallow LeetCode failures — detection is a convenience layered over
     the manual log, never a thing that can break the page.
     """
-    store = get_store(uid)
-    username = store.get_settings().get("username")
-    new_ids = await poller.check_active_sessions(store, username, lc)
-    new_ids += await poller.sweep_untracked_solves(store, username, lc)
-    return {"new_attempts": new_ids, "pending": _pending(store)}
+    async with _poll_lock(uid):
+        store = get_store(uid)
+        username = store.get_settings().get("username")
+        new_ids = await poller.check_active_sessions(store, username, lc)
+        new_ids += await poller.sweep_untracked_solves(store, username, lc)
+        return {"new_attempts": new_ids, "pending": _pending(store)}
 
 
 @app.get("/api/pending")

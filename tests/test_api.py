@@ -10,6 +10,7 @@ import time
 import asyncio
 
 import pytest
+from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
 from server import auth, main, poller
@@ -2506,3 +2507,39 @@ def test_a_leetcode_outage_is_unknown_not_expired(client, monkeypatch):
 
     _with_cookie(client, monkeypatch, signed_in_as)
     assert client.get("/api/leetcode-status").json() == {"state": "unknown", "username": None}
+
+
+async def test_overlapping_polls_log_a_session_solve_once(client, monkeypatch):
+    # The session timer and a focus-triggered sweep both POST /poll. Each awaits
+    # LeetCode between its duplicate check and its write, so run side by side
+    # they both logged the same submission, and closing the modal on one solve
+    # opened it again for the twin.
+    store = client.store
+    store.update_settings({"username": "me"})
+    started = int(time.time()) - 600
+    store.add_session({"slug": "two-sum", "status": "active", "started_at": started,
+                       "kind": "adhoc"})
+
+    async def fake_recent_ac(username, limit, auth=None):
+        await asyncio.sleep(0.05)
+        return [{"id": "sub-1", "titleSlug": "two-sum", "timestamp": started + 300}]
+
+    async def fake_submission_details(submission_id, auth=None):
+        await asyncio.sleep(0.05)
+        return {"code": "pass", "lang": "python3"}
+
+    async def fake_wrong_attempts_between(*a, **k):
+        return 0
+
+    monkeypatch.setattr(main.poller.leetcode, "recent_ac", fake_recent_ac)
+    monkeypatch.setattr(main.poller.leetcode, "submission_details", fake_submission_details)
+    monkeypatch.setattr(
+        main.poller.leetcode, "wrong_attempts_between", fake_wrong_attempts_between)
+
+    results = await asyncio.gather(
+        main.api_poll(BackgroundTasks(), uid="test", lc=None),
+        main.api_poll(BackgroundTasks(), uid="test", lc=None),
+    )
+    assert sum(len(r["new_attempts"]) for r in results) == 1
+    assert [a["submission_id"] for a in store.list_attempts()] == ["sub-1"]
+    assert len(results[-1]["pending"]) == 1
