@@ -1052,7 +1052,16 @@ function initAnnotateGrade(attempt) {
   stopAnnotateGrading();
   panel.classList.add("hidden");
   panel.innerHTML = "";
-  if (!llmEnabled || !attempt.code) return;
+  if (!llmEnabled) return;
+  // Grading reads the submitted code, and the code only reaches us with the
+  // LeetCode session cookie — without it a detected solve is logged, scheduled
+  // and enriched as usual, but can never be graded. Say that where the grade
+  // would have gone. Silence here reads as "the coach had nothing to say",
+  // which is the one thing it doesn't mean.
+  if (!attempt.code) {
+    if (attempt.submission_id) renderSolutionUngradable();
+    return;  // a manual log has no submission to have fetched code from
+  }
   if (attempt.confidence == null || !attempt.independence) return;
   const status = attempt.solution_grading_status;
   if (status === "viewed" && attempt.solution_grade) {
@@ -1105,6 +1114,15 @@ function markAnnotateDone() {
   saveBtn.textContent = "Done";
   saveBtn.dataset.saved = "1";
   saveBtn.disabled = false;
+}
+
+function renderSolutionUngradable() {
+  stopAnnotateGrading();
+  const panel = $("#annotate-grade");
+  panel.classList.remove("hidden");
+  panel.innerHTML = `<p class="missed"><b>No solution grade:</b> your code wasn't captured
+    for this solve. Set the LEETCODE_SESSION cookie in Settings — it's stored per browser,
+    so a new address needs it again. Solves from here on will be graded.</p>`;
 }
 
 function renderSolutionGradeError(err, attemptId) {
@@ -1271,8 +1289,12 @@ $("#btn-save-annotate").addEventListener("click", async () => {
       currentAttempt.time_taken_sec = timeTakenSec;
     }
   }
-  toast(llmEnabled ? "Logged — grading your solution…" : "Logged");
-  if (llmEnabled && currentAttempt && currentAttempt.code) {
+  // Only promise a grade we can actually produce: with no code there is nothing
+  // to grade, and "grading your solution…" followed by nothing is worse than
+  // the plain confirmation.
+  const willGrade = llmEnabled && !!(currentAttempt && currentAttempt.code);
+  toast(willGrade ? "Logged — grading your solution…" : "Logged");
+  if (willGrade) {
     await gradeSavedSolution(attemptId);
   } else {
     closeAnnotate();

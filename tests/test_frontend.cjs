@@ -197,3 +197,30 @@ test('an unchanged solve leaves the open modal alone', async () => {
   assert.equal(ui.run('currentAttempt.time_taken_sec'), 540);
   assert.equal(ui.node('#annotate-facts').innerHTML, '');
 });
+
+test('a solve with no captured code says why, instead of hiding the grade panel', () => {
+  const ui = app(async () => response({}));
+  ui.run(`llmEnabled = true;
+          initAnnotateGrade({ id: "attempt-one", submission_id: 7, code: null })`);
+  const panel = ui.node('#annotate-grade').innerHTML;
+  assert.match(panel, /No solution grade/);
+  assert.match(panel, /LEETCODE_SESSION/);
+});
+
+test('a manual log has no submission to explain away', () => {
+  const ui = app(async () => response({}));
+  ui.run(`llmEnabled = true;
+          initAnnotateGrade({ id: "attempt-one", submission_id: null, code: null })`);
+  assert.equal(ui.node('#annotate-grade').innerHTML, '');
+});
+
+test('saving an ungradable solve never promises a grade', async () => {
+  const calls = [];
+  const ui = app(async (path) => { calls.push(path); return response({ ok: true }); });
+  ui.run('llmEnabled = true; currentAttempt = { id: "attempt-one", code: null }');
+  ui.node('#conf-group button.sel').dataset.val = '3';
+  ui.node('#indep-group button.sel').dataset.val = 'solo';
+  await ui.node('#btn-save-annotate').listeners.click();
+  assert.equal(ui.node('#toast').textContent, 'Logged');
+  assert.ok(!calls.some((p) => p.includes('grade-solution')));
+});
