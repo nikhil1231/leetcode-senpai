@@ -1196,6 +1196,7 @@ function wireGradeButton(attemptId) {
       if (currentAttempt) currentAttempt.solution_grade = r.graded;
       renderSolutionGrade(r.graded);
       markAnnotateDone();
+      refreshAfterAnnotate();
     } else if (r.grading_status === "skipped") {
       $("#annotate-grade").classList.add("hidden");
     } else {
@@ -1216,6 +1217,7 @@ async function gradeSavedSolution(attemptId) {
       if (currentAttempt) currentAttempt.solution_grade = r.graded;
       renderSolutionGrade(r.graded);
       markAnnotateDone();
+      refreshAfterAnnotate();
       return true;
     }
     if (r.grading_status === "skipped") {
@@ -1235,6 +1237,13 @@ function selectPill(group, val) {
 }
 $$("#conf-group button").forEach((b) => b.addEventListener("click", () => selectPill("#conf-group", b.dataset.val)));
 $$("#indep-group button").forEach((b) => b.addEventListener("click", () => selectPill("#indep-group", b.dataset.val)));
+
+// Rating a solve reschedules it and a grade rewrites the attempt, so the queue,
+// stats and History behind the modal are stale the moment either lands.
+function refreshAfterAnnotate() {
+  loadOverview();
+  render(currentActiveTab());
+}
 
 function closeAnnotate({ next = true } = {}) {
   $("#annotate-modal").classList.add("hidden");
@@ -1261,6 +1270,7 @@ async function dismissAnnotate() {
   if (!attempt || !attempt.id) return openNextPending();
   try {
     await api(`/attempt/${attempt.id}/dismiss-annotation`, "POST");
+    refreshAfterAnnotate();
   } catch (e) {
     toast(e.message);
   }
@@ -1323,6 +1333,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
     toast(e.message);
     return;
   }
+  refreshAfterAnnotate();
   if (currentAttempt) {
     Object.assign(currentAttempt, {
       confidence, independence,
