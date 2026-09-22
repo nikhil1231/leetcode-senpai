@@ -937,7 +937,7 @@ def _new_item(p, cat, score):
     return {
         "slug": p["slug"], "title": p["title"], "difficulty": p.get("difficulty", "Unknown"),
         "category": cat, "url": p.get("url"), "kind": "new",
-        "reason": f"Weak topic: {cat}", "score": round(score, 3),
+        "reason": "Weak topic", "score": round(score, 3),
     }
 
 

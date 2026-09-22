@@ -147,12 +147,12 @@
       const due = dueLabel(it.due_date, q.date, overdue);
       // The row shows each fact once. A review's mode ("Quick recall" / "Full
       // re-solve") is already the button's label, so the meta line carries the
-      // topic and the due date instead; only drills lead with their reason,
-      // because that signal exists nowhere else on the row.
+      // due date instead; only drills lead with their reason, because that
+      // signal exists nowhere else on the row. The topic is left off: naming the
+      // category hints at the technique before you've started.
       const meta = [], metaPlain = [];
       const addMeta = (plain, html) => { metaPlain.push(plain); meta.push(html || escapeHtml(plain)); };
       if (lane === "drill" && it.reason) addMeta(it.reason);
-      if (it.category) addMeta(it.category);
       if (due) addMeta(due.text, `<span class="${due.overdue ? "is-overdue" : ""}">${due.text}</span>`);
       const recall = it.mode === "recall";
       return `
