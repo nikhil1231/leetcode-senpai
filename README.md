@@ -203,6 +203,18 @@ bypassed for whoever can reach it.
    (solo / hints / read solution), optional notes.
 4. That feeds the spaced-repetition schedule and topic stats.
 
+## Where it runs
+
+Two deployments, and they authenticate differently:
+
+- **The laptop**, at `https://leetcode.nikhil.ing`. A Cloudflare Tunnel dials
+  out from the box, with Cloudflare Access doing Google sign-in at the edge; the
+  app verifies Access's signed assertion itself (`AUTH_MODE=access`) and renders
+  no login page of its own. Pushing to `main` deploys it within two minutes.
+  See `deploy/README.md`.
+- **Cloud Run + Firebase Hosting**, which verifies a Firebase ID token against
+  the email allowlist (`AUTH_MODE=firebase`). Set up below.
+
 ## Deploy to Firebase
 
 **One-time prerequisites**
