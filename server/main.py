@@ -1654,6 +1654,30 @@ def api_get_config(uid: str = Depends(auth.require_user)):
     }
 
 
+@app.get("/api/leetcode-status")
+async def api_leetcode_status(uid: str = Depends(auth.require_user),
+                              lc=Depends(auth.leetcode_auth)):
+    """Is the LeetCode cookie still good? One of missing / expired / ok / unknown.
+
+    The cookie unlocks the code behind a solve, the % beaten, and wrong-attempt
+    counts. When it lapses, detection carries on working off the public feed, so
+    solves keep landing — just stripped of everything the cookie was buying, and
+    ungradable. That failure is invisible by construction, which is why the
+    header asks this question on every load.
+
+    `unknown` is a first-class answer: a LeetCode outage or a dropped connection
+    must not be reported as an expired cookie, or the warning stops meaning
+    anything.
+    """
+    if not leetcode.has_auth(lc):
+        return {"state": "missing", "username": None}
+    try:
+        username = await leetcode.signed_in_as(lc)
+    except Exception:
+        return {"state": "unknown", "username": None}
+    return {"state": "ok" if username else "expired", "username": username}
+
+
 @app.post("/api/config")
 def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
     store = get_store(uid)

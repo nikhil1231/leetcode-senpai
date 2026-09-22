@@ -224,3 +224,39 @@ test('saving an ungradable solve never promises a grade', async () => {
   assert.equal(ui.node('#toast').textContent, 'Logged');
   assert.ok(!calls.some((p) => p.includes('grade-solution')));
 });
+
+// The stub's localStorage.getItem answers null, i.e. no cookie in this browser.
+test('no cookie in this browser warns without asking the server', async () => {
+  let calls = 0;
+  const ui = app(async () => { calls++; return response({ state: 'ok' }); });
+  await ui.run('checkLeetCodeAuth()');
+  assert.equal(calls, 0);
+  assert.equal(ui.node('#lc-warning').textContent, 'LeetCode cookie not set');
+});
+
+test('a cookie LeetCode refuses is reported as expired', async () => {
+  const ui = app(async () => response({ state: 'expired' }));
+  ui.run(`localStorage.getItem = () => "a-cookie"; checkLeetCodeAuth()`);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ui.node('#lc-warning').textContent, 'LeetCode cookie expired');
+});
+
+test('an unreachable LeetCode is never reported as a dead cookie', async () => {
+  for (const outcome of ['unknown', 'ok']) {
+    const ui = app(async () => response({ state: outcome }));
+    ui.run(`localStorage.getItem = () => "a-cookie";
+            $("#lc-warning").textContent = "stale"; checkLeetCodeAuth()`);
+    await new Promise((r) => setImmediate(r));
+    // Hidden, and so never seen — the stub can't hide, so assert the state that
+    // drives it rather than the class.
+    assert.equal(ui.node('#lc-warning').textContent, 'stale', outcome);
+  }
+});
+
+test('a failed status request leaves the warning alone', async () => {
+  const ui = app(async () => { throw new Error('offline'); });
+  ui.run(`localStorage.getItem = () => "a-cookie";
+          $("#lc-warning").textContent = ""; checkLeetCodeAuth()`);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ui.node('#lc-warning').textContent, '');
+});

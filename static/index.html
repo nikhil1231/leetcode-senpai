@@ -76,6 +76,8 @@
           <p id="page-sub" class="page-sub">Your queue for the day</p>
         </div>
         <div class="topbar-side">
+          <!-- Only ever rendered when the LeetCode cookie is missing or dead. -->
+          <button id="lc-warning" class="lc-warning hidden" type="button"></button>
           <button id="btn-quick-start" class="button is-small" type="button"
                   title="Start any problem by URL, number or title">Start any problem</button>
           <div id="overview" class="overview"></div>

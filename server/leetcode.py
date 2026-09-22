@@ -116,6 +116,15 @@ query submissionDetails($submissionId: Int!) {
 }
 """
 
+_USER_STATUS = """
+query globalData {
+  userStatus {
+    isSignedIn
+    username
+  }
+}
+"""
+
 _SUBMISSION_LIST = """
 query submissionList($offset: Int!, $limit: Int!, $questionSlug: String!) {
   questionSubmissionList(offset: $offset, limit: $limit, questionSlug: $questionSlug) {
@@ -247,6 +256,24 @@ async def submission_details(submission_id, auth):
         "lang": lang.get("name"),
         "code": d.get("code"),
     }
+
+
+async def signed_in_as(auth):
+    """Is this cookie still good? Returns the LeetCode username, or None.
+
+    The cheapest authenticated call there is — `userStatus` takes no arguments
+    and answers from the session alone, which is exactly the thing in question.
+    An unauthenticated caller gets a well-formed reply with `isSignedIn: false`
+    rather than an error, so a dead cookie is a value here, not an exception.
+    Anything that *does* raise (offline, LeetCode down) is the caller's to read
+    as "unknown" — never as "expired".
+    """
+    if not has_auth(auth):
+        return None
+    async with httpx.AsyncClient() as client:
+        data = await _query(client, _USER_STATUS, {}, auth)
+    status = data.get("userStatus") or {}
+    return status.get("username") if status.get("isSignedIn") else None
 
 
 async def wrong_attempts_between(slug, start_ts, end_ts, auth):

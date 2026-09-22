@@ -405,6 +405,49 @@ async function loadOverview({ force = false } = {}) {
     toast(`🎉 Topic mastered: ${m.category}!`));
 }
 
+// ---- LeetCode cookie health ----------------------------------------------------
+// The cookie is what buys the code behind a solve, the % beaten and the
+// wrong-attempt counts. When it lapses nothing breaks loudly: detection keeps
+// working off the public feed, so solves still land — just stripped of all of
+// that, and ungradable forever after, since the code is only ever fetched once,
+// at detection. That is a failure you cannot see by using the app, so it gets
+// said in the header until it's fixed.
+const LC_WARNING = {
+  missing: ["LeetCode cookie not set",
+            "Solves are logged, but without your code — so they can't be graded. "
+            + "Click to set it in Settings."],
+  expired: ["LeetCode cookie expired",
+            "LeetCode is no longer accepting it. Solves are still logged, but "
+            + "without your code, so they can't be graded. Click to paste a fresh one."],
+};
+
+async function checkLeetCodeAuth() {
+  // No cookie in this browser is already the answer — don't spend a round-trip
+  // on a question localStorage just settled.
+  if (!localStorage.getItem("lc_session")) return renderLcWarning("missing");
+  let state;
+  try {
+    ({ state } = await api("/leetcode-status"));
+  } catch (e) {
+    return;  // offline or a failed request is not evidence of a dead cookie
+  }
+  renderLcWarning(state);
+}
+
+function renderLcWarning(state) {
+  const el = $("#lc-warning");
+  const copy = LC_WARNING[state];
+  // "ok", and "unknown" — a LeetCode outage must never masquerade as an expired
+  // cookie, or the warning stops meaning anything.
+  if (!copy) return el.classList.add("hidden");
+  const [label, title] = copy;
+  el.textContent = label;
+  el.title = title;
+  el.classList.remove("hidden");
+}
+
+$("#lc-warning").addEventListener("click", () => goTab("settings"));
+
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
@@ -754,7 +797,10 @@ function applyActive(active) {
 
 function setDashboardLocked(locked) {
   document.body.classList.toggle("has-active-session", locked);
-  ["#tabs", "#overview", "#user-chip", "#coach-chip", "main"].forEach((sel) => {
+  // The warning stays visible during a run — knowing now means you can fix it
+  // before the AC lands — but like the rest of the header it isn't clickable
+  // until the run is over.
+  ["#tabs", "#overview", "#user-chip", "#coach-chip", "#lc-warning", "main"].forEach((sel) => {
     const el = $(sel);
     if (!el) return;
     if (locked) {
@@ -2031,6 +2077,9 @@ async function startApp() {
   // loading. render("today") paints its own loader immediately and fetches
   // /today in parallel with the rest.
   render("today");
+  // Not awaited: this one leaves the building for leetcode.com, and nothing on
+  // the page is waiting on the answer. The pill appears if and when it lands.
+  checkLeetCodeAuth();
   await Promise.all([
     loadAppMeta(),
     loadOverview(),
@@ -2089,7 +2138,8 @@ function showUserChip(email) {
 
 // expose for views.js
 window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOverview, render,
-  currentActiveTab, goTab, api, runSweep, get llmEnabled() { return llmEnabled; } };
+  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth,
+  get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------
 // Deferred to DOMContentLoaded so views.js (loaded after this file) has defined

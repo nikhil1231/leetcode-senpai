@@ -2469,3 +2469,40 @@ def test_a_solve_tomorrow_still_advances_the_card(client, monkeypatch):
         {**today, "slug": "two-sum"}, 3, "solo",
         today=dt.date.fromisoformat(today["last_reviewed"]) + dt.timedelta(days=1))
     assert tomorrow["due_date"] > today["due_date"]
+
+
+# ---- leetcode cookie health -----------------------------------------------------
+def _with_cookie(client, monkeypatch, signed_in_as):
+    """Point the status endpoint at a cookie and a canned LeetCode answer."""
+    main.app.dependency_overrides[auth.leetcode_auth] = lambda: {"session": "s", "csrf": None}
+    monkeypatch.setattr(main.leetcode, "signed_in_as", signed_in_as)
+
+
+def test_leetcode_status_missing_without_cookie(client):
+    assert client.get("/api/leetcode-status").json() == {"state": "missing", "username": None}
+
+
+def test_leetcode_status_ok_when_leetcode_still_knows_the_session(client, monkeypatch):
+    async def signed_in_as(auth_):
+        return "kunde"
+
+    _with_cookie(client, monkeypatch, signed_in_as)
+    assert client.get("/api/leetcode-status").json() == {"state": "ok", "username": "kunde"}
+
+
+def test_leetcode_status_expired_when_the_session_is_refused(client, monkeypatch):
+    async def signed_in_as(auth_):
+        return None  # a well-formed reply saying nobody is signed in
+
+    _with_cookie(client, monkeypatch, signed_in_as)
+    assert client.get("/api/leetcode-status").json() == {"state": "expired", "username": None}
+
+
+def test_a_leetcode_outage_is_unknown_not_expired(client, monkeypatch):
+    # Reporting a dropped connection as a dead cookie would train the warning to
+    # be ignored, which costs more than the missed detection.
+    async def signed_in_as(auth_):
+        raise RuntimeError("connection reset")
+
+    _with_cookie(client, monkeypatch, signed_in_as)
+    assert client.get("/api/leetcode-status").json() == {"state": "unknown", "username": None}

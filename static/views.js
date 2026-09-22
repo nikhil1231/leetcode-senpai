@@ -1091,10 +1091,12 @@
       if ($("#cfg-session").value) localStorage.setItem("lc_session", $("#cfg-session").value.trim());
       if ($("#cfg-csrf").value) localStorage.setItem("lc_csrf", $("#cfg-csrf").value.trim());
       toast("Saved"); renderSettings();
+      App.checkLeetCodeAuth();  // the header warning is about to be right or wrong
     });
     $("#btn-clear-cookie").addEventListener("click", () => {
       localStorage.removeItem("lc_session"); localStorage.removeItem("lc_csrf");
       toast("Cookie cleared"); renderSettings();
+      App.checkLeetCodeAuth();
     });
     $("#btn-save-sched").addEventListener("click", async () => {
       await api("/config", "POST", {
