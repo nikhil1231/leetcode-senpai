@@ -2198,3 +2198,160 @@ def test_catalog_omits_problem_statements_but_single_reads_keep_them(client):
     # The one place it is actually needed still gets it.
     detail = client.get("/api/problem/two-sum/recall-context").json()
     assert detail["content_html"] == "<p>Given…</p>"
+
+
+# ---- solves logged outside a session --------------------------------------------
+def _stub_recent_ac(monkeypatch, feed):
+    async def fake_recent_ac(username, limit=20, auth=None):
+        return feed[:limit]
+
+    async def fake_details(submission_id, auth):
+        raise RuntimeError("no cookie in tests")
+
+    async def fake_question(slug, auth=None):
+        return {"frontend_id": 42, "title": slug.replace("-", " ").title(),
+                "difficulty": "Medium", "tags": ["Two Pointers"], "paid_only": False,
+                "likes": 900, "dislikes": 50, "like_ratio": 0.95, "ac_rate": 50.0,
+                "similar_slugs": []}
+
+    monkeypatch.setattr(main.poller.leetcode, "recent_ac", fake_recent_ac)
+    monkeypatch.setattr(main.poller.leetcode, "submission_details", fake_details)
+    monkeypatch.setattr(main.poller.importer.leetcode, "question", fake_question)
+
+
+def test_poll_detects_a_solve_with_no_session_and_queues_it_for_annotation(
+        client, monkeypatch):
+    client.store.update_settings({"username": "senpai"})
+    _stub_recent_ac(monkeypatch, [
+        {"id": 7001, "title": "3Sum", "titleSlug": "3sum",
+         "timestamp": int(time.time()) - 120},
+    ])
+
+    polled = client.post("/api/poll").json()
+
+    assert len(polled["new_attempts"]) == 1
+    attempt_id = polled["new_attempts"][0]
+    row = next(p for p in polled["pending"] if p["id"] == attempt_id)
+    assert row["source"] == "detected"
+    assert row["time_taken_sec"] is None  # nothing knows when it was started
+    assert row["in_library"] is True
+
+    # A second poll must not log the same submission twice.
+    assert client.post("/api/poll").json()["new_attempts"] == []
+
+
+def test_a_detected_solve_outside_the_library_stays_off_the_daily_queue(
+        client, monkeypatch):
+    client.store.update_settings({"username": "senpai"})
+    _stub_recent_ac(monkeypatch, [
+        {"id": 7002, "title": "Hidden Gem", "titleSlug": "hidden-gem",
+         "timestamp": int(time.time()) - 120},
+    ])
+
+    attempt_id = client.post("/api/poll").json()["new_attempts"][0]
+    row = next(p for p in client.get("/api/pending").json()["pending"]
+               if p["id"] == attempt_id)
+    assert row["in_library"] is False
+
+    # Rating it schedules a card, but the card is not work until it's imported.
+    client.post(f"/api/attempt/{attempt_id}/annotate",
+                json={"confidence": 2, "independence": "solo"})
+    assert client.store.get_review("hidden-gem") is not None
+    assert "hidden-gem" not in {r["slug"] for r in client.get("/api/today").json()["reviews"]}
+    assert "hidden-gem" not in {p["slug"] for p in client.get("/api/problems").json()}
+
+    # …and importing it is what promotes it, with the solve history intact.
+    client.post("/api/import/problem", json={"slug": "hidden-gem"})
+    assert "hidden-gem" in {r["slug"] for r in client.get("/api/today").json()["reviews"]}
+    assert client.get(f"/api/attempt/{attempt_id}").json()["confidence"] == 2
+
+
+def test_annotating_a_detected_solve_accepts_a_typed_time(client, monkeypatch):
+    client.store.update_settings({"username": "senpai"})
+    _stub_recent_ac(monkeypatch, [
+        {"id": 7003, "title": "3Sum", "titleSlug": "3sum",
+         "timestamp": int(time.time()) - 120},
+    ])
+    attempt_id = client.post("/api/poll").json()["new_attempts"][0]
+
+    client.post(f"/api/attempt/{attempt_id}/annotate",
+                json={"confidence": 2, "independence": "solo", "time_taken_sec": 1500})
+
+    assert client.get(f"/api/attempt/{attempt_id}").json()["time_taken_sec"] == 1500
+
+
+def test_a_measured_time_is_never_replaced_by_a_typed_one(client):
+    attempt_id = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
+        "time_taken_sec": 300, "confidence": None, "independence": None,
+    })
+
+    client.post(f"/api/attempt/{attempt_id}/annotate",
+                json={"confidence": 3, "independence": "solo", "time_taken_sec": 60})
+
+    assert client.get(f"/api/attempt/{attempt_id}").json()["time_taken_sec"] == 300
+
+
+# ---- starting any problem from a pasted URL / number ----------------------------
+def _stub_problem_lookup(monkeypatch):
+    async def fake_question(slug, auth=None):
+        if slug != "car-fleet":
+            return None
+        return {"frontend_id": 853, "title": "Car Fleet", "difficulty": "Medium",
+                "tags": ["Stack", "Monotonic Stack"], "paid_only": False,
+                "likes": 4000, "dislikes": 1500, "like_ratio": 0.73, "ac_rate": 50.0,
+                "similar_slugs": [], "content_html": "<p>There are n cars…</p>"}
+
+    async def fake_page(topic=None, difficulty=None, skip=0, limit=50, auth=None, search=None):
+        if search != "853":
+            return {"total": 0, "questions": []}
+        return {"total": 1, "questions": [
+            {"frontend_id": 853, "slug": "car-fleet", "title": "Car Fleet",
+             "difficulty": "Medium", "tags": ["Stack"], "paid_only": False}]}
+
+    monkeypatch.setattr(main.importer.leetcode, "question", fake_question)
+    monkeypatch.setattr(main.importer.leetcode, "problemset_page", fake_page)
+
+
+def test_resolve_finds_a_library_problem_by_url_and_by_number(client, monkeypatch):
+    _stub_problem_lookup(monkeypatch)
+
+    by_url = client.post("/api/problem/resolve",
+                         json={"query": "https://leetcode.com/problems/3sum/"}).json()
+    assert by_url["exact"] is True
+    assert by_url["candidates"][0]["slug"] == "3sum"
+    assert by_url["candidates"][0]["in_library"] is True
+
+    by_number = client.post("/api/problem/resolve", json={"query": "#15"}).json()
+    assert by_number["candidates"][0]["slug"] == "3sum"
+
+
+def test_resolve_is_read_only_then_starting_imports_and_runs(client, monkeypatch):
+    _stub_problem_lookup(monkeypatch)
+
+    resolved = client.post("/api/problem/resolve", json={"query": "853"}).json()
+    assert resolved["candidates"][0]["slug"] == "car-fleet"
+    assert resolved["candidates"][0]["in_library"] is False
+    # A lookup must not litter the catalog with problems that were never started.
+    assert client.store.get_problem("car-fleet") is None
+
+    # The UI imports the pick, then starts the ordinary session flow.
+    client.post("/api/import/problem", json={"slug": "car-fleet"})
+    started = client.post("/api/session/start", json={"slug": "car-fleet", "kind": "adhoc"})
+    assert started.status_code == 200
+    active = client.get("/api/session/active").json()["active"]
+    assert active["slug"] == "car-fleet"
+    assert active["elapsed_sec"] >= 0  # same live view + timer as any other run
+
+    # Deliberately practising it is what puts it in the rotation.
+    assert "car-fleet" in {p["slug"] for p in client.get("/api/problems").json()}
+
+
+def test_resolve_reports_a_miss_instead_of_starting_something_wrong(client, monkeypatch):
+    _stub_problem_lookup(monkeypatch)
+
+    r = client.post("/api/problem/resolve",
+                    json={"query": "https://leetcode.com/problems/nope-not-real/"})
+
+    assert r.status_code == 404
+    assert "nope-not-real" in r.json()["detail"]

@@ -797,6 +797,8 @@ def review_schedule(problems, reviews, today=None, due_window_days=REVIEW_DUE_WI
         due = r.get("due_date")
         if not due or not r.get("slug"):
             continue
+        if not _in_library(prob_by_slug.get(r["slug"], {})):
+            continue
         try:
             days_late = (today_d - dt.date.fromisoformat(due)).days
         except (TypeError, ValueError):
@@ -836,8 +838,12 @@ def build_daily_queue(problems, attempts, reviews, settings, today=None, enrichm
         if cat:
             solved_per_cat[cat] = solved_per_cat.get(cat, 0) + 1
 
-    # Reviews due today or earlier (leeches first, then oldest due).
-    due = [r for r in reviews if r.get("due_date") and r["due_date"] <= today]
+    # Reviews due today or earlier (leeches first, then oldest due). A card for
+    # a problem outside the library — a solve detected from an untracked session
+    # — keeps its history but stays off the queue until the problem is imported.
+    due = [r for r in reviews
+           if r.get("due_date") and r["due_date"] <= today
+           and _in_library(prob_by_slug.get(r["slug"], {}))]
     due.sort(key=lambda r: (not r.get("leech"), r["due_date"]))
     reviews_out = []
     for r in due[:review_limit]:

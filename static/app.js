@@ -459,6 +459,112 @@ function renderPredictPatterns() {
   });
 }
 
+// ---- start any problem (paste a URL, number or title) --------------------------
+// Resolving is read-only; nothing is imported until a run actually starts, so
+// a mistyped paste leaves no trace in the catalog.
+let quickStartPick = null;
+let quickStartSeq = 0;
+
+function openQuickStart() {
+  quickStartPick = null;
+  $("#quickstart-input").value = "";
+  $("#quickstart-result").innerHTML =
+    '<p class="quickstart-hint">Paste a link, or type a number or title, then press Enter.</p>';
+  $("#btn-start-quickstart").disabled = true;
+  $("#btn-start-quickstart").textContent = "Start run";
+  $("#quickstart-modal").classList.remove("hidden");
+  $("#quickstart-input").focus();
+}
+
+function closeQuickStart() {
+  $("#quickstart-modal").classList.add("hidden");
+  quickStartPick = null;
+  quickStartSeq++;  // orphan any in-flight lookup
+}
+
+async function runQuickStartLookup() {
+  const query = $("#quickstart-input").value.trim();
+  if (!query) return;
+  const seq = ++quickStartSeq;
+  quickStartPick = null;
+  $("#btn-start-quickstart").disabled = true;
+  $("#quickstart-result").innerHTML = loader("Looking it up…");
+  let res;
+  try {
+    res = await api("/problem/resolve", "POST", { query });
+  } catch (e) {
+    if (seq !== quickStartSeq) return;
+    $("#quickstart-result").innerHTML =
+      `<p class="quickstart-error">${escapeHtml(e.message)}</p>`;
+    return;
+  }
+  if (seq !== quickStartSeq) return;  // a newer lookup already answered
+  renderQuickStartCandidates(res);
+}
+
+function renderQuickStartCandidates(res) {
+  const list = res.candidates || [];
+  $("#quickstart-result").innerHTML = `<div class="quickstart-list">${list.map((c, i) => `
+    <button class="quickstart-option" type="button" data-idx="${i}">
+      <span class="qs-name">
+        ${c.frontend_id ? `<span class="qs-num">#${c.frontend_id}</span> ` : ""}${escapeHtml(c.title)}
+        <span class="qs-meta">${escapeHtml(c.category || "—")}${c.in_library ? " · already in your library" : ""}</span>
+      </span>
+      ${badge(c.difficulty)}
+    </button>`).join("")}</div>`;
+  const options = $$("#quickstart-result .quickstart-option");
+  options.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      options.forEach((b) => b.classList.remove("sel"));
+      btn.classList.add("sel");
+      quickStartPick = list[Number(btn.dataset.idx)];
+      $("#btn-start-quickstart").disabled = false;
+    });
+  });
+  // One unambiguous hit is the whole point of pasting a link or a number —
+  // don't make it a two-click operation.
+  if (res.exact && options.length === 1) {
+    options[0].classList.add("sel");
+    quickStartPick = list[0];
+    $("#btn-start-quickstart").disabled = false;
+  }
+}
+
+async function startQuickStart() {
+  if (!quickStartPick) return;
+  const pick = quickStartPick;
+  const btn = $("#btn-start-quickstart");
+  btn.disabled = true;
+  // Deliberately sitting down to solve something is what puts it in the
+  // library — otherwise its review card would come due and never be served.
+  if (!pick.in_library) {
+    btn.textContent = "Adding…";
+    try {
+      await api("/import/problem", "POST", { slug: pick.slug });
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = "Start run";
+      toast(e.message);
+      return;
+    }
+  }
+  closeQuickStart();
+  loadOverview();
+  startFlow(pick.slug, "adhoc", null, pick.title, pick.category);
+}
+
+$("#btn-quick-start").addEventListener("click", openQuickStart);
+$("#btn-close-quickstart").addEventListener("click", closeQuickStart);
+$("#btn-cancel-quickstart").addEventListener("click", closeQuickStart);
+$("#btn-start-quickstart").addEventListener("click", startQuickStart);
+$("#quickstart-input").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  // Enter looks up; once something is picked, Enter again starts it.
+  if (quickStartPick) startQuickStart();
+  else runQuickStartLookup();
+});
+
 async function openPredict(ctx) {
   pendingStart = ctx;
   predictCritique = { shown: false, revised: false };
@@ -780,10 +886,33 @@ function startPolling() {
 }
 function stopPolling() { if (pollInterval) clearInterval(pollInterval); pollInterval = null; }
 
-async function refreshPending() {
-  const { pending } = await api("/pending");
-  if (pending && pending.length) openAnnotate(pending[0]);
+// Solve detection outside a live session. POSTing /poll costs the same round
+// trip a bare /pending check did, but it also sweeps LeetCode for accepted
+// submissions with no attempt behind them — so a problem solved in another tab,
+// in a contest, or on the phone gets logged the next time this page is looked
+// at, without ever starting a session for it.
+let lastDetectAt = 0;
+const DETECT_MIN_GAP_MS = 60000;
+
+async function detectSolves({ force = false } = {}) {
+  // Don't talk over a modal the user is already filling in, and don't re-sweep
+  // on every flick back to the tab — the feed doesn't move that fast.
+  if (!$("#annotate-modal").classList.contains("hidden")) return;
+  if (!force && Date.now() - lastDetectAt < DETECT_MIN_GAP_MS) return;
+  lastDetectAt = Date.now();
+  try {
+    const res = await api("/poll", "POST");
+    if (res.pending && res.pending.length) openAnnotate(res.pending[0]);
+    if (res.new_attempts && res.new_attempts.length) {
+      loadOverview();
+      render(currentActiveTab());
+    }
+  } catch (e) { /* detection is a convenience; never break the page over it */ }
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") detectSolves();
+});
 
 $("#btn-cancel-session").addEventListener("click", async () => {
   pauseRequestId++;
@@ -842,7 +971,12 @@ function openAnnotate(attempt) {
   if (attempt.slug) meta.push(attempt.slug);
   $("#annotate-problem-meta").textContent = meta.join(" · ");
   const facts = [];
-  facts.push(`Time <b>${fmtTime(attempt.time_taken_sec)}</b>`);
+  // A detected solve has no session clock — LeetCode reports when a submission
+  // was accepted, never when the problem was opened. Say that outright instead
+  // of rendering an em-dash where a time should be, and ask for one below.
+  const untimed = attempt.time_taken_sec == null && attempt.source === "detected";
+  if (untimed) facts.push("Solved <b>outside a session</b>");
+  else facts.push(`Time <b>${fmtTime(attempt.time_taken_sec)}</b>`);
   if (attempt.runtime_percentile != null) facts.push(`Runtime beats <b>${pct(attempt.runtime_percentile)}</b>`);
   if (attempt.memory_percentile != null) facts.push(`Memory beats <b>${pct(attempt.memory_percentile)}</b>`);
   if (attempt.wrong_before_ac != null) facts.push(`Wrong subs <b>${attempt.wrong_before_ac}</b>`);
@@ -854,6 +988,12 @@ function openAnnotate(attempt) {
   selectPill("#indep-group", usedHints ? "hints" : "solo");
   setComplexityValue("annotate-time", "");
   setComplexityValue("annotate-space", "");
+  $("#annotate-minutes").value = "";
+  $("#annotate-time-row").classList.toggle("hidden", !untimed);
+  $("#annotate-library").classList.toggle("hidden", attempt.in_library !== false);
+  const addBtn = $("#btn-annotate-add-library");
+  addBtn.disabled = false;
+  addBtn.textContent = "Add to library";
   $("#annotate-note").value = "";
   $("#annotate-approach").value = "";
   const saveBtn = $("#btn-save-annotate");
@@ -992,22 +1132,58 @@ function selectPill(group, val) {
 $$("#conf-group button").forEach((b) => b.addEventListener("click", () => selectPill("#conf-group", b.dataset.val)));
 $$("#indep-group button").forEach((b) => b.addEventListener("click", () => selectPill("#indep-group", b.dataset.val)));
 
-function closeAnnotate() {
+function closeAnnotate({ next = true } = {}) {
   $("#annotate-modal").classList.add("hidden");
   stopAnnotateGrading();
   currentAttempt = null;
+  if (next) openNextPending();
 }
+
+// A session can only ever produce one solve at a time; a sweep can surface
+// several at once (a contest, or a day away from the app). Offer the next one
+// instead of leaving the rest sitting unrated in History.
+async function openNextPending() {
+  if (!$("#annotate-modal").classList.contains("hidden")) return;
+  try {
+    const { pending } = await api("/pending");
+    if (pending && pending.length) openAnnotate(pending[0]);
+  } catch (e) { /* they're logged either way */ }
+}
+
 async function dismissAnnotate() {
   const attempt = currentAttempt;
-  closeAnnotate();
-  if (!attempt || !attempt.id) return;
+  // Chain only once the dismissal has landed, or /pending still returns it.
+  closeAnnotate({ next: false });
+  if (!attempt || !attempt.id) return openNextPending();
   try {
     await api(`/attempt/${attempt.id}/dismiss-annotation`, "POST");
   } catch (e) {
     toast(e.message);
   }
+  openNextPending();
 }
 $("#btn-close-annotate").addEventListener("click", dismissAnnotate);
+
+// Adopting a problem the sweep imported metadata-only. The solve is already in
+// history either way — this is what promotes it into the daily rotation.
+$("#btn-annotate-add-library").addEventListener("click", async () => {
+  if (!currentAttempt) return;
+  const btn = $("#btn-annotate-add-library");
+  btn.disabled = true;
+  btn.textContent = "Adding…";
+  try {
+    await api("/import/problem", "POST", { slug: currentAttempt.slug });
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Add to library";
+    toast(e.message);
+    return;
+  }
+  currentAttempt.in_library = true;
+  $("#annotate-library").classList.add("hidden");
+  toast("Added to your library — it'll be scheduled from here.");
+  loadOverview();
+});
 
 $("#btn-save-annotate").addEventListener("click", async () => {
   if (!currentAttempt) return;
@@ -1024,6 +1200,10 @@ $("#btn-save-annotate").addEventListener("click", async () => {
   const attemptId = currentAttempt.id;
   const confidence = Number($("#conf-group button.sel").dataset.val);
   const independence = $("#indep-group button.sel").dataset.val;
+  // Only offered for a detected solve, and only ever fills a blank clock — the
+  // server refuses to overwrite a time it measured itself.
+  const minutes = Number($("#annotate-minutes").value);
+  const timeTakenSec = minutes > 0 ? Math.round(minutes * 60) : null;
   let r;
   try {
     r = await api(`/attempt/${attemptId}/annotate`, "POST", {
@@ -1032,6 +1212,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
       approach: $("#annotate-approach").value || null,
       complexity_time: complexityValue("annotate-time"),
       complexity_space: complexityValue("annotate-space"),
+      time_taken_sec: timeTakenSec,
     });
   } catch (e) {
     saveBtn.disabled = false;
@@ -1046,6 +1227,9 @@ $("#btn-save-annotate").addEventListener("click", async () => {
       complexity_time: complexityValue("annotate-time"),
       complexity_space: complexityValue("annotate-space"),
     });
+    if (timeTakenSec != null && currentAttempt.time_taken_sec == null) {
+      currentAttempt.time_taken_sec = timeTakenSec;
+    }
   }
   toast(llmEnabled ? "Logged — grading your solution…" : "Logged");
   if (llmEnabled && currentAttempt && currentAttempt.code) {
@@ -1787,7 +1971,7 @@ async function startApp() {
     loadAppMeta(),
     loadOverview(),
     refreshActive(),
-    refreshPending(),
+    detectSolves({ force: true }),
   ]);
   if (llmEnabled) runSweep();
 }

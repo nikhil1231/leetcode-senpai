@@ -1,6 +1,7 @@
 """Populate the problems catalog from packs, discover highly-rated problems,
-and backfill solve history."""
+resolve a pasted URL/number to a startable problem, and backfill solve history."""
 import asyncio
+import re
 
 from . import leetcode, packs, scheduler
 
@@ -183,3 +184,112 @@ async def backfill_history(store, username, auth=None, limit=20):
             store.upsert_review(slug, scheduler.seed_review(slug))
         added += 1
     return {"scanned": len(recents), "added": added}
+
+
+# ---- resolving a pasted problem -------------------------------------------------
+# leetcode.com/problems/<slug>/… and the .cn mirror, with whatever query string
+# or /description/ suffix came along for the ride.
+_URL_SLUG = re.compile(r"leetcode\.c(?:om|n)/problems/([a-zA-Z0-9][a-zA-Z0-9-]*)", re.I)
+# A bare slug typed on its own, e.g. "car-fleet". One-word input is treated as a
+# search instead, since "backtracking" is a topic far more often than a slug.
+_BARE_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
+
+
+def parse_problem_query(text):
+    """Classify what was pasted. Pure: no I/O, no catalog.
+
+    Returns (kind, value) where kind is "slug", "number", "text" or None.
+    """
+    q = (text or "").strip()
+    if not q:
+        return None, None
+    m = _URL_SLUG.search(q)
+    if m:
+        return "slug", m.group(1).lower()
+    # "#853", "853." — the decoration people paste around a problem number.
+    bare = q.lstrip("#").rstrip(".").strip()
+    if bare.isdigit():
+        return "number", int(bare)
+    low = q.lower()
+    if _BARE_SLUG.match(low):
+        return "slug", low
+    return "text", q
+
+
+def _candidate(slug, title, difficulty, category, in_library, frontend_id=None):
+    return {"slug": slug, "title": title, "difficulty": difficulty or "Unknown",
+            "category": category, "in_library": in_library,
+            "frontend_id": frontend_id,
+            "url": f"https://leetcode.com/problems/{slug}/"}
+
+
+def _from_catalog(p):
+    return _candidate(p["slug"], p.get("title") or _title_from_slug(p["slug"]),
+                      p.get("difficulty"), p.get("neetcode_category"),
+                      scheduler._in_library(p), p.get("frontend_id"))
+
+
+async def resolve_problem(store, query, auth=None, limit=6):
+    """Turn a pasted URL, number or title into startable candidates.
+
+    The catalog is consulted first: the common case is a problem already
+    imported, and answering from local data keeps the paste-to-timer path off
+    the network entirely. Only an unknown problem costs a LeetCode call.
+
+    Returns {"candidates": [...], "exact": bool} — `exact` marks a single
+    unambiguous hit the UI can select without asking.
+    """
+    kind, value = parse_problem_query(query)
+    if not kind:
+        return {"candidates": [], "exact": False, "error": "Nothing to look up."}
+
+    if kind == "slug":
+        local = store.get_problem(value)
+        if local:
+            return {"candidates": [_from_catalog(local)], "exact": True}
+        try:
+            meta = await leetcode.question(value, auth)
+        except Exception as e:
+            return {"candidates": [], "exact": False, "error": f"LeetCode lookup failed: {e}"}
+        if not meta:
+            return {"candidates": [], "exact": False,
+                    "error": f"No LeetCode problem called \u201c{value}\u201d."}
+        return {"candidates": [_candidate(
+            value, meta["title"], meta["difficulty"],
+            packs.category_from_tags(meta["tags"]), False, meta.get("frontend_id"),
+        )], "exact": True}
+
+    if kind == "number":
+        local = next((p for p in store.list_problems()
+                      if p.get("frontend_id") == value), None)
+        if local:
+            return {"candidates": [_from_catalog(local)], "exact": True}
+
+    try:
+        page = await leetcode.problemset_page(search=str(value), limit=max(limit * 3, 15),
+                                              auth=auth)
+    except Exception as e:
+        return {"candidates": [], "exact": False, "error": f"LeetCode search failed: {e}"}
+
+    questions = page.get("questions") or []
+    # A number must match the number, never merely rank first: searching "1"
+    # also returns "number-of-1-bits".
+    if kind == "number":
+        questions = [q for q in questions if q.get("frontend_id") == value]
+        if not questions:
+            return {"candidates": [], "exact": False,
+                    "error": f"No LeetCode problem numbered {value}."}
+
+    out = []
+    for q in questions[:limit]:
+        existing = store.get_problem(q["slug"])
+        if existing:
+            out.append(_from_catalog(existing))
+            continue
+        out.append(_candidate(q["slug"], q["title"], q["difficulty"],
+                              packs.category_from_tags(q.get("tags") or []),
+                              False, q.get("frontend_id")))
+    if not out:
+        return {"candidates": [], "exact": False,
+                "error": f"Nothing on LeetCode matched \u201c{query.strip()}\u201d."}
+    return {"candidates": out, "exact": len(out) == 1}

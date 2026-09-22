@@ -193,17 +193,22 @@ def _similar_slugs(similar_json):
 _DIFFICULTY_FILTER = {"Easy": "EASY", "Medium": "MEDIUM", "Hard": "HARD"}
 
 
-async def problemset_page(topic=None, difficulty=None, skip=0, limit=50, auth=None):
+async def problemset_page(topic=None, difficulty=None, skip=0, limit=50, auth=None,
+                          search=None):
     """Public. Browse the global problem set. Returns {total, questions:[...]}.
 
     `topic` is a LeetCode tag slug (e.g. 'two-pointers'); `difficulty` is one of
-    Easy/Medium/Hard.
+    Easy/Medium/Hard. `search` is LeetCode's own keyword filter, which matches a
+    problem number exactly and a title loosely — the only way to reach a slug
+    from a number, since the question query is keyed by slug.
     """
     filters = {}
     if difficulty and difficulty in _DIFFICULTY_FILTER:
         filters["difficulty"] = _DIFFICULTY_FILTER[difficulty]
     if topic:
         filters["tags"] = [topic]
+    if search:
+        filters["searchKeywords"] = str(search)
     async with httpx.AsyncClient() as client:
         data = await _query(
             client, _PROBLEMSET,

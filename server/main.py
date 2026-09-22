@@ -82,6 +82,9 @@ class Annotate(BaseModel):
     approach: str | None = None
     complexity_time: str | None = None
     complexity_space: str | None = None
+    # Only sent for a solve with no session clock (one the sweep detected).
+    # A session-timed attempt keeps its measured time; see api_annotate.
+    time_taken_sec: int | None = Field(default=None, ge=0)
 
 
 class ManualAttempt(BaseModel):
@@ -151,6 +154,10 @@ class ImportProblem(BaseModel):
     slug: str
 
 
+class ResolveProblem(BaseModel):
+    query: str = Field(max_length=300)
+
+
 class DeleteProblem(BaseModel):
     confirm_slug: str
 
@@ -196,11 +203,10 @@ def _effective_tags(e):
     return (e.get("user_overrides") or {}).get("tags") or e.get("mistake_tags") or []
 
 
-# Only auto-prompt to annotate freshly-solved problems. Older un-annotated
-# attempts (e.g. the modal was dismissed, or solved days ago) are left alone so
-# the "Solved!" modal doesn't nag on every page load — they stay in History and
-# can still be annotated from there.
-PENDING_MAX_AGE_SEC = 12 * 3600
+# Un-annotated attempts older than this stay in History instead of re-opening
+# the "Solved!" modal on every page load. Lives in config because the sweep for
+# untracked solves is bounded by the same window.
+PENDING_MAX_AGE_SEC = config.PENDING_MAX_AGE_SEC
 
 # Bump to re-generate stored solution grades after a prompt/schema change.
 SOLUTION_PROMPT_VERSION = 2
@@ -226,6 +232,9 @@ def _pending(store):
             **a, "title": p.get("title", a["slug"]),
             "frontend_id": p.get("frontend_id"), "difficulty": p.get("difficulty"),
             "neetcode_category": p.get("neetcode_category"), "url": p.get("url"),
+            # A swept solve can be for a problem outside the library, so the
+            # modal can offer to adopt it rather than leaving it unscheduled.
+            "in_library": scheduler._in_library(p) if p else False,
         })
     out.sort(key=lambda a: a.get("solved_at") or 0, reverse=True)
     return out
@@ -790,9 +799,17 @@ async def api_session_hint(uid: str = Depends(auth.require_user)):
 @app.post("/api/poll")
 async def api_poll(bg: BackgroundTasks, uid: str = Depends(auth.require_user),
                    lc=Depends(auth.leetcode_auth)):
+    """Detect solves. Called on a timer during a live session, and once on load.
+
+    The session pass runs first so a solve the user started here is recorded with
+    its clock and prediction; the sweep then picks up anything solved outside the
+    app. Both swallow LeetCode failures — detection is a convenience layered over
+    the manual log, never a thing that can break the page.
+    """
     store = get_store(uid)
     username = store.get_settings().get("username")
     new_ids = await poller.check_active_sessions(store, username, lc)
+    new_ids += await poller.sweep_untracked_solves(store, username, lc)
     return {"new_attempts": new_ids, "pending": _pending(store)}
 
 
@@ -823,11 +840,17 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     attempt = store.get_attempt(attempt_id)
     if not attempt:
         raise HTTPException(404, "no such attempt")
-    store.update_attempt(attempt_id, {
+    fields = {
         "confidence": body.confidence, "independence": body.independence,
         "mistake_note": body.mistake_note, "approach": body.approach,
         "complexity_time": body.complexity_time, "complexity_space": body.complexity_space,
-    })
+    }
+    # LeetCode's feed reports when a solve was accepted, never when it was begun,
+    # so a detected solve reaches here with no clock. The modal asks for one; a
+    # measured time is never overwritten by a typed one.
+    if body.time_taken_sec is not None and attempt.get("time_taken_sec") is None:
+        fields["time_taken_sec"] = body.time_taken_sec
+    store.update_attempt(attempt_id, fields)
     slug = attempt["slug"]
     current = store.get_review(slug)
     if current:
@@ -1516,6 +1539,18 @@ async def api_discover(topic: str = "", difficulty: str = "",
 async def api_import_pack(body: ImportPack, uid: str = Depends(auth.require_user),
                           lc=Depends(auth.leetcode_auth)):
     return await importer.import_pack(get_store(uid), body.pack, lc, fetch_metadata=body.fetch_metadata)
+
+
+@app.post("/api/problem/resolve")
+async def api_resolve_problem(body: ResolveProblem, uid: str = Depends(auth.require_user),
+                              lc=Depends(auth.leetcode_auth)):
+    """Paste-to-start: a LeetCode URL, problem number or title in, startable
+    candidates out. Read-only — nothing is imported until a run actually starts.
+    """
+    res = await importer.resolve_problem(get_store(uid), body.query, auth=lc)
+    if not res["candidates"]:
+        raise HTTPException(404, res.get("error") or "No problem matched that.")
+    return res
 
 
 @app.post("/api/import/problem")

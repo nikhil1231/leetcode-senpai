@@ -506,6 +506,11 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
 .page-title { font-size: 19px; font-weight: 650; letter-spacing: -.02em; }
 .page-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
 
+.topbar-side { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
+/* Focus mode hides it outright: a run is already going, and starting another
+   would silently cancel it. */
+body.has-active-session #btn-quick-start { display: none; }
+
 .overview { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .overview .stat {
   display: flex;
@@ -2151,3 +2156,29 @@ body.has-active-session #user-chip {
   .problem-action { padding-top: 10px; text-align: left; }
   .problem-action .button { width: 100%; }
 }
+
+
+/* ---- start-any-problem modal ---------------------------------------------- */
+.quickstart-result { margin-top: 12px; min-height: 44px; }
+.quickstart-hint { color: var(--muted); font-size: 12px; padding: 12px 2px; }
+.quickstart-error { color: var(--red); font-size: 12px; padding: 12px 2px; }
+.quickstart-list { display: flex; flex-direction: column; gap: 6px; }
+.quickstart-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color .15s var(--ease), background .15s var(--ease);
+}
+.quickstart-option:hover { border-color: var(--line-hi); background: var(--panel3); }
+.quickstart-option.sel { border-color: var(--accent); background: var(--accent-soft); }
+.quickstart-option .qs-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+.quickstart-option .qs-num { color: var(--muted); font-weight: 500; }
+.quickstart-option .qs-meta { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; font-weight: 400; }

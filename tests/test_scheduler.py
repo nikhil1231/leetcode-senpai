@@ -747,6 +747,32 @@ def test_review_schedule_falls_back_when_the_problem_is_missing():
     assert card["difficulty"] == "Unknown"
 
 
+# ---- solves logged outside the library -----------------------------------------
+# A solve the sweep detects can be for a problem that was never imported. It
+# keeps its rating and its history, but must not start showing up as work.
+def _outside(slug):
+    return {**_problem(slug), "in_library": False, "packs": []}
+
+
+def test_review_schedule_omits_cards_for_problems_outside_the_library():
+    reviews = [_review("in", _due(-1)), _review("out", _due(-1))]
+    problems = [_problem("in"), _outside("out")]
+
+    segments = scheduler.review_schedule(problems, reviews, today=TODAY)
+
+    assert [c["slug"] for s in segments for c in s["items"]] == ["in"]
+
+
+def test_daily_queue_omits_reviews_for_problems_outside_the_library():
+    problems = [_problem("in"), _outside("out")]
+    reviews = [_review("in", _due(-1)), _review("out", _due(-1))]
+
+    queue = scheduler.build_daily_queue(problems, reviews=reviews, attempts=[],
+                                        settings={}, today=TODAY)
+
+    assert [r["slug"] for r in queue["reviews"]] == ["in"]
+
+
 # ---- store cache revisions (pure: no Firestore, no I/O) -------------------------
 def test_invalidating_a_key_bumps_only_that_revision():
     from server import store

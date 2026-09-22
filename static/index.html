@@ -75,7 +75,11 @@
           <h1 id="page-title" class="page-title">Today</h1>
           <p id="page-sub" class="page-sub">Your queue for the day</p>
         </div>
-        <div id="overview" class="overview"></div>
+        <div class="topbar-side">
+          <button id="btn-quick-start" class="button is-small" type="button"
+                  title="Start any problem by URL, number or title">Start any problem</button>
+          <div id="overview" class="overview"></div>
+        </div>
       </header>
 
       <!-- Active session focus mode (timer + hint ladder) -->
@@ -109,6 +113,27 @@
         <section id="tab-problems" class="tab hidden"></section>
         <section id="tab-settings" class="tab hidden"></section>
       </main>
+    </div>
+  </div>
+
+  <!-- Start any problem: paste a URL, number or title -->
+  <div id="quickstart-modal" class="overlay hidden">
+    <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="quickstart-heading">
+      <div class="modal-titlebar">
+        <div>
+          <h2 class="modal-title" id="quickstart-heading">Start any problem</h2>
+          <p class="small">A LeetCode link, a problem number, or a title.</p>
+        </div>
+        <button id="btn-close-quickstart" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+      </div>
+      <input id="quickstart-input" class="input" type="text" autocomplete="off"
+             autocorrect="off" autocapitalize="off" spellcheck="false"
+             placeholder="leetcode.com/problems/car-fleet  ·  853  ·  car fleet" />
+      <div id="quickstart-result" class="quickstart-result"></div>
+      <div class="overlay-actions">
+        <button id="btn-cancel-quickstart" class="button is-ghost" type="button">Cancel</button>
+        <button id="btn-start-quickstart" class="button is-primary" type="button" disabled>Start run</button>
+      </div>
     </div>
   </div>
 
@@ -178,6 +203,10 @@
         </div>
         <div id="annotate-problem-meta" class="solved-problem-meta"></div>
         <div id="annotate-facts" class="facts"></div>
+        <div id="annotate-library" class="solved-problem-meta hidden">
+          <span>Not in your library — logged, but it won't be scheduled.</span>
+          <button id="btn-annotate-add-library" class="button is-small is-link">Add to library</button>
+        </div>
       </div>
 
       <label class="label-sm">How confident are you with this pattern?</label>
@@ -195,6 +224,14 @@
       </div>
 
       <div id="annotate-complexities" class="complexity-fields mt-2"></div>
+
+      <div id="annotate-time-row" class="mt-2 hidden">
+        <label class="label-sm" for="annotate-minutes">Roughly how long did it take?
+          <span class="help-inline">minutes — optional, leave blank if you'd rather not guess</span>
+        </label>
+        <input id="annotate-minutes" class="input" type="number" min="0" step="1"
+               inputmode="numeric" placeholder="e.g. 25">
+      </div>
 
       <label class="label-sm">What tripped you up? <span class="help-inline">plain text — the coach structures it</span></label>
       <input id="annotate-note" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. shrank the window before checking the count" />

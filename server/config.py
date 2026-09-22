@@ -73,6 +73,13 @@ LLM_OPTIONS = {
 # "fsrs" (modern, fits your review history) or "sm2" (legacy escape hatch).
 SCHEDULER = os.environ.get("SCHEDULER", "fsrs").lower()
 
+# Only auto-prompt to annotate freshly-solved problems. Older un-annotated
+# attempts (the modal was dismissed, or the solve was days ago) are left alone so
+# the "Solved!" modal doesn't nag on every page load. It also bounds how far back
+# the untracked-solve sweep looks on its first run: a solve it can't prompt for
+# is a solve it would log unrated, which is worse than not logging it.
+PENDING_MAX_AGE_SEC = 12 * 3600
+
 DEFAULT_SETTINGS = {
     "username": "kunde",
     "poll_interval_seconds": 20,

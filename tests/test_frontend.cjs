@@ -122,3 +122,44 @@ test('annotation rejects double-clicks and keeps notes on a failed save', async 
   assert.equal(ui.node('#annotate-note').value, 'Remember duplicate values');
   assert.equal(ui.run('currentAttempt.id'), 'attempt-one');
 });
+
+test('a slow problem lookup cannot overwrite a newer one', async () => {
+  const resolvers = [];
+  const ui = app(() => new Promise((resolve) => { resolvers.push(resolve); }));
+  const candidate = (slug, title) => response({
+    candidates: [{ slug, title, difficulty: 'Medium', category: 'Stack',
+                   in_library: false, frontend_id: 1 }],
+    exact: true,
+  });
+
+  // api() awaits an auth token before it reaches fetch, so each lookup needs a
+  // microtask turn before its request actually goes out.
+  const flush = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+
+  ui.node('#quickstart-input').value = 'car fleet';
+  const stale = ui.run('runQuickStartLookup()');
+  await flush();
+  ui.node('#quickstart-input').value = 'two sum';
+  const fresh = ui.run('runQuickStartLookup()');
+  await flush();
+
+  // The newer lookup answers first, then the abandoned one finally lands.
+  resolvers[1](candidate('two-sum', 'Two Sum'));
+  await fresh;
+  resolvers[0](candidate('car-fleet', 'Car Fleet'));
+  await stale;
+
+  const shown = ui.node('#quickstart-result').innerHTML;
+  assert.match(shown, /Two Sum/);
+  assert.doesNotMatch(shown, /Car Fleet/);
+});
+
+test('a failed problem lookup leaves nothing startable', async () => {
+  const ui = app(() => Promise.reject(new Error('offline')));
+  ui.node('#quickstart-input').value = '853';
+
+  await ui.run('runQuickStartLookup()');
+
+  assert.match(ui.node('#quickstart-result').innerHTML, /offline/);
+  assert.equal(ui.node('#btn-start-quickstart').disabled, true);
+});
