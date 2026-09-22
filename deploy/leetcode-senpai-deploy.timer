@@ -1,0 +1,18 @@
+[Unit]
+Description=Poll origin/main for Leetcode Senpai deploys
+
+[Timer]
+# Two minutes. This is the primary path here rather than a backstop — the point
+# is that a push from this machine shows up on the site without going and
+# telling the box about it — so it is tighter than HolaFresca's five. It is
+# still only ~720 fetches a day, and a tick with nothing to do costs one
+# `git fetch` and prints nothing.
+#
+# OnBootSec so a laptop that was shut during a push catches up shortly after it
+# comes back, rather than waiting out the interval.
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=leetcode-senpai-deploy.service
+
+[Install]
+WantedBy=timers.target

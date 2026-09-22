@@ -16,6 +16,7 @@ ticket-runner builds.
 
 - `sync-integration.sh` — fetch + hard-reset the testing checkout to the
   integration head; `--restart` also restarts the service when the head moved.
+  (The live site uses `update.sh` instead — see **Deploying** below.)
 - `leetcode-senpai-testing.service` — the app (uvicorn `run.py` on :8000).
   `ExecStartPre` runs the sync so every start lands on head.
 - `leetcode-senpai-testing-sync.{service,timer}` — run the sync with `--restart`
@@ -140,15 +141,72 @@ info leetcode-senpai` reads the default `~/.cloudflared/config.yml`, which on
 this box belongs to HolaFresca, and answers about that tunnel instead — it
 reports on the wrong one rather than complaining.
 
-### Deploying
+## Deploying
 
 The live site serves the main checkout's working tree, so a deploy is a `git
-pull` in that tree plus a restart:
+pull` in that tree plus a restart — not a build-and-ship. Two things do it.
+
+### The timer (the normal path)
+
+`leetcode-senpai-deploy.{service,timer}` poll `origin/main` every two minutes
+and run `update.sh --poll`. Push from wherever you are and the site catches up
+on its own; nothing needs to be running on the dev machine, and a laptop that
+was shut during a push catches up shortly after it boots.
 
 ```sh
-cd ~/Documents/Programming/Learning/leetcode
-git pull
-~/.local/bin/uv sync --locked --no-dev
-systemctl --user restart leetcode-senpai.service
-curl -s localhost:8200/api/health
+systemctl --user list-timers leetcode-senpai-deploy.timer   # when it next fires
+journalctl --user -u leetcode-senpai-deploy.service -f      # what it has been doing
+systemctl --user start leetcode-senpai-deploy.service       # do not wait for the tick
 ```
+
+**Push first.** This deploys what GitHub has, not what is on your disk. A
+commit that only exists locally is not a deploy.
+
+### `lc-deploy` (when two minutes is too long)
+
+```sh
+lc-deploy            # from the dev machine: deploy origin/main now
+lc-deploy --check    # dry run — print what it would do, change nothing
+lc-deploy --force    # sync deps and restart even if already at head
+```
+
+`alias lc-deploy="$HOME/Documents/programming/learning/leetcode-senpai/deploy/deploy.sh"`.
+It tries the box at several addresses and uses the first that answers:
+Tailscale address, MagicDNS, the full `.ts.net` name, then `.local` over mDNS.
+`LEETCODE_HOST=<addr>` overrides the list. Nothing here goes through the
+tunnel — this is ssh on the private network.
+
+### What `update.sh` does, and what it refuses
+
+It fast-forwards to `origin/main`, runs `uv sync --locked --no-dev`, restarts
+the service, and polls `/api/health` for 30 s. That endpoint is unauthenticated
+precisely so a deploy can ask "did it come up?" without holding an Access
+assertion. If the new revision does not come healthy it prints the previous good
+revision and the `git reset` to get back to it.
+
+`--poll` differs from a manual run in what counts as a failure. A dirty tree, a
+diverged tree, the wrong branch, an unreachable origin: only a human clears
+those, so unattended they are skips. Failing the unit every two minutes for a
+condition the timer cannot fix turns `systemctl --user status` into noise and
+hides the deploys that broke for real — so a failed unit here always means a
+deploy that genuinely broke. It is also silent when there is nothing to do,
+which is the answer most of the time.
+
+Both entry points take an `flock` on `.git/leetcode-deploy.lock`, since the
+timer and a manual `lc-deploy` can fire at the same moment. `--check` takes no
+lock, so a dry run never queues behind a running deploy.
+
+Two deliberate differences from `sync-integration.sh`:
+
+- **No `git reset --hard`.** That script owns its checkout; this one does not.
+  This tree is also where ticket-runner builds and where you might edit on the
+  box, so uncommitted tracked changes abort the deploy rather than being
+  flattened. Untracked files are ignored — they are usually scratch, and
+  blocking on them means a stray `.log` stops a deploy.
+- **It refuses the wrong branch.** This checkout stays on `main`; the
+  integration branch is the `-testing` checkout's job.
+
+Note that "already deployed" means origin is an *ancestor* of `HEAD`, not equal
+to it: testing equality treats an unpushed local commit as a deploy, with
+nothing to merge but a service restart — which under a two-minute timer bounces
+the live site forever.

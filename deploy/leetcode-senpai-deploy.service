@@ -1,0 +1,19 @@
+[Unit]
+Description=Leetcode Senpai deploy (roll origin/main out to the live tree)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Documents/Programming/Learning/leetcode
+# --poll: a dirty tree, a diverged tree or an unreachable origin is a skip
+# rather than a failure, so a `systemctl --user status` that says "failed"
+# always means a deploy actually broke.
+ExecStart=%h/Documents/Programming/Learning/leetcode/deploy/update.sh --poll
+# There is no build step here — the long pole is a cold `uv sync` — but a
+# wedged deploy should not sit holding the lock all day.
+TimeoutStartSec=10min
+# A deploy is never more urgent than whatever the box is already serving.
+Nice=10
+
+# No [Install]: driven by the timer, same arrangement as the testing sync.
