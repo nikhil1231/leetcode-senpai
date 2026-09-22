@@ -409,17 +409,35 @@ async function loadOverview({ force = false } = {}) {
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
   if (kind !== "mock") return openPredict({ slug, kind, title, category });
-  return startSession({ slug, kind });
+  return startSession({ slug, kind }, { tabOpened: openProblemTab({ slug }) });
 }
 
-async function startSession(body) {
+// A browser only honours window.open inside the transient activation a real
+// click grants — a few seconds — and *any* await can outlive it. Opening the tab
+// after the start round-trip therefore worked on a fast connection and was
+// silently swallowed on a slow one, which is the worst possible failure mode.
+// So the tab is opened from the click itself, before anything is awaited, off
+// the URL the modal already fetched. Nothing here touches the network.
+function openProblemTab(ctx) {
+  const url = (ctx && ctx.url) || leetcodeProblemUrl(ctx.slug);
+  return Boolean(window.open(url, "_blank", "noopener"));
+}
+
+async function startSession(body, { tabOpened = false } = {}) {
   const s = await api("/session/start", "POST", body);
-  window.open(s.url, "_blank", "noopener");
+  // Only reached when the tab could not be opened from the click (the plan
+  // critique ran first). Past the activation window this may be blocked, and
+  // the live run's own problem link is the fallback — so say which happened.
+  const opened = tabOpened || Boolean(window.open(s.url, "_blank", "noopener"));
   nudgeShown = {};
-  await refreshActive();
+  // /session/start already answered with the live-run view; asking
+  // /session/active for it again would be a second, guaranteed-cold round-trip.
+  applyActive(s.active);
   loadOverview();
   render(currentActiveTab());
-  toast("Timer started — solve it on LeetCode, it'll auto-log.");
+  toast(opened
+    ? "Timer started — solve it on LeetCode, it'll auto-log."
+    : "Timer started — open the problem with the link above.");
 }
 
 function renderPredictPatterns() {
@@ -459,6 +477,7 @@ async function openPredict(ctx) {
   $("#predict-modal").classList.remove("hidden");
   try {
     const problem = await api(`/problem/${encodeURIComponent(ctx.slug)}/recall-context`);
+    ctx.url = problem.url;  // openProblemTab needs this without a round-trip
     $("#predict-problem").textContent = problem.title || ctx.title || ctx.slug;
     renderProblemStatement("#predict-statement", problem, ctx.slug);
   } catch (e) {
@@ -540,30 +559,44 @@ function reviseAfterCritique() {
   $("#btn-start-predict").textContent = "Lock in & start";
 }
 
+// The critique earns its place on a problem you are meeting for the first time:
+// it is worth a beat to be told the plan is wrong before you spend 40 minutes on
+// it. On a re-solve you have formed and defended that plan before, so it buys
+// nothing and costs an LLM round-trip between the click and the timer — the one
+// place the friction budget cannot absorb it. Reviews skip it outright.
+const planCritiqueApplies = (ctx) => ctx.kind !== "review";
+
 async function doStart(includePlan) {
   if (!pendingStart) return;
   const ctx = pendingStart;
   const startBtn = $("#btn-start-predict");
   const skipBtn = $("#btn-skip-predict");
   const body = includePlan ? currentPlanBody(ctx) : { slug: ctx.slug, kind: ctx.kind };
-  if (includePlan && !predictCritique.shown && !predictCritique.revised && hasPlanSignal(body)) {
-    startBtn.disabled = true;
-    skipBtn.disabled = true;
-    startBtn.textContent = "Checking…";
-    try {
-      const r = await critiquePlan(body);
-      if (r && r.llm && r.critique) {
-        predictCritique.shown = true;
-        renderPlanCritique(r.critique);
-        return;
-      }
-    } catch (err) {
-      console.warn("plan critique unavailable", err);
-    } finally {
-      startBtn.disabled = false;
-      skipBtn.disabled = false;
-      if (!predictCritique.shown) startBtn.textContent = "Lock in & start";
+  // Resolved without awaiting anything, so the committed-to-start path can open
+  // the tab while the click's activation is still live.
+  const willCritique = includePlan && !predictCritique.shown && !predictCritique.revised
+    && planCritiqueApplies(ctx) && hasPlanSignal(body);
+  if (!willCritique) {
+    const tabOpened = openProblemTab(ctx);
+    closePredict();
+    return startSession(body, { tabOpened });
+  }
+  startBtn.disabled = true;
+  skipBtn.disabled = true;
+  startBtn.textContent = "Checking…";
+  try {
+    const r = await critiquePlan(body);
+    if (r && r.llm && r.critique) {
+      predictCritique.shown = true;
+      renderPlanCritique(r.critique);
+      return;
     }
+  } catch (err) {
+    console.warn("plan critique unavailable", err);
+  } finally {
+    startBtn.disabled = false;
+    skipBtn.disabled = false;
+    if (!predictCritique.shown) startBtn.textContent = "Lock in & start";
   }
   closePredict();
   await startSession(body);
@@ -579,6 +612,10 @@ $("#btn-start-predict").addEventListener("click", () => doStart(true));
 // ---- active session / timer / hints / nudges -----------------------------------
 async function refreshActive() {
   const { active } = await api("/session/active");
+  applyActive(active);
+}
+
+function applyActive(active) {
   const previousId = activeSession && activeSession.session_id;
   activeSession = active;
   const run = $("#active-run");

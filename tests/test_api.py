@@ -1147,6 +1147,28 @@ def test_session_start_and_hint_degrades(client):
     assert r.json()["hint"] is None
 
 
+def test_session_start_answers_with_the_live_run_view(client):
+    """The client must not need a second round-trip to learn what it started.
+
+    /session/active straight after /session/start is not just an extra request,
+    it is a guaranteed-cold one: the write invalidated the sessions cache. So
+    start answers with the same payload, and the two must not drift apart.
+    """
+    started = client.post("/api/session/start", json={
+        "slug": "two-sum", "kind": "review"}).json()
+    active = client.get("/api/session/active").json()["active"]
+
+    assert started["active"]["session_id"] == started["session_id"]
+    assert started["active"]["slug"] == "two-sum"
+    assert started["active"]["kind"] == "review"
+    assert started["active"]["is_paused"] is False
+    assert started["active"]["hint_level"] == 0
+    # Same shape, same values — elapsed_sec is the only wall-clock-dependent one.
+    assert started["active"].keys() == active.keys()
+    assert {k: v for k, v in started["active"].items() if k != "elapsed_sec"} \
+        == {k: v for k, v in active.items() if k != "elapsed_sec"}
+
+
 def test_session_start_accepts_and_stores_pre_solve_plan(client):
     r = client.post("/api/session/start", json={
         "slug": "two-sum",

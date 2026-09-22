@@ -675,6 +675,33 @@ async def api_session_plan_critique(body: PlanCritiqueRequest,
     return {"ok": True, "llm": True, "critique": critique}
 
 
+def _active_payload(prob, s, settings):
+    """The live-run view of a session, from data the caller already holds.
+
+    Starting a session and then asking /session/active what was started costs a
+    second round-trip — and a guaranteed-cold one, since the write just
+    invalidated the sessions cache. Both endpoints build the payload from here
+    instead, so /session/start can answer with the view the client is about to
+    render.
+    """
+    hint_ladder = prob.get("hint_ladder") or []
+    now = int(time.time())
+    paused_sec = s.get("paused_sec", 0) or 0
+    paused_at = s.get("paused_at")
+    if paused_at:
+        paused_sec += max(0, now - paused_at)
+    return {
+        "session_id": s["id"], "slug": s["slug"], "started_at": s["started_at"],
+        "kind": s.get("kind"), "elapsed_sec": max(0, now - s["started_at"] - paused_sec),
+        "paused_at": paused_at, "paused_sec": s.get("paused_sec", 0) or 0,
+        "is_paused": bool(paused_at),
+        "title": prob.get("title", s["slug"]), "url": prob.get("url"),
+        "hint_level": s.get("hint_level", 0),
+        "hint_total": len(hint_ladder) if hint_ladder else 3,
+        "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(settings),
+    }
+
+
 @app.post("/api/session/start")
 def api_session_start(body: StartSession, bg: BackgroundTasks,
                       uid: str = Depends(auth.require_user)):
@@ -682,9 +709,10 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
     prob = store.get_problem(body.slug)
     if not prob:
         raise HTTPException(404, "unknown problem")
+    settings = store.get_settings()
     store.cancel_active_sessions()
     started = int(time.time())
-    sid = store.add_session({
+    doc = {
         "slug": body.slug, "started_at": started, "status": "active",
         "kind": body.kind, "attempt_id": None, "hint_level": 0,
         "paused_at": None, "paused_sec": 0,
@@ -693,10 +721,12 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "complexity_target_time": body.complexity_target_time,
         "complexity_target_space": body.complexity_target_space,
         "planned_edge_cases": body.planned_edge_cases,
-    })
-    if llm.enabled(store.get_settings()):
+    }
+    sid = store.add_session(doc)
+    if llm.enabled(settings):
         bg.add_task(_prep_problem_bg, uid, body.slug)
-    return {"session_id": sid, "slug": body.slug, "url": prob["url"], "started_at": started}
+    return {"session_id": sid, "slug": body.slug, "url": prob["url"], "started_at": started,
+            "active": _active_payload(prob, {**doc, "id": sid}, settings)}
 
 
 @app.get("/api/session/active")
@@ -706,22 +736,7 @@ def api_session_active(uid: str = Depends(auth.require_user)):
     if not s:
         return {"active": None}
     prob = store.get_problem(s["slug"]) or {}
-    hint_ladder = prob.get("hint_ladder") or []
-    now = int(time.time())
-    paused_sec = s.get("paused_sec", 0) or 0
-    paused_at = s.get("paused_at")
-    if paused_at:
-        paused_sec += max(0, now - paused_at)
-    return {"active": {
-        "session_id": s["id"], "slug": s["slug"], "started_at": s["started_at"],
-        "kind": s.get("kind"), "elapsed_sec": max(0, now - s["started_at"] - paused_sec),
-        "paused_at": paused_at, "paused_sec": s.get("paused_sec", 0) or 0,
-        "is_paused": bool(paused_at),
-        "title": prob.get("title", s["slug"]), "url": prob.get("url"),
-        "hint_level": s.get("hint_level", 0),
-        "hint_total": len(hint_ladder) if hint_ladder else 3,
-        "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(store.get_settings()),
-    }}
+    return {"active": _active_payload(prob, s, store.get_settings())}
 
 
 @app.post("/api/session/pause")
