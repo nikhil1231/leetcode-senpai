@@ -70,6 +70,38 @@ def test_overview(client):
     assert r.json()["llm_enabled"] is False
 
 
+def test_light_practice_is_separate_and_submission_is_idempotent(client):
+    from server import practice
+    before = _practice_state_snapshot(client.store)
+    assert len(client.get("/api/practice").json()["exercises"]) == len(practice.catalog()["exercises"])
+    q = client.get("/api/practice/question/break-search").json()
+    assert "example" not in q
+    # Invalid input must not create a result.
+    bad = client.post("/api/practice/answer", json={"question_id": q["id"], "answer": "[2, 1]"})
+    assert bad.status_code == 400
+    assert client.store.light_practice == {}
+    answer = str(practice.from_id(q["id"])["example"])
+    payload = {"question_id": q["id"], "answer": answer}
+    result = client.post("/api/practice/answer", json=payload)
+    assert result.status_code == 200
+    assert result.json()["correct"] is True
+    assert client.post("/api/practice/answer", json=payload).json() == result.json()
+    assert len(client.get("/api/practice").json()["results"]) == 1
+    assert _practice_state_snapshot(client.store) == before
+    assert not client.store.sessions
+
+
+def test_light_practice_reveal_cannot_be_regraded_as_correct(client):
+    q = client.get("/api/practice/question/fill-bfs").json()
+    payload = {"question_id": q["id"], "reveal": True}
+    revealed = client.post("/api/practice/answer", json=payload).json()
+    assert revealed["revealed"] and not revealed["correct"]
+    replay = client.post("/api/practice/answer", json={"question_id": q["id"], "answer": "0"}).json()
+    assert replay == revealed
+    assert client.get("/api/practice/question/missing").status_code == 404
+    assert client.post("/api/practice/answer", json={"question_id": "bogus"}).status_code == 400
+
+
 def test_me_includes_code_updated_at(client):
     body = client.get("/api/me").json()
     assert body["uid"] == "test"

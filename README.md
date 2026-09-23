@@ -173,7 +173,32 @@ DEV_UID=<your-firebase-uid> uv run scripts/migrate_local_to_firestore.py
 ```bash
 uv run --locked pytest                 # no Firestore/network needed
 node --test tests/test_frontend.cjs       # UI flow regressions; no npm install needed
+node --test tests/test_practice_frontend.cjs # light-practice interactions
 ```
+
+## Light practice
+
+The **Light practice** tab is a self-directed library of short exercises: breaking
+inputs, state prediction, missing code, and approach choices. Choose an activity
+or topic, then an exercise; there is no session setup or automatic next exercise.
+The library contains 138 authored templates: 16 breaking-input exercises, 29 state
+traces, 44 missing-code questions, and 49 approach choices, across all 18 topics.
+Thirty-four templates generate visibly different numerical variations; the remaining
+104 have fixed prompts (choice order is shuffled). Snippets use Python.
+
+Questions and grading require no LLM calls. Counterexamples are evaluated by fixed
+implementations, never by executing submitted code. Answers and reveals are saved
+separately in `users/{uid}/light_practice`, and recent outcomes appear in the
+exercise library. They do not advance FSRS or affect solve counts or mastery.
+Core templates live in `server/practice.py`, additional authored choices in
+`server/practice_bank.py`, and additional computed exercises in
+`server/practice_generated.py`. All content was authored directly during development;
+there is no runtime model generation. Tests execute the displayed trace code,
+compare bug graders to the displayed implementations and independent references,
+and check filled solutions against brute-force or structural expectations; for newer
+missing-code questions, every distractor must also fail that check.
+Retain versioned question semantics when changing templates so existing question
+IDs can still be graded consistently.
 
 ## (Legacy) run locally against real Firestore data
 

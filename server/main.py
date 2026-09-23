@@ -11,6 +11,7 @@ import contextlib
 import datetime as dt
 import hashlib
 import os
+import secrets
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -23,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (auth, coach, config, enrich, gamify, importer, insights,
-               leetcode, llm, mock, neetcode150, packs, plans, poller, scheduler)
+               leetcode, llm, mock, neetcode150, packs, plans, poller, practice, scheduler)
 from . import store as store_mod
 from .store import get_store
 
@@ -69,6 +70,12 @@ class StartSession(BaseModel):
 
 class PauseSession(BaseModel):
     paused: bool
+
+
+class PracticeAnswer(BaseModel):
+    question_id: str = Field(max_length=100)
+    answer: str | None = Field(default=None, max_length=300)
+    reveal: bool = False
 
 
 class Annotate(BaseModel):
@@ -576,6 +583,32 @@ def api_rev(uid: str = Depends(auth.require_user)):
     here because the daily queue turns over at midnight without any write.
     """
     return {"rev": get_store(uid).revisions(), "date": _today_iso()}
+
+
+@app.get("/api/practice")
+def api_practice(uid: str = Depends(auth.require_user)):
+    return {**practice.catalog(), "results": get_store(uid).list_light_practice()}
+
+
+@app.get("/api/practice/question/{template}")
+def api_practice_question(template: str, uid: str = Depends(auth.require_user)):
+    try:
+        return practice.public_question(practice.question(template, secrets.randbits(32)))
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/practice/answer")
+def api_practice_answer(body: PracticeAnswer, uid: str = Depends(auth.require_user)):
+    try:
+        q = practice.from_id(body.question_id)
+        result = practice.grade(q, body.answer, body.reveal)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    result["answered_at"] = int(time.time())
+    # A retry after a lost response returns the first saved result, rather than
+    # turning a revealed answer into a correct attempt or counting it twice.
+    return get_store(uid).save_light_practice(q["id"], result)
 
 
 @app.get("/api/overview")
@@ -1790,7 +1823,7 @@ def api_health():
 
 
 # ---- static frontend ------------------------------------------------------------
-_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js")
+_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js")
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
 

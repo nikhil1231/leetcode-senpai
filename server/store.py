@@ -149,6 +149,23 @@ class FirestoreStore:
     def _user_ref(self):
         return self.db.collection("users").document(self.uid)
 
+    # Kept separate: a small recognition exercise is not an accepted solve or
+    # a spaced-repetition review. create() makes submission retries idempotent.
+    def save_light_practice(self, question_id, result):
+        from google.api_core.exceptions import AlreadyExists
+        ref = self._user_ref().collection("light_practice").document(question_id)
+        try:
+            ref.create(result)
+        except AlreadyExists:
+            return ref.get().to_dict()
+        return result
+
+    def list_light_practice(self):
+        from google.cloud.firestore_v1 import Query
+        query = self._user_ref().collection("light_practice").order_by(
+            "answered_at", direction=Query.DESCENDING).limit(200)
+        return [doc.to_dict() for doc in query.stream()]
+
     # ---- problems (global) --------------------------------------------------
     # The full LeetCode problem statement is 64% of the catalog by bytes, and it
     # is needed one slug at a time (the recall and sprint modals) — never across

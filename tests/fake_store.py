@@ -24,6 +24,14 @@ class FakeStore:
         self.sprint_rounds = {}
         self.settings = {}
         self.flags = {}
+        self.light_practice = {}
+
+    def save_light_practice(self, question_id, result):
+        return dict(self.light_practice.setdefault(question_id, dict(result)))
+
+    def list_light_practice(self):
+        return sorted((dict(r) for r in self.light_practice.values()),
+                      key=lambda r: r["answered_at"], reverse=True)[:200]
 
     # problems
     def list_problems(self):
