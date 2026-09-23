@@ -181,10 +181,10 @@ node --test tests/test_practice_frontend.cjs # light-practice interactions
 The **Light practice** tab is a self-directed library of short exercises: breaking
 inputs, state prediction, missing code, and approach choices. Choose an activity
 or topic, then an exercise; there is no session setup or automatic next exercise.
-The library contains 138 authored templates: 16 breaking-input exercises, 29 state
-traces, 44 missing-code questions, and 49 approach choices, across all 18 topics.
-Thirty-four templates generate visibly different numerical variations; the remaining
-104 have fixed prompts (choice order is shuffled). Snippets use Python.
+The library contains 202 authored templates: 24 breaking-input exercises, 47 state
+traces, 62 missing-code questions, and 69 approach choices, across all 18 topics.
+Fifty-four templates generate visibly different numerical variations; the remaining
+148 have fixed prompts (choice order is shuffled). Snippets use Python.
 
 Questions and grading require no LLM calls. Counterexamples are evaluated by fixed
 implementations, never by executing submitted code. Answers and reveals are saved
