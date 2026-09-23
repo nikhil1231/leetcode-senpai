@@ -24,8 +24,12 @@ function app(fetch) {
     });
     return nodes.get(selector);
   };
+  // The page behind a modal is redrawn as its state changes; no view is loaded
+  // here, so that redraw is a no-op on the Today tab.
+  node('#tabs li.is-active').dataset.tab = 'today';
   const context = vm.createContext({
-    window: { location: { hostname: 'localhost' }, addEventListener() {} },
+    window: { location: { hostname: 'localhost' }, addEventListener() {},
+              Views: { renderToday: async () => {} } },
     document: {
       readyState: 'loading', addEventListener() {},
       querySelector: node, querySelectorAll: () => [],
@@ -86,6 +90,29 @@ test('recall request failure preserves the draft and restores usable actions', a
   assert.match(ui.node('#recall-actions').innerHTML, /Try again/);
   assert.equal(typeof ui.node('#btn-submit-recall').listeners.click, 'function');
   assert.equal(ui.intervals.size, 0);
+});
+
+test('a recall marks its row while grading and redraws the page once graded', async () => {
+  let resolveRecall;
+  const urls = [];
+  const ui = app((url) => {
+    urls.push(url);
+    if (url.endsWith('/review/recall')) return new Promise((resolve) => { resolveRecall = resolve; });
+    return response({});
+  });
+  ui.run('currentRecall = { slug: "two-sum" }; llmEnabled = true');
+  ui.node('#recall-text').value = 'Use a complement map';
+  const submission = ui.run('submitRecall()');
+  assert.equal(ui.run('settling.get("two-sum")'), 'grading');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(!urls.some((u) => u.endsWith('/overview')));
+  resolveRecall(response({ attempt_id: 'r1', grading_status: 'viewed', graded: { grade: 3 } }));
+  await submission;
+  await new Promise((resolve) => setImmediate(resolve));
+  // Redrawn behind the grade, before anyone clicks Done.
+  assert.equal(ui.run('settling.has("two-sum")'), false);
+  assert.ok(urls.some((u) => u.endsWith('/overview')));
+  assert.match(ui.node('#recall-actions').innerHTML, /Done/);
 });
 
 test('cancelling self-grading resolves submission without saving a recall', async () => {

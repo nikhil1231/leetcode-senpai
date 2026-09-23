@@ -362,9 +362,58 @@ async function render(tab, { force = false } = {}) {
   try {
     await fn();
     renderedRev[tab] = rev;
+    applySettling();
   } finally {
     el.classList.remove("is-refreshing");
   }
+}
+
+// A modal covers the page, not its state: whatever it just wrote — a rating, a
+// grade, a sprint's attempts — shows behind it at once, not when it closes. Only
+// the visible tab redraws now; the others revalidate by revision when opened.
+// Best-effort: a failed redraw leaves the page as it was, never the modal broken.
+function refreshBehindModal() {
+  loadOverview().catch(() => {});
+  render(currentActiveTab()).catch(() => {});
+}
+
+// ---- settling rows -------------------------------------------------------------
+// A modal that decides a problem's fate covers the queue it came from: a solve
+// waiting on its rating, a recall being graded. The rows behind it say so the
+// moment that starts, rather than when the modal closes. Marks survive redraws
+// until the real outcome lands, then a fresh render replaces them.
+const settling = new Map();  // slug -> "solved" | "grading"
+const SETTLING_LABEL = { solved: "Solved", grading: "Grading..." };
+const SETTLING_TAG = {
+  solved: '<span class="tag is-success is-light" data-settling-tag>solved</span>',
+  grading: '<span class="tag is-warning is-light" data-settling-tag>grading</span>',
+};
+
+function markSettling(slug, state) {
+  if (!slug) return;
+  settling.set(slug, state);
+  applySettling();
+}
+
+function clearSettling(slug) {
+  if (!settling.delete(slug)) return;
+  // The marked rows are only put right by a redraw, so don't let the freshness
+  // check skip one.
+  delete renderedRev.today;
+}
+
+function applySettling() {
+  settling.forEach((state, slug) => {
+    $$(`#tab-today .q-action[data-kind][data-slug="${slug}"]`).forEach((b) => {
+      const row = b.closest(".q-row");
+      if (!row || row.dataset.settling === state) return;
+      row.dataset.settling = state;
+      b.disabled = true;
+      b.textContent = SETTLING_LABEL[state];
+      row.querySelectorAll(".recall-status-tag, [data-settling-tag]").forEach((t) => t.remove());
+      row.querySelector(".q-main").insertAdjacentHTML("beforeend", SETTLING_TAG[state]);
+    });
+  });
 }
 
 // ---- overview ------------------------------------------------------------------
@@ -1050,6 +1099,7 @@ function openAnnotate(attempt) {
   delete saveBtn.dataset.saved;
   saveBtn.disabled = false;
   $("#annotate-modal").classList.remove("hidden");
+  markSettling(attempt.slug, "solved");
   initAnnotateGrade(attempt);
 }
 
@@ -1196,7 +1246,7 @@ function wireGradeButton(attemptId) {
       if (currentAttempt) currentAttempt.solution_grade = r.graded;
       renderSolutionGrade(r.graded);
       markAnnotateDone();
-      refreshAfterAnnotate();
+      refreshBehindModal();
     } else if (r.grading_status === "skipped") {
       $("#annotate-grade").classList.add("hidden");
     } else {
@@ -1217,7 +1267,7 @@ async function gradeSavedSolution(attemptId) {
       if (currentAttempt) currentAttempt.solution_grade = r.graded;
       renderSolutionGrade(r.graded);
       markAnnotateDone();
-      refreshAfterAnnotate();
+      refreshBehindModal();
       return true;
     }
     if (r.grading_status === "skipped") {
@@ -1237,13 +1287,6 @@ function selectPill(group, val) {
 }
 $$("#conf-group button").forEach((b) => b.addEventListener("click", () => selectPill("#conf-group", b.dataset.val)));
 $$("#indep-group button").forEach((b) => b.addEventListener("click", () => selectPill("#indep-group", b.dataset.val)));
-
-// Rating a solve reschedules it and a grade rewrites the attempt, so the queue,
-// stats and History behind the modal are stale the moment either lands.
-function refreshAfterAnnotate() {
-  loadOverview();
-  render(currentActiveTab());
-}
 
 function closeAnnotate({ next = true } = {}) {
   $("#annotate-modal").classList.add("hidden");
@@ -1267,13 +1310,15 @@ async function dismissAnnotate() {
   const attempt = currentAttempt;
   // Chain only once the dismissal has landed, or /pending still returns it.
   closeAnnotate({ next: false });
+  if (attempt) clearSettling(attempt.slug);
   if (!attempt || !attempt.id) return openNextPending();
   try {
     await api(`/attempt/${attempt.id}/dismiss-annotation`, "POST");
-    refreshAfterAnnotate();
   } catch (e) {
     toast(e.message);
   }
+  // Unrated, the card hasn't moved: the row goes back to how it was.
+  refreshBehindModal();
   openNextPending();
 }
 $("#btn-close-annotate").addEventListener("click", dismissAnnotate);
@@ -1296,7 +1341,7 @@ $("#btn-annotate-add-library").addEventListener("click", async () => {
   currentAttempt.in_library = true;
   $("#annotate-library").classList.add("hidden");
   toast("Added to your library — it'll be scheduled from here.");
-  loadOverview();
+  refreshBehindModal();
 });
 
 $("#btn-save-annotate").addEventListener("click", async () => {
@@ -1312,6 +1357,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
   if (saveBtn.disabled) return;
   saveBtn.disabled = true;
   const attemptId = currentAttempt.id;
+  const slug = currentAttempt.slug;
   const confidence = Number($("#conf-group button.sel").dataset.val);
   const independence = $("#indep-group button.sel").dataset.val;
   // Only offered for a detected solve, and only ever fills a blank clock — the
@@ -1333,7 +1379,8 @@ $("#btn-save-annotate").addEventListener("click", async () => {
     toast(e.message);
     return;
   }
-  refreshAfterAnnotate();
+  clearSettling(slug);
+  refreshBehindModal();
   if (currentAttempt) {
     Object.assign(currentAttempt, {
       confidence, independence,
@@ -1472,9 +1519,7 @@ function renderRecallGrade(g) {
     ${currentRecall.attempt_id ? recallClarificationHtml() : ""}`;
   wireRecallClarification();
   $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;
-  $("#btn-close-recall").addEventListener("click", () => {
-    $("#recall-modal").classList.add("hidden"); loadOverview(); render(currentActiveTab());
-  });
+  $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
 }
 
 function recallClarificationHtml() {
@@ -1538,10 +1583,16 @@ async function submitRecall() {
       "Grading…",
     ]);
   }
+  // Submitted is past taking back: the card will move whatever the grade, so the
+  // queue behind says so now, and catches up the moment the answer is in.
+  const slug = currentRecall.slug;
+  markSettling(slug, "grading");
   let r;
   try {
     r = await api("/review/recall", "POST", body);
   } catch (e) {
+    clearSettling(slug);
+    refreshBehindModal();
     stopRecallGrading();
     setRecallInputsDisabled(false);
     $("#recall-grade").innerHTML = `<p class="missed">${escapeHtml(e.message)}</p>`;
@@ -1551,6 +1602,8 @@ async function submitRecall() {
     wireRecallButtons();
     return;
   }
+  clearSettling(slug);
+  refreshBehindModal();
   stopRecallGrading();
   currentRecall.attempt_id = r.attempt_id;
   if (r.grading_status === "failed") {
@@ -1568,7 +1621,6 @@ async function submitRecall() {
   } else {
     $("#recall-modal").classList.add("hidden");
     toast("Recall logged ✅");
-    loadOverview(); render(currentActiveTab());
   }
 }
 
@@ -1864,15 +1916,8 @@ async function renderSprintSummary() {
       ${answerRows ? `<ul>${answerRows}</ul>` : "<p class='empty'>No submitted answers.</p>"}
       <div class="overlay-actions"><button id="btn-done-sprint" class="button is-primary">Done</button></div>
     </div>`;
-  refreshAfterSprint();
+  refreshBehindModal();
   $("#btn-done-sprint").addEventListener("click", closeSprint);
-}
-
-function refreshAfterSprint() {
-  loadOverview();
-  // Only the visible tab needs redrawing now; the others are revalidated by
-  // their revision the next time they are opened.
-  render(currentActiveTab());
 }
 
 $("#btn-close-sprint").addEventListener("click", closeSprint);
@@ -2034,6 +2079,8 @@ async function startMock() {
     return;
   }
   renderMock(m);
+  // Today's mock card already reads "in progress" behind the runner.
+  refreshBehindModal();
 }
 
 function renderMock(m) {
