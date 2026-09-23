@@ -630,3 +630,54 @@ def test_pace_counts_first_library_solves_only():
     assert pace["solved"] == 2
     assert pace["rate_per_week"] == 0.5
     assert pace["days_left"] == 14
+
+
+def test_reconcile_plan_uses_graded_plan_and_normalized_complexity():
+    rec = insights.reconcile_plan(
+        {"complexity_target_time": "O(nm)", "planned_edge_cases": ["duplicates"]},
+        {"inferred_time": "O(mA), where m = coins", "plan_grade": {
+            "edge_cases": [{"case": "duplicates", "covered": True},
+                           {"case": "empty", "covered": False}]}},
+    )
+    assert rec["complexity_time_hit"] is True
+    assert rec["edge_case_status"] == "missed"
+
+
+def test_planning_stats_overall_categories_and_weakest():
+    attempts = [
+        {"id": "1", "slug": "two-sum", "plan_status": "planned",
+         "predicted_approach": "hash", "complexity_target_time": "O(n)",
+         "plan_held": "held", "plan_time_sec": 60},
+        {"id": "2", "slug": "valid-anagram", "plan_status": "planned",
+         "predicted_approach": "sort", "complexity_target_time": "O(n log n)",
+         "plan_held": "tweaked", "plan_time_sec": 120},
+        {"id": "3", "slug": "3sum", "plan_status": "blank", "plan_time_sec": 400},
+        {"id": "4", "slug": "3sum", "plan_status": "planned",
+         "predicted_approach": "window", "complexity_target_time": "O(n)",
+         "plan_held": "pivoted", "plan_time_sec": 300},
+        {"id": "5", "slug": "3sum", "plan_status": "skipped"},
+        {"id": "6", "slug": "two-sum", "kind": "sprint", "predicted_category": "X"},
+        {"id": "7", "slug": "two-sum"},
+    ]
+    enr = [
+        {"attempt_id": "1", "plan_grade": {"approach_verdict": "viable", "optimal_time": "O(n)"}},
+        {"attempt_id": "2", "plan_grade": {"approach_verdict": "partial", "optimal_time": "O(n)"}},
+        {"attempt_id": "4", "plan_grade": {"approach_verdict": "wrong", "optimal_time": "O(n^2)"}},
+    ]
+    out = insights.planning_stats(_problems(), attempts, enr)
+    o = out["overall"]
+    assert (o["starts"], o["plans"], o["blanks"], o["skips"]) == (5, 3, 1, 1)
+    assert o["held_rate"] == round(1 / 3, 3)
+    assert o["optimal_rate"] == round(1 / 3, 3)
+    assert o["median_plan_sec"] == 210
+    arrays = next(c for c in out["categories"] if c["category"] == "Arrays & Hashing")
+    assert arrays["plans"] == 2 and arrays["scored"] == 2
+    # Two Pointers: one blank (0) and one pivoted wrong plan (0) — the weakest.
+    assert out["weakest"]["category"] == "Two Pointers"
+    assert out["weakest"]["blanks"] == 1
+
+
+def test_planning_stats_empty():
+    out = insights.planning_stats(_problems(), [{"id": "1", "slug": "two-sum"}], [])
+    assert out["overall"]["starts"] == 0
+    assert out["weakest"] is None

@@ -287,3 +287,59 @@ test('a failed status request leaves the warning alone', async () => {
   await new Promise((r) => setImmediate(r));
   assert.equal(ui.node('#lc-warning').textContent, '');
 });
+
+test('locking in a plan needs an approach and a time target', async () => {
+  const bodies = [];
+  const ui = app(async (path, opts) => {
+    if (opts && opts.body) bodies.push([path, JSON.parse(opts.body)]);
+    return response({ active: null, url: 'u' });
+  });
+  ui.run('window.open = () => ({}); pendingStart = { slug: "two-sum", kind: "review" }; planOpenedAt = Date.now() - 90000');
+  ui.node('#predict-approach').value = 'hash complements';
+  ui.run('doStart("planned")');
+  assert.equal(bodies.length, 0);
+  assert.equal(ui.run('pendingStart.slug'), 'two-sum');
+
+  ui.node('#predict-time').value = 'O(n)';
+  await ui.run('doStart("planned")')?.catch?.(() => {});
+  const [path, body] = bodies[0];
+  assert.equal(path, '/api/session/start');
+  assert.equal(body.plan_status, 'planned');
+  assert.equal(body.predicted_approach, 'hash complements');
+  assert.equal(body.complexity_target_time, 'O(n)');
+  assert.ok(body.plan_time_sec >= 89 && body.plan_time_sec <= 91);
+  assert.equal(ui.run('pendingStart'), null);
+});
+
+test('no idea yet starts the run without a plan but keeps the thinking time', async () => {
+  const bodies = [];
+  const ui = app(async (path, opts) => {
+    if (opts && opts.body) bodies.push(JSON.parse(opts.body));
+    return response({ active: null, url: 'u' });
+  });
+  ui.run('window.open = () => ({}); pendingStart = { slug: "two-sum", kind: "new" }; planOpenedAt = Date.now() - 30000');
+  ui.node('#predict-approach').value = 'half an idea';
+  await ui.run('doStart("blank")')?.catch?.(() => {});
+  assert.equal(bodies[0].plan_status, 'blank');
+  assert.equal(bodies[0].predicted_approach, undefined);
+  assert.ok(bodies[0].plan_time_sec >= 29);
+});
+
+test('saving a planned solve sends whether the plan held, then grades the plan', async () => {
+  const calls = [];
+  const ui = app(async (path, opts) => {
+    calls.push([path, opts && opts.body ? JSON.parse(opts.body) : null]);
+    if (path.endsWith('/annotate')) return response({ ok: true, plan: { status: 'planned', held: 'pivoted' } });
+    return response({ ok: true, plan: { status: 'planned', graded: true, score: 2, approach_verdict: 'partial' } });
+  });
+  ui.run('llmEnabled = true; currentAttempt = { id: "a1", code: null, plan: { status: "planned" } }');
+  ui.node('#conf-group button.sel').dataset.val = '3';
+  ui.node('#indep-group button.sel').dataset.val = 'solo';
+  ui.node('#held-group button.sel').dataset.val = 'pivoted';
+  await ui.node('#btn-save-annotate').listeners.click();
+  const annotate = calls.find(([p]) => p.endsWith('/annotate'));
+  assert.equal(annotate[1].plan_held, 'pivoted');
+  assert.ok(calls.some(([p]) => p.endsWith('/a1/grade-plan')));
+  assert.equal(ui.node('#toast').textContent, 'Logged — grading your plan…');
+  assert.match(ui.node('#annotate-plan-grade').innerHTML, /Plan score <b>2\/5<\/b>/);
+});

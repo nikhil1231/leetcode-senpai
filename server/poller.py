@@ -14,7 +14,7 @@ then carrying on until it's clean is one piece of practice, not two.
 """
 import time
 
-from . import config, importer, leetcode
+from . import config, importer, leetcode, plans
 
 # How many recent ACs to look at per pass. LeetCode's feed is short anyway.
 RECENT_LIMIT = 20
@@ -61,9 +61,25 @@ async def check_active_sessions(store, username, auth=None):
     return new_ids
 
 
+# What a run's pre-solve plan hands to the solve it produces.
+_PLAN_CARRY = ("predicted_category", "predicted_approach", "complexity_target_time",
+               "complexity_target_space", "planned_edge_cases", "plan_status",
+               "plan_time_sec", "plan_check_revealed")
+
+
+def _plan_fields(session):
+    out = {k: session.get(k) for k in _PLAN_CARRY}
+    out["planned_edge_cases"] = session.get("planned_edge_cases", [])
+    return out
+
+
 async def _record_solve(store, session, match, auth):
     dup = store.find_attempt_by_submission(match["id"])
     if dup:
+        # Logged already (an overlapping poll got there first). The row still
+        # takes this run's plan if it has none — otherwise the plan is lost.
+        if plans.plan_status(session) and not plans.plan_status(dup):
+            store.update_attempt(dup["id"], _plan_fields(session))
         store.update_session(session["id"], {"status": "completed", "attempt_id": dup["id"]})
         return None
 
@@ -84,6 +100,8 @@ async def _record_solve(store, session, match, auth):
         )
     except Exception:
         wrong = None
+    failed_tests = await _failed_tests(
+        session["slug"], session["started_at"], match["timestamp"], wrong, auth)
 
     code = details.get("code") if details else None
     aid = store.add_attempt({
@@ -96,18 +114,27 @@ async def _record_solve(store, session, match, auth):
         "code": code,
         "confidence": None, "independence": None, "mistake_note": None,
         "approach": None, "source": "auto", "kind": session.get("kind", "adhoc"),
-        # carry the pre-solve prediction + hint usage from the session
-        "predicted_category": session.get("predicted_category"),
-        "predicted_approach": session.get("predicted_approach"),
-        "complexity_target_time": session.get("complexity_target_time"),
-        "complexity_target_space": session.get("complexity_target_space"),
-        "planned_edge_cases": session.get("planned_edge_cases", []),
+        # carry the pre-solve plan + hint usage from the session
+        **_plan_fields(session),
+        "failed_tests": failed_tests,
         "hint_level_used": session.get("hint_level", 0),
         "complexity_time": None, "complexity_space": None,
         "solution_grading_status": None,
     })
     store.update_session(session["id"], {"status": "completed", "attempt_id": aid})
     return aid
+
+
+async def _failed_tests(slug, start_ts, end_ts, wrong, auth):
+    """The inputs that broke the wrong submissions before this AC, when there
+    were any. It's what tells a plan grade which edge case actually bit.
+    A nicety on top of detection: any failure here is just an empty list."""
+    if not wrong:
+        return []
+    try:
+        return await leetcode.failed_tests_between(slug, start_ts, end_ts, auth) or []
+    except Exception:
+        return []
 
 
 # ---- same-sitting folding ---------------------------------------------------

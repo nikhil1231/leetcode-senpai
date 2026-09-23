@@ -869,3 +869,51 @@ def test_sprint_round_old_rep_is_off_cooldown():
     sprints = scheduler.build_sprint_round(
         _sprint_problems(), attempts, [], {"sprint_round_size": 5}, today=today)
     assert any(s["slug"] == "two-sum" for s in sprints)
+
+
+# ---- pre-solve plans --------------------------------------------------------------
+def test_plan_cap_limits_a_solve_found_while_coding():
+    held = scheduler.advance_review(_card(), 3, "solo")
+    pivoted = scheduler.advance_review(_card(), 3, "solo", plan_cap=3)
+    tweaked = scheduler.advance_review(_card(), 3, "solo", plan_cap=4)
+    assert held["quality"] == 5
+    assert pivoted["quality"] == 3
+    assert tweaked["quality"] == 4
+    # A cap never lifts a rating; and a recall grade isn't a plan.
+    assert scheduler.advance_review(_card(), 1, "solo", plan_cap=4)["quality"] == 3
+    assert scheduler.advance_review(_card(), 3, "solo", grade=3, plan_cap=3)["quality"] == 5
+
+
+def test_drill_lane_counts_plan_misses_as_signal():
+    attempts = [
+        {"id": "a1", "slug": "invert-tree", "confidence": 3, "independence": "solo",
+         "solved_at": 1768000000, "plan_status": "planned",
+         "predicted_approach": "dfs", "plan_held": "pivoted"},
+        {"id": "a2", "slug": "longest-substring", "confidence": 3, "independence": "solo",
+         "solved_at": 1768000000, "plan_status": "planned",
+         "predicted_approach": "window", "plan_held": "held"},
+    ]
+    drills = scheduler.build_drill_lane(
+        _drill_problems(), attempts, [], today=dt.date(2026, 1, 10))
+    tree = next(d for d in drills if d["category"] == "Trees")
+    assert "prediction_miss" in tree["reason_codes"]
+    assert tree["signals"]["prediction_misses"] == 1
+    assert not any(d["category"] == "Sliding Window" and "prediction_miss" in d["reason_codes"]
+                   for d in drills)
+
+
+def test_one_attempt_counts_one_plan_miss():
+    attempts = [{"id": "a1", "slug": "invert-tree", "plan_status": "planned",
+                 "predicted_approach": "dfs", "plan_held": "pivoted"}]
+    enrichments = [{"attempt_id": "a1", "prediction_verdict": "wrong",
+                    "plan_grade": {"approach_verdict": "wrong"}}]
+    misses = scheduler._prediction_misses_by_category(_drill_problems(), attempts, enrichments)
+    assert misses == {"Trees": 1}
+
+
+def test_no_idea_start_is_a_recent_struggle():
+    attempts = [{"id": "a1", "slug": "invert-tree", "confidence": 3, "independence": "solo",
+                 "solved_at": 1768000000, "plan_status": "blank"}]
+    struggles = scheduler._recent_struggles_by_category(
+        _drill_problems(), attempts, dt.date(2026, 1, 10))
+    assert struggles == {"Trees": 1}

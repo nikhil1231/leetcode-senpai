@@ -116,6 +116,19 @@ query submissionDetails($submissionId: Int!) {
 }
 """
 
+# Kept apart from _SUBMISSION_DETAILS so a field LeetCode renames here can only
+# cost the failing-input nicety, never the code of an accepted solve.
+_FAILED_DETAILS = """
+query submissionDetails($submissionId: Int!) {
+  submissionDetails(submissionId: $submissionId) {
+    lastTestcase
+    expectedOutput
+    codeOutput
+    runtimeError
+  }
+}
+"""
+
 _USER_STATUS = """
 query globalData {
   userStatus {
@@ -293,3 +306,46 @@ async def wrong_attempts_between(slug, start_ts, end_ts, auth):
         if start_ts <= ts <= end_ts and s.get("statusDisplay") != "Accepted":
             count += 1
     return count
+
+
+_FAILED_STATUSES = ("Wrong Answer", "Runtime Error", "Time Limit Exceeded",
+                    "Memory Limit Exceeded", "Output Limit Exceeded")
+
+
+def _clip(value, limit=300):
+    text = str(value or "").strip()
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+async def failed_tests_between(slug, start_ts, end_ts, auth, limit=2):
+    """Auth required. The failing inputs of the latest `limit` wrong submissions
+    for `slug` in [start, end]: [{status, input, expected, output}], newest first."""
+    if not has_auth(auth):
+        return []
+    async with httpx.AsyncClient() as client:
+        data = await _query(
+            client, _SUBMISSION_LIST,
+            {"offset": 0, "limit": 40, "questionSlug": slug}, auth,
+            referer=f"https://leetcode.com/problems/{slug}/submissions/",
+        )
+        lst = (data.get("questionSubmissionList") or {}).get("submissions") or []
+        failed = sorted(
+            (s for s in lst
+             if start_ts <= int(s["timestamp"]) <= end_ts
+             and s.get("statusDisplay") in _FAILED_STATUSES),
+            key=lambda s: int(s["timestamp"]), reverse=True)[:limit]
+        out = []
+        for sub in failed:
+            try:
+                d = (await _query(client, _FAILED_DETAILS,
+                                  {"submissionId": int(sub["id"])}, auth)
+                     ).get("submissionDetails") or {}
+            except Exception:
+                d = {}
+            out.append({
+                "status": sub.get("statusDisplay"),
+                "input": _clip(d.get("lastTestcase")),
+                "expected": _clip(d.get("expectedOutput"), 120),
+                "output": _clip(d.get("codeOutput") or d.get("runtimeError"), 120),
+            })
+    return out

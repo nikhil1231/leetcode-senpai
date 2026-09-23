@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (auth, coach, config, enrich, gamify, importer, insights,
-               leetcode, llm, mock, neetcode150, packs, poller, scheduler)
+               leetcode, llm, mock, neetcode150, packs, plans, poller, scheduler)
 from . import store as store_mod
 from .store import get_store
 
@@ -61,15 +61,10 @@ class StartSession(BaseModel):
     complexity_target_time: str | None = None
     complexity_target_space: str | None = None
     planned_edge_cases: list[str] = Field(default_factory=list)
-
-
-class PlanCritiqueRequest(BaseModel):
-    slug: str
-    predicted_category: str | None = None
-    predicted_approach: str | None = None
-    complexity_target_time: str | None = None
-    complexity_target_space: str | None = None
-    planned_edge_cases: list[str] = Field(default_factory=list)
+    # How the run began (see plans.py) and how long planning took. Absent from
+    # older clients, which leaves the row reading exactly as it used to.
+    plan_status: Literal["planned", "blank", "skipped"] | None = None
+    plan_time_sec: int | None = Field(default=None, ge=0)
 
 
 class PauseSession(BaseModel):
@@ -83,6 +78,8 @@ class Annotate(BaseModel):
     approach: str | None = None
     complexity_time: str | None = None
     complexity_space: str | None = None
+    # Whether the pre-solve plan survived contact with the code.
+    plan_held: Literal["held", "tweaked", "pivoted"] | None = None
     # Only sent for a solve with no session clock (one the sweep detected).
     # A session-timed attempt keeps its measured time; see api_annotate.
     time_taken_sec: int | None = Field(default=None, ge=0)
@@ -219,7 +216,9 @@ def _pending(store):
     pm = _problem_map(store)
     cutoff = time.time() - PENDING_MAX_AGE_SEC
     out = []
-    for a in store.list_attempts():
+    attempts = store.list_attempts()
+    enrichments = None
+    for a in attempts:
         if a.get("kind") in ("recall", "sprint") or a.get("source") in ("recall", "sprint"):
             continue
         if a.get("confidence") is not None or a.get("source") == "backfill":
@@ -237,6 +236,13 @@ def _pending(store):
             # modal can offer to adopt it rather than leaving it unscheduled.
             "in_library": scheduler._in_library(p) if p else False,
         })
+        if plans.plan_status(a):
+            if enrichments is None:
+                enrichments = _enrichment_map(store)
+            out[-1]["plan"] = plans.plan_review(
+                a, enrichments.get(a["id"]), p.get("canonical_summary"))
+            out[-1]["previous_plan"] = plans.previous_plan(
+                attempts, enrichments, a["slug"], a.get("solved_at") or 0, exclude_id=a["id"])
     out.sort(key=lambda a: a.get("solved_at") or 0, reverse=True)
     return out
 
@@ -660,28 +666,40 @@ def api_failure_mode(tag: str, uid: str = Depends(auth.require_user)):
 
 
 # ---- sessions -------------------------------------------------------------------
-@app.post("/api/session/plan-critique")
-async def api_session_plan_critique(body: PlanCritiqueRequest,
-                                    uid: str = Depends(auth.require_user)):
+@app.post("/api/session/plan-check")
+async def api_session_plan_check(uid: str = Depends(auth.require_user)):
+    """Critique the active run's plan, on request, while the clock runs.
+
+    Nothing in the start path waits on this: the timer is already going when
+    it's asked for, and it's never shown unasked — an unrequested critique of
+    a plan is a hint. Asking is recorded on the run and carried to the solve.
+    """
     store = get_store(uid)
+    s = store.latest_active_session()
+    if not s:
+        raise HTTPException(400, "no active session")
+    if s.get("plan_status") != "planned":
+        raise HTTPException(400, "this run has no plan to check")
     settings = store.get_settings()
     if not llm.enabled(settings):
         return {"ok": True, "llm": False, "critique": None}
-
-    prob = store.get_problem(body.slug)
-    if not prob:
-        raise HTTPException(404, "unknown problem")
-    critique = await llm.extract("critique_plan", {
-        "slug": body.slug,
-        "title": prob.get("title", body.slug),
-        "category": prob.get("neetcode_category") or prob.get("category"),
-        "difficulty": prob.get("difficulty"),
-        "predicted_category": body.predicted_category,
-        "predicted_approach": body.predicted_approach,
-        "complexity_target_time": body.complexity_target_time,
-        "complexity_target_space": body.complexity_target_space,
-        "planned_edge_cases": body.planned_edge_cases[:3],
-    }, settings=settings)
+    critique = s.get("plan_check")
+    if not critique:
+        prob = store.get_problem(s["slug"]) or {}
+        critique, err = await llm.extract_or_error("critique_plan", {
+            "slug": s["slug"],
+            "title": prob.get("title", s["slug"]),
+            "category": prob.get("neetcode_category") or prob.get("category"),
+            "difficulty": prob.get("difficulty"),
+            "predicted_category": s.get("predicted_category"),
+            "predicted_approach": s.get("predicted_approach"),
+            "complexity_target_time": s.get("complexity_target_time"),
+            "complexity_target_space": s.get("complexity_target_space"),
+            "planned_edge_cases": (s.get("planned_edge_cases") or [])[:3],
+        }, settings=settings)
+        if not critique:
+            raise HTTPException(502, err or "plan check unavailable")
+    store.update_session(s["id"], {"plan_check": critique, "plan_check_revealed": True})
     return {"ok": True, "llm": True, "critique": critique}
 
 
@@ -709,6 +727,10 @@ def _active_payload(prob, s, settings):
         "hint_level": s.get("hint_level", 0),
         "hint_total": len(hint_ladder) if hint_ladder else 3,
         "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(settings),
+        "plan_status": s.get("plan_status"),
+        "plan_check_available": s.get("plan_status") == "planned" and llm.enabled(settings),
+        # Only once asked for: a critique shown unasked would be a free hint.
+        "plan_check": s.get("plan_check") if s.get("plan_check_revealed") else None,
     }
 
 
@@ -730,7 +752,9 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "predicted_approach": body.predicted_approach,
         "complexity_target_time": body.complexity_target_time,
         "complexity_target_space": body.complexity_target_space,
-        "planned_edge_cases": body.planned_edge_cases,
+        "planned_edge_cases": plans.planned_edge_cases(body.model_dump())[:3],
+        "plan_status": body.plan_status,
+        "plan_time_sec": body.plan_time_sec,
     }
     sid = store.add_session(doc)
     if llm.enabled(settings):
@@ -862,6 +886,9 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
         "mistake_note": body.mistake_note, "approach": body.approach,
         "complexity_time": body.complexity_time, "complexity_space": body.complexity_space,
     }
+    # Only meaningful for a run that started from a plan.
+    if plans.has_plan(attempt):
+        fields["plan_held"] = body.plan_held
     # LeetCode's feed reports when a solve was accepted, never when it was begun,
     # so a detected solve reaches here with no clock. The modal asks for one; a
     # measured time is never overwritten by a typed one.
@@ -876,8 +903,10 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     # otherwise schedule on the self-assessment alone (LLM never blocks scheduling).
     graded = attempt.get("solution_grade") or {}
     solution_score = graded.get("score") if graded else None
+    plan_cap = plans.quality_cap(plans.plan_status(attempt), fields.get("plan_held"))
     new_state = scheduler.advance_review(
-        current, body.confidence, body.independence, solution_score=solution_score)
+        current, body.confidence, body.independence, solution_score=solution_score,
+        plan_cap=plan_cap)
     new_state["slug"] = slug
     store.upsert_review(slug, new_state)
     if llm.enabled(store.get_settings()):
@@ -887,7 +916,10 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     suggestion = None
     if scheduler.quality(body.confidence, body.independence) < 3:
         suggestion = _similar_suggestion(store, slug)
-    return {"ok": True, "review": new_state, "similar": suggestion}
+    plan = None
+    if plans.plan_status(attempt):
+        plan = _plan_review(store, {**attempt, **fields}, store.get_enrichment(attempt_id))
+    return {"ok": True, "review": new_state, "similar": suggestion, "plan": plan}
 
 
 @app.post("/api/attempt/{attempt_id}/grade-solution")
@@ -903,6 +935,27 @@ async def api_grade_solution(attempt_id: str, uid: str = Depends(auth.require_us
         raise HTTPException(400, "self-assessment is required before solution grading")
     result = await _grade_solution(store, attempt)
     return {"ok": True, **result}
+
+
+@app.post("/api/attempt/{attempt_id}/grade-plan")
+async def api_grade_plan(attempt_id: str, uid: str = Depends(auth.require_user)):
+    """Grade a rated solve's pre-solve plan and return its scorecard. Awaited by
+    the post-solve modal, like solution grading; the rating is already saved."""
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt:
+        raise HTTPException(404, "no such attempt")
+    if not plans.has_plan(attempt):
+        raise HTTPException(400, "this solve has no plan to grade")
+    enrichment, err = await enrich.grade_plan(store, attempt_id)
+    attempt = store.get_attempt(attempt_id)
+    return {"ok": True, "llm": llm.enabled(store.get_settings()), "error": err,
+            "plan": _plan_review(store, attempt, enrichment)}
+
+
+def _plan_review(store, attempt, enrichment=None):
+    prob = store.get_problem(attempt["slug"]) or {}
+    return plans.plan_review(attempt, enrichment, prob.get("canonical_summary"))
 
 
 @app.post("/api/attempt/{attempt_id}/dismiss-annotation")
@@ -961,7 +1014,8 @@ def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
     return {**a, "title": prob.get("title"), "difficulty": prob.get("difficulty"),
             "neetcode_category": prob.get("neetcode_category"), "url": prob.get("url"),
             "enrichment": enrichment,
-            "plan_reconciliation": insights.reconcile_plan(a, enrichment)}
+            "plan_reconciliation": insights.reconcile_plan(a, enrichment),
+            "plan": plans.plan_review(a, enrichment, prob.get("canonical_summary"))}
 
 
 @app.get("/api/history")

@@ -9,7 +9,7 @@ so SM-2 and FSRS share one interface; see fsrs_engine.py for the FSRS side.
 """
 import datetime as dt
 
-from . import config
+from . import config, plans
 from .neetcode150 import CATEGORY_FAMILIES, CATEGORY_ORDER, FAMILY_ORDER
 
 CONF_TO_Q = {1: 3, 2: 4, 3: 5}  # low / medium / high on SM-2's 0..5 scale
@@ -110,12 +110,13 @@ def seed_review(slug, today=None):
 
 
 def advance_review(current, confidence, independence, today=None, grade=None,
-                   solution_score=None):
+                   solution_score=None, plan_cap=None):
     """Return the next review card state. `current` may be None (first solve).
 
     Pass `grade` (0..3) for approach-recall reviews. Pass `solution_score` (0..5)
     to blend the LLM's code grade with the confidence/independence self-assessment;
-    otherwise confidence + independence are graded normally.
+    otherwise confidence + independence are graded normally. `plan_cap` (see
+    plans.quality_cap) is a ceiling from a pre-solve plan that didn't hold.
 
     A card moves once per day. Grading the same problem again today — a second
     solve after a better submission, a recall on top of a solve — replaces that
@@ -129,6 +130,8 @@ def advance_review(current, confidence, independence, today=None, grade=None,
         q = solution_quality(confidence, independence, solution_score)
     else:
         q = quality(confidence, independence)
+    if grade is None and plan_cap is not None:
+        q = min(q, plan_cap)
     today_d = _today(today)
     prior = _rewind_todays_advance(current, today_d)
     if config.SCHEDULER == "fsrs":
@@ -488,14 +491,24 @@ def build_sprint_round(
     return [_sprint_item(*cand) for cand in candidates[:limit]]
 
 
+def _is_plan_miss(a, e):
+    """A wrong pattern guess, or a pre-solve plan that showed a weakness."""
+    return e.get("prediction_verdict") in _PREDICTION_MISSES or plans.plan_miss(a, e)
+
+
 def _prediction_misses_by_category(problems, attempts, enrichments):
+    """Per category, how many starts showed a planning miss: a wrong pattern
+    guess (sprints included), a blank start, a pivot, or a plan whose approach
+    or time target the grade marked short. One per attempt, however many."""
     cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
     attempt_by_id = {a.get("id"): a for a in attempts}
+    enr_by_attempt = {e.get("attempt_id"): e for e in (enrichments or [])}
     raw = {}
-    for e in enrichments or []:
-        if e.get("prediction_verdict") not in _PREDICTION_MISSES:
+    for aid in set(attempt_by_id) | set(enr_by_attempt):
+        a = attempt_by_id.get(aid, {})
+        e = enr_by_attempt.get(aid, {})
+        if not _is_plan_miss(a, e):
             continue
-        a = attempt_by_id.get(e.get("attempt_id"), {})
         cat = cat_of.get(a.get("slug") or e.get("slug"))
         if cat:
             raw[cat] = raw.get(cat, 0) + 1
@@ -531,7 +544,7 @@ def _sprint_score(p, attempts, review, stats, mistakes, pred_misses, struggles, 
         (leech_score, "Leech review state"),
         (fail_score, "Repeated review failures"),
         (mistake_score, "Recent mistake density"),
-        (pred_score, "Prediction misses"),
+        (pred_score, "Plan misses"),
         (struggle_score, "Recent low-confidence solve"),
         (weak_score, "Weak topic"),
         (breadth_score + unattempted_score + base_score, "Broad coverage"),
@@ -616,6 +629,14 @@ def _sprint_item(p, score, reason, reason_codes, signals):
     }
 
 
+def _is_struggle(a):
+    """Low confidence, needed help, or sat down with no idea / had to pivot."""
+    return (a.get("confidence") is not None and a.get("confidence") <= 1
+            or a.get("independence") in ("hints", "solution")
+            or a.get("plan_status") == "blank"
+            or a.get("plan_held") == "pivoted")
+
+
 def _recent_struggles_by_category(problems, attempts, today):
     cutoff = int((dt.datetime.combine(today, dt.time()) - dt.timedelta(days=30)).timestamp())
     cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
@@ -624,8 +645,7 @@ def _recent_struggles_by_category(problems, attempts, today):
         ts = a.get("solved_at")
         if ts is not None and ts < cutoff:
             continue
-        if not (a.get("confidence") is not None and a.get("confidence") <= 1
-                or a.get("independence") in ("hints", "solution")):
+        if not _is_struggle(a):
             continue
         cat = cat_of.get(a.get("slug"))
         if cat:
@@ -647,12 +667,7 @@ def _latest_relevant_signal_by_category(problems, attempts, enrichments, today):
             continue
         e = enr_by_attempt.get(a.get("id"), {})
         tags = (e.get("user_overrides") or {}).get("tags") or e.get("mistake_tags") or []
-        pred_miss = e.get("prediction_verdict") in _PREDICTION_MISSES
-        struggle = (
-            a.get("confidence") is not None and a.get("confidence") <= 1
-            or a.get("independence") in ("hints", "solution")
-        )
-        if tags or pred_miss or struggle:
+        if tags or _is_plan_miss(a, e) or _is_struggle(a):
             raw[cat] = max(raw.get(cat, 0), ts)
     return raw
 
@@ -682,7 +697,7 @@ def _drill_score(p, attempts, review, stats, mistakes, pred_misses, struggles, s
     display_signals = [
         (leech_score, "Leech drill"),
         (mistake_score, "Recent mistakes"),
-        (pred_score, "Prediction misses"),
+        (pred_score, "Plan misses"),
         (struggle_score, "Recent struggle"),
         (weak_score + breadth_score, "Coverage gap"),
     ]

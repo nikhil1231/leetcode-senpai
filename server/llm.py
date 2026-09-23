@@ -54,6 +54,21 @@ class PlanCritiqueResult(BaseModel):
     overall_verdict: Literal["ready", "revise", "unknown"] = "unknown"
 
 
+class PlanGrade(BaseModel):
+    # Flat on purpose: no nested objects or length limits, which not every
+    # provider's structured-output mode accepts. enrich.py normalizes it.
+    pattern_verdict: Literal["correct", "partial", "wrong", "unknown"] = "unknown"
+    approach_verdict: Literal["viable", "partial", "wrong", "unknown"] = "unknown"
+    optimal_time: str = Field("", description="bare big-O only, e.g. O(n log n)")
+    optimal_space: str = Field("", description="bare big-O only")
+    solution_time: str = Field("", description="bare big-O of their code, empty if no code")
+    solution_space: str = Field("", description="bare big-O of their code, empty if no code")
+    edge_cases_covered: list[str] = Field(default_factory=list, description="edge cases that matter which the plan handles")
+    edge_cases_missed: list[str] = Field(default_factory=list, description="edge cases that matter which the plan does not name")
+    failure_case: str = ""
+    note: str = ""
+
+
 class CodeAnalysis(BaseModel):
     pattern_used: str = ""
     inferred_time: str = ""
@@ -171,6 +186,42 @@ TASKS: dict[str, Task] = {
             f"Target complexity: time={p.get('complexity_target_time') or '?'}, "
             f"space={p.get('complexity_target_space') or '?'}.\n"
             f"Planned edge cases: {json.dumps(p.get('planned_edge_cases') or [])}"
+        ),
+    ),
+    "grade_plan": Task(
+        PlanGrade,
+        "You grade a coding-interview plan the solver wrote BEFORE coding, now that "
+        "the solve is over. pattern_verdict: did the predicted pattern match what the "
+        "problem needs ('partial' = right family, wrong variant; 'unknown' if none "
+        "was given). approach_verdict: would the stated approach, as written, solve "
+        "the problem within the optimal complexity ('viable'), solve it but "
+        "suboptimally or missing the crucial trick ('partial'), or not solve it "
+        "('wrong')? Judge by meaning, not wording. optimal_time/optimal_space: the "
+        "canonical optimum. solution_time/solution_space: what their final code "
+        "actually achieves. Write every complexity as a bare big-O with no prose, "
+        "e.g. O(n log n) or O(n + m). Name the 3-5 edge cases that genuinely matter "
+        "for this problem, a few words each: put one in edge_cases_covered only if the "
+        "plan's edge cases or approach explicitly handle it, else in "
+        "edge_cases_missed. failure_case: if a failing test input shows "
+        "an edge case the plan did not name, name it in a few words, else empty. "
+        "note: one or two sentences on the plan itself — what it got right and the "
+        "one thing to plan better next time. Keep strings short.",
+        lambda p: (
+            f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
+            f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
+            f"Canonical optimal complexity: time={p.get('canon_time') or '?'}, "
+            f"space={p.get('canon_space') or '?'}.\n"
+            f"--- plan written before coding ---\n"
+            f"Pattern guess: {p.get('predicted_category') or '(none)'}\n"
+            f"Approach: {p.get('predicted_approach') or '(none)'}\n"
+            f"Target complexity: time={p.get('complexity_target_time') or '?'}, "
+            f"space={p.get('complexity_target_space') or '?'}\n"
+            f"Planned edge cases: {json.dumps(p.get('planned_edge_cases') or [])}\n"
+            f"--- after the solve ---\n"
+            f"Solver says the plan: {p.get('plan_held') or '(not said)'}\n"
+            f"Solver note: {p.get('note') or '(none)'}\n"
+            f"Failing test inputs before AC: {json.dumps(p.get('failed_tests') or [])[:1200]}\n"
+            f"--- final accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'), 1500)}"
         ),
     ),
     "analyze_code": Task(

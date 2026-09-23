@@ -123,6 +123,7 @@ function renderComplexityFields(containerSel, { timeId, spaceId, timeLabel = "Ti
       const input = $(`#${btn.parentElement.dataset.for}`);
       if (!input || input.disabled) return;
       input.value = btn.dataset.val;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
       input.focus();
     });
   });
@@ -254,7 +255,6 @@ let categories = [];
 let userEmail = "";
 let appMeta = null;
 let pendingStart = null;
-let predictCritique = { shown: false, revised: false };
 
 // ---- sign-in gate --------------------------------------------------------------
 function showSignIn(msg) {
@@ -517,9 +517,8 @@ function openProblemTab(ctx) {
 
 async function startSession(body, { tabOpened = false } = {}) {
   const s = await api("/session/start", "POST", body);
-  // Only reached when the tab could not be opened from the click (the plan
-  // critique ran first). Past the activation window this may be blocked, and
-  // the live run's own problem link is the fallback — so say which happened.
+  // A tab not already opened from the click may be blocked this late; the live
+  // run's own problem link is the fallback — so say which happened.
   const opened = tabOpened || Boolean(window.open(s.url, "_blank", "noopener"));
   nudgeShown = {};
   // /session/start already answered with the live-run view; asking
@@ -657,22 +656,53 @@ $("#quickstart-input").addEventListener("keydown", (e) => {
   else runQuickStartLookup();
 });
 
+// ---- pre-solve plan ------------------------------------------------------------
+// A run starts from a plan: one line of approach and a time target, the way an
+// interview expects you to talk before you type. Pattern, space and edge cases
+// are optional. Nothing here waits on the network once you commit — the plan is
+// graded after the solve, and critiqued mid-run only if you ask.
+const PLAN_SOFT_LIMIT_SEC = 5 * 60;
+const PREDICT_MORE_KEY = "predict_more_open";
+let planOpenedAt = 0;
+let planClockTimer = null;
+
+const planElapsedSec = () => (planOpenedAt ? Math.max(0, Math.round((Date.now() - planOpenedAt) / 1000)) : null);
+const fmtClock = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+
+function tickPlanClock() {
+  const sec = planElapsedSec() || 0;
+  const clock = $("#predict-clock");
+  clock.textContent = fmtClock(sec);
+  clock.classList.toggle("is-over", sec >= PLAN_SOFT_LIMIT_SEC);
+}
+
+function stopPlanClock() {
+  if (planClockTimer) clearInterval(planClockTimer);
+  planClockTimer = null;
+}
+
+function rememberedPredictMore() {
+  try { return localStorage.getItem(PREDICT_MORE_KEY) === "1"; } catch (e) { return false; }
+}
+
 async function openPredict(ctx) {
   pendingStart = ctx;
-  predictCritique = { shown: false, revised: false };
   $("#predict-problem").textContent = ctx.title || ctx.slug;
   $("#predict-statement").innerHTML = loader("Loading problem prompt...");
   $("#predict-approach").value = "";
   setComplexityValue("predict-time", "");
   setComplexityValue("predict-space", "");
   $("#predict-edge-cases").value = "";
-  $("#predict-critique").classList.add("hidden");
-  $("#predict-critique").innerHTML = "";
-  $("#btn-skip-predict").textContent = "Skip";
-  $("#btn-start-predict").textContent = "Lock in & start";
+  $("#predict-more").open = rememberedPredictMore();
   if (!categories.length) await loadCategories();
   renderPredictPatterns();
+  updatePlanReady();
   $("#predict-modal").classList.remove("hidden");
+  planOpenedAt = Date.now();
+  stopPlanClock();
+  tickPlanClock();
+  planClockTimer = setInterval(tickPlanClock, 1000);
+  $("#predict-approach").focus?.();
   try {
     const problem = await api(`/problem/${encodeURIComponent(ctx.slug)}/recall-context`);
     ctx.url = problem.url;  // openProblemTab needs this without a round-trip
@@ -685,13 +715,14 @@ async function openPredict(ctx) {
 
 function closePredict() {
   $("#predict-modal").classList.add("hidden");
+  stopPlanClock();
+  planOpenedAt = 0;
   pendingStart = null;
-  predictCritique = { shown: false, revised: false };
 }
 
 function selectedPredictionCategory() {
   const selected = $("#predict-patterns button.sel");
-  if (selected) return selected.dataset.val || null;
+  if (selected && selected.dataset.val) return selected.dataset.val;
   const input = $("#predict-category-freeform");
   return input && input.value.trim() ? input.value.trim() : null;
 }
@@ -704,10 +735,8 @@ function plannedEdgeCases() {
     .slice(0, 3);
 }
 
-function currentPlanBody(ctx) {
+function currentPlanBody() {
   return {
-    slug: ctx.slug,
-    kind: ctx.kind,
     predicted_category: selectedPredictionCategory(),
     predicted_approach: $("#predict-approach").value.trim() || null,
     complexity_target_time: complexityValue("predict-time"),
@@ -716,96 +745,58 @@ function currentPlanBody(ctx) {
   };
 }
 
-function hasPlanSignal(body) {
-  return Boolean(
-    body.predicted_category ||
-    body.predicted_approach ||
-    body.complexity_target_time ||
-    body.complexity_target_space ||
-    body.planned_edge_cases.length
-  );
+// The two things an interviewer asks before you code: what you'll do, and how
+// fast it will be. Everything else is optional.
+const planReady = (plan) => Boolean(plan.predicted_approach && plan.complexity_target_time);
+
+function updatePlanReady() {
+  $("#btn-start-predict").disabled = !planReady(currentPlanBody());
 }
 
-function renderPlanCritique(critique) {
-  const nudges = (critique.nudges || []).filter(Boolean);
-  const missing = (critique.missing_edge_cases || []).filter(Boolean);
-  const items = [
-    ...nudges.map((n) => `<li>${escapeHtml(n)}</li>`),
-    ...missing.map((m) => `<li>Check ${escapeHtml(m)}.</li>`),
-  ];
-  $("#predict-critique").innerHTML = `
-    <div class="plan-critique-title">
-      <span>Plan check</span>
-      <span>${escapeHtml(critique.overall_verdict || "unknown")}</span>
-    </div>
-    ${items.length ? `<ul>${items.join("")}</ul>` : `<p class="small">No specific revisions suggested.</p>`}
-    <p class="small">Revise once, or proceed with this plan.</p>`;
-  $("#predict-critique").classList.remove("hidden");
-  $("#btn-skip-predict").textContent = "Revise";
-  $("#btn-start-predict").textContent = "Proceed anyway";
-}
-
-async function critiquePlan(body) {
-  const { kind, ...plan } = body;
-  return api("/session/plan-critique", "POST", plan);
-}
-
-function reviseAfterCritique() {
-  predictCritique.revised = true;
-  $("#predict-critique").classList.add("hidden");
-  $("#btn-skip-predict").textContent = "Skip";
-  $("#btn-start-predict").textContent = "Lock in & start";
-}
-
-// The critique earns its place on a problem you are meeting for the first time:
-// it is worth a beat to be told the plan is wrong before you spend 40 minutes on
-// it. On a re-solve you have formed and defended that plan before, so it buys
-// nothing and costs an LLM round-trip between the click and the timer — the one
-// place the friction budget cannot absorb it. Reviews skip it outright.
-const planCritiqueApplies = (ctx) => ctx.kind !== "review";
-
-async function doStart(includePlan) {
+// status: "planned" (locked in), "blank" (no idea yet) or "skipped".
+function doStart(status) {
   if (!pendingStart) return;
   const ctx = pendingStart;
-  const startBtn = $("#btn-start-predict");
-  const skipBtn = $("#btn-skip-predict");
-  const body = includePlan ? currentPlanBody(ctx) : { slug: ctx.slug, kind: ctx.kind };
-  // Resolved without awaiting anything, so the committed-to-start path can open
-  // the tab while the click's activation is still live.
-  const willCritique = includePlan && !predictCritique.shown && !predictCritique.revised
-    && planCritiqueApplies(ctx) && hasPlanSignal(body);
-  if (!willCritique) {
-    const tabOpened = openProblemTab(ctx);
-    closePredict();
-    return startSession(body, { tabOpened });
-  }
-  startBtn.disabled = true;
-  skipBtn.disabled = true;
-  startBtn.textContent = "Checking…";
-  try {
-    const r = await critiquePlan(body);
-    if (r && r.llm && r.critique) {
-      predictCritique.shown = true;
-      renderPlanCritique(r.critique);
-      return;
-    }
-  } catch (err) {
-    console.warn("plan critique unavailable", err);
-  } finally {
-    startBtn.disabled = false;
-    skipBtn.disabled = false;
-    if (!predictCritique.shown) startBtn.textContent = "Lock in & start";
-  }
+  const plan = status === "planned" ? currentPlanBody() : null;
+  if (plan && !planReady(plan)) return;
+  const body = {
+    slug: ctx.slug, kind: ctx.kind, plan_status: status,
+    plan_time_sec: status === "skipped" ? null : planElapsedSec(),
+    ...(plan || {}),
+  };
+  // Opened from the click itself: nothing is awaited before this, so the
+  // browser still honours it.
+  const tabOpened = openProblemTab(ctx);
   closePredict();
-  await startSession(body);
+  return startSession(body, { tabOpened });
 }
 
 $("#btn-close-predict").addEventListener("click", closePredict);
-$("#btn-skip-predict").addEventListener("click", () => {
-  if (predictCritique.shown && !predictCritique.revised) return reviseAfterCritique();
-  return doStart(false);
+$("#btn-skip-predict").addEventListener("click", () => doStart("skipped"));
+$("#btn-blank-predict").addEventListener("click", () => doStart("blank"));
+$("#btn-start-predict").addEventListener("click", () => doStart("planned"));
+$("#predict-approach").addEventListener("input", updatePlanReady);
+$("#predict-time").addEventListener("input", updatePlanReady);
+$("#predict-more").addEventListener("toggle", () => {
+  try { localStorage.setItem(PREDICT_MORE_KEY, $("#predict-more").open ? "1" : "0"); } catch (e) { /* per-browser nicety */ }
 });
-$("#btn-start-predict").addEventListener("click", () => doStart(true));
+// Enter walks approach → time → lock in; Ctrl/⌘+Enter locks in from anywhere.
+$("#predict-approach").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.shiftKey || e.metaKey || e.ctrlKey) return;
+  e.preventDefault();
+  $("#predict-time").focus();
+});
+$("#predict-time").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.metaKey || e.ctrlKey) return;
+  e.preventDefault();
+  if (planReady(currentPlanBody())) doStart("planned");
+  else $("#predict-approach").focus();
+});
+$("#predict-modal").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+  e.preventDefault();
+  if (planReady(currentPlanBody())) doStart("planned");
+});
 
 // ---- active session / timer / hints / nudges -----------------------------------
 async function refreshActive() {
@@ -831,12 +822,14 @@ function applyActive(active) {
     }
     setDashboardLocked(true);
     setHintButton(active);
+    setPlanCheck(active);
     setPauseButton(active);
     startTimer(active);
     startPolling();
   } else {
     run.classList.add("hidden");
     $("#hint-panel").classList.add("hidden");
+    $("#plan-check-panel").classList.add("hidden");
     $("#nudge").classList.add("hidden");
     setDashboardLocked(false);
     stopTimer();
@@ -871,6 +864,60 @@ function setHintButton(active) {
   btn.disabled = !active.hints_available || used >= total;
   btn.textContent = used >= total ? `All ${total} hints revealed` : `Reveal hint ${next} of ${total}`;
 }
+
+// The plan check is offered, never shown unasked: an unrequested critique of
+// your plan is a hint. Once asked for it stays on screen for the rest of the run.
+function setPlanCheck(active) {
+  const btn = $("#btn-plan-check");
+  const panel = $("#plan-check-panel");
+  btn.classList.toggle("hidden", !active.plan_check_available || !!active.plan_check);
+  btn.disabled = false;
+  btn.textContent = "Check my plan";
+  if (active.plan_check) {
+    panel.innerHTML = planCritiqueHtml(active.plan_check);
+    panel.classList.remove("hidden");
+  } else {
+    panel.innerHTML = "";
+    panel.classList.add("hidden");
+  }
+}
+
+function planCritiqueHtml(critique) {
+  const nudges = (critique.nudges || []).filter(Boolean);
+  const missing = (critique.missing_edge_cases || []).filter(Boolean);
+  const items = [
+    ...nudges.map((n) => `<li>${escapeHtml(n)}</li>`),
+    ...missing.map((m) => `<li>Check ${escapeHtml(m)}.</li>`),
+  ];
+  const verdict = { ready: "Looks ready", revise: "Worth revisiting" }[critique.overall_verdict] || "Plan check";
+  return `
+    <div class="plan-critique-title">
+      <span>Plan check</span>
+      <span>${escapeHtml(verdict)}</span>
+    </div>
+    ${items.length ? `<ul>${items.join("")}</ul>` : `<p class="small">No specific concerns.</p>`}`;
+}
+
+$("#btn-plan-check").addEventListener("click", async () => {
+  if (!activeSession) return;
+  const btn = $("#btn-plan-check");
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  try {
+    const r = await api("/session/plan-check", "POST");
+    if (!r.llm || !r.critique) {
+      btn.classList.add("hidden");
+      toast("Plan check needs an LLM — none is configured.");
+      return;
+    }
+    if (activeSession) activeSession.plan_check = r.critique;
+    setPlanCheck({ ...(activeSession || {}), plan_check: r.critique, plan_check_available: true });
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Check my plan";
+    toast(e.message);
+  }
+});
 
 function setPauseButton(active) {
   const btn = $("#btn-pause-session");
@@ -1085,15 +1132,22 @@ function openAnnotate(attempt) {
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   selectPill("#conf-group", "2");
   selectPill("#indep-group", usedHints ? "hints" : "solo");
-  setComplexityValue("annotate-time", "");
-  setComplexityValue("annotate-space", "");
+  // What you did usually is what you planned; start from the plan and edit.
+  const plan = attempt.plan || {};
+  const fromPlan = plan.status === "planned";
+  setComplexityValue("annotate-time", attempt.complexity_time || (fromPlan ? plan.target_time : ""));
+  setComplexityValue("annotate-space", attempt.complexity_space || (fromPlan ? plan.target_space : ""));
   $("#annotate-minutes").value = "";
   $("#annotate-library").classList.toggle("hidden", attempt.in_library !== false);
   const addBtn = $("#btn-annotate-add-library");
   addBtn.disabled = false;
   addBtn.textContent = "Add to library";
   $("#annotate-note").value = "";
-  $("#annotate-approach").value = "";
+  $("#annotate-approach").value = attempt.approach || (fromPlan ? plan.approach || "" : "");
+  $("#annotate-approach-help").textContent = fromPlan && plan.approach
+    ? "from your plan — edit it to what you actually did" : "optional";
+  selectPill("#held-group", attempt.plan_held || "");
+  renderAnnotatePlan(attempt);
   const saveBtn = $("#btn-save-annotate");
   saveBtn.textContent = "Save";
   delete saveBtn.dataset.saved;
@@ -1139,6 +1193,128 @@ function refreshAnnotate(fresh) {
   initAnnotateGrade(currentAttempt);
   toast("Picked up your newer submission for this one.");
 }
+
+// ---- the plan, after the solve --------------------------------------------------
+const PLAN_VERDICTS = {
+  viable: ["viable", "ok"], correct: ["right", "ok"],
+  partial: ["partly", "partial"], wrong: ["off", "miss"],
+};
+
+function verdictTag(verdict) {
+  const [label, tone] = PLAN_VERDICTS[verdict] || [];
+  return label ? `<span class="plan-tag is-${tone}">${label}</span>` : "";
+}
+
+function hitTag(hit, yes = "optimal", no = "not optimal") {
+  if (hit == null) return "";
+  return `<span class="plan-tag is-${hit ? "ok" : "miss"}">${hit ? yes : no}</span>`;
+}
+
+// What was planned, as it was written.
+function planSummaryHtml(plan) {
+  if (!plan || plan.status === "skipped" || !plan.status) return "";
+  if (plan.status === "blank") {
+    return `<p class="plan-blank">Started with <b>no idea yet</b>${
+      plan.plan_time_sec != null ? ` after ${fmtClock(plan.plan_time_sec)} of thinking` : ""}.
+      That's recorded as a struggle, so this problem comes back sooner.</p>`;
+  }
+  const facts = [];
+  if (plan.target_time) facts.push(`Target <b>${escapeHtml(plan.target_time)}</b>${plan.target_space ? ` / <b>${escapeHtml(plan.target_space)}</b>` : ""}`);
+  if (plan.pattern) facts.push(`Pattern <b>${escapeHtml(plan.pattern)}</b>`);
+  if (plan.check_revealed) facts.push("Plan check used");
+  return `
+    ${plan.approach ? `<p class="plan-approach">${escapeHtml(plan.approach)}</p>` : ""}
+    ${facts.length ? `<div class="plan-facts">${facts.map((f) => `<span>${f}</span>`).join("")}</div>` : ""}
+    ${plan.edge_cases && plan.edge_cases.length ? `<div class="plan-edges">${plan.edge_cases.map((c) => `<span class="tag">${escapeHtml(c)}</span>`).join(" ")}</div>` : ""}`;
+}
+
+// How the plan held up: the grade, once it has landed.
+function planGradeHtml(plan) {
+  if (!plan || plan.status !== "planned") return "";
+  const rows = [];
+  if (plan.approach_verdict && plan.approach_verdict !== "unknown") rows.push(["Approach", verdictTag(plan.approach_verdict)]);
+  if (plan.pattern && plan.pattern_verdict && plan.pattern_verdict !== "unknown") rows.push(["Pattern", verdictTag(plan.pattern_verdict)]);
+  if (plan.target_time && plan.optimal_time) {
+    rows.push(["Time", `${escapeHtml(plan.target_time)} vs optimal ${escapeHtml(plan.optimal_time)} ${hitTag(plan.time_vs_optimal)}${
+      plan.solution_time && plan.time_vs_solution === false ? ` <span class="small">· your code: ${escapeHtml(plan.solution_time)}</span>` : ""}`]);
+  }
+  if (plan.target_space && plan.optimal_space) {
+    rows.push(["Space", `${escapeHtml(plan.target_space)} vs optimal ${escapeHtml(plan.optimal_space)} ${hitTag(plan.space_vs_optimal)}`]);
+  }
+  const checks = plan.edge_checks || [];
+  if (checks.length) {
+    rows.push(["Edge cases", checks.map((c) =>
+      `<span class="plan-tag is-${c.covered ? "ok" : "miss"}" title="${c.covered ? "In your plan" : "Not in your plan"}">${c.covered ? "✓" : "✗"} ${escapeHtml(c.case)}</span>`).join(" ")]);
+  }
+  const score = plan.score != null
+    ? `<div class="plan-score">Plan score <b>${plan.score}/5</b></div>` : "";
+  if (!rows.length && !plan.note && !plan.failure_case) return score;
+  return `${score}
+    ${rows.length ? `<dl class="plan-rows">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>` : ""}
+    ${plan.failure_case ? `<p class="plan-failure">A failing test hit <b>${escapeHtml(plan.failure_case)}</b> — not in your plan.</p>` : ""}
+    ${plan.note ? `<p class="grade-analysis">${escapeHtml(plan.note)}</p>` : ""}`;
+}
+
+function previousPlanHtml(prev) {
+  if (!prev || !prev.approach) return "";
+  const when = prev.solved_at ? new Date(prev.solved_at * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
+  const bits = [];
+  if (prev.target_time) bits.push(escapeHtml(prev.target_time));
+  if (prev.held) bits.push(escapeHtml(prev.held));
+  if (prev.score != null) bits.push(`${prev.score}/5`);
+  return `<b>Last time${when ? ` (${when})` : ""}${prev.planned ? " you planned" : " you wrote"}:</b> “${escapeHtml(prev.approach)}”${
+    bits.length ? ` · ${bits.join(" · ")}` : ""}`;
+}
+
+function renderAnnotatePlan(attempt) {
+  const plan = attempt.plan || {};
+  const card = $("#annotate-plan");
+  const shown = plan.status === "planned" || plan.status === "blank";
+  card.classList.toggle("hidden", !shown);
+  if (!shown) return;
+  $("#annotate-plan-meta").textContent = plan.plan_time_sec != null && plan.status === "planned"
+    ? `planned in ${fmtClock(plan.plan_time_sec)}` : "";
+  $("#annotate-plan-meta").classList.toggle("is-over", (plan.plan_time_sec || 0) >= PLAN_SOFT_LIMIT_SEC);
+  $("#annotate-plan-body").innerHTML = planSummaryHtml(plan);
+  $("#annotate-plan-held").classList.toggle("hidden", plan.status !== "planned");
+  const prev = previousPlanHtml(attempt.previous_plan);
+  $("#annotate-plan-previous").innerHTML = prev;
+  $("#annotate-plan-previous").classList.toggle("hidden", !prev);
+  const grade = $("#annotate-plan-grade");
+  if (plan.grading_error) return renderPlanGradeError(plan.grading_error, attempt.id);
+  const html = plan.graded ? planGradeHtml(plan) : "";
+  grade.innerHTML = html;
+  grade.classList.toggle("hidden", !html);
+}
+
+function renderPlanGradeError(err, attemptId) {
+  const grade = $("#annotate-plan-grade");
+  grade.classList.remove("hidden");
+  grade.innerHTML = `<p class="missed"><b>Plan grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
+    <div class="grade-actions"><button id="btn-grade-plan" class="button is-small is-link">Retry</button></div>`;
+  const btn = $("#btn-grade-plan");
+  if (btn) btn.addEventListener("click", () => gradePlanAfterSave(attemptId));
+}
+
+async function gradePlanAfterSave(attemptId) {
+  const grade = $("#annotate-plan-grade");
+  grade.classList.remove("hidden");
+  grade.innerHTML = `<div class="grading"><span class="spinner"></span><span class="grading-text">Grading your plan…</span></div>`;
+  try {
+    const r = await api(`/attempt/${attemptId}/grade-plan`, "POST");
+    if (!currentAttempt || currentAttempt.id !== attemptId) return;
+    currentAttempt.plan = r.plan;
+    if (r.error) return renderPlanGradeError(r.error, attemptId);
+    renderAnnotatePlan(currentAttempt);
+  } catch (e) {
+    if (currentAttempt && currentAttempt.id === attemptId) renderPlanGradeError(e.message, attemptId);
+  }
+}
+
+$$("#held-group button").forEach((b) => b.addEventListener("click", () => {
+  // Optional, so a second click takes the answer back.
+  selectPill("#held-group", b.classList.contains("sel") ? "" : b.dataset.val);
+}));
 
 // ---- solution grading (inside the annotate modal) ------------------------------
 let annotateGradeTimer = null;
@@ -1364,6 +1540,8 @@ $("#btn-save-annotate").addEventListener("click", async () => {
   // server refuses to overwrite a time it measured itself.
   const minutes = Number($("#annotate-minutes").value);
   const timeTakenSec = minutes > 0 ? Math.round(minutes * 60) : null;
+  const heldBtn = $("#held-group button.sel");
+  const planHeld = (heldBtn && heldBtn.dataset.val) || null;
   let r;
   try {
     r = await api(`/attempt/${attemptId}/annotate`, "POST", {
@@ -1372,6 +1550,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
       approach: $("#annotate-approach").value || null,
       complexity_time: complexityValue("annotate-time"),
       complexity_space: complexityValue("annotate-space"),
+      plan_held: planHeld,
       time_taken_sec: timeTakenSec,
     });
   } catch (e) {
@@ -1397,11 +1576,25 @@ $("#btn-save-annotate").addEventListener("click", async () => {
   // to grade, and "grading your solution…" followed by nothing is worse than
   // the plain confirmation.
   const willGrade = llmEnabled && !!(currentAttempt && currentAttempt.code);
-  toast(willGrade ? "Logged — grading your solution…" : "Logged");
-  if (willGrade) {
-    await gradeSavedSolution(attemptId);
-  } else {
+  // A plan is graded whether or not there's code: it's the plan being judged.
+  const willGradePlan = llmEnabled && !!(currentAttempt && currentAttempt.plan
+    && currentAttempt.plan.status === "planned");
+  if (currentAttempt && r.plan) {
+    currentAttempt.plan = r.plan;
+    currentAttempt.plan_held = planHeld;
+  }
+  toast(willGrade ? "Logged — grading your solution…"
+    : willGradePlan ? "Logged — grading your plan…" : "Logged");
+  if (!willGrade && !willGradePlan) {
     closeAnnotate();
+  } else {
+    const jobs = [];
+    if (willGradePlan) jobs.push(gradePlanAfterSave(attemptId));
+    // With no code to grade the rating is the last thing to wait for; the
+    // plan grade fills in whether or not the modal is still open.
+    if (willGrade) jobs.push(gradeSavedSolution(attemptId));
+    else markAnnotateDone();
+    await Promise.all(jobs);
   }
   if (!$("#annotate-modal").classList.contains("hidden") && saveBtn.dataset.saved !== "1") {
     saveBtn.disabled = false;
@@ -1989,23 +2182,17 @@ function recallDetailGradeHtml(g, status, err) {
   </div>`;
 }
 
-function planReconciliationHtml(a) {
-  const r = a.plan_reconciliation || {};
-  const planned = r.planned_edge_cases || [];
-  const hasPlan = !!(r.target_time || r.target_space || planned.length);
-  if (!hasPlan) return "";
-  const hitLabel = (hit) => hit == null ? "unknown" : (hit ? "hit" : "miss");
-  const hitClass = (hit) => hit == null ? "is-light" : (hit ? "is-success is-light" : "is-warning is-light");
-  const cxLine = (label, target, actual, hit) => {
-    if (!target && !actual) return "";
-    return `<div class="small">${label} <b>${escapeHtml(target || "?")}</b> vs inferred <b>${escapeHtml(actual || "?")}</b> <span class="tag ${hitClass(hit)}">${hitLabel(hit)}</span></div>`;
-  };
-  return `<section class="detail-plan">
-    <h3>Plan vs actual</h3>
-    ${cxLine("Target time", r.target_time, r.inferred_time, r.complexity_time_hit)}
-    ${cxLine("Target space", r.target_space, r.inferred_space, r.complexity_space_hit)}
-    ${planned.length ? `<p class="small"><b>Planned edge cases:</b> ${planned.map((c) => `<span class="tag">${escapeHtml(c)}</span>`).join(" ")}</p>` : ""}
-    <p class="small"><b>Edge-case status:</b> ${escapeHtml(r.edge_case_summary || r.edge_case_status || "unknown")}</p>
+function planDetailHtml(a) {
+  const plan = a.plan;
+  const summary = planSummaryHtml(plan);
+  if (!summary) return "";
+  const meta = plan.plan_time_sec != null && plan.status === "planned" ? ` <span class="small">planned in ${fmtClock(plan.plan_time_sec)}</span>` : "";
+  const held = plan.held ? `<p class="small">Plan <b>${escapeHtml(plan.held)}</b></p>` : "";
+  return `<section class="detail-plan plan-card">
+    <h3>Your plan${meta}</h3>
+    ${summary}
+    ${held}
+    ${plan.grading_error ? `<p class="missed small">Plan grading failed: ${escapeHtml(plan.grading_error)}</p>` : planGradeHtml(plan)}
   </section>`;
 }
 
@@ -2036,7 +2223,7 @@ async function openDetail(attemptId) {
       ${a.approach || a.predicted_approach ? `<p><b>Why:</b> ${escapeHtml(a.approach || a.predicted_approach)}</p>` : ""}
       <p><b>Verdict:</b> <span class="pred-${escapeHtml(verdict)}">${escapeHtml(verdict)}</span></p>
       ${e.prediction_note ? `<p><b>Note:</b> ${escapeHtml(e.prediction_note)}</p>` : ""}
-      ${planReconciliationHtml(a)}`;
+      ${planDetailHtml(a)}`;
     $("#detail-body").innerHTML = body;
     $("#detail-modal").classList.remove("hidden");
     return;
@@ -2058,7 +2245,7 @@ async function openDetail(attemptId) {
     ${e.pattern_used ? `<p><b>Pattern used:</b> ${escapeHtml(e.pattern_used)} ${e.complexity_verdict && e.complexity_verdict !== "match" ? `<span class="warn-chip">${escapeHtml(e.complexity_verdict.replace("_", " "))}</span>` : ""}</p>` : ""}
     ${tags.length ? `<p><b>Mistakes:</b> ${tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
     ${e.diff_summary ? `<p><b>Since last time:</b> ${escapeHtml(e.diff_summary)}</p>` : ""}
-    ${planReconciliationHtml(a)}
+    ${planDetailHtml(a)}
     ${detailGradeHtml(a)}
     ${a.code ? `<pre class="code">${escapeHtml(a.code)}</pre>` : `<p class="small">No stored code for this attempt.</p>`}`;
   $("#detail-body").innerHTML = body;

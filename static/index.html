@@ -97,10 +97,12 @@
           <div class="active-actions">
             <a id="active-link" class="button is-primary is-lg" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
             <button id="btn-hint" class="button hint-btn">Reveal hint 1 of 3</button>
+            <button id="btn-plan-check" class="button is-ghost hidden" type="button" title="An LLM read of the plan you locked in. It's noted on this solve.">Check my plan</button>
             <button id="btn-pause-session" class="button is-ghost">Pause</button>
             <button id="btn-cancel-session" class="button is-ghost">Cancel run</button>
           </div>
           <div id="hint-panel" class="hint-panel hidden"></div>
+          <div id="plan-check-panel" class="plan-critique hidden"></div>
           <div id="nudge" class="nudge hidden"></div>
         </div>
       </section>
@@ -139,7 +141,7 @@
     </div>
   </div>
 
-  <!-- Pre-solve prediction modal -->
+  <!-- Pre-solve plan modal -->
   <div id="predict-modal" class="overlay hidden">
     <div class="overlay-card box predict-wide" role="dialog" aria-modal="true" aria-labelledby="predict-heading">
       <div class="modal-titlebar">
@@ -147,28 +149,34 @@
           <h2 class="modal-title" id="predict-heading">Plan the solve</h2>
           <p id="predict-problem" class="small"></p>
         </div>
-        <button id="btn-close-predict" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+        <div class="predict-titlebar-side">
+          <span id="predict-clock" class="predict-clock" title="Aim to have a plan within 5 minutes, as you would in an interview">0:00</span>
+          <button id="btn-close-predict" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+        </div>
       </div>
 
       <div id="predict-statement" class="recall-statement"></div>
 
       <div class="predict-form">
-        <label class="label-sm">Pattern prediction</label>
-        <div class="pill-group predict-patterns" id="predict-patterns"></div>
-
-        <label class="label-sm" for="predict-approach">Approach</label>
-        <textarea id="predict-approach" class="textarea" rows="3" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Key idea, data structure, or invariant"></textarea>
+        <label class="label-sm" for="predict-approach">Approach <span class="help-inline">one line: the key idea, data structure or invariant</span></label>
+        <textarea id="predict-approach" class="textarea" rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sliding window over counts, shrink while a char repeats"></textarea>
 
         <div id="predict-complexities" class="complexity-fields mt-2"></div>
 
-        <label class="label-sm" for="predict-edge-cases">1-3 edge cases you'll handle</label>
-        <textarea id="predict-edge-cases" class="textarea" rows="3" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="One per line"></textarea>
+        <details id="predict-more" class="predict-more">
+          <summary>Pattern &amp; edge cases <span class="help-inline">optional</span></summary>
+          <label class="label-sm">Pattern</label>
+          <div class="pill-group predict-patterns" id="predict-patterns"></div>
+          <label class="label-sm" for="predict-edge-cases">Edge cases you'll handle</label>
+          <textarea id="predict-edge-cases" class="textarea" rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="One per line, up to 3"></textarea>
+        </details>
 
-        <div id="predict-critique" class="plan-critique hidden"></div>
+        <p class="help predict-keys">Enter moves to the next field · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> locks in</p>
 
-        <div class="overlay-actions">
-          <button id="btn-skip-predict" class="button is-ghost" type="button">Skip</button>
-          <button id="btn-start-predict" class="button is-primary" type="button">Lock in & start</button>
+        <div class="overlay-actions predict-actions">
+          <button id="btn-skip-predict" class="button is-ghost" type="button" title="Start without planning">Skip</button>
+          <button id="btn-blank-predict" class="button is-ghost" type="button" title="Start the run and record that you had no plan">No idea yet</button>
+          <button id="btn-start-predict" class="button is-primary" type="button" disabled title="Needs an approach and a time target">Lock in &amp; start</button>
         </div>
       </div>
     </div>
@@ -211,6 +219,24 @@
         </div>
       </div>
 
+      <section id="annotate-plan" class="plan-card hidden" aria-labelledby="annotate-plan-heading">
+        <div class="plan-card-head">
+          <h3 id="annotate-plan-heading" class="plan-card-title">Your plan</h3>
+          <span id="annotate-plan-meta" class="small"></span>
+        </div>
+        <div id="annotate-plan-body"></div>
+        <div id="annotate-plan-held" class="hidden">
+          <label class="label-sm">Did your plan hold?</label>
+          <div class="pill-group" id="held-group">
+            <button type="button" data-val="held">Held</button>
+            <button type="button" data-val="tweaked">Tweaked</button>
+            <button type="button" data-val="pivoted">Pivoted</button>
+          </div>
+        </div>
+        <div id="annotate-plan-grade" class="plan-grade hidden"></div>
+        <p id="annotate-plan-previous" class="small plan-previous hidden"></p>
+      </section>
+
       <label class="label-sm">How confident are you with this pattern?</label>
       <div class="pill-group" id="conf-group">
         <button data-val="1">Low</button>
@@ -238,7 +264,7 @@
       <label class="label-sm">What tripped you up? <span class="help-inline">plain text — the coach structures it</span></label>
       <input id="annotate-note" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. shrank the window before checking the count" />
 
-      <label class="label-sm">Approach / pattern <span class="help-inline">optional</span></label>
+      <label class="label-sm" for="annotate-approach">Approach / pattern <span id="annotate-approach-help" class="help-inline">optional</span></label>
       <input id="annotate-approach" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. monotonic stack" />
 
       <div id="annotate-grade" class="recall-grade hidden"></div>

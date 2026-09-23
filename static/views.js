@@ -517,7 +517,7 @@
       </div>
       <div class="columns">
         <div class="column"><div class="panel-box failure-mode-box"><h3>Failure modes (30 days)</h3>${failureModesHtml(fm)}</div></div>
-        <div class="column"><div class="panel-box"><h3>Pattern recognition</h3>${predHtml(pa)}</div></div>
+        <div class="column"><div class="panel-box"><h3>Planning</h3>${planningHtml(d.planning, pa)}</div></div>
       </div>
       <div class="panel-box"><h3>Confidence calibration</h3>${calibrationHtml(calibration)}</div>
       <div class="panel-box"><h3>Mock score trend</h3>${mockTrendHtml(d.mock_trend)}</div>`;
@@ -611,30 +611,40 @@
         "<div class='small'>Solve a few to project a finish date.</div>"}</div>`;
   }
 
-  function predHtml(pa) {
-    if (!pa.graded) return "<p class='empty'>Pattern sprints now train this directly. No pre-solve predictions are collected.</p>";
-    const rows = Object.entries(pa.by_category || {}).map(([cat, r]) => {
-      const tot = r.correct + r.partial + r.wrong;
-      return { label: cat.replace(/ .*/, ""), value: Math.round((r.correct / tot) * 100), display: Math.round((r.correct / tot) * 100) + "%", color: "var(--green)" };
-    });
-    const plan = planQualityHtml(pa.plan_quality);
-    return `<div class="pace-big">${Math.round((pa.overall_correct_rate || 0) * 100)}%</div>
-      <div class="small">overall correct (${pa.graded} graded)</div>${Charts.bars(rows, { max: 100 })}${plan}`;
-  }
+  const pctOrDash = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+  const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")}`;
 
-  function planQualityHtml(pq) {
-    if (!pq) return "";
-    const cx = pq.complexity || {};
-    const edge = pq.edge_cases || {};
-    const lines = [];
-    if (cx.compared) {
-      lines.push(`complexity targets ${Math.round((cx.hit_rate || 0) * 100)}% hit (${cx.hits}/${cx.compared})`);
+  // How well you plan before coding. Sprint pattern guesses, which train the
+  // recognition half of this directly, get a line of their own.
+  function planningHtml(pl, pa) {
+    const sprint = pa && pa.sprint_graded
+      ? `<p class="small plan-sprint">Sprint pattern guesses: <b>${pctOrDash(
+          (pa.by_kind.sprint.correct || 0) / pa.sprint_graded)}</b> right (${pa.sprint_graded} graded)</p>` : "";
+    const o = pl && pl.overall;
+    if (!o || !o.starts) {
+      return `<p class="empty">Lock in a plan before a run and this fills in: your plan score, how often plans hold, and where you plan worst.</p>${sprint}`;
     }
-    if (edge.planned) {
-      lines.push(`edge cases planned ${edge.planned}; caught ${edge.caught || 0}, missed ${edge.missed || 0}, unknown ${edge.unknown || 0}`);
-    }
-    if (!lines.length) return "";
-    return `<div class="small plan-quality">${lines.map(escapeHtml).join("<br>")}</div>`;
+    const slow = o.median_plan_sec != null && o.median_plan_sec >= pl.soft_limit_sec;
+    const stats = [
+      ["Held", pctOrDash(o.held_rate)],
+      ["Optimal target", pctOrDash(o.optimal_rate)],
+      ["Edge coverage", pctOrDash(o.edge_coverage)],
+      ["Median plan time", o.median_plan_sec == null ? "—" : `<span class="${slow ? "is-over" : ""}">${clock(o.median_plan_sec)}</span>`],
+      ["No idea yet", `${o.blanks} of ${o.starts}`],
+    ];
+    const rows = (pl.categories || []).filter((c) => c.avg_score != null).map((c) => ({
+      label: c.category.replace(/ .*/, ""), value: c.avg_score, display: `${c.avg_score}/5`,
+      hint: `${c.category}: ${c.avg_score}/5 over ${c.scored} graded plan${c.scored === 1 ? "" : "s"}`
+        + (c.blanks ? `, ${c.blanks} no-idea start${c.blanks === 1 ? "" : "s"}` : ""),
+      color: c.avg_score >= 4 ? "var(--green)" : c.avg_score >= 2.5 ? "var(--amber)" : "var(--red)",
+    }));
+    const w = pl.weakest;
+    return `<div class="pace-big">${o.avg_score == null ? "—" : `${o.avg_score}/5`}</div>
+      <div class="small">average plan score · ${o.plans} plan${o.plans === 1 ? "" : "s"}, ${o.scored} scored</div>
+      <dl class="plan-stats">${stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>
+      ${w ? `<p class="plan-weakest">Weakest: <b>${escapeHtml(w.category)}</b> — ${w.avg_score}/5 over ${w.count} start${w.count === 1 ? "" : "s"}${w.blanks ? ` (${w.blanks} with no idea)` : ""}. Plan misses feed the drill lane.</p>` : ""}
+      ${rows.length ? Charts.bars(rows, { max: 5 }) : ""}
+      ${sprint}`;
   }
 
   function calibrationHtml(calibration) {

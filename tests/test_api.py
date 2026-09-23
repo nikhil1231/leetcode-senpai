@@ -1203,215 +1203,270 @@ def test_session_start_without_pre_solve_plan_uses_empty_defaults(client):
     assert session["planned_edge_cases"] == []
 
 
-def test_session_plan_critique_disabled_does_not_mutate_sessions(client, monkeypatch):
-    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
-
-    r = client.post("/api/session/plan-critique", json={
-        "slug": "two-sum",
-        "predicted_category": "Arrays & Hashing",
-        "predicted_approach": "Use complements.",
-        "complexity_target_time": "O(n)",
-        "complexity_target_space": "O(n)",
-        "planned_edge_cases": ["duplicates"],
-    })
-
-    assert r.status_code == 200
-    assert r.json() == {"ok": True, "llm": False, "critique": None}
-    assert client.store.sessions == {}
+_PLAN = {
+    "predicted_category": "Arrays & Hashing",
+    "predicted_approach": "Scan once and store complements.",
+    "complexity_target_time": "O(n)",
+    "complexity_target_space": "O(n)",
+    "planned_edge_cases": ["duplicates", "negative target", "same index"],
+}
 
 
-def test_session_plan_critique_enabled_returns_critique(client, monkeypatch):
-    async def fake_extract(task_name, payload, settings=None):
-        assert task_name == "critique_plan"
-        assert payload["title"] == "Two Sum"
-        assert payload["category"] == "Arrays & Hashing"
-        return {
-            "pattern_verdict": "plausible",
-            "complexity_verdict": "realistic",
-            "missing_edge_cases": ["duplicates"],
-            "nudges": ["How do you avoid reusing an element?"],
-            "overall_verdict": "revise",
-        }
-
-    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
-    monkeypatch.setattr(main.llm, "extract", fake_extract)
-
-    r = client.post("/api/session/plan-critique", json={
-        "slug": "two-sum",
-        "predicted_category": "Arrays & Hashing",
-        "predicted_approach": "Use complements.",
-        "complexity_target_time": "O(n)",
-        "complexity_target_space": "O(n)",
-        "planned_edge_cases": ["duplicates"],
-    })
-
-    assert r.status_code == 200
-    body = r.json()
-    assert body["ok"] is True
-    assert body["llm"] is True
-    assert body["critique"]["overall_verdict"] == "revise"
-    assert body["critique"]["nudges"] == ["How do you avoid reusing an element?"]
-    assert client.store.sessions == {}
-
-
-def test_pre_solve_plan_gate_smoke_records_planned_solve(client, monkeypatch):
-    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+def _fake_solve(client, monkeypatch, submission_id="plan-smoke-submission", after=37,
+                wrong=0, failed=None):
     client.store.update_settings({"username": "senpai"})
 
     async def fake_recent_ac(username, limit, auth=None):
         active = client.store.latest_active_session()
-        return [{
-            "id": "plan-smoke-submission",
-            "titleSlug": active["slug"],
-            "timestamp": active["started_at"] + 37,
-        }]
+        return [{"id": submission_id, "titleSlug": active["slug"],
+                 "timestamp": active["started_at"] + after}]
 
     async def fake_submission_details(submission_id, auth=None):
-        return {
-            "runtime_percentile": 92.0, "memory_percentile": 81.0,
-            "lang": "python3", "code": "class Solution: pass",
-        }
+        return {"runtime_percentile": 92.0, "memory_percentile": 81.0,
+                "lang": "python3", "code": "class Solution: pass"}
 
     async def fake_wrong_attempts_between(slug, started_at, ended_at, auth=None):
-        return 0
+        return wrong
+
+    async def fake_failed_tests_between(slug, started_at, ended_at, auth=None):
+        return failed or []
 
     monkeypatch.setattr(main.poller.leetcode, "recent_ac", fake_recent_ac)
     monkeypatch.setattr(main.poller.leetcode, "submission_details", fake_submission_details)
     monkeypatch.setattr(
         main.poller.leetcode, "wrong_attempts_between", fake_wrong_attempts_between)
+    monkeypatch.setattr(
+        main.poller.leetcode, "failed_tests_between", fake_failed_tests_between)
 
-    critique = client.post("/api/session/plan-critique", json={
-        "slug": "two-sum",
-        "predicted_category": "Arrays & Hashing",
-        "predicted_approach": "Scan once and store complements.",
-        "complexity_target_time": "O(n)",
-        "complexity_target_space": "O(n)",
-        "planned_edge_cases": ["duplicates", "negative target", "same index"],
-    })
-    assert critique.status_code == 200
-    assert critique.json() == {"ok": True, "llm": False, "critique": None}
 
+def test_plan_check_needs_an_active_planned_run(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    assert client.post("/api/session/plan-check").status_code == 400
+    client.post("/api/session/start", json={
+        "slug": "two-sum", "kind": "adhoc", "plan_status": "skipped"})
+    assert client.post("/api/session/plan-check").status_code == 400
+
+
+def test_plan_check_without_llm_changes_nothing(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
     started = client.post("/api/session/start", json={
-        "slug": "two-sum",
-        "kind": "adhoc",
-        "predicted_category": "Arrays & Hashing",
-        "predicted_approach": "Scan once and store complements.",
-        "complexity_target_time": "O(n)",
-        "complexity_target_space": "O(n)",
-        "planned_edge_cases": ["duplicates", "negative target", "same index"],
-    })
-    assert started.status_code == 200
-    assert client.get("/api/session/active").json()["active"]["elapsed_sec"] >= 0
+        "slug": "two-sum", "kind": "adhoc", "plan_status": "planned", **_PLAN}).json()
+    assert started["active"]["plan_check_available"] is False
 
-    polled = client.post("/api/poll")
-    assert polled.status_code == 200
-    attempt_id = polled.json()["new_attempts"][0]
-    assert [p["id"] for p in polled.json()["pending"]] == [attempt_id]
+    r = client.post("/api/session/plan-check")
 
-    detail = client.get(f"/api/attempt/{attempt_id}").json()
-    assert detail["time_taken_sec"] == 37
-    assert detail["predicted_category"] == "Arrays & Hashing"
-    assert detail["predicted_approach"] == "Scan once and store complements."
-    assert detail["complexity_target_time"] == "O(n)"
-    assert detail["complexity_target_space"] == "O(n)"
-    assert detail["planned_edge_cases"] == ["duplicates", "negative target", "same index"]
-    assert detail["plan_reconciliation"]["planned_edge_cases"] == [
-        "duplicates", "negative target", "same index"]
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "llm": False, "critique": None}
+    assert "plan_check_revealed" not in client.store.get_session(started["session_id"])
 
 
-def test_pre_solve_plan_gate_smoke_skip_and_enabled_critique_are_nonblocking(
-        client, monkeypatch):
-    critique_payloads = []
-    client.store.update_settings({"username": "senpai"})
+def test_plan_check_is_asked_for_cached_and_carried_to_the_solve(client, monkeypatch):
+    calls = []
 
-    async def fake_extract(task_name, payload, settings=None):
-        critique_payloads.append(payload)
-        return {
-            "pattern_verdict": "plausible",
-            "complexity_verdict": "check_space",
-            "missing_edge_cases": ["empty input"],
-            "nudges": ["What happens when no pair exists?"],
-            "overall_verdict": "revise",
-        }
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        calls.append((task_name, payload))
+        return {"pattern_verdict": "plausible", "complexity_verdict": "realistic",
+                "missing_edge_cases": ["empty input"],
+                "nudges": ["How do you avoid reusing an element?"],
+                "overall_verdict": "revise"}, None
 
     async def fake_prep_problem_bg(uid, slug):
         return None
 
-    async def fake_recent_ac(username, limit, auth=None):
-        active = client.store.latest_active_session()
-        return [{
-            "id": "skip-smoke-submission",
-            "titleSlug": active["slug"],
-            "timestamp": active["started_at"] + 19,
-        }]
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_extract_or_error)
+    monkeypatch.setattr(main, "_prep_problem_bg", fake_prep_problem_bg)
+    started = client.post("/api/session/start", json={
+        "slug": "two-sum", "kind": "review", "plan_status": "planned", **_PLAN}).json()
+    # Offered, never shown unasked — and starting never waited on it.
+    assert calls == []
+    assert started["active"]["plan_check_available"] is True
+    assert started["active"]["plan_check"] is None
 
-    async def fake_submission_details(submission_id, auth=None):
-        return None
+    first = client.post("/api/session/plan-check").json()
+    second = client.post("/api/session/plan-check").json()
 
-    async def fake_wrong_attempts_between(slug, started_at, ended_at, auth=None):
+    assert first["critique"]["overall_verdict"] == "revise"
+    assert second["critique"] == first["critique"]
+    assert [c[0] for c in calls] == ["critique_plan"]
+    assert calls[0][1]["title"] == "Two Sum"
+    assert calls[0][1]["planned_edge_cases"] == _PLAN["planned_edge_cases"]
+    active = client.get("/api/session/active").json()["active"]
+    assert active["plan_check"]["nudges"] == ["How do you avoid reusing an element?"]
+
+    _fake_solve(client, monkeypatch)
+    attempt_id = client.post("/api/poll").json()["new_attempts"][0]
+    assert client.store.get_attempt(attempt_id)["plan_check_revealed"] is True
+
+
+def test_planned_run_carries_its_plan_to_the_solve_and_the_rating(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    _fake_solve(client, monkeypatch, wrong=2, failed=[
+        {"status": "Wrong Answer", "input": "[]", "expected": "[]", "output": "null"}])
+    started = client.post("/api/session/start", json={
+        "slug": "two-sum", "kind": "adhoc", "plan_status": "planned",
+        "plan_time_sec": 95, **_PLAN})
+    assert started.status_code == 200
+    session = client.store.get_session(started.json()["session_id"])
+    assert session["plan_status"] == "planned"
+    assert session["plan_time_sec"] == 95
+
+    polled = client.post("/api/poll").json()
+    attempt_id = polled["new_attempts"][0]
+    pending = polled["pending"][0]
+    assert pending["id"] == attempt_id
+    assert pending["plan"]["status"] == "planned"
+    assert pending["plan"]["approach"] == _PLAN["predicted_approach"]
+    assert pending["plan"]["plan_time_sec"] == 95
+    assert pending["previous_plan"] is None
+
+    attempt = client.store.get_attempt(attempt_id)
+    assert attempt["time_taken_sec"] == 37
+    assert attempt["failed_tests"][0]["input"] == "[]"
+    for key, value in _PLAN.items():
+        assert attempt[key] == value
+
+    # "Solved solo, high confidence" — but the plan had to be thrown away.
+    r = client.post(f"/api/attempt/{attempt_id}/annotate", json={
+        "confidence": 3, "independence": "solo", "plan_held": "pivoted"})
+    assert r.status_code == 200
+    assert r.json()["review"]["quality"] == 3
+    assert r.json()["plan"]["held"] == "pivoted"
+    assert r.json()["plan"]["score"] == 0
+    assert client.store.get_attempt(attempt_id)["plan_held"] == "pivoted"
+
+    detail = client.get(f"/api/attempt/{attempt_id}").json()
+    assert detail["plan"]["status"] == "planned"
+    assert detail["plan_reconciliation"]["planned_edge_cases"] == _PLAN["planned_edge_cases"]
+
+
+def test_no_idea_start_rates_hard_at_best_and_skip_changes_nothing(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    _fake_solve(client, monkeypatch, submission_id="blank-one")
+    client.post("/api/session/start", json={
+        "slug": "two-sum", "kind": "adhoc", "plan_status": "blank", "plan_time_sec": 240})
+    blank_id = client.post("/api/poll").json()["new_attempts"][0]
+    blank = client.store.get_attempt(blank_id)
+    assert blank["plan_status"] == "blank"
+    assert blank["predicted_approach"] is None
+    r = client.post(f"/api/attempt/{blank_id}/annotate", json={
+        "confidence": 3, "independence": "solo", "plan_held": "held"})
+    assert r.json()["review"]["quality"] == 3
+    # A blank start has no plan to have held.
+    assert "plan_held" not in client.store.get_attempt(blank_id)
+
+    _fake_solve(client, monkeypatch, submission_id="skip-one")
+    client.post("/api/session/start", json={
+        "slug": "3sum", "kind": "adhoc", "plan_status": "skipped"})
+    skip_id = client.post("/api/poll").json()["new_attempts"][0]
+    assert client.store.get_attempt(skip_id)["plan_status"] == "skipped"
+    r = client.post(f"/api/attempt/{skip_id}/annotate", json={
+        "confidence": 3, "independence": "solo"})
+    assert r.json()["review"]["quality"] == 5
+
+
+def test_start_without_plan_fields_still_works_for_older_clients(client):
+    r = client.post("/api/session/start", json={"slug": "two-sum", "kind": "adhoc"})
+    session = client.store.get_session(r.json()["session_id"])
+    assert session["plan_status"] is None
+    assert r.json()["active"]["plan_check_available"] is False
+
+
+def test_grade_plan_stores_a_normalized_grade_and_the_pattern_verdict(client, monkeypatch):
+    seen = {}
+
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        seen[task_name] = payload
+        if task_name == "grade_plan":
+            return {"pattern_verdict": "correct", "approach_verdict": "viable",
+                    "optimal_time": "O(n)", "optimal_space": "O(n)",
+                    "solution_time": "O(n)", "solution_space": "O(n)",
+                    "edge_cases_covered": ["duplicates", "Duplicates"],
+                    "edge_cases_missed": ["no valid pair", "duplicates"],
+                    "failure_case": "empty input", "note": "Right idea."}, None
+        return None, "unexpected"
+
+    async def fake_extract(task_name, payload, settings=None):
+        return {"key_ideas": ["complements"], "time": "O(n)", "space": "O(n)"}
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_extract_or_error)
+    monkeypatch.setattr(main.llm, "extract", fake_extract)
+    aid = client.store.add_attempt({
+        "slug": "two-sum", "solved_at": 100, "kind": "adhoc", "code": "x",
+        "plan_status": "planned", "plan_held": "held", **_PLAN,
+        "failed_tests": [{"status": "Wrong Answer", "input": "[]"}],
+    })
+    client.store.upsert_enrichment(aid, {"slug": "two-sum", "prompt_version": 1,
+                                         "mistake_tags": ["edge_case"], "user_overrides": {}})
+
+    r = client.post(f"/api/attempt/{aid}/grade-plan")
+
+    assert r.status_code == 200
+    plan = r.json()["plan"]
+    assert plan["graded"] is True
+    assert plan["approach_verdict"] == "viable"
+    assert plan["time_vs_optimal"] is True
+    assert plan["edge_checks"] == [{"case": "duplicates", "covered": True},
+                                   {"case": "no valid pair", "covered": False}]
+    assert plan["failure_case"] == "empty input"
+    assert plan["score"] == 5  # (2 + 1 + 1 + .5 + 1) / 6
+    assert seen["grade_plan"]["failed_tests"][0]["input"] == "[]"
+    assert seen["grade_plan"]["plan_held"] == "held"
+    enrichment = client.store.get_enrichment(aid)
+    assert enrichment["mistake_tags"] == ["edge_case"]  # merged, not replaced
+    assert enrichment["prediction_verdict"] == "correct"
+    assert enrichment["plan_prompt_version"] == main.enrich.PLAN_PROMPT_VERSION
+
+
+def test_grade_plan_failure_is_stamped_not_retried_by_the_sweep(client, monkeypatch):
+    async def failing(task_name, payload, settings=None):
+        return None, "OpenAI 500"
+
+    async def fake_extract(task_name, payload, settings=None):
         return None
 
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", failing)
     monkeypatch.setattr(main.llm, "extract", fake_extract)
-    monkeypatch.setattr(main, "_prep_problem_bg", fake_prep_problem_bg)
-    monkeypatch.setattr(main.poller.leetcode, "recent_ac", fake_recent_ac)
-    monkeypatch.setattr(main.poller.leetcode, "submission_details", fake_submission_details)
-    monkeypatch.setattr(
-        main.poller.leetcode, "wrong_attempts_between", fake_wrong_attempts_between)
+    aid = client.store.add_attempt({"slug": "two-sum", "solved_at": 100, "confidence": 2,
+                                    "independence": "solo", **_PLAN})
+    assert main.enrich.needs_plan_grade(client.store) == [aid]
 
-    critique = client.post("/api/session/plan-critique", json={
-        "slug": "two-sum",
-        "predicted_category": "Arrays & Hashing",
-        "predicted_approach": "Use a hash map.",
-        "complexity_target_time": "O(n)",
-        "complexity_target_space": "O(1)",
-        "planned_edge_cases": ["duplicates", "same index"],
-    })
-    assert critique.status_code == 200
-    body = critique.json()
-    assert body["llm"] is True
-    assert body["critique"]["overall_verdict"] == "revise"
-    assert body["critique"]["nudges"] == ["What happens when no pair exists?"]
-    assert critique_payloads[0]["planned_edge_cases"] == ["duplicates", "same index"]
+    r = client.post(f"/api/attempt/{aid}/grade-plan").json()
 
-    revised_start = client.post("/api/session/start", json={
-        "slug": "two-sum",
-        "kind": "adhoc",
-        "predicted_category": "Arrays & Hashing",
-        "predicted_approach": "Use a hash map and guard reused indices.",
-        "complexity_target_time": "O(n)",
-        "complexity_target_space": "O(n)",
-        "planned_edge_cases": ["duplicates", "same index", "no pair"],
-    })
-    assert revised_start.status_code == 200
-    revised_session = client.store.get_session(revised_start.json()["session_id"])
-    assert revised_session["predicted_approach"] == (
-        "Use a hash map and guard reused indices.")
+    assert r["error"] == "OpenAI 500"
+    assert r["plan"]["grading_error"] == "OpenAI 500"
+    assert main.enrich.needs_plan_grade(client.store) == []
 
-    skip_start = client.post("/api/session/start", json={
-        "slug": "3sum",
-        "kind": "adhoc",
-    })
-    assert skip_start.status_code == 200
-    skipped_session = client.store.get_session(skip_start.json()["session_id"])
-    assert skipped_session["predicted_category"] is None
-    assert skipped_session["predicted_approach"] is None
-    assert skipped_session["complexity_target_time"] is None
-    assert skipped_session["complexity_target_space"] is None
-    assert skipped_session["planned_edge_cases"] == []
-    assert client.get("/api/session/active").json()["active"]["elapsed_sec"] >= 0
 
-    polled = client.post("/api/poll")
-    assert polled.status_code == 200
-    attempt_id = polled.json()["new_attempts"][0]
-    detail = client.get(f"/api/attempt/{attempt_id}").json()
-    assert detail["slug"] == "3sum"
-    assert detail["time_taken_sec"] == 19
-    assert detail["predicted_category"] is None
-    assert detail["predicted_approach"] is None
-    assert detail["complexity_target_time"] is None
-    assert detail["complexity_target_space"] is None
-    assert detail["planned_edge_cases"] == []
+def test_grade_plan_rejects_a_solve_with_no_plan(client):
+    aid = client.store.add_attempt({"slug": "two-sum", "solved_at": 100})
+    assert client.post(f"/api/attempt/{aid}/grade-plan").status_code == 400
+
+
+def test_a_second_poll_hands_its_plan_to_the_already_logged_solve(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    _fake_solve(client, monkeypatch, submission_id="dup-sub")
+    started = client.post("/api/session/start", json={
+        "slug": "two-sum", "kind": "adhoc", "plan_status": "planned", **_PLAN}).json()
+    aid = client.store.add_attempt({"slug": "two-sum", "submission_id": "dup-sub",
+                                    "solved_at": 1, "source": "detected"})
+
+    asyncio.run(poller._record_solve(
+        client.store, client.store.get_session(started["session_id"]),
+        {"id": "dup-sub", "timestamp": 1}, None))
+
+    attempt = client.store.get_attempt(aid)
+    assert attempt["plan_status"] == "planned"
+    assert attempt["predicted_approach"] == _PLAN["predicted_approach"]
+
+
+def test_insights_reports_planning(client):
+    client.store.add_attempt({"slug": "two-sum", "solved_at": 100, "plan_status": "blank"})
+    planning = client.get("/api/insights").json()["planning"]
+    assert planning["overall"]["blanks"] == 1
+    assert planning["soft_limit_sec"] == 300
 
 
 def test_session_pause_resume_adjusts_elapsed(client, monkeypatch):
@@ -2543,3 +2598,30 @@ async def test_overlapping_polls_log_a_session_solve_once(client, monkeypatch):
     assert sum(len(r["new_attempts"]) for r in results) == 1
     assert [a["submission_id"] for a in store.list_attempts()] == ["sub-1"]
     assert len(results[-1]["pending"]) == 1
+
+
+def test_full_enrichment_keeps_the_plan_grade_and_skips_double_grading(client, monkeypatch):
+    tasks = []
+
+    async def fake_extract(task_name, payload, settings=None):
+        tasks.append(task_name)
+        if task_name == "analyze_code":
+            return {"pattern_used": "hash map", "inferred_time": "O(n)", "inferred_space": "O(n)",
+                    "complexity_verdict": "match", "diff_summary": ""}
+        return None
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract", fake_extract)
+    aid = client.store.add_attempt({"slug": "two-sum", "solved_at": 100, "code": "x",
+                                    "plan_status": "planned", **_PLAN})
+    client.store.upsert_enrichment(aid, {
+        "slug": "two-sum", "plan_grade": {"approach_verdict": "viable"},
+        "plan_prompt_version": 1, "prediction_verdict": "correct"})
+
+    asyncio.run(main.enrich.enrich_attempt(client.store, aid))
+
+    e = client.store.get_enrichment(aid)
+    assert "grade_prediction" not in tasks  # graded with the plan instead
+    assert e["pattern_used"] == "hash map"
+    assert e["plan_grade"] == {"approach_verdict": "viable"}
+    assert e["prediction_verdict"] == "correct"

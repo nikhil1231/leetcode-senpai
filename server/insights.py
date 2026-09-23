@@ -7,7 +7,7 @@ functions.
 import datetime as dt
 
 from .neetcode150 import CATEGORY_ORDER
-from . import scheduler
+from . import plans, scheduler
 
 
 def _today(today=None):
@@ -47,24 +47,13 @@ def _norm_text(value):
 
 def _norm_complexity(value):
     text = _norm_text(value)
-    return text.lower().replace(" ", "") if text else None
+    if not text:
+        return None
+    return plans.norm_big_o(text) or text.lower().replace(" ", "")
 
 
 def _planned_edge_cases(attempt):
-    raw = attempt.get("planned_edge_cases") or []
-    if isinstance(raw, str):
-        raw = raw.replace("\n", ",").split(",")
-    if not isinstance(raw, list):
-        return []
-    out = []
-    seen = set()
-    for item in raw:
-        text = _norm_text(item)
-        key = text.lower() if text else None
-        if key and key not in seen:
-            out.append(text)
-            seen.add(key)
-    return out
+    return plans.planned_edge_cases(attempt)
 
 
 def _edge_case_signal(attempt, enrichment):
@@ -103,25 +92,35 @@ def reconcile_plan(attempt, enrichment=None):
     means caught; missing planned cases remain unknown.
     """
     enrichment = enrichment or {}
+    grade = enrichment.get("plan_grade") or {}
     target_time = _norm_text(attempt.get("complexity_target_time"))
     target_space = _norm_text(attempt.get("complexity_target_space"))
-    inferred_time = _norm_text(enrichment.get("inferred_time"))
-    inferred_space = _norm_text(enrichment.get("inferred_space"))
+    inferred_time = _norm_text(grade.get("solution_time") or enrichment.get("inferred_time"))
+    inferred_space = _norm_text(grade.get("solution_space") or enrichment.get("inferred_space"))
     time_hit = (_norm_complexity(target_time) == _norm_complexity(inferred_time)
                 if target_time and inferred_time else None)
     space_hit = (_norm_complexity(target_space) == _norm_complexity(inferred_space)
                  if target_space and inferred_space else None)
     planned = _planned_edge_cases(attempt)
     edge_status = "unknown"
-    if planned:
+    checks = [c for c in grade.get("edge_cases") or [] if isinstance(c, dict)]
+    if planned and checks:
+        # A graded plan knows which cases mattered; one left uncovered, or one a
+        # failing test exposed, is a miss however the solve felt.
+        covered = all(c.get("covered") for c in checks) and not grade.get("failure_case")
+        edge_status = "caught" if covered else "missed"
+    elif planned:
         edge_status = "missed" if _edge_case_signal(attempt, enrichment) else "caught"
-    edge_summary = (
-        "No planned edge cases recorded."
-        if not planned else
-        ("Planned edge cases were linked to an edge-case mistake."
-         if edge_status == "missed" else
-         "Planned edge cases had no edge-case mistake signal.")
-    )
+    if not planned:
+        edge_summary = "No planned edge cases recorded."
+    elif checks:
+        edge_summary = ("Your plan covered the edge cases that matter."
+                        if edge_status == "caught" else
+                        "Your plan missed an edge case that matters.")
+    else:
+        edge_summary = ("Planned edge cases were linked to an edge-case mistake."
+                        if edge_status == "missed" else
+                        "Planned edge cases had no edge-case mistake signal.")
     return {
         "complexity_time_hit": time_hit,
         "complexity_space_hit": space_hit,
@@ -352,6 +351,104 @@ def plan_quality_metrics(attempts, enrichment_by_attempt):
     }
 
 
+# ---- planning -------------------------------------------------------------------
+def _median_or_none(xs):
+    return _median(xs) if xs else None
+
+
+def _mean_or_none(xs, digits=2):
+    return round(sum(xs) / len(xs), digits) if xs else None
+
+
+def planning_stats(problems, attempts, enrichments, canonical_by_slug=None):
+    """How well you plan before coding: overall and per category.
+
+    Only real solves count (not sprints or recalls). A start can be planned,
+    blank ("No idea yet") or skipped; a plan is then scored 0..5 from its parts
+    (see plans.plan_score) and read for whether it held, whether its time target
+    was the optimal one, and how many of the edge cases that matter it named.
+    """
+    cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
+    enr_by = {e.get("attempt_id"): e for e in enrichments}
+    canonical_by_slug = canonical_by_slug or {}
+    rows = {}
+
+    def row(cat):
+        return rows.setdefault(cat, {
+            "starts": 0, "plans": 0, "blanks": 0, "skips": 0, "scores": [],
+            "held": [], "optimal": [], "edges": [], "plan_secs": [], "pattern": [],
+        })
+
+    total = row(None)
+    for a in scheduler._solved_attempts(attempts):
+        if a.get("kind") == "recall" or a.get("source") == "recall":
+            continue
+        status = plans.plan_status(a)
+        if status is None:
+            continue
+        cat = cat_of.get(a.get("slug"))
+        targets = [total] + ([row(cat)] if cat else [])
+        e = enr_by.get(a.get("id"))
+        c = plans.plan_components(a, e, canonical_by_slug.get(a.get("slug")))
+        score = plans.plan_score(c)
+        for r in targets:
+            r["starts"] += 1
+            if status == "blank":
+                r["blanks"] += 1
+            elif status == "skipped":
+                r["skips"] += 1
+            else:
+                r["plans"] += 1
+                if score is not None:
+                    r["scores"].append(score)
+                if c["held"] is not None:
+                    r["held"].append(1 if a.get("plan_held") == "held" else 0)
+                if c["complexity"] is not None:
+                    r["optimal"].append(c["complexity"])
+                if c["edges"] is not None:
+                    r["edges"].append(c["edges"])
+                if c["pattern"] is not None:
+                    r["pattern"].append(c["pattern"])
+            if status != "skipped" and a.get("plan_time_sec") is not None:
+                r["plan_secs"].append(a["plan_time_sec"])
+
+    def summarize(cat, r):
+        return {
+            "category": cat,
+            "starts": r["starts"], "plans": r["plans"],
+            "blanks": r["blanks"], "skips": r["skips"],
+            "scored": len(r["scores"]),
+            "avg_score": _mean_or_none(r["scores"], 1),
+            "held_rate": _mean_or_none(r["held"], 3),
+            "optimal_rate": _mean_or_none(r["optimal"], 3),
+            "edge_coverage": _mean_or_none(r["edges"], 3),
+            "pattern_rate": _mean_or_none(r["pattern"], 3),
+            "median_plan_sec": _median_or_none(r["plan_secs"]),
+        }
+
+    categories = [summarize(cat, r) for cat, r in rows.items() if cat is not None]
+    categories.sort(key=lambda r: (_CATEGORY_RANK.get(r["category"], 999), r["category"]))
+    # Weakest: the lowest average plan score among categories planned at least
+    # twice; blanks count as zeros, since "no idea yet" is the weakest plan.
+    weakest, weakest_key = None, None
+    for cat, r in rows.items():
+        if cat is None:
+            continue
+        pts = r["scores"] + [0] * r["blanks"]
+        if len(pts) < 2:
+            continue
+        key = (sum(pts) / len(pts), cat)
+        if weakest_key is None or key < weakest_key:
+            weakest_key = key
+            weakest = {"category": cat, "avg_score": round(key[0], 1), "count": len(pts),
+                       "blanks": r["blanks"]}
+    return {"overall": summarize(None, total), "categories": categories,
+            "weakest": weakest, "soft_limit_sec": plans.PLAN_SOFT_LIMIT_SEC}
+
+
+_CATEGORY_RANK = {c: i for i, c in enumerate(CATEGORY_ORDER)}
+
+
 # ---- confidence calibration -----------------------------------------------------
 def confidence_calibration(problems, attempts, reviews=None):
     """Compare self-assessed solve quality with stored objective grades by topic."""
@@ -499,6 +596,8 @@ def build(store, today=None):
     reviews = store.list_reviews()
     enrichments = store.list_enrichments()
     mocks = store.list_mocks()
+    canonical = {p["slug"]: p.get("canonical_summary") for p in problems
+                 if p.get("canonical_summary")}
     return {
         "forecast": review_forecast(reviews, today=today),
         "mastery_radar": mastery_radar(problems, attempts, today=today),
@@ -507,6 +606,7 @@ def build(store, today=None):
         "failure_modes": failure_modes(enrichments, days=30, attempts=attempts, today=today),
         "failure_modes_all": failure_modes(enrichments),
         "prediction_accuracy": prediction_accuracy(problems, attempts, enrichments),
+        "planning": planning_stats(problems, attempts, enrichments, canonical),
         "confidence_calibration": confidence_calibration(problems, attempts, reviews),
         "mock_trend": mock_score_trend(mocks),
     }
