@@ -210,7 +210,9 @@ def topic_stats(problems, attempts, enrichments=None):
         )
         c["total"] += 1
 
-    cat_of = {p["slug"]: p["neetcode_category"] for p in problems}
+    # Only library problems count toward a topic, the same set `total` counts —
+    # else solving a browsed Discover candidate reads as 6/20 over a list of 5.
+    cat_of = {p["slug"]: p["neetcode_category"] for p in problems if _in_library(p)}
     enr_by_attempt = {e.get("attempt_id"): e for e in (enrichments or [])}
     for a in attempts:
         cat = cat_of.get(a["slug"])

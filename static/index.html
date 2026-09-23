@@ -316,6 +316,18 @@
     </div>
   </div>
 
+  <!-- Topic detail: a topic's problems, done and not, each startable -->
+  <div id="topic-modal" class="overlay hidden">
+    <div class="overlay-card wide" role="dialog" aria-modal="true" aria-labelledby="topic-title">
+      <div class="modal-titlebar">
+        <h2 id="topic-title"></h2>
+        <button id="btn-close-topic" class="button is-ghost is-small" type="button">Close</button>
+      </div>
+      <div id="topic-summary" class="topic-summary"></div>
+      <div id="topic-body"></div>
+    </div>
+  </div>
+
   <!-- Mock runner (full screen) -->
   <div id="mock-modal" class="overlay hidden">
     <div class="overlay-card wide" role="dialog" aria-modal="true">

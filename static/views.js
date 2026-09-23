@@ -434,7 +434,9 @@
       t.sprint_accuracy != null ? `${Math.round(t.sprint_accuracy * 100)}% pattern` : null,
     ].filter(Boolean).join(" · ");
     return `
-      <div class="topic-node${t.solved === t.total && t.total ? " is-complete" : ""}">
+      <div class="topic-node${t.solved === t.total && t.total ? " is-complete" : ""}"
+           role="button" tabindex="0" data-cat="${escapeHtml(t.category)}"
+           aria-label="Open ${escapeHtml(t.category)} problems">
         <div class="topic-node-name">
           ${escapeHtml(t.category)}
           ${focus.has(t.category) ? `<span class="focus-chip">focus</span>` : ""}
@@ -485,6 +487,94 @@
             ${f.topics.map((t) => topicNode(t, focus)).join("")}
           </div>
         </details>`).join("");
+
+    const byCat = new Map(families.flatMap((f) => f.topics).map((t) => [t.category, t]));
+    $$("#tab-topics .topic-node").forEach((n) => {
+      const open = () => openTopic(byCat.get(n.dataset.cat));
+      n.addEventListener("click", open);
+      n.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      });
+    });
+  }
+
+  // ---- Topic detail --------------------------------------------------------------
+  // A topic's problems open over the map rather than expanding into it, so the map
+  // stays a one-screen picture of coverage. What's left to do leads, easiest first,
+  // and only its first Start is filled: the list is for picking the next problem.
+  let topicModalBound = false;
+
+  function bindTopicModal() {
+    if (topicModalBound) return;
+    topicModalBound = true;
+    const modal = $("#topic-modal");
+    $("#btn-close-topic").addEventListener("click", closeTopic);
+    modal.addEventListener("click", (e) => { if (e.target === modal) closeTopic(); });
+    modal.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTopic(); });
+  }
+
+  function closeTopic() {
+    $("#topic-modal").classList.add("hidden");
+  }
+
+  function topicProblemRow(r, i) {
+    const done = r.attempt_count > 0;
+    const data = `data-slug="${escapeHtml(r.slug)}" data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(r.neetcode_category || "")}"`;
+    return `
+      <li class="topic-problem${done ? " is-done" : ""}">
+        <span class="topic-problem-check" aria-hidden="true">${done ? "✓" : ""}</span>
+        <span class="topic-problem-title">
+          <a href="${r.url}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a>
+          ${done ? `<span class="small">${r.attempt_count}× · last ${shortLocalDate(r.last_attempt_at)}</span>` : ""}
+        </span>
+        ${diffLabel(r.difficulty)}
+        <span class="topic-problem-state">${done ? compactState(r.mastery_state) : ""}</span>
+        <span class="problem-actions">
+          ${done ? `<button class="button is-small is-link is-light topic-recall" type="button" ${data} title="Recall the method from memory">Recall</button>` : ""}
+          <button class="button is-small${!done && i === 0 ? " is-primary" : ""} topic-start" type="button" ${data}>Start</button>
+        </span>
+      </li>`;
+  }
+
+  function topicSection(label, rows) {
+    if (!rows.length) return "";
+    return `<h3 class="topic-section-head small">${label} <span>${rows.length}</span></h3>
+      <ul class="topic-problems">${rows.map(topicProblemRow).join("")}</ul>`;
+  }
+
+  async function openTopic(t) {
+    if (!t) return;
+    bindTopicModal();
+    const modal = $("#topic-modal");
+    const body = $("#topic-body");
+    $("#topic-title").textContent = t.category;
+    $("#topic-summary").innerHTML = `
+      <span class="topic-map-count">${t.solved}<span class="small">/${t.total} solved</span></span>
+      ${progressBar(t.coverage)}
+      ${masteryPill(t)}`;
+    body.innerHTML = loader("Loading problems…");
+    modal.classList.remove("hidden");
+    $("#btn-close-topic").focus();
+    let rows;
+    try {
+      rows = await api(`/problems?category=${encodeURIComponent(t.category)}&sort=difficulty`);
+    } catch (e) {
+      showLoadError(body, () => openTopic(t));
+      return;
+    }
+    if (!rows.length) {
+      body.innerHTML = "<p class='empty'>No problems in this topic yet.</p>";
+      return;
+    }
+    body.innerHTML =
+      topicSection("To do", rows.filter((r) => !r.attempt_count)) +
+      topicSection("Done", rows.filter((r) => r.attempt_count));
+    const start = (b, mode) => {
+      closeTopic();
+      App.startFlow(b.dataset.slug, "adhoc", mode, b.dataset.title, b.dataset.cat);
+    };
+    $$("#topic-body .topic-start").forEach((b) => b.addEventListener("click", () => start(b, "")));
+    $$("#topic-body .topic-recall").forEach((b) => b.addEventListener("click", () => start(b, "recall")));
   }
 
   // ---- Insights ----------------------------------------------------------------

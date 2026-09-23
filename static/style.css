@@ -1137,6 +1137,41 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .topic-node-count { font-variant-numeric: tabular-nums; font-size: 13px; }
 .topic-node-count .small { font-size: 11px; }
 .topic-node.is-complete .topic-node-count { color: var(--green); }
+.topic-node { cursor: pointer; transition: background .15s var(--ease); }
+.topic-node:hover, .topic-node:focus-visible { background: var(--panel2); outline: none; }
+
+/* topic detail modal */
+.topic-summary {
+  display: grid;
+  grid-template-columns: auto minmax(90px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.topic-section-head {
+  margin: 18px 0 4px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.topic-section-head span { margin-left: 4px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.topic-problems { margin: 0; padding: 0; list-style: none; }
+.topic-problem {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 64px 104px auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.topic-problem-check { color: var(--green); font-weight: 700; text-align: center; }
+.topic-problem-title { min-width: 0; }
+.topic-problem-title a { color: inherit; }
+.topic-problem-title a:hover { color: var(--accent); }
+.topic-problem-title .small { display: block; margin-top: 2px; }
+.topic-problem .problem-actions { justify-content: flex-end; }
+body.has-active-session .topic-start, body.has-active-session .topic-recall { display: none; }
 
 .mastery-pill {
   padding: 3px 9px;
@@ -1534,6 +1569,16 @@ pre.code {
   .family > summary .bar, .topic-node .bar { grid-area: bar; align-self: center; }
   .family > summary .mastery-pill, .topic-node .mastery-pill { grid-area: pill; justify-self: end; }
   .family-body { padding-left: 15px; }
+  .topic-problem {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    grid-template-areas: "check title diff" "check state actions";
+    row-gap: 6px;
+  }
+  .topic-problem-check { grid-area: check; }
+  .topic-problem-title { grid-area: title; }
+  .topic-problem .q-diff { grid-area: diff; justify-self: end; }
+  .topic-problem-state { grid-area: state; }
+  .topic-problem .problem-actions { grid-area: actions; }
   .columns.is-mobile { grid-template-columns: 1fr; }
   .fc-grid { grid-template-columns: repeat(10, 1fr); }
 }

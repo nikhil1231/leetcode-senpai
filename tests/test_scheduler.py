@@ -215,6 +215,23 @@ def test_overview_counts_drills_today_separately():
     assert ov["xp_today"] == 40
 
 
+def test_topic_solved_counts_only_library_problems():
+    today = dt.date(2026, 1, 10)
+    problems = _problems() + [
+        {"slug": "browsed", "title": "Browsed", "difficulty": "Easy",
+         "neetcode_category": "Arrays & Hashing", "in_library": False, "url": "u"},
+    ]
+    attempts = [
+        {"slug": "two-sum", "solved_at": _ts(today), "kind": "adhoc"},
+        {"slug": "browsed", "solved_at": _ts(today), "kind": "adhoc"},
+    ]
+
+    arrays = next(s for s in scheduler.topic_stats(problems, attempts)
+                  if s["category"] == "Arrays & Hashing")
+
+    assert (arrays["solved"], arrays["total"]) == (1, 2)
+
+
 def test_sprint_attempts_do_not_inflate_topic_solved_or_mastery():
     today = dt.date(2026, 1, 10)
     attempts = [
