@@ -2426,3 +2426,8 @@ body.has-active-session #user-chip {
 .light-walkthrough table { width: 100%; margin: 12px 0; border-collapse: collapse; }
 .light-walkthrough th, .light-walkthrough td { padding: 9px; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
 .light-walkthrough caption { text-align: left; color: var(--text-2); padding: 8px; }
+
+.light-recap { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 18px; max-width: 880px; }
+.light-recap p + p { margin-top: 12px; }
+.light-recap p { line-height: 1.6; color: var(--text-2); }
+.light-recap strong { color: var(--text); }

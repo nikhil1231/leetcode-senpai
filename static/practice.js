@@ -39,7 +39,7 @@
         <h2>Pick a kind of question</h2>
         <p>Questions keep coming until you stop. The ones you miss come back.</p></div>
         <div class="light-filters"><label for="practice-length">Round</label><div class="select"><select id="practice-length"><option value="0">Until I stop</option><option value="5">5 questions</option><option value="10">10 questions</option></select></div><label for="practice-difficulty">Level</label><div class="select"><select id="practice-difficulty"><option value="">Adaptive</option><option value="foundation">Foundation</option><option value="standard">Standard</option><option value="stretch">Stretch</option></select></div><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
-      ${lastRun ? `<p class="light-last">Last run: ${lastRun.answered} answered, ${lastRun.correct} right.</p>` : ""}
+      ${lastRun ? `<p class="light-last">Last run: ${lastRun.answered} answered, ${lastRun.correct} right.</p>${recap(lastRun.outcomes)}` : ""}
       <div class="light-modes">${[MIXED, ...catalog.modes].map(m => {
         const c = counts(m.id);
         return `<button class="light-mode" type="button" data-mode="${esc(m.id)}"${c.total ? "" : " disabled"}>
@@ -55,6 +55,18 @@
     $("#practice-topic").addEventListener("change", e => { topic = e.target.value; renderLibrary(); });
   }
 
+  function recap(outcomes) {
+    const latest = new Map();
+    outcomes.forEach(o => latest.set(o.skill, o));
+    const lessons = [...latest.values()];
+    const revisit = lessons.find(o => !o.secure);
+    const learned = lessons.filter(o => o.secure).pop();
+    return `<div class="light-recap" aria-label="Practice takeaway">
+      ${learned ? `<p><strong>Takeaway · ${esc(learned.skill)}</strong><br>${esc(learned.explanation)}</p>` : ""}
+      ${revisit ? `<p><strong>Revisit · ${esc(revisit.skill)}</strong><br>${esc(revisit.explanation)}</p>` : "<p>No unresolved mistakes in this round. Check these skills again another day.</p>"}
+      <p class="light-footnote">Based on this round’s answers; this is not a mastery score.</p></div>`;
+  }
+
   function fetchNext() {
     const params = new URLSearchParams({ mode: run.mode, topic: run.topic, recent: run.recent.join(",") });
     if (difficulty) params.set("difficulty", difficulty);
@@ -64,13 +76,13 @@
   }
 
   function start(mode) {
-    run = { mode, topic, recent: [], answered: 0, correct: 0, next: null, limit: roundSize };
+    run = { mode, topic, recent: [], answered: 0, correct: 0, next: null, limit: roundSize, outcomes: [] };
     advance();
   }
 
   function stop() {
     ticket++;
-    if (run && run.answered) lastRun = { answered: run.answered, correct: run.correct };
+    if (run && run.answered) lastRun = { answered: run.answered, correct: run.correct, outcomes: run.outcomes };
     run = null; current = null; result = null; loading = false; submitting = false;
     renderLibrary();
   }
@@ -168,6 +180,8 @@
       if (t !== ticket) { if (!run && !loading) renderLibrary(); return; }
       result = r;
       run.answered++;
+      run.outcomes.push({ id: q.id, skill: q.skill || q.title, explanation: r.explanation,
+                          secure: r.correct && !r.assisted && !r.guessed && !r.revealed });
       if (r.correct) run.correct++;
       run.next = run.limit && run.answered >= run.limit ? null : fetchNext();  // ready by the time the explanation is read
       renderFeedback(reveal ? null : answer);
@@ -205,6 +219,8 @@
         catalog.status[q.template] = "uncertain";
         if (t !== ticket) { if (!run) renderLibrary(); return; }
         result = updated;
+        const outcome = run.outcomes.find(o => o.id === q.id);
+        if (outcome) outcome.secure = false;
         run.next = run.limit && run.answered >= run.limit ? null : fetchNext();
         renderFeedback(answer);
       } catch (e) {

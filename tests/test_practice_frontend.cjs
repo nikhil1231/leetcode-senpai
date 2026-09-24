@@ -186,3 +186,20 @@ test('a five-question round finishes after feedback without fetching a sixth', a
   assert.equal(served, 5);
   assert.match(view.html(), /Last run: 5 answered/);
 });
+
+test('round recap distinguishes a guessed success from a secure takeaway', async () => {
+  const view = ui(async (url, method) => {
+    if (url === '/practice') return catalog();
+    if (url === '/practice/guess') return graded(choiceQ(), {guessed: true});
+    if (method === 'POST') return graded(choiceQ());
+    return choiceQ();
+  });
+  await view.render();
+  await view.click('mode:fill');
+  await view.key('1');
+  await view.click('#practice-guess');
+  await view.key('Escape');
+  assert.match(view.html(), /Revisit · Stairs/);
+  assert.doesNotMatch(view.html(), /Takeaway · Stairs/);
+  assert.match(view.html(), /Because/);
+});
