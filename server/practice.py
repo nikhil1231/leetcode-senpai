@@ -7,7 +7,7 @@ the browser. Counterexamples run through fixed implementations below.
 import json
 import random
 
-from . import practice_bank, practice_generated
+from . import practice_bank, practice_generated, practice_feedback
 
 
 MODES = [
@@ -224,6 +224,8 @@ def grade(q, answer=None, reveal=False):
         option = next(o for o in q["options"] if o["id"] == q["answer"])
         result.update(correct=not reveal and answer == q["answer"], answer=answer,
                       correct_option=option["id"], solution=option["text"])
+        if not reveal and not result["correct"]:
+            result["mistake"] = practice_feedback.for_answer(q, answer)
     else:
         if reveal:
             nums = q["example"]

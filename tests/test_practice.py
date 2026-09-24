@@ -827,3 +827,13 @@ def test_fill_keys_pass_and_every_distractor_fails(template):
         except Exception:  # a wrong answer, crash or recursion error all count as failing
             continue
         raise AssertionError(f'{template}: distractor {text!r} passes the checker')
+
+
+def test_authored_distractor_feedback_tracks_stable_ids():
+    from server import practice, practice_feedback
+    for template, notes in practice_feedback.DISTRACTORS.items():
+        for seed in (1, 19):
+            q = practice.question(template, seed)
+            for i, note in enumerate(notes, 1):
+                assert practice.grade(q, str(i))["mistake"] == note
+            assert "mistake" not in practice.grade(q, "0")

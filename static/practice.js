@@ -180,7 +180,7 @@
       : (r.correct ? "" : `<p class="light-solution">${esc(r.solution)}</p>`);
     $("#practice-actions").innerHTML = "";
     $("#practice-feedback").innerHTML = `<section class="light-feedback ${r.correct ? "is-correct" : ""}"><h3>${heading}</h3>
-      ${outputs}${solution}<p>${esc(r.explanation)}</p></section>
+      ${r.mistake ? `<p>${esc(r.mistake)}</p>` : ""}${outputs}${solution}<p>${esc(r.explanation)}</p></section>
       <div class="light-actions"><button id="practice-next" class="button is-primary" type="button">${run.limit && run.answered >= run.limit ? "Finish round" : "Next"} <kbd>Enter</kbd></button></div>`;
     $("#practice-next").addEventListener("click", advance);
     $("#practice-next").focus();
