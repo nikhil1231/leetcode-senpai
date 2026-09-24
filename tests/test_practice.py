@@ -837,3 +837,14 @@ def test_authored_distractor_feedback_tracks_stable_ids():
             for i, note in enumerate(notes, 1):
                 assert practice.grade(q, str(i))["mistake"] == note
             assert "mistake" not in practice.grade(q, "0")
+
+
+def test_typed_recall_uses_safe_structural_comparison():
+    from server import practice
+    q = practice.question("fill-search", 1)
+    assert practice.grade(q, "mid+1", recall=True)["correct"]
+    assert not practice.grade(q, "mid", recall=True)["correct"]
+    assert not practice.grade(q, "__import__('os').system('echo nope')", recall=True)["correct"]
+    q = practice.question("trace-search", 1)
+    key = next(o["text"] for o in q["options"] if o["id"] == q["answer"])
+    assert practice.grade(q, key, recall=True)["correct"]

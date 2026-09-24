@@ -76,6 +76,7 @@ class PauseSession(BaseModel):
 
 class PracticeAnswer(BaseModel):
     assisted: bool = False
+    recall: bool = False
     question_id: str = Field(max_length=100)
     answer: str | None = Field(default=None, max_length=300)
     reveal: bool = False
@@ -637,7 +638,7 @@ def api_practice_check(body: PracticeAnswer, uid: str = Depends(auth.require_use
 def api_practice_answer(body: PracticeAnswer, uid: str = Depends(auth.require_user)):
     try:
         q = practice.from_id(body.question_id)
-        result = practice.grade(q, body.answer, body.reveal)
+        result = practice.grade(q, body.answer, body.reveal, body.recall)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     result["assisted"] = body.assisted

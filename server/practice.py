@@ -4,6 +4,7 @@ Light-practice results deliberately live outside solve attempts and FSRS cards.
 The seed reconstructs a question for grading, without storing an answer key in
 the browser. Counterexamples run through fixed implementations below.
 """
+import ast
 import json
 import random
 
@@ -215,7 +216,28 @@ def counterexample(q, nums):
     return {"correct": expected != actual, "expected": expected, "actual": actual}
 
 
-def grade(q, answer=None, reveal=False):
+def grade(q, answer=None, reveal=False, recall=False):
+    if recall and not reveal:
+        if q["mode"] not in {"trace", "fill"}:
+            raise ValueError("This exercise does not support typed recall")
+        key = next(o["text"] for o in q["options"] if o["id"] == q["answer"])
+        try:
+            if q["mode"] == "trace":
+                def state(text):
+                    try:
+                        return json.loads(text)
+                    except ValueError:
+                        return ast.literal_eval(text)
+                correct = type(state(answer)) is type(state(key)) and state(answer) == state(key)
+            else:
+                correct = ast.dump(ast.parse(answer.strip())) == ast.dump(ast.parse(key.strip()))
+        except (ValueError, SyntaxError, TypeError, AttributeError, RecursionError):
+            correct = False
+        result = grade(q, q["answer"] if correct else next(o["id"] for o in q["options"] if o["id"] != q["answer"]))
+        result.update(answer=answer, recall=True)
+        result.pop("mistake", None)
+        return result
+
     result = {"question_id": q["id"], "template": q["template"], "mode": q["mode"],
               "revealed": reveal, "explanation": q["explanation"]}
     if q["input_type"] == "choice":

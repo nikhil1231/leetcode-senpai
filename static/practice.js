@@ -7,7 +7,7 @@
   const MIXED = { id: "", title: "Mixed", duration: "30 sec – 3 min", description: "A bit of everything, weighted toward what you miss." };
   let catalog = null, topic = "", lastRun = null, roundSize = 0;
   let run = null;  // { mode, topic, recent, answered, correct, next }
-  let current = null, result = null, loading = false, submitting = false, ticket = 0, assisted = false;
+  let current = null, result = null, loading = false, submitting = false, ticket = 0, assisted = false, recall = false;
   const root = () => $("#tab-practice");
   const modeOf = id => [MIXED, ...catalog.modes].find(m => m.id === id);
 
@@ -81,7 +81,7 @@
     try {
       const q = await pending;
       if (t !== ticket) return;
-      current = q; assisted = false;
+      current = q; assisted = false; recall = false;
       run.recent.push(q.template);
       renderQuestion();
     } catch (e) {
@@ -102,19 +102,27 @@
   function wireBar() { $("#practice-stop").addEventListener("click", stop); }
 
   function renderQuestion() {
-    const q = current, choice = q.input_type === "choice";
+    const q = current, choice = q.input_type === "choice" && !recall;
     root().innerHTML = `<div class="light-workspace">${runBar()}
       <article class="light-question" aria-labelledby="practice-question-title">
         <div class="light-question-meta"><span>${esc(catalog.modes.find(m => m.id === q.mode).title)} · ${esc(q.topic)}</span></div>
         <h2 id="practice-question-title" tabindex="-1">${esc(q.title)}</h2><p class="light-prompt">${esc(q.prompt)}</p>
         ${q.code ? `<pre class="light-code"><code>${esc(q.code)}</code></pre>` : ""}
+        ${q.input_type === "choice" && ["trace", "fill"].includes(q.mode) ? `<button id="practice-recall" class="button is-small" type="button">${recall ? "Show choices" : "Answer from memory"}</button>` : ""}
         ${choice ? `<div class="light-options" role="group" aria-label="Answer choices">${q.options.map((o, i) => `<button class="light-option" type="button" data-option="${esc(o.id)}"><kbd class="light-key">${i + 1}</kbd><span>${esc(o.text)}</span></button>`).join("")}</div>` :
-          '<label class="label-sm" for="practice-input">Your counterexample</label><textarea id="practice-input" class="input mono light-input" rows="2" placeholder="[1, 2, 1]" autocomplete="off" spellcheck="false" maxlength="300"></textarea><p class="light-input-help">A JSON array. <kbd>Enter</kbd> checks · <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line.</p>'}
+          `<label class="label-sm" for="practice-input">${recall ? "Your answer" : "Your counterexample"}</label><textarea id="practice-input" class="input mono light-input" rows="2" placeholder="${recall ? "Type the state or missing code" : "[1, 2, 1]"}" autocomplete="off" spellcheck="false" maxlength="300"></textarea><p class="light-input-help">${recall ? "Use the displayed variable names and expression structure for code; JSON or Python literals for states." : "A JSON array."} <kbd>Enter</kbd> checks · <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line.</p>`}
         <p id="practice-error" class="light-error" role="alert"></p>
         <div id="practice-actions" class="light-actions">${choice ? "" : '<button class="button is-primary" id="practice-check" type="button">Check <kbd>Enter</kbd></button>'}<button class="button is-ghost" id="practice-reveal" type="button">Show answer</button></div>
         <div id="practice-feedback" aria-live="polite"></div>
       </article></div>`;
     wireBar();
+    if (q.input_type === "choice" && ["trace", "fill"].includes(q.mode)) {
+      $("#practice-recall").addEventListener("click", () => {
+        if (submitting || result) return;
+        if (recall) assisted = true;
+        recall = !recall; renderQuestion();
+      });
+    }
     root().querySelectorAll("[data-option]").forEach(b => b.addEventListener("click", () => submit(false, b.dataset.option)));
     $("#practice-reveal").addEventListener("click", () => submit(true));
     if (choice) { $("#practice-question-title").focus(); return; }
@@ -150,7 +158,7 @@
           return;
         }
       }
-      const r = await api("/practice/answer", "POST", { question_id: q.id, answer: reveal ? null : answer, reveal, assisted });
+      const r = await api("/practice/answer", "POST", { question_id: q.id, answer: reveal ? null : answer, reveal, assisted, recall });
       // Keep the outcome even if the run stopped during the save.
       catalog.status[r.template] = r.correct ? "learned" : "missed";
       if (t !== ticket) { if (!run && !loading) renderLibrary(); return; }
@@ -192,7 +200,7 @@
     if (e.key === "Escape") { e.preventDefault(); stop(); return; }
     if (e.target && e.target.id === "practice-input") return;  // it handles Enter itself
     if (result && !loading && e.key === "Enter") { e.preventDefault(); advance(); return; }
-    if (!result && !submitting && current && current.input_type === "choice") {
+    if (!result && !submitting && current && current.input_type === "choice" && !recall) {
       const i = "1234".indexOf(e.key);
       if (e.key.length === 1 && i >= 0 && i < current.options.length) { e.preventDefault(); submit(false, current.options[i].id); }
     }
