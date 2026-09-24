@@ -19,3 +19,20 @@ CONCEPTS = {template: skill for skill, templates in GROUPS.items() for template 
 
 def concept(template):
     return CONCEPTS.get(template)
+
+FOUNDATIONS = {
+    "fill-search", "trace-search", "fill-window", "fill-bfs", "fill-dp",
+    "fill-two-sum", "fill-heap-k", "fill-backtrack-copy", "fill-merge-end",
+    "trace-kadane-step", "trace-pair-pointers", "trace-bfs-queue",
+    "break-last", "break-max", "approach-stack",
+}
+STRETCH = {
+    "fill-lower-bound", "trace-lower-bound", "break-window-if",
+    "break-prefix-frequency", "approach-negative", "break-next-greater",
+    "fill-coin-combinations", "trace-coin-update",
+}
+
+
+def metadata(template, title):
+    return {"skill": concept(template) or title,
+            "difficulty": "foundation" if template in FOUNDATIONS else "stretch" if template in STRETCH else "standard"}

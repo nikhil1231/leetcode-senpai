@@ -603,19 +603,22 @@ def api_practice_question(template: str, uid: str = Depends(auth.require_user)):
 
 
 @app.get("/api/practice/next")
-def api_practice_next(mode: str = "", topic: str = "", recent: str = "",
+def api_practice_next(mode: str = "", topic: str = "", recent: str = "", difficulty: str = "",
                       uid: str = Depends(auth.require_user)):
     """The next exercise in a practice run, chosen from saved outcomes.
 
     recent lists the templates already served in this run (comma-separated),
     so a miss returns after a gap instead of immediately.
     """
-    candidates = {e["id"]: e["topic"] for e in practice.catalog()["exercises"]
-                  if (not mode or e["mode"] == mode) and (not topic or e["topic"] == topic)}
+    if difficulty not in {"", "foundation", "standard", "stretch"}:
+        raise HTTPException(400, "Unknown difficulty")
+    metadata = {e["id"]: e for e in practice.catalog()["exercises"]}
+    candidates = {e["id"]: e["topic"] for e in metadata.values()
+                  if (not mode or e["mode"] == mode) and (not topic or e["topic"] == topic) and (not difficulty or e["difficulty"] == difficulty)}
     try:
         template = practice_queue.pick(candidates, get_store(uid).list_light_practice(),
                                        recent.split(",")[-50:] if recent else [], int(time.time()),
-                                       random.Random(secrets.randbits(64)))
+                                       random.Random(secrets.randbits(64)), metadata=metadata)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     return practice.public_question(practice.question(template, secrets.randbits(32)))

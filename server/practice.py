@@ -8,7 +8,7 @@ import ast
 import json
 import random
 
-from . import practice_bank, practice_generated, practice_feedback
+from . import practice_bank, practice_generated, practice_feedback, practice_skills
 
 
 MODES = [
@@ -87,7 +87,7 @@ GENERATED.update(practice_generated.TEMPLATES)
 
 def catalog():
     return {"modes": MODES, "exercises": [
-        {"id": key, "mode": row[0], "topic": row[1], "title": row[2],
+        {"id": key, **practice_skills.metadata(key, row[2]), "mode": row[0], "topic": row[1], "title": row[2],
          "variants": key.startswith("trace-") or key == "break-search" or key in practice_generated.VARIANTS}
         for key, row in {**GENERATED, **CHOICES}.items()
     ]}
@@ -106,7 +106,7 @@ def question(template, seed):
     rng = random.Random(seed)
     row = (GENERATED | CHOICES)[template]
     q = {"id": f"v1:{template}:{seed}", "template": template, "mode": row[0],
-         "topic": row[1], "title": row[2], "code": ""}
+         "topic": row[1], "title": row[2], "code": "", **practice_skills.metadata(template, row[2])}
     if template in CHOICES:
         q.update(prompt=row[3], code=row[4])
         _choice(q, row[5], row[6], rng)

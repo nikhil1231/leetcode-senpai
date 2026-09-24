@@ -30,7 +30,7 @@ def status(results):
     return latest
 
 
-def pick(candidates, results, recent, now, rng):
+def pick(candidates, results, recent, now, rng, metadata=None):
     """Return the next template.
 
     candidates: {template: topic} to choose from (the mode/topic filter).
@@ -39,6 +39,8 @@ def pick(candidates, results, recent, now, rng):
     """
     if not candidates:
         raise ValueError("No exercises match")
+    metadata = metadata or {}
+    skills = {t: metadata.get(t, {}).get("skill", topic) for t, topic in candidates.items()}
     history = _histories(results)
     gap = min(GAP, len(candidates) - 1)
     held = set(recent[-gap:]) if gap else set()
@@ -70,10 +72,18 @@ def pick(candidates, results, recent, now, rng):
         tally = {}
         for t, h in history.items():
             if t in candidates:
-                n, m = tally.get(candidates[t], (0, 0))
-                tally[candidates[t]] = (n + len(h), m + sum(not ok for _, ok in h))
-        weights = [1 + 2 * (tally[candidates[t]][1] / tally[candidates[t]][0] if candidates[t] in tally else 0)
+                n, m = tally.get(skills[t], (0, 0))
+                tally[skills[t]] = (n + len(h), m + sum(not ok for _, ok in h))
+        weights = [1 + 2 * (tally[skills[t]][1] / tally[skills[t]][0] if skills[t] in tally else 0)
                    for t in fresh]
+        for i, t in enumerate(fresh):
+            n, misses = tally.get(skills[t], (0, 0))
+            level = metadata.get(t, {}).get("difficulty")
+            ready = n - misses >= 2 and (not n or misses / n < 0.5)
+            if level == "foundation":
+                weights[i] *= 0.7 if ready else 2
+            elif level == "stretch":
+                weights[i] *= 1.5 if ready else 0.35
         return rng.choices(fresh, weights)[0]
     # Everything was answered correctly recently: least recently seen.
     return min(rest, key=lambda t: history[t][-1][0])

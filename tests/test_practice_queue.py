@@ -101,3 +101,13 @@ def test_guesses_and_assisted_successes_return_soon():
         results = [{**r("a", 1), flag: True}, r("b", 5)]
         assert status(results)["a"] == "uncertain"
         assert pick(candidates("a", "b"), results, [], NOW, random.Random(0)) == "a"
+
+
+def test_adaptive_levels_favour_foundations_then_unlock_stretch_weight():
+    c = candidates("easy", "hard", "past")
+    meta = {"easy": {"skill": "S", "difficulty": "foundation"},
+            "hard": {"skill": "S", "difficulty": "stretch"},
+            "past": {"skill": "S", "difficulty": "standard"}}
+    def hard_share(results):
+        return sum(pick(c, results, [], NOW, random.Random(i), meta) == "hard" for i in range(500))
+    assert hard_share([r("past", 2), r("past", 1)]) > hard_share([r("past", 1)]) * 2

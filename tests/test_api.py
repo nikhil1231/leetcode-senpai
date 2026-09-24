@@ -2692,3 +2692,11 @@ def test_guess_is_idempotent_and_does_not_change_correctness(client):
     assert first["correct"] and first["guessed"]
     assert client.post("/api/practice/guess", json=body).json() == first
     assert client.get("/api/practice").json()["status"]["fill-search"] == "uncertain"
+
+
+def test_practice_difficulty_filter(client):
+    for level in ("foundation", "standard", "stretch"):
+        q = client.get("/api/practice/next", params={"difficulty": level})
+        assert q.status_code == 200
+        assert q.json()["difficulty"] == level
+    assert client.get("/api/practice/next?difficulty=impossible").status_code == 400

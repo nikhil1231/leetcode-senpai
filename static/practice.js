@@ -5,7 +5,7 @@
 (function () {
   const { $, escapeHtml: esc, api, loader } = window.H;
   const MIXED = { id: "", title: "Mixed", duration: "30 sec – 3 min", description: "A bit of everything, weighted toward what you miss." };
-  let catalog = null, topic = "", lastRun = null, roundSize = 0;
+  let catalog = null, topic = "", lastRun = null, roundSize = 0, difficulty = "";
   let run = null;  // { mode, topic, recent, answered, correct, next }
   let current = null, result = null, loading = false, submitting = false, ticket = 0, assisted = false, recall = false;
   const root = () => $("#tab-practice");
@@ -27,7 +27,7 @@
   }
 
   function counts(mode) {
-    const xs = catalog.exercises.filter(x => (!mode || x.mode === mode) && (!topic || x.topic === topic));
+    const xs = catalog.exercises.filter(x => (!mode || x.mode === mode) && (!topic || x.topic === topic) && (!difficulty || x.difficulty === difficulty));
     return { total: xs.length, missed: xs.filter(x => ["missed", "uncertain"].includes(catalog.status[x.id])).length,
              fresh: xs.filter(x => !catalog.status[x.id]).length };
   }
@@ -38,7 +38,7 @@
       <div class="light-intro"><div><span class="light-eyebrow">A small rep is enough</span>
         <h2>Pick a kind of question</h2>
         <p>Questions keep coming until you stop. The ones you miss come back.</p></div>
-        <div class="light-filters"><label for="practice-length">Round</label><div class="select"><select id="practice-length"><option value="0">Until I stop</option><option value="5">5 questions</option><option value="10">10 questions</option></select></div><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
+        <div class="light-filters"><label for="practice-length">Round</label><div class="select"><select id="practice-length"><option value="0">Until I stop</option><option value="5">5 questions</option><option value="10">10 questions</option></select></div><label for="practice-difficulty">Level</label><div class="select"><select id="practice-difficulty"><option value="">Adaptive</option><option value="foundation">Foundation</option><option value="standard">Standard</option><option value="stretch">Stretch</option></select></div><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
       ${lastRun ? `<p class="light-last">Last run: ${lastRun.answered} answered, ${lastRun.correct} right.</p>` : ""}
       <div class="light-modes">${[MIXED, ...catalog.modes].map(m => {
         const c = counts(m.id);
@@ -47,6 +47,8 @@
           <span class="light-mode-stats">${c.total} question${c.total === 1 ? "" : "s"}${c.missed ? ` · <b>${c.missed} to revisit</b>` : ""}${c.fresh ? ` · ${c.fresh} new` : ""}</span></button>`;
       }).join("")}</div>
       <p class="light-footnote"><kbd>1</kbd>–<kbd>4</kbd> answer a choice · <kbd>Enter</kbd> checks and moves on · <kbd>Esc</kbd> stops. These reps don’t change your solve counts, mastery, or review schedule.</p>`;
+    $("#practice-difficulty").value = difficulty;
+    $("#practice-difficulty").addEventListener("change", e => { difficulty = e.target.value; renderLibrary(); });
     $("#practice-length").value = String(roundSize);
     $("#practice-length").addEventListener("change", e => { roundSize = Number(e.target.value); });
     root().querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => start(b.dataset.mode)));
@@ -55,6 +57,7 @@
 
   function fetchNext() {
     const params = new URLSearchParams({ mode: run.mode, topic: run.topic, recent: run.recent.join(",") });
+    if (difficulty) params.set("difficulty", difficulty);
     const pending = api(`/practice/next?${params}`);
     pending.catch(() => {});  // awaited later, or dropped if the run stops first
     return pending;
@@ -106,7 +109,7 @@
     const q = current, choice = q.input_type === "choice" && !recall;
     root().innerHTML = `<div class="light-workspace">${runBar()}
       <article class="light-question" aria-labelledby="practice-question-title">
-        <div class="light-question-meta"><span>${esc(catalog.modes.find(m => m.id === q.mode).title)} · ${esc(q.topic)}</span></div>
+        <div class="light-question-meta"><span>${esc(catalog.modes.find(m => m.id === q.mode).title)} · ${esc(q.topic)}${q.skill ? ` · ${esc(q.skill)} · ${esc(q.difficulty)}` : ""}</span></div>
         <h2 id="practice-question-title" tabindex="-1">${esc(q.title)}</h2><p class="light-prompt">${esc(q.prompt)}</p>
         ${q.code ? `<pre class="light-code"><code>${esc(q.code)}</code></pre>` : ""}
         ${q.input_type === "choice" && ["trace", "fill"].includes(q.mode) ? `<button id="practice-recall" class="button is-small" type="button">${recall ? "Show choices" : "Answer from memory"}</button>` : ""}
