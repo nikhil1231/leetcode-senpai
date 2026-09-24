@@ -7,7 +7,7 @@
   const MIXED = { id: "", title: "Mixed", duration: "30 sec – 3 min", description: "A bit of everything, weighted toward what you miss." };
   let catalog = null, topic = "", lastRun = null, roundSize = 0;
   let run = null;  // { mode, topic, recent, answered, correct, next }
-  let current = null, result = null, loading = false, submitting = false, ticket = 0;
+  let current = null, result = null, loading = false, submitting = false, ticket = 0, assisted = false;
   const root = () => $("#tab-practice");
   const modeOf = id => [MIXED, ...catalog.modes].find(m => m.id === id);
 
@@ -81,7 +81,7 @@
     try {
       const q = await pending;
       if (t !== ticket) return;
-      current = q;
+      current = q; assisted = false;
       run.recent.push(q.template);
       renderQuestion();
     } catch (e) {
@@ -139,7 +139,18 @@
     $("#practice-error").textContent = "";
     setBusy(true);
     try {
-      const r = await api("/practice/answer", "POST", { question_id: q.id, answer: reveal ? null : answer, reveal });
+      if (!reveal && q.input_type === "array") {
+        const check = await api("/practice/check", "POST", { question_id: q.id, answer });
+        if (t !== ticket) return;
+        if (!check.correct) {
+          assisted = true;
+          $("#practice-feedback").innerHTML = `<section class="light-feedback"><h3>Try another input</h3><p>Expected <code>${esc(JSON.stringify(check.expected))}</code>; returned <code>${esc(JSON.stringify(check.actual))}</code>. This input does not expose the bug.</p><details><summary>Hint</summary><p>Try the smallest allowed input, duplicates, or boundary values. Check which elements the code actually visits.</p></details></section>`;
+          setBusy(false);
+          $("#practice-input").focus();
+          return;
+        }
+      }
+      const r = await api("/practice/answer", "POST", { question_id: q.id, answer: reveal ? null : answer, reveal, assisted });
       // Keep the outcome even if the run stopped during the save.
       catalog.status[r.template] = r.correct ? "learned" : "missed";
       if (t !== ticket) { if (!run && !loading) renderLibrary(); return; }

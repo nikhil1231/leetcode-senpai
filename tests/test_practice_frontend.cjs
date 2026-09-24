@@ -137,6 +137,7 @@ test('double submissions save once', async () => {
   let finish, posts = 0;
   const view = ui(async (url, method) => {
     if (url === '/practice') return catalog();
+    if (url === '/practice/check') return { correct: true };
     if (method === 'POST') { posts++; return new Promise(resolve => { finish = resolve; }); }
     return arrayQ();
   });

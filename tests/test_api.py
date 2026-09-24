@@ -2671,3 +2671,13 @@ def test_full_enrichment_keeps_the_plan_grade_and_skips_double_grading(client, m
     assert e["pattern_used"] == "hash map"
     assert e["plan_grade"] == {"approach_verdict": "viable"}
     assert e["prediction_verdict"] == "correct"
+
+
+def test_counterexample_check_does_not_reveal_or_finalize(client):
+    qid = "v1:break-last:1"
+    bad = client.post("/api/practice/check", json={"question_id": qid, "answer": "[1, 2]"})
+    assert bad.json() == {"correct": False, "expected": False, "actual": False}
+    good = client.post("/api/practice/check", json={"question_id": qid, "answer": "[1, 1]"})
+    assert good.json()["correct"] is True
+    assert client.store.light_practice == {}
+    assert client.post("/api/practice/check", json={"question_id": qid, "answer": "oops"}).status_code == 400

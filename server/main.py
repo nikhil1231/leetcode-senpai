@@ -75,6 +75,7 @@ class PauseSession(BaseModel):
 
 
 class PracticeAnswer(BaseModel):
+    assisted: bool = False
     question_id: str = Field(max_length=100)
     answer: str | None = Field(default=None, max_length=300)
     reveal: bool = False
@@ -619,6 +620,19 @@ def api_practice_next(mode: str = "", topic: str = "", recent: str = "",
     return practice.public_question(practice.question(template, secrets.randbits(32)))
 
 
+@app.post("/api/practice/check")
+def api_practice_check(body: PracticeAnswer, uid: str = Depends(auth.require_user)):
+    """Try a counterexample without revealing the solution or finalizing it."""
+    try:
+        q = practice.from_id(body.question_id)
+        if q["input_type"] != "array":
+            raise ValueError("Only counterexamples support checking")
+        import json
+        return practice.counterexample(q, json.loads(body.answer or ""))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/practice/answer")
 def api_practice_answer(body: PracticeAnswer, uid: str = Depends(auth.require_user)):
     try:
@@ -626,6 +640,7 @@ def api_practice_answer(body: PracticeAnswer, uid: str = Depends(auth.require_us
         result = practice.grade(q, body.answer, body.reveal)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    result["assisted"] = body.assisted
     result["answered_at"] = int(time.time())
     # A retry after a lost response returns the first saved result, rather than
     # turning a revealed answer into a correct attempt or counting it twice.
