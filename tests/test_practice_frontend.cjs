@@ -203,3 +203,41 @@ test('round recap distinguishes a guessed success from a secure takeaway', async
   assert.doesNotMatch(view.html(), /Takeaway · Stairs/);
   assert.match(view.html(), /Because/);
 });
+
+test('recall-first hides choices before exposure and submits a typed answer', async () => {
+  let payload;
+  const view = ui(async (url, method, body) => {
+    if (url === '/practice') return catalog();
+    if (method === 'POST') { payload = body; return graded(choiceQ()); }
+    return choiceQ();
+  });
+  await view.render();
+  view.node('#practice-recall-first').listeners.change({target: {checked: true}});
+  await view.click('mode:fill');
+  assert.doesNotMatch(view.html(), /data-option=/);
+  view.node('#practice-input').value = 'ways[i-1] + ways[i-2]';
+  await view.key('Enter', view.node('#practice-input'));
+  assert.equal(payload.recall, true);
+  assert.equal(payload.assisted, false);
+  assert.equal(await view.key('Enter', {id: 'practice-guess', tagName: 'BUTTON'}), false);
+});
+
+test('failed counterexamples permit retry without exposing the answer', async () => {
+  let checks = 0, saved;
+  const view = ui(async (url, method, body) => {
+    if (url === '/practice') return catalog();
+    if (url === '/practice/check') return {correct: ++checks > 1, expected: false, actual: false};
+    if (method === 'POST') { saved = body; return graded(arrayQ(), {assisted: true}); }
+    return arrayQ();
+  });
+  await view.render();
+  await view.click('mode:break');
+  view.node('#practice-input').value = '[1, 2]';
+  await view.click('#practice-check');
+  assert.equal(saved, undefined);
+  assert.match(view.node('#practice-feedback').innerHTML, /Try another input/);
+  assert.doesNotMatch(view.node('#practice-feedback').innerHTML, /breaking input:/);
+  view.node('#practice-input').value = '[1, 1]';
+  await view.click('#practice-check');
+  assert.equal(saved.assisted, true);
+});

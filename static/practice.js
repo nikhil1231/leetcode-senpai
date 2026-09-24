@@ -5,7 +5,7 @@
 (function () {
   const { $, escapeHtml: esc, api, loader } = window.H;
   const MIXED = { id: "", title: "Mixed", duration: "30 sec – 3 min", description: "A bit of everything, weighted toward what you miss." };
-  let catalog = null, topic = "", lastRun = null, roundSize = 0, difficulty = "";
+  let catalog = null, topic = "", lastRun = null, roundSize = 0, difficulty = "", recallFirst = false;
   let run = null;  // { mode, topic, recent, answered, correct, next }
   let current = null, result = null, loading = false, submitting = false, ticket = 0, assisted = false, recall = false;
   const root = () => $("#tab-practice");
@@ -38,7 +38,7 @@
       <div class="light-intro"><div><span class="light-eyebrow">A small rep is enough</span>
         <h2>Pick a kind of question</h2>
         <p>Questions keep coming until you stop. The ones you miss come back.</p></div>
-        <div class="light-filters"><label for="practice-length">Round</label><div class="select"><select id="practice-length"><option value="0">Until I stop</option><option value="5">5 questions</option><option value="10">10 questions</option></select></div><label for="practice-difficulty">Level</label><div class="select"><select id="practice-difficulty"><option value="">Adaptive</option><option value="foundation">Foundation</option><option value="standard">Standard</option><option value="stretch">Stretch</option></select></div><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
+        <div class="light-filters"><label><input id="practice-recall-first" type="checkbox"> Recall first</label><label for="practice-length">Round</label><div class="select"><select id="practice-length"><option value="0">Until I stop</option><option value="5">5 questions</option><option value="10">10 questions</option></select></div><label for="practice-difficulty">Level</label><div class="select"><select id="practice-difficulty"><option value="">Adaptive</option><option value="foundation">Foundation</option><option value="standard">Standard</option><option value="stretch">Stretch</option></select></div><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
       ${lastRun ? `<p class="light-last">Last run: ${lastRun.answered} answered, ${lastRun.correct} right.</p>${recap(lastRun.outcomes)}` : ""}
       <div class="light-modes">${[MIXED, ...catalog.modes].map(m => {
         const c = counts(m.id);
@@ -47,6 +47,8 @@
           <span class="light-mode-stats">${c.total} question${c.total === 1 ? "" : "s"}${c.missed ? ` · <b>${c.missed} to revisit</b>` : ""}${c.fresh ? ` · ${c.fresh} new` : ""}</span></button>`;
       }).join("")}</div>
       <p class="light-footnote"><kbd>1</kbd>–<kbd>4</kbd> answer a choice · <kbd>Enter</kbd> checks and moves on · <kbd>Esc</kbd> stops. These reps don’t change your solve counts, mastery, or review schedule.</p>`;
+    $("#practice-recall-first").checked = recallFirst;
+    $("#practice-recall-first").addEventListener("change", e => { recallFirst = e.target.checked; });
     $("#practice-difficulty").value = difficulty;
     $("#practice-difficulty").addEventListener("change", e => { difficulty = e.target.value; renderLibrary(); });
     $("#practice-length").value = String(roundSize);
@@ -97,7 +99,7 @@
     try {
       const q = await pending;
       if (t !== ticket) return;
-      current = q; assisted = false; recall = false;
+      current = q; assisted = false; recall = recallFirst && ["trace", "fill"].includes(q.mode);
       run.recent.push(q.template);
       renderQuestion();
     } catch (e) {
@@ -135,7 +137,7 @@
     if (q.input_type === "choice" && ["trace", "fill"].includes(q.mode)) {
       $("#practice-recall").addEventListener("click", () => {
         if (submitting || result) return;
-        if (recall) assisted = true;
+        assisted = true;
         recall = !recall; renderQuestion();
       });
     }
@@ -233,10 +235,12 @@
   }
 
   document.addEventListener("keydown", e => {
-    if (!run || root().classList.contains("hidden") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.repeat || !run || root().classList.contains("hidden") || e.metaKey || e.ctrlKey || e.altKey) return;
     if (document.querySelector(".overlay:not(.hidden)")) return;
     if (e.key === "Escape") { e.preventDefault(); stop(); return; }
     if (e.target && e.target.id === "practice-input") return;  // it handles Enter itself
+    if (e.key === "Enter" && ["BUTTON", "SUMMARY", "A", "SELECT", "INPUT"].includes(e.target?.tagName)
+        && e.target.id !== "practice-next") return;
     if (result && !loading && e.key === "Enter") { e.preventDefault(); advance(); return; }
     if (!result && !submitting && current && current.input_type === "choice" && !recall) {
       const i = "1234".indexOf(e.key);

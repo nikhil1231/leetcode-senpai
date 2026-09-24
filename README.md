@@ -290,7 +290,8 @@ account; only allow-listed emails get through.
 
 Choose an endless stream or a five-/ten-question round, with adaptive, foundation,
 standard, or stretch difficulty. Counterexample checks allow retries without
-revealing the solution; a successful retry is saved as assisted. “Answer from memory”
+revealing the solution; a successful retry is saved as assisted. Enable “Recall first”
+to hide choices before seeing a question. “Answer from memory”
 supports trace states (JSON/Python literals) and missing code (matching parsed
 structure, not arbitrary equivalent algorithms). No submitted code is executed.
 
