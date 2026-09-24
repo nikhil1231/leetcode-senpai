@@ -284,3 +284,20 @@ account; only allow-listed emails get through.
   `server/leetcode.py` are the only thing to adjust.
 - Want an extra bot-shield? Enable **Firebase App Check** and verify the token in
   `server/auth.py` — optional for a single user.
+
+
+### Light practice learning controls
+
+Choose an endless stream or a five-/ten-question round, with adaptive, foundation,
+standard, or stretch difficulty. Counterexample checks allow retries without
+revealing the solution; a successful retry is saved as assisted. “Answer from memory”
+supports trace states (JSON/Python literals) and missing code (matching parsed
+structure, not arbitrary equivalent algorithms). No submitted code is executed.
+
+Eight core choice templates have authored distractor feedback; other templates
+retain their existing explanations. Twelve curated concept families link different
+question formats, guide skill-level selection, and suggest full LeetCode problems
+after two unassisted reps. “I guessed” preserves correctness but brings the skill
+back sooner. Expandable value tables, completed snippets, and an end-of-round
+takeaway provide optional review. Topic panels can launch a light-practice warm-up.
+These features make no LLM calls and do not alter full-solve mastery or FSRS.

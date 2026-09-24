@@ -36,3 +36,33 @@ STRETCH = {
 def metadata(template, title):
     return {"skill": concept(template) or title,
             "difficulty": "foundation" if template in FOUNDATIONS else "stretch" if template in STRETCH else "standard"}
+
+PROBLEMS = {
+    "Search boundaries": ("binary-search", "search-in-rotated-sorted-array"),
+    "Unique windows": ("longest-substring-without-repeating-characters",),
+    "BFS discovery": ("rotting-oranges", "word-ladder"),
+    "Prefix frequencies": ("subarray-sum-equals-k",),
+    "Distinct pair positions": ("two-sum",),
+    "Monotonic stacks": ("daily-temperatures",),
+    "Top-k heaps": ("kth-largest-element-in-a-stream",),
+    "Backtracking snapshots": ("subsets",),
+    "Interval boundaries": ("merge-intervals",),
+    "Best subarray state": ("maximum-subarray",),
+    "Sorted pair search": ("two-sum-ii-input-array-is-sorted",),
+    "Coin combinations": ("coin-change-ii",),
+}
+
+
+def related_problems(template, results):
+    skill = concept(template)
+    slugs = PROBLEMS.get(skill, ())
+    if not slugs:
+        return []
+    secure = {r["question_id"] for r in results
+              if concept(r.get("template")) == skill and r.get("correct")
+              and not any(r.get(flag) for flag in ("revealed", "guessed", "assisted"))
+              and r.get("question_id")}
+    if len(secure) < 2:
+        return []
+    return [{"title": slug.replace("-", " ").title(),
+             "url": f"https://leetcode.com/problems/{slug}/"} for slug in slugs]

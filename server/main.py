@@ -656,7 +656,10 @@ def api_practice_answer(body: PracticeAnswer, uid: str = Depends(auth.require_us
     result["answered_at"] = int(time.time())
     # A retry after a lost response returns the first saved result, rather than
     # turning a revealed answer into a correct attempt or counting it twice.
-    return get_store(uid).save_light_practice(q["id"], result)
+    store = get_store(uid)
+    saved = store.save_light_practice(q["id"], result)
+    return {**saved, "related_problems": practice.practice_skills.related_problems(
+        q["template"], store.list_light_practice())}
 
 
 @app.get("/api/overview")

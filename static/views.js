@@ -551,7 +551,12 @@
     $("#topic-summary").innerHTML = `
       <span class="topic-map-count">${t.solved}<span class="small">/${t.total} solved</span></span>
       ${progressBar(t.coverage)}
-      ${masteryPill(t)}`;
+      ${masteryPill(t)}
+      <button id="topic-light-practice" class="button is-small" type="button">Warm up with light practice</button>`;
+    $("#topic-light-practice").addEventListener("click", () => {
+      closeTopic();
+      window.Views.startLightPractice(t.category);
+    });
     body.innerHTML = loader("Loading problems…");
     modal.classList.remove("hidden");
     $("#btn-close-topic").focus();

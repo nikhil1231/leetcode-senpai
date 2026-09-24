@@ -862,3 +862,13 @@ def test_walkthroughs_are_available_without_executing_snippets():
     r = practice.grade(q, "0")
     assert ["lo, hi", "[0, 6]"] in r["walkthrough"]
     assert r["walkthrough"][-1] == ["Final requested state", r["solution"]]
+
+
+def test_full_problem_links_require_two_unassisted_reps_of_the_concept():
+    from server.practice_skills import related_problems
+    a = {"question_id": "a", "template": "fill-search", "correct": True}
+    b = {"question_id": "b", "template": "trace-search", "correct": True}
+    assert not related_problems("fill-search", [a])
+    assert not related_problems("fill-search", [a, a])
+    assert not related_problems("fill-search", [a, {**b, "guessed": True}])
+    assert related_problems("fill-search", [a, b])[0]["url"].endswith("/binary-search/")
