@@ -94,3 +94,10 @@ def test_curated_concept_links_reference_real_exercises():
     from server import practice, practice_skills
     ids = {x["id"] for x in practice.catalog()["exercises"]}
     assert set(practice_skills.CONCEPTS) <= ids
+
+
+def test_guesses_and_assisted_successes_return_soon():
+    for flag in ("guessed", "assisted"):
+        results = [{**r("a", 1), flag: True}, r("b", 5)]
+        assert status(results)["a"] == "uncertain"
+        assert pick(candidates("a", "b"), results, [], NOW, random.Random(0)) == "a"

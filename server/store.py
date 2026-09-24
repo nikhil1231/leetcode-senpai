@@ -160,6 +160,14 @@ class FirestoreStore:
             return ref.get().to_dict()
         return result
 
+    def mark_light_practice_guess(self, question_id):
+        ref = self._user_ref().collection("light_practice").document(question_id)
+        result = ref.get().to_dict()
+        if not result or not result.get("correct") or result.get("revealed"):
+            raise ValueError("Only a saved correct answer can be marked as guessed")
+        ref.update({"guessed": True})
+        return {**result, "guessed": True}
+
     def list_light_practice(self):
         from google.cloud.firestore_v1 import Query
         query = self._user_ref().collection("light_practice").order_by(

@@ -16,14 +16,18 @@ def _histories(results):
     """template -> [(answered_at, ok)], oldest first."""
     out = {}
     for r in sorted(results, key=lambda r: r.get("answered_at") or 0):
-        ok = bool(r.get("correct")) and not r.get("revealed")
+        ok = bool(r.get("correct")) and not r.get("revealed") and not r.get("guessed") and not r.get("assisted")
         out.setdefault(r.get("template"), []).append((r.get("answered_at") or 0, ok))
     return out
 
 
 def status(results):
     """template -> "missed" | "learned", from each template's latest answer."""
-    return {t: "learned" if h[-1][1] else "missed" for t, h in _histories(results).items()}
+    latest = {}
+    for r in sorted(results, key=lambda r: r.get("answered_at") or 0):
+        latest[r.get("template")] = ("uncertain" if r.get("correct") and (r.get("guessed") or r.get("assisted"))
+                                     else "learned" if r.get("correct") and not r.get("revealed") else "missed")
+    return latest
 
 
 def pick(candidates, results, recent, now, rng):

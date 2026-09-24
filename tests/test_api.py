@@ -2681,3 +2681,14 @@ def test_counterexample_check_does_not_reveal_or_finalize(client):
     assert good.json()["correct"] is True
     assert client.store.light_practice == {}
     assert client.post("/api/practice/check", json={"question_id": qid, "answer": "oops"}).status_code == 400
+
+
+def test_guess_is_idempotent_and_does_not_change_correctness(client):
+    qid = "v1:fill-search:1"
+    body = {"question_id": qid}
+    assert client.post("/api/practice/guess", json=body).status_code == 400
+    client.post("/api/practice/answer", json={**body, "answer": "0"})
+    first = client.post("/api/practice/guess", json=body).json()
+    assert first["correct"] and first["guessed"]
+    assert client.post("/api/practice/guess", json=body).json() == first
+    assert client.get("/api/practice").json()["status"]["fill-search"] == "uncertain"

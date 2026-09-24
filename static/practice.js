@@ -28,7 +28,7 @@
 
   function counts(mode) {
     const xs = catalog.exercises.filter(x => (!mode || x.mode === mode) && (!topic || x.topic === topic));
-    return { total: xs.length, missed: xs.filter(x => catalog.status[x.id] === "missed").length,
+    return { total: xs.length, missed: xs.filter(x => ["missed", "uncertain"].includes(catalog.status[x.id])).length,
              fresh: xs.filter(x => !catalog.status[x.id]).length };
   }
 
@@ -73,6 +73,7 @@
   }
 
   async function advance() {
+    if (submitting) return;
     if (run.limit && run.answered >= run.limit) { stop(); return; }
     const t = ++ticket, pending = run.next || fetchNext();
     run.next = null; current = null; result = null; loading = true;
@@ -160,7 +161,7 @@
       }
       const r = await api("/practice/answer", "POST", { question_id: q.id, answer: reveal ? null : answer, reveal, assisted, recall });
       // Keep the outcome even if the run stopped during the save.
-      catalog.status[r.template] = r.correct ? "learned" : "missed";
+      catalog.status[r.template] = r.correct ? (r.assisted || r.guessed ? "uncertain" : "learned") : "missed";
       if (t !== ticket) { if (!run && !loading) renderLibrary(); return; }
       result = r;
       run.answered++;
@@ -189,7 +190,23 @@
     $("#practice-actions").innerHTML = "";
     $("#practice-feedback").innerHTML = `<section class="light-feedback ${r.correct ? "is-correct" : ""}"><h3>${heading}</h3>
       ${r.mistake ? `<p>${esc(r.mistake)}</p>` : ""}${outputs}${solution}<p>${esc(r.explanation)}</p></section>
-      <div class="light-actions"><button id="practice-next" class="button is-primary" type="button">${run.limit && run.answered >= run.limit ? "Finish round" : "Next"} <kbd>Enter</kbd></button></div>`;
+      <div class="light-actions">${r.correct && !r.guessed ? '<button id="practice-guess" class="button is-ghost" type="button">I guessed — revisit sooner</button>' : ""}${r.guessed ? "<span>Marked as a guess · will revisit sooner</span>" : r.assisted ? "<span>Completed with help · will revisit sooner</span>" : ""}<button id="practice-next" class="button is-primary" type="button">${run.limit && run.answered >= run.limit ? "Finish round" : "Next"} <kbd>Enter</kbd></button></div>`;
+    if (r.correct && !r.guessed) $("#practice-guess").addEventListener("click", async () => {
+      if (submitting) return;
+      const t = ticket;
+      submitting = true;
+      $("#practice-guess").disabled = true;
+      try {
+        const updated = await api("/practice/guess", "POST", { question_id: q.id });
+        catalog.status[q.template] = "uncertain";
+        if (t !== ticket) { if (!run) renderLibrary(); return; }
+        result = updated;
+        run.next = run.limit && run.answered >= run.limit ? null : fetchNext();
+        renderFeedback(answer);
+      } catch (e) {
+        if (t === ticket) { $("#practice-error").textContent = e.message; $("#practice-guess").disabled = false; }
+      } finally { if (t === ticket) submitting = false; }
+    });
     $("#practice-next").addEventListener("click", advance);
     $("#practice-next").focus();
   }

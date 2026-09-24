@@ -29,6 +29,13 @@ class FakeStore:
     def save_light_practice(self, question_id, result):
         return dict(self.light_practice.setdefault(question_id, dict(result)))
 
+    def mark_light_practice_guess(self, question_id):
+        result = self.light_practice.get(question_id)
+        if not result or not result.get("correct") or result.get("revealed"):
+            raise ValueError("Only a saved correct answer can be marked as guessed")
+        result["guessed"] = True
+        return dict(result)
+
     def list_light_practice(self):
         return sorted((dict(r) for r in self.light_practice.values()),
                       key=lambda r: r["answered_at"], reverse=True)[:200]

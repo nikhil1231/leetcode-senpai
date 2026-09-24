@@ -621,6 +621,14 @@ def api_practice_next(mode: str = "", topic: str = "", recent: str = "",
     return practice.public_question(practice.question(template, secrets.randbits(32)))
 
 
+@app.post("/api/practice/guess")
+def api_practice_guess(body: PracticeAnswer, uid: str = Depends(auth.require_user)):
+    try:
+        return get_store(uid).mark_light_practice_guess(body.question_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/practice/check")
 def api_practice_check(body: PracticeAnswer, uid: str = Depends(auth.require_user)):
     """Try a counterexample without revealing the solution or finalizing it."""
