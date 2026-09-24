@@ -5,6 +5,8 @@ rest, weighted toward topics you miss more often. Exercises answered correctly
 return on a widening interval (1, 3, 9… days). Revealing an answer counts as a
 miss. No I/O, no LLM.
 """
+from .practice_skills import concept
+
 DAY = 86400
 GAP = 4          # a missed exercise waits at least this many others in a run
 MISS_SHARE = 0.6  # chance to revisit a miss while fresher material is available
@@ -53,7 +55,12 @@ def pick(candidates, results, recent, now, rng):
 
     if missed and (not fresh or rng.random() < MISS_SHARE):
         # Oldest miss first: the one that has waited longest.
-        return min(missed, key=lambda t: history[t][-1][0])
+        source = min(missed, key=lambda t: history[t][-1][0])
+        # A related format checks transfer once before repeating the source.
+        related = [t for t in pool if t != source and concept(source)
+                   and concept(t) == concept(source) and t.split("-")[0] != source.split("-")[0]
+                   and (not history.get(t) or history[t][-1][0] < history[source][-1][0])]
+        return rng.choice(related) if related else source
     if fresh:
         # A topic's miss rate raises the odds of practicing it next.
         tally = {}

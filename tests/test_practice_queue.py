@@ -78,3 +78,19 @@ def test_new_questions_lean_toward_topics_with_more_misses():
     picks = [pick(cands, results, [], NOW, random.Random(s)) for s in range(2000)]
     weak = sum(p.startswith("weak") for p in picks)
     assert weak / len(picks) > 0.6
+
+
+def test_transfer_uses_another_format_then_returns_to_the_miss():
+    c = candidates("fill-search", "trace-search", "break-search")
+    results = [r("fill-search", 100, correct=False)]
+    assert pick(c, results, [], NOW, random.Random(1)) in {"trace-search", "break-search"}
+    # All related formats checked since the mistake: repeat the source.
+    results += [r("trace-search", 20), r("break-search", 10)]
+    assert pick(c, results, [], NOW, random.Random(1)) == "fill-search"
+    assert pick({"fill-search": "T"}, results, [], NOW, random.Random(1)) == "fill-search"
+
+
+def test_curated_concept_links_reference_real_exercises():
+    from server import practice, practice_skills
+    ids = {x["id"] for x in practice.catalog()["exercises"]}
+    assert set(practice_skills.CONCEPTS) <= ids
