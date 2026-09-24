@@ -11,6 +11,7 @@ import contextlib
 import datetime as dt
 import hashlib
 import os
+import random
 import secrets
 import threading
 import time
@@ -24,7 +25,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (auth, coach, config, enrich, gamify, importer, insights,
-               leetcode, llm, mock, neetcode150, packs, plans, poller, practice, scheduler)
+               leetcode, llm, mock, neetcode150, packs, plans, poller, practice,
+               practice_queue, scheduler)
 from . import store as store_mod
 from .store import get_store
 
@@ -587,7 +589,7 @@ def api_rev(uid: str = Depends(auth.require_user)):
 
 @app.get("/api/practice")
 def api_practice(uid: str = Depends(auth.require_user)):
-    return {**practice.catalog(), "results": get_store(uid).list_light_practice()}
+    return {**practice.catalog(), "status": practice_queue.status(get_store(uid).list_light_practice())}
 
 
 @app.get("/api/practice/question/{template}")
@@ -596,6 +598,25 @@ def api_practice_question(template: str, uid: str = Depends(auth.require_user)):
         return practice.public_question(practice.question(template, secrets.randbits(32)))
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@app.get("/api/practice/next")
+def api_practice_next(mode: str = "", topic: str = "", recent: str = "",
+                      uid: str = Depends(auth.require_user)):
+    """The next exercise in a practice run, chosen from saved outcomes.
+
+    recent lists the templates already served in this run (comma-separated),
+    so a miss returns after a gap instead of immediately.
+    """
+    candidates = {e["id"]: e["topic"] for e in practice.catalog()["exercises"]
+                  if (not mode or e["mode"] == mode) and (not topic or e["topic"] == topic)}
+    try:
+        template = practice_queue.pick(candidates, get_store(uid).list_light_practice(),
+                                       recent.split(",")[-50:] if recent else [], int(time.time()),
+                                       random.Random(secrets.randbits(64)))
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return practice.public_question(practice.question(template, secrets.randbits(32)))
 
 
 @app.post("/api/practice/answer")

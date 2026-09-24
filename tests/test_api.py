@@ -86,7 +86,7 @@ def test_light_practice_is_separate_and_submission_is_idempotent(client):
     assert result.status_code == 200
     assert result.json()["correct"] is True
     assert client.post("/api/practice/answer", json=payload).json() == result.json()
-    assert len(client.get("/api/practice").json()["results"]) == 1
+    assert client.get("/api/practice").json()["status"] == {"break-search": "learned"}
     assert _practice_state_snapshot(client.store) == before
     assert not client.store.sessions
 
@@ -100,6 +100,20 @@ def test_light_practice_reveal_cannot_be_regraded_as_correct(client):
     assert replay == revealed
     assert client.get("/api/practice/question/missing").status_code == 404
     assert client.post("/api/practice/answer", json={"question_id": "bogus"}).status_code == 400
+
+
+def test_light_practice_next_filters_and_brings_a_miss_back(client):
+    q = client.get("/api/practice/next", params={"mode": "fill", "topic": "Tries"}).json()
+    assert q["mode"] == "fill" and q["topic"] == "Tries" and "answer" not in q
+    assert client.get("/api/practice/next", params={"mode": "fill", "topic": "Nope"}).status_code == 404
+    # A revealed answer is a miss: once others have been served, it returns.
+    client.post("/api/practice/answer", json={"question_id": q["id"], "reveal": True})
+    assert client.get("/api/practice").json()["status"] == {q["template"]: "missed"}
+    others = [e["id"] for e in client.get("/api/practice").json()["exercises"]
+              if e["mode"] == "fill" and e["topic"] == "Tries" and e["id"] != q["template"]]
+    again = client.get("/api/practice/next", params={"mode": "fill", "topic": "Tries",
+                                                      "recent": ",".join([q["template"], *others])}).json()
+    assert again["template"] == q["template"]
 
 
 def test_me_includes_code_updated_at(client):

@@ -178,9 +178,15 @@ node --test tests/test_practice_frontend.cjs # light-practice interactions
 
 ## Light practice
 
-The **Light practice** tab is a self-directed library of short exercises: breaking
-inputs, state prediction, missing code, and approach choices. Choose an activity
-or topic, then an exercise; there is no session setup or automatic next exercise.
+The **Light practice** tab is a stream of short exercises: breaking inputs, state
+prediction, missing code, and approach choices. Clicking a kind of question (or
+Mixed, optionally narrowed to a topic) starts a run with no fixed length. Each
+answer is graded and explained as soon as it is submitted. Keys: `1`–`4` answer a
+choice, `Enter` checks a typed answer and moves to the next question,
+`Shift+Enter` adds a line, `Esc` stops. `server/practice_queue.py` picks each next
+question: misses (including revealed answers) come back after a few others, new
+questions lean toward topics you miss more, and correct answers return after 1, 3,
+9… days.
 The library contains 202 authored templates: 24 breaking-input exercises, 47 state
 traces, 62 missing-code questions, and 69 approach choices, across all 18 topics.
 Fifty-four templates generate visibly different numerical variations; the remaining
@@ -188,8 +194,8 @@ Fifty-four templates generate visibly different numerical variations; the remain
 
 Questions and grading require no LLM calls. Counterexamples are evaluated by fixed
 implementations, never by executing submitted code. Answers and reveals are saved
-separately in `users/{uid}/light_practice`, and recent outcomes appear in the
-exercise library. They do not advance FSRS or affect solve counts or mastery.
+separately in `users/{uid}/light_practice`; each category shows how many questions
+are waiting to be revisited. They do not advance FSRS or affect solve counts or mastery.
 Core templates live in `server/practice.py`, additional authored choices in
 `server/practice_bank.py`, and additional computed exercises in
 `server/practice_generated.py`. All content was authored directly during development;

@@ -1,13 +1,19 @@
-// Self-directed, small exercises. No timers, sessions, or review-card advances.
+// Light practice: pick a kind of question and answer a stream of small ones.
+// Each answer is shown as soon as it is submitted; Enter moves on, Esc stops.
+// The server picks every next question from past outcomes (practice_queue.py).
+// No timers, sessions, or review-card advances.
 (function () {
   const { $, escapeHtml: esc, api, loader } = window.H;
-  let catalog = null, mode = null, topic = "", current = null, result = null;
-  let loading = false, submitting = false, request = 0;
+  const MIXED = { id: "", title: "Mixed", duration: "30 sec – 3 min", description: "A bit of everything, weighted toward what you miss." };
+  let catalog = null, topic = "", lastRun = null;
+  let run = null;  // { mode, topic, recent, answered, correct, next }
+  let current = null, result = null, loading = false, submitting = false, ticket = 0;
   const root = () => $("#tab-practice");
+  const modeOf = id => [MIXED, ...catalog.modes].find(m => m.id === id);
 
   async function renderPractice() {
-    // Background solve updates must not wipe an answer being composed here.
-    if (current || loading) return;
+    // Background refreshes must not wipe a question or an answer being typed.
+    if (run || loading) return;
     if (catalog) { renderLibrary(); return; }
     loading = true;
     root().innerHTML = loader("Loading light practice…");
@@ -20,129 +26,163 @@
     } finally { loading = false; }
   }
 
-  function renderLibrary() {
-    const topics = [...new Set(catalog.exercises.filter(x => !mode || x.mode === mode).map(x => x.topic))].sort();
-    if (!topics.includes(topic)) topic = "";
-    const exercises = catalog.exercises.filter(x => (!mode || x.mode === mode) && (!topic || x.topic === topic));
-    const latest = {};
-    for (const r of catalog.results) if (!latest[r.template]) latest[r.template] = r;
-    root().innerHTML = `
-      <div class="light-intro"><div><span class="light-eyebrow">A small rep is enough</span>
-        <h2>What feels manageable?</h2>
-        <p>Pick an exercise. Take your time. Stop whenever you like.</p></div>
-        <span class="light-note">Instant feedback · No coding setup</span></div>
-      <div class="light-modes" role="group" aria-label="Activity type">
-        ${catalog.modes.map(m => `<button class="light-mode ${mode === m.id ? "selected" : ""}" type="button" data-mode="${esc(m.id)}" aria-pressed="${mode === m.id}">
-          <span class="light-duration">${esc(m.duration)}</span><strong>${esc(m.title)}</strong><span>${esc(m.description)}</span></button>`).join("")}
-      </div>
-      <div class="light-library-head"><h3>${mode ? esc(catalog.modes.find(m => m.id === mode).title) : "All exercises"} <span class="light-count">${exercises.length}</span></h3>
-        <div class="light-filters">${mode ? '<button id="practice-all" class="button is-ghost is-small">All activities</button>' : ""}
-        <label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
-      <div class="light-exercises">${exercises.map(x => {
-        const r = latest[x.id];
-        const status = r ? (r.revealed ? "Answer viewed" : r.correct ? "Last answer correct" : "Worth another look") : "";
-        return `<button class="light-exercise" type="button" data-exercise="${esc(x.id)}">
-          <span><span class="light-exercise-topic">${esc(x.topic)}${!mode ? ` · ${esc(catalog.modes.find(m => m.id === x.mode).title)}` : ""}</span>
-            <strong>${esc(x.title)}</strong>${status ? `<span class="light-history">${status}</span>` : ""}</span><span aria-hidden="true">↗</span></button>`;
-      }).join("")}</div>
-      <p class="light-footnote">These small reps have their own history. They don’t change your solve counts, mastery, or review schedule.</p>`;
-    root().querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => {
-      mode = mode === b.dataset.mode ? null : b.dataset.mode; topic = ""; renderLibrary();
-    }));
-    root().querySelectorAll("[data-exercise]").forEach(b => b.addEventListener("click", () => openQuestion(b.dataset.exercise)));
-    $("#practice-topic").addEventListener("change", e => { topic = e.target.value; renderLibrary(); });
-    $("#practice-all")?.addEventListener("click", () => { mode = null; topic = ""; renderLibrary(); });
+  function counts(mode) {
+    const xs = catalog.exercises.filter(x => (!mode || x.mode === mode) && (!topic || x.topic === topic));
+    return { total: xs.length, missed: xs.filter(x => catalog.status[x.id] === "missed").length,
+             fresh: xs.filter(x => !catalog.status[x.id]).length };
   }
 
-  function back() {
-    request++;
-    current = null; result = null; loading = false; submitting = false;
+  function renderLibrary() {
+    const topics = [...new Set(catalog.exercises.map(x => x.topic))].sort();
+    root().innerHTML = `
+      <div class="light-intro"><div><span class="light-eyebrow">A small rep is enough</span>
+        <h2>Pick a kind of question</h2>
+        <p>Questions keep coming until you stop. The ones you miss come back.</p></div>
+        <div class="light-filters"><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
+      ${lastRun ? `<p class="light-last">Last run: ${lastRun.answered} answered, ${lastRun.correct} right.</p>` : ""}
+      <div class="light-modes">${[MIXED, ...catalog.modes].map(m => {
+        const c = counts(m.id);
+        return `<button class="light-mode" type="button" data-mode="${esc(m.id)}"${c.total ? "" : " disabled"}>
+          <span class="light-duration">${esc(m.duration)}</span><strong>${esc(m.title)}</strong><span>${esc(m.description)}</span>
+          <span class="light-mode-stats">${c.total} question${c.total === 1 ? "" : "s"}${c.missed ? ` · <b>${c.missed} to revisit</b>` : ""}${c.fresh ? ` · ${c.fresh} new` : ""}</span></button>`;
+      }).join("")}</div>
+      <p class="light-footnote"><kbd>1</kbd>–<kbd>4</kbd> answer a choice · <kbd>Enter</kbd> checks and moves on · <kbd>Esc</kbd> stops. These reps don’t change your solve counts, mastery, or review schedule.</p>`;
+    root().querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => start(b.dataset.mode)));
+    $("#practice-topic").addEventListener("change", e => { topic = e.target.value; renderLibrary(); });
+  }
+
+  function fetchNext() {
+    const params = new URLSearchParams({ mode: run.mode, topic: run.topic, recent: run.recent.join(",") });
+    const pending = api(`/practice/next?${params}`);
+    pending.catch(() => {});  // awaited later, or dropped if the run stops first
+    return pending;
+  }
+
+  function start(mode) {
+    run = { mode, topic, recent: [], answered: 0, correct: 0, next: null };
+    advance();
+  }
+
+  function stop() {
+    ticket++;
+    if (run && run.answered) lastRun = { answered: run.answered, correct: run.correct };
+    run = null; current = null; result = null; loading = false; submitting = false;
     renderLibrary();
   }
 
-  async function openQuestion(template) {
-    const ticket = ++request;
-    loading = true; current = null; result = null;
-    root().innerHTML = `<button id="practice-back" class="button is-ghost">← Exercises</button>${loader("Loading exercise…")}`;
-    $("#practice-back").addEventListener("click", back);
+  async function advance() {
+    const t = ++ticket, pending = run.next || fetchNext();
+    run.next = null; current = null; result = null; loading = true;
+    root().innerHTML = `${runBar()}${loader("Loading the next question…")}`;
+    wireBar();
     try {
-      const q = await api(`/practice/question/${encodeURIComponent(template)}`);
-      if (ticket !== request) return;
+      const q = await pending;
+      if (t !== ticket) return;
       current = q;
+      run.recent.push(q.template);
       renderQuestion();
     } catch (e) {
-      if (ticket !== request) return;
-      root().innerHTML = `<button id="practice-back" class="button is-ghost">← Exercises</button><div class="empty"><p>${esc(e.message)}</p><button id="practice-retry" class="button">Try again</button></div>`;
-      $("#practice-back").addEventListener("click", back);
-      $("#practice-retry").addEventListener("click", () => openQuestion(template));
-    } finally { if (ticket === request) loading = false; }
+      if (t !== ticket) return;
+      root().innerHTML = `${runBar()}<div class="empty"><p>${esc(e.message)}</p><button id="practice-retry" class="button">Try again</button></div>`;
+      wireBar();
+      $("#practice-retry").addEventListener("click", advance);
+    } finally { if (t === ticket) loading = false; }
   }
+
+  function runBar() {
+    const m = modeOf(run.mode);
+    return `<div class="light-run-bar"><button id="practice-stop" class="button is-ghost is-small" type="button">← Stop <kbd>Esc</kbd></button>
+      <span class="light-run-title">${esc(m.title)}${run.topic ? ` · ${esc(run.topic)}` : ""}</span>
+      <span id="practice-tally" class="light-tally">${tally()}</span></div>`;
+  }
+  const tally = () => run.answered ? `${run.answered} answered · ${run.correct} right` : "";
+  function wireBar() { $("#practice-stop").addEventListener("click", stop); }
 
   function renderQuestion() {
-    const q = current;
-    const m = catalog.modes.find(m => m.id === q.mode);
-    root().innerHTML = `<div class="light-workspace">
-      <button id="practice-back" class="button is-ghost">← Exercises</button>
+    const q = current, choice = q.input_type === "choice";
+    root().innerHTML = `<div class="light-workspace">${runBar()}
       <article class="light-question" aria-labelledby="practice-question-title">
-        <div class="light-question-meta"><span>${esc(m.title)} · ${esc(q.topic)}</span><span>${esc(m.duration)}</span></div>
+        <div class="light-question-meta"><span>${esc(catalog.modes.find(m => m.id === q.mode).title)} · ${esc(q.topic)}</span></div>
         <h2 id="practice-question-title" tabindex="-1">${esc(q.title)}</h2><p class="light-prompt">${esc(q.prompt)}</p>
-        ${q.code ? `<div class="light-code-label">Python</div><pre class="light-code"><code>${esc(q.code)}</code></pre>` : ""}
-        <form id="practice-form">
-          ${q.input_type === "choice" ? `<fieldset class="light-options"><legend>Choose one answer</legend>${q.options.map((o, i) => `<label class="light-option" data-option="${esc(o.id)}"><input type="radio" name="practice-answer" value="${esc(o.id)}" required><span class="light-letter" aria-hidden="true">${String.fromCharCode(65 + i)}</span><span>${esc(o.text)}</span></label>`).join("")}</fieldset>` :
-            '<label class="label-sm" for="practice-input">Your counterexample</label><input id="practice-input" class="input mono" name="practice-answer" placeholder="[1, 2, 1]" autocomplete="off" spellcheck="false" maxlength="300" required><p class="light-input-help">Use square brackets and commas. We’ll compare the function’s output with the expected result.</p>'}
-          <p id="practice-error" class="light-error" role="alert"></p>
-          <div id="practice-actions" class="light-actions"><button class="button is-primary" id="practice-check" type="submit">Check answer</button><button class="button is-ghost" id="practice-reveal" type="button">Show answer</button></div>
-        </form>
+        ${q.code ? `<pre class="light-code"><code>${esc(q.code)}</code></pre>` : ""}
+        ${choice ? `<div class="light-options" role="group" aria-label="Answer choices">${q.options.map((o, i) => `<button class="light-option" type="button" data-option="${esc(o.id)}"><kbd class="light-key">${i + 1}</kbd><span>${esc(o.text)}</span></button>`).join("")}</div>` :
+          '<label class="label-sm" for="practice-input">Your counterexample</label><textarea id="practice-input" class="input mono light-input" rows="2" placeholder="[1, 2, 1]" autocomplete="off" spellcheck="false" maxlength="300"></textarea><p class="light-input-help">A JSON array. <kbd>Enter</kbd> checks · <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line.</p>'}
+        <p id="practice-error" class="light-error" role="alert"></p>
+        <div id="practice-actions" class="light-actions">${choice ? "" : '<button class="button is-primary" id="practice-check" type="button">Check <kbd>Enter</kbd></button>'}<button class="button is-ghost" id="practice-reveal" type="button">Show answer</button></div>
         <div id="practice-feedback" aria-live="polite"></div>
       </article></div>`;
-    $("#practice-back").addEventListener("click", back);
-    $("#practice-form").addEventListener("submit", e => { e.preventDefault(); submit(false); });
+    wireBar();
+    root().querySelectorAll("[data-option]").forEach(b => b.addEventListener("click", () => submit(false, b.dataset.option)));
     $("#practice-reveal").addEventListener("click", () => submit(true));
-    $("#practice-question-title").focus();
+    if (choice) { $("#practice-question-title").focus(); return; }
+    const input = $("#practice-input");
+    $("#practice-check").addEventListener("click", () => submit(false, input.value));
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(false, input.value); }
+    });
+    input.focus();
   }
 
-  async function submit(reveal) {
+  function setBusy(busy) {
+    root().querySelectorAll("#practice-input, #practice-actions button, [data-option]").forEach(el => { el.disabled = busy; });
+  }
+
+  async function submit(reveal, answer = "") {
     if (submitting || result || !current) return;
-    const input = current.input_type === "choice" ? root().querySelector('input[name="practice-answer"]:checked') : $("#practice-input");
-    const answer = input?.value.trim() || "";
-    if (!reveal && !answer) { $("#practice-error").textContent = "Enter or choose an answer first."; return; }
-    const q = current, ticket = request;
+    answer = answer.trim();
+    if (!reveal && !answer) { $("#practice-error").textContent = "Enter an answer first."; return; }
+    const q = current, t = ticket;
     submitting = true;
     $("#practice-error").textContent = "";
-    root().querySelectorAll("#practice-form input, #practice-actions button").forEach(el => { el.disabled = true; });
-    $("#practice-check").textContent = "Checking…";
+    setBusy(true);
     try {
       const r = await api("/practice/answer", "POST", { question_id: q.id, answer: reveal ? null : answer, reveal });
-      // Keep history even if the user left the exercise during the save.
-      catalog.results = [r, ...catalog.results.filter(x => x.question_id !== r.question_id)].slice(0, 200);
-      if (ticket !== request) { if (!current && !loading) renderLibrary(); return; }
+      // Keep the outcome even if the run stopped during the save.
+      catalog.status[r.template] = r.correct ? "learned" : "missed";
+      if (t !== ticket) { if (!run && !loading) renderLibrary(); return; }
       result = r;
-      renderFeedback();
+      run.answered++;
+      if (r.correct) run.correct++;
+      run.next = fetchNext();  // ready by the time the explanation is read
+      renderFeedback(reveal ? null : answer);
     } catch (e) {
-      if (ticket !== request) return;
+      if (t !== ticket) return;
       $("#practice-error").textContent = e.message;
-      root().querySelectorAll("#practice-form input, #practice-actions button").forEach(el => { el.disabled = false; });
-      $("#practice-check").textContent = "Check answer";
-    } finally { if (ticket === request) submitting = false; }
+      setBusy(false);
+    } finally { if (t === ticket) submitting = false; }
   }
 
-  function renderFeedback() {
-    const r = result;
-    const heading = r.revealed ? "Here’s the answer" : r.correct ? "That’s right" : current.input_type === "array" ? "This input doesn’t expose the bug" : "Not quite";
+  function renderFeedback(answer) {
+    const r = result, q = current, array = q.input_type === "array";
+    const heading = r.revealed ? "Here’s the answer" : r.correct ? "That’s right" : array ? "This input doesn’t expose the bug" : "Not quite";
     root().querySelectorAll("[data-option]").forEach(el => {
       el.classList.toggle("is-correct", el.dataset.option === r.correct_option);
+      el.classList.toggle("is-wrong", !r.correct && el.dataset.option === answer);
     });
-    const outputs = current.input_type === "array" ? `<div class="light-output"><span>Expected <code>${esc(JSON.stringify(r.expected))}</code></span><span>Function returned <code>${esc(JSON.stringify(r.actual))}</code></span></div>` : "";
-    const example = current.input_type === "array" && !r.correct && !r.revealed
-      ? `<p>A breaking input: <code>${esc(r.solution)}</code>. Expected <code>${esc(JSON.stringify(r.example_expected))}</code>, returned <code>${esc(JSON.stringify(r.example_actual))}</code>.</p>` : "";
+    $("#practice-tally").textContent = tally();
+    const outputs = array && !r.revealed ? `<div class="light-output"><span>Expected <code>${esc(JSON.stringify(r.expected))}</code></span><span>Function returned <code>${esc(JSON.stringify(r.actual))}</code></span></div>` : "";
+    const solution = array
+      ? (r.correct ? "" : `<p>A breaking input: <code>${esc(r.solution)}</code>${r.revealed ? "" : `. Expected <code>${esc(JSON.stringify(r.example_expected))}</code>, returned <code>${esc(JSON.stringify(r.example_actual))}</code>`}.</p>`)
+      : (r.correct ? "" : `<p class="light-solution">${esc(r.solution)}</p>`);
     $("#practice-actions").innerHTML = "";
-    $("#practice-feedback").innerHTML = `<section class="light-feedback ${r.correct ? "is-correct" : ""}"><h3 tabindex="-1" id="practice-feedback-title">${heading}</h3>
-      ${r.revealed || current.input_type === "choice" ? `<p class="light-solution">${esc(r.solution)}</p>` : ""}${outputs}${example}<p>${esc(r.explanation)}</p></section>
-      <div class="light-actions"><button id="practice-return" class="button is-primary">Choose an exercise</button><button id="practice-another" class="button is-ghost">${catalog.exercises.find(x => x.id === current.template).variants ? "Another variation" : "Try again"}</button></div>`;
-    $("#practice-return").addEventListener("click", back);
-    $("#practice-another").addEventListener("click", () => openQuestion(current.template));
-    $("#practice-feedback-title").focus();
+    $("#practice-feedback").innerHTML = `<section class="light-feedback ${r.correct ? "is-correct" : ""}"><h3>${heading}</h3>
+      ${outputs}${solution}<p>${esc(r.explanation)}</p></section>
+      <div class="light-actions"><button id="practice-next" class="button is-primary" type="button">Next <kbd>Enter</kbd></button></div>`;
+    $("#practice-next").addEventListener("click", advance);
+    $("#practice-next").focus();
   }
+
+  document.addEventListener("keydown", e => {
+    if (!run || root().classList.contains("hidden") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (document.querySelector(".overlay:not(.hidden)")) return;
+    if (e.key === "Escape") { e.preventDefault(); stop(); return; }
+    if (e.target && e.target.id === "practice-input") return;  // it handles Enter itself
+    if (result && !loading && e.key === "Enter") { e.preventDefault(); advance(); return; }
+    if (!result && !submitting && current && current.input_type === "choice") {
+      const i = "1234".indexOf(e.key);
+      if (e.key.length === 1 && i >= 0 && i < current.options.length) { e.preventDefault(); submit(false, current.options[i].id); }
+    }
+  });
 
   window.Views.renderPractice = renderPractice;
 })();

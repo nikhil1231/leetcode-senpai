@@ -534,8 +534,35 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
   flex: 0 0 7px;
   box-shadow: 0 0 0 3px rgba(251, 113, 133, .18);
 }
-/* Focus mode hides it outright: a run is already going, and starting another
-   would silently cancel it. */
+/* Start any problem: a plus to the right of the stats. Text made it read as a
+   primary action competing with the queue; the glyph keeps it available without
+   claiming the eye. Focus mode hides it outright — a run is already going, and
+   starting another would silently cancel it. */
+.quick-start {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent-strong));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 8px 18px -10px rgba(107, 116, 245, 1);
+  cursor: pointer;
+  transition: filter .16s var(--ease), box-shadow .16s var(--ease), transform .1s var(--ease);
+}
+.quick-start svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.quick-start:hover { filter: brightness(1.1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 10px 22px -10px rgba(107, 116, 245, 1); }
+.quick-start:active { transform: translateY(1px); }
 body.has-active-session #btn-quick-start { display: none; }
 
 .overview { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
@@ -1710,7 +1737,31 @@ pre.code {
 
 .sprint-section .section-title { color: var(--accent); }
 
-.overlay-card.annotate-wide { width: min(760px, 96vw); }
+/* Post-solve: rating | plan | solution side by side, so both grades land in view
+   instead of stacking below the fold. Each column scrolls on its own and Save
+   stays pinned. A column with nothing to show drops out and the card narrows. */
+.overlay-card.annotate-wide { width: min(1240px, 96vw); display: flex; flex-direction: column; }
+.overlay-card.annotate-wide:has(#annotate-plan.hidden),
+.overlay-card.annotate-wide:has(#annotate-grade.hidden) { width: min(880px, 96vw); }
+.overlay-card.annotate-wide:has(#annotate-plan.hidden):has(#annotate-grade.hidden) { width: min(560px, 96vw); }
+.overlay-card.annotate-wide > .modal-title { margin-bottom: 10px; }
+.overlay-card.annotate-wide > .overlay-actions { margin-top: 16px; }
+.annotate-cols {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  margin-top: 14px;
+}
+.annotate-col { min-height: 0; overflow-y: auto; }
+.annotate-cols > .plan-card { margin-top: 0; }
+.annotate-form > .label-sm:first-child { margin-top: 0; }
+.grade-card .grade-score { margin-top: 10px; }
+.grade-card .grade-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.grade-card .missed { margin: 10px 0 0; font-size: 12.5px; }
+.grade-card .grading { margin-top: 10px; }
+.grade-pending { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 
 .overlay-card.predict-wide { width: min(1120px, 96vw); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .85fr); gap: 10px 18px; align-items: start; }
 
@@ -2228,6 +2279,9 @@ body.has-active-session #user-chip {
   .active-timer { font-size: 34px; }
   .active-actions .button { flex: 1 1 160px; }
   .overlay-card.predict-wide { grid-template-columns: 1fr; }
+  .overlay-card.annotate-wide { display: block; }
+  .annotate-cols { grid-auto-flow: row; }
+  .annotate-col { overflow: visible; }
   .overlay-card.predict-wide > .modal-titlebar,
   .overlay-card.predict-wide > #predict-statement,
   .overlay-card.predict-wide > .predict-form { grid-column: 1; }
@@ -2316,53 +2370,52 @@ body.has-active-session #user-chip {
 .quickstart-option .qs-num { color: var(--muted); font-weight: 500; }
 .quickstart-option .qs-meta { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; font-weight: 400; }
 
-/* Light practice: an optional library, separate from the daily queue. */
-.light-intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 26px; }
+/* Light practice: pick a kind of question, then answer a stream of them. */
+.light-intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 22px; }
 .light-eyebrow { display: block; color: var(--accent-2); font-size: 12px; margin-bottom: 10px; }
 .light-intro h2 { font-size: 25px; margin-bottom: 9px; }
-.light-intro p, .light-note, .light-footnote { color: var(--text-2); }
-.light-note { font-size: 12px; white-space: nowrap; }
-.light-modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 32px; }
+.light-intro p, .light-footnote, .light-last { color: var(--text-2); }
+.light-last { font-size: 13px; margin: -8px 0 16px; }
+.light-filters { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2); }
+.light-modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
 .light-mode { display: flex; flex-direction: column; text-align: left; padding: 20px; gap: 10px; color: var(--text-2); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); cursor: pointer; font: inherit; }
-.light-mode:hover, .light-mode.selected { border-color: var(--accent); background: var(--accent-soft); }
-.light-mode strong { font-size: 16px; line-height: 1.4; }
-.light-mode > span:last-child { font-size: 13px; }
-.light-duration { color: var(--accent-2); font-size: 12px; }
-.light-library-head, .light-filters { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.light-library-head { margin-bottom: 14px; flex-wrap: wrap; }
-.light-filters { font-size: 12px; color: var(--text-2); }
-.light-count { color: var(--muted); margin-left: 8px; font-size: 13px; }
-.light-exercises { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.light-exercise { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 18px 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text-2); text-align: left; cursor: pointer; font: inherit; }
-.light-exercise:hover { border-color: var(--line-hi); background: var(--panel2); }
-.light-exercise strong, .light-exercise-topic, .light-history { display: block; }
-.light-exercise strong { margin-top: 5px; }
-.light-exercise-topic, .light-history { font-size: 12px; }
-.light-history { color: var(--accent-2); margin-top: 8px; }
-.light-footnote { font-size: 12px; margin-top: 22px; }
+.light-mode:hover:not(:disabled), .light-mode:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.light-mode:disabled { opacity: .5; cursor: default; }
+.light-mode strong { font-size: 16px; line-height: 1.4; color: var(--text); }
+.light-mode > span { font-size: 13px; }
+.light-mode .light-duration { color: var(--accent-2); font-size: 12px; }
+.light-mode .light-mode-stats { margin-top: auto; font-size: 12px; color: var(--muted); }
+.light-mode-stats b { color: var(--amber); font-weight: 600; }
+.light-footnote { font-size: 12px; margin-top: 22px; line-height: 1.8; }
+.tab kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--line-hi); border-radius: 4px; background: var(--panel2); color: var(--text-2); }
 .light-workspace { max-width: 880px; margin: 0 auto; }
-.light-question { margin-top: 18px; padding: 30px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius-lg); }
-.light-question-meta { display: flex; justify-content: space-between; gap: 15px; color: var(--text-2); font-size: 12px; margin-bottom: 18px; }
-.light-question h2 { font-size: 25px; }
-.light-prompt { font-size: 16px; line-height: 1.65; margin: 16px 0 22px; }
-.light-code-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
-.light-code { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; overflow-x: auto; font-size: 13px; line-height: 1.75; margin: 0 0 24px; }
-.light-options { border: 0; padding: 0; margin: 0; min-width: 0; }
-.light-options legend { font-size: 12px; color: var(--text-2); margin-bottom: 10px; }
-.light-option { display: flex; gap: 12px; align-items: baseline; padding: 14px; margin-bottom: 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; line-height: 1.6; overflow-wrap: anywhere; }
-.light-option:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
-.light-option input { accent-color: var(--accent); }
-.light-letter { font-size: 12px; color: var(--muted); }
-.light-option.is-correct { border-color: var(--green); }
-.light-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+.light-run-bar { display: flex; align-items: center; gap: 14px; max-width: 880px; margin: 0 auto; font-size: 13px; color: var(--text-2); }
+.light-run-title { color: var(--text); font-weight: 600; }
+.light-tally { margin-left: auto; color: var(--muted); }
+.light-question { margin-top: 14px; padding: 26px 30px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius-lg); }
+.light-question-meta { color: var(--text-2); font-size: 12px; margin-bottom: 12px; }
+.light-question h2 { font-size: 22px; }
+.light-question h2:focus { outline: none; }
+.light-prompt { font-size: 15px; line-height: 1.65; margin: 12px 0 18px; }
+.light-code { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px; overflow-x: auto; font-size: 13px; line-height: 1.7; margin: 0 0 20px; }
+.light-options { display: grid; gap: 8px; }
+.light-option { display: flex; gap: 12px; align-items: baseline; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; line-height: 1.55; overflow-wrap: anywhere; }
+.light-option:hover:not(:disabled), .light-option:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.light-option:disabled { cursor: default; }
+.light-option.is-correct { border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
+.light-option.is-wrong { border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+.light-input { width: 100%; resize: vertical; min-height: 44px; margin-top: 6px; }
+.light-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.light-actions:empty { display: none; }
 .light-input-help { margin-top: 8px; color: var(--text-2); font-size: 12px; }
-.light-error { color: var(--red); margin-top: 12px; }
-.light-feedback { border-top: 1px solid var(--line-hi); padding-top: 22px; margin-top: 24px; }
-.light-feedback h3 { color: var(--amber); margin-bottom: 12px; }
+.light-error { color: var(--red); margin-top: 10px; }
+.light-error:empty { display: none; }
+.light-feedback { border-top: 1px solid var(--line-hi); padding-top: 18px; margin-top: 20px; }
+.light-feedback h3 { color: var(--amber); margin-bottom: 10px; }
 .light-feedback.is-correct h3 { color: var(--green); }
-.light-feedback p { margin-top: 10px; color: var(--text-2); line-height: 1.65; }
+.light-feedback p { margin-top: 8px; color: var(--text-2); line-height: 1.65; }
 .light-feedback .light-solution { color: var(--text); font-weight: 600; }
-.light-output { display: flex; flex-wrap: wrap; gap: 20px; margin: 14px 0; color: var(--text-2); }
+.light-output { display: flex; flex-wrap: wrap; gap: 20px; margin: 12px 0; color: var(--text-2); }
 .light-output code { color: var(--text); margin-left: 5px; }
-@media (max-width: 1100px) { .light-modes { grid-template-columns: repeat(2, minmax(0, 1fr)); } .light-intro { align-items: start; flex-direction: column; gap: 10px; } }
-@media (max-width: 600px) { .light-exercises { grid-template-columns: 1fr; } .light-mode { padding: 14px; } .light-mode strong { font-size: 14px; } .light-question { padding: 18px; } .light-question-meta { flex-direction: column; gap: 4px; } .light-filters { flex-wrap: wrap; } .light-code { padding: 12px; } }
+@media (max-width: 1100px) { .light-intro { align-items: start; flex-direction: column; gap: 10px; } }
+@media (max-width: 600px) { .light-mode { padding: 14px; } .light-mode strong { font-size: 14px; } .light-question { padding: 18px; } .light-code { padding: 12px; } .light-run-bar { flex-wrap: wrap; } }

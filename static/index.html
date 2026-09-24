@@ -26,6 +26,8 @@
       <g id="i-settings"><path d="M4 7.5h10M18 7.5h2M4 16.5h2M10 16.5h10" /><circle cx="16" cy="7.5" r="2.3" /><circle cx="8" cy="16.5" r="2.3" /></g>
       <!-- sprint button glyph -->
       <g id="i-drill"><path d="M13.2 3.2L6 13.4h5.2L10.8 20.8L18 10.6h-5.2z" /></g>
+      <!-- start-any-problem glyph -->
+      <g id="i-plus"><path d="M12 5.5v13M5.5 12h13" /></g>
     </defs>
   </svg>
 
@@ -79,9 +81,12 @@
         <div class="topbar-side">
           <!-- Only ever rendered when the LeetCode cookie is missing or dead. -->
           <button id="lc-warning" class="lc-warning hidden" type="button"></button>
-          <button id="btn-quick-start" class="button is-small" type="button"
-                  title="Start any problem by URL, number or title">Start any problem</button>
           <div id="overview" class="overview"></div>
+          <button id="btn-quick-start" class="quick-start" type="button"
+                  aria-label="Start any problem"
+                  title="Start any problem by URL, number or title">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus" /></svg>
+          </button>
         </div>
       </header>
 
@@ -221,55 +226,64 @@
         </div>
       </div>
 
-      <section id="annotate-plan" class="plan-card hidden" aria-labelledby="annotate-plan-heading">
-        <div class="plan-card-head">
-          <h3 id="annotate-plan-heading" class="plan-card-title">Your plan</h3>
-          <span id="annotate-plan-meta" class="small"></span>
-        </div>
-        <div id="annotate-plan-body"></div>
-        <div id="annotate-plan-held" class="hidden">
-          <label class="label-sm">Did your plan hold?</label>
-          <div class="pill-group" id="held-group">
-            <button type="button" data-val="held">Held</button>
-            <button type="button" data-val="tweaked">Tweaked</button>
-            <button type="button" data-val="pivoted">Pivoted</button>
+      <div class="annotate-cols">
+        <section class="annotate-col annotate-form" aria-label="Your rating">
+          <label class="label-sm">How confident are you with this pattern?</label>
+          <div class="pill-group" id="conf-group">
+            <button data-val="1">Low</button>
+            <button data-val="2" class="sel">Medium</button>
+            <button data-val="3">High</button>
           </div>
-        </div>
-        <div id="annotate-plan-grade" class="plan-grade hidden"></div>
-        <p id="annotate-plan-previous" class="small plan-previous hidden"></p>
-      </section>
 
-      <label class="label-sm">How confident are you with this pattern?</label>
-      <div class="pill-group" id="conf-group">
-        <button data-val="1">Low</button>
-        <button data-val="2" class="sel">Medium</button>
-        <button data-val="3">High</button>
+          <label class="label-sm">How did it go?</label>
+          <div class="pill-group" id="indep-group">
+            <button data-val="solo" class="sel">Solved solo</button>
+            <button data-val="hints">Needed hints</button>
+            <button data-val="solution">Read solution</button>
+          </div>
+
+          <div id="annotate-complexities" class="complexity-fields mt-2"></div>
+
+          <div id="annotate-time-row" class="mt-2 hidden">
+            <label class="label-sm" for="annotate-minutes">Roughly how long did it take?
+              <span class="help-inline">minutes — optional, leave blank if you'd rather not guess</span>
+            </label>
+            <input id="annotate-minutes" class="input" type="number" min="0" step="1"
+                   inputmode="numeric" placeholder="e.g. 25">
+          </div>
+
+          <label class="label-sm" for="annotate-approach">Approach / pattern <span id="annotate-approach-help" class="help-inline">optional</span></label>
+          <input id="annotate-approach" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. monotonic stack" />
+
+          <label class="label-sm">What tripped you up? <span class="help-inline">plain text — the coach structures it</span></label>
+          <input id="annotate-note" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. shrank the window before checking the count" />
+        </section>
+
+        <section id="annotate-plan" class="annotate-col plan-card hidden" aria-labelledby="annotate-plan-heading">
+          <div class="plan-card-head">
+            <h3 id="annotate-plan-heading" class="plan-card-title">Your plan</h3>
+            <span id="annotate-plan-meta" class="small"></span>
+          </div>
+          <div id="annotate-plan-body"></div>
+          <div id="annotate-plan-held" class="hidden">
+            <label class="label-sm">Did your plan hold?</label>
+            <div class="pill-group" id="held-group">
+              <button type="button" data-val="held">Held</button>
+              <button type="button" data-val="tweaked">Tweaked</button>
+              <button type="button" data-val="pivoted">Pivoted</button>
+            </div>
+          </div>
+          <div id="annotate-plan-grade" class="plan-grade hidden"></div>
+          <p id="annotate-plan-previous" class="small plan-previous hidden"></p>
+        </section>
+
+        <section id="annotate-grade" class="annotate-col plan-card grade-card hidden" aria-labelledby="annotate-grade-heading">
+          <div class="plan-card-head">
+            <h3 id="annotate-grade-heading" class="plan-card-title">Your solution</h3>
+          </div>
+          <div id="annotate-grade-body"></div>
+        </section>
       </div>
-
-      <label class="label-sm">How did it go?</label>
-      <div class="pill-group" id="indep-group">
-        <button data-val="solo" class="sel">Solved solo</button>
-        <button data-val="hints">Needed hints</button>
-        <button data-val="solution">Read solution</button>
-      </div>
-
-      <div id="annotate-complexities" class="complexity-fields mt-2"></div>
-
-      <div id="annotate-time-row" class="mt-2 hidden">
-        <label class="label-sm" for="annotate-minutes">Roughly how long did it take?
-          <span class="help-inline">minutes — optional, leave blank if you'd rather not guess</span>
-        </label>
-        <input id="annotate-minutes" class="input" type="number" min="0" step="1"
-               inputmode="numeric" placeholder="e.g. 25">
-      </div>
-
-      <label class="label-sm">What tripped you up? <span class="help-inline">plain text — the coach structures it</span></label>
-      <input id="annotate-note" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. shrank the window before checking the count" />
-
-      <label class="label-sm" for="annotate-approach">Approach / pattern <span id="annotate-approach-help" class="help-inline">optional</span></label>
-      <input id="annotate-approach" class="input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. monotonic stack" />
-
-      <div id="annotate-grade" class="recall-grade hidden"></div>
 
       <div class="overlay-actions">
         <button id="btn-close-annotate" class="button is-ghost">Close</button>

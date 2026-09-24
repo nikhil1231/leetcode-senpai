@@ -163,7 +163,7 @@ class FirestoreStore:
     def list_light_practice(self):
         from google.cloud.firestore_v1 import Query
         query = self._user_ref().collection("light_practice").order_by(
-            "answered_at", direction=Query.DESCENDING).limit(200)
+            "answered_at", direction=Query.DESCENDING).limit(500)
         return [doc.to_dict() for doc in query.stream()]
 
     # ---- problems (global) --------------------------------------------------

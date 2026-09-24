@@ -1324,7 +1324,7 @@ function initAnnotateGrade(attempt) {
   const panel = $("#annotate-grade");
   stopAnnotateGrading();
   panel.classList.add("hidden");
-  panel.innerHTML = "";
+  $("#annotate-grade-body").innerHTML = "";
   if (!llmEnabled) return;
   // Grading reads the submitted code, and the code only reaches us with the
   // LeetCode session cookie — without it a detected solve is logged, scheduled
@@ -1335,8 +1335,14 @@ function initAnnotateGrade(attempt) {
     if (attempt.submission_id) renderSolutionUngradable();
     return;  // a manual log has no submission to have fetched code from
   }
-  if (attempt.confidence == null || !attempt.independence) return;
   const status = attempt.solution_grading_status;
+  // Claim the column up front so the grade lands where you're already looking,
+  // not below the fold after Save.
+  if (attempt.confidence == null || !attempt.independence) {
+    panel.classList.remove("hidden");
+    $("#annotate-grade-body").innerHTML = `<p class="grade-pending">Save your rating and the coach grades your submitted code here.</p>`;
+    return;
+  }
   if (status === "viewed" && attempt.solution_grade) {
     renderSolutionGrade(attempt.solution_grade);
   } else if (status === "failed") {
@@ -1345,8 +1351,8 @@ function initAnnotateGrade(attempt) {
 }
 
 function showAnnotateGrading(messages) {
-  const g = $("#annotate-grade");
-  g.classList.remove("hidden");
+  const g = $("#annotate-grade-body");
+  $("#annotate-grade").classList.remove("hidden");
   g.innerHTML = `<div class="grading"><span class="spinner"></span>
     <span class="grading-text">${escapeHtml(messages[0])}</span></div>`;
   stopAnnotateGrading();
@@ -1366,13 +1372,13 @@ function stopAnnotateGrading() {
 function renderSolutionGrade(g) {
   g = g || {};
   stopAnnotateGrading();
-  const panel = $("#annotate-grade");
-  panel.classList.remove("hidden");
+  $("#annotate-grade").classList.remove("hidden");
+  const panel = $("#annotate-grade-body");
   const positives = (g.positives || []).filter(Boolean);
   const negatives = (g.negatives || g.improvements || []).filter(Boolean);
   const hasCx = g.inferred_time || g.inferred_space;
   panel.innerHTML = `
-    <div class="grade-score">Solution grade: <b>${g.score}/5</b>${
+    <div class="grade-score">Score <b>${g.score}/5</b>${
       g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
     ${g.analysis ? `<p class="grade-analysis">${escapeHtml(g.analysis)}</p>` : ""}
     ${hasCx ? `<p class="small"><b>Complexity:</b> time ${escapeHtml(g.inferred_time || "?")}, space ${escapeHtml(g.inferred_space || "?")}</p>` : ""}
@@ -1391,18 +1397,16 @@ function markAnnotateDone() {
 
 function renderSolutionUngradable() {
   stopAnnotateGrading();
-  const panel = $("#annotate-grade");
-  panel.classList.remove("hidden");
-  panel.innerHTML = `<p class="missed"><b>No solution grade:</b> your code wasn't captured
+  $("#annotate-grade").classList.remove("hidden");
+  $("#annotate-grade-body").innerHTML = `<p class="missed"><b>No solution grade:</b> your code wasn't captured
     for this solve. Set the LEETCODE_SESSION cookie in Settings — it's stored per browser,
     so a new address needs it again. Solves from here on will be graded.</p>`;
 }
 
 function renderSolutionGradeError(err, attemptId) {
   stopAnnotateGrading();
-  const panel = $("#annotate-grade");
-  panel.classList.remove("hidden");
-  panel.innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
+  $("#annotate-grade").classList.remove("hidden");
+  $("#annotate-grade-body").innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
     <div class="grade-actions"><button id="btn-grade-solution" class="button is-small is-link">Retry grading</button></div>`;
   wireGradeButton(attemptId);
 }
