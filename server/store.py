@@ -160,6 +160,9 @@ class FirestoreStore:
             return ref.get().to_dict()
         return result
 
+    def get_light_practice(self, question_id):
+        return self._user_ref().collection("light_practice").document(question_id).get().to_dict()
+
     def mark_light_practice_guess(self, question_id):
         ref = self._user_ref().collection("light_practice").document(question_id)
         result = ref.get().to_dict()

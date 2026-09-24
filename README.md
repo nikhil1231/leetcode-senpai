@@ -302,3 +302,10 @@ after two unassisted reps. “I guessed” preserves correctness but brings the 
 back sooner. Expandable value tables, completed snippets, and an end-of-round
 takeaway provide optional review. Topic panels can launch a light-practice warm-up.
 These features make no LLM calls and do not alter full-solve mastery or FSRS.
+
+An unfinished round can be resumed after refreshing the same browser tab. Its
+question, draft, filters, and tally are kept in account-scoped session storage for
+up to 24 hours. Resume checks the server's saved answer before retrying an
+interrupted submission, so an answer is counted only once. Stopping, finishing,
+discarding, or starting a new round clears the checkpoint. Practice still works
+when browser storage is unavailable; only refresh recovery is disabled.

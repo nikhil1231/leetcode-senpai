@@ -29,6 +29,10 @@ class FakeStore:
     def save_light_practice(self, question_id, result):
         return dict(self.light_practice.setdefault(question_id, dict(result)))
 
+    def get_light_practice(self, question_id):
+        result = self.light_practice.get(question_id)
+        return dict(result) if result else None
+
     def mark_light_practice_guess(self, question_id):
         result = self.light_practice.get(question_id)
         if not result or not result.get("correct") or result.get("revealed"):

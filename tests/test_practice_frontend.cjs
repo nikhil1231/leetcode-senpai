@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const catalog = () => ({
+  storage_scope: 'test',
   modes: [{ id: 'break', title: 'Find the breaking input', duration: '1 min', description: 'Find a bug' },
           { id: 'fill', title: 'Fill the missing piece', duration: '1 min', description: 'Fill a blank' }],
   exercises: [{ id: 'break-last', mode: 'break', topic: 'Arrays', title: 'Last element', variants: false },
@@ -20,7 +21,13 @@ const graded = (q, extra = {}) => ({ question_id: q.id, template: q.template, mo
   revealed: false, explanation: 'Because.', expected: true, actual: false, correct_option: '0', solution: 'b', ...extra });
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-function ui(api) {
+function memoryStorage() {
+  const data = new Map();
+  return { getItem: key => data.get(key) || null,
+           setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+}
+
+function ui(api, sessionStorage = memoryStorage()) {
   const nodes = new Map();
   let keydown = null;
   function node(id) {
@@ -49,7 +56,7 @@ function ui(api) {
     addEventListener(event, fn) { if (event === 'keydown') keydown = fn; },
     querySelector() { return null; },
   };
-  const window = { Views: {}, H: { $: node, escapeHtml: x => String(x), api, loader: x => x } };
+  const window = { sessionStorage, Views: {}, H: { $: node, escapeHtml: x => String(x), api, loader: x => x } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../static/practice.js'), 'utf8'),
     { window, document, URLSearchParams });
   const html = () => node('#tab-practice').innerHTML;
@@ -240,4 +247,195 @@ test('failed counterexamples permit retry without exposing the answer', async ()
   view.node('#practice-input').value = '[1, 1]';
   await view.click('#practice-check');
   assert.equal(saved.assisted, true);
+});
+
+const roundKey = 'light-practice-round:v1:test';
+
+test('refresh restores the exact question, draft and recall settings', async () => {
+  const storage = memoryStorage();
+  const first = ui(async url => url === '/practice' ? catalog() : choiceQ(42), storage);
+  await first.render();
+  first.node('#practice-recall-first').listeners.change({target: {checked: true}});
+  first.node('#practice-length').listeners.change({target: {value: '5'}});
+  await first.click('mode:fill');
+  first.node('#practice-input').value = 'ways[i - 1]\n + ways[i - 2]';
+  first.node('#practice-input').listeners.input();
+  const calls = [];
+  const restored = ui(async url => {
+    calls.push(url);
+    return url === '/practice' ? catalog() : {question: choiceQ(42), result: null};
+  }, storage);
+  await restored.render();
+  assert.match(restored.html(), /Resume round/);
+  assert.equal(calls.length, 1); // no question fetch until the user resumes
+  await restored.click('#practice-resume');
+  assert.equal(calls[1], '/practice/resume/v1%3Afill-dp%3A42');
+  assert.equal(restored.node('#practice-input').value, 'ways[i - 1]\n + ways[i - 2]');
+  assert.doesNotMatch(restored.html(), /data-option=/);
+  assert.match(restored.html(), /0 \/ 5 answered/);
+  await restored.key('Escape');
+  assert.equal(storage.getItem(roundKey), null);
+});
+
+test('refresh after an answer restores feedback and counts it only once', async () => {
+  const storage = memoryStorage();
+  const answer = graded(choiceQ(7), {answer: '0'});
+  const api = async (url, method) => {
+    if (url === '/practice') return catalog();
+    if (url.startsWith('/practice/resume/')) return {question: choiceQ(7), result: answer};
+    if (method === 'POST') return answer;
+    return choiceQ(7);
+  };
+  const first = ui(api, storage);
+  await first.render();
+  await first.click('mode:fill');
+  await first.key('2');
+  for (let i = 0; i < 2; i++) {
+    const restored = ui(api, storage);
+    await restored.render();
+    await restored.click('#practice-resume');
+    assert.equal(restored.node('#practice-tally').textContent, '1 answered · 1 right');
+    assert.match(restored.node('#practice-feedback').innerHTML, /That’s right/);
+    assert.equal(restored.node('option:0').disabled, true);
+  }
+});
+
+test('refresh during a lost save response reconciles the server without reposting', async () => {
+  const storage = memoryStorage();
+  const first = ui(async (url, method) => {
+    if (url === '/practice') return catalog();
+    if (method === 'POST') return new Promise(() => {});
+    return choiceQ(8);
+  }, storage);
+  await first.render();
+  await first.click('mode:fill');
+  first.node('option:0').listeners.click();
+  await settle();
+  assert.equal(JSON.parse(storage.getItem(roundKey)).pendingAnswer.answer, '0');
+  let posts = 0;
+  const restored = ui(async (url, method) => {
+    if (method === 'POST') posts++;
+    if (url === '/practice') return catalog();
+    if (url.startsWith('/practice/resume/')) return {question: choiceQ(8), result: graded(choiceQ(8), {answer: '0'})};
+    return choiceQ(9);
+  }, storage);
+  await restored.render();
+  await restored.click('#practice-resume');
+  assert.equal(posts, 0);
+  assert.equal(restored.node('#practice-tally').textContent, '1 answered · 1 right');
+  assert.equal(JSON.parse(storage.getItem(roundKey)).pendingAnswer, null);
+});
+
+test('an interrupted unsaved submission retries the same answer and assistance flags', async () => {
+  const storage = memoryStorage();
+  const first = ui(async (url, method) => {
+    if (url === '/practice') return catalog();
+    if (method === 'POST') throw new Error('Offline');
+    return choiceQ(8);
+  }, storage);
+  await first.render();
+  await first.click('mode:fill');
+  await first.click('#practice-recall');
+  first.node('#practice-input').value = 'ways[i-1]+ways[i-2]';
+  await first.click('#practice-check');
+  let payload;
+  const restored = ui(async (url, method, body) => {
+    if (url === '/practice') return catalog();
+    if (url.startsWith('/practice/resume/')) return {question: choiceQ(8), result: null};
+    if (method === 'POST') { payload = body; return graded(choiceQ(8), {answer: body.answer, assisted: true}); }
+    return choiceQ(9);
+  }, storage);
+  await restored.render();
+  await restored.click('#practice-resume');
+  assert.equal(payload.question_id, choiceQ(8).id);
+  assert.equal(payload.answer, 'ways[i-1]+ways[i-2]');
+  assert.equal(payload.assisted, true);
+  assert.equal(payload.recall, true);
+  assert.equal(restored.node('#practice-tally').textContent, '1 answered · 1 right');
+});
+
+test('refresh retries an interrupted guess without adding another answer', async () => {
+  const storage = memoryStorage();
+  const first = ui(async (url, method) => {
+    if (url === '/practice') return catalog();
+    if (url === '/practice/guess') throw new Error('Offline');
+    if (method === 'POST') return graded(choiceQ(), {answer: '0'});
+    return choiceQ();
+  }, storage);
+  await first.render();
+  await first.click('mode:fill');
+  await first.key('2');
+  await first.click('#practice-guess');
+  let guesses = 0;
+  const restored = ui(async url => {
+    if (url === '/practice') return catalog();
+    if (url.startsWith('/practice/resume/')) return {question: choiceQ(), result: graded(choiceQ(), {answer: '0'})};
+    if (url === '/practice/guess') { guesses++; return graded(choiceQ(), {answer: '0', guessed: true}); }
+    return choiceQ(2);
+  }, storage);
+  await restored.render();
+  await restored.click('#practice-resume');
+  assert.equal(guesses, 1);
+  assert.equal(restored.node('#practice-tally').textContent, '1 answered · 1 right');
+  assert.match(restored.node('#practice-feedback').innerHTML, /Marked as a guess/);
+  await restored.key('Escape');
+  assert.match(restored.html(), /Revisit · Stairs/);
+});
+
+test('resume survives an API error and stopping cancels a pending restore', async () => {
+  const storage = memoryStorage();
+  const first = ui(async url => url === '/practice' ? catalog() : arrayQ(), storage);
+  await first.render();
+  await first.click('mode:break');
+  let finish, attempts = 0;
+  const restored = ui(async url => {
+    if (url === '/practice') return catalog();
+    if (++attempts === 1) throw new Error('Offline');
+    return new Promise(resolve => { finish = resolve; });
+  }, storage);
+  await restored.render();
+  await restored.click('#practice-resume');
+  assert.match(restored.html(), /Offline/);
+  restored.node('#practice-retry').listeners.click();
+  await settle();
+  await restored.key('Escape');
+  finish({question: arrayQ(), result: null});
+  await settle();
+  assert.match(restored.html(), /Pick a kind of question/);
+  assert.doesNotMatch(restored.html(), /Resume round/);
+  assert.equal(storage.getItem(roundKey), null);
+});
+
+test('draft recovery is scoped by user and invalid or expired snapshots are discarded', async () => {
+  const storage = memoryStorage();
+  const api = async url => url === '/practice' ? catalog() : arrayQ();
+  const first = ui(api, storage);
+  await first.render();
+  await first.click('mode:break');
+  const original = storage.getItem(roundKey);
+  const otherUser = ui(async () => ({...catalog(), storage_scope: 'someone-else'}), storage);
+  await otherUser.render();
+  assert.doesNotMatch(otherUser.html(), /Resume round/);
+  assert.equal(storage.getItem(roundKey), original);
+  for (const invalid of ['{broken', JSON.stringify({...JSON.parse(original), savedAt: 1}),
+                         JSON.stringify({...JSON.parse(original), run: {}})]) {
+    storage.setItem(roundKey, invalid);
+    const restored = ui(api, storage);
+    await restored.render();
+    assert.doesNotMatch(restored.html(), /Resume round/);
+    assert.equal(storage.getItem(roundKey), null);
+  }
+});
+
+test('unavailable browser storage does not prevent practicing', async () => {
+  const blocked = () => { throw new Error('Storage disabled'); };
+  const view = ui(async (url, method) => url === '/practice' ? catalog()
+    : method === 'POST' ? graded(choiceQ()) : choiceQ(),
+    {getItem: blocked, setItem: blocked, removeItem: blocked});
+  await view.render();
+  await view.click('mode:fill');
+  await view.key('1');
+  assert.match(view.node('#practice-feedback').innerHTML, /That’s right/);
+  await view.key('Escape');
+  assert.match(view.html(), /Last run: 1 answered/);
 });

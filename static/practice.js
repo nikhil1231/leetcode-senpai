@@ -8,8 +8,84 @@
   let catalog = null, topic = "", lastRun = null, roundSize = 0, difficulty = "", recallFirst = false;
   let run = null;  // { mode, topic, recent, answered, correct, next }
   let current = null, result = null, loading = false, submitting = false, ticket = 0, assisted = false, recall = false;
+  let savedRound = null, draft = "", pendingAnswer = null, pendingGuess = false;
   const root = () => $("#tab-practice");
   const modeOf = id => [MIXED, ...catalog.modes].find(m => m.id === id);
+  const storageKey = () => catalog?.storage_scope ? `light-practice-round:v1:${catalog.storage_scope}` : null;
+
+  function forgetRound() {
+    savedRound = null;
+    try { if (storageKey()) window.sessionStorage.removeItem(storageKey()); } catch (_) {}
+  }
+
+  function readRound() {
+    try {
+      const s = JSON.parse(window.sessionStorage.getItem(storageKey()));
+      if (!s) return;
+      const r = s.run;
+      if (s.version !== 1 || Date.now() - s.savedAt > 86400000 || s.savedAt > Date.now() || !Number.isFinite(s.savedAt)
+          || !r || !modeOf(r.mode) || ![0, 5, 10].includes(r.limit)
+          || !Number.isInteger(r.answered) || r.answered < 0
+          || !Number.isInteger(r.correct) || r.correct < 0 || r.correct > r.answered
+          || !Array.isArray(r.recent) || r.recent.length > 50 || !r.recent.every(t => typeof t === "string")
+          || !Array.isArray(r.outcomes) || r.outcomes.length > catalog.exercises.length
+          || !r.outcomes.every(o => o && typeof o.skill === "string" && typeof o.explanation === "string")
+          || typeof r.topic !== "string" || typeof s.draft !== "string" || s.draft.length > 300
+          || !["", "foundation", "standard", "stretch"].includes(s.difficulty)
+          || (s.questionId !== null && (typeof s.questionId !== "string" || !catalog.exercises.some(e => s.questionId.startsWith(`v1:${e.id}:`))))
+          || (s.pendingAnswer && (s.pendingAnswer.question_id !== s.questionId
+              || typeof s.pendingAnswer.reveal !== "boolean"
+              || (s.pendingAnswer.answer !== null && typeof s.pendingAnswer.answer !== "string")))) throw new Error("Stale round");
+      savedRound = s;
+    } catch (_) { forgetRound(); }
+  }
+
+  function saveRound() {
+    if (!run || !storageKey()) return;
+    // Store counts before the current answer. Resume obtains that answer from
+    // the server and adds it exactly once, even if refresh interrupted the save.
+    const outcomes = run.outcomes.filter(o => o.id !== current?.id);
+    const compact = [...new Map(outcomes.map(o => [o.skill, o])).values()];
+    const snapshot = { version: 1, savedAt: Date.now(),
+      run: { mode: run.mode, topic: run.topic, limit: run.limit, recent: run.recent.slice(-50),
+             answered: run.answered - (result ? 1 : 0), correct: run.correct - (result?.correct ? 1 : 0), outcomes: compact },
+      questionId: current?.id || null, draft, assisted, recall, recallFirst, difficulty,
+      pendingAnswer, pendingGuess };
+    try { window.sessionStorage.setItem(storageKey(), JSON.stringify(snapshot)); }
+    catch (_) {} // A full or disabled store must never block practice.
+  }
+
+  async function resumeRound(snapshot = savedRound) {
+    if (loading || submitting || !snapshot) return;
+    const t = ++ticket;
+    run = { ...snapshot.run, recent: [...snapshot.run.recent], outcomes: [...snapshot.run.outcomes], next: null };
+    topic = run.topic; roundSize = run.limit; difficulty = snapshot.difficulty;
+    recallFirst = !!snapshot.recallFirst; recall = !!snapshot.recall; assisted = !!snapshot.assisted;
+    draft = snapshot.draft; pendingAnswer = snapshot.pendingAnswer; pendingGuess = !!snapshot.pendingGuess;
+    current = null; result = null; loading = true;
+    root().innerHTML = `${runBar()}${loader("Restoring your round…")}`;
+    wireBar();
+    try {
+      if (!snapshot.questionId) { await advance(); return; }
+      const restored = await api(`/practice/resume/${encodeURIComponent(snapshot.questionId)}`);
+      if (t !== ticket) return;
+      current = restored.question;
+      if (typeof restored.result?.answer === "string" && (recall || current.input_type === "array")) draft = restored.result.answer;
+      renderQuestion();
+      if (restored.result) {
+        pendingGuess = pendingGuess && restored.result.correct && !restored.result.guessed;
+        acceptResult(restored.result);
+        if (pendingGuess && !result.guessed) await markGuessed();
+      } else if (pendingAnswer) {
+        await submit(pendingAnswer.reveal, pendingAnswer.answer || "");
+      } else { saveRound(); }
+    } catch (e) {
+      if (t !== ticket) return;
+      root().innerHTML = `${runBar()}<div class="empty"><p>${esc(e.message)}</p><button id="practice-retry" class="button">Try again</button></div>`;
+      wireBar();
+      $("#practice-retry").addEventListener("click", () => resumeRound(snapshot));
+    } finally { if (t === ticket) loading = false; }
+  }
 
   async function renderPractice() {
     // Background refreshes must not wipe a question or an answer being typed.
@@ -19,6 +95,7 @@
     root().innerHTML = loader("Loading light practice…");
     try {
       catalog = await api("/practice");
+      readRound();
       renderLibrary();
     } catch (e) {
       root().innerHTML = `<div class="empty"><p>${esc(e.message)}</p><button id="practice-retry" class="button">Try again</button></div>`;
@@ -40,6 +117,7 @@
         <p>Questions keep coming until you stop. The ones you miss come back.</p></div>
         <div class="light-filters"><label><input id="practice-recall-first" type="checkbox"> Recall first</label><label for="practice-length">Round</label><div class="select"><select id="practice-length"><option value="0">Until I stop</option><option value="5">5 questions</option><option value="10">10 questions</option></select></div><label for="practice-difficulty">Level</label><div class="select"><select id="practice-difficulty"><option value="">Adaptive</option><option value="foundation">Foundation</option><option value="standard">Standard</option><option value="stretch">Stretch</option></select></div><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
       ${lastRun ? `<p class="light-last">Last run: ${lastRun.answered} answered, ${lastRun.correct} right.</p>${recap(lastRun.outcomes)}` : ""}
+      ${savedRound ? `<div class="light-recap"><p><strong>Your unfinished round</strong> · ${esc(modeOf(savedRound.run.mode).title)}${savedRound.run.topic ? ` · ${esc(savedRound.run.topic)}` : ""}</p><p>Your place and draft are kept in this tab for up to a day.</p><div class="light-actions"><button id="practice-resume" class="button is-primary" type="button">Resume round</button><button id="practice-discard" class="button is-ghost" type="button">Discard round</button></div></div>` : ""}
       <div class="light-modes">${[MIXED, ...catalog.modes].map(m => {
         const c = counts(m.id);
         return `<button class="light-mode" type="button" data-mode="${esc(m.id)}"${c.total ? "" : " disabled"}>
@@ -48,6 +126,10 @@
       }).join("")}</div>
       <p class="light-footnote"><kbd>1</kbd>–<kbd>4</kbd> answer a choice · <kbd>Enter</kbd> checks and moves on · <kbd>Esc</kbd> stops. These reps don’t change your solve counts, mastery, or review schedule.</p>`;
     $("#practice-recall-first").checked = recallFirst;
+    if (savedRound) {
+      $("#practice-resume").addEventListener("click", () => resumeRound());
+      $("#practice-discard").addEventListener("click", () => { forgetRound(); renderLibrary(); });
+    }
     $("#practice-recall-first").addEventListener("change", e => { recallFirst = e.target.checked; });
     $("#practice-difficulty").value = difficulty;
     $("#practice-difficulty").addEventListener("change", e => { difficulty = e.target.value; renderLibrary(); });
@@ -78,12 +160,14 @@
   }
 
   function start(mode) {
+    forgetRound();
     run = { mode, topic, recent: [], answered: 0, correct: 0, next: null, limit: roundSize, outcomes: [] };
     advance();
   }
 
   function stop() {
     ticket++;
+    forgetRound();
     if (run && run.answered) lastRun = { answered: run.answered, correct: run.correct, outcomes: run.outcomes };
     run = null; current = null; result = null; loading = false; submitting = false;
     renderLibrary();
@@ -94,13 +178,16 @@
     if (run.limit && run.answered >= run.limit) { stop(); return; }
     const t = ++ticket, pending = run.next || fetchNext();
     run.next = null; current = null; result = null; loading = true;
+    draft = ""; pendingAnswer = null; pendingGuess = false;
+    saveRound();
     root().innerHTML = `${runBar()}${loader("Loading the next question…")}`;
     wireBar();
     try {
       const q = await pending;
       if (t !== ticket) return;
       current = q; assisted = false; recall = recallFirst && ["trace", "fill"].includes(q.mode);
-      run.recent.push(q.template);
+      run.recent = [...run.recent, q.template].slice(-50);
+      saveRound();
       renderQuestion();
     } catch (e) {
       if (t !== ticket) return;
@@ -138,13 +225,15 @@
       $("#practice-recall").addEventListener("click", () => {
         if (submitting || result) return;
         assisted = true;
-        recall = !recall; renderQuestion();
+        recall = !recall; saveRound(); renderQuestion();
       });
     }
     root().querySelectorAll("[data-option]").forEach(b => b.addEventListener("click", () => submit(false, b.dataset.option)));
     $("#practice-reveal").addEventListener("click", () => submit(true));
     if (choice) { $("#practice-question-title").focus(); return; }
     const input = $("#practice-input");
+    input.value = draft;
+    input.addEventListener("input", () => { draft = input.value; saveRound(); });
     $("#practice-check").addEventListener("click", () => submit(false, input.value));
     input.addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(false, input.value); }
@@ -170,23 +259,20 @@
         if (t !== ticket) return;
         if (!check.correct) {
           assisted = true;
+          saveRound();
           $("#practice-feedback").innerHTML = `<section class="light-feedback"><h3>Try another input</h3><p>Expected <code>${esc(JSON.stringify(check.expected))}</code>; returned <code>${esc(JSON.stringify(check.actual))}</code>. This input does not expose the bug.</p><details><summary>Hint</summary><p>Try the smallest allowed input, duplicates, or boundary values. Check which elements the code actually visits.</p></details></section>`;
           setBusy(false);
           $("#practice-input").focus();
           return;
         }
       }
-      const r = await api("/practice/answer", "POST", { question_id: q.id, answer: reveal ? null : answer, reveal, assisted, recall });
+      pendingAnswer = { question_id: q.id, answer: reveal ? null : answer, reveal, assisted, recall };
+      saveRound();
+      const r = await api("/practice/answer", "POST", pendingAnswer);
       // Keep the outcome even if the run stopped during the save.
       catalog.status[r.template] = r.correct ? (r.assisted || r.guessed ? "uncertain" : "learned") : "missed";
       if (t !== ticket) { if (!run && !loading) renderLibrary(); return; }
-      result = r;
-      run.answered++;
-      run.outcomes.push({ id: q.id, skill: q.skill || q.title, explanation: r.explanation,
-                          secure: r.correct && !r.assisted && !r.guessed && !r.revealed });
-      if (r.correct) run.correct++;
-      run.next = run.limit && run.answered >= run.limit ? null : fetchNext();  // ready by the time the explanation is read
-      renderFeedback(reveal ? null : answer);
+      acceptResult(r);
     } catch (e) {
       if (t !== ticket) return;
       $("#practice-error").textContent = e.message;
@@ -194,8 +280,46 @@
     } finally { if (t === ticket) submitting = false; }
   }
 
-  function renderFeedback(answer) {
+  function acceptResult(r) {
+    result = r;
+    catalog.status[r.template] = r.correct ? (r.assisted || r.guessed ? "uncertain" : "learned") : "missed";
+    pendingAnswer = null;
+    run.answered++;
+    run.outcomes.push({ id: current.id, skill: current.skill || current.title, explanation: r.explanation,
+                        secure: r.correct && !r.assisted && !r.guessed && !r.revealed });
+    if (r.correct) run.correct++;
+    run.next = run.limit && run.answered >= run.limit ? null : fetchNext();
+    setBusy(true);
+    saveRound();
+    renderFeedback();
+  }
+
+  async function markGuessed() {
+    if (submitting || !result?.correct || result.guessed) return;
+    const t = ticket, q = current, round = run;
+    submitting = true;
+    pendingGuess = true;
+    saveRound();
+    $("#practice-guess").disabled = true;
+    try {
+      const updated = await api("/practice/guess", "POST", { question_id: q.id });
+      catalog.status[q.template] = "uncertain";
+      const outcome = round.outcomes.find(o => o.id === q.id);
+      if (outcome) outcome.secure = false;
+      if (t !== ticket) { if (!run) renderLibrary(); return; }
+      result = updated;
+      pendingGuess = false;
+      run.next = run.limit && run.answered >= run.limit ? null : fetchNext();
+      saveRound();
+      renderFeedback();
+    } catch (e) {
+      if (t === ticket) { $("#practice-error").textContent = e.message; $("#practice-guess").disabled = false; }
+    } finally { if (t === ticket) submitting = false; }
+  }
+
+  function renderFeedback() {
     const r = result, q = current, array = q.input_type === "array";
+    const answer = r.answer;
     const heading = r.revealed ? "Here’s the answer" : r.correct ? "That’s right" : array ? "This input doesn’t expose the bug" : "Not quite";
     root().querySelectorAll("[data-option]").forEach(el => {
       el.classList.toggle("is-correct", el.dataset.option === r.correct_option);
@@ -212,24 +336,7 @@
       ${r.related_problems?.length ? `<aside class="light-apply"><strong>Apply this skill in a full problem</strong><p>You’ve completed at least two unassisted reps of this concept.</p>${r.related_problems.map(p => `<a class="button is-small" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)} ↗</a>`).join(" ")}</aside>` : ""}
       ${r.walkthrough?.length ? `<details class="light-walkthrough"><summary>Walk through the values</summary><table><caption>${array ? "Where the outputs diverge" : "Given values and the answer"}</caption><tbody>${r.walkthrough.map(([label, value]) => `<tr><th scope="row">${esc(label)}</th><td><code>${esc(value)}</code></td></tr>`).join("")}</tbody></table>${q.mode === "fill" ? `<pre class="light-code"><code>${esc(q.code.replace("___", r.solution))}</code></pre>` : ""}</details>` : ""}</section>
       <div class="light-actions">${r.correct && !r.guessed ? '<button id="practice-guess" class="button is-ghost" type="button">I guessed — revisit sooner</button>' : ""}${r.guessed ? "<span>Marked as a guess · will revisit sooner</span>" : r.assisted ? "<span>Completed with help · will revisit sooner</span>" : ""}<button id="practice-next" class="button is-primary" type="button">${run.limit && run.answered >= run.limit ? "Finish round" : "Next"} <kbd>Enter</kbd></button></div>`;
-    if (r.correct && !r.guessed) $("#practice-guess").addEventListener("click", async () => {
-      if (submitting) return;
-      const t = ticket;
-      submitting = true;
-      $("#practice-guess").disabled = true;
-      try {
-        const updated = await api("/practice/guess", "POST", { question_id: q.id });
-        catalog.status[q.template] = "uncertain";
-        if (t !== ticket) { if (!run) renderLibrary(); return; }
-        result = updated;
-        const outcome = run.outcomes.find(o => o.id === q.id);
-        if (outcome) outcome.secure = false;
-        run.next = run.limit && run.answered >= run.limit ? null : fetchNext();
-        renderFeedback(answer);
-      } catch (e) {
-        if (t === ticket) { $("#practice-error").textContent = e.message; $("#practice-guess").disabled = false; }
-      } finally { if (t === ticket) submitting = false; }
-    });
+    if (r.correct && !r.guessed) $("#practice-guess").addEventListener("click", markGuessed);
     $("#practice-next").addEventListener("click", advance);
     $("#practice-next").focus();
   }

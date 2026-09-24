@@ -591,7 +591,23 @@ def api_rev(uid: str = Depends(auth.require_user)):
 
 @app.get("/api/practice")
 def api_practice(uid: str = Depends(auth.require_user)):
-    return {**practice.catalog(), "status": practice_queue.status(get_store(uid).list_light_practice())}
+    return {**practice.catalog(), "storage_scope": uid,
+            "status": practice_queue.status(get_store(uid).list_light_practice())}
+
+
+@app.get("/api/practice/resume/{question_id}")
+def api_practice_resume(question_id: str, uid: str = Depends(auth.require_user)):
+    """Reconstruct the same variation and reconcile an interrupted answer save."""
+    try:
+        q = practice.from_id(question_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    store = get_store(uid)
+    result = store.get_light_practice(question_id)
+    if result:
+        result = {**result, "related_problems": practice.practice_skills.related_problems(
+            q["template"], store.list_light_practice())}
+    return {"question": practice.public_question(q), "result": result}
 
 
 @app.get("/api/practice/question/{template}")

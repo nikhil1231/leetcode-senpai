@@ -2700,3 +2700,31 @@ def test_practice_difficulty_filter(client):
         assert q.status_code == 200
         assert q.json()["difficulty"] == level
     assert client.get("/api/practice/next?difficulty=impossible").status_code == 400
+
+
+def test_resume_reconstructs_variation_and_reads_saved_answer(client):
+    from server import practice
+    question_id = "v1:fill-search:1234"
+    url = f"/api/practice/resume/{question_id}"
+    fresh = client.get(url)
+    assert fresh.status_code == 200
+    assert fresh.json() == {"question": practice.public_question(practice.from_id(question_id)), "result": None}
+    assert not client.store.light_practice
+    result = client.post("/api/practice/answer", json={"question_id": question_id, "answer": "0"}).json()
+    before = copy.deepcopy(client.store.light_practice)
+    assert client.get(url).json()["result"] == result
+    assert client.store.light_practice == before
+    client.post("/api/practice/guess", json={"question_id": question_id})
+    assert client.get(url).json()["result"]["guessed"] is True
+    assert client.get("/api/practice/resume/not-a-question").status_code == 404
+
+
+def test_resume_and_browser_storage_scope_follow_authenticated_user(client, monkeypatch):
+    qid = "v1:fill-search:1234"
+    client.post("/api/practice/answer", json={"question_id": qid, "answer": "0"})
+    other = FakeStore("other")
+    monkeypatch.setattr(main, "get_store", lambda uid: client.store if uid == "test" else other)
+    assert client.get("/api/practice").json()["storage_scope"] == "test"
+    main.app.dependency_overrides[auth.require_user] = lambda: "other"
+    assert client.get("/api/practice").json()["storage_scope"] == "other"
+    assert client.get(f"/api/practice/resume/{qid}").json()["result"] is None
