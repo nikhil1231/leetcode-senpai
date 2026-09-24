@@ -47,6 +47,12 @@ GOOGLE_APPLICATION_CREDENTIALS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"
 # reads/writes your existing users/{uid} data.
 DEV_UID = os.environ.get("DEV_UID", "local-dev")
 
+# Quickfire results made while Firestore is unreachable wait here until they
+# sync (see practice_offline.py). Outside the checkout, so a deploy's hard reset
+# or clean can never take unsynced answers with it.
+PRACTICE_OFFLINE_PATH = os.environ.get("PRACTICE_OFFLINE_PATH") or os.path.join(
+    os.path.expanduser("~"), ".leetcode-senpai", "practice_offline.json")
+
 # ---- LLM -----------------------------------------------------------------------
 # Enrichment/coaching layer. Optional: when the selected provider's API key is
 # unset, every LLM-dependent feature degrades gracefully instead of erroring.

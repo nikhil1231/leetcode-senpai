@@ -173,12 +173,12 @@ DEV_UID=<your-firebase-uid> uv run scripts/migrate_local_to_firestore.py
 ```bash
 uv run --locked pytest                 # no Firestore/network needed
 node --test tests/test_frontend.cjs       # UI flow regressions; no npm install needed
-node --test tests/test_practice_frontend.cjs # light-practice interactions
+node --test tests/test_practice_frontend.cjs # Quickfire interactions
 ```
 
-## Light practice
+## Quickfire
 
-The **Light practice** tab is a stream of short exercises: breaking inputs, state
+The **Quickfire** tab (called Light practice in code, routes, and storage) is a stream of short exercises: breaking inputs, state
 prediction, missing code, and approach choices. Clicking a kind of question (or
 Mixed, optionally narrowed to a topic) starts a run with no fixed length. Each
 answer is graded and explained as soon as it is submitted. Keys: `1`–`4` answer a
@@ -286,7 +286,20 @@ account; only allow-listed emails get through.
   `server/auth.py` — optional for a single user.
 
 
-### Light practice learning controls
+### Quickfire offline
+
+Quickfire works without internet as long as the server runs locally with
+`AUTH_MODE=local` (Firebase and Cloudflare Access sign-in need the network). Answers are
+mirrored to `~/.leetcode-senpai/practice_offline.json` (`PRACTICE_OFFLINE_PATH`
+overrides it). When Firestore is unreachable, reads come from that mirror and new
+answers or guess marks are queued there. They replay once Firestore answers again: on
+the next Quickfire request, or at server start. Replays are idempotent: if an answer is
+already on the server, the server's copy wins, as with any retry. A queued write is
+removed only after Firestore confirms it. `server/connectivity.py` probes reachability
+(a cached TCP connect), so while offline every other API returns a fast 503 rather than
+hanging on Firestore retries.
+
+### Quickfire learning controls
 
 Choose an endless stream or a five-/ten-question round, with adaptive, foundation,
 standard, or stretch difficulty. Counterexample checks allow retries without
@@ -300,7 +313,7 @@ retain their existing explanations. Twelve curated concept families link differe
 question formats, guide skill-level selection, and suggest full LeetCode problems
 after two unassisted reps. “I guessed” preserves correctness but brings the skill
 back sooner. Expandable value tables, completed snippets, and an end-of-round
-takeaway provide optional review. Topic panels can launch a light-practice warm-up.
+takeaway provide optional review. Topic panels can launch a Quickfire warm-up.
 These features make no LLM calls and do not alter full-solve mastery or FSRS.
 
 An unfinished round can be resumed after refreshing the same browser tab. Its

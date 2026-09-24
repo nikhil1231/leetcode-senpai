@@ -20,13 +20,13 @@ from typing import Literal
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (auth, coach, config, enrich, gamify, importer, insights,
+from . import (auth, coach, config, connectivity, enrich, gamify, importer, insights,
                leetcode, llm, mock, neetcode150, packs, plans, poller, practice,
-               practice_queue, scheduler)
+               practice_offline, practice_queue, scheduler)
 from . import store as store_mod
 from .store import get_store
 
@@ -45,6 +45,8 @@ async def lifespan(_app):
     if config.local_mode():
         threading.Thread(target=store_mod.warm, args=(config.DEV_UID,),
                          daemon=True).start()
+        # Quickfire answers saved while offline in an earlier run.
+        _practice_store(config.DEV_UID).flush_in_background()
     yield
 
 
@@ -589,10 +591,17 @@ def api_rev(uid: str = Depends(auth.require_user)):
     return {"rev": get_store(uid).revisions(), "date": _today_iso()}
 
 
+def _practice_store(uid):
+    """Quickfire needs no network: its results fall back to a local mirror."""
+    return practice_offline.OfflinePractice(get_store(uid), uid)
+
+
 @app.get("/api/practice")
 def api_practice(uid: str = Depends(auth.require_user)):
+    store = _practice_store(uid)
     return {**practice.catalog(), "storage_scope": uid,
-            "status": practice_queue.status(get_store(uid).list_light_practice())}
+            "status": practice_queue.status(store.list_light_practice()),
+            "sync": store.sync_status()}
 
 
 @app.get("/api/practice/resume/{question_id}")
@@ -602,11 +611,11 @@ def api_practice_resume(question_id: str, uid: str = Depends(auth.require_user))
         q = practice.from_id(question_id)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
-    store = get_store(uid)
+    store = _practice_store(uid)
     result = store.get_light_practice(question_id)
     if result:
         result = {**result, "related_problems": practice.practice_skills.related_problems(
-            q["template"], store.list_light_practice())}
+            q["template"], store.list_light_practice()), "sync": store.sync_status()}
     return {"question": practice.public_question(q), "result": result}
 
 
@@ -632,7 +641,7 @@ def api_practice_next(mode: str = "", topic: str = "", recent: str = "", difficu
     candidates = {e["id"]: e["topic"] for e in metadata.values()
                   if (not mode or e["mode"] == mode) and (not topic or e["topic"] == topic) and (not difficulty or e["difficulty"] == difficulty)}
     try:
-        template = practice_queue.pick(candidates, get_store(uid).list_light_practice(),
+        template = practice_queue.pick(candidates, _practice_store(uid).list_light_practice(),
                                        recent.split(",")[-50:] if recent else [], int(time.time()),
                                        random.Random(secrets.randbits(64)), metadata=metadata)
     except ValueError as exc:
@@ -643,7 +652,7 @@ def api_practice_next(mode: str = "", topic: str = "", recent: str = "", difficu
 @app.post("/api/practice/guess")
 def api_practice_guess(body: PracticeAnswer, uid: str = Depends(auth.require_user)):
     try:
-        return get_store(uid).mark_light_practice_guess(body.question_id)
+        return _practice_store(uid).mark_light_practice_guess(body.question_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -672,10 +681,10 @@ def api_practice_answer(body: PracticeAnswer, uid: str = Depends(auth.require_us
     result["answered_at"] = int(time.time())
     # A retry after a lost response returns the first saved result, rather than
     # turning a revealed answer into a correct attempt or counting it twice.
-    store = get_store(uid)
+    store = _practice_store(uid)
     saved = store.save_light_practice(q["id"], result)
     return {**saved, "related_problems": practice.practice_skills.related_problems(
-        q["template"], store.list_light_practice())}
+        q["template"], store.list_light_practice()), "sync": store.sync_status()}
 
 
 @app.get("/api/overview")
@@ -1932,6 +1941,24 @@ _FIREBASE_SDK = (
     '<script src="https://www.gstatic.com/firebasejs/10.12.0/'
     'firebase-auth-compat.js"></script>'
 )
+
+
+# What still works without the internet: Quickfire (local mirror), the in-memory
+# freshness check, liveness, and the LeetCode status probe (which reports
+# "unknown" on its own). Everything else needs Firestore.
+_OFFLINE_PATHS = ("/api/practice", "/api/rev", "/api/health", "/api/leetcode-status")
+OFFLINE_MESSAGE = "You're offline. Quickfire still works; everything else needs a connection."
+
+
+@app.middleware("http")
+async def offline_gate(request, call_next):
+    """Fail Firestore-backed requests fast when offline, instead of letting them
+    hang for a minute each and starve the browser's connection pool."""
+    path = request.url.path
+    if (path.startswith("/api/") and not path.startswith(_OFFLINE_PATHS)
+            and not await asyncio.to_thread(connectivity.online)):
+        return JSONResponse({"detail": OFFLINE_MESSAGE}, status_code=503)
+    return await call_next(request)
 
 
 @app.middleware("http")

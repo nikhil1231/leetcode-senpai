@@ -6,12 +6,16 @@
 
   // Replace a stuck loader with a retry affordance when a fetch fails (e.g. the
   // dev server briefly restarts) so a view never hangs on the spinner forever.
-  function showLoadError(el, retry) {
+  // A 503 is the server saying Firestore is unreachable: offline, not restarting.
+  function showLoadError(el, retry, err) {
+    const offline = err && err.status === 503;
     el.innerHTML = `<div class="empty load-error">
-      <p>Couldn't reach the server. It may be restarting.</p>
-      <button class="button is-small retry-load">Retry</button></div>`;
+      <p>${offline ? escapeHtml(err.message) : "Couldn't reach the server. It may be restarting."}</p>
+      ${offline ? '<button class="button is-small is-primary open-quickfire">Open Quickfire</button> ' : ""}<button class="button is-small retry-load">Retry</button></div>`;
     const btn = el.querySelector(".retry-load");
     if (btn) btn.addEventListener("click", retry);
+    const quick = el.querySelector(".open-quickfire");
+    if (quick) quick.addEventListener("click", () => App.goTab("practice"));
   }
 
   const problemFilters = {
@@ -126,7 +130,7 @@
         api("/reviews/schedule").catch(() => []),
       ]);
     } catch (e) {
-      showLoadError(el, renderToday);
+      showLoadError(el, renderToday, e);
       return;
     }
 
@@ -552,7 +556,7 @@
       <span class="topic-map-count">${t.solved}<span class="small">/${t.total} solved</span></span>
       ${progressBar(t.coverage)}
       ${masteryPill(t)}
-      <button id="topic-light-practice" class="button is-small" type="button">Warm up with light practice</button>`;
+      <button id="topic-light-practice" class="button is-small" type="button">Warm up with Quickfire</button>`;
     $("#topic-light-practice").addEventListener("click", () => {
       closeTopic();
       window.Views.startLightPractice(t.category);
@@ -564,7 +568,7 @@
     try {
       rows = await api(`/problems?category=${encodeURIComponent(t.category)}&sort=difficulty`);
     } catch (e) {
-      showLoadError(body, () => openTopic(t));
+      showLoadError(body, () => openTopic(t), e);
       return;
     }
     if (!rows.length) {
@@ -590,7 +594,7 @@
     try {
       d = await api("/insights");
     } catch (e) {
-      showLoadError(el, renderInsights);
+      showLoadError(el, renderInsights, e);
       return;
     }
     const fm = Object.entries(d.failure_modes || {}).map(([k, v]) => ({
@@ -655,7 +659,7 @@
     try {
       r = await api(`/failure-mode/${encodeURIComponent(tag)}`);
     } catch (e) {
-      showLoadError(panel, () => loadFailureMode(btn));
+      showLoadError(panel, () => loadFailureMode(btn), e);
       return;
     }
     const attempts = (r.attempts || []).slice().sort((a, b) => (b.solved_at || 0) - (a.solved_at || 0));
@@ -886,7 +890,7 @@
     try {
       rows = await api("/history?limit=100");
     } catch (e) {
-      showLoadError(el, renderHistory);
+      showLoadError(el, renderHistory, e);
       return;
     }
     if (!rows.length) { el.innerHTML = "<p class='empty'>No attempts logged yet.</p>"; return; }
@@ -956,7 +960,7 @@
     try {
       facets = await loadProblemFacets();
     } catch (e) {
-      showLoadError(el, renderProblems);
+      showLoadError(el, renderProblems, e);
       return;
     }
     const totalLabel = facets.total == null ? "" : `<span class="small">${facets.total} in library</span>`;
@@ -1027,7 +1031,7 @@
     try {
       rows = await api(`/problems${problemQueryString()}`);
     } catch (e) {
-      showLoadError(box, loadProblemResults);
+      showLoadError(box, loadProblemResults, e);
       return;
     }
     if (!rows.length && !hasActiveProblemFilters()) {

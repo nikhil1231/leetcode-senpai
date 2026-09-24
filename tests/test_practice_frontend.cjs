@@ -439,3 +439,25 @@ test('unavailable browser storage does not prevent practicing', async () => {
   await view.key('Escape');
   assert.match(view.html(), /Last run: 1 answered/);
 });
+
+test('offline practice says answers are kept locally and counts what is waiting to sync', async () => {
+  const view = ui(async (url, method) => {
+    if (url === '/practice') return { ...catalog(), sync: { offline: true, unsynced: 0 } };
+    if (method === 'POST') return graded(choiceQ(1), { sync: { offline: true, unsynced: 1 } });
+    return choiceQ();
+  });
+  await view.render();
+  assert.match(view.html(), /Offline\. Answers are saved on this computer/);
+  await view.click('mode:fill');
+  assert.match(view.html(), /offline, saved locally/);
+  await view.key('2');
+  assert.match(view.node('#practice-tally').textContent, /1 answered · 1 right · offline, saved locally/);
+  await view.key('Escape');
+  assert.match(view.html(), /1 answer waiting to sync/);
+});
+
+test('online practice with nothing pending shows no sync note', async () => {
+  const view = ui(async url => url === '/practice' ? { ...catalog(), sync: { offline: false, unsynced: 0 } } : choiceQ());
+  await view.render();
+  assert.doesNotMatch(view.html(), /Offline|waiting to sync|saved locally/);
+});

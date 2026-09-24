@@ -1,7 +1,8 @@
-// Light practice: pick a kind of question and answer a stream of small ones.
+// Quickfire: pick a kind of question and answer a stream of small ones.
 // Each answer is shown as soon as it is submitted; Enter moves on, Esc stops.
 // The server picks every next question from past outcomes (practice_queue.py).
-// No timers, sessions, or review-card advances.
+// No timers, sessions, or review-card advances. Works offline: the server saves
+// answers locally and syncs them later (practice_offline.py).
 (function () {
   const { $, escapeHtml: esc, api, loader } = window.H;
   const MIXED = { id: "", title: "Mixed", duration: "30 sec – 3 min", description: "A bit of everything, weighted toward what you miss." };
@@ -92,7 +93,7 @@
     if (run || loading) return;
     if (catalog) { renderLibrary(); return; }
     loading = true;
-    root().innerHTML = loader("Loading light practice…");
+    root().innerHTML = loader("Loading Quickfire…");
     try {
       catalog = await api("/practice");
       readRound();
@@ -116,6 +117,7 @@
         <h2>Pick a kind of question</h2>
         <p>Questions keep coming until you stop. The ones you miss come back.</p></div>
         <div class="light-filters"><label><input id="practice-recall-first" type="checkbox"> Recall first</label><label for="practice-length">Round</label><div class="select"><select id="practice-length"><option value="0">Until I stop</option><option value="5">5 questions</option><option value="10">10 questions</option></select></div><label for="practice-difficulty">Level</label><div class="select"><select id="practice-difficulty"><option value="">Adaptive</option><option value="foundation">Foundation</option><option value="standard">Standard</option><option value="stretch">Stretch</option></select></div><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
+      ${syncNote()}
       ${lastRun ? `<p class="light-last">Last run: ${lastRun.answered} answered, ${lastRun.correct} right.</p>${recap(lastRun.outcomes)}` : ""}
       ${savedRound ? `<div class="light-recap"><p><strong>Your unfinished round</strong> · ${esc(modeOf(savedRound.run.mode).title)}${savedRound.run.topic ? ` · ${esc(savedRound.run.topic)}` : ""}</p><p>Your place and draft are kept in this tab for up to a day.</p><div class="light-actions"><button id="practice-resume" class="button is-primary" type="button">Resume round</button><button id="practice-discard" class="button is-ghost" type="button">Discard round</button></div></div>` : ""}
       <div class="light-modes">${[MIXED, ...catalog.modes].map(m => {
@@ -137,6 +139,13 @@
     $("#practice-length").addEventListener("change", e => { roundSize = Number(e.target.value); });
     root().querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => start(b.dataset.mode)));
     $("#practice-topic").addEventListener("change", e => { topic = e.target.value; renderLibrary(); });
+  }
+
+  function syncNote() {
+    const s = catalog.sync || {};
+    const n = s.unsynced ? `${s.unsynced} answer${s.unsynced === 1 ? "" : "s"} waiting to sync.` : "";
+    if (s.offline) return `<p class="light-sync">Offline. Answers are saved on this computer and sync when you’re back online. ${n}</p>`;
+    return n ? `<p class="light-sync">${n}</p>` : "";
   }
 
   function recap(outcomes) {
@@ -203,7 +212,8 @@
       <span class="light-run-title">${esc(m.title)}${run.topic ? ` · ${esc(run.topic)}` : ""}</span>
       <span id="practice-tally" class="light-tally">${tally()}</span></div>`;
   }
-  const tally = () => run.limit ? `${run.answered} / ${run.limit} answered · ${run.correct} right` : run.answered ? `${run.answered} answered · ${run.correct} right` : "";
+  const tally = () => (run.limit ? `${run.answered} / ${run.limit} answered · ${run.correct} right` : run.answered ? `${run.answered} answered · ${run.correct} right` : "")
+    + (catalog.sync?.offline ? `${run.answered ? " · " : ""}offline, saved locally` : "");
   function wireBar() { $("#practice-stop").addEventListener("click", stop); }
 
   function renderQuestion() {
@@ -282,6 +292,7 @@
 
   function acceptResult(r) {
     result = r;
+    if (r.sync) catalog.sync = r.sync;
     catalog.status[r.template] = r.correct ? (r.assisted || r.guessed ? "uncertain" : "learned") : "missed";
     pendingAnswer = null;
     run.answered++;

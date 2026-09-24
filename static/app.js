@@ -52,7 +52,7 @@ const api = async (path, method = "GET", body) => {
   }
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
-    throw new Error(apiErrorMessage(payload.detail) || res.statusText);
+    throw Object.assign(new Error(apiErrorMessage(payload.detail) || res.statusText), { status: res.status });
   }
   // A write has just changed the server's revision counters, so any in-flight
   // freshness check is now answering about the world before it. Drop it, or a
@@ -292,7 +292,7 @@ function handleAuthFailure(status) {
 // what the tab is for, so no section needs to re-explain itself.
 const TAB_HEADINGS = {
   today: ["Today", "Your queue for the day"],
-  practice: ["Light practice", "Small exercises for a little spare headspace"],
+  practice: ["Quickfire", "Quick reps for a few spare minutes. Works offline."],
   discover: ["Discover", "Curated packs and highly-rated problems"],
   topics: ["Topics", "Coverage and mastery across the map"],
   insights: ["Insights", "What the data says about your prep"],
