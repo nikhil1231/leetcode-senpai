@@ -848,3 +848,17 @@ def test_typed_recall_uses_safe_structural_comparison():
     q = practice.question("trace-search", 1)
     key = next(o["text"] for o in q["options"] if o["id"] == q["answer"])
     assert practice.grade(q, key, recall=True)["correct"]
+
+
+def test_walkthroughs_are_available_without_executing_snippets():
+    from server import practice
+    for item in practice.catalog()["exercises"]:
+        q = practice.question(item["id"], 1)
+        r = practice.grade(q, reveal=True)
+        if q["mode"] != "approach":
+            assert r["walkthrough"]
+        assert "given" not in practice.public_question(q)
+    q = practice.question("trace-search", 1)
+    r = practice.grade(q, "0")
+    assert ["lo, hi", "[0, 6]"] in r["walkthrough"]
+    assert r["walkthrough"][-1] == ["Final requested state", r["solution"]]

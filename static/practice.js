@@ -192,7 +192,8 @@
       : (r.correct ? "" : `<p class="light-solution">${esc(r.solution)}</p>`);
     $("#practice-actions").innerHTML = "";
     $("#practice-feedback").innerHTML = `<section class="light-feedback ${r.correct ? "is-correct" : ""}"><h3>${heading}</h3>
-      ${r.mistake ? `<p>${esc(r.mistake)}</p>` : ""}${outputs}${solution}<p>${esc(r.explanation)}</p></section>
+      ${r.mistake ? `<p>${esc(r.mistake)}</p>` : ""}${outputs}${solution}<p>${esc(r.explanation)}</p>
+      ${r.walkthrough?.length ? `<details class="light-walkthrough"><summary>Walk through the values</summary><table><caption>${array ? "Where the outputs diverge" : "Given values and the answer"}</caption><tbody>${r.walkthrough.map(([label, value]) => `<tr><th scope="row">${esc(label)}</th><td><code>${esc(value)}</code></td></tr>`).join("")}</tbody></table>${q.mode === "fill" ? `<pre class="light-code"><code>${esc(q.code.replace("___", r.solution))}</code></pre>` : ""}</details>` : ""}</section>
       <div class="light-actions">${r.correct && !r.guessed ? '<button id="practice-guess" class="button is-ghost" type="button">I guessed — revisit sooner</button>' : ""}${r.guessed ? "<span>Marked as a guess · will revisit sooner</span>" : r.assisted ? "<span>Completed with help · will revisit sooner</span>" : ""}<button id="practice-next" class="button is-primary" type="button">${run.limit && run.answered >= run.limit ? "Finish round" : "Next"} <kbd>Enter</kbd></button></div>`;
     if (r.correct && !r.guessed) $("#practice-guess").addEventListener("click", async () => {
       if (submitting) return;

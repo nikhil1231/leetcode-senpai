@@ -168,6 +168,12 @@ def question(template, seed):
         q.update(prompt=f"nums = {nums}. window_sum starts at {total}, the sum of nums[0:3]. What is it after one shift?",
                  code="window_sum -= nums[0]\nwindow_sum += nums[3]")
         explanation = f"Remove the outgoing {nums[0]} and add the incoming {nums[3]}: {total} - {nums[0]} + {nums[3]} = {answer}."
+    if template == "trace-search":
+        q["given"] = [["nums", json.dumps(nums)], ["target", str(target)], ["lo, hi", "[0, 6]"], ["mid", "3"]]
+    elif template == "trace-stack":
+        q["given"] = [["stack (bottom to top)", json.dumps(stack)], ["x", str(x)]]
+    else:
+        q["given"] = [["nums", json.dumps(nums)], ["window_sum", str(total)]]
     _choice(q, [json.dumps(c) for c in choices[:4]], explanation, rng)
     return q
 
@@ -184,7 +190,7 @@ def from_id(question_id):
 
 
 def public_question(q):
-    return {k: v for k, v in q.items() if k not in {"answer", "explanation", "example"}}
+    return {k: v for k, v in q.items() if k not in {"answer", "explanation", "example", "given"}}
 
 
 def counterexample(q, nums):
@@ -264,4 +270,31 @@ def grade(q, answer=None, reveal=False, recall=False):
             example_result = counterexample(q, q["example"])
             result["example_expected"] = example_result["expected"]
             result["example_actual"] = example_result["actual"]
+    result["walkthrough"] = walkthrough(q, result)
     return result
+
+
+def walkthrough(q, result):
+    """Inspect literal initial values only; never execute snippets or submitted code."""
+    rows = []
+    if q["input_type"] == "array":
+        rows = [["Input", result["solution"] if result["revealed"] else result.get("answer", "")],
+                ["Expected result", json.dumps(result["expected"])],
+                ["Buggy result", json.dumps(result["actual"])]]
+    elif q["mode"] == "trace":
+        rows = list(q.get("given", []))
+        if not rows:
+            for node in ast.parse(q["code"]).body:
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    continue
+                if not isinstance(node, ast.Assign):
+                    break
+                try:
+                    value = ast.literal_eval(node.value)
+                except (ValueError, TypeError):
+                    break
+                rows.append([ast.unparse(node.targets[0]), repr(value)])
+        rows.append(["Final requested state", result["solution"]])
+    elif q["mode"] == "fill":
+        rows = [["Missing piece", "___"], ["Replacement", result["solution"]]]
+    return rows
