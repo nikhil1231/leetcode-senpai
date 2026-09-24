@@ -169,3 +169,19 @@ test('Esc during a pending save stops the run without reopening the question', a
   assert.match(view.html(), /1 to revisit/);
   assert.doesNotMatch(view.html(), /practice-input/);
 });
+
+test('a five-question round finishes after feedback without fetching a sixth', async () => {
+  let served = 0;
+  const view = ui(async (url, method) => url === '/practice' ? catalog()
+    : method === 'POST' ? graded(choiceQ(served)) : choiceQ(++served));
+  await view.render();
+  view.node('#practice-length').listeners.change({target: {value: '5'}});
+  await view.click('mode:fill');
+  for (let i = 0; i < 5; i++) {
+    await view.key('1');
+    if (i === 4) assert.match(view.node('#practice-feedback').innerHTML, /Finish round/);
+    await view.key('Enter');
+  }
+  assert.equal(served, 5);
+  assert.match(view.html(), /Last run: 5 answered/);
+});

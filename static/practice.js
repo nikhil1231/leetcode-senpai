@@ -5,7 +5,7 @@
 (function () {
   const { $, escapeHtml: esc, api, loader } = window.H;
   const MIXED = { id: "", title: "Mixed", duration: "30 sec – 3 min", description: "A bit of everything, weighted toward what you miss." };
-  let catalog = null, topic = "", lastRun = null;
+  let catalog = null, topic = "", lastRun = null, roundSize = 0;
   let run = null;  // { mode, topic, recent, answered, correct, next }
   let current = null, result = null, loading = false, submitting = false, ticket = 0;
   const root = () => $("#tab-practice");
@@ -38,7 +38,7 @@
       <div class="light-intro"><div><span class="light-eyebrow">A small rep is enough</span>
         <h2>Pick a kind of question</h2>
         <p>Questions keep coming until you stop. The ones you miss come back.</p></div>
-        <div class="light-filters"><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
+        <div class="light-filters"><label for="practice-length">Round</label><div class="select"><select id="practice-length"><option value="0">Until I stop</option><option value="5">5 questions</option><option value="10">10 questions</option></select></div><label for="practice-topic">Topic</label><div class="select"><select id="practice-topic"><option value="">All topics</option>${topics.map(t => `<option${topic === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div></div></div>
       ${lastRun ? `<p class="light-last">Last run: ${lastRun.answered} answered, ${lastRun.correct} right.</p>` : ""}
       <div class="light-modes">${[MIXED, ...catalog.modes].map(m => {
         const c = counts(m.id);
@@ -47,6 +47,8 @@
           <span class="light-mode-stats">${c.total} question${c.total === 1 ? "" : "s"}${c.missed ? ` · <b>${c.missed} to revisit</b>` : ""}${c.fresh ? ` · ${c.fresh} new` : ""}</span></button>`;
       }).join("")}</div>
       <p class="light-footnote"><kbd>1</kbd>–<kbd>4</kbd> answer a choice · <kbd>Enter</kbd> checks and moves on · <kbd>Esc</kbd> stops. These reps don’t change your solve counts, mastery, or review schedule.</p>`;
+    $("#practice-length").value = String(roundSize);
+    $("#practice-length").addEventListener("change", e => { roundSize = Number(e.target.value); });
     root().querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => start(b.dataset.mode)));
     $("#practice-topic").addEventListener("change", e => { topic = e.target.value; renderLibrary(); });
   }
@@ -59,7 +61,7 @@
   }
 
   function start(mode) {
-    run = { mode, topic, recent: [], answered: 0, correct: 0, next: null };
+    run = { mode, topic, recent: [], answered: 0, correct: 0, next: null, limit: roundSize };
     advance();
   }
 
@@ -71,6 +73,7 @@
   }
 
   async function advance() {
+    if (run.limit && run.answered >= run.limit) { stop(); return; }
     const t = ++ticket, pending = run.next || fetchNext();
     run.next = null; current = null; result = null; loading = true;
     root().innerHTML = `${runBar()}${loader("Loading the next question…")}`;
@@ -95,7 +98,7 @@
       <span class="light-run-title">${esc(m.title)}${run.topic ? ` · ${esc(run.topic)}` : ""}</span>
       <span id="practice-tally" class="light-tally">${tally()}</span></div>`;
   }
-  const tally = () => run.answered ? `${run.answered} answered · ${run.correct} right` : "";
+  const tally = () => run.limit ? `${run.answered} / ${run.limit} answered · ${run.correct} right` : run.answered ? `${run.answered} answered · ${run.correct} right` : "";
   function wireBar() { $("#practice-stop").addEventListener("click", stop); }
 
   function renderQuestion() {
@@ -143,7 +146,7 @@
       result = r;
       run.answered++;
       if (r.correct) run.correct++;
-      run.next = fetchNext();  // ready by the time the explanation is read
+      run.next = run.limit && run.answered >= run.limit ? null : fetchNext();  // ready by the time the explanation is read
       renderFeedback(reveal ? null : answer);
     } catch (e) {
       if (t !== ticket) return;
@@ -167,7 +170,7 @@
     $("#practice-actions").innerHTML = "";
     $("#practice-feedback").innerHTML = `<section class="light-feedback ${r.correct ? "is-correct" : ""}"><h3>${heading}</h3>
       ${outputs}${solution}<p>${esc(r.explanation)}</p></section>
-      <div class="light-actions"><button id="practice-next" class="button is-primary" type="button">Next <kbd>Enter</kbd></button></div>`;
+      <div class="light-actions"><button id="practice-next" class="button is-primary" type="button">${run.limit && run.answered >= run.limit ? "Finish round" : "Next"} <kbd>Enter</kbd></button></div>`;
     $("#practice-next").addEventListener("click", advance);
     $("#practice-next").focus();
   }
