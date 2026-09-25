@@ -242,6 +242,23 @@ test('a solve with no captured code still promises a grade while the cookie may 
   assert.match(ui.node('#annotate-grade-body').innerHTML, /Save your rating/);
 });
 
+test('a solve that lands without its code re-checks the cookie at once', () => {
+  const ui = app(async () => response({}));
+  ui.run(`llmEnabled = true; lastLcCheckAt = Date.now();
+          openAnnotate({ id: "attempt-one", slug: "two-sum", submission_id: 7, code: null })`);
+  // No cookie in the stub's localStorage, so the answer is immediate.
+  assert.equal(ui.run('lcState'), 'missing');
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /grade-cookie-form/);
+});
+
+test('coming back to the page re-checks the cookie at most every few minutes', () => {
+  const ui = app(async () => response({}));
+  ui.run('lastLcCheckAt = Date.now(); lcState = "ok"; recheckLeetCodeAuth()');
+  assert.equal(ui.run('lcState'), 'ok');
+  ui.run('lastLcCheckAt = Date.now() - LC_RECHECK_GAP_MS; recheckLeetCodeAuth()');
+  assert.equal(ui.run('lcState'), 'missing');
+});
+
 test('a manual log has no submission to explain away', () => {
   const ui = app(async () => response({}));
   ui.run(`llmEnabled = true;

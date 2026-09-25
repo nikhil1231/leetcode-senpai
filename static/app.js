@@ -475,7 +475,19 @@ const LC_WARNING = {
 // The last answer, so the post-solve modal can ask for a fresh cookie up front.
 let lcState = null;
 
+// The page stays open for hours, and a cookie that was fine at load can die
+// under it — so this is asked again whenever the page is looked at again, at
+// most every few minutes, and straight away when a solve lands without code.
+let lastLcCheckAt = 0;
+const LC_RECHECK_GAP_MS = 5 * 60 * 1000;
+
+function recheckLeetCodeAuth() {
+  if (Date.now() - lastLcCheckAt < LC_RECHECK_GAP_MS) return;
+  checkLeetCodeAuth();
+}
+
 async function checkLeetCodeAuth() {
+  lastLcCheckAt = Date.now();
   // No cookie in this browser is already the answer — don't spend a round-trip
   // on a question localStorage just settled.
   if (!localStorage.getItem("lc_session")) return renderLcWarning("missing");
@@ -1072,11 +1084,11 @@ async function detectSolves({ force = false } = {}) {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") detectSolves();
+  if (document.visibilityState === "visible") { detectSolves(); recheckLeetCodeAuth(); }
 });
 // visibilitychange misses the case where the app was never hidden — a second
 // monitor, or LeetCode in its own window. Window focus covers coming back there.
-window.addEventListener("focus", () => detectSolves());
+window.addEventListener("focus", () => { detectSolves(); recheckLeetCodeAuth(); });
 
 $("#btn-cancel-session").addEventListener("click", async () => {
   pauseRequestId++;
@@ -1162,6 +1174,9 @@ function openAnnotate(attempt) {
   $("#annotate-modal").classList.remove("hidden");
   markSettling(attempt.slug, "solved");
   initAnnotateGrade(attempt);
+  // Detection asked for the code and didn't get it: the likeliest reason is
+  // the cookie, so find out now rather than on the next reload.
+  if (!attempt.code && attempt.submission_id) checkLeetCodeAuth();
 }
 
 // Rendered when the modal opens, and again whenever a better submission lands
