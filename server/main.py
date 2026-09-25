@@ -431,9 +431,60 @@ async def _enrich_bg(uid, attempt_id):
     await enrich.enrich_attempt(get_store(uid), attempt_id)
 
 
-async def _grade_solution(store, attempt):
+async def _recover_code(store, attempt, lc):
+    """Fetch the code a detected solve was logged without.
+
+    Code is captured once, at detection, and a cookie that was dead at that
+    moment used to leave the solve ungradable for good. Grading asks again with
+    the cookie the browser holds now. Returns (attempt, problem): problem is None
+    once the code is in hand, else a grade-response dict saying why it isn't —
+    "needs_cookie" when the cookie is missing or LeetCode rejects it, so the
+    modal can take a fresh one and try again in place. Nothing is persisted for
+    a missing cookie: that's a state of this browser, not of the solve.
+    """
+    def needs(state):
+        return {"grading_status": "needs_cookie", "cookie_state": state,
+                "graded": None, "grading_error": None}
+
+    def failed(err):
+        store.update_attempt(attempt["id"], {
+            "solution_grading_status": "failed", "solution_grading_error": err})
+        return {"grading_status": "failed", "graded": None, "grading_error": err}
+
+    if not leetcode.has_auth(lc):
+        return attempt, needs("missing")
+    try:
+        details = await leetcode.submission_details(attempt["submission_id"], lc)
+    except Exception:
+        details = None
+    if details and details.get("code"):
+        fields = {"code": details["code"]}
+        # Only blanks: the rest describes the same submission, so filling in
+        # what detection missed never overwrites anything it did capture.
+        for k in ("runtime_percentile", "memory_percentile", "lang"):
+            if attempt.get(k) is None and details.get(k) is not None:
+                fields[k] = details[k]
+        store.update_attempt(attempt["id"], fields)
+        return {**attempt, **fields}, None
+    # No code back. Only a signed-out answer means the cookie; anything else —
+    # LeetCode down, a submission it won't show — must not ask for a new one.
+    try:
+        username = await leetcode.signed_in_as(lc)
+    except Exception:
+        return attempt, failed("Couldn't reach LeetCode to fetch your code. Try again.")
+    if not username:
+        return attempt, needs("expired")
+    return attempt, failed("LeetCode didn't return the code for this submission.")
+
+
+async def _grade_solution(store, attempt, lc=None):
     """Grade an attempt's code and persist the result. Returns the response dict
-    the modal expects: {grading_status, graded, grading_error}. Never raises."""
+    the modal expects: {grading_status, graded, grading_error[, cookie_state]}.
+    Never raises."""
+    if not attempt.get("code") and attempt.get("submission_id"):
+        attempt, problem = await _recover_code(store, attempt, lc)
+        if problem:
+            return problem
     code = attempt.get("code")
     if not code:
         store.update_attempt(attempt["id"], {"solution_grading_status": "skipped"})
@@ -1032,17 +1083,19 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
 
 
 @app.post("/api/attempt/{attempt_id}/grade-solution")
-async def api_grade_solution(attempt_id: str, uid: str = Depends(auth.require_user)):
+async def api_grade_solution(attempt_id: str, uid: str = Depends(auth.require_user),
+                             lc=Depends(auth.leetcode_auth)):
     """On-demand solution grading - used by the modal to grade a solve that wasn't
     auto-graded (stale) or to retry after a failure. Awaits the LLM synchronously
-    like recall grading so the modal can render the result immediately."""
+    like recall grading so the modal can render the result immediately. A solve
+    logged without its code has it fetched first, with the caller's cookie."""
     store = get_store(uid)
     attempt = store.get_attempt(attempt_id)
     if not attempt:
         raise HTTPException(404, "no such attempt")
     if attempt.get("confidence") is None or attempt.get("independence") is None:
         raise HTTPException(400, "self-assessment is required before solution grading")
-    result = await _grade_solution(store, attempt)
+    result = await _grade_solution(store, attempt, lc)
     return {"ok": True, **result}
 
 

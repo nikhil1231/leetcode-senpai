@@ -2085,6 +2085,77 @@ def test_grade_solution_skips_without_code(client):
     assert r.json()["grading_status"] == "skipped"
 
 
+def _codeless_solve(client, cookie=None):
+    main.app.dependency_overrides[auth.leetcode_auth] = (
+        lambda: {"session": cookie, "csrf": None} if cookie else None)
+    return client.store.add_attempt({
+        "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
+        "kind": "adhoc", "confidence": 3, "independence": "solo",
+        "submission_id": 42, "code": None, "lang": None, "runtime_percentile": 71.0,
+    })
+
+
+def test_grade_solution_fetches_code_detection_missed(client, monkeypatch):
+    seen = {}
+
+    async def fake_details(submission_id, auth=None):
+        seen["auth"] = auth
+        return {"code": "class Solution: pass", "lang": "python3",
+                "runtime_percentile": 12.0, "memory_percentile": 55.0}
+
+    async def fake_grade(store, slug, code, *a, **k):
+        seen["code"] = code
+        return {"score": 5, "optimal": True, "analysis": "ok"}, None
+
+    monkeypatch.setattr(main.leetcode, "submission_details", fake_details)
+    monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
+    aid = _codeless_solve(client, "fresh")
+    r = client.post(f"/api/attempt/{aid}/grade-solution")
+    assert r.json()["grading_status"] == "viewed"
+    assert seen == {"auth": {"session": "fresh", "csrf": None}, "code": "class Solution: pass"}
+    stored = client.store.get_attempt(aid)
+    assert stored["code"] == "class Solution: pass"
+    assert stored["lang"] == "python3"
+    assert stored["memory_percentile"] == 55.0
+    assert stored["runtime_percentile"] == 71.0  # what detection captured stays
+
+
+def test_grade_solution_asks_for_a_cookie_when_none_is_set(client):
+    aid = _codeless_solve(client)
+    body = client.post(f"/api/attempt/{aid}/grade-solution").json()
+    assert body["grading_status"] == "needs_cookie"
+    assert body["cookie_state"] == "missing"
+    # A cookie missing from this browser says nothing about the solve itself.
+    assert client.store.get_attempt(aid).get("solution_grading_status") is None
+
+
+def test_grade_solution_reports_a_rejected_cookie_as_expired(client, monkeypatch):
+    async def no_details(submission_id, auth=None):
+        return None
+
+    async def signed_out(auth):
+        return None
+
+    monkeypatch.setattr(main.leetcode, "submission_details", no_details)
+    monkeypatch.setattr(main.leetcode, "signed_in_as", signed_out)
+    aid = _codeless_solve(client, "stale")
+    body = client.post(f"/api/attempt/{aid}/grade-solution").json()
+    assert body["grading_status"] == "needs_cookie"
+    assert body["cookie_state"] == "expired"
+
+
+def test_grade_solution_never_blames_the_cookie_for_an_outage(client, monkeypatch):
+    async def down(*a, **k):
+        raise RuntimeError("503")
+
+    monkeypatch.setattr(main.leetcode, "submission_details", down)
+    monkeypatch.setattr(main.leetcode, "signed_in_as", down)
+    aid = _codeless_solve(client, "fine")
+    body = client.post(f"/api/attempt/{aid}/grade-solution").json()
+    assert body["grading_status"] == "failed"
+    assert "reach LeetCode" in body["grading_error"]
+
+
 def test_grade_solution_requires_self_assessment(client, monkeypatch):
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
     aid = client.store.add_attempt({

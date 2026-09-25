@@ -1761,6 +1761,8 @@ pre.code {
 .grade-card .grade-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 .grade-card .missed { margin: 10px 0 0; font-size: 12.5px; }
 .grade-card .grading { margin-top: 10px; }
+.grade-cookie { display: flex; gap: 8px; margin-top: 10px; }
+.grade-cookie .input { flex: 1; min-width: 0; }
 .grade-pending { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 
 .overlay-card.predict-wide { width: min(1120px, 96vw); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .85fr); gap: 10px 18px; align-items: start; }

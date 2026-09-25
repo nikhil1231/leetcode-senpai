@@ -34,7 +34,8 @@ function app(fetch) {
       readyState: 'loading', addEventListener() {},
       querySelector: node, querySelectorAll: () => [],
     },
-    localStorage: { getItem: () => null }, fetch,
+    stored: {},
+    localStorage: { getItem: () => null, setItem(k, v) { context.stored[k] = v; } }, fetch,
     setInterval(fn) { const id = nextTimer++; intervals.set(id, fn); return id; },
     clearInterval(id) { intervals.delete(id); },
     setTimeout() {}, clearTimeout() {},
@@ -225,23 +226,30 @@ test('an unchanged solve leaves the open modal alone', async () => {
   assert.equal(ui.node('#annotate-facts').innerHTML, '');
 });
 
-test('a solve with no captured code says why, instead of hiding the grade panel', () => {
+test('a solve with no captured code asks for a fresh cookie when it is known dead', () => {
   const ui = app(async () => response({}));
-  ui.run(`llmEnabled = true;
+  ui.run(`llmEnabled = true; lcState = "expired";
           initAnnotateGrade({ id: "attempt-one", submission_id: 7, code: null })`);
-  const panel = ui.node('#annotate-grade').innerHTML;
-  assert.match(panel, /No solution grade/);
-  assert.match(panel, /LEETCODE_SESSION/);
+  const panel = ui.node('#annotate-grade-body').innerHTML;
+  assert.match(panel, /expired/);
+  assert.match(panel, /grade-cookie-form/);
+});
+
+test('a solve with no captured code still promises a grade while the cookie may be fine', () => {
+  const ui = app(async () => response({}));
+  ui.run(`llmEnabled = true; lcState = "ok";
+          initAnnotateGrade({ id: "attempt-one", submission_id: 7, code: null })`);
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /Save your rating/);
 });
 
 test('a manual log has no submission to explain away', () => {
   const ui = app(async () => response({}));
   ui.run(`llmEnabled = true;
           initAnnotateGrade({ id: "attempt-one", submission_id: null, code: null })`);
-  assert.equal(ui.node('#annotate-grade').innerHTML, '');
+  assert.equal(ui.node('#annotate-grade-body').innerHTML, '');
 });
 
-test('saving an ungradable solve never promises a grade', async () => {
+test('saving a manual log never promises a grade', async () => {
   const calls = [];
   const ui = app(async (path) => { calls.push(path); return response({ ok: true }); });
   ui.run('llmEnabled = true; currentAttempt = { id: "attempt-one", code: null }');
@@ -250,6 +258,36 @@ test('saving an ungradable solve never promises a grade', async () => {
   await ui.node('#btn-save-annotate').listeners.click();
   assert.equal(ui.node('#toast').textContent, 'Logged');
   assert.ok(!calls.some((p) => p.includes('grade-solution')));
+});
+
+test('a cookie that dies before grading is replaced and graded without leaving the modal', async () => {
+  const calls = [];
+  let cookieGood = false;
+  const ui = app(async (path) => {
+    calls.push(path);
+    if (path.endsWith('/leetcode-status')) return response({ state: 'ok' });
+    if (path.endsWith('/grade-solution')) {
+      return response(cookieGood
+        ? { grading_status: 'viewed', graded: { score: 4, analysis: 'hash map' } }
+        : { grading_status: 'needs_cookie', cookie_state: 'expired' });
+    }
+    return response({ ok: true });
+  });
+  ui.run('llmEnabled = true; currentAttempt = { id: "attempt-one", submission_id: 7, code: null }');
+  ui.node('#conf-group button.sel').dataset.val = '3';
+  ui.node('#indep-group button.sel').dataset.val = 'solo';
+  await ui.node('#btn-save-annotate').listeners.click();
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /grade-cookie-form/);
+  assert.equal(ui.run('lcState'), 'expired');
+
+  cookieGood = true;
+  ui.node('#grade-cookie-input').value = ' fresh-cookie ';
+  await ui.node('#grade-cookie-form').listeners.submit({ preventDefault() {} });
+  assert.equal(ui.run('stored.lc_session'), 'fresh-cookie');
+  assert.equal(ui.run('lcState'), 'ok');
+  assert.equal(calls.filter((p) => p.endsWith('/grade-solution')).length, 2);
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /Score <b>4\/5<\/b>/);
+  assert.equal(ui.node('#btn-save-annotate').dataset.saved, '1');
 });
 
 // The stub's localStorage.getItem answers null, i.e. no cookie in this browser.

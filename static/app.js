@@ -427,6 +427,7 @@ async function loadOverview({ force = false } = {}) {
   llmEnabled = o.llm_enabled;
   llmProvider = o.llm_provider || "";
   llmModel = o.llm_model || "";
+  redrawUnratedGrade();
 
   // `optional` stats collapse first on narrow screens; `mod` tints the value
   // when the number is something to act on (due reviews, leeches).
@@ -471,6 +472,9 @@ const LC_WARNING = {
             + "without your code, so they can't be graded. Click to paste a fresh one."],
 };
 
+// The last answer, so the post-solve modal can ask for a fresh cookie up front.
+let lcState = null;
+
 async function checkLeetCodeAuth() {
   // No cookie in this browser is already the answer — don't spend a round-trip
   // on a question localStorage just settled.
@@ -485,6 +489,8 @@ async function checkLeetCodeAuth() {
 }
 
 function renderLcWarning(state) {
+  lcState = state;
+  redrawUnratedGrade();
   const el = $("#lc-warning");
   const copy = LC_WARNING[state];
   // "ok", and "unknown" — a LeetCode outage must never masquerade as an expired
@@ -1327,13 +1333,13 @@ function initAnnotateGrade(attempt) {
   $("#annotate-grade-body").innerHTML = "";
   if (!llmEnabled) return;
   // Grading reads the submitted code, and the code only reaches us with the
-  // LeetCode session cookie — without it a detected solve is logged, scheduled
-  // and enriched as usual, but can never be graded. Say that where the grade
-  // would have gone. Silence here reads as "the coach had nothing to say",
-  // which is the one thing it doesn't mean.
+  // LeetCode session cookie. A solve detected while it was dead arrives
+  // without it; grading fetches it again with whatever cookie this browser
+  // holds by then. When that's already known to be dead, ask for a fresh one
+  // here, where the grade would have gone.
   if (!attempt.code) {
-    if (attempt.submission_id) renderSolutionUngradable();
-    return;  // a manual log has no submission to have fetched code from
+    if (!attempt.submission_id) return;  // a manual log has no code to fetch
+    if (cookieDead()) return renderSolutionNeedsCookie(lcState, attempt.id);
   }
   const status = attempt.solution_grading_status;
   // Claim the column up front so the grade lands where you're already looking,
@@ -1347,7 +1353,24 @@ function initAnnotateGrade(attempt) {
     renderSolutionGrade(attempt.solution_grade);
   } else if (status === "failed") {
     renderSolutionGradeError(attempt.solution_grading_error, attempt.id);
+  } else if (!attempt.code) {
+    renderSolutionGradeError("Your code wasn't captured when this solve was detected.", attempt.id);
   }
+}
+
+// A solve detected on load opens its modal before the overview and the cookie
+// check have answered, so the panel above was drawn without either. Draw it
+// again when they land — only while unrated, since after Save the panel may
+// be holding a grade in flight.
+function redrawUnratedGrade() {
+  if (!currentAttempt || currentAttempt.confidence != null) return;
+  const typed = document.querySelector("#grade-cookie-input");
+  if (typed && typed.value) return;  // never wipe a cookie mid-paste
+  initAnnotateGrade(currentAttempt);
+}
+
+function cookieDead() {
+  return lcState === "missing" || lcState === "expired";
 }
 
 function showAnnotateGrading(messages) {
@@ -1395,12 +1418,46 @@ function markAnnotateDone() {
   saveBtn.disabled = false;
 }
 
-function renderSolutionUngradable() {
+// The cookie died between solving and grading. Take a fresh one right here —
+// it's stored exactly as Settings stores it — and grade without leaving.
+function renderSolutionNeedsCookie(state, attemptId, note = "") {
   stopAnnotateGrading();
   $("#annotate-grade").classList.remove("hidden");
-  $("#annotate-grade-body").innerHTML = `<p class="missed"><b>No solution grade:</b> your code wasn't captured
-    for this solve. Set the LEETCODE_SESSION cookie in Settings — it's stored per browser,
-    so a new address needs it again. Solves from here on will be graded.</p>`;
+  const why = state === "missing" ? "no LeetCode cookie is set in this browser"
+    : "your LeetCode cookie has expired";
+  $("#annotate-grade-body").innerHTML = `
+    <p class="missed"><b>Can't fetch your code:</b> ${why}. Paste a fresh
+      LEETCODE_SESSION and it's fetched and graded right here.</p>
+    ${note ? `<p class="missed">${escapeHtml(note)}</p>` : ""}
+    <form id="grade-cookie-form" class="grade-cookie">
+      <input id="grade-cookie-input" class="input is-small" type="password"
+        autocomplete="off" placeholder="LEETCODE_SESSION value" aria-label="LEETCODE_SESSION cookie" />
+      <button class="button is-small is-link" type="submit">Use cookie</button>
+    </form>`;
+  $("#grade-cookie-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const value = $("#grade-cookie-input").value.trim();
+    if (!value) return;
+    const btn = $("#grade-cookie-form button");
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+    localStorage.setItem("lc_session", value);
+    let state = "unknown";
+    try { ({ state } = await api("/leetcode-status")); } catch (_) {}
+    renderLcWarning(state);
+    if (!currentAttempt || currentAttempt.id !== attemptId) return;
+    if (state === "expired") {
+      return renderSolutionNeedsCookie(state, attemptId,
+        "LeetCode rejected that one — copy it again from a signed-in leetcode.com tab.");
+    }
+    // Grading waits on the rating, as it always does; before Save, the cookie
+    // is simply in place for when it runs.
+    if (currentAttempt.confidence == null || !currentAttempt.independence) {
+      $("#annotate-grade-body").innerHTML = `<p class="grade-pending">Cookie saved. Save your rating and the coach fetches and grades your code here.</p>`;
+      return;
+    }
+    await gradeSavedSolution(attemptId);
+  });
 }
 
 function renderSolutionGradeError(err, attemptId) {
@@ -1413,27 +1470,7 @@ function renderSolutionGradeError(err, attemptId) {
 
 function wireGradeButton(attemptId) {
   const btn = $("#btn-grade-solution");
-  if (!btn) return;
-  btn.addEventListener("click", async () => {
-    showAnnotateGrading(["Grading your solution…"]);
-    let r;
-    try {
-      r = await api(`/attempt/${attemptId}/grade-solution`, "POST");
-    } catch (e) {
-      renderSolutionGradeError(e.message, attemptId);
-      return;
-    }
-    if (r.grading_status === "viewed" && r.graded) {
-      if (currentAttempt) currentAttempt.solution_grade = r.graded;
-      renderSolutionGrade(r.graded);
-      markAnnotateDone();
-      refreshBehindModal();
-    } else if (r.grading_status === "skipped") {
-      $("#annotate-grade").classList.add("hidden");
-    } else {
-      renderSolutionGradeError(r.grading_error, attemptId);
-    }
-  });
+  if (btn) btn.addEventListener("click", () => gradeSavedSolution(attemptId));
 }
 
 async function gradeSavedSolution(attemptId) {
@@ -1454,6 +1491,11 @@ async function gradeSavedSolution(attemptId) {
     if (r.grading_status === "skipped") {
       $("#annotate-grade").classList.add("hidden");
       return true;
+    }
+    if (r.grading_status === "needs_cookie") {
+      renderLcWarning(r.cookie_state);
+      renderSolutionNeedsCookie(r.cookie_state, attemptId);
+      return false;
     }
     renderSolutionGradeError(r.grading_error, attemptId);
     return false;
@@ -1577,10 +1619,14 @@ $("#btn-save-annotate").addEventListener("click", async () => {
       currentAttempt.time_taken_sec = timeTakenSec;
     }
   }
-  // Only promise a grade we can actually produce: with no code there is nothing
-  // to grade, and "grading your solution…" followed by nothing is worse than
-  // the plain confirmation.
-  const willGrade = llmEnabled && !!(currentAttempt && currentAttempt.code);
+  // Only promise a grade we can actually produce. Code missing from a detected
+  // solve is fetched at grading time — unless the cookie is already known to be
+  // dead, in which case the modal stays open on the prompt for a fresh one.
+  const recoverable = llmEnabled && !!(currentAttempt && !currentAttempt.code
+    && currentAttempt.submission_id);
+  const awaitingCookie = recoverable && cookieDead();
+  const willGrade = llmEnabled && !!(currentAttempt
+    && (currentAttempt.code || (recoverable && !awaitingCookie)));
   // A plan is graded whether or not there's code: it's the plan being judged.
   const willGradePlan = llmEnabled && !!(currentAttempt && currentAttempt.plan
     && currentAttempt.plan.status === "planned");
@@ -1589,8 +1635,9 @@ $("#btn-save-annotate").addEventListener("click", async () => {
     currentAttempt.plan_held = planHeld;
   }
   toast(willGrade ? "Logged — grading your solution…"
+    : awaitingCookie ? "Logged — paste a fresh cookie to grade your solution"
     : willGradePlan ? "Logged — grading your plan…" : "Logged");
-  if (!willGrade && !willGradePlan) {
+  if (!willGrade && !willGradePlan && !awaitingCookie) {
     closeAnnotate();
   } else {
     const jobs = [];
