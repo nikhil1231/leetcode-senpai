@@ -1,6 +1,8 @@
 """Scheduler behavior tests — the invariants that must hold across SM-2 and FSRS."""
 import datetime as dt
 
+import pytest
+
 from server import insights, scheduler
 
 
@@ -934,3 +936,27 @@ def test_no_idea_start_is_a_recent_struggle():
     struggles = scheduler._recent_struggles_by_category(
         _drill_problems(), attempts, dt.date(2026, 1, 10))
     assert struggles == {"Trees": 1}
+
+
+# ---- review mode -----------------------------------------------------------------
+@pytest.mark.parametrize("card, mode", [
+    ({"interval_days": 5, "quality": 4}, "recall"),
+    ({"interval_days": 5}, "recall"),                       # seeded: no rating yet
+    ({"interval_days": 1, "quality": 1}, "full"),           # failed it
+    ({"interval_days": 1, "quality": 3}, "full"),           # hints / plan fell apart
+    ({"interval_days": scheduler.RECALL_INTERVAL_CAP, "quality": 5}, "full"),
+    ({"interval_days": 5, "quality": 5, "leech": 1}, "full"),
+])
+def test_review_mode(card, mode):
+    assert scheduler.review_mode(card) == mode
+
+
+def test_a_weak_card_is_a_full_resolve_on_the_board_and_the_queue():
+    problems = [{"slug": "two-sum", "title": "Two Sum", "neetcode_category": "Arrays & Hashing",
+                 "difficulty": "Easy", "in_neetcode150": True}]
+    reviews = [{"slug": "two-sum", "due_date": "2026-01-01", "interval_days": 1, "quality": 1}]
+    today = dt.date(2026, 1, 1)
+    queue = scheduler.build_daily_queue(problems, [], reviews, {}, today=today)
+    board = scheduler.review_schedule(problems, reviews, today=today)
+    assert queue["reviews"][0]["mode"] == "full"
+    assert board[0]["items"][0]["mode"] == "full"

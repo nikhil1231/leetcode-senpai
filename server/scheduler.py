@@ -16,6 +16,13 @@ CONF_TO_Q = {1: 3, 2: 4, 3: 5}  # low / medium / high on SM-2's 0..5 scale
 RECALL_TO_Q = {0: 1, 1: 3, 2: 4, 3: 5}  # recall grade -> quality
 SOLUTION_TO_Q = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 5}  # LLM /5 solution score -> quality
 RECALL_INTERVAL_CAP = 21  # cards shorter than this are reviewed by recall, not full solve
+# A recall is a paragraph of approach, not code: it can carry a card at most to
+# the full-solve threshold, so the next review after one is a real re-solve.
+RECALL_MAX_INTERVAL = 30
+# Every problem comes back around at least this often — sized so the whole
+# library is seen inside the ~90-day run-up to interviews. Unbounded FSRS
+# parked most of the set a year or more out.
+MAX_INTERVAL_DAYS = 45
 REVIEW_DUE_WINDOW_DAYS = 7  # a card stays "due" for this long before it counts as overdue
 
 
@@ -110,13 +117,15 @@ def seed_review(slug, today=None):
 
 
 def advance_review(current, confidence, independence, today=None, grade=None,
-                   solution_score=None, plan_cap=None):
+                   solution_score=None, plan_cap=None, recall=False):
     """Return the next review card state. `current` may be None (first solve).
 
     Pass `grade` (0..3) for approach-recall reviews. Pass `solution_score` (0..5)
     to blend the LLM's code grade with the confidence/independence self-assessment;
     otherwise confidence + independence are graded normally. `plan_cap` (see
     plans.quality_cap) is a ceiling from a pre-solve plan that didn't hold.
+    `recall` marks a self-graded recall (a `grade` implies one): its interval is
+    held to RECALL_MAX_INTERVAL. Every interval is held to MAX_INTERVAL_DAYS.
 
     A card moves once per day. Grading the same problem again today — a second
     solve after a better submission, a recall on top of a solve — replaces that
@@ -139,11 +148,24 @@ def advance_review(current, confidence, independence, today=None, grade=None,
         out = fsrs_engine.advance_review(prior, q, today=today_d)
     else:
         out = _advance_sm2(prior, q, today=today_d)
+    cap = MAX_INTERVAL_DAYS
+    if recall or grade is not None:
+        cap = min(cap, RECALL_MAX_INTERVAL)
+    _clamp_interval(out, today_d, cap)
     # What this advance was computed from, so the next one today can redo it.
     # Stripped of its own snapshot, which keeps the nesting one deep.
     out[PRIOR_CARD_KEY] = (
         {k: v for k, v in prior.items() if k != PRIOR_CARD_KEY} if prior else None)
     return out
+
+
+def _clamp_interval(card, today_d, days):
+    """Pull a card's due date in to at most `days` out. Only the date moves:
+    FSRS stability stays as earned, and it discounts an early review itself."""
+    if (card.get("interval_days") or 0) <= days:
+        return
+    card["interval_days"] = days
+    card["due_date"] = _iso(today_d + dt.timedelta(days=days))
 
 
 def _rewind_todays_advance(current, today_d):
@@ -807,12 +829,22 @@ def review_bucket(days_late, due_window_days=REVIEW_DUE_WINDOW_DAYS):
     return "later"
 
 
+def review_mode(review):
+    """"full" re-solve or quick "recall". A long gap earns a re-solve; so does a
+    weak last rating (a failure, hints, a plan that fell apart — quality <= 3):
+    a card you couldn't code last time isn't checked with a paragraph."""
+    if review.get("leech") or (review.get("interval_days") or 0) >= RECALL_INTERVAL_CAP:
+        return "full"
+    q = review.get("quality")
+    return "full" if q is not None and q <= 3 else "recall"
+
+
 def review_card(review, problem, days_late):
     """One review rendered for the board. Mirrors build_daily_queue's review items
     so the same row renderer handles both."""
     interval = review.get("interval_days") or 0
     leech = bool(review.get("leech"))
-    mode = "full" if (leech or interval >= RECALL_INTERVAL_CAP) else "recall"
+    mode = review_mode(review)
     return {
         "slug": review["slug"],
         "title": problem.get("title", review["slug"]),
@@ -900,7 +932,7 @@ def build_daily_queue(problems, attempts, reviews, settings, today=None, enrichm
         p = prob_by_slug.get(r["slug"], {})
         interval = r.get("interval_days") or 0
         leech = bool(r.get("leech"))
-        mode = "full" if (leech or interval >= RECALL_INTERVAL_CAP) else "recall"
+        mode = review_mode(r)
         reviews_out.append({
             "slug": r["slug"], "title": p.get("title", r["slug"]),
             "difficulty": p.get("difficulty", "Unknown"),

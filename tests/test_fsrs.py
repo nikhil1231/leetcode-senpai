@@ -148,3 +148,40 @@ def test_a_failure_comes_back_tomorrow(engine):
     assert failed["due_date"] == _day(41).isoformat()
     first = scheduler.advance_review(None, 1, "solution", today=_day(0))
     assert first["due_date"] == _day(1).isoformat()
+
+
+# ---- interval caps ---------------------------------------------------------------
+def _strong_card():
+    """A card rated Easy on widely spaced days, as uncapped FSRS would park a
+    year or more out."""
+    card, day = None, 0
+    for _ in range(6):
+        card = scheduler.advance_review(card, 3, "solo", today=_day(day))
+        day += max(card["interval_days"], 1)
+    return card, day
+
+
+def test_no_interval_exceeds_the_cap(engine):
+    card, day = _strong_card()
+    nxt = scheduler.advance_review(card, 3, "solo", today=_day(day), solution_score=5)
+    assert nxt["interval_days"] == scheduler.MAX_INTERVAL_DAYS
+    assert nxt["due_date"] == _day(day + scheduler.MAX_INTERVAL_DAYS).isoformat()
+
+
+@pytest.mark.parametrize("graded", [True, False])
+def test_a_recall_carries_a_card_only_as_far_as_the_recall_cap(engine, graded):
+    """Sliding Window Maximum went 12 -> 432 days on one approach paragraph."""
+    card, day = _strong_card()
+    if graded:
+        nxt = scheduler.advance_review(card, None, None, today=_day(day), grade=3)
+    else:
+        nxt = scheduler.advance_review(card, 3, "solo", today=_day(day), recall=True)
+    assert nxt["interval_days"] == scheduler.RECALL_MAX_INTERVAL
+    # …which puts it past the threshold, so the next review is a re-solve.
+    assert scheduler.review_mode(nxt) == "full"
+
+
+def test_a_short_interval_is_left_alone(engine):
+    card = scheduler.advance_review(None, 1, "hints", today=_day(0))
+    assert card["interval_days"] < scheduler.RECALL_MAX_INTERVAL
+    assert card["due_date"] == _day(card["interval_days"]).isoformat()

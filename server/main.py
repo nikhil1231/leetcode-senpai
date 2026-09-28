@@ -1579,7 +1579,7 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
     current = store.get_review(body.slug)
     if current:
         current = {**current, "slug": body.slug}
-    new_state = scheduler.advance_review(current, body.confidence, "solo")
+    new_state = scheduler.advance_review(current, body.confidence, "solo", recall=True)
     new_state["slug"] = body.slug
     store.upsert_review(body.slug, new_state)
     return {"ok": True, "attempt_id": aid, "grading_status": "viewed",
