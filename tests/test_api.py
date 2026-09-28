@@ -2431,12 +2431,17 @@ def test_a_detected_solve_outside_the_library_stays_off_the_daily_queue(
     client.post(f"/api/attempt/{attempt_id}/annotate",
                 json={"confidence": 2, "independence": "solo"})
     assert client.store.get_review("hidden-gem") is not None
-    assert "hidden-gem" not in {r["slug"] for r in client.get("/api/today").json()["reviews"]}
+
+    def on_board():
+        return {i["slug"] for seg in client.get("/api/reviews/schedule").json()
+                for i in seg["items"]}
+
+    assert "hidden-gem" not in on_board()
     assert "hidden-gem" not in {p["slug"] for p in client.get("/api/problems").json()}
 
     # …and importing it is what promotes it, with the solve history intact.
     client.post("/api/import/problem", json={"slug": "hidden-gem"})
-    assert "hidden-gem" in {r["slug"] for r in client.get("/api/today").json()["reviews"]}
+    assert "hidden-gem" in on_board()
     assert client.get(f"/api/attempt/{attempt_id}").json()["confidence"] == 2
 
 

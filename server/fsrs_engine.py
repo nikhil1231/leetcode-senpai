@@ -12,7 +12,15 @@ import datetime as dt
 
 from fsrs import Card, Rating, Scheduler, State
 
-_scheduler = Scheduler()
+# No (re)learning steps. FSRS's defaults (1m/10m) are flashcard-session steps;
+# this app schedules in whole days from midnight, so any card still stepping —
+# every first solve rated below Easy, every lapse — landed back as due *today*.
+# Without steps every rating graduates straight to a day-scale interval.
+def make_scheduler(**kw):
+    return Scheduler(learning_steps=(), relearning_steps=(), **kw)
+
+
+_scheduler = make_scheduler()
 
 # quality (0..5) -> FSRS rating
 def _rating(q):
@@ -37,7 +45,11 @@ def _card_from(current, today):
     """Rebuild an FSRS Card from a stored card dict, migrating SM-2 if needed."""
     if current and current.get("fsrs"):
         return Card.from_dict(current["fsrs"])
-    # migrate a legacy SM-2 card (or start fresh if none)
+    if not current:
+        # A genuinely new card, so the first rating gets FSRS's own initial
+        # stability rather than one made up for a migration.
+        return Card(due=_midnight_utc(today))
+    # migrate a legacy SM-2 card
     interval = (current or {}).get("interval_days") or 0
     ease = (current or {}).get("ease") or 2.5
     stability = max(1.0, float(interval)) if interval else 1.0
@@ -63,6 +75,11 @@ def advance_review(current, q, today):
     card = _card_from(current, today)
     rating = _rating(q)
     card, _ = _scheduler.review_card(card, rating, review_datetime=_midnight_utc(today))
+    if rating == Rating.Again:
+        # A failed solve comes back tomorrow, as under SM-2: not later today
+        # (that tests short-term memory), and not the days FSRS's post-lapse
+        # stability would allow. Stability is untouched; only `due` moves.
+        card.due = _midnight_utc(today + dt.timedelta(days=1))
     fail_count = (current or {}).get("fail_count", 0)
     if q < 3:
         fail_count += 1

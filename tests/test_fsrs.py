@@ -115,3 +115,36 @@ def test_correct_code_does_not_erase_help_needed(engine, independence, expected)
                                     today=dt.date(2026, 1, 1))
     assert card["quality"] == expected
     assert card["fail_count"] == (1 if independence == "solution" else 0)
+
+
+# ---- nothing lands back on the day it was rated ---------------------------------
+@pytest.mark.parametrize("confidence, independence", [
+    (1, "solution"), (1, "hints"), (2, "solo"), (3, "solo")])
+def test_no_first_solve_is_due_the_same_day(engine, confidence, independence):
+    card = scheduler.advance_review(None, confidence, independence, today=_day(0))
+    assert card["due_date"] > _day(0).isoformat()
+
+
+def test_a_clean_solve_with_a_tweaked_plan_is_not_due_today(engine):
+    """Solo, confident, 5/5 code, plan tweaked (capped at Good): FSRS's minute-
+    scale learning steps used to put this straight back in today's reviews."""
+    card = scheduler.advance_review(None, 3, "solo", today=_day(0),
+                                    solution_score=5, plan_cap=4)
+    assert card["due_date"] > _day(0).isoformat()
+
+
+@pytest.mark.parametrize("grade", [0, 1, 2, 3])
+def test_a_recall_on_top_of_a_first_solve_is_not_due_today(engine, grade):
+    solved = scheduler.advance_review(None, 3, "solo", today=_day(0),
+                                      solution_score=5, plan_cap=4)
+    recalled = scheduler.advance_review(solved, None, None, today=_day(0), grade=grade)
+    assert recalled["due_date"] > _day(0).isoformat()
+
+
+def test_a_failure_comes_back_tomorrow(engine):
+    card = scheduler.advance_review(None, 3, "solo", today=_day(0))
+    card = scheduler.advance_review(card, 3, "solo", today=_day(10))
+    failed = scheduler.advance_review(card, 1, "solution", today=_day(40))
+    assert failed["due_date"] == _day(41).isoformat()
+    first = scheduler.advance_review(None, 1, "solution", today=_day(0))
+    assert first["due_date"] == _day(1).isoformat()
