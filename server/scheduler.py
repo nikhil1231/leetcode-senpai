@@ -23,6 +23,8 @@ RECALL_MAX_INTERVAL = 30
 # library is seen inside the ~90-day run-up to interviews. Unbounded FSRS
 # parked most of the set a year or more out.
 MAX_INTERVAL_DAYS = 45
+LEECH_FAILS = 3          # failures since the last clear that make a card a leech
+LEECH_CLEAR_PASSES = 2   # Good-or-better ratings in a row that clear one
 REVIEW_DUE_WINDOW_DAYS = 7  # a card stays "due" for this long before it counts as overdue
 
 
@@ -77,6 +79,19 @@ def quality(confidence, independence):
     return q
 
 
+def self_assessed(a):
+    """Whether an attempt's `confidence` is the user's own rating. An LLM-graded
+    recall stores its 0..3 grade there too, but that is the coach's verdict:
+    read as a self-rating it is compared with itself, and a failed recall (0)
+    falls off the 1..3 scale. A confidence that differs from the grade was
+    confirmed by the user, so it still counts."""
+    if a.get("confidence") is None:
+        return False
+    grade = (a.get("recall_grade") or {}).get("grade")
+    return not (a.get("kind") == "recall" and grade is not None
+                and a["confidence"] == grade)
+
+
 def recall_quality(grade):
     """Map a 0..3 approach-recall grade to SM-2/FSRS quality."""
     return RECALL_TO_Q.get(grade, 4)
@@ -86,13 +101,15 @@ def solution_quality(confidence, independence, solution_score):
     """Blend the user's self-assessment with the LLM's 0..5 solution grade.
 
     The self-assessment (how the solve *felt*) stays a co-equal signal; the LLM
-    read of the code nudges it. Returns a rounded 50/50 average on the SM-2 0..5
-    scale. Falls back to self-assessment alone when the score is missing.
+    read of the code nudges it. Returns the 50/50 average on the SM-2 0..5 scale,
+    halves rounded up (Python's round() sends them to the even neighbour, so a
+    tie went up or down depending on where it sat). Falls back to
+    self-assessment alone when the score is missing.
     """
     q = quality(confidence, independence)
     if solution_score is None:
         return q
-    blended = round((q + SOLUTION_TO_Q.get(solution_score, q)) / 2)
+    blended = (q + SOLUTION_TO_Q.get(solution_score, q) + 1) // 2
     # Correct code cannot demonstrate independent recall when help was needed.
     return min(q, blended) if independence in ("hints", "solution") else blended
 
@@ -152,11 +169,43 @@ def advance_review(current, confidence, independence, today=None, grade=None,
     if recall or grade is not None:
         cap = min(cap, RECALL_MAX_INTERVAL)
     _clamp_interval(out, today_d, cap)
+    _update_leech(out, prior, q)
     # What this advance was computed from, so the next one today can redo it.
     # Stripped of its own snapshot, which keeps the nesting one deep.
     out[PRIOR_CARD_KEY] = (
         {k: v for k, v in prior.items() if k != PRIOR_CARD_KEY} if prior else None)
     return out
+
+
+# The attempt whose rating last moved a card.
+SOURCE_ATTEMPT_KEY = "source_attempt"
+
+
+def regrade_applies(card, attempt_id, today=None):
+    """Whether a solution grade that landed after its solve was rated may redo
+    the card. The modal rates first and grades second, so this is the normal
+    path, not a race. Only while that rating is still today's last word: once
+    the day has turned, or another rating has moved the card since, redoing it
+    would stack a second advance instead of replacing one."""
+    return bool(card and attempt_id
+                and card.get(SOURCE_ATTEMPT_KEY) == attempt_id
+                and card.get("last_reviewed") == _iso(_today(today)))
+
+
+def _update_leech(card, prior, q):
+    """Leech status from failures since the last clear. `fail_count` stays the
+    lifetime tally; `leech_base` is where it stood when the card last shed its
+    leech status, so a re-learned card stops being forced to the front of the
+    queue and into full re-solves for good. Cards from before carry neither
+    field and read as never cleared — the old rule, until they earn a clear."""
+    prior = prior or {}
+    streak = (prior.get("pass_streak") or 0) + 1 if q >= 4 else 0
+    base = prior.get("leech_base") or 0
+    if prior.get("leech") and streak >= LEECH_CLEAR_PASSES:
+        base = card["fail_count"]
+    card["pass_streak"] = streak
+    card["leech_base"] = base
+    card["leech"] = 1 if card["fail_count"] - base >= LEECH_FAILS else 0
 
 
 def _clamp_interval(card, today_d, days):
@@ -253,7 +302,10 @@ def topic_stats(problems, attempts, enrichments=None):
             continue
         c["solved"].add(a["slug"])
         if a.get("confidence") is not None:
-            c["confs"].append(a["confidence"])
+            # A coach-graded recall still says how well the topic is known, but
+            # its 0..3 grade must sit on the 1..3 scale: a failed recall is low.
+            conf = a["confidence"] if self_assessed(a) else max(1, a["confidence"])
+            c["confs"].append(conf)
         if a.get("independence"):
             c["indep"].append(1.0 if a["independence"] == "solo" else 0.0)
         if a.get("runtime_percentile") is not None:

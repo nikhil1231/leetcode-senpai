@@ -1739,18 +1739,51 @@ async function loadRecallAttempt(attemptId) {
     $("#recall-grade").innerHTML = `<p class="small">This recall is still grading. Try again in a moment.</p>`;
     $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Close</button>`;
     $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
-  } else if (a.grading_status === "ready") {
+  } else if ((a.grading_status === "ready" || a.grading_status === "viewed") && !a.recall_grade) {
+    // Self-graded (no coach, or the coach failed): there is no grade to show.
     setRecallInputsDisabled(true);
-    renderRecallGrade(a.recall_grade);
-  } else if (a.grading_status === "viewed") {
+    $("#recall-grade").classList.remove("hidden");
+    $("#recall-grade").innerHTML = `<p class="small">Self-graded: <b>${
+      ["", "Low", "Med", "High"][a.confidence] || "—"}</b></p>`;
+    $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Close</button>`;
+    $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
+  } else if (a.grading_status === "ready" || a.grading_status === "viewed") {
     setRecallInputsDisabled(true);
     renderRecallGrade(a.recall_grade);
   } else if (a.grading_status === "failed") {
-    setRecallInputsDisabled(false);
-    $("#recall-grade").classList.remove("hidden");
-    $("#recall-grade").innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(a.grading_error || "Unknown error")}</p>`;
-    $("#btn-submit-recall").textContent = "Retry grading";
+    showRecallGradingFailed(a.grading_error);
   }
+}
+
+// A failed grade never blocks the review: retry the coach, or rate it yourself.
+function showRecallGradingFailed(err) {
+  setRecallInputsDisabled(false);
+  $("#recall-grade").classList.remove("hidden");
+  $("#recall-grade").innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>`;
+  $("#recall-actions").innerHTML =
+    `<button id="btn-close-recall" class="button is-ghost">Cancel</button>
+     <button id="btn-selfgrade-recall" class="button">Grade it myself</button>
+     <button id="btn-submit-recall" class="button is-primary">Retry grading</button>`;
+  wireRecallButtons();
+  $("#btn-selfgrade-recall").addEventListener("click", selfGradeFailedRecall);
+}
+
+async function selfGradeFailedRecall() {
+  const btn = $("#btn-selfgrade-recall");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const confidence = await pickSelfGrade();
+  if (confidence == null) { btn.disabled = false; return; }
+  try {
+    await api(`/review/recall/${currentRecall.attempt_id}/self-grade`, "POST", { confidence });
+  } catch (e) {
+    btn.disabled = false;
+    toast(e.message);
+    return;
+  }
+  refreshBehindModal();
+  $("#recall-modal").classList.add("hidden");
+  toast("Recall logged ✅");
 }
 
 function setRecallInputsDisabled(disabled) {
@@ -1867,13 +1900,7 @@ async function submitRecall() {
   stopRecallGrading();
   currentRecall.attempt_id = r.attempt_id;
   if (r.grading_status === "failed") {
-    setRecallInputsDisabled(false);
-    $("#recall-grade").classList.remove("hidden");
-    $("#recall-grade").innerHTML = `<p class="missed"><b>Grading failed:</b> ${escapeHtml(r.grading_error || "Unknown error")}</p>`;
-    $("#recall-actions").innerHTML =
-      `<button id="btn-close-recall" class="button is-ghost">Cancel</button>
-       <button id="btn-submit-recall" class="button is-primary">Retry grading</button>`;
-    wireRecallButtons();
+    showRecallGradingFailed(r.grading_error);
     return;
   }
   if (r.graded) {

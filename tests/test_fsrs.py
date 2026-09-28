@@ -185,3 +185,50 @@ def test_a_short_interval_is_left_alone(engine):
     card = scheduler.advance_review(None, 1, "hints", today=_day(0))
     assert card["interval_days"] < scheduler.RECALL_MAX_INTERVAL
     assert card["due_date"] == _day(card["interval_days"]).isoformat()
+
+
+# ---- leeches clear once re-learned ----------------------------------------------
+def _leech(engine_day=0):
+    card = None
+    for d in range(3):
+        card = scheduler.advance_review(card, 1, "solution", today=_day(engine_day + d))
+    assert card["leech"] == 1
+    return card
+
+
+def test_two_passes_in_a_row_clear_a_leech(engine):
+    card = _leech()
+    once = scheduler.advance_review(card, 3, "solo", today=_day(5))
+    assert once["leech"] == 1
+    twice = scheduler.advance_review(once, 3, "solo", today=_day(10))
+    assert twice["leech"] == 0
+    assert twice["fail_count"] == 3                       # history is kept
+
+
+def test_a_shaky_pass_does_not_count_toward_clearing(engine):
+    card = _leech()
+    card = scheduler.advance_review(card, 3, "solo", today=_day(5))
+    card = scheduler.advance_review(card, 1, "hints", today=_day(10))  # Hard
+    card = scheduler.advance_review(card, 3, "solo", today=_day(15))
+    assert card["leech"] == 1
+
+
+def test_a_cleared_card_needs_three_new_failures_to_become_a_leech_again(engine):
+    card = _leech()
+    card = scheduler.advance_review(card, 3, "solo", today=_day(5))
+    card = scheduler.advance_review(card, 3, "solo", today=_day(10))
+    for d in (20, 21):
+        card = scheduler.advance_review(card, 1, "solution", today=_day(d))
+        assert card["leech"] == 0
+    card = scheduler.advance_review(card, 1, "solution", today=_day(22))
+    assert card["leech"] == 1
+
+
+def test_a_leech_from_before_the_clear_rule_can_still_clear(engine):
+    legacy = {"slug": "two-sum", "interval_days": 1, "due_date": "2026-01-01",
+              "last_reviewed": "2025-12-31", "fail_count": 4, "leech": 1, "ease": 2.0,
+              "reps": 2}
+    card = scheduler.advance_review(legacy, 3, "solo", today=_day(0))
+    assert card["leech"] == 1
+    card = scheduler.advance_review(card, 3, "solo", today=_day(3))
+    assert card["leech"] == 0 and card["fail_count"] == 4

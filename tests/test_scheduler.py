@@ -960,3 +960,41 @@ def test_a_weak_card_is_a_full_resolve_on_the_board_and_the_queue():
     board = scheduler.review_schedule(problems, reviews, today=today)
     assert queue["reviews"][0]["mode"] == "full"
     assert board[0]["items"][0]["mode"] == "full"
+
+
+# ---- a solution grade that lands after the rating -------------------------------
+def test_solution_quality_rounds_halves_up():
+    assert scheduler.solution_quality(2, "solo", 5) == 5      # (4 + 5) / 2
+    assert scheduler.solution_quality(3, "solo", 3) == 5      # (5 + 4) / 2
+    assert scheduler.solution_quality(2, "solo", 2) == 4      # (4 + 3) / 2
+
+
+def test_regrade_applies_only_to_todays_rating_from_that_attempt():
+    today = dt.date(2026, 1, 5)
+    card = {"source_attempt": "a1", "last_reviewed": "2026-01-05"}
+    assert scheduler.regrade_applies(card, "a1", today=today)
+    assert not scheduler.regrade_applies(card, "a2", today=today)          # rated since
+    assert not scheduler.regrade_applies(card, "a1", today=dt.date(2026, 1, 6))  # day turned
+    assert not scheduler.regrade_applies({"last_reviewed": "2026-01-05"}, "a1", today=today)
+    assert not scheduler.regrade_applies(None, "a1", today=today)
+
+
+def test_a_failed_coach_graded_recall_reads_as_low_confidence():
+    problems = [{"slug": "two-sum", "title": "Two Sum", "neetcode_category": "Arrays & Hashing",
+                 "difficulty": "Easy", "in_neetcode150": True}]
+    attempts = [{"slug": "two-sum", "kind": "recall", "solved_at": 1, "confidence": 0,
+                 "independence": "solo", "recall_grade": {"grade": 0}}]
+    arrays = next(t for t in scheduler.topic_stats(problems, attempts)
+                  if t["category"] == "Arrays & Hashing")
+    assert arrays["avg_confidence"] == 1
+
+
+@pytest.mark.parametrize("attempt, mine", [
+    ({"confidence": 2, "independence": "solo"}, True),
+    ({"kind": "recall", "confidence": 2}, True),                              # self-graded
+    ({"kind": "recall", "confidence": 2, "recall_grade": {"grade": 2}}, False),  # coach's
+    ({"kind": "recall", "confidence": 3, "recall_grade": {"grade": 1}}, True),   # confirmed
+    ({"kind": "recall", "confidence": None}, False),
+])
+def test_self_assessed(attempt, mine):
+    assert scheduler.self_assessed(attempt) is mine

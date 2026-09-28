@@ -117,6 +117,10 @@ class RecallSubmit(BaseModel):
     confidence: int | None = None  # user's confirmed self-grade (overrides LLM)
 
 
+class RecallSelfGrade(BaseModel):
+    confidence: int
+
+
 class SprintStart(BaseModel):
     limit: int | None = None
     exclude_slugs: list[str] = Field(default_factory=list)
@@ -1030,6 +1034,31 @@ def _similar_suggestion(store, slug):
     return None
 
 
+def _schedule_solve(store, attempt):
+    """Move a rated solve's card: the self-assessment, blended with the LLM's /5
+    solution grade once that has landed, held down by a plan that didn't hold.
+    The rating never waits on the grade; when the grade arrives later the same
+    day, grading calls this again and the redo replaces the first advance."""
+    slug = attempt["slug"]
+    current = store.get_review(slug)
+    if current:
+        current = {**current, "slug": slug}
+    graded = attempt.get("solution_grade") or {}
+    plan_held = attempt.get("plan_held") if plans.has_plan(attempt) else None
+    new_state = scheduler.advance_review(
+        current, attempt["confidence"], attempt["independence"],
+        solution_score=graded.get("score"),
+        plan_cap=plans.quality_cap(plans.plan_status(attempt), plan_held))
+    _save_card(store, slug, new_state, attempt.get("id"))
+    return new_state
+
+
+def _save_card(store, slug, card, attempt_id):
+    card["slug"] = slug
+    card[scheduler.SOURCE_ATTEMPT_KEY] = attempt_id
+    store.upsert_review(slug, card)
+
+
 @app.post("/api/attempt/{attempt_id}/annotate")
 def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
                  uid: str = Depends(auth.require_user)):
@@ -1056,19 +1085,7 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
         fields["time_taken_sec"] = body.time_taken_sec
     store.update_attempt(attempt_id, fields)
     slug = attempt["slug"]
-    current = store.get_review(slug)
-    if current:
-        current = {**current, "slug": slug}
-    # Fold the LLM's /5 solution grade into scheduling when it's already landed;
-    # otherwise schedule on the self-assessment alone (LLM never blocks scheduling).
-    graded = attempt.get("solution_grade") or {}
-    solution_score = graded.get("score") if graded else None
-    plan_cap = plans.quality_cap(plans.plan_status(attempt), fields.get("plan_held"))
-    new_state = scheduler.advance_review(
-        current, body.confidence, body.independence, solution_score=solution_score,
-        plan_cap=plan_cap)
-    new_state["slug"] = slug
-    store.upsert_review(slug, new_state)
+    new_state = _schedule_solve(store, {**attempt, **fields, "id": attempt_id})
     if llm.enabled(store.get_settings()):
         bg.add_task(_enrich_bg, uid, attempt_id)
     if attempt.get("kind") == "drill":
@@ -1096,6 +1113,9 @@ async def api_grade_solution(attempt_id: str, uid: str = Depends(auth.require_us
     if attempt.get("confidence") is None or attempt.get("independence") is None:
         raise HTTPException(400, "self-assessment is required before solution grading")
     result = await _grade_solution(store, attempt, lc)
+    if result.get("grading_status") == "viewed" and scheduler.regrade_applies(
+            store.get_review(attempt["slug"]), attempt_id):
+        result["review"] = _schedule_solve(store, store.get_attempt(attempt_id))
     return {"ok": True, **result}
 
 
@@ -1149,8 +1169,7 @@ def api_manual(body: ManualAttempt, bg: BackgroundTasks, uid: str = Depends(auth
     if current:
         current = {**current, "slug": body.slug}
     new_state = scheduler.advance_review(current, body.confidence, body.independence)
-    new_state["slug"] = body.slug
-    store.upsert_review(body.slug, new_state)
+    _save_card(store, body.slug, new_state, aid)
     if llm.enabled(store.get_settings()):
         bg.add_task(_enrich_bg, uid, aid)
     return {"ok": True, "attempt_id": aid, "review": new_state}
@@ -1563,8 +1582,7 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
             current = {**current, "slug": body.slug}
         grade = (graded or {}).get("grade", 0)
         new_state = scheduler.advance_review(current, None, None, grade=grade or 0)
-        new_state["slug"] = body.slug
-        store.upsert_review(body.slug, new_state)
+        _save_card(store, body.slug, new_state, aid)
         store.update_attempt(aid, {
             "grading_status": "viewed",
             "recall_grade": graded,
@@ -1580,9 +1598,36 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
     if current:
         current = {**current, "slug": body.slug}
     new_state = scheduler.advance_review(current, body.confidence, "solo", recall=True)
-    new_state["slug"] = body.slug
-    store.upsert_review(body.slug, new_state)
+    _save_card(store, body.slug, new_state, aid)
     return {"ok": True, "attempt_id": aid, "grading_status": "viewed",
+            "review": new_state, "graded": None}
+
+
+@app.post("/api/review/recall/{attempt_id}/self-grade")
+def api_recall_self_grade(attempt_id: str, body: RecallSelfGrade,
+                          uid: str = Depends(auth.require_user)):
+    """Rate a recall the coach couldn't grade. The grade is an extra, never the
+    gate: without this a failed grading left the card due until the LLM came
+    back. Self-graded like the no-LLM path, on the recall already written."""
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt or attempt.get("kind") != "recall":
+        raise HTTPException(404, "no such recall")
+    if body.confidence not in (1, 2, 3):
+        raise HTTPException(400, "confidence must be 1..3")
+    if attempt.get("grading_status") != "failed":
+        raise HTTPException(400, "only a recall whose grading failed can be self-graded")
+    slug = attempt["slug"]
+    store.update_attempt(attempt_id, {
+        "confidence": body.confidence, "independence": "solo",
+        "grading_status": "viewed", "grading_error": None, "self_graded": True,
+    })
+    current = store.get_review(slug)
+    if current:
+        current = {**current, "slug": slug}
+    new_state = scheduler.advance_review(current, body.confidence, "solo", recall=True)
+    _save_card(store, slug, new_state, attempt_id)
+    return {"ok": True, "attempt_id": attempt_id, "grading_status": "viewed",
             "review": new_state, "graded": None}
 
 

@@ -463,7 +463,9 @@ def confidence_calibration(problems, attempts, reviews=None):
         cat = cat_of.get(slug)
         if not cat or a.get("solved_at") is None:
             continue
-        if a.get("confidence") is None or a.get("independence") is None:
+        # Only the user's own ratings: a coach-graded recall would be measured
+        # against itself, and its failed grade (0) misread as a medium rating.
+        if not scheduler.self_assessed(a) or a.get("independence") is None:
             continue
 
         self_q = scheduler.quality(a.get("confidence"), a.get("independence"))

@@ -681,3 +681,21 @@ def test_planning_stats_empty():
     out = insights.planning_stats(_problems(), [{"id": "1", "slug": "two-sum"}], [])
     assert out["overall"]["starts"] == 0
     assert out["weakest"] is None
+
+
+def test_confidence_calibration_skips_coach_graded_recalls():
+    """A coach-graded recall writes its grade into `confidence`: counted, it was
+    compared with itself, and a failed one (0) read as a medium self-rating."""
+    attempts = [
+        {"id": "1", "slug": "two-sum", "kind": "recall", "solved_at": 1,
+         "confidence": 0, "independence": "solo", "recall_grade": {"grade": 0}},
+        {"id": "2", "slug": "valid-anagram", "kind": "recall", "solved_at": 2,
+         "confidence": 3, "independence": "solo", "recall_grade": {"grade": 3}},
+        {"id": "3", "slug": "3sum", "solved_at": 3, "confidence": 3,
+         "independence": "solo", "solution_grade": {"score": 5}},
+    ]
+
+    cal = insights.confidence_calibration(_problems(), attempts)
+
+    assert cal["graded_attempts"] == 1
+    assert [r["category"] for r in cal["categories"]] == ["Two Pointers"]

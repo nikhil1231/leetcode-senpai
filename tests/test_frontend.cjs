@@ -129,6 +129,38 @@ test('cancelling self-grading resolves submission without saving a recall', asyn
   assert.equal(ui.node('#btn-submit-recall').disabled, false);
 });
 
+test('a failed recall grade offers self-grading, which schedules and closes', async () => {
+  const calls = [];
+  const ui = app(async (url, opts) => {
+    calls.push([url, opts && opts.body]);
+    if (url.endsWith('/review/recall')) {
+      return response({ attempt_id: 'r9', grading_status: 'failed', grading_error: 'provider down' });
+    }
+    return response({ ok: true });
+  });
+  ui.run('currentRecall = { slug: "two-sum" }; llmEnabled = true');
+  ui.node('#recall-text').value = 'Use a complement map';
+  await ui.run('submitRecall()');
+  assert.match(ui.node('#recall-grade').innerHTML, /provider down/);
+  assert.match(ui.node('#recall-actions').innerHTML, /Grade it myself/);
+  assert.match(ui.node('#recall-actions').innerHTML, /Retry grading/);
+  const graded = ui.node('#btn-selfgrade-recall').listeners.click();
+  assert.equal(ui.node('#btn-selfgrade-recall').disabled, true);
+  ui.run('resolveSelfGrade(2)');
+  await graded;
+  const post = calls.find(([u]) => u.endsWith('/review/recall/r9/self-grade'));
+  assert.ok(post, 'posts the self-grade against the failed recall');
+  assert.deepEqual(JSON.parse(post[1]), { confidence: 2 });
+});
+
+test('reopening a self-graded recall shows the self-grade, not an empty score', async () => {
+  const ui = app(async () => response({ grading_status: 'viewed', recall_grade: null, confidence: 3 }));
+  ui.run('currentRecall = { slug: "two-sum" }');
+  await ui.run('loadRecallAttempt("r1")');
+  assert.match(ui.node('#recall-grade').innerHTML, /Self-graded: <b>High/);
+  assert.doesNotMatch(ui.node('#recall-grade').innerHTML, /undefined/);
+});
+
 test('annotation rejects double-clicks and keeps notes on a failed save', async () => {
   let rejectRequest;
   let calls = 0;

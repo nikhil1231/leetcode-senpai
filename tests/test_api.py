@@ -13,7 +13,7 @@ import pytest
 from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
-from server import auth, main, poller
+from server import auth, main, poller, scheduler
 from tests.fake_store import FakeStore
 
 
@@ -2804,3 +2804,96 @@ def test_resume_and_browser_storage_scope_follow_authenticated_user(client, monk
     main.app.dependency_overrides[auth.require_user] = lambda: "other"
     assert client.get("/api/practice").json()["storage_scope"] == "other"
     assert client.get(f"/api/practice/resume/{qid}").json()["result"] is None
+
+
+# ---- a solution grade that lands after the rating reaches the schedule ----------
+def _grading_to(monkeypatch, score):
+    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
+                         self_confidence=None, self_independence=None, self_note=None,
+                         self_approach=None):
+        return {"score": score, "optimal": False, "analysis": "", "positives": [],
+                "negatives": [], "inferred_time": "O(n)", "inferred_space": "O(n)"}, None
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
+
+
+def _rated_solve(client, slug="two-sum", confidence=3):
+    aid = client.store.add_attempt({
+        "slug": slug, "solved_at": int(time.time()), "source": "auto", "kind": "new",
+        "confidence": None, "independence": None, "code": "class Solution: pass",
+    })
+    client.post(f"/api/attempt/{aid}/annotate",
+                json={"confidence": confidence, "independence": "solo"})
+    return aid
+
+
+def test_a_grade_landing_after_the_rating_redoes_the_card(client, monkeypatch):
+    """The modal rates first and grades second — the grade used to be ignored."""
+    _grading_to(monkeypatch, 0)
+    aid = _rated_solve(client)
+    assert client.store.get_review("two-sum")["quality"] == 5  # self-assessment only
+    r = client.post(f"/api/attempt/{aid}/grade-solution").json()
+    card = client.store.get_review("two-sum")
+    assert card["quality"] == 3 == r["review"]["quality"]      # (5 + 1) / 2
+    # Replaced today's advance rather than stacking on it.
+    assert card[scheduler.PRIOR_CARD_KEY] is None
+    assert card["source_attempt"] == aid
+
+
+def test_a_grade_leaves_the_card_once_another_rating_has_moved_it(client, monkeypatch):
+    _grading_to(monkeypatch, 0)
+    first = _rated_solve(client)
+    _rated_solve(client, confidence=2)
+    before = client.store.get_review("two-sum")
+    r = client.post(f"/api/attempt/{first}/grade-solution").json()
+    assert r["grading_status"] == "viewed" and "review" not in r
+    assert client.store.get_review("two-sum") == before
+
+
+def test_a_grade_landing_on_a_later_day_leaves_the_card(client, monkeypatch):
+    _grading_to(monkeypatch, 0)
+    aid = _rated_solve(client)
+    card = client.store.get_review("two-sum")
+    client.store.upsert_review("two-sum", {**card, "last_reviewed": "2020-01-01"})
+    client.post(f"/api/attempt/{aid}/grade-solution")
+    assert client.store.get_review("two-sum")["quality"] == 5
+
+
+# ---- a recall the coach couldn't grade can be self-graded -----------------------
+def _failed_recall(client, monkeypatch):
+    async def failing(store, slug, recall_text, recall_time=None, recall_space=None):
+        return None, "provider unavailable"
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.coach, "grade_recall", failing)
+    client.store.upsert_review("two-sum", {
+        "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5})
+    body = client.post("/api/review/recall", json={
+        "slug": "two-sum", "recall_text": "hashmap of complements"}).json()
+    assert body["grading_status"] == "failed"
+    assert client.store.get_review("two-sum")["due_date"] == "2000-01-01"
+    return body["attempt_id"]
+
+
+def test_a_failed_recall_grade_can_be_self_graded(client, monkeypatch):
+    aid = _failed_recall(client, monkeypatch)
+    r = client.post(f"/api/review/recall/{aid}/self-grade", json={"confidence": 3})
+    assert r.status_code == 200
+    card = client.store.get_review("two-sum")
+    assert card["due_date"] != "2000-01-01"
+    assert card["interval_days"] <= scheduler.RECALL_MAX_INTERVAL
+    assert card["source_attempt"] == aid
+    stored = client.store.get_attempt(aid)
+    assert stored["grading_status"] == "viewed"
+    assert stored["confidence"] == 3 and stored["self_graded"] is True
+    # Once rated it can't be rated again through this door.
+    again = client.post(f"/api/review/recall/{aid}/self-grade", json={"confidence": 1})
+    assert again.status_code == 400
+
+
+def test_self_grading_a_recall_validates_its_input(client, monkeypatch):
+    aid = _failed_recall(client, monkeypatch)
+    assert client.post(f"/api/review/recall/{aid}/self-grade",
+                       json={"confidence": 0}).status_code == 400
+    solve = client.store.add_attempt({"slug": "two-sum", "kind": "new", "solved_at": 1})
+    assert client.post(f"/api/review/recall/{solve}/self-grade",
+                       json={"confidence": 2}).status_code == 404
