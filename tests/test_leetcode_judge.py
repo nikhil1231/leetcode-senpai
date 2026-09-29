@@ -88,6 +88,12 @@ async def test_rate_limit_and_missing_cookie_are_judge_errors(monkeypatch):
         await leetcode.submit_code("two-sum", "1", "x", None)
 
 
+async def test_blank_lines_in_the_input_are_dropped_before_judging(lc):
+    r = await leetcode.run_code("two-sum", "1", "code", "[2,7,11,15]\n9\n\n[3,2,4]\n6\n  \n[3,3]\n6\n", AUTH)
+    assert lc["posts"][0][1]["data_input"] == "[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6"
+    assert [c["input"] for c in r["cases"]] == ["[2,7,11,15]\n9", "[3,2,4]\n6", "[3,3]\n6"]
+
+
 def test_cases_fall_back_to_one_block_when_lines_do_not_divide():
     assert leetcode._cases("a\nb\nc", 2) == ["a\nb\nc"]
     assert leetcode._cases("a\nb\nc\nd", 2) == ["a\nb", "c\nd"]

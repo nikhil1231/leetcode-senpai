@@ -137,6 +137,19 @@ def test_run_logs_the_pending_deltas_then_the_judging(client, monkeypatch):
     assert client.store.get_recording(sid)["chain_ok"] is True
 
 
+def test_the_last_input_run_reopens_on_any_device(client, monkeypatch):
+    async def run_code(slug, qid, code, data_input, auth):
+        return {"status": "Accepted", "passed": True, "correct": 1, "total": 1,
+                "cases": [], "error": None}
+    monkeypatch.setattr(main.leetcode, "run_code", run_code)
+    sid = _start(client)
+    assert client.get(f"/api/editor/state?session_id={sid}").json()["last_input"] is None
+    client.post("/api/editor/run", json={"session_id": sid, "code": STARTER, "t": 5,
+                                         "data_input": "[3,3]\n6\n\n"})
+    assert _events(client, sid)[-1]["input"] == "[3,3]\n6"
+    assert client.get(f"/api/editor/state?session_id={sid}").json()["last_input"] == "[3,3]\n6"
+
+
 def test_a_judge_refusal_is_an_answer_not_an_error(client, monkeypatch):
     async def run_code(*a):
         raise leetcode.JudgeError("LeetCode is rate-limiting — wait a few seconds and try again.")

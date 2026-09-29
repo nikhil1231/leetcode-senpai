@@ -1096,6 +1096,10 @@ def _append_recording(store, s, client_events=(), seq=None, server_events=()):
             doc["truncated"] = True
         else:
             new += server
+        # The last input run is what the test box reopens with on another device.
+        runs = [e for e in new if e.get("k") == "run"]
+        if runs:
+            doc["last_input"] = runs[-1].get("input")
         if new:
             doc["events"] += recording.dump(new)
             doc["code"], mismatches = recording.advance(doc["code"], new)
@@ -1152,6 +1156,7 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
             "content_html": p.get("content_html"), "starter_code": starter,
             "example_testcases": p.get("example_testcases") or [],
             "code": code, "seq": (doc or {}).get("seq", 0), "now_ms": _run_ms(s),
+            "last_input": (doc or {}).get("last_input"),
             "truncated": bool((doc or {}).get("truncated"))}
 
 
@@ -1192,7 +1197,8 @@ async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user
     if err:
         return {"ok": False, "error": err}
     doc = _append_recording(store, s, server_events=[{
-        "t": body.t, "k": "run", "code": body.code, "input": body.data_input[:2000],
+        "t": body.t, "k": "run", "code": body.code,
+        "input": leetcode.clean_input(body.data_input)[:2000],
         "result": recording.compact_run(result)}])
     return {"ok": True, "result": result, "truncated": bool(doc.get("truncated"))}
 

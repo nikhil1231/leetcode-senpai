@@ -161,3 +161,35 @@ test('a full log is said once, and editing carries on', async () => {
   assert.match(ui.node('#editor-notice').textContent, /edit log is full/);
   assert.equal(ui.E._state().truncated, true);
 });
+
+test('the test input reopens as last left: this browser, else the last run, else examples', async () => {
+  const fresh = editor({ state: { example_testcases: ['[1]', '[2]'] } });
+  await fresh.mount();
+  assert.equal(fresh.node('#editor-input').value, '[1]\n[2]');
+
+  const other = editor({ state: { last_input: '[9]' } });
+  await other.mount();
+  assert.equal(other.node('#editor-input').value, '[9]');
+
+  const saved = { code: STARTER, lastLogged: STARTER, queue: [], inflight: null, seq: 0, input: '[5]' };
+  const local = editor({ saved, state: { last_input: '[9]' } });
+  await local.mount();
+  assert.equal(local.node('#editor-input').value, '[5]');
+  local.node('#editor-input').value = '[6]';
+  local.node('#editor-input').listeners.input();
+  assert.equal(JSON.parse(local.storage.get('editor-run:v1:s1')).input, '[6]');
+});
+
+test('a failing submit input can be added to the tests, once', async () => {
+  const ui = editor({ api: async (p) => {
+    if (p.startsWith('/editor/state')) return { available: true, can_judge: true, starter_code: STARTER,
+                                                code: STARTER, seq: 0, now_ms: 0, example_testcases: ['[1]'] };
+    return { ok: true, result: { accepted: false, status: 'Wrong Answer', input: '[3,2,4]\n6' } };
+  } });
+  await ui.mount();
+  await ui.node('#editor-submit').listeners.click();
+  await new Promise((r) => setImmediate(r));
+  ui.node('#editor-add-case').listeners.click();
+  ui.node('#editor-add-case').listeners.click();
+  assert.equal(ui.node('#editor-input').value, '[1]\n[3,2,4]\n6');
+});

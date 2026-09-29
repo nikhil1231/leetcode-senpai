@@ -54,7 +54,7 @@
     try {
       localStorage.setItem(STORE_PREFIX + r.sessionId, JSON.stringify({
         code: currentCode(r), lastLogged: r.lastLogged, queue: r.queue,
-        inflight: r.inflight, seq: r.seq,
+        inflight: r.inflight, seq: r.seq, input: r.input,
       }));
     } catch (_) { /* storage full or blocked: the server copy still stands */ }
   }
@@ -204,7 +204,22 @@
         <span class="small">${r.correct ?? "?"}/${r.total ?? "?"} tests${esc(beats)}</span></p>
       ${block("Error", r.error, "is-error")}
       ${block("Failing input", r.input)}${block("Output", r.output)}${block("Expected", r.expected)}
-      ${block("Stdout", r.stdout)}`;
+      ${block("Stdout", r.stdout)}
+      ${!good && r.input ? `<button id="editor-add-case" class="button is-small" type="button">Add to test input</button>` : ""}`;
+    if (!good && r.input) $("#editor-add-case").addEventListener("click", () => addCase(r.input));
+  }
+
+  // The input that broke a submit becomes a case you can Run against.
+  function addCase(input) {
+    if (!run) return;
+    const box = $("#editor-input");
+    const current = box.value.replace(/\s+$/, "");
+    if (!current.includes(input.trim())) {
+      box.value = current ? `${current}\n${input.trim()}` : input.trim();
+    }
+    run.input = box.value;
+    persist();
+    toast("Added to the test input");
   }
 
   // ---- mount / unmount --------------------------------------------------------------
@@ -270,16 +285,20 @@
     r.canJudge = state.can_judge;
     const saved = restore(r.sessionId);
     let doc = state.code;
+    // What was last run, else the problem's examples.
+    r.input = state.last_input ?? (state.example_testcases || []).join("\n");
     // This browser's copy wins unless another device has logged past it.
     if (saved && Number.isInteger(saved.seq) && saved.seq >= state.seq) {
       Object.assign(r, { lastLogged: saved.lastLogged, queue: saved.queue || [],
                          inflight: saved.inflight || null, seq: saved.seq });
       doc = saved.code;
+      if (typeof saved.input === "string") r.input = saved.input;
     } else {
       Object.assign(r, { lastLogged: state.code, seq: state.seq });
     }
     pane.innerHTML = paneHtml(state);
-    $("#editor-input").value = (state.example_testcases || []).join("\n");
+    $("#editor-input").value = r.input;
+    $("#editor-input").addEventListener("input", () => { r.input = $("#editor-input").value; persist(r); });
 
     r.readOnly = new CM.Compartment();
     r.view = new CM.EditorView({

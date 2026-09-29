@@ -415,6 +415,13 @@ def _judge_error(d):
             or d.get("full_runtime_error") or d.get("runtime_error") or None)
 
 
+def clean_input(data_input):
+    """A run's test input without blank lines. Every parameter is one line and
+    none is ever empty (an empty string is written `""`), so a blank line is a
+    stray Enter — which would shift every parameter after it."""
+    return "\n".join(line for line in (data_input or "").split("\n") if line.strip())
+
+
 def _cases(data_input, total):
     """Split a run's newline-joined input back into one string per case."""
     lines = (data_input or "").split("\n")
@@ -427,6 +434,7 @@ def _cases(data_input, total):
 async def run_code(slug, question_id, code, data_input, auth):
     """Auth required. Judge `code` on `data_input` against LeetCode's reference
     answer, like the editor's Run. Raises JudgeError when it can't be judged."""
+    data_input = clean_input(data_input)
     body = {"lang": EDITOR_LANG, "question_id": str(question_id),
             "typed_code": code, "data_input": data_input}
     _, d = await _judge(slug, "interpret_solution", body, "check/", auth)
