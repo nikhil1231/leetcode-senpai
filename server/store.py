@@ -9,6 +9,7 @@ Collections:
   users/{uid}/attempts/{id}            solve/recall/mock attempts
   users/{uid}/reviews/{slug}           spaced-repetition cards
   users/{uid}/sessions/{id}            active/finished solve sessions
+  users/{uid}/recordings/{session_id}  in-app editor change log (never listed wholesale)
   users/{uid}/enrichments/{attempt_id} LLM-derived structure (never source of truth)
   users/{uid}/reports/{iso_week}       weekly coach reports
   users/{uid}/playbooks/{category}     synthesized per-category cheat sheets
@@ -182,7 +183,7 @@ class FirestoreStore:
     # is needed one slug at a time (the recall and sprint modals) — never across
     # the whole catalog. Keeping it out of the catalog read keeps every hot
     # endpoint small; get_problem still returns the complete document.
-    CATALOG_OMIT = ("content_html",)
+    CATALOG_OMIT = ("content_html", "starter_code", "example_testcases")
 
     def list_problems(self):
         # Global catalog; cache key is not per-user.
@@ -287,6 +288,18 @@ class FirestoreStore:
         _invalidate(("reviews", self.uid))
 
     # ---- sessions -----------------------------------------------------------
+    def _recordings(self):
+        return self._user_ref().collection("recordings")
+
+    # Uncached and never listed: a recording is read only for its own session,
+    # and kept off the attempt doc so loading every attempt stays cheap.
+    def get_recording(self, session_id):
+        snap = self._recordings().document(session_id).get()
+        return snap.to_dict() if snap.exists else None
+
+    def save_recording(self, session_id, doc):
+        self._recordings().document(session_id).set(doc)
+
     def _sessions(self):
         return self._user_ref().collection("sessions")
 

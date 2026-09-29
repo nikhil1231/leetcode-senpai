@@ -215,7 +215,7 @@ function renderProblemStatement(containerSel, problem, slug) {
 }
 
 window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader,
-  beginRender, COMPLEXITIES };
+  beginRender, COMPLEXITIES, sanitizeProblemHtml };
 
 renderComplexityFields("#annotate-complexities", {
   timeId: "annotate-time",
@@ -534,17 +534,18 @@ function openProblemTab(ctx) {
 
 async function startSession(body, { tabOpened = false } = {}) {
   const s = await api("/session/start", "POST", body);
+  const inEditor = s.active && s.active.surface === "editor";
   // A tab not already opened from the click may be blocked this late; the live
   // run's own problem link is the fallback — so say which happened.
-  const opened = tabOpened || Boolean(window.open(s.url, "_blank", "noopener"));
+  const opened = inEditor || tabOpened || Boolean(window.open(s.url, "_blank", "noopener"));
   nudgeShown = {};
   // /session/start already answered with the live-run view; asking
   // /session/active for it again would be a second, guaranteed-cold round-trip.
   applyActive(s.active);
   loadOverview();
   render(currentActiveTab());
-  toast(opened
-    ? "Timer started — solve it on LeetCode, it'll auto-log."
+  toast(inEditor ? "Timer started — solve it below."
+    : opened ? "Timer started — solve it on LeetCode, it'll auto-log."
     : "Timer started — open the problem with the link above.");
 }
 
@@ -776,14 +777,16 @@ function doStart(status) {
   const ctx = pendingStart;
   const plan = status === "planned" ? currentPlanBody() : null;
   if (plan && !planReady(plan)) return;
+  // Solved in the app's own editor unless asked otherwise.
+  const surface = $("#predict-on-leetcode").checked ? "leetcode" : "editor";
   const body = {
     slug: ctx.slug, kind: ctx.kind, plan_status: status,
     plan_time_sec: status === "skipped" ? null : planElapsedSec(),
-    ...(plan || {}),
+    ...(plan || {}), surface,
   };
   // Opened from the click itself: nothing is awaited before this, so the
   // browser still honours it.
-  const tabOpened = openProblemTab(ctx);
+  const tabOpened = surface === "leetcode" && openProblemTab(ctx);
   closePredict();
   return startSession(body, { tabOpened });
 }
@@ -842,6 +845,9 @@ function applyActive(active) {
     setPlanCheck(active);
     setPauseButton(active);
     startTimer(active);
+    // In the app's editor, LeetCode's own page is the fallback, not the way in.
+    $("#active-link").classList.toggle("is-primary", active.surface !== "editor");
+    window.Editor?.mount(active);
   } else {
     run.classList.add("hidden");
     $("#hint-panel").classList.add("hidden");
@@ -849,6 +855,7 @@ function applyActive(active) {
     $("#nudge").classList.add("hidden");
     setDashboardLocked(false);
     stopTimer();
+    window.Editor?.unmount();
   }
 }
 
@@ -942,6 +949,8 @@ function setPauseButton(active) {
   btn.setAttribute("aria-pressed", active.is_paused ? "true" : "false");
   $("#active-run").classList.toggle("is-paused", active.is_paused);
   $("#active-status").textContent = active.is_paused ? "Run paused" : "Current run";
+  // A paused clock is a frozen buffer: no coding off the clock.
+  window.Editor?.setPaused(active.is_paused);
 }
 
 function startTimer(session) {
@@ -1090,6 +1099,7 @@ window.addEventListener("focus", () => { detectSolves(); recheckLeetCodeAuth(); 
 
 $("#btn-cancel-session").addEventListener("click", async () => {
   pauseRequestId++;
+  if (activeSession) window.Editor?.discard(activeSession.session_id);
   await api("/session/cancel", "POST");
   await refreshActive();
 });
@@ -2474,8 +2484,17 @@ function showUserChip(email) {
 }
 
 // expose for views.js
+// An Accepted from the in-app editor is logged by the submit itself: rate it now.
+async function onEditorSolved(res) {
+  const solved = (res.pending || []).find((p) => p.id === res.attempt_id);
+  if (solved && $("#annotate-modal").classList.contains("hidden")) openAnnotate(solved);
+  await refreshActive();
+  loadOverview();
+  render(currentActiveTab());
+}
+
 window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOverview, render,
-  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth,
+  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth, onEditorSolved,
   get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------

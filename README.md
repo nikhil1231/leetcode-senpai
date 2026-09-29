@@ -65,10 +65,13 @@ server/           FastAPI backend (containerized for Cloud Run)
   packs.py        curated list packs + tag->category mapping
   importer.py     pack import, discover, history backfill
   poller.py       on-demand solve detection
-  leetcode.py     GraphQL client (cookie passed in per call)
+  recording.py    pure change log of an in-app editor solve (deltas + checkpoints)
+  leetcode.py     GraphQL client + run/submit judging (cookie passed in per call)
   neetcode150.py  the backbone list (slugs by category)
   config.py       env-driven app config
 static/           vanilla-JS SPA (app.js + views.js + charts.js), Firebase Auth
+  editor.js       in-app editor: Run/Submit via the server, 10s change log
+  vendor/         CodeMirror bundle, rebuilt only by scripts/vendor_editor.sh
 scripts/          migrate_local_to_firestore.py
 tests/            pytest (scheduler, FSRS, discover, insights, API, llm)
 ```

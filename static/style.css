@@ -2434,3 +2434,92 @@ body.has-active-session #user-chip {
 .light-recap p + p { margin-top: 12px; }
 .light-recap p { line-height: 1.6; color: var(--text-2); }
 .light-recap strong { color: var(--text); }
+
+/* ---- in-app editor (editor.js) --------------------------------------------------
+   The run panel shrinks to a header strip; the statement and the editor share the
+   rest of the screen, stacking on narrow ones. */
+.active-run.has-editor { display: block; min-height: 0; padding: 18px 24px 32px; }
+.active-run.has-editor .active-run-inner {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  text-align: left;
+}
+.active-run.has-editor .active-run-inner h2 { margin: 0; font-size: 22px; }
+.active-run.has-editor .active-kind { display: none; }
+.active-run.has-editor .active-clock { display: flex; align-items: baseline; gap: 8px; margin: 0 auto 0 0; }
+.active-run.has-editor .active-clock-label { margin: 0; }
+.active-run.has-editor .active-timer { font-size: 26px; font-weight: 400; text-shadow: none; }
+.active-run.has-editor .active-actions { justify-content: flex-end; }
+.active-run.has-editor .hint-panel,
+.active-run.has-editor .plan-critique,
+.active-run.has-editor .nudge { flex: 1 0 100%; }
+
+.editor-pane {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 16px;
+  margin-top: 16px;
+  text-align: left;
+}
+.editor-pane.hidden { display: none; }
+.editor-pane .editor-statement { max-height: calc(100vh - 190px); margin: 0; }
+.editor-work { display: flex; flex-direction: column; min-width: 0; }
+.editor-cm {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-elev);
+}
+.editor-cm .cm-editor { height: min(56vh, 620px); font-size: 13.5px; }
+.editor-cm .cm-editor.cm-focused { outline: none; }
+.editor-cm .cm-scroller { font-family: var(--font-mono); line-height: 1.55; }
+.editor-cm .cm-gutters { background: var(--bg-elev); border-right: 1px solid var(--line-soft); color: var(--muted); }
+.editor-cm .cm-activeLine, .editor-cm .cm-activeLineGutter { background: rgba(124, 134, 255, .06); }
+.editor-cm .cm-cursor { border-left-color: var(--accent); }
+.editor-cm .cm-selectionBackground, .editor-cm .cm-focused .cm-selectionBackground { background: rgba(124, 134, 255, .28) !important; }
+.editor-pane.is-paused .editor-cm { opacity: .55; }
+.editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.editor-nocookie { color: var(--amber); }
+.editor-input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: 12.5px/1.5 var(--font-mono);
+  resize: vertical;
+}
+.editor-result { margin-top: 12px; font-size: 13px; }
+.editor-verdict { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; font-weight: 650; }
+.editor-verdict.is-good { color: var(--green); }
+.editor-verdict.is-bad { color: var(--red); }
+.editor-error, .editor-io pre {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.editor-error { color: var(--red); }
+.editor-case { margin: 6px 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.editor-case > summary { cursor: pointer; font-weight: 600; }
+.editor-case.is-good > summary { color: var(--green); }
+.editor-case.is-bad > summary { color: var(--red); }
+.editor-io { margin: 6px 0; }
+.editor-io > span { display: block; margin-bottom: 3px; font-size: 11px; color: var(--muted); }
+.predict-surface { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; cursor: pointer; }
+
+@media (max-width: 960px) {
+  .editor-pane { grid-template-columns: 1fr; }
+  .editor-pane .editor-statement { max-height: 38vh; }
+  .editor-cm .cm-editor { height: 50vh; }
+}
+@media (max-width: 720px) {
+  .active-run.has-editor { padding: 14px 16px 24px; }
+}

@@ -25,6 +25,7 @@ class FakeStore:
         self.settings = {}
         self.flags = {}
         self.light_practice = {}
+        self.recordings = {}
 
     def save_light_practice(self, question_id, result):
         return dict(self.light_practice.setdefault(question_id, dict(result)))
@@ -102,6 +103,13 @@ class FakeStore:
         self.reviews.pop(slug, None)
 
     # sessions
+    def get_recording(self, session_id):
+        doc = self.recordings.get(session_id)
+        return dict(doc) if doc else None
+
+    def save_recording(self, session_id, doc):
+        self.recordings[session_id] = dict(doc)
+
     def get_session(self, sid):
         s = self.sessions.get(sid)
         return dict(s) if s else None

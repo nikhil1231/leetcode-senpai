@@ -6,14 +6,25 @@ request headers (the value lives in the browser's localStorage). It is used
 transiently and never persisted or logged server-side.
 
 Public data (recent accepted submissions, question metadata) needs only a
-username. Private data (% beaten, code, wrong-attempt counts) needs the cookie.
+username. Private data (% beaten, code, wrong-attempt counts) needs the cookie,
+as does judging code from the in-app editor (`run_code` / `submit_code`), which
+goes through the same REST endpoints LeetCode's own editor uses.
 """
+import asyncio
 import json
+import time
 
 import httpx
 
-GRAPHQL_URL = "https://leetcode.com/graphql"
+BASE_URL = "https://leetcode.com"
+GRAPHQL_URL = f"{BASE_URL}/graphql"
 TIMEOUT = 15.0
+
+# The one language the in-app editor writes.
+EDITOR_LANG = "python3"
+# Judging is queued: poll its check endpoint until it lands, within reason.
+JUDGE_POLL_SEC = 0.8
+JUDGE_WAIT_SEC = 25.0
 
 
 def has_auth(auth):
@@ -68,7 +79,10 @@ query recentAcSubmissions($username: String!, $limit: Int!) {
 _QUESTION = """
 query questionData($titleSlug: String!) {
   question(titleSlug: $titleSlug) {
+    questionId
     questionFrontendId
+    exampleTestcaseList
+    codeSnippets { langSlug code }
     title
     titleSlug
     difficulty
@@ -189,6 +203,12 @@ async def question(slug, auth=None):
         "ac_rate": _ac_rate(q.get("stats")),
         "content_html": q.get("content"),
         "similar_slugs": _similar_slugs(q.get("similarQuestions")),
+        # What the in-app editor needs: the id LeetCode's judge is keyed by (not
+        # the number shown on the site), the starter code and the example inputs.
+        "question_id": str(q["questionId"]) if q.get("questionId") else None,
+        "starter_code": next((s["code"] for s in (q.get("codeSnippets") or [])
+                              if s.get("langSlug") == EDITOR_LANG), None),
+        "example_testcases": list(q.get("exampleTestcaseList") or []),
     }
 
 
@@ -349,3 +369,105 @@ async def failed_tests_between(slug, start_ts, end_ts, auth, limit=2):
                 "output": _clip(d.get("codeOutput") or d.get("runtimeError"), 120),
             })
     return out
+
+
+# ---- judging (in-app editor) -------------------------------------------------
+
+class JudgeError(RuntimeError):
+    """LeetCode wouldn't judge this (rate limit, dead cookie, queue timeout).
+    Its message is written for the editor to show as-is."""
+
+
+async def _judge(slug, path, body, check_path, auth):
+    """POST code to a judge endpoint, then poll its check endpoint to a verdict."""
+    if not has_auth(auth):
+        raise JudgeError("Judging needs your LeetCode cookie — set it in Settings.")
+    headers = _headers(auth, referer=f"{BASE_URL}/problems/{slug}/")
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(f"{BASE_URL}/problems/{slug}/{path}/", json=body,
+                                 headers=headers, timeout=TIMEOUT)
+        if resp.status_code == 429:
+            raise JudgeError("LeetCode is rate-limiting — wait a few seconds and try again.")
+        if resp.status_code in (401, 403):
+            raise JudgeError("LeetCode refused the cookie — refresh it in Settings.")
+        resp.raise_for_status()
+        started = resp.json()
+        if started.get("error"):
+            raise JudgeError(str(started["error"]))
+        job = started.get("interpret_id") or started.get("submission_id")
+        if not job:
+            raise JudgeError("LeetCode didn't queue the code.")
+        deadline = time.monotonic() + JUDGE_WAIT_SEC
+        while True:
+            check = await client.get(f"{BASE_URL}/submissions/detail/{job}/{check_path}",
+                                     headers=headers, timeout=TIMEOUT)
+            check.raise_for_status()
+            data = check.json()
+            if data.get("state") == "SUCCESS":
+                return job, data
+            if time.monotonic() > deadline:
+                raise JudgeError("LeetCode is taking too long to judge — try again.")
+            await asyncio.sleep(JUDGE_POLL_SEC)
+
+
+def _judge_error(d):
+    return (d.get("full_compile_error") or d.get("compile_error")
+            or d.get("full_runtime_error") or d.get("runtime_error") or None)
+
+
+def _cases(data_input, total):
+    """Split a run's newline-joined input back into one string per case."""
+    lines = (data_input or "").split("\n")
+    if not total or len(lines) % total:
+        return [data_input or ""]
+    per = len(lines) // total
+    return ["\n".join(lines[i:i + per]) for i in range(0, len(lines), per)]
+
+
+async def run_code(slug, question_id, code, data_input, auth):
+    """Auth required. Judge `code` on `data_input` against LeetCode's reference
+    answer, like the editor's Run. Raises JudgeError when it can't be judged."""
+    body = {"lang": EDITOR_LANG, "question_id": str(question_id),
+            "typed_code": code, "data_input": data_input}
+    _, d = await _judge(slug, "interpret_solution", body, "check/", auth)
+    total = d.get("total_testcases") or 0
+    inputs = _cases(data_input, total)
+    answers = d.get("code_answer") or []
+    expected = d.get("expected_code_answer") or []
+    stdout = d.get("std_output_list") or []
+    cases = [{"input": inputs[i] if i < len(inputs) else "",
+              "output": answers[i] if i < len(answers) else None,
+              "expected": expected[i] if i < len(expected) else None,
+              "stdout": stdout[i] if i < len(stdout) else ""}
+             for i in range(total)]
+    error = _judge_error(d)
+    return {
+        "status": d.get("status_msg"),
+        # A run's status reads "Accepted" whenever the code ran at all; whether
+        # it matched the reference answer is correct_answer.
+        "passed": bool(d.get("correct_answer")) and not error,
+        "correct": d.get("total_correct"), "total": total,
+        "cases": cases, "error": error, "runtime": d.get("status_runtime"),
+    }
+
+
+async def submit_code(slug, question_id, code, auth):
+    """Auth required. Submit `code` for judging on the full test set."""
+    body = {"lang": EDITOR_LANG, "question_id": str(question_id), "typed_code": code}
+    job, d = await _judge(slug, "submit", body, "v2/check/", auth)
+    finished = d.get("task_finish_time")
+    return {
+        "status": d.get("status_msg"),
+        "accepted": d.get("status_msg") == "Accepted",
+        "submission_id": int(d.get("submission_id") or job),
+        "finished_at": int(finished / 1000) if finished else int(time.time()),
+        "correct": d.get("total_correct"), "total": d.get("total_testcases"),
+        "input": d.get("last_testcase") or None,
+        "expected": d.get("expected_output") or None,
+        "output": d.get("code_output") or None,
+        "stdout": d.get("std_output") or None,
+        "error": _judge_error(d),
+        "runtime_percentile": d.get("runtime_percentile"),
+        "memory_percentile": d.get("memory_percentile"),
+        "runtime": d.get("status_runtime"), "memory": d.get("status_memory"),
+    }

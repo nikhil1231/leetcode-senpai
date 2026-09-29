@@ -91,8 +91,8 @@
       </header>
 
       <!-- Active session focus mode (timer + hint ladder) -->
-      <section id="active-run" class="active-run hidden" aria-live="polite">
-        <div class="active-run-inner">
+      <section id="active-run" class="active-run hidden">
+        <div class="active-run-inner" aria-live="polite">
           <div class="active-kicker"><span class="dot"></span><span id="active-status">Current run</span></div>
           <h2 id="active-title"></h2>
           <p id="active-kind" class="active-kind"></p>
@@ -112,6 +112,7 @@
           <div id="plan-check-panel" class="plan-critique hidden"></div>
           <div id="nudge" class="nudge hidden"></div>
         </div>
+        <div id="editor-pane" class="editor-pane hidden"></div>
       </section>
 
       <main>
@@ -182,6 +183,9 @@
         <p class="help predict-keys">Enter moves to the next field · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> locks in</p>
 
         <div class="overlay-actions predict-actions">
+          <label class="predict-surface small" title="Open LeetCode's own page instead of solving in the app's editor">
+            <input type="checkbox" id="predict-on-leetcode" /> Solve on LeetCode
+          </label>
           <button id="btn-skip-predict" class="button is-ghost" type="button" title="Start without planning">Skip</button>
           <button id="btn-blank-predict" class="button is-ghost" type="button" title="Start the run and record that you had no plan">No idea yet</button>
           <button id="btn-start-predict" class="button is-primary" type="button" disabled title="Needs an approach and a time target">Lock in &amp; start</button>
@@ -354,12 +358,13 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script>window.AUTH_MODE = "__AUTH_MODE__";</script>
+  <script>window.AUTH_MODE = "__AUTH_MODE__"; window.ASSET_VER = "__ASSET_VER__";</script>
   __FIREBASE_SDK__
   <script src="/firebase-config.js"></script>
   <script src="/charts.js?v=__ASSET_VER__"></script>
   <script src="/app.js?v=__ASSET_VER__"></script>
   <script src="/views.js?v=__ASSET_VER__"></script>
   <script src="/practice.js?v=__ASSET_VER__"></script>
+  <script src="/editor.js?v=__ASSET_VER__"></script>
 </body>
 </html>

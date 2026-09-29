@@ -1,0 +1,251 @@
+"""The change log of a solve written in the in-app editor. Pure: no I/O.
+
+A recording is an ordered list of events, each `{"t": ms since the solve started,
+"k": kind, ...}`. The editor checks its buffer every few seconds and logs a delta
+only when the code moved since the last one, so time spent thinking costs nothing:
+
+  c      checkpoint      {code}                  full text: the starter code, or a
+                                                 delta that would outweigh the doc
+  d      delta           {f, to, s}              replace code[f:to] with s
+  run    run             {code, input, result}   also a checkpoint
+  sub    submit          {code, submission_id, result}  also a checkpoint
+  pause / resume / blur / focus / hint {level}
+
+Nobody reads this at keystroke level — it's raw material for the LLM review and
+for the handful of numbers `summary` derives. State at any moment is rebuilt from
+the deltas on demand. Runs and submits carry the full code anyway (it's what was
+judged), so they double as checkpoints: rebuilding the chain and comparing at each
+one is how a lost or corrupt delta is noticed, and the chain resumes from there.
+
+Events are stored in arrival order, which is the order they happened: the editor
+sends any unsent deltas in the same request as the run or submit they precede.
+"""
+import json
+
+VERSION = 1
+
+CODE_KINDS = ("c", "run", "sub")
+# What the browser may append; judging events are written by the server alone.
+CLIENT_KINDS = ("c", "d", "pause", "resume", "blur", "focus")
+# A pause in activity at least this long counts as a stall worth naming.
+IDLE_GAP_MS = 60_000
+# Keep a recording well inside Firestore's 1 MiB document limit.
+MAX_LOG_CHARS = 800_000
+MAX_TEXT = 20_000
+
+
+def diff(prev, new):
+    """The single replacement turning `prev` into `new`, or None if unchanged.
+
+    Trims the common prefix and suffix. Two edits far apart in one tick become one
+    wider replacement — fine at this resolution, and it needs no diff library.
+    """
+    if prev == new:
+        return None
+    start = 0
+    limit = min(len(prev), len(new))
+    while start < limit and prev[start] == new[start]:
+        start += 1
+    end_prev, end_new = len(prev), len(new)
+    while end_prev > start and end_new > start and prev[end_prev - 1] == new[end_new - 1]:
+        end_prev -= 1
+        end_new -= 1
+    return {"f": start, "to": end_prev, "s": new[start:end_new]}
+
+
+def apply_delta(code, ev):
+    f, to = ev["f"], ev["to"]
+    if not (0 <= f <= to <= len(code)):
+        raise ValueError("delta out of range")
+    return code[:f] + ev["s"] + code[to:]
+
+
+def parse(log):
+    """JSONL text -> events. A line that won't parse is dropped, not fatal."""
+    out = []
+    for line in (log or "").splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(ev, dict) and "k" in ev:
+            out.append(ev)
+    return out
+
+
+def dump(events):
+    return "".join(json.dumps(ev, separators=(",", ":")) + "\n" for ev in events)
+
+
+def clean_client_event(ev):
+    """A browser-sent event, validated and clipped, or None to drop it."""
+    if not isinstance(ev, dict) or ev.get("k") not in CLIENT_KINDS:
+        return None
+    try:
+        t = max(0, int(ev.get("t", 0)))
+    except (TypeError, ValueError):
+        return None
+    k = ev["k"]
+    if k == "c":
+        if not isinstance(ev.get("code"), str) or len(ev["code"]) > MAX_TEXT:
+            return None
+        return {"t": t, "k": k, "code": ev["code"]}
+    if k == "d":
+        try:
+            f, to = int(ev["f"]), int(ev["to"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        s = ev.get("s")
+        if not isinstance(s, str) or len(s) > MAX_TEXT or f < 0 or to < f:
+            return None
+        return {"t": t, "k": k, "f": f, "to": to, "s": s}
+    return {"t": t, "k": k}
+
+
+def reconstruct(events):
+    """Replay the chain. Returns (states, mismatches): states is [(t, code)] after
+    every code-bearing event; mismatches counts checkpoints the chain disagreed
+    with (or deltas that couldn't apply) — each one resyncs from the checkpoint."""
+    code = None
+    states = []
+    mismatches = 0
+    for ev in events:
+        k = ev.get("k")
+        if k in CODE_KINDS:
+            if code is not None and k != "c" and code != ev.get("code"):
+                mismatches += 1
+            code = ev.get("code") or ""
+        elif k == "d":
+            if code is None:
+                mismatches += 1
+                continue
+            try:
+                code = apply_delta(code, ev)
+            except (KeyError, TypeError, ValueError):
+                mismatches += 1
+                continue
+        else:
+            continue
+        states.append((ev.get("t", 0), code))
+    return states, mismatches
+
+
+def code_at(events, t):
+    """The code as it stood at `t` ms, or None before the first checkpoint."""
+    best = None
+    for when, code in reconstruct(events)[0]:
+        if when > t:
+            break
+        best = code
+    return best
+
+
+def _spans(events, start_kind, end_kind, end_t):
+    total, opened = 0, None
+    for ev in events:
+        if ev.get("k") == start_kind and opened is None:
+            opened = ev["t"]
+        elif ev.get("k") == end_kind and opened is not None:
+            total += max(0, ev["t"] - opened)
+            opened = None
+    if opened is not None:
+        total += max(0, end_t - opened)
+    return total
+
+
+def idle_gaps(events, min_gap=IDLE_GAP_MS):
+    """[(start_ms, length_ms)] between consecutive bits of work, ignoring pauses."""
+    gaps = []
+    last = None
+    paused = False
+    for ev in events:
+        k = ev.get("k")
+        if k == "pause":
+            paused = True
+            last = None
+        elif k == "resume":
+            paused = False
+            last = ev["t"]
+        elif k in ("d", "run", "sub") and not paused:
+            if last is not None and ev["t"] - last >= min_gap:
+                gaps.append((last, ev["t"] - last))
+            last = ev["t"]
+    return gaps
+
+
+def _first(events, kind):
+    return next((ev["t"] for ev in events if ev.get("k") == kind), None)
+
+
+def summary(events):
+    """The handful of numbers an attempt keeps about how its solve went."""
+    runs = [ev for ev in events if ev.get("k") == "run"]
+    subs = [ev for ev in events if ev.get("k") == "sub"]
+    end = events[-1]["t"] if events else 0
+    gaps = idle_gaps(events)
+    _, mismatches = reconstruct(events)
+    return {
+        "v": VERSION,
+        "first_edit_ms": _first(events, "d"),
+        "first_run_ms": _first(events, "run"),
+        "first_submit_ms": _first(events, "sub"),
+        "runs": len(runs),
+        "runs_failed": sum(1 for ev in runs if not (ev.get("result") or {}).get("passed")),
+        "submits": len(subs),
+        "failed_submits": sum(1 for ev in subs
+                              if (ev.get("result") or {}).get("status") != "Accepted"),
+        "edits": sum(1 for ev in events if ev.get("k") == "d"),
+        "idle_ms": sum(length for _, length in gaps),
+        "longest_idle_ms": max((length for _, length in gaps), default=0),
+        "away_ms": _spans(events, "blur", "focus", end),
+        "paused_ms": _spans(events, "pause", "resume", end),
+        "duration_ms": end,
+        "chain_ok": mismatches == 0,
+    }
+
+
+def failed_tests(events, limit=2):
+    """Failing inputs of the wrong submits, newest first — the same shape the
+    poller builds from LeetCode's submission list, without asking LeetCode."""
+    out = []
+    for ev in reversed(events):
+        r = ev.get("result") or {}
+        if ev.get("k") != "sub" or r.get("status") in (None, "Accepted"):
+            continue
+        out.append({"status": r.get("status"), "input": _clip(r.get("input"), 300),
+                    "expected": _clip(r.get("expected"), 120),
+                    "output": _clip(r.get("output") or r.get("error"), 120)})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _clip(value, limit):
+    text = str(value or "").strip()
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def compact_run(result):
+    """What a run keeps in the log: the verdict and the first case it got wrong."""
+    cases = result.get("cases") or []
+    wrong = next((c for c in cases if c.get("output") != c.get("expected")), None)
+    return {
+        "status": result.get("status"), "passed": bool(result.get("passed")),
+        "correct": result.get("correct"), "total": result.get("total"),
+        "error": _clip(result.get("error"), 600) or None,
+        "printed": any((c.get("stdout") or "").strip() for c in cases),
+        "wrong": {k: _clip(wrong.get(k), 300) for k in ("input", "output", "expected")}
+                 if wrong else None,
+    }
+
+
+def compact_submit(result):
+    return {
+        "status": result.get("status"),
+        "correct": result.get("correct"), "total": result.get("total"),
+        "input": _clip(result.get("input"), 600) or None,
+        "expected": _clip(result.get("expected"), 300) or None,
+        "output": _clip(result.get("output"), 300) or None,
+        "error": _clip(result.get("error"), 600) or None,
+        "runtime_percentile": result.get("runtime_percentile"),
+    }

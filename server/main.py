@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from . import (auth, coach, config, connectivity, enrich, gamify, importer, insights,
                leetcode, llm, mock, neetcode150, packs, plans, poller, practice,
-               practice_offline, practice_queue, scheduler)
+               practice_offline, practice_queue, recording, scheduler)
 from . import store as store_mod
 from .store import get_store
 
@@ -70,10 +70,28 @@ class StartSession(BaseModel):
     # older clients, which leaves the row reading exactly as it used to.
     plan_status: Literal["planned", "blank", "skipped"] | None = None
     plan_time_sec: int | None = Field(default=None, ge=0)
+    # Where the solve happens. Older clients always opened LeetCode's tab.
+    surface: Literal["editor", "leetcode"] = "leetcode"
 
 
 class PauseSession(BaseModel):
     paused: bool
+
+
+class EditorLog(BaseModel):
+    session_id: str
+    seq: int = Field(ge=1)
+    events: list[dict] = Field(default_factory=list, max_length=500)
+
+
+class EditorJudge(BaseModel):
+    session_id: str
+    code: str = Field(max_length=recording.MAX_TEXT)
+    data_input: str = Field(default="", max_length=recording.MAX_TEXT)
+    t: int = Field(ge=0)
+    # Deltas not yet sent ride along, so the log holds them before this judging.
+    seq: int | None = Field(default=None, ge=1)
+    events: list[dict] = Field(default_factory=list, max_length=500)
 
 
 class PracticeAnswer(BaseModel):
@@ -892,6 +910,7 @@ def _active_payload(prob, s, settings):
         "hint_total": len(hint_ladder) if hint_ladder else 3,
         "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(settings),
         "plan_status": s.get("plan_status"),
+        "surface": s.get("surface") or "leetcode",
         "plan_check_available": s.get("plan_status") == "planned" and llm.enabled(settings),
         # Only once asked for: a critique shown unasked would be a free hint.
         "plan_check": s.get("plan_check") if s.get("plan_check_revealed") else None,
@@ -919,6 +938,7 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "planned_edge_cases": plans.planned_edge_cases(body.model_dump())[:3],
         "plan_status": body.plan_status,
         "plan_time_sec": body.plan_time_sec,
+        "surface": "leetcode" if body.kind == "mock" else body.surface,
     }
     sid = store.add_session(doc)
     if llm.enabled(settings):
@@ -950,11 +970,13 @@ def api_session_pause(body: PauseSession, uid: str = Depends(auth.require_user))
         if not paused_at:
             store.update_session(s["id"], {"paused_at": now})
             paused_at = now
+            _log_server_event(store, s, {"k": "pause"})
     else:
         if paused_at:
             paused_sec += max(0, now - paused_at)
             store.update_session(s["id"], {"paused_at": None, "paused_sec": paused_sec})
             paused_at = None
+            _log_server_event(store, s, {"k": "resume"})
     effective_paused_sec = paused_sec + (max(0, now - paused_at) if paused_at else 0)
     elapsed_sec = max(0, now - s["started_at"] - effective_paused_sec)
     return {"ok": True, "paused_at": paused_at, "paused_sec": paused_sec,
@@ -981,6 +1003,7 @@ async def api_session_hint(uid: str = Depends(auth.require_user)):
                 "exhausted": True, "llm": llm.enabled(store.get_settings())}
     level = min(len(ladder), s.get("hint_level", 0) + 1)
     store.update_session(s["id"], {"hint_level": level})
+    _log_server_event(store, s, {"k": "hint", "level": level})
     return {"hint": ladder[level - 1], "level": level, "total": len(ladder),
             "exhausted": level >= len(ladder)}
 
@@ -1016,6 +1039,172 @@ async def api_poll(bg: BackgroundTasks, uid: str = Depends(auth.require_user),
         new_ids = await poller.check_active_sessions(store, username, lc)
         new_ids += await poller.sweep_untracked_solves(store, username, lc)
         return {"new_attempts": new_ids, "pending": _pending(store)}
+
+
+# ---- in-app editor --------------------------------------------------------------
+# The editor's Run and Submit reach LeetCode through here, and every judging lands
+# in the session's recording (recording.py) beside the deltas the page sends.
+# Solving on LeetCode's own site stays a first-class path: nothing here is needed
+# for a run to start, be detected, or be logged.
+
+_recording_locks = {}
+
+
+def _recording_lock(uid):
+    # A plain lock: the section it guards is a read-modify-write with no awaits,
+    # entered both from async routes and from sync ones on the threadpool.
+    return _recording_locks.setdefault(uid, threading.Lock())
+
+
+def _editor_session(store, session_id):
+    s = store.get_session(session_id)
+    if not s or s.get("status") != "active":
+        raise HTTPException(409, "This run is no longer active.")
+    return s
+
+
+def _run_ms(s):
+    return max(0, int(time.time() * 1000) - s["started_at"] * 1000)
+
+
+def _append_recording(store, s, client_events=(), seq=None, server_events=()):
+    """Append to a run's recording, creating it on first write. A client batch
+    whose seq was already applied (a retried request) is dropped; server events
+    — judgings, pauses, hints — never are."""
+    with _recording_lock(store.uid):
+        doc = store.get_recording(s["id"]) or {
+            "slug": s["slug"], "started_at": s["started_at"], "lang": leetcode.EDITOR_LANG,
+            "v": recording.VERSION, "seq": 0, "events": "", "chain_ok": True}
+        new = []
+        if seq is not None and seq > doc.get("seq", 0):
+            new += [e for e in map(recording.clean_client_event, client_events) if e]
+            doc["seq"] = seq
+        new += list(server_events)
+        text = recording.dump(new)
+        if len(doc["events"]) + len(text) > recording.MAX_LOG_CHARS:
+            doc["truncated"] = True
+        elif new:
+            doc["events"] += text
+            doc["chain_ok"] = recording.reconstruct(recording.parse(doc["events"]))[1] == 0
+        store.save_recording(s["id"], doc)
+        return doc
+
+
+def _log_server_event(store, s, ev):
+    """Note a pause, resume or hint in an editor run's recording; else a no-op."""
+    if s.get("surface") == "editor" and store.get_recording(s["id"]):
+        _append_recording(store, s, server_events=[{"t": _run_ms(s), **ev}])
+
+
+async def _hydrate_editor(store, slug):
+    """The problem, with what the editor needs fetched from LeetCode once when an
+    older import predates it. Public data: no cookie involved."""
+    p = store.get_problem(slug) or {}
+    if p.get("question_id") and p.get("starter_code") and p.get("content_html"):
+        return p
+    try:
+        meta = await leetcode.question(slug)
+    except Exception:
+        meta = None
+    if not meta:
+        return p
+    fields = {k: meta[k] for k in ("question_id", "starter_code", "example_testcases")
+              if meta.get(k)}
+    if meta.get("content_html") and not p.get("content_html"):
+        fields["content_html"] = meta["content_html"]
+    if fields:
+        store.upsert_problem({"slug": slug, **fields})
+        p = {**p, **fields}
+    return p
+
+
+@app.get("/api/editor/state")
+async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user),
+                           lc=Depends(auth.leetcode_auth)):
+    """What the editor opens with: the statement, the starter code, and — for a
+    run resumed on reload or another device — the code as last recorded."""
+    store = get_store(uid)
+    s = _editor_session(store, session_id)
+    p = await _hydrate_editor(store, s["slug"])
+    starter = p.get("starter_code")
+    available = bool(p.get("question_id") and starter)
+    doc = store.get_recording(s["id"])
+    if available and not doc:
+        doc = _append_recording(store, s, server_events=[{"t": 0, "k": "c", "code": starter}])
+    code = starter
+    if doc:
+        states, _ = recording.reconstruct(recording.parse(doc["events"]))
+        if states:
+            code = states[-1][1]
+    return {"available": available, "can_judge": leetcode.has_auth(lc),
+            "content_html": p.get("content_html"), "starter_code": starter,
+            "example_testcases": p.get("example_testcases") or [],
+            "code": code, "seq": (doc or {}).get("seq", 0), "now_ms": _run_ms(s)}
+
+
+@app.post("/api/editor/log")
+def api_editor_log(body: EditorLog, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    s = _editor_session(store, body.session_id)
+    doc = _append_recording(store, s, body.events, body.seq)
+    return {"ok": True, "seq": doc.get("seq", 0)}
+
+
+async def _judge_or_error(call):
+    try:
+        return await call, None
+    except leetcode.JudgeError as e:
+        return None, str(e)
+    except Exception:
+        return None, "LeetCode didn't answer — try again, or open the problem on LeetCode."
+
+
+async def _editor_judging(store, body):
+    s = _editor_session(store, body.session_id)
+    p = await _hydrate_editor(store, s["slug"])
+    if not p.get("question_id"):
+        raise HTTPException(409, "This problem can't be judged here yet — open it on LeetCode.")
+    # Whatever the page hadn't sent yet goes in first: it's what led to this code.
+    _append_recording(store, s, body.events, body.seq)
+    return s, p
+
+
+@app.post("/api/editor/run")
+async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user),
+                         lc=Depends(auth.leetcode_auth)):
+    store = get_store(uid)
+    s, p = await _editor_judging(store, body)
+    result, err = await _judge_or_error(leetcode.run_code(
+        s["slug"], p["question_id"], body.code, body.data_input, lc))
+    if err:
+        return {"ok": False, "error": err}
+    _append_recording(store, s, server_events=[{
+        "t": body.t, "k": "run", "code": body.code, "input": body.data_input[:2000],
+        "result": recording.compact_run(result)}])
+    return {"ok": True, "result": result}
+
+
+@app.post("/api/editor/submit")
+async def api_editor_submit(body: EditorJudge, uid: str = Depends(auth.require_user),
+                            lc=Depends(auth.leetcode_auth)):
+    """Submit for judging. An Accepted is logged on the spot — no waiting for the
+    feed — and comes back with the pending list so the rating modal opens at once."""
+    store = get_store(uid)
+    s, p = await _editor_judging(store, body)
+    result, err = await _judge_or_error(leetcode.submit_code(
+        s["slug"], p["question_id"], body.code, lc))
+    if err:
+        return {"ok": False, "error": err}
+    doc = _append_recording(store, s, server_events=[{
+        "t": body.t, "k": "sub", "code": body.code, "submission_id": result["submission_id"],
+        "result": recording.compact_submit(result)}])
+    out = {"ok": True, "result": result, "attempt_id": None}
+    if result["accepted"]:
+        async with _poll_lock(uid):
+            out["attempt_id"] = await poller.record_editor_solve(
+                store, s, result, body.code, recording.parse(doc["events"]))
+        out["pending"] = _pending(store)
+    return out
 
 
 @app.get("/api/pending")
@@ -1997,7 +2186,8 @@ def api_health():
 
 
 # ---- static frontend ------------------------------------------------------------
-_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js")
+_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js",
+                     "editor.js", "vendor/codemirror.js")
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
 

@@ -15,7 +15,7 @@ then carrying on until it's clean is one piece of practice, not two.
 """
 import time
 
-from . import config, importer, leetcode, plans
+from . import config, importer, leetcode, plans, recording
 
 # How many recent ACs to look at per pass. LeetCode's feed is short anyway.
 RECENT_LIMIT = 20
@@ -74,13 +74,17 @@ def _plan_fields(session):
     return out
 
 
-async def _record_solve(store, session, match, auth):
+async def _record_solve(store, session, match, auth, known=None):
+    """Log a session's AC. `known` carries what the caller already holds —
+    details, wrong count, failed tests, extra fields — instead of asking LeetCode."""
     dup = store.find_attempt_by_submission(match["id"])
     if dup:
         # Logged already (an overlapping poll got there first). The row still
         # takes this run's plan if it has none — otherwise the plan is lost.
         if plans.plan_status(session) and not plans.plan_status(dup):
             store.update_attempt(dup["id"], _plan_fields(session))
+        if known:
+            store.update_attempt(dup["id"], known["extra"])
         store.update_session(session["id"], {"status": "completed", "attempt_id": dup["id"]})
         return None
 
@@ -89,20 +93,10 @@ async def _record_solve(store, session, match, auth):
     if paused_at:
         paused_sec += max(0, match["timestamp"] - paused_at)
     time_taken = max(0, match["timestamp"] - session["started_at"] - paused_sec)
-    details = None
-    wrong = None
-    try:
-        details = await leetcode.submission_details(match["id"], auth)
-    except Exception:
-        details = None
-    try:
-        wrong = await leetcode.wrong_attempts_between(
-            session["slug"], session["started_at"], match["timestamp"], auth
-        )
-    except Exception:
-        wrong = None
-    failed_tests = await _failed_tests(
-        session["slug"], session["started_at"], match["timestamp"], wrong, auth)
+    if known:
+        details, wrong, failed_tests = known["details"], known["wrong"], known["failed_tests"]
+    else:
+        details, wrong, failed_tests = await _fetch_solve_facts(session, match, auth)
 
     code = details.get("code") if details else None
     aid = store.add_attempt({
@@ -121,8 +115,52 @@ async def _record_solve(store, session, match, auth):
         "hint_level_used": session.get("hint_level", 0),
         "complexity_time": None, "complexity_space": None,
         "solution_grading_status": None,
+        **(known["extra"] if known else {}),
     })
     store.update_session(session["id"], {"status": "completed", "attempt_id": aid})
+    return aid
+
+
+async def _fetch_solve_facts(session, match, auth):
+    """What LeetCode can say about an AC seen in the feed: (details, wrong, failed)."""
+    try:
+        details = await leetcode.submission_details(match["id"], auth)
+    except Exception:
+        details = None
+    try:
+        wrong = await leetcode.wrong_attempts_between(
+            session["slug"], session["started_at"], match["timestamp"], auth
+        )
+    except Exception:
+        wrong = None
+    failed_tests = await _failed_tests(
+        session["slug"], session["started_at"], match["timestamp"], wrong, auth)
+    return details, wrong, failed_tests
+
+
+async def record_editor_solve(store, session, sub, code, events):
+    """Log an AC judged from the in-app editor; returns the attempt id.
+
+    Everything the feed-driven path asks LeetCode for afterwards is already in
+    hand — the verdict, the code, and this session's own failed submits — so
+    this makes no calls. The feed will show the same AC later; its submission id
+    is what keeps that from becoming a second solve.
+    """
+    summary = recording.summary(events)
+    known = {
+        "details": {"runtime_percentile": sub.get("runtime_percentile"),
+                    "memory_percentile": sub.get("memory_percentile"),
+                    "lang": leetcode.EDITOR_LANG, "code": code},
+        "wrong": summary["failed_submits"],
+        "failed_tests": recording.failed_tests(events),
+        "extra": {"via": "editor", "recording": summary},
+    }
+    match = {"id": sub["submission_id"], "titleSlug": session["slug"],
+             "timestamp": sub["finished_at"]}
+    aid = await _record_solve(store, session, match, None, known)
+    if aid is None:
+        dup = store.find_attempt_by_submission(sub["submission_id"])
+        aid = dup["id"] if dup else None
     return aid
 
 
