@@ -46,6 +46,17 @@ def test_the_run_and_the_solve_carry_interview_pace_for_their_difficulty(client)
     assert r["active"]["par_sec"] == main.config.SOLVE_PAR_SEC["Easy"]
 
 
+def test_a_run_opens_with_the_last_lesson_and_keeps_it(client):
+    aid = client.store.add_attempt({"slug": "two-sum", "solved_at": 100, "confidence": 2})
+    client.store.upsert_enrichment(aid, {"attempt_id": aid, "process_review": {
+        "takeaway": "Run the empty case before submitting."}})
+    r = client.post("/api/session/start", json={"slug": "two-sum", "surface": "editor"}).json()
+    t = r["active"]["takeaway"]
+    assert (t["text"], t["scope"], t["title"]) == (
+        "Run the empty case before submitting.", "problem", "Two Sum")
+    assert client.get("/api/session/active").json()["active"]["takeaway"] == t
+
+
 def test_state_hydrates_the_problem_once_and_opens_the_recording(client):
     sid = _start(client)
     state = client.get(f"/api/editor/state?session_id={sid}").json()

@@ -136,3 +136,27 @@ def test_no_score_from_a_time_target_alone():
     c = plans.plan_components(_planned(), None, canonical={"time": "O(n)"})
     assert c["complexity"] == 1.0
     assert plans.plan_score(c) is None
+
+
+def test_a_run_opens_with_the_closest_recent_lesson():
+    cats = {"two-sum": "Arrays", "3sum": "Two Pointers", "group-anagrams": "Arrays",
+            "old": "Graphs"}
+    now = 100 * 86400
+    attempts = [
+        {"id": "a", "slug": "group-anagrams", "solved_at": now - 3600},
+        {"id": "b", "slug": "two-sum", "solved_at": now - 30 * 86400},
+        {"id": "c", "slug": "3sum", "solved_at": now - 86400},
+        {"id": "d", "slug": "old", "solved_at": now - 40 * 86400},
+        {"id": "e", "slug": "two-sum", "solved_at": now - 60},  # reviewed, no takeaway
+    ]
+    enr = {k: {"process_review": {"takeaway": f"lesson {k}"}} for k in "abcd"}
+    enr["e"] = {"process_review": {"takeaway": "  "}}
+
+    t = plans.last_takeaway(attempts, enr, "two-sum", cats, now)
+    assert (t["text"], t["scope"]) == ("lesson b", "problem")
+    t = plans.last_takeaway(attempts, enr, "contains-duplicate", {**cats, "contains-duplicate": "Arrays"}, now)
+    assert (t["text"], t["scope"], t["slug"]) == ("lesson a", "topic", "group-anagrams")
+    t = plans.last_takeaway(attempts, enr, "course-schedule", {**cats, "course-schedule": "Trees"}, now)
+    assert (t["text"], t["scope"]) == ("lesson a", "recent")
+    # Only an old lesson from another topic: nothing worth opening with.
+    assert plans.last_takeaway(attempts[3:4], enr, "two-sum", cats, now) is None

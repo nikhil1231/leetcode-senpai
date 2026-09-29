@@ -268,3 +268,39 @@ def previous_plan(attempts, enrichment_by_attempt, slug, before_ts, exclude_id=N
         "held": review["held"],
         "score": review["score"],
     }
+
+
+# ---- carrying a lesson forward ---------------------------------------------------
+# A process review ends in one "next time" line. It only helps if it's in front
+# of you when next time comes, so a run opens with the most relevant one.
+TAKEAWAY_RECENT_SEC = 14 * 86400
+
+
+def last_takeaway(attempts, enrichment_by_attempt, slug, category_by_slug, now):
+    """The "next time" line a run should open with: the latest from this problem,
+    else from its topic, else any from the last two weeks. None if there is none."""
+    category = category_by_slug.get(slug)
+    best = {}
+    for a in attempts:
+        review = (enrichment_by_attempt.get(a.get("id")) or {}).get("process_review") or {}
+        text = (review.get("takeaway") or "").strip()
+        if not text:
+            continue
+        if a.get("slug") == slug:
+            scope = "problem"
+        elif category and category_by_slug.get(a.get("slug")) == category:
+            scope = "topic"
+        elif now - (a.get("solved_at") or 0) <= TAKEAWAY_RECENT_SEC:
+            scope = "recent"
+        else:
+            continue
+        held = best.get(scope)
+        if held is None or (a.get("solved_at") or 0) > (held[0].get("solved_at") or 0):
+            best[scope] = (a, text)
+    for scope in ("problem", "topic", "recent"):
+        if scope in best:
+            a, text = best[scope]
+            return {"text": text, "scope": scope, "slug": a.get("slug"),
+                    "category": category_by_slug.get(a.get("slug")),
+                    "solved_at": a.get("solved_at")}
+    return None

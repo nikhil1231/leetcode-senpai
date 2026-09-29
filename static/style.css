@@ -954,6 +954,13 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .active-run.is-paused .active-kicker { border-color: rgba(245, 181, 68, .3); background: rgba(245, 181, 68, .1); color: var(--amber); }
 .active-run.is-paused .dot { animation: none; opacity: .7; }
 .active-run.is-paused .active-timer { color: var(--muted); text-shadow: none; }
+.active-takeaway {
+  max-width: 62ch; margin: 18px auto 0; padding: 8px 12px;
+  border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
+  background: rgba(124, 134, 255, .07); font-size: 13.5px; text-align: left;
+}
+.active-takeaway.hidden { display: none; }
+.active-run.has-editor .active-takeaway { max-width: none; margin: 4px 0 0; }
 .active-timer.is-over { color: var(--amber); text-shadow: 0 0 44px rgba(245, 181, 68, .25); }
 .active-clock .active-par { margin: 6px 0 0; font-size: 12px; font-variant-numeric: tabular-nums; }
 .active-clock .active-par.is-over { color: var(--amber); }
@@ -2458,6 +2465,7 @@ body.has-active-session #user-chip {
 .active-run.has-editor .active-timer { font-size: 26px; font-weight: 400; text-shadow: none; }
 .active-run.has-editor .active-actions { justify-content: flex-end; }
 .active-run.has-editor .hint-panel,
+.active-run.has-editor .active-takeaway,
 .active-run.has-editor .plan-critique,
 .active-run.has-editor .nudge { flex: 1 0 100%; }
 

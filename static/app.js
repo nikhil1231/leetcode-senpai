@@ -856,6 +856,7 @@ function applyActive(active) {
       $("#nudge").classList.add("hidden");
     }
     setDashboardLocked(true);
+    setTakeaway(active.takeaway);
     setHintButton(active);
     setPlanCheck(active);
     setPauseButton(active);
@@ -872,6 +873,17 @@ function applyActive(active) {
     stopTimer();
     window.Editor?.unmount();
   }
+}
+
+// The last process review's "next time" line, in front of you for this run.
+function setTakeaway(t) {
+  const el = $("#active-takeaway");
+  el.classList.toggle("hidden", !t);
+  if (!t) return;
+  const where = t.scope === "problem" ? "Last time on this problem"
+    : t.scope === "topic" ? `Last time in ${t.category} (${t.title})`
+    : `Your last solve (${t.title})`;
+  el.innerHTML = `<b>${escapeHtml(where)}:</b> ${escapeHtml(t.text)}`;
 }
 
 function setDashboardLocked(locked) {

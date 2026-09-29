@@ -918,6 +918,7 @@ def _active_payload(prob, s, settings):
         "surface": s.get("surface") or "leetcode",
         "interview": bool(s.get("interview")),
         "par_sec": config.SOLVE_PAR_SEC.get(prob.get("difficulty")),
+        "takeaway": s.get("takeaway"),
         "plan_check_available": s.get("plan_status") == "planned" and llm.enabled(settings),
         # Only once asked for: a critique shown unasked would be a free hint.
         "plan_check": s.get("plan_check") if s.get("plan_check_revealed") else None,
@@ -934,6 +935,12 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
     settings = store.get_settings()
     store.cancel_active_sessions()
     started = int(time.time())
+    pm = _problem_map(store)
+    takeaway = plans.last_takeaway(
+        store.list_attempts(), _enrichment_map(store), body.slug,
+        {slug: p.get("neetcode_category") for slug, p in pm.items()}, started)
+    if takeaway:
+        takeaway["title"] = (pm.get(takeaway["slug"]) or {}).get("title", takeaway["slug"])
     doc = {
         "slug": body.slug, "started_at": started, "status": "active",
         "kind": body.kind, "attempt_id": None, "hint_level": 0,
@@ -947,6 +954,8 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "plan_time_sec": body.plan_time_sec,
         "surface": body.surface,
         "interview": body.surface == "editor" and (body.interview or body.kind == "mock"),
+        # Fixed when the run starts: the lesson it opens with doesn't shift under it.
+        "takeaway": takeaway,
     }
     sid = store.add_session(doc)
     if llm.enabled(settings):
