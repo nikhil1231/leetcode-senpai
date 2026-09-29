@@ -149,7 +149,25 @@ def test_timeline_reads_in_order_with_the_fix_after_the_failed_submit():
     assert "    -        return [0, 0]" in lines
     assert "    +        return [0, 1]" in lines
     assert "[04:40] revealed hint 1" in text
-    assert text.rstrip().endswith("[05:30] submit: Accepted (65/65 tests)")
+    # The fix went straight to Submit without a Run of that exact code.
+    assert text.rstrip().endswith(
+        "[05:30] submit: Accepted (65/65 tests) (this exact code was never run first)")
+    assert rec.summary(_solve())["submits_unrun"] == 1
+
+
+def test_ticked_edge_cases_are_tracked_and_read_in_the_timeline():
+    events = [ev(0, "c", code="x"), ev(1_000, "edge", case="empty", on=True),
+              ev(2_000, "edge", case="dupes", on=True), ev(3_000, "edge", case="empty", on=False),
+              ev(4_000, "run", code="x", result={"passed": True, "correct": 1, "total": 1}),
+              ev(5_000, "sub", code="x", result={"status": "Accepted"})]
+    assert rec.edges_checked(events) == ["dupes"]
+    assert rec.edges_checked(events[3:], ["empty"]) == []
+    text = rec.timeline_for_llm(events)
+    assert '[00:02] ticked planned edge case "dupes" as tested' in text
+    assert "never run" not in text and rec.summary(events)["submits_unrun"] == 0
+    assert rec.clean_client_event({"t": 1, "k": "edge", "case": "  ", "on": True}) is None
+    assert rec.clean_client_event({"t": 1, "k": "edge", "case": "a" * 200, "on": 1}) == {
+        "t": 1, "k": "edge", "case": "a" * 80, "on": True}
 
 
 def test_timeline_names_big_rewrites_and_lost_logs():

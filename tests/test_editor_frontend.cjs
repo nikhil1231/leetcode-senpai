@@ -50,7 +50,7 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
                    'drawSelection', 'indentOnInput', 'bracketMatching', 'closeBrackets',
                    'highlightActiveLine', 'syntaxHighlighting', 'python']) CM[f] = noop;
   const context = vm.createContext({
-    window: { H: { $: node, escapeHtml: (s) => String(s), api, toast() {}, sanitizeProblemHtml: (h) => h || '' },
+    window: { H: { $: node, $$: () => [], escapeHtml: (s) => String(s), api, toast() {}, sanitizeProblemHtml: (h) => h || '' },
               CM, App: { onEditorSolved() {} },
               addEventListener(ev, fn) { win[ev] = fn; }, removeEventListener() {} },
     document: doc,
@@ -191,6 +191,7 @@ test('a failing submit input can be added to the tests, once', async () => {
     return { ok: true, result: { accepted: false, status: 'Wrong Answer', input: '[3,2,4]\n6' } };
   } });
   await ui.mount();
+  ui.node('#editor-submit').listeners.click();  // never run: asks first
   await ui.node('#editor-submit').listeners.click();
   await new Promise((r) => setImmediate(r));
   ui.node('#editor-add-case').listeners.click();
@@ -213,4 +214,37 @@ test('another window in front counts as away, once, however it is signalled', as
   await ui.E.flush();
   const kinds = ui.logs().flatMap((l) => l.body.events.map((e) => e.k));
   assert.deepEqual(kinds, ['blur', 'focus']);
+});
+
+test('a submit of untested code asks first; asking again, or code just run, goes through', async () => {
+  const ui = editor({ state: { planned_edge_cases: ['empty', 'dupes'] } });
+  await ui.mount();
+  const submits = () => ui.calls.filter((c) => c.path === '/editor/submit').length;
+  ui.E.judge('submit');
+  assert.equal(submits(), 0);
+  const asked = ui.node('#editor-result').innerHTML;
+  assert.match(asked, /haven't run this version/);
+  assert.match(asked, /not ticked: empty, dupes/);
+  await ui.E.judge('submit');
+  assert.equal(submits(), 1);
+
+  const ran = editor();
+  await ran.mount();
+  await ran.E.judge('run');
+  await ran.E.judge('submit');
+  assert.equal(ran.calls.filter((c) => c.path === '/editor/submit').length, 1);
+  ran.buffer.code = STARTER + '# changed\n';
+  ran.E.judge('submit');
+  assert.equal(ran.calls.filter((c) => c.path === '/editor/submit').length, 1);
+});
+
+test('ticking a planned edge case is logged and kept with the draft', async () => {
+  const ui = editor({ state: { planned_edge_cases: ['empty', 'dupes'], edges_checked: ['dupes'] } });
+  await ui.mount();
+  ui.node('#editor-edges').listeners.change({ target: { dataset: { i: '0' }, checked: true } });
+  assert.deepEqual([...ui.E._state().checked], ['dupes', 'empty']);
+  await ui.E.flush();
+  const [ev] = ui.logs()[0].body.events;
+  assert.deepEqual({ k: ev.k, case: ev.case, on: ev.on }, { k: 'edge', case: 'empty', on: true });
+  assert.deepEqual(JSON.parse(ui.storage.get('editor-run:v1:s1')).checked, ['dupes', 'empty']);
 });

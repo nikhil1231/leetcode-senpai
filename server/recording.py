@@ -10,6 +10,7 @@ only when the code moved since the last one, so time spent thinking costs nothin
   run    run             {code, input, result}   also a checkpoint
   sub    submit          {code, submission_id, result}  also a checkpoint
   pause / resume / blur / focus / hint {level}
+  edge   edge case       {case, on}              a planned edge case ticked (or not)
 
 Nobody reads this at keystroke level — it's raw material for the LLM review and
 for the handful of numbers `summary` derives. State at any moment is rebuilt from
@@ -27,7 +28,7 @@ VERSION = 1
 
 CODE_KINDS = ("c", "run", "sub")
 # What the browser may append; judging events are written by the server alone.
-CLIENT_KINDS = ("c", "d", "pause", "resume", "blur", "focus")
+CLIENT_KINDS = ("c", "d", "pause", "resume", "blur", "focus", "edge")
 # A pause in activity at least this long counts as a stall worth naming.
 IDLE_GAP_MS = 60_000
 # Keep a recording well inside Firestore's 1 MiB document limit. Past the first
@@ -103,6 +104,11 @@ def clean_client_event(ev):
         if not isinstance(s, str) or len(s) > MAX_TEXT or f < 0 or to < f:
             return None
         return {"t": t, "k": k, "f": f, "to": to, "s": s}
+    if k == "edge":
+        case = ev.get("case")
+        if not isinstance(case, str) or not case.strip():
+            return None
+        return {"t": t, "k": k, "case": case.strip()[:80], "on": bool(ev.get("on"))}
     return {"t": t, "k": k}
 
 
@@ -194,6 +200,31 @@ def idle_gaps(events, min_gap=IDLE_GAP_MS):
     return gaps
 
 
+def edges_checked(events, checked=()):
+    """The planned edge cases ticked as of the end of `events`, from `checked`."""
+    out = list(checked)
+    for ev in events:
+        if ev.get("k") != "edge":
+            continue
+        case = ev.get("case")
+        if ev.get("on") and case not in out:
+            out.append(case)
+        elif not ev.get("on") and case in out:
+            out.remove(case)
+    return out
+
+
+def _never_run(events):
+    """The submit events (by id) whose exact code was never Run before them."""
+    ran, out = set(), set()
+    for ev in events:
+        if ev.get("k") == "run":
+            ran.add(ev.get("code") or "")
+        elif ev.get("k") == "sub" and (ev.get("code") or "") not in ran:
+            out.add(id(ev))
+    return out
+
+
 def _first(events, kind):
     return next((ev["t"] for ev in events if ev.get("k") == kind), None)
 
@@ -215,6 +246,7 @@ def summary(events):
         "submits": len(subs),
         "failed_submits": sum(1 for ev in subs
                               if (ev.get("result") or {}).get("status") != "Accepted"),
+        "submits_unrun": len(_never_run(events)),
         "edits": sum(1 for ev in events if ev.get("k") == "d"),
         "idle_ms": sum(length for _, length in gaps),
         "longest_idle_ms": max((length for _, length in gaps), default=0),
@@ -351,6 +383,7 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
     entries = []  # [t, text, diff]
     code = None
     failed_sub = None  # (entry, code) awaiting the next judged code
+    unrun_subs = _never_run(events)
     away_from = None
     for ev in events:
         k, t = ev.get("k"), ev.get("t", 0)
@@ -375,12 +408,15 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
                 entry[2] = _unified(before, ev.get("code") or "") or None
                 failed_sub = None
             code = ev.get("code") or ""
-            entry = [t, _judged(ev), None]
+            unrun = " (this exact code was never run first)" if id(ev) in unrun_subs else ""
+            entry = [t, _judged(ev) + unrun, None]
             entries.append(entry)
             if k == "sub" and (ev.get("result") or {}).get("status") != "Accepted":
                 failed_sub = (entry, code)
         elif k == "hint":
             entries.append([t, f"revealed hint {ev.get('level')}", None])
+        elif k == "edge" and ev.get("on"):
+            entries.append([t, f"ticked planned edge case \"{ev.get('case')}\" as tested", None])
         elif k in ("pause", "resume"):
             entries.append([t, "paused the clock" if k == "pause" else "resumed", None])
         elif k == "blur":

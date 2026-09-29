@@ -8,7 +8,7 @@
 // and any still unsent ride along with the next Run or Submit, so the log always
 // holds what led to the code being judged.
 (function () {
-  const { $, escapeHtml: esc, api, toast, sanitizeProblemHtml } = window.H;
+  const { $, $$, escapeHtml: esc, api, toast, sanitizeProblemHtml } = window.H;
   const TICK_MS = 10000;
   const FLUSH_MS = 30000;
   const STORE_PREFIX = "editor-run:v1:";
@@ -54,7 +54,8 @@
     try {
       localStorage.setItem(STORE_PREFIX + r.sessionId, JSON.stringify({
         code: currentCode(r), lastLogged: r.lastLogged, queue: r.queue,
-        inflight: r.inflight, seq: r.seq, input: r.input,
+        inflight: r.inflight, seq: r.seq, input: r.input, checked: r.checked,
+        lastRunCode: r.lastRunCode, submits: r.submits,
       }));
     } catch (_) { /* storage full or blocked: the server copy still stands */ }
   }
@@ -80,9 +81,9 @@
     persist();
   }
 
-  function note(kind) {
+  function note(kind, extra = {}) {
     if (!run) return;
-    run.queue.push({ t: nowMs(), k: kind });
+    run.queue.push({ t: nowMs(), k: kind, ...extra });
     persist();
   }
 
@@ -122,10 +123,46 @@
   }
 
   // ---- judging ------------------------------------------------------------------
+  // A submit goes on your LeetCode record and a wrong one counts against the
+  // solve, so one made without testing gets a second look: code never Run as it
+  // stands, or — before the first submit — planned edge cases left unticked.
+  // Submitting again (button or shortcut) goes ahead; a stray Ctrl/⌘+Enter
+  // doesn't.
+  function submitDoubts(r) {
+    const doubts = [];
+    if (r.lastRunCode !== r.lastLogged) doubts.push("You haven't run this version of the code.");
+    const open = r.edges.filter((c) => !r.checked.includes(c));
+    if (!r.submits && open.length) doubts.push(`Planned edge cases not ticked: ${open.join(", ")}.`);
+    return doubts;
+  }
+
+  function showDoubts(doubts) {
+    $("#editor-result").innerHTML = `<div class="editor-confirm">
+      <p><b>Submit anyway?</b></p>${doubts.map((d) => `<p class="small">${esc(d)}</p>`).join("")}
+      <div class="editor-confirm-actions">
+        <button id="editor-confirm-run" class="button is-small" type="button">Run first</button>
+        <button id="editor-confirm-submit" class="button is-small is-primary" type="button">Submit anyway</button>
+        <span class="small">or Ctrl/⌘ + Enter again</span>
+      </div></div>`;
+    $("#editor-confirm-run").addEventListener("click", () => judge("run"));
+    $("#editor-confirm-submit").addEventListener("click", () => judge("submit"));
+    // Asked from the keyboard, the question may sit below the fold.
+    $("#editor-result").scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }
+
   function judge(kind) {
     if (!run || run.judging) return;
     const r = run;
     tick();
+    if (kind === "submit" && !r.confirming) {
+      const doubts = submitDoubts(r);
+      if (doubts.length) {
+        r.confirming = true;
+        showDoubts(doubts);
+        return;
+      }
+    }
+    r.confirming = false;
     const code = r.lastLogged;
     const dataInput = $("#editor-input").value;
     setJudging(true, kind);
@@ -145,6 +182,9 @@
       if (run !== r) return;
       if (!res.ok) { showError(res.error); return; }
       if (res.truncated) markTruncated(r);
+      if (kind === "run") r.lastRunCode = code;
+      else r.submits += 1;
+      persist(r);
       if (kind === "run") showRun(res.result);
       else showSubmit(res.result);
       if (res.attempt_id) {
@@ -223,6 +263,25 @@
   }
 
   // ---- mount / unmount --------------------------------------------------------------
+  // The plan's edge cases, to tick off as runs cover them. Ticks are logged, so
+  // the review can see which ones were actually tested.
+  function edgesHtml(cases) {
+    if (!cases.length) return "";
+    return `<div id="editor-edges" class="editor-edges">
+      <span class="label-sm">Planned edge cases — tick each once a run covers it</span>
+      ${cases.map((c, i) => `<label class="editor-edge"><input type="checkbox" data-i="${i}"> ${esc(c)}</label>`).join("")}
+    </div>`;
+  }
+
+  function onEdgeTick(e) {
+    const r = run;
+    const box = e.target;
+    const c = r && r.edges[Number(box.dataset.i)];
+    if (!c) return;
+    r.checked = r.checked.filter((x) => x !== c).concat(box.checked ? [c] : []);
+    note("edge", { case: c, on: Boolean(box.checked) });
+  }
+
   function paneHtml(state) {
     return `
       <div class="editor-statement recall-statement">${sanitizeProblemHtml(state.content_html)
@@ -236,6 +295,7 @@
           ${state.can_judge ? "" : `<span class="small editor-nocookie">Set your LeetCode cookie in Settings to run and submit.</span>`}
         </div>
         <p id="editor-notice" class="small editor-notice hidden"></p>
+        ${edgesHtml(state.planned_edge_cases || [])}
         <label class="label-sm" for="editor-input">Test input</label>
         <textarea id="editor-input" class="editor-input" rows="4" spellcheck="false"></textarea>
         <div id="editor-result" class="editor-result" aria-live="polite"></div>
@@ -276,6 +336,7 @@
       sessionId: active.session_id, startedAtMs: active.started_at * 1000, offsetMs: 0,
       view: null, lastLogged: "", queue: [], inflight: null, seq: 0,
       chain: Promise.resolve(), judging: false, canJudge: false, timers: [],
+      edges: [], checked: [], lastRunCode: null, submits: 0, confirming: false,
     };
     run = r;
     let state, CM;
@@ -298,18 +359,27 @@
     let doc = state.code;
     // What was last run, else the problem's examples.
     r.input = state.last_input ?? (state.example_testcases || []).join("\n");
+    r.edges = state.planned_edge_cases || [];
+    r.checked = state.edges_checked || [];
     // This browser's copy wins unless another device has logged past it.
     if (saved && Number.isInteger(saved.seq) && saved.seq >= state.seq) {
       Object.assign(r, { lastLogged: saved.lastLogged, queue: saved.queue || [],
                          inflight: saved.inflight || null, seq: saved.seq });
       doc = saved.code;
       if (typeof saved.input === "string") r.input = saved.input;
+      if (Array.isArray(saved.checked)) r.checked = saved.checked;
+      r.lastRunCode = saved.lastRunCode ?? null;
+      r.submits = saved.submits || 0;
     } else {
       Object.assign(r, { lastLogged: state.code, seq: state.seq });
     }
     pane.innerHTML = paneHtml(state);
     $("#editor-input").value = r.input;
     $("#editor-input").addEventListener("input", () => { r.input = $("#editor-input").value; persist(r); });
+    if (r.edges.length) {
+      $("#editor-edges").addEventListener("change", onEdgeTick);
+      $$("#editor-edges input").forEach((box) => { box.checked = r.checked.includes(r.edges[Number(box.dataset.i)]); });
+    }
 
     r.readOnly = new CM.Compartment();
     r.view = new CM.EditorView({
@@ -379,6 +449,6 @@
     forget(sessionId);
   }
 
-  window.Editor = { mount, unmount, setPaused, discard, diff, tick, flush,
+  window.Editor = { mount, unmount, setPaused, discard, diff, tick, flush, judge,
                     _state: () => run };
 })();

@@ -150,6 +150,20 @@ def test_the_last_input_run_reopens_on_any_device(client, monkeypatch):
     assert client.get(f"/api/editor/state?session_id={sid}").json()["last_input"] == "[3,3]\n6"
 
 
+def test_planned_edge_cases_and_their_ticks_come_back_with_the_state(client):
+    sid = client.post("/api/session/start", json={
+        "slug": "two-sum", "surface": "editor", "plan_status": "planned",
+        "planned_edge_cases": ["empty", "dupes"]}).json()["session_id"]
+    client.get(f"/api/editor/state?session_id={sid}")
+    client.post("/api/editor/log", json={"session_id": sid, "seq": 1, "events": [
+        {"t": 5, "k": "edge", "case": "empty", "on": True},
+        {"t": 6, "k": "edge", "case": "dupes", "on": True},
+        {"t": 7, "k": "edge", "case": "empty", "on": False}]})
+    state = client.get(f"/api/editor/state?session_id={sid}").json()
+    assert state["planned_edge_cases"] == ["empty", "dupes"]
+    assert state["edges_checked"] == ["dupes"]
+
+
 def test_a_judge_refusal_is_an_answer_not_an_error(client, monkeypatch):
     async def run_code(*a):
         raise leetcode.JudgeError("LeetCode is rate-limiting — wait a few seconds and try again.")

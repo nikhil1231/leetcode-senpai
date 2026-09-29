@@ -2484,6 +2484,12 @@ body.has-active-session #user-chip {
 .editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .editor-nocookie, .editor-notice { color: var(--amber); }
 .editor-notice { margin: 8px 0 0; }
+.editor-edges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 10px 0 2px; font-size: 13px; }
+.editor-edges .label-sm { flex: 1 0 100%; margin: 0; }
+.editor-edge { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.editor-confirm { padding: 10px 12px; border: 1px solid var(--amber); border-radius: var(--radius-sm); }
+.editor-confirm p { margin: 0 0 4px; }
+.editor-confirm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .editor-input {
   width: 100%;
   padding: 9px 11px;

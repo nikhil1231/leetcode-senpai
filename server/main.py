@@ -1100,6 +1100,8 @@ def _append_recording(store, s, client_events=(), seq=None, server_events=()):
         runs = [e for e in new if e.get("k") == "run"]
         if runs:
             doc["last_input"] = runs[-1].get("input")
+        if any(e.get("k") == "edge" for e in new):
+            doc["edges_checked"] = recording.edges_checked(new, doc.get("edges_checked") or [])
         if new:
             doc["events"] += recording.dump(new)
             doc["code"], mismatches = recording.advance(doc["code"], new)
@@ -1157,6 +1159,8 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
             "example_testcases": p.get("example_testcases") or [],
             "code": code, "seq": (doc or {}).get("seq", 0), "now_ms": _run_ms(s),
             "last_input": (doc or {}).get("last_input"),
+            "planned_edge_cases": plans.planned_edge_cases(s)[:3],
+            "edges_checked": (doc or {}).get("edges_checked") or [],
             "truncated": bool((doc or {}).get("truncated"))}
 
 
