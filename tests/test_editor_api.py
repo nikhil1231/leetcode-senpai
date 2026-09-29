@@ -353,6 +353,22 @@ def test_a_rated_solve_is_not_reopened_for_optimizing(client, monkeypatch):
     assert client.post("/api/editor/optimize", json={"attempt_id": "nope"}).status_code == 404
 
 
+def test_a_re_solve_reads_against_the_solve_before_it(client):
+    add = client.store.add_attempt
+    add({"slug": "two-sum", "solved_at": 10, "code": "old", "kind": "recall", "source": "recall"})
+    first = add({"slug": "two-sum", "solved_at": 100, "code": WRONG, "time_taken_sec": 900,
+                 "wrong_before_ac": 2})
+    again = add({"slug": "two-sum", "solved_at": 200, "code": RIGHT, "time_taken_sec": 400,
+                 "wrong_before_ac": 0, "kind": "review"})
+    same = add({"slug": "two-sum", "solved_at": 300, "code": RIGHT, "time_taken_sec": 300})
+    assert client.get(f"/api/attempt/{first}").json()["previous_solve"] is None
+    p = client.get(f"/api/attempt/{again}").json()["previous_solve"]
+    assert (p["solved_at"], p["time_taken_sec"], p["wrong_before_ac"]) == (100, 900, 2)
+    assert "-        return [0, 0]" in p["diff"] and "+        return [0, 1]" in p["diff"]
+    p = client.get(f"/api/attempt/{same}").json()["previous_solve"]
+    assert p["same_code"] is True and p["diff"] is None
+
+
 def test_pauses_and_hints_land_in_an_editor_runs_recording_only(client, monkeypatch):
     async def ladder(store, slug):
         return ["think about complements"]

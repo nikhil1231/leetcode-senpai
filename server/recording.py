@@ -359,9 +359,10 @@ def _judged(ev):
     return head
 
 
-def _unified(a, b):
-    out = [line for line in difflib.unified_diff(a.splitlines(), b.splitlines(),
-                                                 lineterm="", n=1)
+def unified_diff(a, b, context=1):
+    """A headerless unified diff of two versions of some code."""
+    out = [line for line in difflib.unified_diff((a or "").splitlines(), (b or "").splitlines(),
+                                                 lineterm="", n=context)
            if not line.startswith(("---", "+++"))]
     return "\n".join(out)
 
@@ -406,7 +407,7 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
         elif k in ("run", "sub"):
             if failed_sub:
                 entry, before = failed_sub
-                entry[2] = _unified(before, ev.get("code") or "") or None
+                entry[2] = unified_diff(before, ev.get("code") or "") or None
                 failed_sub = None
             code = ev.get("code") or ""
             unrun = " (this exact code was never run first)" if id(ev) in unrun_subs else ""

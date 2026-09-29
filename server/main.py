@@ -1461,6 +1461,33 @@ def api_override(attempt_id: str, body: OverrideTags, uid: str = Depends(auth.re
     return {"ok": True, "enrichment": e}
 
 
+_DIFF_MAX_CHARS = 6000
+
+
+def _previous_solve(store, a):
+    """The last real solve of the same problem before this one, and how the code
+    moved since — a re-solve read against the one before it, no LLM needed."""
+    if a.get("kind") in ("recall", "sprint") or a.get("source") in ("recall", "sprint"):
+        return None
+    before = [x for x in store.attempts_for_slug(a["slug"])
+              if x.get("id") != a.get("id")
+              and (x.get("solved_at") or 0) < (a.get("solved_at") or 0)
+              and x.get("kind") not in ("recall", "sprint")
+              and x.get("source") not in ("recall", "sprint", "backfill")]
+    if not before:
+        return None
+    prev = before[-1]
+    diff = None
+    if prev.get("code") and a.get("code") and prev["code"] != a["code"]:
+        diff = recording.unified_diff(prev["code"], a["code"], context=2)
+        if len(diff) > _DIFF_MAX_CHARS:
+            diff = diff[:_DIFF_MAX_CHARS] + "\n…"
+    return {"solved_at": prev.get("solved_at"), "time_taken_sec": prev.get("time_taken_sec"),
+            "wrong_before_ac": prev.get("wrong_before_ac"), "same_code": bool(
+                prev.get("code") and prev.get("code") == a.get("code")),
+            "diff": diff}
+
+
 @app.get("/api/attempt/{attempt_id}")
 def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
@@ -1470,6 +1497,7 @@ def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
     prob = store.get_problem(a["slug"]) or {}
     enrichment = store.get_enrichment(attempt_id)
     return {**a, "title": prob.get("title"), "difficulty": prob.get("difficulty"),
+            "previous_solve": _previous_solve(store, a),
             "neetcode_category": prob.get("neetcode_category"), "url": prob.get("url"),
             "par_sec": config.SOLVE_PAR_SEC.get(prob.get("difficulty")),
             "enrichment": enrichment,

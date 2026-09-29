@@ -516,7 +516,7 @@ $("#lc-warning").addEventListener("click", () => goTab("settings"));
 
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
-  if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
+  if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus, kind);
   if (kind !== "mock") return openPredict({ slug, kind, title, category });
   return startSession({ slug, kind, surface: "editor" });
 }
@@ -1746,8 +1746,8 @@ function offerSimilar(sim) {
 }
 
 // ---- recall modal --------------------------------------------------------------
-async function openRecall(slug, title, category, attemptId = null, gradingStatus = null) {
-  currentRecall = { slug, title, category, attempt_id: attemptId, grading_status: gradingStatus };
+async function openRecall(slug, title, category, attemptId = null, gradingStatus = null, kind = "adhoc") {
+  currentRecall = { slug, title, category, attempt_id: attemptId, grading_status: gradingStatus, kind };
   stopRecallGrading();
   $("#recall-problem").textContent = title || slug;
   $("#recall-statement").innerHTML = loader("Loading problem prompt...");
@@ -1763,8 +1763,10 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
   $("#recall-grade").innerHTML = "";
   $("#recall-actions").innerHTML =
     `<button id="btn-close-recall" class="button is-ghost">Cancel</button>
+     <button id="btn-code-recall" class="button" type="button" title="Write it out in the editor instead — a full re-solve, compared with your last one">Code it instead</button>
      <button id="btn-submit-recall" class="button is-primary">${llmEnabled ? "Check my recall" : "Grade & schedule"}</button>`;
   wireRecallButtons();
+  $("#btn-code-recall").addEventListener("click", codeRecall);
   $("#recall-modal").classList.remove("hidden");
   try {
     const ctx = await api(`/problem/${encodeURIComponent(slug)}/recall-context`);
@@ -1777,6 +1779,15 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
   if (attemptId) {
     await loadRecallAttempt(attemptId);
   }
+}
+
+// A recall written out as code rather than words: a full re-solve in the editor,
+// which is more than the recall asked for, so it counts for the review too.
+function codeRecall() {
+  const r = currentRecall;
+  if (!r) return;
+  $("#recall-modal").classList.add("hidden");
+  startFlow(r.slug, r.kind || "adhoc", "", r.title, r.category);
 }
 
 function wireRecallButtons() {
@@ -2387,6 +2398,26 @@ function processDetailHtml(a) {
   </section>`;
 }
 
+// A re-solve against the solve before it: the clock, and how the code moved.
+function previousSolveHtml(a) {
+  const p = a.previous_solve;
+  if (!p) return "";
+  const when = p.solved_at ? new Date(p.solved_at * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
+  const time = p.time_taken_sec != null && a.time_taken_sec != null
+    ? `${fmtTime(p.time_taken_sec)} → <b>${fmtTime(a.time_taken_sec)}</b>` : "";
+  const diffLines = (p.diff || "").split("\n").map((line) => {
+    const cls = line.startsWith("+") ? "is-add" : line.startsWith("-") ? "is-del" : line.startsWith("@@") ? "is-hunk" : "";
+    return `<span class="${cls}">${escapeHtml(line)}</span>`;
+  }).join("\n");
+  return `<section class="detail-previous plan-card">
+    <h3>Against last time${when ? ` <span class="small">(${escapeHtml(when)})</span>` : ""}</h3>
+    ${time ? `<p class="small">Time ${time}${p.wrong_before_ac != null && a.wrong_before_ac != null
+      ? ` · wrong subs ${p.wrong_before_ac} → <b>${a.wrong_before_ac}</b>` : ""}</p>` : ""}
+    ${p.same_code ? `<p class="small">Same code as last time.</p>` : ""}
+    ${p.diff ? `<details class="code-diff"><summary class="small">What changed in the code</summary><pre class="code">${diffLines}</pre></details>` : ""}
+  </section>`;
+}
+
 async function openDetail(attemptId) {
   $("#detail-body").innerHTML = loader("Loading attempt…");
   $("#detail-modal").classList.remove("hidden");
@@ -2437,6 +2468,7 @@ async function openDetail(attemptId) {
     ${e.pattern_used ? `<p><b>Pattern used:</b> ${escapeHtml(e.pattern_used)} ${e.complexity_verdict && e.complexity_verdict !== "match" ? `<span class="warn-chip">${escapeHtml(e.complexity_verdict.replace("_", " "))}</span>` : ""}</p>` : ""}
     ${tags.length ? `<p><b>Mistakes:</b> ${tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
     ${e.diff_summary ? `<p><b>Since last time:</b> ${escapeHtml(e.diff_summary)}</p>` : ""}
+    ${previousSolveHtml(a)}
     ${planDetailHtml(a)}
     ${processDetailHtml(a)}
     ${detailGradeHtml(a)}
