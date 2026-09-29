@@ -917,6 +917,10 @@ function applyActive(active, editorState = null) {
     setPlanCheck(active);
     setPauseButton(active);
     startTimer(active);
+    // Giving up on optimizing isn't cancelling anything: the Accepted stands.
+    const optimizing = active.kind === "optimize";
+    $("#btn-cancel-session").textContent = optimizing ? "Stop optimizing" : "Cancel run";
+    $("#btn-cancel-session").title = optimizing ? "Keep the Accepted you had and go back to rating it" : "";
     // In the app's editor, LeetCode's own page is the fallback, not the way in.
     $("#active-link").classList.toggle("is-primary", active.surface !== "editor");
     const starting = !active.session_id;
@@ -1193,9 +1197,19 @@ $("#btn-cancel-session").addEventListener("click", async () => {
   const optimized = activeSession && activeSession.optimizes;
   await api("/session/cancel", "POST");
   await refreshActive();
-  // Optimizing given up: the accepted solve it started from still wants rating.
-  if (optimized) openNextPending();
+  // Optimizing given up: back to rating the Accepted it started from.
+  if (optimized) reopenForRating(optimized);
 });
+
+async function reopenForRating(attemptId) {
+  if (!$("#annotate-modal").classList.contains("hidden")) return;
+  try {
+    const { pending } = await api("/pending");
+    const solve = (pending || []).find((p) => p.id === attemptId);
+    if (solve) return openAnnotate(solve);
+  } catch (e) { /* the queue's next is the fallback */ }
+  openNextPending();
+}
 
 $("#btn-pause-session").addEventListener("click", async () => {
   if (!activeSession) return;
@@ -2699,7 +2713,7 @@ async function keepOptimizing() {
   }
   closeAnnotate({ next: false });
   applyActive(res.active);
-  toast("Optimizing — submit a better version, or Cancel run to keep this one.");
+  toast("Optimizing — submit a better version, or Stop optimizing to keep this one.");
 }
 $("#btn-optimize-annotate").addEventListener("click", keepOptimizing);
 

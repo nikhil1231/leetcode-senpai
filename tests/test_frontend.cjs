@@ -517,3 +517,12 @@ test('saving a planned solve sends whether the plan held, then grades the plan',
   assert.equal(ui.node('#toast').textContent, 'Logged — grading your plan…');
   assert.match(ui.node('#annotate-plan-grade').innerHTML, /Plan score <b>2\/5<\/b>/);
 });
+
+test('stopping an optimize run goes back to rating that solve, not the queue head', async () => {
+  const ui = app(async () => response({
+    pending: [{ id: 'older', slug: 'a', title: 'A' }, { id: 'optimized', slug: 'b', title: 'B' }],
+  }));
+  closeModal(ui);
+  await ui.run('reopenForRating("optimized")');
+  assert.equal(ui.run('currentAttempt.id'), 'optimized');
+});

@@ -307,7 +307,7 @@
   function optimizingHtml(o) {
     const pct = (v) => (v == null ? "—" : `${Math.round(v)}%`);
     return `<p class="small editor-optimizing">Optimizing your Accepted — runtime beats <b>${pct(o.runtime_percentile)}</b>,
-      memory <b>${pct(o.memory_percentile)}</b>. A better Accepted replaces it; Cancel run keeps it.</p>`;
+      memory <b>${pct(o.memory_percentile)}</b>. A better Accepted replaces it; Stop optimizing keeps it.</p>`;
   }
 
   function paneHtml(state) {
