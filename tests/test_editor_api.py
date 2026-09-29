@@ -297,6 +297,42 @@ def test_mock_runs_can_use_the_editor_and_older_clients_stay_on_leetcode(client)
     assert r["active"]["surface"] == "leetcode"
 
 
+def test_interview_mode_caps_runs_and_rides_along_to_the_solve(client, monkeypatch):
+    async def run_code(slug, qid, code, data_input, auth):
+        return {"status": "Accepted", "passed": True, "correct": 1, "total": 1,
+                "cases": [], "error": None}
+    monkeypatch.setattr(main.leetcode, "run_code", run_code)
+    monkeypatch.setattr(main.config, "INTERVIEW_RUN_LIMIT", 2)
+    r = client.post("/api/session/start", json={"slug": "two-sum", "surface": "editor",
+                                                "interview": True}).json()
+    sid = r["session_id"]
+    assert r["active"]["interview"] is True
+    state = client.get(f"/api/editor/state?session_id={sid}").json()
+    assert state["interview"] and state["runs_left"] == 2
+    body = {"session_id": sid, "code": STARTER, "t": 5}
+    assert client.post("/api/editor/run", json=body).json()["runs_left"] == 1
+    assert client.post("/api/editor/run", json=body).json()["runs_left"] == 0
+    third = client.post("/api/editor/run", json=body).json()
+    assert third["ok"] is False and "no Runs left" in third["error"]
+    assert [e["k"] for e in _events(client, sid)] == ["c", "run", "run"]
+
+    started = client.store.get_session(sid)["started_at"]
+    _submits(monkeypatch, [{"status": "Accepted", "accepted": True, "submission_id": 30,
+                            "finished_at": started + 60}])
+    done = client.post("/api/editor/submit", json={"session_id": sid, "code": RIGHT, "t": 60_000}).json()
+    assert client.store.get_attempt(done["attempt_id"])["interview"] is True
+
+
+def test_mocks_in_the_editor_are_interview_mode_and_leetcode_runs_never_are(client):
+    mock = client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock",
+                                                   "surface": "editor"}).json()
+    assert mock["active"]["interview"] is True
+    plain = client.post("/api/session/start", json={"slug": "two-sum", "interview": True}).json()
+    assert plain["active"]["interview"] is False
+    sid = _start(client)
+    assert client.get(f"/api/editor/state?session_id={sid}").json()["runs_left"] is None
+
+
 def test_editor_is_unavailable_without_problem_metadata(client, monkeypatch):
     async def question(slug, auth=None):
         raise RuntimeError("offline")

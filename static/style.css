@@ -2532,6 +2532,10 @@ body.has-active-session #user-chip {
 .editor-io { margin: 6px 0; }
 .editor-io > span { display: block; margin-bottom: 3px; font-size: 11px; color: var(--muted); }
 .predict-surface { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; cursor: pointer; }
+.predict-surface-group { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 4px 14px; }
+.predict-surface-group .predict-surface { margin-right: 0; }
+.predict-surface.is-off { opacity: .45; cursor: default; }
+.editor-mode { color: var(--amber); font-weight: 600; }
 
 @media (max-width: 960px) {
   .editor-pane { grid-template-columns: 1fr; gap: 16px; }

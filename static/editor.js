@@ -132,7 +132,7 @@
   // doesn't.
   function submitDoubts(r) {
     const doubts = [];
-    if (r.lastRunCode !== r.lastLogged) doubts.push("You haven't run this version of the code.");
+    if (r.lastRunCode !== r.lastLogged && r.runsLeft !== 0) doubts.push("You haven't run this version of the code.");
     const open = r.edges.filter((c) => !r.checked.includes(c));
     if (!r.submits && open.length) doubts.push(`Planned edge cases not ticked: ${open.join(", ")}.`);
     return doubts;
@@ -156,6 +156,10 @@
     if (!run || run.judging) return;
     const r = run;
     tick();
+    if (kind === "run" && r.runsLeft === 0) {
+      showError("Interview mode: no Runs left — trace it by hand, then submit.");
+      return;
+    }
     if (kind === "submit" && !r.confirming) {
       const doubts = submitDoubts(r);
       if (doubts.length) {
@@ -182,6 +186,7 @@
       return res;
     }).then((res) => {
       if (run !== r) return;
+      if (res.runs_left != null) r.runsLeft = res.runs_left;
       if (!res.ok) { showError(res.error); return; }
       if (res.truncated) markTruncated(r);
       if (kind === "run") r.lastRunCode = code;
@@ -195,12 +200,18 @@
       }
     }).catch((e) => {
       if (run === r) showError(e.message || "Couldn't reach the server.");
-    }).finally(() => { if (run === r) setJudging(false); });
+    }).finally(() => { if (run === r) { setJudging(false); setRunsLeft(r); } });
+  }
+
+  function setRunsLeft(r) {
+    if (r.runsLeft == null) return;
+    $("#editor-run").textContent = `Run (${r.runsLeft} left)`;
+    $("#editor-run").disabled = r.judging || !r.canJudge || r.runsLeft === 0;
   }
 
   function setJudging(on, kind) {
     run.judging = on;
-    $("#editor-run").disabled = on || !run.canJudge;
+    $("#editor-run").disabled = on || !run.canJudge || run.runsLeft === 0;
     $("#editor-submit").disabled = on || !run.canJudge;
     if (on) $("#editor-result").innerHTML = `<p class="small editor-pending">${kind === "run" ? "Running" : "Judging"}…</p>`;
   }
@@ -270,7 +281,7 @@
   function edgesHtml(cases) {
     if (!cases.length) return "";
     return `<div id="editor-edges" class="editor-edges">
-      <span class="label-sm">Planned edge cases — tick each once a run covers it</span>
+      <span class="label-sm">Planned edge cases — tick each once you've checked it</span>
       ${cases.map((c, i) => `<label class="editor-edge"><input type="checkbox" data-i="${i}"> ${esc(c)}</label>`).join("")}
     </div>`;
   }
@@ -297,6 +308,7 @@
           <button id="editor-submit" class="button is-primary" type="button" title="Submit (Ctrl/⌘ + Enter)">Submit</button>
           <button id="editor-copy" class="button is-ghost" type="button">Copy code</button>
           <button id="editor-reset" class="button is-ghost" type="button" title="Put the starter code back (Ctrl/⌘ + Z undoes it)">Reset</button>
+          ${state.interview ? `<span class="small editor-mode" title="No highlighting or auto-closing brackets, and a couple of Runs: trace it by hand">Interview mode</span>` : ""}
           <button id="editor-toggle-statement" class="button is-ghost editor-toggle" type="button">Hide statement</button>
           ${state.can_judge ? "" : `<span class="small editor-nocookie">Set your LeetCode cookie in Settings to run and submit.</span>`}
         </div>
@@ -429,6 +441,7 @@
     // What was last run, else the problem's examples.
     r.input = state.last_input ?? (state.example_testcases || []).join("\n");
     r.edges = state.planned_edge_cases || [];
+    r.runsLeft = state.runs_left ?? null;
     r.checked = state.edges_checked || [];
     // This browser's copy wins unless another device has logged past it.
     if (saved && Number.isInteger(saved.seq) && saved.seq >= state.seq) {
@@ -457,13 +470,16 @@
         doc,
         extensions: [
           CM.lineNumbers(), CM.highlightActiveLineGutter(), CM.highlightSpecialChars(),
-          CM.history(), CM.drawSelection(), CM.indentOnInput(), CM.bracketMatching(),
-          CM.closeBrackets(), CM.highlightActiveLine(), CM.indentUnit.of("    "),
-          CM.syntaxHighlighting(CM.oneDarkHighlightStyle), CM.python(),
+          CM.history(), CM.drawSelection(), CM.indentOnInput(),
+          CM.highlightActiveLine(), CM.indentUnit.of("    "), CM.python(),
+          // Interview mode is a plain buffer: what a shared doc or whiteboard gives you.
+          ...(state.interview ? [] : [CM.bracketMatching(), CM.closeBrackets(),
+                                      CM.syntaxHighlighting(CM.oneDarkHighlightStyle)]),
           CM.keymap.of([
             { key: "Mod-'", run: () => { judge("run"); return true; } },
             { key: "Mod-Enter", run: () => { judge("submit"); return true; } },
-            ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.historyKeymap, CM.indentWithTab,
+            ...(state.interview ? [] : CM.closeBracketsKeymap),
+            ...CM.defaultKeymap, ...CM.historyKeymap, CM.indentWithTab,
           ]),
           r.readOnly.of(CM.EditorState.readOnly.of(false)),
           CM.EditorView.theme({}, { dark: true }),
@@ -481,6 +497,7 @@
       catch (_) { toast("Couldn't copy — select the code instead."); }
     });
     $("#editor-run").disabled = $("#editor-submit").disabled = !r.canJudge;
+    setRunsLeft(r);
     r.CM = CM;
     if (state.truncated) markTruncated(r);
     setPaused(active.is_paused);

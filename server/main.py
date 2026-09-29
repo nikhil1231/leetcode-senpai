@@ -72,6 +72,8 @@ class StartSession(BaseModel):
     plan_time_sec: int | None = Field(default=None, ge=0)
     # Where the solve happens. Older clients always opened LeetCode's tab.
     surface: Literal["editor", "leetcode"] = "leetcode"
+    # A plain editor with capped Runs (config.INTERVIEW_RUN_LIMIT). Mocks always.
+    interview: bool = False
 
 
 class PauseSession(BaseModel):
@@ -913,6 +915,7 @@ def _active_payload(prob, s, settings):
         "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(settings),
         "plan_status": s.get("plan_status"),
         "surface": s.get("surface") or "leetcode",
+        "interview": bool(s.get("interview")),
         "plan_check_available": s.get("plan_status") == "planned" and llm.enabled(settings),
         # Only once asked for: a critique shown unasked would be a free hint.
         "plan_check": s.get("plan_check") if s.get("plan_check_revealed") else None,
@@ -941,6 +944,7 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "plan_status": body.plan_status,
         "plan_time_sec": body.plan_time_sec,
         "surface": body.surface,
+        "interview": body.surface == "editor" and (body.interview or body.kind == "mock"),
     }
     sid = store.add_session(doc)
     if llm.enabled(settings):
@@ -1100,6 +1104,7 @@ def _append_recording(store, s, client_events=(), seq=None, server_events=()):
         runs = [e for e in new if e.get("k") == "run"]
         if runs:
             doc["last_input"] = runs[-1].get("input")
+            doc["runs"] = doc.get("runs", 0) + len(runs)
         if any(e.get("k") == "edge" for e in new):
             doc["edges_checked"] = recording.edges_checked(new, doc.get("edges_checked") or [])
         if new:
@@ -1160,6 +1165,7 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
             "code": code, "seq": (doc or {}).get("seq", 0), "now_ms": _run_ms(s),
             "last_input": (doc or {}).get("last_input"),
             "planned_edge_cases": plans.planned_edge_cases(s)[:3],
+            "interview": bool(s.get("interview")), "runs_left": _runs_left(s, doc),
             "edges_checked": (doc or {}).get("edges_checked") or [],
             "truncated": bool((doc or {}).get("truncated"))}
 
@@ -1170,6 +1176,13 @@ def api_editor_log(body: EditorLog, uid: str = Depends(auth.require_user)):
     s = _editor_session(store, body.session_id)
     doc = _append_recording(store, s, body.events, body.seq)
     return {"ok": True, "seq": doc.get("seq", 0), "truncated": bool(doc.get("truncated"))}
+
+
+def _runs_left(s, doc):
+    """Runs an interview-mode run has left; None when Runs aren't capped."""
+    if not s.get("interview"):
+        return None
+    return max(0, config.INTERVIEW_RUN_LIMIT - (doc or {}).get("runs", 0))
 
 
 async def _judge_or_error(call):
@@ -1196,6 +1209,9 @@ async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user
                          lc=Depends(auth.leetcode_auth)):
     store = get_store(uid)
     s, p = await _editor_judging(store, body)
+    if _runs_left(s, store.get_recording(s["id"])) == 0:
+        return {"ok": False, "runs_left": 0,
+                "error": "Interview mode: no Runs left — trace it by hand, then submit."}
     result, err = await _judge_or_error(leetcode.run_code(
         s["slug"], p["question_id"], body.code, body.data_input, lc))
     if err:
@@ -1204,7 +1220,8 @@ async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user
         "t": body.t, "k": "run", "code": body.code,
         "input": leetcode.clean_input(body.data_input)[:2000],
         "result": recording.compact_run(result)}])
-    return {"ok": True, "result": result, "truncated": bool(doc.get("truncated"))}
+    return {"ok": True, "result": result, "truncated": bool(doc.get("truncated")),
+            "runs_left": _runs_left(s, doc)}
 
 
 @app.post("/api/editor/submit")

@@ -681,6 +681,7 @@ $("#quickstart-input").addEventListener("keydown", (e) => {
 // graded after the solve, and critiqued mid-run only if you ask.
 const PLAN_SOFT_LIMIT_SEC = 5 * 60;
 const PREDICT_MORE_KEY = "predict_more_open";
+const PREDICT_INTERVIEW_KEY = "predict_interview";
 let planOpenedAt = 0;
 let planClockTimer = null;
 
@@ -712,6 +713,9 @@ async function openPredict(ctx) {
   setComplexityValue("predict-space", "");
   $("#predict-edge-cases").value = "";
   $("#predict-more").open = rememberedPredictMore();
+  try { $("#predict-interview").checked = localStorage.getItem(PREDICT_INTERVIEW_KEY) === "1"; } catch (e) { /* per-browser nicety */ }
+  $("#predict-on-leetcode").checked = false;
+  syncPredictSurface();
   if (!categories.length) await loadCategories();
   renderPredictPatterns();
   updatePlanReady();
@@ -783,6 +787,7 @@ function doStart(status) {
     slug: ctx.slug, kind: ctx.kind, plan_status: status,
     plan_time_sec: status === "skipped" ? null : planElapsedSec(),
     ...(plan || {}), surface,
+    interview: surface === "editor" && $("#predict-interview").checked,
   };
   // Opened from the click itself: nothing is awaited before this, so the
   // browser still honours it.
@@ -797,6 +802,16 @@ $("#btn-blank-predict").addEventListener("click", () => doStart("blank"));
 $("#btn-start-predict").addEventListener("click", () => doStart("planned"));
 $("#predict-approach").addEventListener("input", updatePlanReady);
 $("#predict-time").addEventListener("input", updatePlanReady);
+// Interview mode is an editor setting: it means nothing on LeetCode's page.
+function syncPredictSurface() {
+  const off = $("#predict-on-leetcode").checked;
+  $("#predict-interview").disabled = off;
+  $("#predict-interview").closest("label").classList.toggle("is-off", off);
+}
+$("#predict-on-leetcode").addEventListener("change", syncPredictSurface);
+$("#predict-interview").addEventListener("change", () => {
+  try { localStorage.setItem(PREDICT_INTERVIEW_KEY, $("#predict-interview").checked ? "1" : "0"); } catch (e) { /* per-browser nicety */ }
+});
 $("#predict-more").addEventListener("toggle", () => {
   try { localStorage.setItem(PREDICT_MORE_KEY, $("#predict-more").open ? "1" : "0"); } catch (e) { /* per-browser nicety */ }
 });
@@ -1209,6 +1224,7 @@ function renderAnnotateFacts(attempt) {
   if (attempt.memory_percentile != null) facts.push(`Memory beats <b>${pct(attempt.memory_percentile)}</b>`);
   if (attempt.wrong_before_ac != null) facts.push(`Wrong subs <b>${attempt.wrong_before_ac}</b>`);
   if (attempt.lang) facts.push(`Lang <b>${attempt.lang}</b>`);
+  if (attempt.interview) facts.push("<b>Interview mode</b>");
   $("#annotate-facts").innerHTML = facts.map((f) => `<span>${f}</span>`).join("");
   $("#annotate-time-row").classList.toggle("hidden", !untimed);
 }
@@ -2371,6 +2387,7 @@ async function openDetail(attemptId) {
       ${a.first_ac_time_taken_sec != null ? `<span>First AC <b>${fmtTime(a.first_ac_time_taken_sec)}</b></span>` : ""}
       ${a.confidence ? `<span>Conf <b>${["", "Low", "Med", "High"][a.confidence]}</b></span>` : ""}
       ${a.independence ? `<span><b>${a.independence}</b></span>` : ""}
+      ${a.interview ? `<span><b>Interview mode</b></span>` : ""}
       ${a.complexity_time ? `<span>Time <b>${escapeHtml(a.complexity_time)}</b></span>` : ""}
     </div>
     ${a.approach ? `<p><b>Your approach:</b> ${escapeHtml(a.approach)}</p>` : ""}
@@ -2414,7 +2431,7 @@ function renderMock(m) {
     </div>`).join("");
   $("#mock-body").innerHTML = `
     <h2>Mock interview <span class="mock-timer" id="mock-timer"></span></h2>
-    <p class="small">60 minutes, three problems, no hints. Each one opens in the editor and logs itself; come back here from Today for the next. Finish when done or time's up.</p>
+    <p class="small">60 minutes, three problems, no hints. Each one opens in the editor in interview mode — plain, with a couple of Runs — and logs itself; come back here from Today for the next. Finish when done or time's up.</p>
     ${list}
     <div class="overlay-actions">
       <label class="predict-surface small" title="Open LeetCode's own page instead of solving in the app's editor">

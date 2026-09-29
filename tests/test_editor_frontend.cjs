@@ -263,3 +263,26 @@ test('reset puts the starter back as a marked checkpoint', async () => {
   await ui.E.flush();
   assert.equal(ui.logs().length, 1);
 });
+
+test('interview mode counts Runs down and stops at none, without nagging to run', async () => {
+  let left = 2;
+  const ui = editor({ api: async (p) => {
+    if (p.startsWith('/editor/state')) return { available: true, can_judge: true, starter_code: STARTER,
+                                                code: STARTER, seq: 0, now_ms: 0, example_testcases: [],
+                                                interview: true, runs_left: left };
+    if (p === '/editor/run') { left -= 1; return { ok: true, runs_left: left, result: { passed: true, cases: [] } }; }
+    return { ok: true, result: { accepted: false, status: 'Wrong Answer' } };
+  } });
+  await ui.mount();
+  assert.equal(ui.node('#editor-run').textContent, 'Run (2 left)');
+  await ui.E.judge('run');
+  await ui.E.judge('run');
+  assert.equal(ui.node('#editor-run').textContent, 'Run (0 left)');
+  assert.equal(ui.node('#editor-run').disabled, true);
+  ui.E.judge('run');
+  assert.equal(ui.calls.filter((c) => c.path === '/editor/run').length, 2);
+  assert.match(ui.node('#editor-result').innerHTML, /no Runs left/);
+  ui.buffer.code = STARTER + '# traced by hand\n';
+  await ui.E.judge('submit');  // no Runs to ask for: straight through
+  assert.equal(ui.calls.filter((c) => c.path === '/editor/submit').length, 1);
+});

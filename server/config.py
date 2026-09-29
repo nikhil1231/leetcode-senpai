@@ -86,6 +86,11 @@ SCHEDULER = os.environ.get("SCHEDULER", "fsrs").lower()
 # is a solve it would log unrated, which is worse than not logging it.
 PENDING_MAX_AGE_SEC = 12 * 3600
 
+# Interview mode in the in-app editor: a plain editor and this many Runs, so the
+# code gets traced by hand the way a whiteboard or shared doc makes you. Mocks
+# always run this way.
+INTERVIEW_RUN_LIMIT = 2
+
 DEFAULT_SETTINGS = {
     "username": "kunde",
     "poll_interval_seconds": 20,

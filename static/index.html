@@ -183,9 +183,14 @@
         <p class="help predict-keys">Enter moves to the next field · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> locks in</p>
 
         <div class="overlay-actions predict-actions">
-          <label class="predict-surface small" title="Open LeetCode's own page instead of solving in the app's editor">
-            <input type="checkbox" id="predict-on-leetcode" /> Solve on LeetCode
-          </label>
+          <span class="predict-surface-group">
+            <label class="predict-surface small" title="A plain editor (no highlighting, no auto-closing brackets) and only a couple of Runs — trace it by hand">
+              <input type="checkbox" id="predict-interview" /> Interview mode
+            </label>
+            <label class="predict-surface small" title="Open LeetCode's own page instead of solving in the app's editor">
+              <input type="checkbox" id="predict-on-leetcode" /> Solve on LeetCode
+            </label>
+          </span>
           <button id="btn-skip-predict" class="button is-ghost" type="button" title="Start without planning">Skip</button>
           <button id="btn-blank-predict" class="button is-ghost" type="button" title="Start the run and record that you had no plan">No idea yet</button>
           <button id="btn-start-predict" class="button is-primary" type="button" disabled title="Needs an approach and a time target">Lock in &amp; start</button>

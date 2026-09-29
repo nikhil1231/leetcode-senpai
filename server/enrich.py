@@ -20,7 +20,7 @@ works the same way under PROCESS_PROMPT_VERSION.
 """
 import time
 
-from . import coach, llm, plans, recording
+from . import coach, config, llm, plans, recording
 
 PROMPT_VERSION = 1
 PLAN_PROMPT_VERSION = 1
@@ -250,6 +250,10 @@ async def review_process(store, attempt_id):
 
 def _process_timeline(attempt, rec):
     text = recording.timeline_for_llm(recording.parse(rec.get("events")))
+    if attempt.get("interview"):
+        text = (f"Solved in interview mode: no syntax highlighting and at most "
+                f"{config.INTERVIEW_RUN_LIMIT} Runs, so few Runs is by design — judge how "
+                "the code was checked by hand.\n" + text)
     if rec.get("truncated"):
         text = ("The log hit its size limit partway: later edits (and possibly judgings) "
                 "are missing.\n" + text)

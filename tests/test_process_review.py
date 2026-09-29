@@ -67,6 +67,14 @@ async def test_a_solve_finished_on_leetcode_says_where_the_log_stops(monkeypatch
     assert "[02:30] accepted on LeetCode's own site" in seen[0][1]["timeline"]
 
 
+async def test_an_interview_mode_solve_is_read_as_one(monkeypatch):
+    store, recorded, _ = _store()
+    store.update_attempt(recorded, {"interview": True})
+    seen = _llm(monkeypatch, REVIEW)
+    await enrich.review_process(store, recorded)
+    assert seen[0][1]["timeline"].startswith("Solved in interview mode")
+
+
 async def test_nothing_happens_without_a_recording_or_an_llm(monkeypatch):
     store, recorded, plain = _store()
     seen = _llm(monkeypatch, REVIEW)

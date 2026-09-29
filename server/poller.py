@@ -62,10 +62,10 @@ async def check_active_sessions(store, username, auth=None):
     return new_ids
 
 
-# What a run's pre-solve plan hands to the solve it produces.
+# What a run's pre-solve plan (and how it was run) hands to the solve it produces.
 _PLAN_CARRY = ("predicted_category", "predicted_approach", "complexity_target_time",
                "complexity_target_space", "planned_edge_cases", "plan_status",
-               "plan_time_sec", "plan_check_revealed")
+               "plan_time_sec", "plan_check_revealed", "interview")
 
 
 def _plan_fields(session):
