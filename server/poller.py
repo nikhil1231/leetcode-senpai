@@ -74,17 +74,31 @@ def _plan_fields(session):
     return out
 
 
+def _editor_extra(store, session):
+    """An editor run that was finished on LeetCode's own site — a judge error, no
+    cookie — still has its recording. Link it, so the process review sees it."""
+    if session.get("surface") != "editor":
+        return {}
+    rec = store.get_recording(session["id"])
+    if not rec:
+        return {}
+    return {"via": "editor", "finished_on": "leetcode", "recording_id": session["id"],
+            "recording": recording.summary(recording.parse(rec.get("events")))}
+
+
 async def _record_solve(store, session, match, auth, known=None):
     """Log a session's AC. `known` carries what the caller already holds —
     details, wrong count, failed tests, extra fields — instead of asking LeetCode."""
+    extra = known["extra"] if known else _editor_extra(store, session)
     dup = store.find_attempt_by_submission(match["id"])
     if dup:
         # Logged already (an overlapping poll got there first). The row still
         # takes this run's plan if it has none — otherwise the plan is lost.
         if plans.plan_status(session) and not plans.plan_status(dup):
             store.update_attempt(dup["id"], _plan_fields(session))
-        if known:
-            store.update_attempt(dup["id"], known["extra"])
+        # The editor's own account of its AC outranks the feed's.
+        if known or (extra and not dup.get("recording_id")):
+            store.update_attempt(dup["id"], extra)
         store.update_session(session["id"], {"status": "completed", "attempt_id": dup["id"]})
         return None
 
@@ -115,7 +129,7 @@ async def _record_solve(store, session, match, auth, known=None):
         "hint_level_used": session.get("hint_level", 0),
         "complexity_time": None, "complexity_space": None,
         "solution_grading_status": None,
-        **(known["extra"] if known else {}),
+        **extra,
     })
     store.update_session(session["id"], {"status": "completed", "attempt_id": aid})
     return aid
@@ -153,7 +167,8 @@ async def record_editor_solve(store, session, sub, code, events):
                     "lang": leetcode.EDITOR_LANG, "code": code},
         "wrong": summary["failed_submits"],
         "failed_tests": recording.failed_tests(events),
-        "extra": {"via": "editor", "recording": summary, "recording_id": session["id"]},
+        "extra": {"via": "editor", "finished_on": None, "recording": summary,
+                  "recording_id": session["id"]},
     }
     match = {"id": sub["submission_id"], "titleSlug": session["slug"],
              "timestamp": sub["finished_at"]}

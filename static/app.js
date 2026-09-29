@@ -2318,6 +2318,7 @@ function processDetailHtml(a) {
       ${stat("Idle", at(r.idle_ms))}
       ${r.away_ms ? stat("Away", at(r.away_ms)) : ""}
     </dl>
+    ${a.finished_on === "leetcode" ? `<p class="small">Finished on LeetCode's site — the log stops where the editor was left.</p>` : ""}
     ${review ? `
       ${list("Stuck", review.stuck_points)}
       ${list("Fixes", review.fixes)}

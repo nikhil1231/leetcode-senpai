@@ -59,6 +59,14 @@ async def test_a_recorded_solve_gets_a_review_built_from_its_timeline(monkeypatc
     assert payload["canonical"] == "hash complements"
 
 
+async def test_a_solve_finished_on_leetcode_says_where_the_log_stops(monkeypatch):
+    store, recorded, _ = _store()
+    store.update_attempt(recorded, {"finished_on": "leetcode", "time_taken_sec": 150})
+    seen = _llm(monkeypatch, REVIEW)
+    await enrich.review_process(store, recorded)
+    assert "[02:30] accepted on LeetCode's own site" in seen[0][1]["timeline"]
+
+
 async def test_nothing_happens_without_a_recording_or_an_llm(monkeypatch):
     store, recorded, plain = _store()
     seen = _llm(monkeypatch, REVIEW)

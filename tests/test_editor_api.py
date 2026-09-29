@@ -177,6 +177,44 @@ def test_the_feed_seeing_the_same_ac_later_adds_nothing(client, monkeypatch):
     assert len(client.store.attempts) == 1
 
 
+def _feed(client, monkeypatch, sub_id, ts, code=RIGHT):
+    client.store.settings["username"] = "kunde"
+
+    async def recent_ac(username, limit=20, auth=None):
+        return [{"id": sub_id, "title": "Two Sum", "titleSlug": "two-sum", "timestamp": ts}]
+
+    async def details(submission_id, auth):
+        return {"code": code, "lang": "python3", "runtime_percentile": 50.0}
+
+    async def nothing(*a, **k):
+        return 0
+    monkeypatch.setattr(main.poller.leetcode, "recent_ac", recent_ac)
+    monkeypatch.setattr(main.poller.leetcode, "submission_details", details)
+    monkeypatch.setattr(main.poller.leetcode, "wrong_attempts_between", nothing)
+
+
+def test_an_editor_run_finished_on_leetcode_keeps_its_recording(client, monkeypatch):
+    # The judge failed, so the code was pasted into LeetCode's page and the feed
+    # found the AC: the recording made so far still belongs to the solve.
+    sid = _start(client)
+    started = client.store.get_session(sid)["started_at"]
+    client.get(f"/api/editor/state?session_id={sid}")
+    client.post("/api/editor/log", json={"session_id": sid, "seq": 1, "events": [
+        {"t": 40_000, "k": "d", **recording.diff(STARTER, RIGHT)}]})
+    _feed(client, monkeypatch, 21, started + 120)
+    [aid] = client.post("/api/poll").json()["new_attempts"]
+    attempt = client.store.get_attempt(aid)
+    assert attempt["recording_id"] == sid and attempt["finished_on"] == "leetcode"
+    assert attempt["recording"]["edits"] == 1 and attempt["code"] == RIGHT
+
+
+def test_a_leetcode_run_has_no_recording_to_link(client, monkeypatch):
+    sid = client.post("/api/session/start", json={"slug": "two-sum"}).json()["session_id"]
+    _feed(client, monkeypatch, 22, client.store.get_session(sid)["started_at"] + 60)
+    [aid] = client.post("/api/poll").json()["new_attempts"]
+    assert "recording_id" not in client.store.get_attempt(aid)
+
+
 def test_pauses_and_hints_land_in_an_editor_runs_recording_only(client, monkeypatch):
     async def ladder(store, slug):
         return ["think about complements"]

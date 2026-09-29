@@ -263,7 +263,7 @@ AWAY_MIN_MS = 30_000
 REWRITE_MIN_LINES = 5
 
 
-def _mmss(ms):
+def mmss(ms):
     sec = max(0, int(ms or 0)) // 1000
     return f"{sec // 60:02d}:{sec % 60:02d}"
 
@@ -317,9 +317,9 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
     """A compact, human-readable account of a recorded solve, for a prompt."""
     s = summary(events)
     head = [
-        f"Solve lasted {_dur(s['duration_ms'])}. First edit {_mmss(s['first_edit_ms'])}, "
-        f"first run {_mmss(s['first_run_ms']) if s['first_run_ms'] is not None else 'never'}, "
-        f"first submit {_mmss(s['first_submit_ms']) if s['first_submit_ms'] is not None else 'never'}.",
+        f"Solve lasted {_dur(s['duration_ms'])}. First edit {mmss(s['first_edit_ms'])}, "
+        f"first run {mmss(s['first_run_ms']) if s['first_run_ms'] is not None else 'never'}, "
+        f"first submit {mmss(s['first_submit_ms']) if s['first_submit_ms'] is not None else 'never'}.",
         f"{s['runs']} runs ({s['runs_failed']} not matching), {s['submits']} submits "
         f"({s['failed_submits']} failed). Idle {_dur(s['idle_ms'])} in stretches of a minute "
         f"or more; paused {_dur(s['paused_ms'])}; away from the tab {_dur(s['away_ms'])}.",
@@ -374,7 +374,7 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
     def render():
         lines = list(head)
         for t, text, diff in entries:
-            lines.append(f"[{_mmss(t)}] {text}")
+            lines.append(f"[{mmss(t)}] {text}")
             if diff:
                 lines.append("  what changed before the next judging:")
                 lines.extend("    " + line for line in diff.splitlines())

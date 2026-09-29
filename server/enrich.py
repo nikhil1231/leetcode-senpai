@@ -237,7 +237,7 @@ async def review_process(store, attempt_id):
         "predicted_approach": attempt.get("predicted_approach"),
         "planned_edge_cases": plans.planned_edge_cases(attempt),
         "note": attempt.get("mistake_note"),
-        "timeline": recording.timeline_for_llm(recording.parse(rec.get("events"))),
+        "timeline": _process_timeline(attempt, rec),
         "code": attempt.get("code"), "lang": attempt.get("lang"),
     }, settings=settings)
     fields = {"process_prompt_version": PROCESS_PROMPT_VERSION}
@@ -246,6 +246,16 @@ async def review_process(store, attempt_id):
         return _merge_enrichment(store, attempt, fields), fields["process_review_error"]
     fields.update({"process_review": normalize_process_review(res), "process_review_error": None})
     return _merge_enrichment(store, attempt, fields), None
+
+
+def _process_timeline(attempt, rec):
+    text = recording.timeline_for_llm(recording.parse(rec.get("events")))
+    if attempt.get("finished_on") == "leetcode":
+        # The log stops where the editor was left; the AC came from LeetCode's site.
+        at = recording.mmss((attempt.get("time_taken_sec") or 0) * 1000)
+        text += (f"\n[{at}] accepted on LeetCode's own site — the editor was left before "
+                 "then, so anything tried there is not in this log")
+    return text
 
 
 def needs_process_review(store):
