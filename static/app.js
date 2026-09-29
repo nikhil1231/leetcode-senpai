@@ -1275,7 +1275,9 @@ function openAnnotate(attempt) {
   $("#annotate-modal").classList.remove("hidden");
   markSettling(attempt.slug, "solved");
   initAnnotateGrade(attempt);
-  $("#btn-optimize-annotate").classList.toggle("hidden", !(attempt.via === "editor" && attempt.code));
+  // Only while unrated: the server won't reopen a solve once it's rated.
+  $("#btn-optimize-annotate").classList.toggle("hidden",
+    !(attempt.via === "editor" && attempt.code && attempt.confidence == null));
   // Detection asked for the code and didn't get it: the likeliest reason is
   // the cookie, so find out now rather than on the next reload.
   if (!attempt.code && attempt.submission_id) checkLeetCodeAuth();
@@ -1756,6 +1758,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
   }
   clearSettling(slug);
   refreshBehindModal();
+  $("#btn-optimize-annotate").classList.add("hidden");  // rated now: past optimizing
   if (currentAttempt) {
     Object.assign(currentAttempt, {
       confidence, independence,
