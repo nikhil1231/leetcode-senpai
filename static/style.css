@@ -954,6 +954,10 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .active-run.is-paused .active-kicker { border-color: rgba(245, 181, 68, .3); background: rgba(245, 181, 68, .1); color: var(--amber); }
 .active-run.is-paused .dot { animation: none; opacity: .7; }
 .active-run.is-paused .active-timer { color: var(--muted); text-shadow: none; }
+.active-timer.is-over { color: var(--amber); text-shadow: 0 0 44px rgba(245, 181, 68, .25); }
+.active-clock .active-par { margin: 6px 0 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.active-clock .active-par.is-over { color: var(--amber); }
+.active-run.has-editor .active-clock .active-par { margin: 0; }
 
 .button.hint-btn { border-color: rgba(245, 181, 68, .38); background: rgba(245, 181, 68, .08); color: var(--amber); }
 .button.hint-btn:hover { background: rgba(245, 181, 68, .16); color: var(--amber); }

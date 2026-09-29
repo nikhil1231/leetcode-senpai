@@ -269,6 +269,7 @@ def _pending(store):
             **a, "title": p.get("title", a["slug"]),
             "frontend_id": p.get("frontend_id"), "difficulty": p.get("difficulty"),
             "neetcode_category": p.get("neetcode_category"), "url": p.get("url"),
+            "par_sec": config.SOLVE_PAR_SEC.get(p.get("difficulty")),
             # A swept solve can be for a problem outside the library, so the
             # modal can offer to adopt it rather than leaving it unscheduled.
             "in_library": scheduler._in_library(p) if p else False,
@@ -916,6 +917,7 @@ def _active_payload(prob, s, settings):
         "plan_status": s.get("plan_status"),
         "surface": s.get("surface") or "leetcode",
         "interview": bool(s.get("interview")),
+        "par_sec": config.SOLVE_PAR_SEC.get(prob.get("difficulty")),
         "plan_check_available": s.get("plan_status") == "planned" and llm.enabled(settings),
         # Only once asked for: a critique shown unasked would be a free hint.
         "plan_check": s.get("plan_check") if s.get("plan_check_revealed") else None,
@@ -1424,6 +1426,7 @@ def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
     enrichment = store.get_enrichment(attempt_id)
     return {**a, "title": prob.get("title"), "difficulty": prob.get("difficulty"),
             "neetcode_category": prob.get("neetcode_category"), "url": prob.get("url"),
+            "par_sec": config.SOLVE_PAR_SEC.get(prob.get("difficulty")),
             "enrichment": enrichment,
             "plan_reconciliation": insights.reconcile_plan(a, enrichment),
             "plan": plans.plan_review(a, enrichment, prob.get("canonical_summary"))}

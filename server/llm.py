@@ -285,7 +285,9 @@ TASKS: dict[str, Task] = {
         "edge cases a failing input exposed that the plan did not name, a few words "
         "each; empty if none. testing_habit: one short line on how they used Run "
         "before submitting. takeaway: one sentence, the single change that would "
-        "most help next time. Be concrete, cite times, keep every string short.",
+        "most help next time. When the solve ran over the interview pace given, "
+        "say where the overrun came from. Be concrete, cite times, keep every "
+        "string short.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
             f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"

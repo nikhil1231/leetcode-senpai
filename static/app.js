@@ -970,6 +970,7 @@ function setPauseButton(active) {
 
 function startTimer(session) {
   stopTimer();
+  $("#active-par").textContent = session.par_sec ? `${Math.round(session.par_sec / 60)}m pace` : "";
   const baseElapsed = session.elapsed_sec || 0;
   const baseWall = Math.floor(Date.now() / 1000);
   session._timerBaseElapsed = baseElapsed;
@@ -979,6 +980,10 @@ function startTimer(session) {
       ? baseElapsed
       : baseElapsed + Math.max(0, Math.floor(Date.now() / 1000) - baseWall);
     $("#active-timer").textContent = fmtTime(elapsed);
+    // Past interview pace for the difficulty: the clock says so, quietly.
+    const over = Boolean(session.par_sec) && elapsed >= session.par_sec;
+    $("#active-timer").classList.toggle("is-over", over);
+    $("#active-par").classList.toggle("is-over", over);
     checkNudges(elapsed);
   };
   tick();
@@ -1211,7 +1216,7 @@ function renderAnnotateFacts(attempt) {
   // of rendering an em-dash where a time should be, and ask for one below.
   const untimed = attempt.time_taken_sec == null && attempt.source === "detected";
   if (untimed) facts.push("Solved <b>outside a session</b>");
-  else facts.push(`Time <b>${fmtTime(attempt.time_taken_sec)}</b>`);
+  else facts.push(`Time <b>${fmtTime(attempt.time_taken_sec)}</b>${solvePaceHtml(attempt)}`);
   // The clock above covers the whole sitting once you've resubmitted, so the
   // first AC is worth stating separately — the gap is how long the clean-up took.
   if (attempt.resubmissions) {
@@ -1227,6 +1232,13 @@ function renderAnnotateFacts(attempt) {
   if (attempt.interview) facts.push("<b>Interview mode</b>");
   $("#annotate-facts").innerHTML = facts.map((f) => `<span>${f}</span>`).join("");
   $("#annotate-time-row").classList.toggle("hidden", !untimed);
+}
+
+// "/ 25m pace", amber when the solve ran past it.
+function solvePaceHtml(a) {
+  if (!a.par_sec || a.time_taken_sec == null) return "";
+  const over = a.time_taken_sec > a.par_sec;
+  return ` <span class="small${over ? " is-over" : ""}">/ ${Math.round(a.par_sec / 60)}m pace</span>`;
 }
 
 // You AC'd something suboptimal, left this modal open, and kept working until it
@@ -2382,7 +2394,7 @@ async function openDetail(attemptId) {
     <h2>${escapeHtml(a.title || a.slug)} ${a.difficulty ? badge(a.difficulty) : ""}</h2>
     <div class="detail-meta small">${escapeHtml(a.neetcode_category || "")} · ${a.solved_at ? new Date(a.solved_at * 1000).toLocaleString() : ""}</div>
     <div class="facts">
-      ${a.time_taken_sec != null ? `<span>Time <b>${fmtTime(a.time_taken_sec)}</b></span>` : ""}
+      ${a.time_taken_sec != null ? `<span>Time <b>${fmtTime(a.time_taken_sec)}</b>${solvePaceHtml(a)}</span>` : ""}
       ${a.resubmissions ? `<span>Accepted subs <b>${a.resubmissions + 1}</b></span>` : ""}
       ${a.first_ac_time_taken_sec != null ? `<span>First AC <b>${fmtTime(a.first_ac_time_taken_sec)}</b></span>` : ""}
       ${a.confidence ? `<span>Conf <b>${["", "Low", "Med", "High"][a.confidence]}</b></span>` : ""}

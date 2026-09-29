@@ -41,6 +41,11 @@ def _events(client, sid):
     return recording.parse(client.store.get_recording(sid)["events"])
 
 
+def test_the_run_and_the_solve_carry_interview_pace_for_their_difficulty(client):
+    r = client.post("/api/session/start", json={"slug": "two-sum", "surface": "editor"}).json()
+    assert r["active"]["par_sec"] == main.config.SOLVE_PAR_SEC["Easy"]
+
+
 def test_state_hydrates_the_problem_once_and_opens_the_recording(client):
     sid = _start(client)
     state = client.get(f"/api/editor/state?session_id={sid}").json()

@@ -91,6 +91,11 @@ PENDING_MAX_AGE_SEC = 12 * 3600
 # always run this way.
 INTERVIEW_RUN_LIMIT = 2
 
+# Interview pace: roughly what a solve of each difficulty gets in a real round.
+# The run clock turns amber past it, and the process review reads the solve
+# against it. (The plan's "time target" is a big-O, not minutes.)
+SOLVE_PAR_SEC = {"Easy": 15 * 60, "Medium": 25 * 60, "Hard": 40 * 60}
+
 DEFAULT_SETTINGS = {
     "username": "kunde",
     "poll_interval_seconds": 20,

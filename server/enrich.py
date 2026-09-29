@@ -24,7 +24,7 @@ from . import coach, config, llm, plans, recording
 
 PROMPT_VERSION = 1
 PLAN_PROMPT_VERSION = 1
-PROCESS_PROMPT_VERSION = 1
+PROCESS_PROMPT_VERSION = 2
 # Enrichment fields owned by plan grading; a full re-enrichment carries them over.
 PLAN_KEYS = ("plan_grade", "plan_prompt_version", "plan_grading_error")
 PROCESS_KEYS = ("process_review", "process_prompt_version", "process_review_error")
@@ -237,7 +237,7 @@ async def review_process(store, attempt_id):
         "predicted_approach": attempt.get("predicted_approach"),
         "planned_edge_cases": plans.planned_edge_cases(attempt),
         "note": attempt.get("mistake_note"),
-        "timeline": _process_timeline(attempt, rec),
+        "timeline": _process_timeline(attempt, rec, problem.get("difficulty")),
         "code": attempt.get("code"), "lang": attempt.get("lang"),
     }, settings=settings)
     fields = {"process_prompt_version": PROCESS_PROMPT_VERSION}
@@ -248,8 +248,14 @@ async def review_process(store, attempt_id):
     return _merge_enrichment(store, attempt, fields), None
 
 
-def _process_timeline(attempt, rec):
+def _process_timeline(attempt, rec, difficulty=None):
     text = recording.timeline_for_llm(recording.parse(rec.get("events")))
+    par = config.SOLVE_PAR_SEC.get(difficulty)
+    taken = attempt.get("time_taken_sec")
+    if par and taken is not None:
+        verdict = "over" if taken > par else "within"
+        text = (f"Interview pace for {difficulty} is {par // 60}m; this solve took "
+                f"{recording.mmss(taken * 1000)} of clock time ({verdict} pace).\n" + text)
     if attempt.get("interview"):
         text = (f"Solved in interview mode: no syntax highlighting and at most "
                 f"{config.INTERVIEW_RUN_LIMIT} Runs, so few Runs is by design — judge how "
