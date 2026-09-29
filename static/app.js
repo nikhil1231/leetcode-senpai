@@ -1304,8 +1304,19 @@ function renderAnnotateFacts(attempt) {
     const before = (attempt.before_optimize || {})[key];
     return before != null && before !== attempt[key] ? ` <span class="small">(was ${pct(before)})</span>` : "";
   };
-  if (attempt.runtime_percentile != null) facts.push(`Runtime beats <b>${pct(attempt.runtime_percentile)}</b>${was("runtime_percentile")}`);
-  if (attempt.memory_percentile != null) facts.push(`Memory beats <b>${pct(attempt.memory_percentile)}</b>${was("memory_percentile")}`);
+  // Runtime and memory lead: they're what the solve scored, the rest is context.
+  const perf = [["Runtime", "runtime_percentile"], ["Memory", "memory_percentile"]]
+    .filter(([, key]) => attempt[key] != null)
+    .map(([label, key]) => {
+      const v = attempt[key];
+      return `<div class="solve-perf-stat${v < 50 ? " is-low" : ""}">
+        <span class="solve-perf-label">${label}</span>
+        <span class="solve-perf-value">beats <b>${pct(v)}</b>${was(key)}</span>
+        <span class="solve-perf-bar"><i style="width:${Math.max(0, Math.min(100, v))}%"></i></span>
+      </div>`;
+    });
+  $("#annotate-perf").innerHTML = perf.join("");
+  $("#annotate-perf").classList.toggle("hidden", !perf.length);
   if (attempt.wrong_before_ac != null) facts.push(`Wrong subs <b>${attempt.wrong_before_ac}</b>`);
   if (attempt.lang) facts.push(`Lang <b>${attempt.lang}</b>`);
   if (attempt.interview) facts.push("<b>Interview mode</b>");

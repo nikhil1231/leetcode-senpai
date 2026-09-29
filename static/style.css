@@ -1087,6 +1087,22 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
   color: var(--muted);
 }
 .facts b { color: var(--text); font-weight: 600; }
+.solve-perf { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+.solve-perf.hidden { display: none; }
+.solve-perf-stat {
+  display: grid; gap: 4px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel2);
+}
+.solve-perf-label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.solve-perf-value { color: var(--text-2); font-size: 13px; }
+.solve-perf-value b {
+  color: var(--green); font-size: 22px; font-weight: 680; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.solve-perf-stat.is-low .solve-perf-value b { color: var(--amber); }
+.solve-perf-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.solve-perf-bar i { display: block; height: 100%; border-radius: inherit; background: var(--green); }
+.solve-perf-stat.is-low .solve-perf-bar i { background: var(--amber); }
 
 /* pill toggles */
 .pill-group { display: flex; gap: 8px; flex-wrap: wrap; }
