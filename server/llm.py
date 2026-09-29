@@ -96,6 +96,15 @@ class SolutionGrade(BaseModel):
     inferred_space: str = ""
 
 
+class ProcessReview(BaseModel):
+    # Flat, like PlanGrade: strings rather than nested objects.
+    stuck_points: list[str] = Field(default_factory=list, description="up to 3, each 'mm:ss — where the time went and the likely reason'")
+    fixes: list[str] = Field(default_factory=list, description="one per failure that led to a change: 'what broke -> what fixed it'")
+    missed_edge_cases: list[str] = Field(default_factory=list, description="edge cases a failing input exposed that the plan did not name")
+    testing_habit: str = ""
+    takeaway: str = ""
+
+
 class RecallClarification(BaseModel):
     reply: str = ""
 
@@ -259,6 +268,33 @@ TASKS: dict[str, Task] = {
             f"Solver stated approach: {p.get('self_approach') or '(none)'}\n"
             f"Solver claimed time={p.get('claim_time') or '?'}, space={p.get('claim_space') or '?'}.\n"
             f"--- their accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
+        ),
+    ),
+    "review_process": Task(
+        ProcessReview,
+        "You review HOW a coding-interview practice solve went, from a timeline of "
+        "the solver's editor session: idle stretches, time away, runs against test "
+        "input, submissions, and the code changes between a failed submission and "
+        "the next attempt. Their pre-coding plan and final accepted code are given "
+        "for context; the plan and the code are graded elsewhere, so judge the "
+        "process in between. stuck_points: up to 3 real stalls or detours, each "
+        "'mm:ss — where the time went and the likely reason'. A stall is a minute "
+        "or more of no progress; reading and planning before the first edit is "
+        "not one unless it ran several minutes. Empty is fine. fixes: one per failure that led to a change, 'what broke -> "
+        "what fixed it', naming the edge case when there is one. missed_edge_cases: "
+        "edge cases a failing input exposed that the plan did not name, a few words "
+        "each; empty if none. testing_habit: one short line on how they used Run "
+        "before submitting. takeaway: one sentence, the single change that would "
+        "most help next time. Be concrete, cite times, keep every string short.",
+        lambda p: (
+            f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
+            f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
+            f"--- plan written before coding ---\n"
+            f"Approach: {p.get('predicted_approach') or '(none)'}\n"
+            f"Planned edge cases: {json.dumps(p.get('planned_edge_cases') or [])}\n"
+            f"Solver note after solving: {p.get('note') or '(none)'}\n"
+            f"--- timeline (mm:ss since the solve started) ---\n{p.get('timeline')}\n"
+            f"--- final accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'), 1500)}"
         ),
     ),
     "grade_recall": Task(

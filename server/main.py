@@ -450,7 +450,9 @@ def _replace_completed_drill_cache(uid, completed_slug):
 
 
 async def _enrich_bg(uid, attempt_id):
-    await enrich.enrich_attempt(get_store(uid), attempt_id)
+    store = get_store(uid)
+    await enrich.enrich_attempt(store, attempt_id)
+    await enrich.review_process(store, attempt_id)
 
 
 async def _recover_code(store, attempt, lc):

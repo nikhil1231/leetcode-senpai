@@ -2298,6 +2298,36 @@ function planDetailHtml(a) {
   </section>`;
 }
 
+// How a solve written in the in-app editor went: plain numbers from its change
+// log, and the coach's read of it once the solve is rated.
+function processDetailHtml(a) {
+  const r = a.recording;
+  if (!r) return "";
+  const review = (a.enrichment || {}).process_review;
+  const err = (a.enrichment || {}).process_review_error;
+  const at = (ms) => (ms == null ? "—" : fmtClock(Math.round(ms / 1000)));
+  const stat = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+  const list = (title, items) => items && items.length
+    ? `<p class="small"><b>${title}</b></p><ul class="process-list">${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>` : "";
+  return `<section class="detail-process plan-card">
+    <h3>How it went</h3>
+    <dl class="plan-stats">
+      ${stat("First run", at(r.first_run_ms))}
+      ${stat("Runs", `${r.runs}${r.runs_failed ? ` <span class="small">(${r.runs_failed} off)</span>` : ""}`)}
+      ${stat("Failed submits", r.failed_submits)}
+      ${stat("Idle", at(r.idle_ms))}
+      ${r.away_ms ? stat("Away", at(r.away_ms)) : ""}
+    </dl>
+    ${review ? `
+      ${list("Stuck", review.stuck_points)}
+      ${list("Fixes", review.fixes)}
+      ${list("Edge cases the plan missed", review.missed_edge_cases)}
+      ${review.testing_habit ? `<p class="small"><b>Testing:</b> ${escapeHtml(review.testing_habit)}</p>` : ""}
+      ${review.takeaway ? `<p class="plan-weakest"><b>Next time:</b> ${escapeHtml(review.takeaway)}</p>` : ""}`
+    : err ? `<p class="missed small">Review failed: ${escapeHtml(err)}</p>` : ""}
+  </section>`;
+}
+
 async function openDetail(attemptId) {
   $("#detail-body").innerHTML = loader("Loading attempt…");
   $("#detail-modal").classList.remove("hidden");
@@ -2348,6 +2378,7 @@ async function openDetail(attemptId) {
     ${tags.length ? `<p><b>Mistakes:</b> ${tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
     ${e.diff_summary ? `<p><b>Since last time:</b> ${escapeHtml(e.diff_summary)}</p>` : ""}
     ${planDetailHtml(a)}
+    ${processDetailHtml(a)}
     ${detailGradeHtml(a)}
     ${a.code ? `<pre class="code">${escapeHtml(a.code)}</pre>` : `<p class="small">No stored code for this attempt.</p>`}`;
   $("#detail-body").innerHTML = body;

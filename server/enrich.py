@@ -14,16 +14,20 @@ re-enrich anything older.
 
 Plan grading (did the pre-solve plan hold up?) is its own step with its own
 PLAN_PROMPT_VERSION: it runs when a solve is rated, merges into the same
-enrichment doc, and survives a re-enrichment of the rest.
+enrichment doc, and survives a re-enrichment of the rest. The process review
+(how a solve recorded in the in-app editor went between plan and final code)
+works the same way under PROCESS_PROMPT_VERSION.
 """
 import time
 
-from . import coach, llm, plans
+from . import coach, llm, plans, recording
 
 PROMPT_VERSION = 1
 PLAN_PROMPT_VERSION = 1
+PROCESS_PROMPT_VERSION = 1
 # Enrichment fields owned by plan grading; a full re-enrichment carries them over.
 PLAN_KEYS = ("plan_grade", "plan_prompt_version", "plan_grading_error")
+PROCESS_KEYS = ("process_review", "process_prompt_version", "process_review_error")
 
 
 def _prev_code(store, attempt):
@@ -103,7 +107,7 @@ async def enrich_attempt(store, attempt_id):
 
     existing = store.get_enrichment(attempt_id) or {}
     doc["user_overrides"] = existing.get("user_overrides", {})
-    for k in PLAN_KEYS + ("prediction_verdict", "prediction_note"):
+    for k in PLAN_KEYS + PROCESS_KEYS + ("prediction_verdict", "prediction_note"):
         if k in existing and k not in doc:
             doc[k] = existing[k]
     store.upsert_enrichment(attempt_id, doc)
@@ -198,6 +202,61 @@ async def grade_plan(store, attempt_id):
     return _merge_enrichment(store, attempt, fields), None
 
 
+def normalize_process_review(res):
+    return {
+        "stuck_points": _short(res.get("stuck_points"), 3, 160),
+        "fixes": _short(res.get("fixes"), 5, 160),
+        "missed_edge_cases": _short(res.get("missed_edge_cases"), 5, 80),
+        "testing_habit": (res.get("testing_habit") or "")[:200],
+        "takeaway": (res.get("takeaway") or "")[:300],
+    }
+
+
+async def review_process(store, attempt_id):
+    """Review how a solve recorded in the in-app editor went — the stretch
+    between the plan and the final code, which plan and solution grading only
+    see the two ends of. Returns (enrichment, error).
+
+    Never raises. (None, None) with no LLM or no recording; the solve and its
+    schedule never wait on this.
+    """
+    settings = store.get_settings()
+    if not llm.enabled(settings):
+        return None, None
+    attempt = store.get_attempt(attempt_id)
+    rec = attempt and attempt.get("recording_id") and store.get_recording(attempt["recording_id"])
+    if not rec:
+        return None, None
+    problem = store.get_problem(attempt["slug"]) or {}
+    canonical = await coach.ensure_canonical(store, attempt["slug"])
+    res, err = await llm.extract_or_error("review_process", {
+        "title": problem.get("title", attempt["slug"]),
+        "difficulty": problem.get("difficulty"),
+        "category": problem.get("neetcode_category"),
+        "canonical": ", ".join((canonical or {}).get("key_ideas", [])) or None,
+        "predicted_approach": attempt.get("predicted_approach"),
+        "planned_edge_cases": plans.planned_edge_cases(attempt),
+        "note": attempt.get("mistake_note"),
+        "timeline": recording.timeline_for_llm(recording.parse(rec.get("events"))),
+        "code": attempt.get("code"), "lang": attempt.get("lang"),
+    }, settings=settings)
+    fields = {"process_prompt_version": PROCESS_PROMPT_VERSION}
+    if not res:
+        fields["process_review_error"] = err or "review returned no result"
+        return _merge_enrichment(store, attempt, fields), fields["process_review_error"]
+    fields.update({"process_review": normalize_process_review(res), "process_review_error": None})
+    return _merge_enrichment(store, attempt, fields), None
+
+
+def needs_process_review(store):
+    """Rated (or dismissed) recorded solves whose process review is missing or stale."""
+    enr = {e["attempt_id"]: e for e in store.list_enrichments()}
+    return [a["id"] for a in store.list_attempts()
+            if a.get("recording_id")
+            and (a.get("confidence") is not None or a.get("annotation_dismissed_at"))
+            and (enr.get(a["id"]) or {}).get("process_prompt_version", 0) < PROCESS_PROMPT_VERSION]
+
+
 def needs_plan_grade(store):
     """Rated (or dismissed) planned solves whose plan grade is missing or stale."""
     enr = {e["attempt_id"]: e for e in store.list_enrichments()}
@@ -238,11 +297,17 @@ async def sweep(store, limit=10):
         if await enrich_attempt(store, aid):
             done += 1
     plan_ids = needs_plan_grade(store)
-    for aid in plan_ids[:max(0, limit - len(todo))]:
+    plan_todo = plan_ids[:max(0, limit - len(todo))]
+    for aid in plan_todo:
         doc, _ = await grade_plan(store, aid)
         if doc:
             done += 1
-    remaining = len(needs_enrichment(store)) + len(needs_plan_grade(store))
+    for aid in needs_process_review(store)[:max(0, limit - len(todo) - len(plan_todo))]:
+        doc, _ = await review_process(store, aid)
+        if doc:
+            done += 1
+    remaining = (len(needs_enrichment(store)) + len(needs_plan_grade(store))
+                 + len(needs_process_review(store)))
     return {"enriched": done, "remaining": remaining, "llm": True}
 
 

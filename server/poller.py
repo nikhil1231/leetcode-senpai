@@ -153,7 +153,7 @@ async def record_editor_solve(store, session, sub, code, events):
                     "lang": leetcode.EDITOR_LANG, "code": code},
         "wrong": summary["failed_submits"],
         "failed_tests": recording.failed_tests(events),
-        "extra": {"via": "editor", "recording": summary},
+        "extra": {"via": "editor", "recording": summary, "recording_id": session["id"]},
     }
     match = {"id": sub["submission_id"], "titleSlug": session["slug"],
              "timestamp": sub["finished_at"]}

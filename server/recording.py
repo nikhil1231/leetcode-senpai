@@ -20,6 +20,7 @@ one is how a lost or corrupt delta is noticed, and the chain resumes from there.
 Events are stored in arrival order, which is the order they happened: the editor
 sends any unsent deltas in the same request as the run or submit they precede.
 """
+import difflib
 import json
 
 VERSION = 1
@@ -249,3 +250,140 @@ def compact_submit(result):
         "error": _clip(result.get("error"), 600) or None,
         "runtime_percentile": result.get("runtime_percentile"),
     }
+
+
+# ---- the timeline the LLM reads -------------------------------------------------
+# Deltas aren't listed one by one: at 10s granularity they're noise. What's kept
+# is where time went (stalls, time away, pauses, big rewrites), every judging with
+# its verdict, and — after each failed submit — the diff to the next judged code,
+# which is what shows what actually broke and how it was fixed.
+
+TIMELINE_MAX_CHARS = 12_000
+AWAY_MIN_MS = 30_000
+REWRITE_MIN_LINES = 5
+
+
+def _mmss(ms):
+    sec = max(0, int(ms or 0)) // 1000
+    return f"{sec // 60:02d}:{sec % 60:02d}"
+
+
+def _dur(ms):
+    sec = max(0, int(ms or 0)) // 1000
+    return f"{sec // 60}m{sec % 60:02d}s" if sec >= 60 else f"{sec}s"
+
+
+def _lines(code, f, to):
+    start = code.count("\n", 0, f) + 1
+    end = code.count("\n", 0, max(f, to - 1)) + 1
+    return f"L{start}" if start == end else f"L{start}-{end}"
+
+
+def _one_line(text, limit):
+    return _clip(" ".join(str(text or "").split()), limit)
+
+
+def _judged(ev):
+    r = ev.get("result") or {}
+    if ev["k"] == "run":
+        if r.get("error"):
+            head = f"run: {r.get('status') or 'error'} — {_one_line(r['error'].splitlines()[0], 160)}"
+        else:
+            head = f"run: {r.get('correct', 0)}/{r.get('total', '?')} cases matched"
+            w = r.get("wrong")
+            if w:
+                head += (f" — input {_one_line(w.get('input'), 120)}, expected "
+                         f"{_one_line(w.get('expected'), 60)}, got {_one_line(w.get('output'), 60)}")
+        return head + (" (printed debug output)" if r.get("printed") else "")
+    head = f"submit: {r.get('status')} ({r.get('correct', '?')}/{r.get('total', '?')} tests)"
+    if r.get("status") == "Accepted":
+        return head
+    if r.get("error"):
+        head += f" — {_one_line(r['error'].splitlines()[0], 160)}"
+    if r.get("input"):
+        head += (f" — failing input {_one_line(r['input'], 160)}, expected "
+                 f"{_one_line(r.get('expected'), 80)}, got {_one_line(r.get('output'), 80)}")
+    return head
+
+
+def _unified(a, b):
+    out = [line for line in difflib.unified_diff(a.splitlines(), b.splitlines(),
+                                                 lineterm="", n=1)
+           if not line.startswith(("---", "+++"))]
+    return "\n".join(out)
+
+
+def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
+    """A compact, human-readable account of a recorded solve, for a prompt."""
+    s = summary(events)
+    head = [
+        f"Solve lasted {_dur(s['duration_ms'])}. First edit {_mmss(s['first_edit_ms'])}, "
+        f"first run {_mmss(s['first_run_ms']) if s['first_run_ms'] is not None else 'never'}, "
+        f"first submit {_mmss(s['first_submit_ms']) if s['first_submit_ms'] is not None else 'never'}.",
+        f"{s['runs']} runs ({s['runs_failed']} not matching), {s['submits']} submits "
+        f"({s['failed_submits']} failed). Idle {_dur(s['idle_ms'])} in stretches of a minute "
+        f"or more; paused {_dur(s['paused_ms'])}; away from the tab {_dur(s['away_ms'])}.",
+    ]
+    if not s["chain_ok"]:
+        head.append("Part of the edit log was lost, so code between judgings is approximate.")
+
+    gap_ends = {start + length: (start, length) for start, length in idle_gaps(events)}
+    entries = []  # [t, text, diff]
+    code = None
+    failed_sub = None  # (entry, code) awaiting the next judged code
+    away_from = None
+    for ev in events:
+        k, t = ev.get("k"), ev.get("t", 0)
+        if k in ("d", "run", "sub") and t in gap_ends:
+            start, length = gap_ends.pop(t)
+            where = f", then edited {_lines(code, ev['f'], ev['to'])}" if k == "d" and code else ""
+            entries.append([start, f"no edits or runs for {_dur(length)}{where}", None])
+        if k == "c":
+            code = ev.get("code") or ""
+        elif k == "d" and code is not None:
+            removed = code[ev["f"]:ev["to"]].count("\n")
+            if removed >= REWRITE_MIN_LINES:
+                entries.append([t, f"rewrote {_lines(code, ev['f'], ev['to'])} "
+                                   f"({removed} lines replaced)", None])
+            try:
+                code = apply_delta(code, ev)
+            except (KeyError, TypeError, ValueError):
+                pass
+        elif k in ("run", "sub"):
+            if failed_sub:
+                entry, before = failed_sub
+                entry[2] = _unified(before, ev.get("code") or "") or None
+                failed_sub = None
+            code = ev.get("code") or ""
+            entry = [t, _judged(ev), None]
+            entries.append(entry)
+            if k == "sub" and (ev.get("result") or {}).get("status") != "Accepted":
+                failed_sub = (entry, code)
+        elif k == "hint":
+            entries.append([t, f"revealed hint {ev.get('level')}", None])
+        elif k in ("pause", "resume"):
+            entries.append([t, "paused the clock" if k == "pause" else "resumed", None])
+        elif k == "blur":
+            away_from = t
+        elif k == "focus" and away_from is not None:
+            if t - away_from >= AWAY_MIN_MS:
+                entries.append([away_from, f"away from the tab {_dur(t - away_from)}", None])
+            away_from = None
+    entries.sort(key=lambda e: e[0])
+
+    def render():
+        lines = list(head)
+        for t, text, diff in entries:
+            lines.append(f"[{_mmss(t)}] {text}")
+            if diff:
+                lines.append("  what changed before the next judging:")
+                lines.extend("    " + line for line in diff.splitlines())
+        return "\n".join(lines)
+
+    text = render()
+    # Over budget: drop the oldest diffs first, keeping the last one longest.
+    with_diff = [e for e in entries if e[2]]
+    while len(text) > max_chars and len(with_diff) > 1:
+        with_diff.pop(0)[2] = "(diff omitted for length)"
+        text = render()
+    return _clip(text, max_chars)

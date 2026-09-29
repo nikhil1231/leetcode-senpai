@@ -101,3 +101,64 @@ def test_compact_run_keeps_the_first_wrong_case():
                                      {"input": "b", "output": "2", "expected": "3", "stdout": "dbg"}]})
     assert out["wrong"] == {"input": "b", "output": "2", "expected": "3"}
     assert out["printed"] is True and out["passed"] is False
+
+
+# ---- timeline_for_llm ---------------------------------------------------------------
+S = "class Solution:\n    def f(self, nums):\n        "
+W = S + "return [0, 0]\n"
+R = S + "for i in range(len(nums)):\n            pass\n        return [0, 1]\n"
+
+
+def _solve():
+    return [ev(0, "c", code=S), ev(30_000, "d", **rec.diff(S, W)),
+            ev(40_000, "blur"), ev(100_000, "focus"),
+            ev(200_000, "run", code=W, result={"passed": False, "correct": 1, "total": 2,
+                                               "wrong": {"input": "[3,2,4]\n6", "expected": "[1,2]",
+                                                         "output": "[0,0]"}, "printed": True}),
+            ev(260_000, "sub", code=W, result={"status": "Wrong Answer", "correct": 62, "total": 65,
+                                               "input": "[3,3]\n6", "expected": "[0,1]", "output": "[0,0]"}),
+            ev(280_000, "hint", level=1),
+            ev(300_000, "d", **rec.diff(W, R)),
+            ev(330_000, "sub", code=R, result={"status": "Accepted", "correct": 65, "total": 65})]
+
+
+def test_timeline_reads_in_order_with_the_fix_after_the_failed_submit():
+    text = rec.timeline_for_llm(_solve())
+    lines = text.splitlines()
+    assert lines[0].startswith("Solve lasted 5m30s. First edit 00:30, first run 03:20")
+    stamps = [line[1:6] for line in lines if line.startswith("[")]
+    assert stamps == sorted(stamps)
+    assert "[00:30] no edits or runs for 2m50s" in text
+    assert "[00:40] away from the tab 1m00s" in text
+    assert "run: 1/2 cases matched — input [3,2,4] 6, expected [1,2], got [0,0] (printed debug output)" in text
+    wa = lines.index(next(line for line in lines if "Wrong Answer" in line))
+    assert "failing input [3,3] 6" in lines[wa]
+    assert lines[wa + 1] == "  what changed before the next judging:"
+    assert "    -        return [0, 0]" in lines
+    assert "    +        return [0, 1]" in lines
+    assert "[04:40] revealed hint 1" in text
+    assert text.rstrip().endswith("[05:30] submit: Accepted (65/65 tests)")
+
+
+def test_timeline_names_big_rewrites_and_lost_logs():
+    long = S + "".join(f"x{i} = {i}\n        " for i in range(8))
+    events = [ev(0, "c", code=long), ev(5_000, "d", **rec.diff(long, S + "pass\n")),
+              ev(9_000, "sub", code="something else", result={"status": "Accepted"})]
+    text = rec.timeline_for_llm(events)
+    assert "[00:05] rewrote L3-11 (8 lines replaced)" in text
+    assert "Part of the edit log was lost" in text
+
+
+def test_timeline_drops_oldest_diffs_to_fit():
+    events, code = [ev(0, "c", code="")], ""
+    for i in range(6):
+        new = code + "".join(f"line_{i}_{j} = {j}\n" for j in range(40))
+        events.append(ev(i * 60_000 + 1, "sub", code=code,
+                         result={"status": "Wrong Answer", "input": "x"}))
+        code = new
+    events.append(ev(999_000, "sub", code=code, result={"status": "Accepted"}))
+    full = rec.timeline_for_llm(events, max_chars=10**6)
+    capped = rec.timeline_for_llm(events, max_chars=6_000)
+    assert len(capped) <= 6_000 < len(full)
+    assert capped.count("(diff omitted for length)") >= 1
+    assert "line_5_39" in capped  # the last fix survives
