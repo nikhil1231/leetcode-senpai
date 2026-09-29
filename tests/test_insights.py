@@ -699,3 +699,38 @@ def test_confidence_calibration_skips_coach_graded_recalls():
 
     assert cal["graded_attempts"] == 1
     assert [r["category"] for r in cal["categories"]] == ["Two Pointers"]
+
+
+def test_solve_habits_read_recorded_solves_and_pace():
+    from server import insights
+    problems = [{"slug": "a", "difficulty": "Easy", "neetcode_category": "DP"},
+                {"slug": "b", "difficulty": "Medium", "neetcode_category": "DP"},
+                {"slug": "c", "difficulty": "Easy", "neetcode_category": "Trees"}]
+    rec = lambda **kw: {"runs": 1, "first_run_ms": 120_000, "first_submit_ms": 300_000,
+                        "first_edit_ms": 30_000, "failed_submits": 0, "idle_ms": 0,
+                        "away_ms": 0, "duration_ms": 600_000, **kw}
+    attempts = [
+        {"id": "1", "slug": "a", "time_taken_sec": 600, "recording": rec(idle_ms=300_000)},
+        # submitted before its first run, and never ran at all
+        {"id": "2", "slug": "b", "time_taken_sec": 2000,
+         "recording": rec(runs=0, first_run_ms=None, failed_submits=2, idle_ms=120_000)},
+        {"id": "3", "slug": "c", "time_taken_sec": 1000,
+         "recording": rec(first_run_ms=400_000)},
+        {"id": "4", "slug": "c", "time_taken_sec": 100},  # LeetCode-side solve: pace only
+        {"id": "5", "slug": "a", "kind": "sprint", "recording": rec()},
+    ]
+    enrichments = [
+        {"attempt_id": "1", "process_review": {"missed_edge_cases": ["Empty input", "zero"]}},
+        {"attempt_id": "2", "process_review": {"missed_edge_cases": ["empty  input"]}},
+    ]
+    h = insights.solve_habits(problems, attempts, enrichments,
+                              {"Easy": 900, "Medium": 1500})
+    assert h["recorded"] == 3
+    assert h["submit_unrun_rate"] == round(2 / 3, 3)
+    assert h["median_first_run_sec"] == 260
+    assert h["median_first_edit_sec"] == 30
+    assert h["failed_submits_per_solve"] == 0.67
+    assert h["stall_category"] == {"category": "DP", "idle_share": 0.35, "count": 2}
+    assert h["edge_misses"][0] == {"case": "empty input", "count": 2}
+    assert (h["over_pace_rate"], h["timed"]) == (0.5, 4)
+    assert insights.solve_habits(problems, [], [], {})["recorded"] == 0

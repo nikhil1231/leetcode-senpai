@@ -619,7 +619,10 @@
         <div class="column"><div class="panel-box"><h3>Planning</h3>${planningHtml(d.planning, pa)}</div></div>
       </div>
       <div class="panel-box"><h3>Confidence calibration</h3>${calibrationHtml(calibration)}</div>
-      <div class="panel-box"><h3>Mock score trend</h3>${mockTrendHtml(d.mock_trend)}</div>`;
+      <div class="columns">
+        <div class="column"><div class="panel-box"><h3>Solve habits</h3>${habitsHtml(d.habits)}</div></div>
+        <div class="column"><div class="panel-box"><h3>Mock score trend</h3>${mockTrendHtml(d.mock_trend)}</div></div>
+      </div>`;
     bindFailureModeRows();
   }
 
@@ -710,6 +713,7 @@
         "<div class='small'>Solve a few to project a finish date.</div>"}</div>`;
   }
 
+  const clip = (text, n) => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
   const pctOrDash = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
   const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")}`;
 
@@ -744,6 +748,30 @@
       ${w ? `<p class="plan-weakest">Weakest: <b>${escapeHtml(w.category)}</b> — ${w.avg_score}/5 over ${w.count} start${w.count === 1 ? "" : "s"}${w.blanks ? ` (${w.blanks} with no idea)` : ""}. Plan misses feed the drill lane.</p>` : ""}
       ${rows.length ? Charts.bars(rows, { max: 5 }) : ""}
       ${sprint}`;
+  }
+
+  // How you work between plan and AC, from editor recordings. A figure past its
+  // line is amber: those are the habits worth changing.
+  function habitsHtml(h) {
+    if (!h || !h.recorded) {
+      return `<p class="empty">Solve in the in-app editor and this fills in: whether you run before submitting, how soon you start typing, where you stall, and which edge cases keep biting.</p>`;
+    }
+    const warn = (bad, html) => `<span class="${bad ? "is-over" : ""}">${html}</span>`;
+    const stats = [
+      ["Submitted before running", h.submit_unrun_rate == null ? "—" : warn(h.submit_unrun_rate >= 0.3, pctOrDash(h.submit_unrun_rate))],
+      ["First edit", h.median_first_edit_sec == null ? "—" : clock(h.median_first_edit_sec)],
+      ["First run", h.median_first_run_sec == null ? "—" : clock(h.median_first_run_sec)],
+      ["Failed submits", h.failed_submits_per_solve == null ? "—" : warn(h.failed_submits_per_solve >= 1, `${h.failed_submits_per_solve} / solve`)],
+      ["Stalled", h.idle_share == null ? "—" : warn(h.idle_share >= 0.25, pctOrDash(h.idle_share))],
+      ["Over pace", h.over_pace_rate == null ? "—" : warn(h.over_pace_rate >= 0.5, `${pctOrDash(h.over_pace_rate)} <span class="small">of ${h.timed}</span>`)],
+    ];
+    const s = h.stall_category;
+    const edges = h.edge_misses || [];
+    return `<div class="small">medians over ${plural(h.recorded, "recorded solve")} · stalled is time with no edits or runs for a minute or more</div>
+      <dl class="plan-stats">${stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>
+      ${s ? `<p class="plan-weakest">Stalls most in <b>${escapeHtml(s.category)}</b> — ${pctOrDash(s.idle_share)} of the clock over ${plural(s.count, "solve")}.</p>` : ""}
+      ${edges.length ? `<p class="small"><b>Edge cases that bit</b></p><ul class="process-list">${edges.map((e) => `
+        <li title="${escapeHtml(e.case)}">${escapeHtml(clip(e.case, 70))}${e.count > 1 ? ` <b>×${e.count}</b>` : ""}</li>`).join("")}</ul>` : ""}`;
   }
 
   function calibrationHtml(calibration) {

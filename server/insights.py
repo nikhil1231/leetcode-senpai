@@ -7,7 +7,7 @@ functions.
 import datetime as dt
 
 from .neetcode150 import CATEGORY_ORDER
-from . import plans, scheduler
+from . import config, plans, scheduler
 
 
 def _today(today=None):
@@ -583,6 +583,82 @@ def confidence_calibration(problems, attempts, reviews=None):
     }
 
 
+# ---- solve habits (in-app editor recordings) --------------------------------------
+HABIT_MIN_PER_CATEGORY = 2
+
+
+def _share(xs):
+    return round(sum(xs) / len(xs), 3) if xs else None
+
+
+def solve_habits(problems, attempts, enrichments, par_by_difficulty):
+    """How you work between plan and AC, across every solve recorded in the
+    editor: whether you run before submitting, how soon you first type and run,
+    how much of a solve is stalled, where stalls cluster, and — from process
+    reviews — which edge cases keep biting. Pace is read over every timed solve."""
+    prob = {p["slug"]: p for p in problems}
+    enr_by = {e.get("attempt_id"): e for e in enrichments}
+    solves = [a for a in scheduler._solved_attempts(attempts)
+              if a.get("kind") != "recall" and a.get("source") != "recall"]
+    recorded = [a for a in solves if isinstance(a.get("recording"), dict)]
+
+    unrun, first_edit, first_run, failed, idle_share, away_share = [], [], [], [], [], []
+    by_cat = {}
+    for a in recorded:
+        r = a["recording"]
+        runs, first_sub, fr = r.get("runs") or 0, r.get("first_submit_ms"), r.get("first_run_ms")
+        if first_sub is not None:
+            unrun.append(1 if not runs or fr is None or fr > first_sub else 0)
+        if r.get("first_edit_ms") is not None:
+            first_edit.append(r["first_edit_ms"] // 1000)
+        if fr is not None:
+            first_run.append(fr // 1000)
+        failed.append(r.get("failed_submits") or 0)
+        duration = r.get("duration_ms") or 0
+        if duration > 0:
+            idle_share.append(min(1.0, (r.get("idle_ms") or 0) / duration))
+            away_share.append(min(1.0, (r.get("away_ms") or 0) / duration))
+            cat = (prob.get(a.get("slug")) or {}).get("neetcode_category")
+            if cat:
+                by_cat.setdefault(cat, []).append(idle_share[-1])
+
+    stall = None
+    for cat, xs in by_cat.items():
+        if len(xs) < HABIT_MIN_PER_CATEGORY:
+            continue
+        med = _median(xs)
+        if stall is None or med > stall["idle_share"]:
+            stall = {"category": cat, "idle_share": round(med, 3), "count": len(xs)}
+
+    missed = {}
+    for a in recorded:
+        review = (enr_by.get(a.get("id")) or {}).get("process_review") or {}
+        for case in review.get("missed_edge_cases") or []:
+            key = " ".join(str(case).lower().split())
+            if key:
+                missed[key] = missed.get(key, 0) + 1
+    edge_misses = sorted(missed.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+
+    over = []
+    for a in solves:
+        par = par_by_difficulty.get((prob.get(a.get("slug")) or {}).get("difficulty"))
+        if par and a.get("time_taken_sec") is not None:
+            over.append(1 if a["time_taken_sec"] > par else 0)
+
+    return {
+        "recorded": len(recorded),
+        "submit_unrun_rate": _share(unrun),
+        "median_first_edit_sec": _median_or_none(first_edit),
+        "median_first_run_sec": _median_or_none(first_run),
+        "failed_submits_per_solve": _mean_or_none(failed, 2),
+        "idle_share": _median_or_none(idle_share),
+        "away_share": _median_or_none(away_share),
+        "stall_category": stall,
+        "edge_misses": [{"case": c, "count": n} for c, n in edge_misses],
+        "over_pace_rate": _share(over), "timed": len(over),
+    }
+
+
 # ---- mock score trend -----------------------------------------------------------
 def mock_score_trend(mocks):
     done = [m for m in mocks if m.get("score") is not None and m.get("finished_at")]
@@ -611,4 +687,5 @@ def build(store, today=None):
         "planning": planning_stats(problems, attempts, enrichments, canonical),
         "confidence_calibration": confidence_calibration(problems, attempts, reviews),
         "mock_trend": mock_score_trend(mocks),
+        "habits": solve_habits(problems, attempts, enrichments, config.SOLVE_PAR_SEC),
     }
