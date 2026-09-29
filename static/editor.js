@@ -103,7 +103,8 @@
       r.inflight = { seq: r.seq + 1, events: r.queue.splice(0) };
       persist(r);
     }
-    await api("/editor/log", "POST", { session_id: r.sessionId, ...r.inflight });
+    const res = await api("/editor/log", "POST", { session_id: r.sessionId, ...r.inflight });
+    if (res && res.truncated) markTruncated(r);
     r.seq = r.inflight.seq;
     r.inflight = null;
     persist(r);
@@ -143,6 +144,7 @@
     }).then((res) => {
       if (run !== r) return;
       if (!res.ok) { showError(res.error); return; }
+      if (res.truncated) markTruncated(r);
       if (kind === "run") showRun(res.result);
       else showSubmit(res.result);
       if (res.attempt_id) {
@@ -163,6 +165,16 @@
 
   const block = (label, value, cls = "") => value == null || value === "" ? "" :
     `<div class="editor-io ${cls}"><span>${esc(label)}</span><pre>${esc(String(value))}</pre></div>`;
+
+  // The server stopped keeping this run's edits (the log hit its size cap). Say
+  // so once: judging still works, the review just won't see the rest.
+  function markTruncated(r) {
+    if (r.truncated || run !== r) return;
+    r.truncated = true;
+    const el = $("#editor-notice");
+    el.textContent = "This run's edit log is full — Run and Submit still work, but the review will only see the first part.";
+    el.classList.remove("hidden");
+  }
 
   function showError(message) {
     $("#editor-result").innerHTML = `<p class="editor-verdict is-bad">${esc(message)}</p>`;
@@ -208,6 +220,7 @@
           <button id="editor-copy" class="button is-ghost" type="button">Copy code</button>
           ${state.can_judge ? "" : `<span class="small editor-nocookie">Set your LeetCode cookie in Settings to run and submit.</span>`}
         </div>
+        <p id="editor-notice" class="small editor-notice hidden"></p>
         <label class="label-sm" for="editor-input">Test input</label>
         <textarea id="editor-input" class="editor-input" rows="4" spellcheck="false"></textarea>
         <div id="editor-result" class="editor-result" aria-live="polite"></div>
@@ -296,6 +309,7 @@
     });
     $("#editor-run").disabled = $("#editor-submit").disabled = !r.canJudge;
     r.CM = CM;
+    if (state.truncated) markTruncated(r);
     setPaused(active.is_paused);
     r.timers.push(setInterval(tick, TICK_MS), setInterval(flush, FLUSH_MS));
     document.addEventListener("visibilitychange", onVisibility);

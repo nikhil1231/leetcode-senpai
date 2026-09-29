@@ -146,3 +146,18 @@ test('this browser\'s unsent work survives a reload unless another device logged
   await behind.mount();
   assert.equal(behind.buffer.code, STARTER + '# other device\n');
 });
+
+test('a full log is said once, and editing carries on', async () => {
+  const ui = editor({ api: async (p) => {
+    if (p.startsWith('/editor/state')) return { available: true, can_judge: true, starter_code: STARTER,
+                                                code: STARTER, seq: 0, now_ms: 0, example_testcases: [] };
+    return { ok: true, seq: 1, truncated: true };
+  } });
+  await ui.mount();
+  assert.equal(ui.node('#editor-notice').textContent, undefined);
+  ui.buffer.code = STARTER + '# more\n';
+  ui.E.tick();
+  await ui.E.flush();
+  assert.match(ui.node('#editor-notice').textContent, /edit log is full/);
+  assert.equal(ui.E._state().truncated, true);
+});

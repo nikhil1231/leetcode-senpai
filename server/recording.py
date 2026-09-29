@@ -30,8 +30,11 @@ CODE_KINDS = ("c", "run", "sub")
 CLIENT_KINDS = ("c", "d", "pause", "resume", "blur", "focus")
 # A pause in activity at least this long counts as a stall worth naming.
 IDLE_GAP_MS = 60_000
-# Keep a recording well inside Firestore's 1 MiB document limit.
+# Keep a recording well inside Firestore's 1 MiB document limit. Past the first
+# mark the browser's edits stop being kept; judgings, which carry the code that
+# was actually judged, keep going into the reserve above it.
 MAX_LOG_CHARS = 800_000
+JUDGING_RESERVE_CHARS = 150_000
 MAX_TEXT = 20_000
 
 
@@ -103,32 +106,49 @@ def clean_client_event(ev):
     return {"t": t, "k": k}
 
 
-def reconstruct(events):
-    """Replay the chain. Returns (states, mismatches): states is [(t, code)] after
-    every code-bearing event; mismatches counts checkpoints the chain disagreed
-    with (or deltas that couldn't apply) — each one resyncs from the checkpoint."""
-    code = None
-    states = []
-    mismatches = 0
+def _replay(events, code=None):
+    """Yield (event, code after it, ok) for each code-bearing event, from `code`.
+    Code is None where a delta couldn't apply; ok is False wherever the chain
+    disagreed with a checkpoint or broke."""
     for ev in events:
         k = ev.get("k")
         if k in CODE_KINDS:
-            if code is not None and k != "c" and code != ev.get("code"):
-                mismatches += 1
+            ok = code is None or k == "c" or code == ev.get("code")
             code = ev.get("code") or ""
+            yield ev, code, ok
         elif k == "d":
             if code is None:
-                mismatches += 1
+                yield ev, None, False
                 continue
             try:
                 code = apply_delta(code, ev)
             except (KeyError, TypeError, ValueError):
-                mismatches += 1
+                yield ev, None, False
                 continue
-        else:
-            continue
-        states.append((ev.get("t", 0), code))
+            yield ev, code, True
+
+
+def reconstruct(events):
+    """Replay the chain. Returns (states, mismatches): states is [(t, code)] after
+    every code-bearing event; mismatches counts checkpoints the chain disagreed
+    with (or deltas that couldn't apply) — each one resyncs from the checkpoint."""
+    states, mismatches = [], 0
+    for ev, code, ok in _replay(events):
+        mismatches += not ok
+        if code is not None:
+            states.append((ev.get("t", 0), code))
     return states, mismatches
+
+
+def advance(code, events):
+    """Carry the chain's end state over newly appended events: (code, mismatches).
+    What lets an append check only what it adds instead of replaying the log."""
+    mismatches = 0
+    for _, after, ok in _replay(events, code):
+        mismatches += not ok
+        if after is not None:
+            code = after
+    return code, mismatches
 
 
 def code_at(events, t):

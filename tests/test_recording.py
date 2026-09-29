@@ -46,6 +46,18 @@ def test_a_delta_that_cannot_apply_is_counted_not_fatal():
     assert mismatches == 1 and states[-1][1] == "ab"
 
 
+def test_advancing_in_pieces_matches_a_full_replay():
+    events = [ev(0, "c", code="a"), ev(1, "d", f=1, to=1, s="b"),
+              ev(2, "sub", code="ab", result={}), ev(3, "d", f=9, to=9, s="x"),
+              ev(4, "d", f=2, to=2, s="c"), ev(5, "run", code="abX", result={}),
+              ev(6, "d", f=0, to=1, s="")]
+    states, mismatches = rec.reconstruct(events)
+    for cut in range(len(events) + 1):
+        code, m1 = rec.advance(None, events[:cut])
+        code, m2 = rec.advance(code, events[cut:])
+        assert (code, m1 + m2) == (states[-1][1], mismatches)
+
+
 def test_summary_numbers():
     events = [ev(0, "c", code=""), ev(30_000, "d", f=0, to=0, s="x"),
               ev(40_000, "blur"), ev(100_000, "focus"),

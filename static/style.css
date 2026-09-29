@@ -2482,7 +2482,8 @@ body.has-active-session #user-chip {
 .editor-cm .cm-selectionBackground, .editor-cm .cm-focused .cm-selectionBackground { background: rgba(124, 134, 255, .28) !important; }
 .editor-pane.is-paused .editor-cm { opacity: .55; }
 .editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
-.editor-nocookie { color: var(--amber); }
+.editor-nocookie, .editor-notice { color: var(--amber); }
+.editor-notice { margin: 8px 0 0; }
 .editor-input {
   width: 100%;
   padding: 9px 11px;

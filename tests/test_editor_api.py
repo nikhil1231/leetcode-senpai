@@ -75,6 +75,36 @@ def test_a_retried_log_batch_is_not_applied_twice(client):
     assert client.store.get_recording(sid)["chain_ok"] is True
 
 
+def test_a_recording_from_before_the_end_state_was_kept_still_appends(client):
+    sid = _start(client)
+    client.get(f"/api/editor/state?session_id={sid}")
+    doc = client.store.get_recording(sid)
+    del doc["code"]
+    client.store.save_recording(sid, doc)
+    client.post("/api/editor/log", json={"session_id": sid, "seq": 1,
+                                         "events": [{"t": 9, "k": "d", **recording.diff(STARTER, WRONG)}]})
+    doc = client.store.get_recording(sid)
+    assert doc["code"] == WRONG and doc["chain_ok"] is True
+    assert client.get(f"/api/editor/state?session_id={sid}").json()["code"] == WRONG
+
+
+def test_a_full_log_drops_edits_but_keeps_judgings_and_says_so(client, monkeypatch):
+    async def run_code(slug, qid, code, data_input, auth):
+        return {"status": "Accepted", "passed": True, "correct": 1, "total": 1,
+                "cases": [], "error": None}
+    monkeypatch.setattr(main.leetcode, "run_code", run_code)
+    sid = _start(client)
+    client.get(f"/api/editor/state?session_id={sid}")
+    monkeypatch.setattr(recording, "MAX_LOG_CHARS", len(client.store.get_recording(sid)["events"]) + 10)
+    r = client.post("/api/editor/log", json={"session_id": sid, "seq": 1, "events": [
+        {"t": 9, "k": "d", **recording.diff(STARTER, WRONG)}]}).json()
+    assert r["truncated"] is True and r["seq"] == 1
+    r = client.post("/api/editor/run", json={"session_id": sid, "code": WRONG, "t": 20}).json()
+    assert r["ok"] and r["truncated"]
+    assert [e["k"] for e in _events(client, sid)] == ["c", "run"]
+    assert client.get(f"/api/editor/state?session_id={sid}").json()["truncated"] is True
+
+
 def test_the_log_refuses_server_only_events_and_finished_runs(client):
     sid = _start(client)
     client.get(f"/api/editor/state?session_id={sid}")

@@ -250,6 +250,9 @@ async def review_process(store, attempt_id):
 
 def _process_timeline(attempt, rec):
     text = recording.timeline_for_llm(recording.parse(rec.get("events")))
+    if rec.get("truncated"):
+        text = ("The log hit its size limit partway: later edits (and possibly judgings) "
+                "are missing.\n" + text)
     if attempt.get("finished_on") == "leetcode":
         # The log stops where the editor was left; the AC came from LeetCode's site.
         at = recording.mmss((attempt.get("time_taken_sec") or 0) * 1000)

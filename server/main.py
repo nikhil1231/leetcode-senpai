@@ -1072,22 +1072,34 @@ def _run_ms(s):
 def _append_recording(store, s, client_events=(), seq=None, server_events=()):
     """Append to a run's recording, creating it on first write. A client batch
     whose seq was already applied (a retried request) is dropped; server events
-    — judgings, pauses, hints — never are."""
+    — judgings, pauses, hints — never are, short of the hard size cap.
+
+    The doc keeps the chain's end state (`code`), so an append checks only what
+    it adds rather than replaying the whole log."""
     with _recording_lock(store.uid):
         doc = store.get_recording(s["id"]) or {
             "slug": s["slug"], "started_at": s["started_at"], "lang": leetcode.EDITOR_LANG,
-            "v": recording.VERSION, "seq": 0, "events": "", "chain_ok": True}
+            "v": recording.VERSION, "seq": 0, "events": "", "chain_ok": True, "code": None}
+        if "code" not in doc:  # written before the end state was kept
+            doc["code"], _ = recording.advance(None, recording.parse(doc["events"]))
         new = []
         if seq is not None and seq > doc.get("seq", 0):
-            new += [e for e in map(recording.clean_client_event, client_events) if e]
+            client = [e for e in map(recording.clean_client_event, client_events) if e]
+            if len(doc["events"]) + len(recording.dump(client)) > recording.MAX_LOG_CHARS:
+                doc["truncated"] = True
+            else:
+                new += client
             doc["seq"] = seq
-        new += list(server_events)
-        text = recording.dump(new)
-        if len(doc["events"]) + len(text) > recording.MAX_LOG_CHARS:
+        server = list(server_events)
+        cap = recording.MAX_LOG_CHARS + recording.JUDGING_RESERVE_CHARS
+        if len(doc["events"]) + len(recording.dump(new + server)) > cap:
             doc["truncated"] = True
-        elif new:
-            doc["events"] += text
-            doc["chain_ok"] = recording.reconstruct(recording.parse(doc["events"]))[1] == 0
+        else:
+            new += server
+        if new:
+            doc["events"] += recording.dump(new)
+            doc["code"], mismatches = recording.advance(doc["code"], new)
+            doc["chain_ok"] = doc.get("chain_ok", True) and mismatches == 0
         store.save_recording(s["id"], doc)
         return doc
 
@@ -1135,13 +1147,12 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
         doc = _append_recording(store, s, server_events=[{"t": 0, "k": "c", "code": starter}])
     code = starter
     if doc:
-        states, _ = recording.reconstruct(recording.parse(doc["events"]))
-        if states:
-            code = states[-1][1]
+        code = doc.get("code") or starter
     return {"available": available, "can_judge": leetcode.has_auth(lc),
             "content_html": p.get("content_html"), "starter_code": starter,
             "example_testcases": p.get("example_testcases") or [],
-            "code": code, "seq": (doc or {}).get("seq", 0), "now_ms": _run_ms(s)}
+            "code": code, "seq": (doc or {}).get("seq", 0), "now_ms": _run_ms(s),
+            "truncated": bool((doc or {}).get("truncated"))}
 
 
 @app.post("/api/editor/log")
@@ -1149,7 +1160,7 @@ def api_editor_log(body: EditorLog, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     s = _editor_session(store, body.session_id)
     doc = _append_recording(store, s, body.events, body.seq)
-    return {"ok": True, "seq": doc.get("seq", 0)}
+    return {"ok": True, "seq": doc.get("seq", 0), "truncated": bool(doc.get("truncated"))}
 
 
 async def _judge_or_error(call):
@@ -1180,10 +1191,10 @@ async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user
         s["slug"], p["question_id"], body.code, body.data_input, lc))
     if err:
         return {"ok": False, "error": err}
-    _append_recording(store, s, server_events=[{
+    doc = _append_recording(store, s, server_events=[{
         "t": body.t, "k": "run", "code": body.code, "input": body.data_input[:2000],
         "result": recording.compact_run(result)}])
-    return {"ok": True, "result": result}
+    return {"ok": True, "result": result, "truncated": bool(doc.get("truncated"))}
 
 
 @app.post("/api/editor/submit")
@@ -1200,7 +1211,8 @@ async def api_editor_submit(body: EditorJudge, uid: str = Depends(auth.require_u
     doc = _append_recording(store, s, server_events=[{
         "t": body.t, "k": "sub", "code": body.code, "submission_id": result["submission_id"],
         "result": recording.compact_submit(result)}])
-    out = {"ok": True, "result": result, "attempt_id": None}
+    out = {"ok": True, "result": result, "attempt_id": None,
+           "truncated": bool(doc.get("truncated"))}
     if result["accepted"]:
         async with _poll_lock(uid):
             out["attempt_id"] = await poller.record_editor_solve(
