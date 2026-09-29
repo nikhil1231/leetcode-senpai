@@ -917,6 +917,8 @@ def _active_payload(prob, s, settings):
         "title": prob.get("title", s["slug"]), "url": prob.get("url"),
         "hint_level": s.get("hint_level", 0),
         "hint_total": len(hint_ladder) if hint_ladder else 3,
+        # Only the rungs already revealed, so a reload keeps them on screen.
+        "hints": hint_ladder[:s.get("hint_level", 0)],
         "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(settings),
         "plan_status": s.get("plan_status"),
         "surface": s.get("surface") or "leetcode",

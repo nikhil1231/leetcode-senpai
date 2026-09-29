@@ -970,16 +970,36 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .button.hint-btn:hover { background: rgba(245, 181, 68, .16); color: var(--amber); }
 .button.hint-btn:disabled { background: transparent; border-color: var(--line-hi); color: var(--muted); }
 
+.button.hint-btn[aria-busy="true"] { cursor: progress; animation: pulse 1.2s ease-in-out infinite; }
+
 .hint-panel, .nudge { margin-top: 18px; text-align: left; }
-.hint-list {
-  padding: 14px 16px;
-  border: 1px solid rgba(245, 181, 68, .28);
-  border-radius: var(--radius);
+.hint-panel {
+  padding: 8px 12px 10px;
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm);
   background: rgba(245, 181, 68, .06);
+  font-size: 13.5px;
 }
-.hint-item { margin: 8px 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
-.hint-item:first-child { margin-top: 0; }
-.hint-item b { display: block; margin-bottom: 2px; color: var(--amber); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+.hint-panel.hidden { display: none; }
+.hint-head {
+  display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px;
+  color: var(--amber); font-size: 12px; font-weight: 650;
+}
+.hint-head span:last-child { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.hint-list { margin: 0; padding: 0; list-style: none; counter-reset: hint; }
+.hint-list li {
+  counter-increment: hint;
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px;
+  margin-top: 4px; line-height: 1.55; color: var(--muted);
+}
+.hint-list li::before {
+  content: counter(hint);
+  color: var(--amber); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums;
+  line-height: 21px; text-align: center; opacity: .6;
+}
+.hint-list li.is-latest { color: var(--text); animation: hint-in .25s ease-out; }
+.hint-list li.is-latest::before { opacity: 1; }
+@keyframes hint-in { from { opacity: 0; transform: translateY(-3px); } }
 .nudge {
   padding: 12px 15px;
   border: 1px solid var(--accent-line);
@@ -1929,7 +1949,6 @@ body.has-active-session #user-chip {
 
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
 
-.active-run .hint-panel,
 .active-run .nudge {
   grid-column: 1 / -1;
   max-width: none;
@@ -1937,6 +1956,8 @@ body.has-active-session #user-chip {
   margin: 0;
   padding: 0;
 }
+.active-run .hint-panel { max-width: 62ch; margin: 12px auto 0; }
+.active-run.has-editor .hint-panel { max-width: none; margin: 0; }
 
 /* ---- weekly report + goals + mock banners ----------------------------------- */
 .report-banner ul { margin: 8px 0 0; padding-left: 18px; }

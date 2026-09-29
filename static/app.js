@@ -910,15 +910,10 @@ function applyActive(active, editorState = null) {
     $("#active-kind").textContent = active.kind === "mock" ? "Mock interview problem"
       : active.kind === "optimize" ? "Optimizing an accepted solve — a better Accepted replaces it."
       : "Solve this problem before returning to the rest of the dashboard.";
-    if (previousId !== active.session_id) {
-      $("#hint-panel").innerHTML = "";
-      $("#hint-panel").classList.add("hidden");
-      $("#nudge").classList.add("hidden");
-    }
+    if (previousId !== active.session_id) $("#nudge").classList.add("hidden");
     setDashboardLocked(true);
     setTakeaway(active.takeaway);
-    setHintButton(active);
-    if (active.kind === "optimize") $("#btn-hint").classList.add("hidden");
+    setHints(active);
     setPlanCheck(active);
     setPauseButton(active);
     startTimer(active);
@@ -968,14 +963,25 @@ function setDashboardLocked(locked) {
   });
 }
 
-function setHintButton(active) {
-  const btn = $("#btn-hint");
+// The ladder so far, drawn from the run itself — a reload keeps what was
+// revealed. The button goes once the last rung is out; the panel counts them.
+function setHints(active) {
+  const hints = active.hints || [];
   const total = active.hint_total || 3;
   const used = active.hint_level || 0;
-  const next = Math.min(total, used + 1);
-  btn.classList.toggle("hidden", !active.hints_available);
-  btn.disabled = !active.hints_available || used >= total;
-  btn.textContent = used >= total ? `All ${total} hints revealed` : `Reveal hint ${next} of ${total}`;
+  const btn = $("#btn-hint");
+  btn.classList.toggle("hidden", !active.hints_available || active.kind === "optimize" || used >= total);
+  btn.removeAttribute("aria-busy");
+  btn.disabled = false;
+  btn.textContent = `Hint ${used + 1} of ${total}`;
+  const panel = $("#hint-panel");
+  panel.classList.toggle("hidden", !hints.length);
+  const html = hints.length ? `
+    <div class="hint-head"><span>Hints</span><span>${hints.length} of ${total}</span></div>
+    <ol class="hint-list">${hints.map((h, i) =>
+      `<li${i === hints.length - 1 ? ' class="is-latest"' : ""}>${escapeHtml(h)}</li>`).join("")}</ol>` : "";
+  // Redrawn only on a change, so a refresh doesn't replay the newest rung's entrance.
+  if (panel._drawn !== html) { panel._drawn = html; panel.innerHTML = html; }
 }
 
 // The plan check is offered, never shown unasked: an unrequested critique of
@@ -1082,7 +1088,7 @@ function checkNudges(elapsed) {
     nudgeShown.solution = true;
     n.innerHTML = `⏱️ 35 min in. Reading the solution now is a smart move — mark it "Read solution" and you'll re-solve it in 2 days. That's the plan, not a failure.`;
     n.classList.remove("hidden");
-  } else if (elapsed >= 20 * 60 && !nudgeShown.hint) {
+  } else if (elapsed >= 20 * 60 && !nudgeShown.hint && !(activeSession && activeSession.hint_level)) {
     nudgeShown.hint = true;
     n.innerHTML = `💡 20 min in. Stuck? Try revealing hint 1 before pushing further.`;
     n.classList.remove("hidden");
@@ -1092,37 +1098,24 @@ function checkNudges(elapsed) {
 $("#btn-hint").addEventListener("click", async () => {
   if (!activeSession) return;
   const btn = $("#btn-hint");
-  const previousText = btn.textContent;
-  const next = (activeSession.hint_level || 0) + 1;
+  // The label stays put while it loads: a relabelled button reflows the bar.
   btn.disabled = true;
-  btn.textContent = `Revealing hint ${next}...`;
+  btn.setAttribute("aria-busy", "true");
   try {
     const r = await api("/session/hint", "POST");
-    const panel = $("#hint-panel");
-    panel.classList.remove("hidden");
+    if (!activeSession) return;
     if (r.hint == null) {
-      panel.innerHTML = `<p class="small">${llmEnabled ? "No hints available for this one." : "Hints need the coach enabled."}</p>`;
-      btn.textContent = previousText;
-      btn.disabled = false;
+      toast(llmEnabled ? "No hints available for this one." : "Hints need the coach enabled.");
+      setHints(activeSession);
       return;
     }
-    activeSession = {
-      ...activeSession,
-      hint_level: r.level,
-      hint_total: r.total || activeSession.hint_total || 3,
-    };
-    const existing = panel.querySelector(".hint-list");
-    const item = `<div class="hint-item" data-hint-level="${r.level}"><b>Hint ${r.level} of ${r.total || 3}</b> ${escapeHtml(r.hint)}</div>`;
-    if (existing && existing.querySelector(`[data-hint-level="${r.level}"]`)) {
-      setHintButton(activeSession);
-      return;
-    }
-    if (existing) existing.insertAdjacentHTML("beforeend", item);
-    else panel.innerHTML = `<div class="hint-list">${item}</div>`;
-    setHintButton(activeSession);
+    const hints = (activeSession.hints || []).slice(0, r.level - 1);
+    hints[r.level - 1] = r.hint;
+    activeSession = { ...activeSession, hint_level: r.level, hints,
+                      hint_total: r.total || activeSession.hint_total || 3 };
+    setHints(activeSession);
   } catch (e) {
-    btn.textContent = previousText;
-    btn.disabled = false;
+    setHints(activeSession);
     toast(e.message);
   }
 });

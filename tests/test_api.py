@@ -1195,6 +1195,16 @@ def test_session_start_and_hint_degrades(client):
     assert r.json()["hint"] is None
 
 
+def test_active_run_carries_only_the_hints_already_revealed(client):
+    client.store.upsert_problem({"slug": "two-sum", "hint_ladder": ["one", "two", "three"]})
+    client.post("/api/session/start", json={"slug": "two-sum"})
+    assert client.get("/api/session/active").json()["active"]["hints"] == []
+    client.post("/api/session/hint")
+    client.post("/api/session/hint")
+    active = client.get("/api/session/active").json()["active"]
+    assert (active["hint_level"], active["hints"]) == (2, ["one", "two"])
+
+
 def test_session_start_answers_with_the_live_run_view(client):
     """The client must not need a second round-trip to learn what it started.
 
