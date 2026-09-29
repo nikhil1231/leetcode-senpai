@@ -13,7 +13,7 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
   const nodes = new Map();
   const node = (sel) => {
     if (!nodes.has(sel)) nodes.set(sel, {
-      value: '', disabled: false, innerHTML: '', listeners: {},
+      value: '', disabled: false, innerHTML: '', listeners: {}, style: { setProperty() {} },
       classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
       addEventListener(ev, fn) { this.listeners[ev] = fn; },
     });
@@ -40,8 +40,8 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
     Compartment: class { of() { return {}; } reconfigure() { return {}; } },
     EditorState: { create: ({ doc }) => { buffer.code = doc; return {}; }, readOnly: { of: noop } },
     EditorView: Object.assign(class {
-      constructor() { this.state = { doc: { toString: () => buffer.code } }; }
-      dispatch() {} destroy() {}
+      constructor() { this.state = { doc: { toString: () => buffer.code, get length() { return buffer.code.length; } } }; }
+      dispatch(tr) { if (tr && tr.changes) buffer.code = tr.changes.insert; } destroy() {}
     }, { theme: noop }),
     keymap: { of: noop }, indentUnit: { of: noop },
     closeBracketsKeymap: [], defaultKeymap: [], historyKeymap: [], indentWithTab: {},
@@ -247,4 +247,19 @@ test('ticking a planned edge case is logged and kept with the draft', async () =
   const [ev] = ui.logs()[0].body.events;
   assert.deepEqual({ k: ev.k, case: ev.case, on: ev.on }, { k: 'edge', case: 'empty', on: true });
   assert.deepEqual(JSON.parse(ui.storage.get('editor-run:v1:s1')).checked, ['dupes', 'empty']);
+});
+
+test('reset puts the starter back as a marked checkpoint', async () => {
+  const ui = editor();
+  await ui.mount();
+  ui.buffer.code = STARTER + '    x = 1\n';
+  ui.node('#editor-reset').listeners.click();
+  assert.equal(ui.buffer.code, STARTER);
+  ui.E.tick();
+  await ui.E.flush();
+  assert.deepEqual(ui.logs()[0].body.events.map((e) => e.k), ['d', 'reset', 'c']);
+  // Already at the starter: nothing to do.
+  ui.node('#editor-reset').listeners.click();
+  await ui.E.flush();
+  assert.equal(ui.logs().length, 1);
 });

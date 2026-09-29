@@ -192,3 +192,11 @@ def test_timeline_drops_oldest_diffs_to_fit():
     assert len(capped) <= 6_000 < len(full)
     assert capped.count("(diff omitted for length)") >= 1
     assert "line_5_39" in capped  # the last fix survives
+
+
+def test_a_reset_reads_as_a_restart():
+    events = [ev(0, "c", code="start"), ev(1_000, "d", f=5, to=5, s=" more"),
+              ev(2_000, "reset"), ev(2_000, "c", code="start")]
+    assert rec.clean_client_event({"t": 2_000, "k": "reset"}) == {"t": 2_000, "k": "reset"}
+    assert "[00:02] reset the code to the starter" in rec.timeline_for_llm(events)
+    assert rec.summary(events)["chain_ok"] is True

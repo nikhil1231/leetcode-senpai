@@ -2438,7 +2438,7 @@ body.has-active-session #user-chip {
 /* ---- in-app editor (editor.js) --------------------------------------------------
    The run panel shrinks to a header strip; the statement and the editor share the
    rest of the screen, stacking on narrow ones. */
-.active-run.has-editor { display: block; min-height: 0; padding: 18px 24px 32px; }
+.active-run.has-editor { display: block; place-items: normal; min-height: 0; padding: 18px 24px 32px; }
 .active-run.has-editor .active-run-inner {
   width: 100%;
   display: flex;
@@ -2459,11 +2459,22 @@ body.has-active-session #user-chip {
 
 .editor-pane {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, var(--statement-w, 42%)) 12px minmax(0, 1fr);
+  gap: 0 4px;
   margin-top: 16px;
   text-align: left;
 }
+.editor-pane.statement-hidden { grid-template-columns: minmax(0, 1fr); }
+.editor-pane.statement-hidden .editor-statement,
+.editor-pane.statement-hidden .editor-split { display: none; }
+.editor-split { cursor: col-resize; touch-action: none; border-radius: 6px; position: relative; }
+.editor-split::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 4px; height: 44px;
+  transform: translate(-50%, -50%); border-radius: 2px; background: var(--line);
+}
+.editor-split:hover::after, .editor-split:focus-visible::after { background: var(--accent); }
+.editor-toggle { margin-left: auto; }
+.editor-bar .editor-nocookie { flex: 1 0 100%; order: 1; }
 .editor-pane.hidden { display: none; }
 .editor-pane .editor-statement { max-height: calc(100vh - 190px); margin: 0; }
 .editor-work { display: flex; flex-direction: column; min-width: 0; }
@@ -2523,7 +2534,8 @@ body.has-active-session #user-chip {
 .predict-surface { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; cursor: pointer; }
 
 @media (max-width: 960px) {
-  .editor-pane { grid-template-columns: 1fr; }
+  .editor-pane { grid-template-columns: 1fr; gap: 16px; }
+  .editor-split { display: none; }
   .editor-pane .editor-statement { max-height: 38vh; }
   .editor-cm .cm-editor { height: 50vh; }
 }

@@ -12,6 +12,8 @@
   const TICK_MS = 10000;
   const FLUSH_MS = 30000;
   const STORE_PREFIX = "editor-run:v1:";
+  const LAYOUT_KEY = "editor-layout:v1";
+  const STATEMENT_PCT = { min: 20, max: 70, def: 42 };
 
   let run = null;  // the mounted run: see mount()
   let cmLoading = null;
@@ -286,12 +288,16 @@
     return `
       <div class="editor-statement recall-statement">${sanitizeProblemHtml(state.content_html)
         || `<p class="small">Statement unavailable — it's on LeetCode.</p>`}</div>
+      <div id="editor-split" class="editor-split" role="separator" aria-orientation="vertical"
+           aria-label="Resize the statement" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <div class="editor-work">
         <div id="editor-cm" class="editor-cm"></div>
         <div class="editor-bar">
           <button id="editor-run" class="button" type="button" title="Run on the test input (Ctrl/⌘ + ')">Run</button>
           <button id="editor-submit" class="button is-primary" type="button" title="Submit (Ctrl/⌘ + Enter)">Submit</button>
           <button id="editor-copy" class="button is-ghost" type="button">Copy code</button>
+          <button id="editor-reset" class="button is-ghost" type="button" title="Put the starter code back (Ctrl/⌘ + Z undoes it)">Reset</button>
+          <button id="editor-toggle-statement" class="button is-ghost editor-toggle" type="button">Hide statement</button>
           ${state.can_judge ? "" : `<span class="small editor-nocookie">Set your LeetCode cookie in Settings to run and submit.</span>`}
         </div>
         <p id="editor-notice" class="small editor-notice hidden"></p>
@@ -317,6 +323,69 @@
     if (document.visibilityState === "hidden" || !document.hasFocus()) return;
     run.away = false;
     note("focus");
+  }
+
+  // ---- layout -----------------------------------------------------------------------
+  // How wide the statement is, and whether it's shown: a per-browser preference.
+  function readLayout() {
+    try { return JSON.parse(localStorage.getItem(LAYOUT_KEY)) || {}; } catch (_) { return {}; }
+  }
+
+  function saveLayout(patch) {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify({ ...readLayout(), ...patch })); } catch (_) {}
+  }
+
+  function applyLayout() {
+    const { pct, hidden } = readLayout();
+    const pane = $("#editor-pane");
+    const w = Math.min(STATEMENT_PCT.max, Math.max(STATEMENT_PCT.min, Number(pct) || STATEMENT_PCT.def));
+    pane.style.setProperty("--statement-w", `${w}%`);
+    pane.classList.toggle("statement-hidden", Boolean(hidden));
+    $("#editor-toggle-statement").textContent = hidden ? "Show statement" : "Hide statement";
+  }
+
+  function bindSplit() {
+    const pane = $("#editor-pane");
+    const split = $("#editor-split");
+    const setPct = (pct) => { saveLayout({ pct: Math.round(pct * 10) / 10 }); applyLayout(); };
+    split.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      split.setPointerCapture(e.pointerId);
+      const box = pane.getBoundingClientRect();
+      const move = (ev) => setPct(((ev.clientX - box.left) / box.width) * 100);
+      const up = () => {
+        split.removeEventListener("pointermove", move);
+        split.removeEventListener("pointerup", up);
+      };
+      split.addEventListener("pointermove", move);
+      split.addEventListener("pointerup", up);
+    });
+    split.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const pct = Number(readLayout().pct) || STATEMENT_PCT.def;
+      setPct(pct + (e.key === "ArrowLeft" ? -2 : 2));
+    });
+    split.addEventListener("dblclick", () => setPct(STATEMENT_PCT.def));
+    $("#editor-toggle-statement").addEventListener("click", () => {
+      saveLayout({ hidden: !readLayout().hidden });
+      applyLayout();
+    });
+  }
+
+  // Back to the starter code. Logged as a marker plus a checkpoint, so the
+  // review sees a deliberate restart rather than a mass deletion.
+  function resetToStarter() {
+    const r = run;
+    if (!r || !r.view || r.readOnlyNow || !r.starter) return;
+    tick();
+    if (r.lastLogged === r.starter) return;
+    r.view.dispatch({ changes: { from: 0, to: r.view.state.doc.length, insert: r.starter } });
+    note("reset");
+    r.queue.push({ t: nowMs(), k: "c", code: r.starter });
+    r.lastLogged = r.starter;
+    persist();
+    toast("Back to the starter code — Ctrl/⌘ + Z undoes it.");
   }
 
   function onVisibility() {
@@ -403,6 +472,10 @@
     });
     $("#editor-run").addEventListener("click", () => judge("run"));
     $("#editor-submit").addEventListener("click", () => judge("submit"));
+    r.starter = state.starter_code;
+    applyLayout();
+    bindSplit();
+    $("#editor-reset").addEventListener("click", resetToStarter);
     $("#editor-copy").addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(currentCode()); toast("Code copied"); }
       catch (_) { toast("Couldn't copy — select the code instead."); }
@@ -438,6 +511,7 @@
   function setPaused(paused) {
     if (!run || !run.view) return;
     const { CM } = run;
+    run.readOnlyNow = Boolean(paused);
     run.view.dispatch({ effects: run.readOnly.reconfigure(CM.EditorState.readOnly.of(Boolean(paused))) });
     $("#editor-pane").classList.toggle("is-paused", Boolean(paused));
   }

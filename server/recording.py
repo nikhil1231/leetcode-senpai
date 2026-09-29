@@ -11,6 +11,7 @@ only when the code moved since the last one, so time spent thinking costs nothin
   sub    submit          {code, submission_id, result}  also a checkpoint
   pause / resume / blur / focus / hint {level}
   edge   edge case       {case, on}              a planned edge case ticked (or not)
+  reset                                          back to the starter code (a "c" follows)
 
 Nobody reads this at keystroke level — it's raw material for the LLM review and
 for the handful of numbers `summary` derives. State at any moment is rebuilt from
@@ -28,7 +29,7 @@ VERSION = 1
 
 CODE_KINDS = ("c", "run", "sub")
 # What the browser may append; judging events are written by the server alone.
-CLIENT_KINDS = ("c", "d", "pause", "resume", "blur", "focus", "edge")
+CLIENT_KINDS = ("c", "d", "pause", "resume", "blur", "focus", "edge", "reset")
 # A pause in activity at least this long counts as a stall worth naming.
 IDLE_GAP_MS = 60_000
 # Keep a recording well inside Firestore's 1 MiB document limit. Past the first
@@ -415,6 +416,8 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
                 failed_sub = (entry, code)
         elif k == "hint":
             entries.append([t, f"revealed hint {ev.get('level')}", None])
+        elif k == "reset":
+            entries.append([t, "reset the code to the starter", None])
         elif k == "edge" and ev.get("on"):
             entries.append([t, f"ticked planned edge case \"{ev.get('case')}\" as tested", None])
         elif k in ("pause", "resume"):
