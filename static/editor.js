@@ -251,7 +251,10 @@
 
   function showSubmit(r) {
     const good = r.accepted;
-    const beats = r.runtime_percentile != null ? ` · beats ${Math.round(r.runtime_percentile)}%` : "";
+    const beats = [
+      r.runtime_percentile != null ? `runtime beats ${Math.round(r.runtime_percentile)}%` : "",
+      r.memory_percentile != null ? `memory beats ${Math.round(r.memory_percentile)}%` : "",
+    ].filter(Boolean).map((b) => ` · ${b}`).join("");
     $("#editor-result").innerHTML = `
       <p class="editor-verdict ${good ? "is-good" : "is-bad"}">${esc(r.status || "")}
         <span class="small">${r.correct ?? "?"}/${r.total ?? "?"} tests${esc(beats)}</span></p>
@@ -295,6 +298,13 @@
     note("edge", { case: c, on: Boolean(box.checked) });
   }
 
+  // An optimize run: the Accepted it's trying to beat.
+  function optimizingHtml(o) {
+    const pct = (v) => (v == null ? "—" : `${Math.round(v)}%`);
+    return `<p class="small editor-optimizing">Optimizing your Accepted — runtime beats <b>${pct(o.runtime_percentile)}</b>,
+      memory <b>${pct(o.memory_percentile)}</b>. A better Accepted replaces it; Cancel run keeps it.</p>`;
+  }
+
   function paneHtml(state) {
     return `
       <div class="editor-statement recall-statement">${sanitizeProblemHtml(state.content_html)
@@ -312,6 +322,7 @@
           <button id="editor-toggle-statement" class="button is-ghost editor-toggle" type="button">Hide statement</button>
           ${state.can_judge ? "" : `<span class="small editor-nocookie">Set your LeetCode cookie in Settings to run and submit.</span>`}
         </div>
+        ${state.optimizing ? optimizingHtml(state.optimizing) : ""}
         <p id="editor-notice" class="small editor-notice hidden"></p>
         ${edgesHtml(state.planned_edge_cases || [])}
         <label class="label-sm" for="editor-input">Test input</label>

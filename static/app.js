@@ -847,8 +847,8 @@ function applyActive(active) {
     run.classList.remove("hidden");
     $("#active-title").textContent = active.title;
     $("#active-link").href = active.url;
-    $("#active-kind").textContent = active.kind === "mock"
-      ? "Mock interview problem"
+    $("#active-kind").textContent = active.kind === "mock" ? "Mock interview problem"
+      : active.kind === "optimize" ? "Optimizing an accepted solve — a better Accepted replaces it."
       : "Solve this problem before returning to the rest of the dashboard.";
     if (previousId !== active.session_id) {
       $("#hint-panel").innerHTML = "";
@@ -858,6 +858,7 @@ function applyActive(active) {
     setDashboardLocked(true);
     setTakeaway(active.takeaway);
     setHintButton(active);
+    if (active.kind === "optimize") $("#btn-hint").classList.add("hidden");
     setPlanCheck(active);
     setPauseButton(active);
     startTimer(active);
@@ -1012,6 +1013,7 @@ function activeElapsedSeconds(session = activeSession) {
 }
 
 function checkNudges(elapsed) {
+  if (activeSession && activeSession.kind === "optimize") return;  // not a solve against the clock
   const n = $("#nudge");
   if (elapsed >= 35 * 60 && !nudgeShown.solution) {
     nudgeShown.solution = true;
@@ -1102,8 +1104,8 @@ function detectSolves({ force = false, followup = true } = {}) {
         // this solve if a better submission has taken it over since it opened.
         const fresh = currentAttempt && pending.find((p) => p.id === currentAttempt.id);
         if (fresh && fresh.submission_id !== currentAttempt.submission_id) refreshAnnotate(fresh);
-      } else if (pending.length) {
-        openAnnotate(pending[0]);
+      } else if (rateable(pending).length) {
+        openAnnotate(rateable(pending)[0]);
       }
       const logged = res.new_attempts && res.new_attempts.length;
       if (logged && sessionId) await refreshActive();
@@ -1132,8 +1134,11 @@ window.addEventListener("focus", () => { detectSolves(); recheckLeetCodeAuth(); 
 $("#btn-cancel-session").addEventListener("click", async () => {
   pauseRequestId++;
   if (activeSession) window.Editor?.discard(activeSession.session_id);
+  const optimized = activeSession && activeSession.optimizes;
   await api("/session/cancel", "POST");
   await refreshActive();
+  // Optimizing given up: the accepted solve it started from still wants rating.
+  if (optimized) openNextPending();
 });
 
 $("#btn-pause-session").addEventListener("click", async () => {
@@ -1214,6 +1219,7 @@ function openAnnotate(attempt) {
   $("#annotate-modal").classList.remove("hidden");
   markSettling(attempt.slug, "solved");
   initAnnotateGrade(attempt);
+  $("#btn-optimize-annotate").classList.toggle("hidden", !(attempt.via === "editor" && attempt.code));
   // Detection asked for the code and didn't get it: the likeliest reason is
   // the cookie, so find out now rather than on the next reload.
   if (!attempt.code && attempt.submission_id) checkLeetCodeAuth();
@@ -1237,8 +1243,13 @@ function renderAnnotateFacts(attempt) {
       facts.push(`First AC <b>${fmtTime(attempt.first_ac_time_taken_sec)}</b>`);
     }
   }
-  if (attempt.runtime_percentile != null) facts.push(`Runtime beats <b>${pct(attempt.runtime_percentile)}</b>`);
-  if (attempt.memory_percentile != null) facts.push(`Memory beats <b>${pct(attempt.memory_percentile)}</b>`);
+  // After "Keep optimizing", where the percentiles started from.
+  const was = (key) => {
+    const before = (attempt.before_optimize || {})[key];
+    return before != null && before !== attempt[key] ? ` <span class="small">(was ${pct(before)})</span>` : "";
+  };
+  if (attempt.runtime_percentile != null) facts.push(`Runtime beats <b>${pct(attempt.runtime_percentile)}</b>${was("runtime_percentile")}`);
+  if (attempt.memory_percentile != null) facts.push(`Memory beats <b>${pct(attempt.memory_percentile)}</b>${was("memory_percentile")}`);
   if (attempt.wrong_before_ac != null) facts.push(`Wrong subs <b>${attempt.wrong_before_ac}</b>`);
   if (attempt.lang) facts.push(`Lang <b>${attempt.lang}</b>`);
   if (attempt.interview) facts.push("<b>Interview mode</b>");
@@ -1584,11 +1595,18 @@ function closeAnnotate({ next = true } = {}) {
 // A session can only ever produce one solve at a time; a sweep can surface
 // several at once (a contest, or a day away from the app). Offer the next one
 // instead of leaving the rest sitting unrated in History.
+// The solve being optimized waits for its rating until the optimize run ends.
+function rateable(pending) {
+  const busy = activeSession && activeSession.optimizes;
+  return busy ? pending.filter((p) => p.id !== busy) : pending;
+}
+
 async function openNextPending() {
   if (!$("#annotate-modal").classList.contains("hidden")) return;
   try {
     const { pending } = await api("/pending");
-    if (pending && pending.length) openAnnotate(pending[0]);
+    const next = rateable(pending || []);
+    if (next.length) openAnnotate(next[0]);
   } catch (e) { /* they're logged either way */ }
 }
 
@@ -2563,6 +2581,24 @@ function showUserChip(email) {
 }
 
 // expose for views.js
+// Back to the editor from a solve that's Accepted but not yet rated. The modal
+// just steps aside (no dismissal): the solve is rated once optimizing ends.
+async function keepOptimizing() {
+  const attempt = currentAttempt;
+  if (!attempt) return;
+  let res;
+  try {
+    res = await api("/editor/optimize", "POST", { attempt_id: attempt.id });
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  closeAnnotate({ next: false });
+  applyActive(res.active);
+  toast("Optimizing — submit a better version, or Cancel run to keep this one.");
+}
+$("#btn-optimize-annotate").addEventListener("click", keepOptimizing);
+
 // An Accepted from the in-app editor is logged by the submit itself: rate it now.
 async function onEditorSolved(res) {
   const solved = (res.pending || []).find((p) => p.id === res.attempt_id);

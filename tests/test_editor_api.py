@@ -288,6 +288,71 @@ def test_a_leetcode_run_has_no_recording_to_link(client, monkeypatch):
     assert "recording_id" not in client.store.get_attempt(aid)
 
 
+def _accepted(client, monkeypatch, sub_id=12, pct=40.0):
+    sid = _start(client)
+    started = client.store.get_session(sid)["started_at"]
+    client.get(f"/api/editor/state?session_id={sid}")
+    _submits(monkeypatch, [{"status": "Accepted", "accepted": True, "submission_id": sub_id,
+                            "finished_at": started + 60, "runtime_percentile": pct,
+                            "memory_percentile": 10.0}])
+    done = client.post("/api/editor/submit", json={"session_id": sid, "code": WRONG, "t": 60_000}).json()
+    return done["attempt_id"], started
+
+
+FAST = STARTER + "return sorted(range(2))\n"
+
+
+def test_keep_optimizing_folds_a_better_accepted_into_the_same_solve(client, monkeypatch):
+    aid, started = _accepted(client, monkeypatch)
+    r = client.post("/api/editor/optimize", json={"attempt_id": aid}).json()["active"]
+    assert (r["kind"], r["optimizes"], r["surface"], r["par_sec"]) == ("optimize", aid, "editor", None)
+    sid = r["session_id"]
+    state = client.get(f"/api/editor/state?session_id={sid}").json()
+    assert state["code"] == WRONG and state["starter_code"] == WRONG
+    assert state["optimizing"] == {"runtime_percentile": 40.0, "memory_percentile": 10.0}
+
+    _submits(monkeypatch, [
+        {"status": "Time Limit Exceeded", "accepted": False, "submission_id": 13,
+         "finished_at": started + 200},
+        {"status": "Accepted", "accepted": True, "submission_id": 14, "finished_at": started + 300,
+         "runtime_percentile": 91.0, "memory_percentile": 55.0}])
+    body = {"session_id": sid, "code": FAST, "t": 1000}
+    client.post("/api/editor/submit", json=body)
+    done = client.post("/api/editor/submit", json=body).json()
+    assert done["attempt_id"] == aid
+    assert any(p["id"] == aid for p in done["pending"])
+    a = client.store.get_attempt(aid)
+    assert (a["code"], a["submission_id"], a["runtime_percentile"]) == (FAST, 14, 91.0)
+    assert a["before_optimize"] == {"runtime_percentile": 40.0, "memory_percentile": 10.0}
+    assert a["optimize_recording_ids"] == [sid] and a["resubmissions"] == 1
+    assert a["first_ac_time_taken_sec"] == 60 and a["solution_grade"] is None
+    assert len(client.store.attempts) == 1
+    assert client.store.get_session(sid)["status"] == "completed"
+
+    # The feed catching up with both ACs adds nothing.
+    _feed(client, monkeypatch, 14, started + 300)
+    assert client.post("/api/poll").json()["new_attempts"] == []
+    assert len(client.store.attempts) == 1
+
+
+def test_an_optimize_run_finished_on_leetcode_still_improves_the_solve(client, monkeypatch):
+    aid, started = _accepted(client, monkeypatch)
+    sid = client.post("/api/editor/optimize", json={"attempt_id": aid}).json()["active"]["session_id"]
+    _feed(client, monkeypatch, 15, client.store.get_session(sid)["started_at"] + 30, code=FAST)
+    assert client.post("/api/poll").json()["new_attempts"] == [aid]
+    a = client.store.get_attempt(aid)
+    assert (a["submission_id"], a["code"], a["optimize_recording_ids"]) == (15, FAST, [sid])
+    assert len(client.store.attempts) == 1
+    assert client.store.get_session(sid)["status"] == "completed"
+
+
+def test_a_rated_solve_is_not_reopened_for_optimizing(client, monkeypatch):
+    aid, _ = _accepted(client, monkeypatch)
+    client.store.update_attempt(aid, {"confidence": 3})
+    assert client.post("/api/editor/optimize", json={"attempt_id": aid}).status_code == 409
+    assert client.post("/api/editor/optimize", json={"attempt_id": "nope"}).status_code == 404
+
+
 def test_pauses_and_hints_land_in_an_editor_runs_recording_only(client, monkeypatch):
     async def ladder(store, slug):
         return ["think about complements"]

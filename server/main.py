@@ -80,6 +80,10 @@ class PauseSession(BaseModel):
     paused: bool
 
 
+class EditorOptimize(BaseModel):
+    attempt_id: str
+
+
 class EditorLog(BaseModel):
     session_id: str
     seq: int = Field(ge=1)
@@ -917,8 +921,11 @@ def _active_payload(prob, s, settings):
         "plan_status": s.get("plan_status"),
         "surface": s.get("surface") or "leetcode",
         "interview": bool(s.get("interview")),
-        "par_sec": config.SOLVE_PAR_SEC.get(prob.get("difficulty")),
+        # Optimizing an Accepted isn't a solve against the clock.
+        "par_sec": (None if s.get("kind") == "optimize"
+                    else config.SOLVE_PAR_SEC.get(prob.get("difficulty"))),
         "takeaway": s.get("takeaway"),
+        "optimizes": s.get("optimizes"),
         "plan_check_available": s.get("plan_status") == "planned" and llm.enabled(settings),
         # Only once asked for: a critique shown unasked would be a free hint.
         "plan_check": s.get("plan_check") if s.get("plan_check_revealed") else None,
@@ -1163,6 +1170,12 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
     s = _editor_session(store, session_id)
     p = await _hydrate_editor(store, s["slug"])
     starter = p.get("starter_code")
+    optimizing = None
+    if s.get("kind") == "optimize":
+        # An optimize run starts from — and resets to — the code that was accepted.
+        prior = store.get_attempt(s.get("optimizes")) or {}
+        starter = prior.get("code") or starter
+        optimizing = {k: prior.get(k) for k in ("runtime_percentile", "memory_percentile")}
     available = bool(p.get("question_id") and starter)
     doc = store.get_recording(s["id"])
     if available and not doc:
@@ -1178,7 +1191,28 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
             "planned_edge_cases": plans.planned_edge_cases(s)[:3],
             "interview": bool(s.get("interview")), "runs_left": _runs_left(s, doc),
             "edges_checked": (doc or {}).get("edges_checked") or [],
+            "optimizing": optimizing,
             "truncated": bool((doc or {}).get("truncated"))}
+
+
+@app.post("/api/editor/optimize")
+def api_editor_optimize(body: EditorOptimize, uid: str = Depends(auth.require_user)):
+    """Keep working on a solve that's Accepted but not yet rated: a new editor run
+    from its accepted code, whose next Accepted replaces it rather than logging a
+    second solve (see poller.record_editor_improvement)."""
+    store = get_store(uid)
+    a = store.get_attempt(body.attempt_id)
+    if not a or a.get("kind") in ("recall", "sprint") or not a.get("code"):
+        raise HTTPException(404, "no solve with code to optimize")
+    if a.get("confidence") is not None:
+        raise HTTPException(409, "This solve is already rated — start a fresh run instead.")
+    prob = store.get_problem(a["slug"]) or {}
+    store.cancel_active_sessions()
+    doc = {"slug": a["slug"], "started_at": int(time.time()), "status": "active",
+           "kind": "optimize", "optimizes": a["id"], "attempt_id": None, "hint_level": 0,
+           "paused_at": None, "paused_sec": 0, "surface": "editor", "interview": False}
+    sid = store.add_session(doc)
+    return {"active": _active_payload(prob, {**doc, "id": sid}, store.get_settings())}
 
 
 @app.post("/api/editor/log")
@@ -1252,8 +1286,10 @@ async def api_editor_submit(body: EditorJudge, uid: str = Depends(auth.require_u
     out = {"ok": True, "result": result, "attempt_id": None,
            "truncated": bool(doc.get("truncated"))}
     if result["accepted"]:
+        record = (poller.record_editor_improvement if s.get("kind") == "optimize"
+                  else poller.record_editor_solve)
         async with _poll_lock(uid):
-            out["attempt_id"] = await poller.record_editor_solve(
+            out["attempt_id"] = await record(
                 store, s, result, body.code, recording.parse(doc["events"]))
         out["pending"] = _pending(store)
     return out

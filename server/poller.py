@@ -56,6 +56,15 @@ async def check_active_sessions(store, username, auth=None):
         )
         if not match:
             continue
+        if s.get("kind") == "optimize":
+            # Finished on LeetCode's page: still an improvement, not a new solve.
+            prior = store.get_attempt(s.get("optimizes"))
+            if prior and match["id"] != prior.get("submission_id"):
+                aid = await _record_supersede(store, prior, match, auth)
+                store.update_attempt(aid, _optimize_fields(prior, s))
+                store.update_session(s["id"], {"status": "completed", "attempt_id": aid})
+                new_ids.append(aid)
+            continue
         aid = await _record_solve(store, s, match, auth)
         if aid:
             new_ids.append(aid)
@@ -246,12 +255,25 @@ async def _record_supersede(store, prior, match, auth):
     """
     slug = prior["slug"]
     prev_ts = prior.get("solved_at") or match["timestamp"]
-    elapsed = max(0, match["timestamp"] - prev_ts)
     try:
         details = await leetcode.submission_details(match["id"], auth)
     except Exception:
         details = None
+    extra = None
+    if prior.get("wrong_before_ac") is not None:
+        try:
+            extra = await leetcode.wrong_attempts_between(
+                slug, prev_ts, match["timestamp"], auth)
+        except Exception:
+            extra = None
+    store.update_attempt(prior["id"], _supersede_fields(prior, match, details, extra))
+    return prior["id"]
 
+
+def _supersede_fields(prior, match, details, extra_wrong):
+    """What a better submission changes on the solve it takes over."""
+    prev_ts = prior.get("solved_at") or match["timestamp"]
+    elapsed = max(0, match["timestamp"] - prev_ts)
     fields = {
         "submission_id": match["id"], "solved_at": match["timestamp"],
         # Percentiles and code describe a submission, so they move with it. When
@@ -276,17 +298,39 @@ async def _record_supersede(store, prior, match, auth):
     if prior.get("time_taken_sec") is not None:
         fields["time_taken_sec"] = prior["time_taken_sec"] + elapsed
     # Same for anything that failed on the way to the better version.
-    if prior.get("wrong_before_ac") is not None:
-        try:
-            extra = await leetcode.wrong_attempts_between(
-                slug, prev_ts, match["timestamp"], auth)
-        except Exception:
-            extra = None
-        if extra:
-            fields["wrong_before_ac"] = prior["wrong_before_ac"] + extra
+    if prior.get("wrong_before_ac") is not None and extra_wrong:
+        fields["wrong_before_ac"] = prior["wrong_before_ac"] + extra_wrong
+    return fields
 
+
+async def record_editor_improvement(store, session, sub, code, events):
+    """An Accepted from an optimize run — "Keep optimizing" on a solve still
+    waiting for its rating — taken over the solve it improves on, exactly as the
+    sweep takes over a better submission seen in the feed. Returns the attempt id."""
+    prior = store.get_attempt(session.get("optimizes"))
+    if not prior:
+        store.update_session(session["id"], {"status": "completed"})
+        return None
+    match = {"id": sub["submission_id"], "timestamp": sub["finished_at"]}
+    details = {"code": code, "lang": leetcode.EDITOR_LANG,
+               "runtime_percentile": sub.get("runtime_percentile"),
+               "memory_percentile": sub.get("memory_percentile")}
+    fields = _supersede_fields(prior, match, details,
+                               recording.summary(events)["failed_submits"])
+    fields.update(_optimize_fields(prior, session))
     store.update_attempt(prior["id"], fields)
+    store.update_session(session["id"], {"status": "completed", "attempt_id": prior["id"]})
     return prior["id"]
+
+
+def _optimize_fields(prior, session):
+    """The optimize run's recording, and where the percentiles started from."""
+    return {
+        "optimize_recording_ids": (prior.get("optimize_recording_ids") or []) + [session["id"]],
+        "before_optimize": prior.get("before_optimize") or {
+            "runtime_percentile": prior.get("runtime_percentile"),
+            "memory_percentile": prior.get("memory_percentile")},
+    }
 
 
 async def sweep_untracked_solves(store, username, auth=None):
