@@ -23,6 +23,9 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
   const buffer = { code: STARTER };
   const storage = new Map(saved ? [['editor-run:v1:s1', JSON.stringify(saved)]] : []);
   const intervals = [];
+  const win = {};
+  const doc = { visibilityState: 'visible', focused: true, hasFocus() { return this.focused; },
+                addEventListener(ev, fn) { win['doc:' + ev] = fn; }, removeEventListener() {} };
   const serverState = { available: true, can_judge: true, content_html: '<p>x</p>',
                         starter_code: STARTER, example_testcases: ['[1]'], code: STARTER,
                         seq: 0, now_ms: 0, ...state };
@@ -48,8 +51,9 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
                    'highlightActiveLine', 'syntaxHighlighting', 'python']) CM[f] = noop;
   const context = vm.createContext({
     window: { H: { $: node, escapeHtml: (s) => String(s), api, toast() {}, sanitizeProblemHtml: (h) => h || '' },
-              CM, App: { onEditorSolved() {} } },
-    document: { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} },
+              CM, App: { onEditorSolved() {} },
+              addEventListener(ev, fn) { win[ev] = fn; }, removeEventListener() {} },
+    document: doc,
     localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v),
                     removeItem: (k) => storage.delete(k) },
     setInterval(fn) { intervals.push(fn); return intervals.length; }, clearInterval() {},
@@ -57,7 +61,7 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/editor.js'), 'utf8'), context);
   const E = context.window.Editor;
-  return { E, node, calls, buffer, storage,
+  return { E, node, calls, buffer, storage, win, doc,
            logs: () => calls.filter((c) => c.path === '/editor/log'),
            mount: () => E.mount({ session_id: 's1', surface: 'editor', started_at: Math.floor(Date.now() / 1000) - 60, is_paused: false }) };
 }
@@ -192,4 +196,21 @@ test('a failing submit input can be added to the tests, once', async () => {
   ui.node('#editor-add-case').listeners.click();
   ui.node('#editor-add-case').listeners.click();
   assert.equal(ui.node('#editor-input').value, '[1]\n[3,2,4]\n6');
+});
+
+test('another window in front counts as away, once, however it is signalled', async () => {
+  const ui = editor();
+  await ui.mount();
+  ui.doc.focused = false;
+  ui.win.blur();
+  ui.doc.visibilityState = 'hidden';
+  ui.win['doc:visibilitychange']();
+  ui.doc.visibilityState = 'visible';
+  ui.win['doc:visibilitychange']();  // visible again, but another window still has focus
+  ui.doc.focused = true;
+  ui.win.focus();
+  ui.win.focus();
+  await ui.E.flush();
+  const kinds = ui.logs().flatMap((l) => l.body.events.map((e) => e.k));
+  assert.deepEqual(kinds, ['blur', 'focus']);
 });

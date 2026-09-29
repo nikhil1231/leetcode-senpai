@@ -242,15 +242,26 @@
       </div>`;
   }
 
+  // Away is the tab hidden *or* another window in front of it — a second
+  // monitor or a docs window leaves the tab visible — whichever says so first.
+  function goAway() {
+    if (!run || run.away) return;
+    run.away = true;
+    tick();
+    note("blur");
+    flush();
+  }
+
+  function comeBack() {
+    if (!run || !run.away) return;
+    if (document.visibilityState === "hidden" || !document.hasFocus()) return;
+    run.away = false;
+    note("focus");
+  }
+
   function onVisibility() {
-    if (!run) return;
-    if (document.visibilityState === "hidden") {
-      tick();
-      note("blur");
-      flush();
-    } else {
-      note("focus");
-    }
+    if (document.visibilityState === "hidden") goAway();
+    else comeBack();
   }
 
   async function mount(active) {
@@ -332,6 +343,8 @@
     setPaused(active.is_paused);
     r.timers.push(setInterval(tick, TICK_MS), setInterval(flush, FLUSH_MS));
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", goAway);
+    window.addEventListener("focus", comeBack);
     flush();  // anything a previous page load left unsent
   }
 
@@ -343,6 +356,8 @@
     run = null;
     r.timers.forEach(clearInterval);
     document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("blur", goAway);
+    window.removeEventListener("focus", comeBack);
     if (r.view) r.view.destroy();
     $("#editor-pane").innerHTML = "";
     $("#editor-pane").classList.add("hidden");
