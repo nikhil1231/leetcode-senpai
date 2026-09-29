@@ -61,7 +61,7 @@ async def check_active_sessions(store, username, auth=None):
             prior = store.get_attempt(s.get("optimizes"))
             if prior and match["id"] != prior.get("submission_id"):
                 aid = await _record_supersede(store, prior, match, auth)
-                store.update_attempt(aid, _optimize_fields(prior, s))
+                store.update_attempt(aid, _optimize_fields(prior, s, match["timestamp"]))
                 store.update_session(s["id"], {"status": "completed", "attempt_id": aid})
                 new_ids.append(aid)
             continue
@@ -111,11 +111,7 @@ async def _record_solve(store, session, match, auth, known=None):
         store.update_session(session["id"], {"status": "completed", "attempt_id": dup["id"]})
         return None
 
-    paused_sec = session.get("paused_sec", 0) or 0
-    paused_at = session.get("paused_at")
-    if paused_at:
-        paused_sec += max(0, match["timestamp"] - paused_at)
-    time_taken = max(0, match["timestamp"] - session["started_at"] - paused_sec)
+    time_taken = run_clock(session, match["timestamp"])
     if known:
         details, wrong, failed_tests = known["details"], known["wrong"], known["failed_tests"]
     else:
@@ -317,20 +313,35 @@ async def record_editor_improvement(store, session, sub, code, events):
                "memory_percentile": sub.get("memory_percentile")}
     fields = _supersede_fields(prior, match, details,
                                recording.summary(events)["failed_submits"])
-    fields.update(_optimize_fields(prior, session))
+    fields.update(_optimize_fields(prior, session, sub["finished_at"]))
     store.update_attempt(prior["id"], fields)
     store.update_session(session["id"], {"status": "completed", "attempt_id": prior["id"]})
     return prior["id"]
 
 
-def _optimize_fields(prior, session):
-    """The optimize run's recording, and where the percentiles started from."""
-    return {
+def _optimize_fields(prior, session, at):
+    """The optimize run's recording, where the percentiles started from, and the
+    solve's clock as the run carried it on to the better Accepted at `at`."""
+    fields = {
         "optimize_recording_ids": (prior.get("optimize_recording_ids") or []) + [session["id"]],
         "before_optimize": prior.get("before_optimize") or {
             "runtime_percentile": prior.get("runtime_percentile"),
             "memory_percentile": prior.get("memory_percentile")},
     }
+    # A run started before the clock was carried keeps the supersede's wall-clock gap.
+    if session.get("elapsed_base_sec") is not None:
+        fields["time_taken_sec"] = run_clock(session, at)
+    return fields
+
+
+def run_clock(session, at):
+    """A run's clock at `at`: wall time since it started, less its pauses, on top
+    of any time it carried in — an optimize run picks up where its solve stopped."""
+    paused_sec = session.get("paused_sec", 0) or 0
+    paused_at = session.get("paused_at")
+    if paused_at:
+        paused_sec += max(0, at - paused_at)
+    return (session.get("elapsed_base_sec") or 0) + max(0, at - session["started_at"] - paused_sec)
 
 
 async def sweep_untracked_solves(store, username, auth=None):

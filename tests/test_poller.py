@@ -269,3 +269,15 @@ async def test_a_recall_is_not_a_sitting_to_fold_into(library, recents, details)
     ids = await poller.sweep_untracked_solves(library, "kunde")
     assert len(ids) == 1
     assert library.get_attempt(ids[0])["source"] == "detected"
+
+
+def test_run_clock_is_wall_time_less_pauses():
+    s = {"started_at": 1000, "paused_sec": 100}
+    assert poller.run_clock(s, 1500) == 400
+    assert poller.run_clock({**s, "paused_at": 1400}, 1500) == 300  # paused now
+
+
+def test_an_optimize_runs_clock_carries_on_from_its_solve():
+    s = {"started_at": 1000, "paused_sec": 0, "elapsed_base_sec": 600}
+    assert poller.run_clock(s, 1000) == 600
+    assert poller.run_clock(s, 1090) == 690

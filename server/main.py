@@ -905,13 +905,10 @@ def _active_payload(prob, s, settings):
     """
     hint_ladder = prob.get("hint_ladder") or []
     now = int(time.time())
-    paused_sec = s.get("paused_sec", 0) or 0
     paused_at = s.get("paused_at")
-    if paused_at:
-        paused_sec += max(0, now - paused_at)
     return {
         "session_id": s["id"], "slug": s["slug"], "started_at": s["started_at"],
-        "kind": s.get("kind"), "elapsed_sec": max(0, now - s["started_at"] - paused_sec),
+        "kind": s.get("kind"), "elapsed_sec": poller.run_clock(s, now),
         "paused_at": paused_at, "paused_sec": s.get("paused_sec", 0) or 0,
         "is_paused": bool(paused_at),
         "title": prob.get("title", s["slug"]), "url": prob.get("url"),
@@ -1012,8 +1009,7 @@ def api_session_pause(body: PauseSession, uid: str = Depends(auth.require_user))
             store.update_session(s["id"], {"paused_at": None, "paused_sec": paused_sec})
             paused_at = None
             _log_server_event(store, s, {"k": "resume"})
-    effective_paused_sec = paused_sec + (max(0, now - paused_at) if paused_at else 0)
-    elapsed_sec = max(0, now - s["started_at"] - effective_paused_sec)
+    elapsed_sec = poller.run_clock({**s, "paused_at": paused_at, "paused_sec": paused_sec}, now)
     return {"ok": True, "paused_at": paused_at, "paused_sec": paused_sec,
             "elapsed_sec": elapsed_sec,
             "is_paused": bool(paused_at)}
@@ -1238,7 +1234,9 @@ def api_editor_optimize(body: EditorOptimize, uid: str = Depends(auth.require_us
     store.cancel_active_sessions()
     doc = {"slug": a["slug"], "started_at": int(time.time()), "status": "active",
            "kind": "optimize", "optimizes": a["id"], "attempt_id": None, "hint_level": 0,
-           "paused_at": None, "paused_sec": 0, "surface": "editor", "interview": False}
+           "paused_at": None, "paused_sec": 0, "surface": "editor", "interview": False,
+           # The solve's clock runs on from where it stopped, not from zero.
+           "elapsed_base_sec": a.get("time_taken_sec")}
     sid = store.add_session(doc)
     return {"active": _active_payload(prob, {**doc, "id": sid}, store.get_settings())}
 

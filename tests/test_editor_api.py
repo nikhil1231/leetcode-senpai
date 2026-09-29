@@ -381,6 +381,21 @@ def test_an_optimize_run_finished_on_leetcode_still_improves_the_solve(client, m
     assert client.store.get_session(sid)["status"] == "completed"
 
 
+def test_an_optimize_run_carries_the_solves_clock_on(client, monkeypatch):
+    aid, _ = _accepted(client, monkeypatch)
+    r = client.post("/api/editor/optimize", json={"attempt_id": aid}).json()["active"]
+    assert r["elapsed_sec"] >= 60  # the solve took 60s: the clock picks up there
+    sid = r["session_id"]
+    client.get(f"/api/editor/state?session_id={sid}")
+    start = client.store.get_session(sid)["started_at"]
+    client.store.update_session(sid, {"paused_sec": 100})  # off the clock
+    _submits(monkeypatch, [{"status": "Accepted", "accepted": True, "submission_id": 16,
+                            "finished_at": start + 400, "runtime_percentile": 91.0}])
+    client.post("/api/editor/submit", json={"session_id": sid, "code": FAST, "t": 1000})
+    a = client.store.get_attempt(aid)
+    assert (a["time_taken_sec"], a["first_ac_time_taken_sec"]) == (60 + 300, 60)
+
+
 def test_a_rated_solve_is_not_reopened_for_optimizing(client, monkeypatch):
     aid, _ = _accepted(client, monkeypatch)
     client.store.update_attempt(aid, {"confidence": 3})
