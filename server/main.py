@@ -940,7 +940,7 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "planned_edge_cases": plans.planned_edge_cases(body.model_dump())[:3],
         "plan_status": body.plan_status,
         "plan_time_sec": body.plan_time_sec,
-        "surface": "leetcode" if body.kind == "mock" else body.surface,
+        "surface": body.surface,
     }
     sid = store.add_session(doc)
     if llm.enabled(settings):

@@ -289,9 +289,11 @@ def test_pauses_and_hints_land_in_an_editor_runs_recording_only(client, monkeypa
     assert client.store.get_recording(other) is None
 
 
-def test_mock_runs_stay_on_leetcode(client):
+def test_mock_runs_can_use_the_editor_and_older_clients_stay_on_leetcode(client):
     r = client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock",
                                                 "surface": "editor"}).json()
+    assert r["active"]["surface"] == "editor"
+    r = client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock"}).json()
     assert r["active"]["surface"] == "leetcode"
 
 

@@ -518,7 +518,7 @@ $("#lc-warning").addEventListener("click", () => goTab("settings"));
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus);
   if (kind !== "mock") return openPredict({ slug, kind, title, category });
-  return startSession({ slug, kind }, { tabOpened: openProblemTab({ slug }) });
+  return startSession({ slug, kind, surface: "editor" });
 }
 
 // A browser only honours window.open inside the transient activation a real
@@ -2414,9 +2414,12 @@ function renderMock(m) {
     </div>`).join("");
   $("#mock-body").innerHTML = `
     <h2>Mock interview <span class="mock-timer" id="mock-timer"></span></h2>
-    <p class="small">60 minutes, three problems, no hints. Solve on LeetCode; they auto-log. Finish when done or time's up.</p>
+    <p class="small">60 minutes, three problems, no hints. Each one opens in the editor and logs itself; come back here from Today for the next. Finish when done or time's up.</p>
     ${list}
     <div class="overlay-actions">
+      <label class="predict-surface small" title="Open LeetCode's own page instead of solving in the app's editor">
+        <input type="checkbox" id="mock-on-leetcode" /> Solve on LeetCode
+      </label>
       <button id="btn-finish-mock" class="button is-primary" data-id="${m.id}">Finish &amp; score</button>
     </div>`;
   const tick = () => {
@@ -2425,9 +2428,12 @@ function renderMock(m) {
   };
   tick(); const iv = setInterval(tick, 1000);
   $$("#mock-body .mock-open").forEach((b) => b.addEventListener("click", async () => {
-    const s = await api("/session/start", "POST", { slug: b.dataset.slug, kind: "mock" });
-    window.open(s.url, "_blank", "noopener");
-    await refreshActive();
+    const surface = $("#mock-on-leetcode").checked ? "leetcode" : "editor";
+    // Opened from the click itself, before anything is awaited (see openProblemTab).
+    const tabOpened = surface === "leetcode" && openProblemTab({ slug: b.dataset.slug });
+    // The editor is the run view behind this modal; the mock card on Today resumes it.
+    if (surface === "editor") $("#mock-modal").classList.add("hidden");
+    await startSession({ slug: b.dataset.slug, kind: "mock", surface }, { tabOpened });
   }));
   $("#btn-finish-mock").addEventListener("click", async () => {
     clearInterval(iv);
