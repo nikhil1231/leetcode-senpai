@@ -70,6 +70,41 @@ def test_state_hydrates_the_problem_once_and_opens_the_recording(client):
     assert len(_events(client, sid)) == 1
 
 
+def test_the_plan_prefetches_what_a_new_run_opens_with(client):
+    r = client.get("/api/problem/two-sum/recall-context?editor=1").json()
+    assert r["content_html"] == "<p>Two Sum</p>"
+    assert r["editor"] == {"available": True, "can_judge": True, "starter_code": STARTER,
+                           "example_testcases": ["[2,7,11,15]\n9", "[3,2,4]\n6"],
+                           "interview_runs": main.config.INTERVIEW_RUN_LIMIT,
+                           "par_sec": main.config.SOLVE_PAR_SEC["Easy"]}
+    # Without asking for it, the recall modal pays for none of it.
+    assert client.get("/api/problem/two-sum/recall-context").json()["editor"] is None
+
+
+def test_start_opens_the_recording_and_answers_with_the_editor_state(client):
+    client.get("/api/problem/two-sum/recall-context?editor=1")  # hydrated while planning
+    old = _start(client)
+    r = client.post("/api/session/start", json={
+        "slug": "two-sum", "surface": "editor", "interview": True,
+        "planned_edge_cases": ["empty", "Empty", "dupes"]}).json()
+    sid = r["session_id"]
+    assert client.store.sessions[old]["status"] == "cancelled"
+    assert _events(client, sid) == [{"t": 0, "k": "c", "code": STARTER}]
+    state = client.get(f"/api/editor/state?session_id={sid}").json()
+    assert {**r["editor"], "now_ms": 0} == {**state, "now_ms": 0}
+    assert r["editor"]["planned_edge_cases"] == ["empty", "dupes"]
+    assert r["editor"]["runs_left"] == main.config.INTERVIEW_RUN_LIMIT
+    # Opening it didn't restart the recording.
+    assert len(_events(client, sid)) == 1
+
+
+def test_start_leaves_the_recording_to_the_editor_when_the_problem_isnt_hydrated(client):
+    r = client.post("/api/session/start", json={"slug": "two-sum", "surface": "editor"}).json()
+    assert r["editor"] is None and client.store.get_recording(r["session_id"]) is None
+    lc = client.post("/api/session/start", json={"slug": "two-sum", "surface": "leetcode"}).json()
+    assert lc["editor"] is None
+
+
 def test_state_resumes_from_the_recorded_code(client):
     sid = _start(client)
     client.get(f"/api/editor/state?session_id={sid}")

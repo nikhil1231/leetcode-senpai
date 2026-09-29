@@ -127,6 +127,13 @@ class FakeStore:
         self.sessions[sid] = {**doc, "id": sid}
         return sid
 
+    def start_session(self, doc, recording=None):
+        self.cancel_active_sessions()
+        sid = self.add_session(doc)
+        if recording is not None:
+            self.save_recording(sid, recording)
+        return sid
+
     def update_session(self, sid, fields):
         if sid in self.sessions:
             self.sessions[sid].update(fields)

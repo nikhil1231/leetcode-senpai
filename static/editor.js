@@ -7,6 +7,10 @@
 // the server has them — a reload, a crash or a dropped request loses no code —
 // and any still unsent ride along with the next Run or Submit, so the log always
 // holds what led to the code being judged.
+//
+// A new run opens before the server has it: mounted from what the plan modal
+// prefetched, under no session id, until the start answers and it's adopted.
+// Nothing reaches the server until then — sends wait on `ready`.
 (function () {
   const { $, $$, escapeHtml: esc, api, toast, sanitizeProblemHtml } = window.H;
   const TICK_MS = 10000;
@@ -51,8 +55,9 @@
   const currentCode = (r = run) => (r.view ? r.view.state.doc.toString() : r.lastLogged);
 
   function persist(r = run) {
-    // A finished run's draft has no future; don't write it back.
-    if (!r || r.finished) return;
+    // A finished run's draft has no future; don't write it back. A pending one
+    // has no key yet — it's seconds old, and adoption writes it.
+    if (!r || r.finished || !r.sessionId) return;
     try {
       localStorage.setItem(STORE_PREFIX + r.sessionId, JSON.stringify({
         code: currentCode(r), lastLogged: r.lastLogged, queue: r.queue,
@@ -90,10 +95,10 @@
   }
 
   // One request at a time, in order: a log flush racing a judging would let a
-  // later delta land before the run it follows.
+  // later delta land before the run it follows. None before the run has an id.
   function send(fn) {
     const r = run;
-    const next = r.chain.then(fn, fn);
+    const next = (r.sessionId ? r.chain : r.chain.then(() => r.ready)).then(fn);
     r.chain = next.catch(() => {});
     return next;
   }
@@ -121,7 +126,7 @@
         await flushOnce(r);
         if (r.queue.length) await flushOnce(r);
       } catch (_) { /* kept in storage; the next flush retries */ }
-    });
+    }).catch(() => { /* the run never started: nothing to send */ });
   }
 
   // ---- judging ------------------------------------------------------------------
@@ -416,38 +421,82 @@
     else comeBack();
   }
 
-  async function mount(active) {
+  // `prefetched` is the editor state when the caller already holds it: from the
+  // plan modal for a run not yet started, or from the start's own answer.
+  async function mount(active, prefetched = null) {
     if (!active || active.surface !== "editor") return unmount();
-    if (run && run.sessionId === active.session_id) return setPaused(active.is_paused);
+    if (run && active.session_id && run.sessionId === active.session_id) return setPaused(active.is_paused);
+    if (run && !run.sessionId && active.session_id && run.slug === active.slug) {
+      return adopt(run, active, prefetched);
+    }
     await unmount();
     const pane = $("#editor-pane");
     pane.classList.remove("hidden");
     $("#active-run").classList.add("has-editor");
     pane.innerHTML = `<p class="small">Opening the editor…</p>`;
+    let settle;
     const r = {
-      sessionId: active.session_id, startedAtMs: active.started_at * 1000, offsetMs: 0,
+      sessionId: active.session_id || null, slug: active.slug,
+      startedAtMs: active.started_at * 1000, offsetMs: 0,
       view: null, lastLogged: "", queue: [], inflight: null, seq: 0,
       chain: Promise.resolve(), judging: false, canJudge: false, timers: [],
       edges: [], checked: [], lastRunCode: null, submits: 0, confirming: false,
+      hasState: Boolean(prefetched),
     };
+    r.ready = active.session_id ? Promise.resolve()
+      : new Promise((resolve, reject) => { settle = { resolve, reject }; });
+    r.settle = settle;
+    r.ready.catch(() => {});
     run = r;
+    // Pending with nothing to show yet: the start's answer brings the state.
+    if (!r.sessionId && !prefetched) { loadCodeMirror().catch(() => {}); return; }
     let state, CM;
     try {
       [state, CM] = await Promise.all([
-        api(`/editor/state?session_id=${encodeURIComponent(active.session_id)}`), loadCodeMirror()]);
+        prefetched || api(`/editor/state?session_id=${encodeURIComponent(active.session_id)}`),
+        loadCodeMirror()]);
     } catch (e) {
       if (run === r) pane.innerHTML = `<p class="small">${esc(e.message)} Solve it on LeetCode instead.</p>`;
       return;
     }
     if (run !== r) return;
+    build(r, state, CM, active);
+  }
+
+  // The pending run now exists on the server: take its id and clock, and open
+  // the buffer if the plan modal didn't have what it needed.
+  async function adopt(r, active, state) {
+    r.sessionId = active.session_id;
+    r.startedAtMs = active.started_at * 1000;
+    if (state && state.now_ms != null) r.offsetMs = state.now_ms - (Date.now() - r.startedAtMs);
+    if (!r.hasState) {
+      r.hasState = true;
+      let CM;
+      try {
+        [state, CM] = await Promise.all([
+          state || api(`/editor/state?session_id=${encodeURIComponent(r.sessionId)}`), loadCodeMirror()]);
+      } catch (e) {
+        if (run === r) $("#editor-pane").innerHTML = `<p class="small">${esc(e.message)} Solve it on LeetCode instead.</p>`;
+        return;
+      }
+      if (run !== r) return;
+      build(r, state, CM, active);
+    }
+    r.settle.resolve();
+    persist(r);
+    setPaused(active.is_paused);
+  }
+
+  function build(r, state, CM, active) {
+    const pane = $("#editor-pane");
     if (!state.available) {
       pane.innerHTML = `<p class="small">This problem can't be edited here yet — solve it on LeetCode.</p>`;
       return;
     }
     // Server time since the run began, so client- and server-written events share a clock.
-    r.offsetMs = state.now_ms - (Date.now() - r.startedAtMs);
+    if (state.now_ms != null) r.offsetMs = state.now_ms - (Date.now() - r.startedAtMs);
     r.canJudge = state.can_judge;
-    const saved = restore(r.sessionId);
+    const saved = r.sessionId ? restore(r.sessionId) : null;
     let doc = state.code;
     // What was last run, else the problem's examples.
     r.input = state.last_input ?? (state.example_testcases || []).join("\n");
@@ -523,6 +572,8 @@
     const r = run;
     if (!r) return;
     tick();
+    // Never started (the start failed, or was replaced): nothing to send.
+    if (!r.sessionId) r.settle.reject(new Error("The run didn't start."));
     const done = flush();
     run = null;
     r.timers.forEach(clearInterval);
@@ -551,6 +602,9 @@
     forget(sessionId);
   }
 
-  window.Editor = { mount, unmount, setPaused, discard, diff, tick, flush, judge,
+  // Fetched while the plan is written, so lock-in doesn't wait on it.
+  function preload() { loadCodeMirror().catch(() => {}); }
+
+  window.Editor = { mount, unmount, preload, setPaused, discard, diff, tick, flush, judge,
                     _state: () => run };
 })();

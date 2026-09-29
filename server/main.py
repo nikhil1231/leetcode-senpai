@@ -934,13 +934,13 @@ def _active_payload(prob, s, settings):
 
 @app.post("/api/session/start")
 def api_session_start(body: StartSession, bg: BackgroundTasks,
-                      uid: str = Depends(auth.require_user)):
+                      uid: str = Depends(auth.require_user),
+                      lc=Depends(auth.leetcode_auth)):
     store = get_store(uid)
     prob = store.get_problem(body.slug)
     if not prob:
         raise HTTPException(404, "unknown problem")
     settings = store.get_settings()
-    store.cancel_active_sessions()
     started = int(time.time())
     pm = _problem_map(store)
     takeaway = plans.last_takeaway(
@@ -964,11 +964,20 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         # Fixed when the run starts: the lesson it opens with doesn't shift under it.
         "takeaway": takeaway,
     }
-    sid = store.add_session(doc)
+    # An editor run opens on the starter code. Recorded here, in the same write
+    # as the session, so the editor needn't ask /editor/state for it afterwards.
+    starter = prob.get("starter_code")
+    first = None
+    if (doc["surface"] == "editor" and doc["kind"] != "optimize"
+            and prob.get("question_id") and starter):
+        first = _first_recording(doc, starter)
+    sid = store.start_session(doc, recording=first)
     if llm.enabled(settings):
         bg.add_task(_prep_problem_bg, uid, body.slug)
+    s = {**doc, "id": sid}
     return {"session_id": sid, "slug": body.slug, "url": prob["url"], "started_at": started,
-            "active": _active_payload(prob, {**doc, "id": sid}, settings)}
+            "active": _active_payload(prob, s, settings),
+            "editor": _editor_state(s, prob, starter, True, first, lc) if first else None}
 
 
 @app.get("/api/session/active")
@@ -1091,6 +1100,20 @@ def _run_ms(s):
     return max(0, int(time.time() * 1000) - s["started_at"] * 1000)
 
 
+def _blank_recording(s):
+    return {"slug": s["slug"], "started_at": s["started_at"], "lang": leetcode.EDITOR_LANG,
+            "v": recording.VERSION, "seq": 0, "events": "", "chain_ok": True, "code": None}
+
+
+def _first_recording(s, starter):
+    """A new run's recording: the starter code as its opening checkpoint."""
+    first = [{"t": 0, "k": "c", "code": starter}]
+    doc = _blank_recording(s)
+    doc["events"] = recording.dump(first)
+    doc["code"], _ = recording.advance(None, first)
+    return doc
+
+
 def _append_recording(store, s, client_events=(), seq=None, server_events=()):
     """Append to a run's recording, creating it on first write. A client batch
     whose seq was already applied (a retried request) is dropped; server events
@@ -1099,9 +1122,7 @@ def _append_recording(store, s, client_events=(), seq=None, server_events=()):
     The doc keeps the chain's end state (`code`), so an append checks only what
     it adds rather than replaying the whole log."""
     with _recording_lock(store.uid):
-        doc = store.get_recording(s["id"]) or {
-            "slug": s["slug"], "started_at": s["started_at"], "lang": leetcode.EDITOR_LANG,
-            "v": recording.VERSION, "seq": 0, "events": "", "chain_ok": True, "code": None}
+        doc = store.get_recording(s["id"]) or _blank_recording(s)
         if "code" not in doc:  # written before the end state was kept
             doc["code"], _ = recording.advance(None, recording.parse(doc["events"]))
         new = []
@@ -1180,6 +1201,11 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
     doc = store.get_recording(s["id"])
     if available and not doc:
         doc = _append_recording(store, s, server_events=[{"t": 0, "k": "c", "code": starter}])
+    return _editor_state(s, p, starter, available, doc, lc, optimizing)
+
+
+def _editor_state(s, p, starter, available, doc, lc, optimizing=None):
+    """What the editor opens with, from data the caller already holds."""
     code = starter
     if doc:
         code = doc.get("code") or starter
@@ -2076,13 +2102,28 @@ def api_delete_problem(slug: str, body: DeleteProblem, uid: str = Depends(auth.r
 
 
 @app.get("/api/problem/{slug}/recall-context")
-async def api_recall_context(slug: str, uid: str = Depends(auth.require_user),
+async def api_recall_context(slug: str, editor: bool = False,
+                             uid: str = Depends(auth.require_user),
                              lc=Depends(auth.leetcode_auth)):
+    """The statement — and with `editor`, what a new editor run opens with, fetched
+    while the plan is being written so the run can open without waiting."""
     store = get_store(uid)
     p = await _hydrate_problem_content(store, slug, lc)
     if not p:
         raise HTTPException(404, "unknown problem")
+    prefetch = None
+    if editor:
+        p = await _hydrate_editor(store, slug)
+        prefetch = {
+            "available": bool(p.get("question_id") and p.get("starter_code")),
+            "can_judge": leetcode.has_auth(lc),
+            "starter_code": p.get("starter_code"),
+            "example_testcases": p.get("example_testcases") or [],
+            "interview_runs": config.INTERVIEW_RUN_LIMIT,
+            "par_sec": config.SOLVE_PAR_SEC.get(p.get("difficulty")),
+        }
     return {
+        "editor": prefetch,
         "slug": slug,
         "title": p.get("title", slug),
         "difficulty": p.get("difficulty"),

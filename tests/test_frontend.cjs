@@ -21,6 +21,7 @@ function app(fetch) {
       // wrapper simply find nothing to decorate.
       closest: () => null,
       addEventListener(event, handler) { this.listeners[event] = handler; },
+      setAttribute() {}, removeAttribute() {},
     });
     return nodes.get(selector);
   };
@@ -37,7 +38,7 @@ function app(fetch) {
     document: {
       readyState: 'loading', visibilityState: 'visible',
       addEventListener(event, fn) { listeners.document[event] = fn; },
-      querySelector: node, querySelectorAll: () => [],
+      querySelector: node, querySelectorAll: () => [], body: node('body'),
     },
     stored: {},
     localStorage: { getItem: () => null, setItem(k, v) { context.stored[k] = v; } }, fetch,
@@ -450,6 +451,52 @@ test('no idea yet starts the run without a plan but keeps the thinking time', as
   assert.equal(bodies[0].plan_status, 'blank');
   assert.equal(bodies[0].predicted_approach, undefined);
   assert.ok(bodies[0].plan_time_sec >= 29);
+});
+
+test('lock-in switches to the run and opens the editor before the start answers', async () => {
+  let answer;
+  const ui = app((path) => (String(path).includes('/session/start')
+    ? new Promise((resolve) => { answer = resolve; }) : response({ pending: [] })));
+  ui.run('window.open = () => ({}); planOpenedAt = Date.now() - 60000');
+  ui.run('window.Editor = { mount: (a, st) => { window.mounts.push([a, st]); }, unmount() {}, setPaused() {}, preload() {} }');
+  ui.run('window.mounts = []');
+  ui.run(`pendingStart = { slug: "two-sum", kind: "review", title: "Two Sum", url: "https://lc/two-sum",
+          content_html: "<p>x</p>", editor: { available: true, can_judge: true, starter_code: "S",
+          example_testcases: ["[1]"], interview_runs: 2, par_sec: 900 } }`);
+  ui.node('#predict-approach').value = 'hash';
+  ui.node('#predict-time').value = 'O(n)';
+  ui.node('#predict-edge-cases').value = 'empty; Empty; dupes';
+  const started = ui.run('doStart("planned")');
+  // Painted from the click: no id yet, controls that need one are off.
+  const [pending, state] = ui.run('window.mounts[0]');
+  assert.equal(pending.session_id, null);
+  assert.equal(ui.run('activeSession.title'), 'Two Sum');
+  assert.equal(ui.node('#active-par').textContent, '15m pace');
+  assert.equal(ui.node('#btn-pause-session').disabled, true);
+  assert.equal(state.code, 'S');
+  assert.deepEqual([...state.planned_edge_cases], ['empty', 'dupes']);
+
+  await new Promise((r) => setImmediate(r));
+  answer(response({ url: 'u', active: { ...pending, session_id: 's1', hints_available: true },
+                    editor: { code: 'S', now_ms: 5 } }));
+  await started;
+  const [real, fromStart] = ui.run('window.mounts[1]');
+  assert.equal(real.session_id, 's1');
+  assert.equal(fromStart.now_ms, 5);
+  assert.equal(ui.node('#btn-pause-session').disabled, false);
+});
+
+test('a lock-in whose start fails puts the dashboard back', async () => {
+  const ui = app(async (path) => (String(path).includes('/session/start')
+    ? { ok: false, status: 503, statusText: 'x', json: async () => ({ detail: "You're offline." }) }
+    : response({ pending: [] })));
+  ui.run('window.open = () => ({}); planOpenedAt = Date.now()');
+  ui.run('window.Editor = { mount() {}, unmount() { window.unmounted = true; }, setPaused() {}, preload() {} }');
+  ui.run('pendingStart = { slug: "two-sum", kind: "new" }');
+  await ui.run('doStart("skipped")');
+  assert.equal(ui.run('activeSession'), null);
+  assert.equal(ui.run('window.unmounted'), true);
+  assert.equal(ui.node('#toast').textContent, "Couldn't start the run: You're offline.");
 });
 
 test('saving a planned solve sends whether the plan held, then grades the plan', async () => {

@@ -202,17 +202,25 @@ const sanitizeProblemHtml = (html) => {
   });
   return template.innerHTML;
 };
-function renderProblemStatement(containerSel, problem, slug) {
+// `err` is why the statement couldn't be fetched: a 503 carries the server's own
+// "you're offline" message, which says more than a bare "unavailable".
+function renderProblemStatement(containerSel, problem, slug, err = null) {
   const root = $(containerSel);
   if (!root) return;
   const problemUrl = problem?.url || leetcodeProblemUrl(slug);
   const body = sanitizeProblemHtml(problem?.content_html);
+  const why = err && err.status === 503 ? err.message
+    : err ? "Couldn't load the prompt — it's on LeetCode." : "Prompt unavailable.";
   root.innerHTML = `
     <div class="problem-statement-source">
       <a href="${escapeHtml(problemUrl)}" target="_blank" rel="noopener">Open on LeetCode</a>
     </div>
-    ${body || `<p class="small">Prompt unavailable.</p>`}`;
+    ${body || `<p class="small">${escapeHtml(why)}</p>`}`;
 }
+const leetcodeEditorialUrl = (slug) => `${leetcodeProblemUrl(slug)}editorial/`;
+const editorialLinkHtml = (slug) => slug
+  ? `<p class="small grade-editorial"><a href="${escapeHtml(leetcodeEditorialUrl(slug))}" target="_blank" rel="noopener">Read the editorial ↗</a></p>`
+  : "";
 
 window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader,
   beginRender, COMPLEXITIES, sanitizeProblemHtml };
@@ -532,16 +540,32 @@ function openProblemTab(ctx) {
   return Boolean(window.open(url, "_blank", "noopener"));
 }
 
-async function startSession(body, { tabOpened = false } = {}) {
-  const s = await api("/session/start", "POST", body);
+// `pending` is the run as the client already knows it — shown at once, so lock-in
+// never waits on the start's Firestore writes. The start's answer then fills in
+// what only the server knows (the id, the takeaway, hints) in place.
+let startInFlight = null;
+async function startSession(body, { tabOpened = false, pending = null } = {}) {
+  nudgeShown = {};
+  const request = startInFlight = api("/session/start", "POST", body);
+  if (pending) applyActive(pending.active, pending.editor);
+  let s;
+  try {
+    s = await request;
+  } catch (e) {
+    if (!pending) throw e;
+    applyActive(null);
+    toast(`Couldn't start the run: ${e.message}`);
+    return;
+  } finally {
+    startInFlight = null;
+  }
   const inEditor = s.active && s.active.surface === "editor";
   // A tab not already opened from the click may be blocked this late; the live
   // run's own problem link is the fallback — so say which happened.
   const opened = inEditor || tabOpened || Boolean(window.open(s.url, "_blank", "noopener"));
-  nudgeShown = {};
   // /session/start already answered with the live-run view; asking
   // /session/active for it again would be a second, guaranteed-cold round-trip.
-  applyActive(s.active);
+  applyActive(s.active, s.editor);
   loadOverview();
   render(currentActiveTab());
   toast(inEditor ? "Timer started — solve it below."
@@ -725,13 +749,16 @@ async function openPredict(ctx) {
   tickPlanClock();
   planClockTimer = setInterval(tickPlanClock, 1000);
   $("#predict-approach").focus?.();
+  // Everything the run opens with loads while the plan is written.
+  window.Editor?.preload();
   try {
-    const problem = await api(`/problem/${encodeURIComponent(ctx.slug)}/recall-context`);
+    const problem = await api(`/problem/${encodeURIComponent(ctx.slug)}/recall-context?editor=1`);
     ctx.url = problem.url;  // openProblemTab needs this without a round-trip
+    Object.assign(ctx, { content_html: problem.content_html, editor: problem.editor });
     $("#predict-problem").textContent = problem.title || ctx.title || ctx.slug;
     renderProblemStatement("#predict-statement", problem, ctx.slug);
   } catch (e) {
-    renderProblemStatement("#predict-statement", null, ctx.slug);
+    renderProblemStatement("#predict-statement", null, ctx.slug, e);
   }
 }
 
@@ -749,11 +776,14 @@ function selectedPredictionCategory() {
   return input && input.value.trim() ? input.value.trim() : null;
 }
 
+// Deduplicated as plans.planned_edge_cases does, so the editor opened before the
+// start answers ticks off the same cases the server stored.
 function plannedEdgeCases() {
+  const seen = new Set();
   return $("#predict-edge-cases").value
     .split(/\n|;/)
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter((s) => s && !seen.has(s.toLowerCase()) && seen.add(s.toLowerCase()))
     .slice(0, 3);
 }
 
@@ -793,7 +823,31 @@ function doStart(status) {
   // browser still honours it.
   const tabOpened = surface === "leetcode" && openProblemTab(ctx);
   closePredict();
-  return startSession(body, { tabOpened });
+  return startSession(body, { tabOpened, pending: pendingRun(ctx, body) });
+}
+
+// The run about to start, from what the plan modal holds: enough to switch to
+// it now. Server-only fields (hints, takeaway, plan check) arrive with the start.
+function pendingRun(ctx, body) {
+  const e = ctx.editor;
+  const active = {
+    session_id: null, slug: ctx.slug, kind: ctx.kind, title: ctx.title || ctx.slug,
+    url: ctx.url || leetcodeProblemUrl(ctx.slug), started_at: Math.floor(Date.now() / 1000),
+    elapsed_sec: 0, is_paused: false, paused_at: null, paused_sec: 0,
+    hint_level: 0, hint_total: 3, hints_available: false, plan_status: body.plan_status,
+    surface: body.surface, interview: body.interview, par_sec: e ? e.par_sec : null,
+    takeaway: null, plan_check_available: false, plan_check: null,
+  };
+  // Not prefetched yet (a very fast lock-in): the editor waits for the start's copy.
+  const editor = e && body.surface === "editor" ? {
+    available: e.available, can_judge: e.can_judge, content_html: ctx.content_html,
+    starter_code: e.starter_code, example_testcases: e.example_testcases,
+    code: e.starter_code, seq: 0, last_input: null,
+    planned_edge_cases: body.planned_edge_cases || [], interview: body.interview,
+    runs_left: body.interview ? e.interview_runs : null, edges_checked: [],
+    optimizing: null, truncated: false,
+  } : null;
+  return { active, editor };
 }
 
 $("#btn-close-predict").addEventListener("click", closePredict);
@@ -835,11 +889,17 @@ $("#predict-modal").addEventListener("keydown", (e) => {
 
 // ---- active session / timer / hints / nudges -----------------------------------
 async function refreshActive() {
+  // Mid-start, the server may not have the run yet; its answer is the truth.
+  if (startInFlight) await startInFlight.catch(() => {});
   const { active } = await api("/session/active");
   applyActive(active);
 }
 
-function applyActive(active) {
+// Run controls that act on the server's copy of the run: off until it has one.
+const RUN_CONTROLS = ["#btn-hint", "#btn-plan-check", "#btn-check-solve",
+                      "#btn-pause-session", "#btn-cancel-session"];
+
+function applyActive(active, editorState = null) {
   const previousId = activeSession && activeSession.session_id;
   activeSession = active;
   const run = $("#active-run");
@@ -864,7 +924,10 @@ function applyActive(active) {
     startTimer(active);
     // In the app's editor, LeetCode's own page is the fallback, not the way in.
     $("#active-link").classList.toggle("is-primary", active.surface !== "editor");
-    window.Editor?.mount(active);
+    const starting = !active.session_id;
+    ["#btn-check-solve", "#btn-pause-session", "#btn-cancel-session"].forEach((b) => { $(b).disabled = starting; });
+    if (starting) RUN_CONTROLS.forEach((b) => { $(b).disabled = true; });
+    window.Editor?.mount(active, editorState);
   } else {
     run.classList.add("hidden");
     $("#hint-panel").classList.add("hidden");
@@ -1482,7 +1545,8 @@ function renderSolutionGrade(g) {
     ${positives.length ? `<div class="grade-bullets grade-positives"><b>Positives</b><ul>${
       positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
     ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>Negatives</b><ul>${
-      negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}`;
+      negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+    ${editorialLinkHtml(currentAttempt && currentAttempt.slug)}`;
 }
 
 function markAnnotateDone() {
@@ -1774,7 +1838,7 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
     $("#recall-problem").textContent = ctx.title || title || slug;
     renderProblemStatement("#recall-statement", ctx, slug);
   } catch (e) {
-    renderProblemStatement("#recall-statement", null, slug);
+    renderProblemStatement("#recall-statement", null, slug, e);
   }
   if (attemptId) {
     await loadRecallAttempt(attemptId);
@@ -1886,6 +1950,7 @@ function renderRecallGrade(g) {
       negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
     ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
     <p class="small">Scheduled next review accordingly.</p>
+    ${editorialLinkHtml(currentRecall.slug)}
     ${currentRecall.attempt_id ? recallClarificationHtml() : ""}`;
   wireRecallClarification();
   $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;

@@ -337,6 +337,21 @@ class FirestoreStore:
         self._sessions().document(sid).update(fields)
         _invalidate(("sessions", self.uid))
 
+    def start_session(self, doc, recording=None):
+        """Cancel whatever run is active and start `doc` in one write — with its
+        editor recording, when it has one. Two round-trips, not one per write."""
+        batch = self.db.batch()
+        for d in self._sessions().where(
+                filter=_where("status", "==", "active")).stream():
+            batch.update(d.reference, {"status": "cancelled"})
+        ref = self._sessions().document()
+        batch.set(ref, doc)
+        if recording is not None:
+            batch.set(self._recordings().document(ref.id), recording)
+        batch.commit()
+        _invalidate(("sessions", self.uid))
+        return ref.id
+
     def cancel_active_sessions(self, slug=None):
         cancelled = 0
         for d in self._sessions().where(

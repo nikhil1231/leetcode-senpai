@@ -286,3 +286,48 @@ test('interview mode counts Runs down and stops at none, without nagging to run'
   await ui.E.judge('submit');  // no Runs to ask for: straight through
   assert.equal(ui.calls.filter((c) => c.path === '/editor/submit').length, 1);
 });
+
+// A run opened from the plan modal before the start has answered.
+const pendingRun = { session_id: null, slug: 'two-sum', surface: 'editor', is_paused: false,
+                     started_at: Math.floor(Date.now() / 1000) };
+const prefetched = { available: true, can_judge: true, content_html: '<p>x</p>', starter_code: STARTER,
+                     example_testcases: ['[1]'], code: STARTER, seq: 0, planned_edge_cases: [] };
+
+test('a pending run opens at once and sends nothing until it has an id', async () => {
+  const ui = editor();
+  await ui.E.mount(pendingRun, prefetched);
+  assert.equal(ui.buffer.code, STARTER);
+  ui.buffer.code = STARTER.replace('pass', 'return 2');
+  const judged = ui.node('#editor-run').listeners.click();
+  const flushed = ui.E.flush();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ui.calls.length, 0);
+  assert.equal(ui.storage.size, 0);
+
+  await ui.E.mount({ ...pendingRun, session_id: 's1' }, { now_ms: 0 });
+  await Promise.all([judged, flushed]);
+  const run = ui.calls.find((c) => c.path === '/editor/run');
+  assert.equal(run.body.session_id, 's1');
+  assert.equal(run.body.code, ui.buffer.code);
+  assert.ok(ui.storage.has('editor-run:v1:s1'));
+  assert.ok(!ui.calls.some((c) => c.path.startsWith('/editor/state')));
+});
+
+test('a pending run with nothing prefetched opens from the start\'s answer', async () => {
+  const ui = editor();
+  await ui.E.mount(pendingRun, null);
+  assert.equal(ui.E._state().view, null);
+  await ui.E.mount({ ...pendingRun, session_id: 's1' }, { ...prefetched, now_ms: 0 });
+  assert.ok(ui.E._state().view);
+  assert.equal(ui.E._state().sessionId, 's1');
+  assert.ok(!ui.calls.some((c) => c.path.startsWith('/editor/state')));
+});
+
+test('a run whose start failed is dropped without a request', async () => {
+  const ui = editor();
+  await ui.E.mount(pendingRun, prefetched);
+  ui.buffer.code = STARTER + '# typed\n';
+  await ui.E.unmount();
+  assert.equal(ui.calls.length, 0);
+  assert.equal(ui.E._state(), null);
+});
