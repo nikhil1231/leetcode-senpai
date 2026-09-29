@@ -1,6 +1,7 @@
 """On-demand solve detection. Serverless-friendly: no background loop — the
-frontend calls this (via /api/poll) every few seconds while a session is active,
-and once on load to catch solves done outside the app entirely.
+frontend calls this (via /api/poll) whenever the tab regains focus, which is when
+a solve done in LeetCode's tab comes back, and once on load to catch solves done
+outside the app entirely.
 
 Two passes over the same public feed of accepted submissions:
 `check_active_sessions` matches an AC to a session the user started here, so the

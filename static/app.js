@@ -237,8 +237,6 @@ renderComplexityFields("#recall-complexities", {
 // ---- state ---------------------------------------------------------------------
 let activeSession = null;
 let timerInterval = null;
-let pollInterval = null;
-let pollInFlight = false;
 let currentAttempt = null;
 let currentRecall = null;
 let resolveSelfGrade = null;
@@ -844,7 +842,6 @@ function applyActive(active) {
     setPlanCheck(active);
     setPauseButton(active);
     startTimer(active);
-    startPolling();
   } else {
     run.classList.add("hidden");
     $("#hint-panel").classList.add("hidden");
@@ -852,7 +849,6 @@ function applyActive(active) {
     $("#nudge").classList.add("hidden");
     setDashboardLocked(false);
     stopTimer();
-    stopPolling();
   }
 }
 
@@ -1025,63 +1021,65 @@ $("#btn-hint").addEventListener("click", async () => {
   }
 });
 
-function startPolling() {
-  stopPolling();
-  const sessionId = activeSession && activeSession.session_id;
-  pollInterval = setInterval(async () => {
-    if (pollInFlight) return;
-    pollInFlight = true;
-    try {
-      const res = await api("/poll", "POST");
-      if (!activeSession || activeSession.session_id !== sessionId) return;
-      if (res.pending && res.pending.length) {
-        stopPolling();
-        openAnnotate(res.pending[0]);
-        await refreshActive();
-        loadOverview();
-        render(currentActiveTab());
-      }
-    } catch (e) { /* transient */ }
-    finally { pollInFlight = false; }
-  }, 4000);
-}
-function stopPolling() { if (pollInterval) clearInterval(pollInterval); pollInterval = null; }
-
-// Solve detection outside a live session. POSTing /poll costs the same round
-// trip a bare /pending check did, but it also sweeps LeetCode for accepted
-// submissions with no attempt behind them — so a problem solved in another tab,
-// in a contest, or on the phone gets logged the next time this page is looked
-// at, without ever starting a session for it.
+// Solve detection. There is no timer: a solve on LeetCode happens in another tab,
+// so coming back to this one is the moment it's worth asking — and a hidden tab's
+// timers are throttled to a crawl anyway, which is what made a 4s poll feel slow.
+// POSTing /poll also sweeps LeetCode for accepted submissions with no attempt
+// behind them — so a problem solved in a contest or on the phone gets logged the
+// next time this page is looked at, without ever starting a session for it.
 let lastDetectAt = 0;
 const DETECT_MIN_GAP_MS = 60000;
 // With the modal open the answer can still change under it — you AC'd, kept
 // optimising, and are coming back to rate the better version. Check more eagerly
 // there, since a stale sweep is what gets the wrong solve written to history.
 const DETECT_MODAL_GAP_MS = 5000;
+// During a run, returning to the tab is the likeliest moment a solve is waiting:
+// only the focus/visibilitychange pair firing together is worth collapsing.
+const DETECT_SESSION_GAP_MS = 2000;
+// LeetCode's accepted feed can trail the submit by a few seconds, so a return
+// that finds nothing gets one more look.
+const DETECT_FOLLOWUP_MS = 5000;
+let detectInFlight = null;
+let detectFollowup = null;
 
-async function detectSolves({ force = false } = {}) {
-  // Don't re-sweep on every flick back to the tab — the feed doesn't move that fast.
+function detectSolves({ force = false, followup = true } = {}) {
+  if (detectInFlight) return detectInFlight;
   const modalOpen = !$("#annotate-modal").classList.contains("hidden");
-  const gap = modalOpen ? DETECT_MODAL_GAP_MS : DETECT_MIN_GAP_MS;
-  if (!force && Date.now() - lastDetectAt < gap) return;
+  const sessionId = activeSession && activeSession.session_id;
+  const gap = modalOpen ? DETECT_MODAL_GAP_MS : sessionId ? DETECT_SESSION_GAP_MS : DETECT_MIN_GAP_MS;
+  if (!force && Date.now() - lastDetectAt < gap) return Promise.resolve();
   lastDetectAt = Date.now();
-  try {
-    const res = await api("/poll", "POST");
-    const pending = res.pending || [];
-    if (!$("#annotate-modal").classList.contains("hidden")) {
-      // Never stack a second modal over one being filled in — but do restate
-      // this solve if a better submission has taken it over since it opened.
-      const fresh = currentAttempt && pending.find((p) => p.id === currentAttempt.id);
-      if (fresh && fresh.submission_id !== currentAttempt.submission_id) refreshAnnotate(fresh);
-    } else if (pending.length) {
-      openAnnotate(pending[0]);
-    }
-    if (res.new_attempts && res.new_attempts.length) {
-      loadOverview();
-      render(currentActiveTab());
-    }
-  } catch (e) { /* detection is a convenience; never break the page over it */ }
+  clearTimeout(detectFollowup);
+  detectInFlight = (async () => {
+    try {
+      const res = await api("/poll", "POST");
+      // A run cancelled or replaced mid-request: its answer is no longer ours.
+      if (sessionId && (!activeSession || activeSession.session_id !== sessionId)) return;
+      const pending = res.pending || [];
+      if (!$("#annotate-modal").classList.contains("hidden")) {
+        // Never stack a second modal over one being filled in — but do restate
+        // this solve if a better submission has taken it over since it opened.
+        const fresh = currentAttempt && pending.find((p) => p.id === currentAttempt.id);
+        if (fresh && fresh.submission_id !== currentAttempt.submission_id) refreshAnnotate(fresh);
+      } else if (pending.length) {
+        openAnnotate(pending[0]);
+      }
+      const logged = res.new_attempts && res.new_attempts.length;
+      if (logged && sessionId) await refreshActive();
+      if (logged) {
+        loadOverview();
+        render(currentActiveTab());
+      } else if (sessionId && followup && document.visibilityState === "visible") {
+        detectFollowup = setTimeout(() => detectSolves({ force: true, followup: false }),
+                                    DETECT_FOLLOWUP_MS);
+      }
+    } catch (e) { /* detection is a convenience; never break the page over it */ }
+    finally { detectInFlight = null; }
+  })();
+  return detectInFlight;
 }
+
+$("#btn-check-solve").addEventListener("click", () => detectSolves({ force: true }));
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") { detectSolves(); recheckLeetCodeAuth(); }

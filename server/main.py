@@ -1003,7 +1003,7 @@ def _poll_lock(uid):
 @app.post("/api/poll")
 async def api_poll(bg: BackgroundTasks, uid: str = Depends(auth.require_user),
                    lc=Depends(auth.leetcode_auth)):
-    """Detect solves. Called on a timer during a live session, and once on load.
+    """Detect solves. Called when the tab regains focus, on request, and on load.
 
     The session pass runs first so a solve the user started here is recorded with
     its clock and prediction; the sweep then picks up anything solved outside the

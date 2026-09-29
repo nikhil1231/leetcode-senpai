@@ -27,25 +27,34 @@ function app(fetch) {
   // The page behind a modal is redrawn as its state changes; no view is loaded
   // here, so that redraw is a no-op on the Today tab.
   node('#tabs li.is-active').dataset.tab = 'today';
+  // Page-level listeners are kept so a test can play "the tab came back".
+  const listeners = { window: {}, document: {} };
+  const timeouts = new Map();
   const context = vm.createContext({
-    window: { location: { hostname: 'localhost' }, addEventListener() {},
+    window: { location: { hostname: 'localhost' },
+              addEventListener(event, fn) { listeners.window[event] = fn; },
               Views: { renderToday: async () => {} } },
     document: {
-      readyState: 'loading', addEventListener() {},
+      readyState: 'loading', visibilityState: 'visible',
+      addEventListener(event, fn) { listeners.document[event] = fn; },
       querySelector: node, querySelectorAll: () => [],
     },
     stored: {},
     localStorage: { getItem: () => null, setItem(k, v) { context.stored[k] = v; } }, fetch,
     setInterval(fn) { const id = nextTimer++; intervals.set(id, fn); return id; },
     clearInterval(id) { intervals.delete(id); },
-    setTimeout() {}, clearTimeout() {},
+    setTimeout(fn, ms) { const id = nextTimer++; timeouts.set(id, { fn, ms }); return id; },
+    clearTimeout(id) { timeouts.delete(id); },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/app.js'), 'utf8'), context);
-  return { node, intervals, run: (code) => vm.runInContext(code, context) };
+  return { node, intervals, timeouts, listeners, run: (code) => vm.runInContext(code, context) };
 }
 const response = (body) => ({ ok: true, json: async () => body });
 
-test('slow solve polling never overlaps and resumes after failure', async () => {
+// The annotate modal reads as closed, so a pending solve would open it.
+const closeModal = (ui) => { ui.node('#annotate-modal').classList.contains = (c) => c === 'hidden'; };
+
+test('slow solve detection never overlaps and resumes after failure', async () => {
   let rejectRequest;
   let calls = 0;
   const ui = app(() => {
@@ -53,28 +62,59 @@ test('slow solve polling never overlaps and resumes after failure', async () => 
     if (calls === 1) return new Promise((resolve, reject) => { rejectRequest = reject; });
     return response({ pending: [] });
   });
-  ui.run('activeSession = { session_id: "one" }; startPolling()');
-  const tick = [...ui.intervals.values()][0];
-  const first = tick();
-  await tick();
+  ui.run('activeSession = { session_id: "one" }');
+  const first = ui.run('detectSolves({ force: true })');
+  // A second trigger (focus and visibilitychange both fire) joins the first.
+  assert.equal(ui.run('detectSolves({ force: true })'), first);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 1);
   rejectRequest(new Error('offline'));
   await first;
-  await tick();
+  await ui.run('detectSolves({ force: true })');
   assert.equal(calls, 2);
 });
 
-test('poll response from a cancelled session cannot reopen annotation', async () => {
+test('detection answer from a cancelled session cannot reopen annotation', async () => {
   let resolveRequest;
   const ui = app(() => new Promise((resolve) => { resolveRequest = resolve; }));
-  ui.run('activeSession = { session_id: "one" }; startPolling()');
-  const request = [...ui.intervals.values()][0]();
+  closeModal(ui);
+  ui.run('activeSession = { session_id: "one" }');
+  const request = ui.run('detectSolves({ force: true })');
   await Promise.resolve();
   await Promise.resolve();
-  ui.run('activeSession = null; stopPolling()');
+  ui.run('activeSession = null');
   resolveRequest(response({ pending: [{ id: 'old' }] }));
   await request;
   assert.equal(ui.run('currentAttempt'), null);
+});
+
+test('coming back to the tab mid-run checks at once; without a run it stays throttled', async () => {
+  let polls = 0;
+  const ui = app(async (url) => { if (String(url).includes('/poll')) polls++; return response({ pending: [] }); });
+  closeModal(ui);
+  ui.run('activeSession = { session_id: "one" }; lastDetectAt = Date.now() - 10000');
+  await ui.listeners.window.focus();
+  await ui.run('detectInFlight');
+  assert.equal(polls, 1);
+
+  ui.run('activeSession = null; lastDetectAt = Date.now() - 10000');
+  await ui.listeners.window.focus();
+  await ui.run('detectInFlight');
+  assert.equal(polls, 1);
+});
+
+test('a mid-run return that finds nothing looks once more, and only once', async () => {
+  let polls = 0;
+  const ui = app(async (url) => { if (String(url).includes('/poll')) polls++; return response({ pending: [] }); });
+  closeModal(ui);
+  ui.run('activeSession = { session_id: "one" }');
+  await ui.run('detectSolves({ force: true })');
+  const followups = [...ui.timeouts.values()].filter((t) => t.ms === 5000);
+  assert.equal(followups.length, 1);
+  ui.timeouts.clear();
+  await followups[0].fn();
+  assert.equal(polls, 2);
+  assert.equal([...ui.timeouts.values()].filter((t) => t.ms === 5000).length, 0);
 });
 
 test('recall request failure preserves the draft and restores usable actions', async () => {
