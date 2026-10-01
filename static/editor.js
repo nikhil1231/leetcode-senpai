@@ -238,20 +238,32 @@
     $("#editor-result").innerHTML = `<p class="editor-verdict is-bad">${esc(message)}</p>`;
   }
 
+  // One case at a time, picked from a row of tabs — the first failing one to
+  // start — so a run's results fit beside the input instead of below the fold.
   function showRun(r) {
     const head = r.error
       ? `<p class="editor-verdict is-bad">${esc(r.status || "Error")}</p><pre class="editor-error">${esc(r.error)}</pre>`
       : `<p class="editor-verdict ${r.passed ? "is-good" : "is-bad"}">${r.passed ? "All cases match" : "Mismatch"}
            <span class="small">${r.correct ?? 0}/${r.total} cases · ${esc(r.runtime || "")}</span></p>`;
-    const cases = r.error ? "" : (r.cases || []).map((c, i) => {
-      const ok = c.output === c.expected;
-      return `<details class="editor-case ${ok ? "is-good" : "is-bad"}" ${ok ? "" : "open"}>
-        <summary>${ok ? "✓" : "✗"} Case ${i + 1}</summary>
-        ${block("Input", c.input)}${block("Output", c.output)}${block("Expected", c.expected)}
-        ${block("Stdout", c.stdout)}
-      </details>`;
-    }).join("");
-    $("#editor-result").innerHTML = head + cases;
+    const cases = r.error ? [] : (r.cases || []);
+    const ok = (c) => c.output === c.expected;
+    const tabs = cases.length ? `<div class="editor-case-tabs" role="tablist">${cases.map((c, i) =>
+      `<button class="editor-case-tab ${ok(c) ? "is-good" : "is-bad"}" type="button" role="tab" data-i="${i}">
+         ${ok(c) ? "✓" : "✗"} Case ${i + 1}</button>`).join("")}</div><div id="editor-case" role="tabpanel"></div>` : "";
+    $("#editor-result").innerHTML = head + tabs;
+    if (!cases.length) return;
+    const pick = (i) => {
+      const c = cases[i];
+      $$("#editor-result .editor-case-tab").forEach((t) => t.setAttribute("aria-selected", String(Number(t.dataset.i) === i)));
+      $("#editor-case").innerHTML = `${block("Input", c.input)}
+        <div class="editor-io-pair">${block("Output", c.output, ok(c) ? "" : "is-off")}${block("Expected", c.expected)}</div>
+        ${block("Stdout", c.stdout)}`;
+    };
+    $("#editor-result .editor-case-tabs").addEventListener("click", (e) => {
+      const tab = e.target.closest(".editor-case-tab");
+      if (tab) pick(Number(tab.dataset.i));
+    });
+    pick(Math.max(0, cases.findIndex((c) => !ok(c))));
   }
 
   function showSubmit(r) {
@@ -264,7 +276,8 @@
       <p class="editor-verdict ${good ? "is-good" : "is-bad"}">${esc(r.status || "")}
         <span class="small">${r.correct ?? "?"}/${r.total ?? "?"} tests${esc(beats)}</span></p>
       ${block("Error", r.error, "is-error")}
-      ${block("Failing input", r.input)}${block("Output", r.output)}${block("Expected", r.expected)}
+      ${block("Failing input", r.input)}
+      <div class="editor-io-pair">${block("Output", r.output, "is-off")}${block("Expected", r.expected)}</div>
       ${block("Stdout", r.stdout)}
       ${!good && r.input ? `<button id="editor-add-case" class="button is-small" type="button">Add to test input</button>` : ""}`;
     if (!good && r.input) $("#editor-add-case").addEventListener("click", () => addCase(r.input));
@@ -329,10 +342,16 @@
         </div>
         ${state.optimizing ? optimizingHtml(state.optimizing) : ""}
         <p id="editor-notice" class="small editor-notice hidden"></p>
-        ${edgesHtml(state.planned_edge_cases || [])}
-        <label class="label-sm" for="editor-input">Test input</label>
-        <textarea id="editor-input" class="editor-input" rows="4" spellcheck="false"></textarea>
-        <div id="editor-result" class="editor-result" aria-live="polite"></div>
+        <div class="editor-console">
+          <div class="editor-console-input">
+            ${edgesHtml(state.planned_edge_cases || [])}
+            <label class="label-sm" for="editor-input">Test input</label>
+            <textarea id="editor-input" class="editor-input" rows="4" spellcheck="false"></textarea>
+          </div>
+          <div id="editor-result" class="editor-result" aria-live="polite">
+            <p class="small editor-pending">Run (Ctrl/⌘ + ') to see each case here.</p>
+          </div>
+        </div>
       </div>`;
   }
 

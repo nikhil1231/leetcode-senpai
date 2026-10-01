@@ -2485,8 +2485,17 @@ body.has-active-session #user-chip {
 
 /* ---- in-app editor (editor.js) --------------------------------------------------
    The run panel shrinks to a header strip; the statement and the editor share the
-   rest of the screen, stacking on narrow ones. */
-.active-run.has-editor { display: block; place-items: normal; min-height: 0; padding: 18px 24px 32px; }
+   rest of the screen, stacking on narrow ones. On wide ones it is exactly one
+   screen tall: the buffer takes what the console under it leaves, and each part
+   scrolls inside itself rather than the page. */
+.active-run.has-editor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar));
+  height: calc(100dvh - var(--topbar));
+  min-height: 0;
+  padding: 18px 24px 20px;
+}
 .active-run.has-editor .active-run-inner {
   width: 100%;
   display: flex;
@@ -2507,8 +2516,11 @@ body.has-active-session #user-chip {
 .active-run.has-editor .nudge { flex: 1 0 100%; }
 
 .editor-pane {
+  flex: 1 1 0;
+  min-height: 460px;
   display: grid;
   grid-template-columns: minmax(0, var(--statement-w, 42%)) 12px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 0 4px;
   margin-top: 16px;
   text-align: left;
@@ -2525,15 +2537,17 @@ body.has-active-session #user-chip {
 .editor-toggle { margin-left: auto; }
 .editor-bar .editor-nocookie { flex: 1 0 100%; order: 1; }
 .editor-pane.hidden { display: none; }
-.editor-pane .editor-statement { max-height: calc(100vh - 190px); margin: 0; }
-.editor-work { display: flex; flex-direction: column; min-width: 0; }
+.editor-pane .editor-statement { max-height: none; margin: 0; }
+.editor-work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .editor-cm {
+  flex: 1 1 0;
+  min-height: 150px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg-elev);
 }
-.editor-cm .cm-editor { height: min(56vh, 620px); font-size: 13.5px; }
+.editor-cm .cm-editor { height: 100%; font-size: 13.5px; }
 .editor-cm .cm-editor.cm-focused { outline: none; }
 .editor-cm .cm-scroller { font-family: var(--font-mono); line-height: 1.55; }
 .editor-cm .cm-gutters { background: var(--bg-elev); border-right: 1px solid var(--line-soft); color: var(--muted); }
@@ -2545,7 +2559,18 @@ body.has-active-session #user-chip {
 .editor-nocookie, .editor-notice { color: var(--amber); }
 .editor-notice { margin: 8px 0 0; }
 .editor-optimizing { margin: 8px 0 0; color: var(--muted); }
-.editor-edges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 10px 0 2px; font-size: 13px; }
+.editor-console {
+  flex: 0 0 clamp(190px, 36%, 340px);
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 14px;
+  min-height: 0;
+  margin-top: 12px;
+}
+.editor-console-input { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.editor-console-input > .label-sm { margin-top: 0; }
+.editor-console-input .editor-input { flex: 1 1 auto; min-height: 72px; resize: none; }
+.editor-edges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0 0 10px; font-size: 13px; }
 .editor-edges .label-sm { flex: 1 0 100%; margin: 0; }
 .editor-edge { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .editor-confirm { padding: 10px 12px; border: 1px solid var(--amber); border-radius: var(--radius-sm); }
@@ -2561,7 +2586,16 @@ body.has-active-session #user-chip {
   font: 12.5px/1.5 var(--font-mono);
   resize: vertical;
 }
-.editor-result { margin-top: 12px; font-size: 13px; }
+.editor-result {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  font-size: 13px;
+}
+.editor-result .editor-pending { margin: 0; }
 .editor-verdict { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; font-weight: 650; }
 .editor-verdict.is-good { color: var(--green); }
 .editor-verdict.is-bad { color: var(--red); }
@@ -2572,14 +2606,27 @@ body.has-active-session #user-chip {
   border-radius: var(--radius-sm);
   background: var(--bg);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 12px;
 }
 .editor-error { color: var(--red); }
-.editor-case { margin: 6px 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.editor-case > summary { cursor: pointer; font-weight: 600; }
-.editor-case.is-good > summary { color: var(--green); }
-.editor-case.is-bad > summary { color: var(--red); }
+.editor-case-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.editor-case-tab {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.editor-case-tab.is-good { color: var(--green); }
+.editor-case-tab.is-bad { color: var(--red); }
+.editor-case-tab[aria-selected="true"] { border-color: currentColor; background: var(--bg); }
 .editor-io { margin: 6px 0; }
+.editor-io-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 10px; }
+.editor-io.is-off pre { border-color: rgba(251, 113, 133, .45); }
 .editor-io > span { display: block; margin-bottom: 3px; font-size: 11px; color: var(--muted); }
 .predict-surface { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; cursor: pointer; }
 .predict-surface-group { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 4px 14px; }
@@ -2588,10 +2635,14 @@ body.has-active-session #user-chip {
 .editor-mode { color: var(--amber); font-weight: 600; }
 
 @media (max-width: 960px) {
-  .editor-pane { grid-template-columns: 1fr; gap: 16px; }
+  .active-run.has-editor { display: block; height: auto; }
+  .editor-pane { grid-template-columns: 1fr; grid-template-rows: none; gap: 16px; min-height: 0; }
   .editor-split { display: none; }
   .editor-pane .editor-statement { max-height: 38vh; }
+  .editor-cm { flex: none; }
   .editor-cm .cm-editor { height: 50vh; }
+  .editor-console { flex: none; grid-template-columns: 1fr; }
+  .editor-result { overflow: visible; }
 }
 @media (max-width: 720px) {
   .active-run.has-editor { padding: 14px 16px 24px; }
