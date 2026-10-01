@@ -947,7 +947,7 @@
         ${fbtn("all", "All")}${fbtn("solve", "Completions")}${fbtn("drill", "Drills")}${fbtn("sprint", "Sprints")}${fbtn("recall", "Recalls")}
       </div>
       <table class="table is-app is-fullwidth is-hoverable">
-      <thead><tr><th>Problem</th><th>Type</th><th>Topic</th><th>When</th><th>Time</th><th>Conf</th><th>How</th><th>Coach read</th></tr></thead>
+      <thead><tr><th>Problem</th><th>Type</th><th>Topic</th><th>When</th><th>Time</th><th>Conf</th><th>How</th><th>Coach read</th><th></th></tr></thead>
       <tbody>${rows.map((r) => {
         const t = historyType(r);
         return `
@@ -960,6 +960,8 @@
           <td>${confLabel(r.confidence)}</td>
           <td class="small">${r.independence || "—"}</td>
           <td class="small">${coachRead(r)}</td>
+          <td class="problem-action"><button class="button hist-solve is-small" data-slug="${r.slug}"
+            data-title="${escapeHtml(r.title)}" data-cat="${escapeHtml(r.neetcode_category || "")}">Solve again</button></td>
         </tr>`; }).join("")}</tbody></table>
       <p class="small">Click a row for its saved practice detail.</p>`;
 
@@ -974,6 +976,10 @@
     }));
     applyFilter();
     $$("#tab-history .hist-row").forEach((tr) => tr.addEventListener("click", () => App.openDetail(tr.dataset.id)));
+    $$("#tab-history .hist-solve").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      App.startFlow(b.dataset.slug, "adhoc", "", b.dataset.title, b.dataset.cat);
+    }));
   }
 
   // ---- Problems ----------------------------------------------------------------
