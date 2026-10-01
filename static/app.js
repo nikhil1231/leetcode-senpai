@@ -938,15 +938,13 @@ function applyActive(active, editorState = null) {
   }
 }
 
-// The last process review's "next time" line, in front of you for this run.
+// This problem's last "next time" line, in front of you for this run. Runs
+// started before lessons were kept to their own problem may carry another's.
 function setTakeaway(t) {
   const el = $("#active-takeaway");
-  el.classList.toggle("hidden", !t);
-  if (!t) return;
-  const where = t.scope === "problem" ? "Last time on this problem"
-    : t.scope === "topic" ? `Last time in ${t.category} (${t.title})`
-    : `Your last solve (${t.title})`;
-  el.innerHTML = `<b>${escapeHtml(where)}:</b> ${escapeHtml(t.text)}`;
+  const shown = t && t.scope === "problem";
+  el.classList.toggle("hidden", !shown);
+  if (shown) el.innerHTML = `<b>Last time on this problem:</b> ${escapeHtml(t.text)}`;
 }
 
 function setDashboardLocked(locked) {

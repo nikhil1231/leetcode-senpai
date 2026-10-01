@@ -272,35 +272,22 @@ def previous_plan(attempts, enrichment_by_attempt, slug, before_ts, exclude_id=N
 
 # ---- carrying a lesson forward ---------------------------------------------------
 # A process review ends in one "next time" line. It only helps if it's in front
-# of you when next time comes, so a run opens with the most relevant one.
-TAKEAWAY_RECENT_SEC = 14 * 86400
+# of you when next time comes — and only next time on the same problem: a lesson
+# from another problem in the topic rarely applies, so a run doesn't open with one.
 
 
-def last_takeaway(attempts, enrichment_by_attempt, slug, category_by_slug, now):
-    """The "next time" line a run should open with: the latest from this problem,
-    else from its topic, else any from the last two weeks. None if there is none."""
-    category = category_by_slug.get(slug)
-    best = {}
+def last_takeaway(attempts, enrichment_by_attempt, slug):
+    """The latest "next time" line from this problem, for a run to open with.
+    None if there is none."""
+    best = None
     for a in attempts:
+        if a.get("slug") != slug:
+            continue
         review = (enrichment_by_attempt.get(a.get("id")) or {}).get("process_review") or {}
         text = (review.get("takeaway") or "").strip()
-        if not text:
-            continue
-        if a.get("slug") == slug:
-            scope = "problem"
-        elif category and category_by_slug.get(a.get("slug")) == category:
-            scope = "topic"
-        elif now - (a.get("solved_at") or 0) <= TAKEAWAY_RECENT_SEC:
-            scope = "recent"
-        else:
-            continue
-        held = best.get(scope)
-        if held is None or (a.get("solved_at") or 0) > (held[0].get("solved_at") or 0):
-            best[scope] = (a, text)
-    for scope in ("problem", "topic", "recent"):
-        if scope in best:
-            a, text = best[scope]
-            return {"text": text, "scope": scope, "slug": a.get("slug"),
-                    "category": category_by_slug.get(a.get("slug")),
-                    "solved_at": a.get("solved_at")}
-    return None
+        if text and (best is None or (a.get("solved_at") or 0) > (best[0].get("solved_at") or 0)):
+            best = (a, text)
+    if best is None:
+        return None
+    a, text = best
+    return {"text": text, "scope": "problem", "slug": slug, "solved_at": a.get("solved_at")}

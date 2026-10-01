@@ -941,12 +941,9 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         raise HTTPException(404, "unknown problem")
     settings = store.get_settings()
     started = int(time.time())
-    pm = _problem_map(store)
-    takeaway = plans.last_takeaway(
-        store.list_attempts(), _enrichment_map(store), body.slug,
-        {slug: p.get("neetcode_category") for slug, p in pm.items()}, started)
+    takeaway = plans.last_takeaway(store.list_attempts(), _enrichment_map(store), body.slug)
     if takeaway:
-        takeaway["title"] = (pm.get(takeaway["slug"]) or {}).get("title", takeaway["slug"])
+        takeaway["title"] = prob.get("title", body.slug)
     doc = {
         "slug": body.slug, "started_at": started, "status": "active",
         "kind": body.kind, "attempt_id": None, "hint_level": 0,
