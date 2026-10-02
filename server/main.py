@@ -16,7 +16,7 @@ import secrets
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
@@ -78,6 +78,10 @@ class StartSession(BaseModel):
 
 class PauseSession(BaseModel):
     paused: bool
+
+
+class HintRequest(BaseModel):
+    code: Optional[str] = Field(None, max_length=60000)
 
 
 class EditorOptimize(BaseModel):
@@ -903,7 +907,6 @@ def _active_payload(prob, s, settings):
     instead, so /session/start can answer with the view the client is about to
     render.
     """
-    hint_ladder = prob.get("hint_ladder") or []
     now = int(time.time())
     paused_at = s.get("paused_at")
     return {
@@ -913,10 +916,11 @@ def _active_payload(prob, s, settings):
         "is_paused": bool(paused_at),
         "title": prob.get("title", s["slug"]), "url": prob.get("url"),
         "hint_level": s.get("hint_level", 0),
-        "hint_total": len(hint_ladder) if hint_ladder else 3,
-        # Only the rungs already revealed, so a reload keeps them on screen.
-        "hints": hint_ladder[:s.get("hint_level", 0)],
-        "hints_available": bool(prob.get("hint_ladder")) or llm.enabled(settings),
+        # Only the hints already given, so a reload keeps them on screen.
+        "hints": _hints_given(prob, s),
+        "hints_available": _hints_available(prob, s, settings),
+        "give_up_available": _assisted(s) and (llm.enabled(settings) or bool(coach.give_up_fallback(prob))),
+        "give_up": s.get("give_up_text") if s.get("gave_up") else None,
         "plan_status": s.get("plan_status"),
         "surface": s.get("surface") or "leetcode",
         "interview": bool(s.get("interview")),
@@ -929,6 +933,33 @@ def _active_payload(prob, s, settings):
         # Only once asked for: a critique shown unasked would be a free hint.
         "plan_check": s.get("plan_check") if s.get("plan_check_revealed") else None,
     }
+
+
+def _assisted(s):
+    """Hints and giving up are for solves: a mock runs without them, and an
+    optimize run is past needing them."""
+    return s.get("kind") not in ("mock", "optimize")
+
+
+def _ladder_rung(s):
+    # A run from before live hints counted only ladder rungs in hint_level.
+    return s.get("ladder_rung", s.get("hint_level", 0) if s.get("hint_log") is None else 0)
+
+
+def _hints_given(prob, s):
+    if s.get("hint_log") is not None:
+        return [h["text"] for h in s["hint_log"]]
+    return (prob.get("hint_ladder") or [])[:s.get("hint_level", 0)]
+
+
+def _hints_available(prob, s, settings):
+    """In the editor with an LLM, hints never run out; else it's the ladder's rungs."""
+    if not _assisted(s):
+        return False
+    if s.get("surface") == "editor" and llm.enabled(settings):
+        return True
+    ladder = prob.get("hint_ladder")
+    return _ladder_rung(s) < len(ladder) if ladder else llm.enabled(settings)
 
 
 @app.post("/api/session/start")
@@ -1019,21 +1050,75 @@ def api_session_cancel(uid: str = Depends(auth.require_user)):
 
 
 @app.post("/api/session/hint")
-async def api_session_hint(uid: str = Depends(auth.require_user)):
-    """Reveal the next hint rung for the active session."""
+async def api_session_hint(body: Optional[HintRequest] = None,
+                           uid: str = Depends(auth.require_user)):
+    """Give the active run a hint.
+
+    In the editor, with code past the starter and an LLM, it's a live hint: what
+    an interviewer would say about the code on screen, with up to two marks
+    pinned to its lines. Otherwise — or if that call fails — it's the problem's
+    next ladder rung. Every hint counts toward hint_level and is logged.
+    """
     store = get_store(uid)
     s = store.latest_active_session()
     if not s:
         raise HTTPException(400, "no active session")
-    ladder = await coach.ensure_hint_ladder(store, s["slug"])
-    if not ladder:
-        return {"hint": None, "level": s.get("hint_level", 0),
-                "exhausted": True, "llm": llm.enabled(store.get_settings())}
-    level = min(len(ladder), s.get("hint_level", 0) + 1)
-    store.update_session(s["id"], {"hint_level": level})
-    _log_server_event(store, s, {"k": "hint", "level": level})
-    return {"hint": ladder[level - 1], "level": level, "total": len(ladder),
-            "exhausted": level >= len(ladder)}
+    if not _assisted(s):
+        raise HTTPException(400, "no hints on this run")
+    settings = store.get_settings()
+    prob = store.get_problem(s["slug"]) or {}
+    log_ = list(s.get("hint_log") or [{"text": t, "src": "ladder"} for t in _hints_given(prob, s)])
+    rung = _ladder_rung(s)
+    hint = None
+    if s.get("surface") == "editor" and llm.enabled(settings):
+        doc = store.get_recording(s["id"]) or {}
+        code = (body.code if body and body.code is not None else None) or doc.get("code") or ""
+        if not coach.untouched(code, prob.get("starter_code")):
+            events = recording.parse(doc["events"]) if doc.get("events") else []
+            hint = await coach.live_hint(
+                prob, s, code, [h["text"] for h in log_], recording.last_judged(events),
+                poller.run_clock(s, int(time.time())) // 60, settings=settings)
+            if hint:
+                hint["src"] = "live"
+    if not hint:
+        ladder = await coach.ensure_hint_ladder(store, s["slug"])
+        if not ladder or rung >= len(ladder):
+            return {"hint": None, "level": s.get("hint_level", 0), "exhausted": True,
+                    "llm": llm.enabled(settings), "available": _hints_available(prob, s, settings)}
+        hint = {"text": ladder[rung], "marks": [], "src": "ladder"}
+        rung += 1
+    level = s.get("hint_level", 0) + 1
+    log_.append({"text": hint["text"], "src": hint["src"]})
+    store.update_session(s["id"], {"hint_level": level, "hint_log": log_, "ladder_rung": rung})
+    _log_server_event(store, s, {"k": "hint", "level": level, "text": hint["text"]})
+    s = {**s, "hint_level": level, "hint_log": log_, "ladder_rung": rung}
+    return {"hint": hint["text"], "marks": hint["marks"], "level": level,
+            "available": _hints_available(prob, s, settings)}
+
+
+@app.post("/api/session/give-up")
+async def api_session_give_up(body: Optional[HintRequest] = None,
+                              uid: str = Depends(auth.require_user)):
+    """Hear the approach in words and still write it yourself. Asked once per
+    run; the solve it ends in is marked as having needed the solution."""
+    store = get_store(uid)
+    s = store.latest_active_session()
+    if not s:
+        raise HTTPException(400, "no active session")
+    if not _assisted(s):
+        raise HTTPException(400, "nothing to give up on this run")
+    if s.get("gave_up") and s.get("give_up_text"):
+        return {"text": s["give_up_text"]}
+    prob = store.get_problem(s["slug"]) or {}
+    code = body.code if body and body.code else (store.get_recording(s["id"]) or {}).get("code")
+    if coach.untouched(code, prob.get("starter_code")):
+        code = None
+    text = await coach.give_up(prob, s, code, settings=store.get_settings())
+    if not text:
+        return {"text": None}
+    store.update_session(s["id"], {"gave_up": True, "give_up_text": text})
+    _log_server_event(store, s, {"k": "giveup"})
+    return {"text": text}
 
 
 # One detection pass per user at a time. The session timer and a focus-triggered

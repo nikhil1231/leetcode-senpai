@@ -834,7 +834,7 @@ function pendingRun(ctx, body) {
     session_id: null, slug: ctx.slug, kind: ctx.kind, title: ctx.title || ctx.slug,
     url: ctx.url || leetcodeProblemUrl(ctx.slug), started_at: Math.floor(Date.now() / 1000),
     elapsed_sec: 0, is_paused: false, paused_at: null, paused_sec: 0,
-    hint_level: 0, hint_total: 3, hints_available: false, plan_status: body.plan_status,
+    hint_level: 0, hints_available: false, give_up_available: false, plan_status: body.plan_status,
     surface: body.surface, interview: body.interview, par_sec: e ? e.par_sec : null,
     takeaway: null, plan_check_available: false, plan_check: null,
   };
@@ -896,7 +896,7 @@ async function refreshActive() {
 }
 
 // Run controls that act on the server's copy of the run: off until it has one.
-const RUN_CONTROLS = ["#btn-hint", "#btn-plan-check", "#btn-check-solve",
+const RUN_CONTROLS = ["#btn-hint", "#btn-give-up", "#btn-plan-check", "#btn-check-solve",
                       "#btn-pause-session", "#btn-cancel-session"];
 
 function applyActive(active, editorState = null) {
@@ -913,7 +913,9 @@ function applyActive(active, editorState = null) {
     if (previousId !== active.session_id) $("#nudge").classList.add("hidden");
     setDashboardLocked(true);
     setTakeaway(active.takeaway);
+    if (previousId !== active.session_id) setRunMenu(false);
     setHints(active);
+    setGiveUp(active);
     setPlanCheck(active);
     setPauseButton(active);
     startTimer(active);
@@ -929,7 +931,9 @@ function applyActive(active, editorState = null) {
     window.Editor?.mount(active, editorState);
   } else {
     run.classList.add("hidden");
+    setRunMenu(false);
     $("#hint-panel").classList.add("hidden");
+    $("#give-up-panel").classList.add("hidden");
     $("#plan-check-panel").classList.add("hidden");
     $("#nudge").classList.add("hidden");
     setDashboardLocked(false);
@@ -965,26 +969,75 @@ function setDashboardLocked(locked) {
   });
 }
 
-// The ladder so far, drawn from the run itself — a reload keeps what was
-// revealed. The button goes once the last rung is out; the panel counts them.
+// Coach prose, escaped, with `code` spans kept as code.
+const coachText = (t) => escapeHtml(t).replace(/`([^`]+)`/g, "<code>$1</code>");
+
+// The hints so far, drawn from the run itself — a reload keeps them. Unnumbered:
+// in the editor they're live, so there's no ladder to count down, and the
+// button stays until the server says there's nothing more to give.
 function setHints(active) {
   const hints = active.hints || [];
-  const total = active.hint_total || 3;
-  const used = active.hint_level || 0;
   const btn = $("#btn-hint");
-  btn.classList.toggle("hidden", !active.hints_available || active.kind === "optimize" || used >= total);
+  btn.classList.toggle("hidden", !active.hints_available);
   btn.removeAttribute("aria-busy");
   btn.disabled = false;
-  btn.textContent = `Hint ${used + 1} of ${total}`;
+  btn.textContent = hints.length ? "Another hint" : "Ask for a hint";
   const panel = $("#hint-panel");
   panel.classList.toggle("hidden", !hints.length);
   const html = hints.length ? `
-    <div class="hint-head"><span>Hints</span><span>${hints.length} of ${total}</span></div>
-    <ol class="hint-list">${hints.map((h, i) =>
-      `<li${i === hints.length - 1 ? ' class="is-latest"' : ""}>${escapeHtml(h)}</li>`).join("")}</ol>` : "";
-  // Redrawn only on a change, so a refresh doesn't replay the newest rung's entrance.
+    <div class="note-head"><span>${hints.length === 1 ? "Hint" : "Hints"}</span>
+      <button id="btn-clear-marks" class="note-action hidden" type="button">Clear marks</button></div>
+    <ul class="hint-list">${hints.map((h, i) =>
+      `<li${i === hints.length - 1 ? ' class="is-latest"' : ""}>${coachText(h)}</li>`).join("")}</ul>` : "";
+  // Redrawn only on a change, so a refresh doesn't replay the newest hint's entrance.
+  if (panel._drawn !== html) {
+    panel._drawn = html;
+    panel.innerHTML = html;
+    $("#btn-clear-marks")?.addEventListener("click", () => {
+      window.Editor?.clearMarks();
+      $("#btn-clear-marks").classList.add("hidden");
+    });
+  }
+}
+
+// Giving up is a one-time step down from hints: the approach in words, kept on
+// screen for the rest of the run, with the code still yours to write.
+function setGiveUp(active) {
+  const btn = $("#btn-give-up");
+  btn.classList.toggle("hidden", !active.give_up_available || Boolean(active.give_up));
+  btn.removeAttribute("aria-busy");
+  btn.disabled = false;
+  btn.textContent = "Give up";
+  delete btn.dataset.armed;
+  const panel = $("#give-up-panel");
+  panel.classList.toggle("hidden", !active.give_up);
+  const html = active.give_up ? `
+    <div class="note-head"><span>The approach</span><span class="note-meta">your turn to write it</span></div>
+    <p>${coachText(active.give_up)}</p>` : "";
   if (panel._drawn !== html) { panel._drawn = html; panel.innerHTML = html; }
 }
+
+// The rarer run actions live behind ⋯; the menu closes on a pick, a click
+// elsewhere or Escape.
+function setRunMenu(open) {
+  $("#run-menu").classList.toggle("hidden", !open);
+  $("#btn-run-menu").setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+$("#btn-run-menu").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = $("#run-menu").classList.contains("hidden");
+  setRunMenu(open);
+  if (open) $("#run-menu button:not(.hidden):not(:disabled)")?.focus();
+});
+$("#run-menu").addEventListener("click", (e) => { if (e.target.closest("button")) setRunMenu(false); });
+document.addEventListener("click", (e) => { if (!e.target.closest(".run-menu")) setRunMenu(false); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#run-menu").classList.contains("hidden")) {
+    setRunMenu(false);
+    $("#btn-run-menu").focus();
+  }
+});
 
 // The plan check is offered, never shown unasked: an unrequested critique of
 // your plan is a hint. Once asked for it stays on screen for the rest of the run.
@@ -1040,11 +1093,11 @@ $("#btn-plan-check").addEventListener("click", async () => {
   }
 });
 
+// Pause sits in the menu; a paused run puts Resume out front, since that's the
+// only thing left to do with it.
 function setPauseButton(active) {
   const btn = $("#btn-pause-session");
   btn.textContent = active.is_paused ? "Resume" : "Pause";
-  btn.classList.toggle("is-primary", active.is_paused);
-  btn.classList.toggle("is-ghost", !active.is_paused);
   btn.setAttribute("aria-pressed", active.is_paused ? "true" : "false");
   $("#active-run").classList.toggle("is-paused", active.is_paused);
   $("#active-status").textContent = active.is_paused ? "Run paused" : "Current run";
@@ -1088,36 +1141,84 @@ function checkNudges(elapsed) {
   const n = $("#nudge");
   if (elapsed >= 35 * 60 && !nudgeShown.solution) {
     nudgeShown.solution = true;
-    n.innerHTML = `⏱️ 35 min in. Reading the solution now is a smart move — mark it "Read solution" and you'll re-solve it in 2 days. That's the plan, not a failure.`;
+    n.innerHTML = `⏱️ 35 min in. Giving up now is a smart move — hear the approach, write it yourself, and it comes back in 2 days. That's the plan, not a failure.`;
     n.classList.remove("hidden");
   } else if (elapsed >= 20 * 60 && !nudgeShown.hint && !(activeSession && activeSession.hint_level)) {
     nudgeShown.hint = true;
-    n.innerHTML = `💡 20 min in. Stuck? Try revealing hint 1 before pushing further.`;
+    n.innerHTML = `💡 20 min in. Stuck? Ask for a hint before pushing further.`;
     n.classList.remove("hidden");
   }
 }
 
+// The code on screen goes with the ask, after its edits are logged, so the
+// hint reads what you see and the run's log has it in order.
+async function editorCodeForCoach() {
+  const ed = window.Editor;
+  if (!ed || !ed.code) return null;
+  ed.tick();
+  await ed.flush();
+  return ed.code();
+}
+
 $("#btn-hint").addEventListener("click", async () => {
   if (!activeSession) return;
+  const sessionId = activeSession.session_id;
   const btn = $("#btn-hint");
   // The label stays put while it loads: a relabelled button reflows the bar.
   btn.disabled = true;
   btn.setAttribute("aria-busy", "true");
   try {
-    const r = await api("/session/hint", "POST");
-    if (!activeSession) return;
+    const code = await editorCodeForCoach();
+    const r = await api("/session/hint", "POST", code == null ? {} : { code });
+    if (!activeSession || activeSession.session_id !== sessionId) return;
     if (r.hint == null) {
-      toast(llmEnabled ? "No hints available for this one." : "Hints need the coach enabled.");
+      activeSession = { ...activeSession, hints_available: Boolean(r.available) };
+      toast(r.available ? "Couldn't get a hint just now — try again."
+        : llmEnabled ? "No more hints for this one." : "Hints need the coach enabled.");
       setHints(activeSession);
       return;
     }
-    const hints = (activeSession.hints || []).slice(0, r.level - 1);
-    hints[r.level - 1] = r.hint;
-    activeSession = { ...activeSession, hint_level: r.level, hints,
-                      hint_total: r.total || activeSession.hint_total || 3 };
+    activeSession = { ...activeSession, hint_level: r.level,
+                      hints: [...(activeSession.hints || []), r.hint],
+                      hints_available: r.available !== false };
     setHints(activeSession);
+    const shown = window.Editor?.showMarks(r.marks || []) || 0;
+    $("#btn-clear-marks")?.classList.toggle("hidden", !shown);
   } catch (e) {
     setHints(activeSession);
+    toast(e.message);
+  }
+});
+
+// Two clicks: giving up marks the solve as needing the solution, so a stray
+// click shouldn't. The second must come within a few seconds.
+$("#btn-give-up").addEventListener("click", async () => {
+  if (!activeSession) return;
+  const btn = $("#btn-give-up");
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = "1";
+    btn.textContent = "Sure? Click again";
+    btn._disarm = setTimeout(() => setGiveUp(activeSession || {}), 4000);
+    return;
+  }
+  clearTimeout(btn._disarm);
+  const sessionId = activeSession.session_id;
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  btn.textContent = "Give up";
+  try {
+    const code = await editorCodeForCoach();
+    const r = await api("/session/give-up", "POST", code == null ? {} : { code });
+    if (!activeSession || activeSession.session_id !== sessionId) return;
+    if (!r.text) {
+      activeSession = { ...activeSession, give_up_available: false };
+      toast("No explanation available for this one — the solution is on LeetCode.");
+    } else {
+      activeSession = { ...activeSession, give_up: r.text };
+    }
+    setGiveUp(activeSession);
+  } catch (e) {
+    setGiveUp(activeSession);
     toast(e.message);
   }
 });
@@ -1209,7 +1310,7 @@ async function reopenForRating(attemptId) {
   openNextPending();
 }
 
-$("#btn-pause-session").addEventListener("click", async () => {
+async function togglePause() {
   if (!activeSession) return;
   const paused = !activeSession.is_paused;
   const requestId = ++pauseRequestId;
@@ -1244,7 +1345,9 @@ $("#btn-pause-session").addEventListener("click", async () => {
     }
     toast(e.message);
   }
-});
+}
+$("#btn-pause-session").addEventListener("click", togglePause);
+$("#btn-resume-session").addEventListener("click", togglePause);
 
 // ---- annotation modal ----------------------------------------------------------
 function openAnnotate(attempt) {
@@ -1260,10 +1363,10 @@ function openAnnotate(attempt) {
   if (attempt.slug) meta.push(attempt.slug);
   $("#annotate-problem-meta").textContent = meta.join(" · ");
   renderAnnotateFacts(attempt);
-  // default independence to "hints" if they used the hint ladder
+  // Default independence from the run: gave up → solution; leaned on hints → hints.
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   selectPill("#conf-group", "2");
-  selectPill("#indep-group", usedHints ? "hints" : "solo");
+  selectPill("#indep-group", attempt.gave_up ? "solution" : usedHints ? "hints" : "solo");
   // What you did usually is what you planned; start from the plan and edit.
   const plan = attempt.plan || {};
   const fromPlan = plan.status === "planned";

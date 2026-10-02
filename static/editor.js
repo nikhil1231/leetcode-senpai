@@ -8,6 +8,9 @@
 // and any still unsent ride along with the next Run or Submit, so the log always
 // holds what led to the code being judged.
 //
+// A live hint can point at lines of the code: a tint and a ghost margin note,
+// drawn over the buffer, never in it — the code and its log are untouched.
+//
 // A new run opens before the server has it: mounted from what the plan modal
 // prefetched, under no session id, until the start answers and it's adopted.
 // Nothing reaches the server until then — sends wait on `ready`.
@@ -296,6 +299,72 @@
     toast("Added to the test input");
   }
 
+  // ---- hint marks -------------------------------------------------------------------
+  // Up to two lines a hint points at. They follow their lines through edits and
+  // go when cleared, when the next hint lands, or with the run.
+  function marksExtension(CM) {
+    if (!CM.StateField) return null;
+    const set = CM.StateEffect.define();
+    class Note extends CM.WidgetType {
+      constructor(text) { super(); this.text = text; }
+      eq(other) { return other.text === this.text; }
+      toDOM() {
+        const el = document.createElement("span");
+        el.className = "cm-hint-note";
+        el.textContent = `# ${this.text}`;
+        return el;
+      }
+    }
+    const field = CM.StateField.define({
+      create: () => CM.Decoration.none,
+      update(deco, tr) {
+        deco = deco.map(tr.changes);
+        for (const e of tr.effects) if (e.is(set)) deco = e.value;
+        return deco;
+      },
+      provide: (f) => CM.EditorView.decorations.from(f),
+    });
+    return { field, set, Note };
+  }
+
+  // The line a mark meant: where it was if the text still matches, else the
+  // nearest line with that text — the code may have moved while the hint came.
+  function findLine(doc, mark) {
+    const fits = (n) => n >= 1 && n <= doc.lines && doc.line(n).text === mark.text;
+    if (fits(mark.line)) return doc.line(mark.line);
+    for (let d = 1; d < doc.lines; d++) {
+      if (fits(mark.line - d)) return doc.line(mark.line - d);
+      if (fits(mark.line + d)) return doc.line(mark.line + d);
+    }
+    return null;
+  }
+
+  // Draws a hint's marks in place of any before; the count drawn.
+  function showMarks(marks) {
+    const r = run;
+    if (!r || !r.view || !r.marks) return 0;
+    const { CM } = r;
+    const doc = r.view.state.doc;
+    const lines = [];
+    for (const m of marks || []) {
+      const line = findLine(doc, m);
+      if (line && !lines.some((l) => l.line.number === line.number)) lines.push({ line, note: m.note });
+    }
+    lines.sort((a, b) => a.line.from - b.line.from);
+    const ranges = lines.flatMap(({ line, note }) => [
+      CM.Decoration.line({ class: "cm-hint-line" }).range(line.from),
+      CM.Decoration.widget({ widget: new r.marks.Note(note), side: 1 }).range(line.to),
+    ]);
+    const effects = [r.marks.set.of(CM.Decoration.set(ranges, true))];
+    if (lines.length) effects.push(CM.EditorView.scrollIntoView(lines[0].line.from, { y: "center" }));
+    r.view.dispatch({ effects });
+    return lines.length;
+  }
+
+  function clearMarks() { showMarks([]); }
+
+  const code = () => (run && run.view ? currentCode() : null);
+
   // ---- mount / unmount --------------------------------------------------------------
   // The plan's edge cases, to tick off as runs cover them. Ticks are logged, so
   // the review can see which ones were actually tested.
@@ -323,10 +392,15 @@
       memory <b>${pct(o.memory_percentile)}</b>. A better Accepted replaces it; Stop optimizing keeps it.</p>`;
   }
 
-  function paneHtml(state) {
+  // In the app's editor, LeetCode's own page is the fallback, not the way in.
+  const lcLink = (url, label = "Open on LeetCode") => url
+    ? `<a class="editor-lc-link" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>` : "";
+
+  function paneHtml(state, url) {
     return `
       <div class="editor-statement recall-statement">${sanitizeProblemHtml(state.content_html)
-        || `<p class="small">Statement unavailable — it's on LeetCode.</p>`}</div>
+        || `<p class="small">Statement unavailable — it's on LeetCode.</p>`}
+        <p class="editor-lc">${lcLink(url)}</p></div>
       <div id="editor-split" class="editor-split" role="separator" aria-orientation="vertical"
            aria-label="Resize the statement" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <div class="editor-work">
@@ -475,7 +549,7 @@
         prefetched || api(`/editor/state?session_id=${encodeURIComponent(active.session_id)}`),
         loadCodeMirror()]);
     } catch (e) {
-      if (run === r) pane.innerHTML = `<p class="small">${esc(e.message)} Solve it on LeetCode instead.</p>`;
+      if (run === r) pane.innerHTML = `<p class="small">${esc(e.message)} ${lcLink(active.url, "Solve it on LeetCode instead")}</p>`;
       return;
     }
     if (run !== r) return;
@@ -495,7 +569,7 @@
         [state, CM] = await Promise.all([
           state || api(`/editor/state?session_id=${encodeURIComponent(r.sessionId)}`), loadCodeMirror()]);
       } catch (e) {
-        if (run === r) $("#editor-pane").innerHTML = `<p class="small">${esc(e.message)} Solve it on LeetCode instead.</p>`;
+        if (run === r) $("#editor-pane").innerHTML = `<p class="small">${esc(e.message)} ${lcLink(active.url, "Solve it on LeetCode instead")}</p>`;
         return;
       }
       if (run !== r) return;
@@ -509,7 +583,7 @@
   function build(r, state, CM, active) {
     const pane = $("#editor-pane");
     if (!state.available) {
-      pane.innerHTML = `<p class="small">This problem can't be edited here yet — solve it on LeetCode.</p>`;
+      pane.innerHTML = `<p class="small">This problem can't be edited here yet — ${lcLink(active.url, "solve it on LeetCode")}</p>`;
       return;
     }
     // Server time since the run began, so client- and server-written events share a clock.
@@ -534,7 +608,7 @@
     } else {
       Object.assign(r, { lastLogged: state.code, seq: state.seq });
     }
-    pane.innerHTML = paneHtml(state);
+    pane.innerHTML = paneHtml(state, active.url);
     $("#editor-input").value = r.input;
     $("#editor-input").addEventListener("input", () => { r.input = $("#editor-input").value; persist(r); });
     if (r.edges.length) {
@@ -543,6 +617,7 @@
     }
 
     r.readOnly = new CM.Compartment();
+    r.marks = marksExtension(CM);
     r.view = new CM.EditorView({
       parent: $("#editor-cm"),
       state: CM.EditorState.create({
@@ -561,6 +636,7 @@
             ...CM.defaultKeymap, ...CM.historyKeymap, CM.indentWithTab,
           ]),
           r.readOnly.of(CM.EditorState.readOnly.of(false)),
+          ...(r.marks ? [r.marks.field] : []),
           CM.EditorView.theme({}, { dark: true }),
         ],
       }),
@@ -625,5 +701,5 @@
   function preload() { loadCodeMirror().catch(() => {}); }
 
   window.Editor = { mount, unmount, preload, setPaused, discard, diff, tick, flush, judge,
-                    _state: () => run };
+                    code, showMarks, clearMarks, _state: () => run };
 })();

@@ -31,10 +31,10 @@ cat > "$WORK/package.json" <<'EOF'
 EOF
 
 cat > "$WORK/entry.js" <<'EOF'
-export { EditorState, Compartment } from "@codemirror/state";
+export { EditorState, Compartment, StateField, StateEffect } from "@codemirror/state";
 export {
   EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
-  highlightSpecialChars, drawSelection,
+  highlightSpecialChars, drawSelection, Decoration, WidgetType,
 } from "@codemirror/view";
 export { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 export { indentOnInput, bracketMatching, syntaxHighlighting, indentUnit } from "@codemirror/language";

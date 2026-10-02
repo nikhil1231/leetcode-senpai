@@ -132,6 +132,7 @@ async def _record_solve(store, session, match, auth, known=None):
         **_plan_fields(session),
         "failed_tests": failed_tests,
         "hint_level_used": session.get("hint_level", 0),
+        "gave_up": bool(session.get("gave_up")),
         "complexity_time": None, "complexity_space": None,
         "solution_grading_status": None,
         **extra,

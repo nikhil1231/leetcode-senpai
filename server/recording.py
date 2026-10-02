@@ -9,7 +9,9 @@ only when the code moved since the last one, so time spent thinking costs nothin
   d      delta           {f, to, s}              replace code[f:to] with s
   run    run             {code, input, result}   also a checkpoint
   sub    submit          {code, submission_id, result}  also a checkpoint
-  pause / resume / blur / focus / hint {level}
+  pause / resume / blur / focus
+  hint   hint asked for  {level, text?}          level counts hints taken this run
+  giveup gave up         {}                      heard the approach in words
   edge   edge case       {case, on}              a planned edge case ticked (or not)
   reset                                          back to the starter code (a "c" follows)
 
@@ -359,6 +361,14 @@ def _judged(ev):
     return head
 
 
+def last_judged(events):
+    """The most recent run or submit, described in a line; None before any."""
+    for ev in reversed(events):
+        if ev.get("k") in ("run", "sub"):
+            return _judged(ev)
+    return None
+
+
 def unified_diff(a, b, context=1):
     """A headerless unified diff of two versions of some code."""
     out = [line for line in difflib.unified_diff((a or "").splitlines(), (b or "").splitlines(),
@@ -416,7 +426,10 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
             if k == "sub" and (ev.get("result") or {}).get("status") != "Accepted":
                 failed_sub = (entry, code)
         elif k == "hint":
-            entries.append([t, f"revealed hint {ev.get('level')}", None])
+            entries.append([t, f"asked for a hint: \"{_one_line(ev['text'], 160)}\""
+                               if ev.get("text") else f"revealed hint {ev.get('level')}", None])
+        elif k == "giveup":
+            entries.append([t, "gave up and heard the approach explained", None])
         elif k == "reset":
             entries.append([t, "reset the code to the starter", None])
         elif k == "edge" and ev.get("on"):

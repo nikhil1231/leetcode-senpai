@@ -90,7 +90,7 @@
         </div>
       </header>
 
-      <!-- Active session focus mode (timer + hint ladder) -->
+      <!-- Active session focus mode (timer + hints) -->
       <section id="active-run" class="active-run hidden">
         <div class="active-run-inner" aria-live="polite">
           <div class="active-kicker"><span class="dot"></span><span id="active-status">Current run</span></div>
@@ -103,16 +103,28 @@
           </div>
           <div class="active-actions">
             <a id="active-link" class="button is-primary is-lg" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
-            <button id="btn-hint" class="button hint-btn">Reveal hint 1 of 3</button>
-            <button id="btn-plan-check" class="button is-ghost hidden" type="button" title="An LLM read of the plan you locked in. It's noted on this solve.">Check my plan</button>
-            <button id="btn-check-solve" class="button is-ghost" type="button" title="Solves are picked up when you come back to this tab. Solved elsewhere without leaving it? Check here.">Check for solve</button>
-            <button id="btn-pause-session" class="button is-ghost">Pause</button>
-            <button id="btn-cancel-session" class="button is-ghost">Cancel run</button>
+            <button id="btn-hint" class="button hint-btn" type="button" title="An interviewer's nudge about the code you've written">Ask for a hint</button>
+            <button id="btn-give-up" class="button is-ghost is-small give-up-btn hidden" type="button" title="Hear the approach in plain English, then write it yourself. The solve counts as needing the solution.">Give up</button>
+            <button id="btn-resume-session" class="button is-primary resume-btn" type="button">Resume</button>
+            <div class="run-menu">
+              <button id="btn-run-menu" class="button is-ghost icon-button" type="button"
+                      aria-haspopup="menu" aria-expanded="false" aria-controls="run-menu"
+                      aria-label="More run actions" title="More">&#x22EF;</button>
+              <div id="run-menu" class="run-menu-list hidden" role="menu">
+                <button id="btn-plan-check" class="hidden" type="button" role="menuitem" title="An LLM read of the plan you locked in. It's noted on this solve.">Check my plan</button>
+                <button id="btn-check-solve" type="button" role="menuitem" title="Solves are picked up when you come back to this tab. Solved elsewhere without leaving it? Check here.">Check for solve</button>
+                <button id="btn-pause-session" type="button" role="menuitem">Pause</button>
+                <button id="btn-cancel-session" class="is-danger" type="button" role="menuitem">Cancel run</button>
+              </div>
+            </div>
           </div>
-          <p id="active-takeaway" class="active-takeaway hidden"></p>
-          <div id="hint-panel" class="hint-panel hidden"></div>
-          <div id="plan-check-panel" class="plan-critique hidden"></div>
-          <div id="nudge" class="nudge hidden"></div>
+          <div class="active-notes">
+            <p id="active-takeaway" class="active-takeaway hidden"></p>
+            <div id="hint-panel" class="hint-panel hidden"></div>
+            <div id="give-up-panel" class="give-up-panel hidden"></div>
+            <div id="plan-check-panel" class="plan-critique hidden"></div>
+            <div id="nudge" class="nudge hidden"></div>
+          </div>
         </div>
         <div id="editor-pane" class="editor-pane hidden"></div>
       </section>

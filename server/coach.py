@@ -6,6 +6,8 @@ report, and playbook synthesis pull together the user's structured data on
 demand. Everything degrades gracefully when the LLM is disabled.
 """
 import datetime as dt
+import html
+import re
 import time
 
 from . import llm
@@ -28,6 +30,90 @@ async def ensure_hint_ladder(store, slug):
     if hints:
         store.upsert_problem({"slug": slug, "hint_ladder": hints})
     return hints or None
+
+
+# ---- live hints + giving up -------------------------------------------------------
+# A live hint reads the code on screen and answers like an interviewer would; the
+# ladder above is its fallback when there's no code to read or no LLM. Giving up
+# hears the approach in words — below reading a solution, above another nudge.
+def untouched(code, starter):
+    """True when the buffer is still the starter code, give or take whitespace."""
+    return "".join((code or "").split()) == "".join((starter or "").split())
+
+
+def numbered(code):
+    return "\n".join(f"{i:>3} | {line}" for i, line in enumerate((code or "").split("\n"), 1))
+
+
+def statement_text(content_html, limit=2500):
+    """A problem statement's HTML as plain text, for a prompt."""
+    text = re.sub(r"<sup>(.*?)</sup>", r"^\1", content_html or "")
+    text = re.sub(r"<(br|/p|/pre|/li|/ul|/ol|/div)\b[^>]*>", "\n", text)
+    text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    text = re.sub(r"\n\s*\n+", "\n\n", text).strip()
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def parse_marks(raw, code, limit=2):
+    """The model's "line: note" marks, kept only where they point at a real,
+    non-blank line of the code it was shown. Each carries that line's text so
+    the editor can find it again if the code moved while the hint was coming."""
+    lines = (code or "").split("\n")
+    out, seen = [], set()
+    for item in raw or []:
+        m = re.match(r"\s*(?:line\s*)?(\d+)\s*[:\-–—]\s*(.+)", str(item), re.I)
+        if not m:
+            continue
+        n, note = int(m.group(1)), " ".join(m.group(2).split())
+        if not (1 <= n <= len(lines)) or not lines[n - 1].strip() or n in seen or not note:
+            continue
+        seen.add(n)
+        out.append({"line": n, "text": lines[n - 1], "note": note[:80]})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def give_up_fallback(prob):
+    """The approach from cached content, for when no LLM can explain it."""
+    canon = prob.get("canonical_summary") or {}
+    ideas = [i for i in canon.get("key_ideas") or [] if i]
+    if ideas:
+        cost = f" That's {canon['time']} time and {canon['space']} space." if canon.get("time") and canon.get("space") else ""
+        return " ".join(i.rstrip(".") + "." for i in ideas) + cost
+    ladder = prob.get("hint_ladder") or []
+    return " ".join(ladder) or None
+
+
+async def live_hint(prob, s, code, previous, last_judged, minutes, settings=None):
+    """A hint about the code on screen: {text, marks}, or None on any failure."""
+    plan = " — ".join(x for x in (s.get("predicted_category"), s.get("predicted_approach")) if x)
+    res = await llm.extract("live_hint", {
+        "title": prob.get("title", s["slug"]), "difficulty": prob.get("difficulty"),
+        "category": prob.get("neetcode_category"),
+        "statement": statement_text(prob.get("content_html")),
+        "plan": plan, "minutes": minutes, "last_judged": last_judged,
+        "previous": previous[-6:], "code": numbered(code)[:6000],
+    }, settings=settings)
+    text = " ".join(((res or {}).get("hint") or "").split())
+    if not text:
+        return None
+    return {"text": text, "marks": parse_marks(res.get("marks"), code)}
+
+
+async def give_up(prob, s, code, settings=None):
+    """The approach in spoken English, tailored to the code so far when there's an LLM."""
+    if llm.enabled(settings):
+        res = await llm.extract("give_up", {
+            "title": prob.get("title", s["slug"]), "difficulty": prob.get("difficulty"),
+            "category": prob.get("neetcode_category"),
+            "statement": statement_text(prob.get("content_html")),
+            "code": (code or "")[:6000] or None,
+        }, settings=settings)
+        text = " ".join(((res or {}).get("approach") or "").split())
+        if text:
+            return text
+    return give_up_fallback(prob)
 
 
 async def ensure_canonical(store, slug):

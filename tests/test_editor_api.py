@@ -496,3 +496,110 @@ def test_state_reports_a_missing_cookie(client):
     main.app.dependency_overrides[auth.leetcode_auth] = lambda: None
     sid = _start(client)
     assert client.get(f"/api/editor/state?session_id={sid}").json()["can_judge"] is False
+
+
+# ---- live hints + giving up -----------------------------------------------------
+def _coach(monkeypatch, replies):
+    """An LLM that answers the tasks in `replies` and records what they were asked;
+    anything else (the start's background prep) gets nothing."""
+    asked = []
+
+    async def extract(task, payload, settings=None):
+        if task not in replies:
+            return None
+        asked.append((task, payload))
+        return replies[task]
+    monkeypatch.setattr(main.llm, "enabled", lambda settings=None: True)
+    monkeypatch.setattr(main.llm, "extract", extract)
+    return asked
+
+
+def test_a_live_hint_reads_the_code_on_screen_and_points_at_its_lines(client, monkeypatch):
+    asked = _coach(monkeypatch, {"live_hint": {
+        "hint": "What does index 0 hold?", "marks": ["3: is this always right?", "9: nope"]}})
+    sid = _start(client)
+    client.get(f"/api/editor/state?session_id={sid}")
+    r = client.post("/api/session/hint", json={"code": WRONG}).json()
+    assert r["hint"] == "What does index 0 hold?" and r["level"] == 1 and r["available"]
+    assert r["marks"] == [{"line": 3, "text": "        return [0, 0]", "note": "is this always right?"}]
+    task, payload = asked[0]
+    assert task == "live_hint" and "  3 |         return [0, 0]" in payload["code"]
+    assert payload["statement"] == "Two Sum" and payload["previous"] == []
+
+    client.post("/api/session/hint", json={"code": WRONG})
+    assert asked[1][1]["previous"] == ["What does index 0 hold?"]
+    active = client.get("/api/session/active").json()["active"]
+    assert active["hint_level"] == 2 and active["hints"] == ["What does index 0 hold?"] * 2
+    assert active["hints_available"] is True  # live hints don't run out
+    hints = [e for e in _events(client, sid) if e["k"] == "hint"]
+    assert [(e["level"], e["text"]) for e in hints] == [(1, "What does index 0 hold?"), (2, "What does index 0 hold?")]
+
+
+def test_with_only_the_starter_or_a_failed_call_it_falls_back_to_the_ladder(client, monkeypatch):
+    asked = _coach(monkeypatch, {"live_hint": None})
+    client.store.upsert_problem({"slug": "two-sum", "hint_ladder": ["one", "two"]})
+    sid = _start(client)
+    client.get(f"/api/editor/state?session_id={sid}")
+    assert client.post("/api/session/hint", json={"code": STARTER}).json()["hint"] == "one"
+    assert asked == []  # nothing written yet: no call
+    assert client.post("/api/session/hint", json={"code": WRONG}).json()["hint"] == "two"
+    assert [t for t, _ in asked] == ["live_hint"]
+    # The ladder is spent, but the next live hint may still land.
+    assert client.get("/api/session/active").json()["active"]["hints_available"] is True
+
+
+def test_on_leetcodes_page_hints_are_the_ladder_and_run_out(client):
+    client.store.upsert_problem({"slug": "two-sum", "hint_ladder": ["one"]})
+    client.post("/api/session/start", json={"slug": "two-sum"})
+    r = client.post("/api/session/hint").json()
+    assert (r["hint"], r["marks"], r["available"]) == ("one", [], False)
+    assert client.post("/api/session/hint").json()["hint"] is None
+    assert client.get("/api/session/active").json()["active"]["hints_available"] is False
+
+
+def test_a_run_from_before_live_hints_keeps_its_rungs(client):
+    client.store.upsert_problem({"slug": "two-sum", "hint_ladder": ["one", "two", "three"]})
+    sid = client.post("/api/session/start", json={"slug": "two-sum"}).json()["session_id"]
+    client.store.update_session(sid, {"hint_level": 2})  # no hint_log: the old shape
+    assert client.get("/api/session/active").json()["active"]["hints"] == ["one", "two"]
+    assert client.post("/api/session/hint").json()["hint"] == "three"
+    assert client.get("/api/session/active").json()["active"]["hints"] == ["one", "two", "three"]
+
+
+def test_mocks_and_optimize_runs_get_no_hints_or_giving_up(client):
+    client.store.upsert_problem({"slug": "two-sum", "hint_ladder": ["one"]})
+    client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock"})
+    active = client.get("/api/session/active").json()["active"]
+    assert active["hints_available"] is False and active["give_up_available"] is False
+    assert client.post("/api/session/hint").status_code == 400
+    assert client.post("/api/session/give-up").status_code == 400
+
+
+def test_giving_up_explains_once_and_marks_the_solve(client, monkeypatch):
+    asked = _coach(monkeypatch, {"give_up": {"approach": "Keep a map of what you've seen."}})
+    sid = _start(client)
+    assert client.get("/api/session/active").json()["active"]["give_up_available"] is True
+    client.get(f"/api/editor/state?session_id={sid}")
+    assert client.post("/api/session/give-up", json={"code": WRONG}).json() == {
+        "text": "Keep a map of what you've seen."}
+    assert asked[0][1]["code"] == WRONG
+    client.post("/api/session/give-up", json={"code": WRONG})
+    assert len(asked) == 1  # asked once per run
+    assert client.get("/api/session/active").json()["active"]["give_up"] == "Keep a map of what you've seen."
+    assert [e["k"] for e in _events(client, sid)][-1] == "giveup"
+
+    started = client.store.get_session(sid)["started_at"]
+    _submits(monkeypatch, [{"status": "Accepted", "accepted": True, "submission_id": 12,
+                            "finished_at": started + 300, "correct": 65, "total": 65}])
+    done = client.post("/api/editor/submit", json={
+        "session_id": sid, "code": RIGHT, "t": 300_000, "seq": 1,
+        "events": [{"t": 290_000, "k": "d", **recording.diff(STARTER, RIGHT)}]}).json()
+    assert client.store.get_attempt(done["attempt_id"])["gave_up"] is True
+
+
+def test_giving_up_without_an_llm_uses_the_cached_summary(client):
+    client.store.upsert_problem({"slug": "two-sum", "canonical_summary": {
+        "key_ideas": ["Hash the complements"], "time": "O(n)", "space": "O(n)"}})
+    client.post("/api/session/start", json={"slug": "two-sum"})
+    assert client.post("/api/session/give-up").json()["text"] == \
+        "Hash the complements. That's O(n) time and O(n) space."

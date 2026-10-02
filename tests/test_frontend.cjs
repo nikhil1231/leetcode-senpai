@@ -526,3 +526,40 @@ test('stopping an optimize run goes back to rating that solve, not the queue hea
   await ui.run('reopenForRating("optimized")');
   assert.equal(ui.run('currentAttempt.id'), 'optimized');
 });
+
+test('a hint asks with the code on screen, lists unnumbered and draws its marks', async () => {
+  const calls = [];
+  const ui = app(async (path, opts) => {
+    calls.push([path, opts && opts.body ? JSON.parse(opts.body) : null]);
+    return response({ hint: 'What does `seen` hold?', level: 2, available: true,
+                      marks: [{ line: 3, text: 'x', note: 'here?' }] });
+  });
+  ui.run(`window.Editor = { tick() { window.ticked = true; }, flush: async () => {}, code: () => "CODE",
+          showMarks: (m) => { window.marks = m; return m.length; } }`);
+  ui.run('activeSession = { session_id: "s1", hints: ["Earlier one."], hint_level: 1, hints_available: true }');
+  await ui.node('#btn-hint').listeners.click();
+  const [path, body] = calls.find(([p]) => p.endsWith('/session/hint'));
+  assert.equal(body.code, 'CODE');
+  assert.equal(ui.run('window.ticked'), true);
+  assert.equal(ui.run('activeSession.hint_level'), 2);
+  const html = ui.node('#hint-panel').innerHTML;
+  assert.match(html, /<ul class="hint-list">/);
+  assert.match(html, /<li class="is-latest">What does <code>seen<\/code> hold\?<\/li>/);
+  assert.doesNotMatch(html, /of \d/);
+  assert.equal(ui.node('#btn-hint').textContent, 'Another hint');
+  assert.equal(ui.run('window.marks[0].note'), 'here?');
+});
+
+test('giving up takes a second click, then keeps the approach on screen', async () => {
+  const calls = [];
+  const ui = app(async (path) => { calls.push(path); return response({ text: 'Slide a window.' }); });
+  ui.run('activeSession = { session_id: "s1", give_up_available: true }');
+  const btn = ui.node('#btn-give-up');
+  await btn.listeners.click();
+  assert.equal(btn.textContent, 'Sure? Click again');
+  assert.equal(calls.filter((p) => p.endsWith('/give-up')).length, 0);
+  await btn.listeners.click();
+  assert.equal(calls.filter((p) => p.endsWith('/give-up')).length, 1);
+  assert.equal(ui.run('activeSession.give_up'), 'Slide a window.');
+  assert.match(ui.node('#give-up-panel').innerHTML, /The approach[\s\S]*Slide a window\./);
+});

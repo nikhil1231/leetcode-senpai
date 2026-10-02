@@ -113,6 +113,16 @@ class HintLadder(BaseModel):
     hints: list[str] = Field(default_factory=list, description="exactly 3, escalating; rung 3 outlines the approach")
 
 
+class LiveHint(BaseModel):
+    # Flat, like PlanGrade: marks are "line: note" strings, parsed in coach.py.
+    hint: str = Field("", description="1-2 short spoken sentences, under 35 words")
+    marks: list[str] = Field(default_factory=list, description="0-2 items, each '<line number>: <note under 8 words>'")
+
+
+class GiveUpExplainer(BaseModel):
+    approach: str = Field("", description="3-5 spoken sentences, no code")
+
+
 class CanonicalSummary(BaseModel):
     key_ideas: list[str] = Field(default_factory=list)
     time: str = ""
@@ -350,6 +360,52 @@ TASKS: dict[str, Task] = {
         "no pattern named. Hint 2: name the pattern/data structure. Hint 3: outline "
         "the full approach in 2-3 steps. Never paste code.",
         lambda p: f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}). Slug: {p.get('slug')}.",
+    ),
+    "live_hint": Task(
+        LiveHint,
+        "You are a supportive senior engineer running a live coding interview. The "
+        "candidate asked for a hint. Read THEIR code and say what you would say out "
+        "loud across the table: 1-2 short sentences, under 35 words, plain speech. "
+        "Respond to where they actually are — a bug, a stall, a wrong turn, a "
+        "missed case, or a next step — not to the problem in general.\n"
+        "NEVER GIVE AWAY THE ANSWER. Do not name the algorithm, pattern or data "
+        "structure unless their code or plan already uses it. Do not state the fix, "
+        "write code, or describe the solution's steps. Prefer a pointed question or "
+        "an observation that lets them find it themselves (\"What happens to your "
+        "window when you see a character twice?\", \"Trace line 6 on 'abba'.\"). "
+        "Escalate gently past the earlier hints; never repeat one. If the code "
+        "hasn't moved since the last hint, go one notch more concrete on the same "
+        "issue rather than restating it — but even then name the problem, never "
+        "the fix; the candidate has a separate Give up button for that. Plain "
+        "text, no markdown.\n"
+        "marks: optionally 0-2 annotations pinned to lines of THEIR code, each "
+        "'<line number>: <note>' with the note under 8 words, like a margin "
+        "comment an interviewer might point at (e.g. '6: what if this is already "
+        "set?'). Same rule: they point, they never answer. Use no marks when "
+        "pointing at a line wouldn't help.",
+        lambda p: (
+            f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
+            f"Statement:\n{p.get('statement') or '(unavailable)'}\n\n"
+            f"Candidate's plan: {p.get('plan') or '(none stated)'}\n"
+            f"Minutes in: {p.get('minutes')}\n"
+            f"Last judged: {p.get('last_judged') or '(not run yet)'}\n"
+            f"Hints already given, oldest first: {json.dumps(p.get('previous') or [])}\n\n"
+            f"Their code (line numbers added):\n{p.get('code')}"
+        ),
+    ),
+    "give_up": Task(
+        GiveUpExplainer,
+        "The candidate in a coding interview has given up and wants the answer, "
+        "explained the way an interviewer would talk it through so they can still "
+        "implement it themselves. In 3-5 plain spoken sentences: the key insight, "
+        "the approach step by step, and the time/space complexity. No code, no "
+        "pseudocode, no variable names from a reference solution. If their code is "
+        "already partly on the right track, say which part to keep.",
+        lambda p: (
+            f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
+            f"Statement:\n{p.get('statement') or '(unavailable)'}\n\n"
+            f"Their code so far:\n{p.get('code') or '(none)'}"
+        ),
     ),
     "canonical_summary": Task(
         CanonicalSummary,

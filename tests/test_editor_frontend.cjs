@@ -331,3 +331,15 @@ test('a run whose start failed is dropped without a request', async () => {
   assert.equal(ui.calls.length, 0);
   assert.equal(ui.E._state(), null);
 });
+
+test('the coach reads the buffer; marks need the decoration API and the statement links out', async () => {
+  const ui = editor();
+  assert.equal(ui.E.code(), null);
+  await ui.E.mount({ session_id: 's1', surface: 'editor', url: 'https://lc/x',
+                     started_at: Math.floor(Date.now() / 1000) - 60, is_paused: false });
+  ui.buffer.code = STARTER + '# mine\n';
+  assert.equal(ui.E.code(), STARTER + '# mine\n');
+  // The stub has no StateField: nothing is drawn, and nothing breaks.
+  assert.equal(ui.E.showMarks([{ line: 1, text: 'class Solution:', note: 'n' }]), 0);
+  assert.match(ui.node('#editor-pane').innerHTML, /<a class="editor-lc-link" href="https:\/\/lc\/x"/);
+});
