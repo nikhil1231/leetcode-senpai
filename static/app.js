@@ -457,6 +457,11 @@ async function loadOverview({ force = false } = {}) {
       <span class="coach-dot"></span>
       <span class="coach-model">Coach ${llmEnabled ? escapeHtml(coachLabel) : "off"}</span>
     </div>`;
+  $("#coach-model").textContent = llmEnabled ? llmModel : "off";
+  // The same numbers, pared down, for the editor's full-screen run header.
+  $("#run-stats").innerHTML = `<span><b>${o.solved}</b>/${o.total_problems}</span>`
+    + `<span class="${o.due_reviews ? "is-due" : ""}"><b>${o.due_reviews}</b> due</span>`
+    + `<span><b>${o.streak}</b> streak</span><span><b>${o.xp_today}</b> XP</span>`;
 
   (o.newly_mastered || []).forEach((m) =>
     toast(`🎉 Topic mastered: ${m.category}!`));
@@ -513,14 +518,70 @@ function renderLcWarning(state) {
   const copy = LC_WARNING[state];
   // "ok", and "unknown" — a LeetCode outage must never masquerade as an expired
   // cookie, or the warning stops meaning anything.
+  const runEl = $("#run-lc");
+  runEl.classList.toggle("hidden", !copy);
   if (!copy) return el.classList.add("hidden");
   const [label, title] = copy;
   el.textContent = label;
   el.title = title;
   el.classList.remove("hidden");
+  runEl.textContent = "Cookie";
+  runEl.title = `${label} — click to paste a fresh one.`;
 }
 
-$("#lc-warning").addEventListener("click", () => goTab("settings"));
+// Either warning opens the cookie modal — on top of whatever you're doing, a run
+// included, rather than off to Settings.
+function openCookieModal() {
+  $("#cookie-why").textContent = lcState === "expired"
+    ? "LeetCode stopped accepting the last one. Paste a fresh one to run, submit and grade."
+    : "Needed to run and submit in the editor, and to grade your code.";
+  $("#cookie-session").value = "";
+  $("#cookie-csrf").value = "";
+  $("#cookie-error").classList.add("hidden");
+  $("#btn-save-cookie").disabled = false;
+  $("#btn-save-cookie").textContent = "Save cookie";
+  $("#cookie-modal").classList.remove("hidden");
+  $("#cookie-session").focus();
+}
+
+function closeCookieModal() { $("#cookie-modal").classList.add("hidden"); }
+
+$("#cookie-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const session = $("#cookie-session").value.trim();
+  const csrf = $("#cookie-csrf").value.trim();
+  const err = $("#cookie-error");
+  if (!session) {
+    err.textContent = "Paste the LEETCODE_SESSION value.";
+    err.classList.remove("hidden");
+    return;
+  }
+  const btn = $("#btn-save-cookie");
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  // Stored exactly as Settings stores it, then checked against LeetCode.
+  localStorage.setItem("lc_session", session);
+  if (csrf) localStorage.setItem("lc_csrf", csrf);
+  let state = "unknown";
+  try { ({ state } = await api("/leetcode-status")); } catch (_) {}
+  lastLcCheckAt = Date.now();
+  renderLcWarning(state);
+  if (state === "expired") {
+    err.textContent = "LeetCode rejected that one — copy it again from a signed-in leetcode.com tab.";
+    err.classList.remove("hidden");
+    btn.disabled = false;
+    btn.textContent = "Save cookie";
+    return;
+  }
+  closeCookieModal();
+  window.Editor?.setCanJudge(true);
+  toast(state === "ok" ? "Cookie saved — LeetCode accepts it." : "Cookie saved.");
+});
+$("#lc-warning").addEventListener("click", openCookieModal);
+$("#run-lc").addEventListener("click", openCookieModal);
+$("#btn-close-cookie").addEventListener("click", closeCookieModal);
+$("#btn-cancel-cookie").addEventListener("click", closeCookieModal);
+$("#cookie-modal").addEventListener("keydown", (e) => { if (e.key === "Escape") closeCookieModal(); });
 
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
@@ -907,6 +968,9 @@ function applyActive(active, editorState = null) {
     run.classList.remove("hidden");
     $("#active-title").textContent = active.title;
     $("#active-link").href = active.url;
+    const diff = active.difficulty || "";
+    $("#active-diff").textContent = diff;
+    $("#active-diff").className = `tag active-diff diff-${diff.toLowerCase()}${diff ? "" : " hidden"}`;
     $("#active-kind").textContent = active.kind === "mock" ? "Mock interview problem"
       : active.kind === "optimize" ? "Optimizing an accepted solve — a better Accepted replaces it."
       : "Solve this problem before returning to the rest of the dashboard.";
@@ -953,10 +1017,9 @@ function setTakeaway(t) {
 
 function setDashboardLocked(locked) {
   document.body.classList.toggle("has-active-session", locked);
-  // The warning stays visible during a run — knowing now means you can fix it
-  // before the AC lands — but like the rest of the header it isn't clickable
-  // until the run is over.
-  ["#tabs", "#overview", "#user-chip", "#coach-chip", "#lc-warning", "main"].forEach((sel) => {
+  // The cookie warning stays live during a run: knowing now means you can fix it
+  // before the AC lands, and its modal opens over the run.
+  ["#tabs", "#overview", "#user-chip", "#coach-chip", "main"].forEach((sel) => {
     const el = $(sel);
     if (!el) return;
     if (locked) {
@@ -972,9 +1035,9 @@ function setDashboardLocked(locked) {
 // Coach prose, escaped, with `code` spans kept as code.
 const coachText = (t) => escapeHtml(t).replace(/`([^`]+)`/g, "<code>$1</code>");
 
-// The hints so far, drawn from the run itself — a reload keeps them. Unnumbered:
-// in the editor they're live, so there's no ladder to count down, and the
-// button stays until the server says there's nothing more to give.
+// The hints so far, drawn from the run itself — a reload keeps them. One card
+// each, numbered in the order given — not a ladder counting down: in the editor
+// they're live, and the button stays until the server says there's nothing more.
 function setHints(active) {
   const hints = active.hints || [];
   const btn = $("#btn-hint");
@@ -984,11 +1047,18 @@ function setHints(active) {
   btn.textContent = hints.length ? "Another hint" : "Ask for a hint";
   const panel = $("#hint-panel");
   panel.classList.toggle("hidden", !hints.length);
-  const html = hints.length ? `
-    <div class="note-head"><span>${hints.length === 1 ? "Hint" : "Hints"}</span>
-      <button id="btn-clear-marks" class="note-action hidden" type="button">Clear marks</button></div>
-    <ul class="hint-list">${hints.map((h, i) =>
-      `<li${i === hints.length - 1 ? ' class="is-latest"' : ""}>${coachText(h)}</li>`).join("")}</ul>` : "";
+  const html = hints.map((h, i) => {
+    const latest = i === hints.length - 1;
+    return `<div class="hint-card${latest ? " is-latest" : ""}">
+      <div class="note-head"><span>Hint ${i + 1}</span>${latest
+        ? `<button id="btn-clear-marks" class="note-action hidden" type="button">Clear marks</button>` : ""}</div>
+      <p>${coachText(h)}</p></div>`;
+  }).join("");
+  $("#coach-empty").textContent = active.hints_available
+    ? "Stuck? A hint reads the code you've written and points, without giving the fix."
+    : active.kind === "mock" ? "A mock runs without hints — it's you and the clock."
+    : active.kind === "optimize" ? "No hints while optimizing — the Accepted is already yours."
+    : "No hints for this one.";
   // Redrawn only on a change, so a refresh doesn't replay the newest hint's entrance.
   if (panel._drawn !== html) {
     panel._drawn = html;
@@ -2828,7 +2898,7 @@ async function onEditorSolved(res) {
 }
 
 window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOverview, render,
-  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth, onEditorSolved,
+  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth, onEditorSolved, openCookieModal,
   get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------

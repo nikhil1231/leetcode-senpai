@@ -915,6 +915,7 @@ def _active_payload(prob, s, settings):
         "paused_at": paused_at, "paused_sec": s.get("paused_sec", 0) or 0,
         "is_paused": bool(paused_at),
         "title": prob.get("title", s["slug"]), "url": prob.get("url"),
+        "difficulty": prob.get("difficulty"),
         "hint_level": s.get("hint_level", 0),
         # Only the hints already given, so a reload keeps them on screen.
         "hints": _hints_given(prob, s),
