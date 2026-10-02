@@ -105,7 +105,7 @@
             <span id="active-par" class="active-par"></span>
           </div>
           <div id="run-stats" class="run-stats"></div>
-          <span id="run-lc" class="run-lc hidden"></span>
+          <button id="run-lc" class="run-lc hidden" type="button"></button>
           <div class="active-actions">
             <a id="active-link" class="button is-primary is-lg" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
             <button id="btn-resume-session" class="button is-primary resume-btn" type="button">Resume</button>
@@ -157,6 +157,31 @@
         <section id="tab-problems" class="tab hidden"></section>
         <section id="tab-settings" class="tab hidden"></section>
       </main>
+    </div>
+  </div>
+
+  <!-- LeetCode cookie: set or replace it without leaving what you're doing -->
+  <div id="cookie-modal" class="overlay hidden">
+    <div class="overlay-card box" role="dialog" aria-modal="true" aria-labelledby="cookie-heading">
+      <div class="modal-titlebar">
+        <div>
+          <h2 class="modal-title" id="cookie-heading">LeetCode cookie</h2>
+          <p id="cookie-why" class="small"></p>
+        </div>
+        <button id="btn-close-cookie" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
+      </div>
+      <form id="cookie-form">
+        <label class="label-sm" for="cookie-session">LEETCODE_SESSION</label>
+        <input id="cookie-session" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="paste the cookie value" />
+        <label class="label-sm" for="cookie-csrf">csrftoken <span class="help-inline">optional</span></label>
+        <input id="cookie-csrf" class="input" type="password" autocomplete="off" spellcheck="false" />
+        <p class="help">From a signed-in leetcode.com tab: DevTools → Application → Cookies. Stored only in this browser and sent per request; never saved server-side.</p>
+        <p id="cookie-error" class="quickstart-error hidden"></p>
+        <div class="overlay-actions">
+          <button id="btn-cancel-cookie" class="button is-ghost" type="button">Cancel</button>
+          <button id="btn-save-cookie" class="button is-primary" type="submit">Save cookie</button>
+        </div>
+      </form>
     </div>
   </div>
 

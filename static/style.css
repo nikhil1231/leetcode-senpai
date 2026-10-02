@@ -2636,6 +2636,7 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .editor-lc-link:hover { text-decoration: underline; }
 .editor-nocookie, .editor-notice { color: var(--amber); }
 .editor-nocookie { margin: 10px 0 0; }
+.editor-nocookie .console-tool { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .editor-notice { margin: 0; padding: 6px 16px; border-top: 1px solid var(--line); }
 .editor-optimizing { margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--line); color: var(--muted); }
 .editor-console {

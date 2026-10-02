@@ -472,7 +472,7 @@
             ${edgesHtml(state.planned_edge_cases || [])}
             <label class="label-sm" for="editor-input">Test input <span class="help-inline">one argument per line, case after case</span></label>
             <textarea id="editor-input" class="editor-input" rows="4" spellcheck="false"></textarea>
-            ${state.can_judge ? "" : `<p class="small editor-nocookie">Set your LeetCode cookie in Settings to run and submit.</p>`}
+            ${state.can_judge ? "" : `<p class="small editor-nocookie"><button id="editor-set-cookie" class="console-tool" type="button">Set your LeetCode cookie</button> to run and submit.</p>`}
           </div>
           <div id="editor-result" class="console-panel editor-result hidden" data-panel="result" aria-live="polite">
             <p class="small editor-pending">Run (${MOD}') to see each case here.</p>
@@ -766,6 +766,7 @@
     applyLayout();
     bindSplit();
     $("#editor-reset").addEventListener("click", resetToStarter);
+    $("#editor-set-cookie")?.addEventListener("click", () => window.App.openCookieModal());
     $("#editor-copy").addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(currentCode()); toast("Code copied"); }
       catch (_) { toast("Couldn't copy — select the code instead."); }
@@ -803,6 +804,15 @@
     await done;
   }
 
+  // A cookie set mid-run: judging works from the next Run on.
+  function setCanJudge(on) {
+    if (!run || !run.view || !on) return;
+    run.canJudge = true;
+    $(".editor-nocookie")?.remove();
+    if (!run.judging) setJudging(false);
+    setRunsLeft(run);
+  }
+
   function setPaused(paused) {
     if (!run || !run.view) return;
     const { CM } = run;
@@ -821,6 +831,6 @@
   // Fetched while the plan is written, so lock-in doesn't wait on it.
   function preload() { loadCodeMirror().catch(() => {}); }
 
-  window.Editor = { mount, unmount, preload, setPaused, discard, diff, tick, flush, judge,
+  window.Editor = { mount, unmount, preload, setPaused, setCanJudge, discard, diff, tick, flush, judge,
                     code, showMarks, clearMarks, _state: () => run };
 })();
