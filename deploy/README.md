@@ -1,5 +1,12 @@
 # deploy/ — LAN testing deployment and public access
 
+> **Superseded.** The live app now runs as the `leetcode-senpai` container, deployed
+> from GitHub `main` by `~/infra/bin/deploy` (`infra-deploy@leetcode-senpai.timer`);
+> the tunnel is the `cloudflared` container in `~/infra`. The LAN testing stack below
+> is disabled, and `leetcode-senpai.service` / `leetcode-senpai-deploy.timer` are no
+> longer used. The rest of this file is kept for history and for the Access/auth notes,
+> which still apply.
+
 Two deployments run on the laptop, from two different checkouts:
 
 | | checkout | port | reached by |

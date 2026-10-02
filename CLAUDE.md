@@ -43,19 +43,19 @@ pure unit tests that run without I/O. Prefer additive, backward-compatible data 
 
 ## Repo topology — where changes land (read before committing)
 
-There are two checkouts of this project; they are NOT interchangeable:
-
 - `~/…/leetcode` — the **real repo**. Its `origin` is GitHub
   (`github.com/nikhil1231/leetcode-senpai`); `main` is canonical. **Durable work goes
   here, on `main`.** Land a change by fast-forwarding `main` to `origin/main`, applying
   your commit, running the suite, and `git push origin main`.
-- `~/…/leetcode-testing` — the **LAN deploy target** (runs at `192.168.0.219:8000`). Its
-  git `origin` is the LOCAL `../leetcode`, not GitHub. A systemd service
-  (`sync-integration.sh`) periodically **hard-resets this checkout** to
-  `origin/integration/leetcode-senpai`. **Never commit here:** the reset wipes your commit,
-  and pushing is rejected anyway (that branch is checked out in the origin's worktree).
+- **Deploys are automatic from GitHub `main`.** `infra-deploy@leetcode-senpai.timer`
+  runs `~/infra/bin/deploy` every 2 minutes: it builds an image from `main`, swaps the
+  `leetcode-senpai` container (`~/infra/stacks/leetcode-senpai/`), and rolls back if
+  `/api/health` doesn't come up. It's served at `https://leetcode.nikhil.ing` through
+  the `cloudflared` container, behind Cloudflare Access. A commit that is only local
+  is not deployed.
 
-A `ticket-runner` service continuously rebuilds `integration/leetcode-senpai` from `main`,
-and the deploy sync then pulls it into the LAN app — so a fix pushed to GitHub `main`
-reaches the running app with no manual deploy step. Don't hand-edit `integration` or the
-`ai/*` branches; they are ticket-runner-managed worktrees.
+The `ticket-runner` service still works leetcode tickets in its own worktrees and
+rebuilds `integration/leetcode-senpai`; Done tickets are merged and pushed to `main`,
+which then deploys like any other commit. Don't hand-edit `integration` or the `ai/*`
+branches. Nothing serves the integration branch any more: the LAN testing stack
+(`~/…/leetcode-testing` on :8000, `leetcode-senpai-testing{,-sync}` units) is disabled.
