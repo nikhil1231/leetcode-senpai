@@ -7,10 +7,10 @@ your real Firestore data via a service-account key and your real UID:
     GOOGLE_APPLICATION_CREDENTIALS=/path/key.json \
     GOOGLE_CLOUD_PROJECT=your-project \
     DEV_UID=<your-firebase-uid> \
-    GEMINI_API_KEY=<optional, unlocks the coaching layer> \
+    OPENROUTER_API_KEY=<optional, unlocks the coaching layer> \
     uv run run.py
 
-Then open http://127.0.0.1:8000. Without GEMINI_API_KEY the app still runs; the
+Then open http://127.0.0.1:8000. Without OPENROUTER_API_KEY the app still runs; the
 LLM-powered features degrade gracefully.
 
 For convenience, if a `.env.local` file exists at the project root (KEY=VALUE

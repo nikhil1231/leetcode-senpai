@@ -54,26 +54,13 @@ PRACTICE_OFFLINE_PATH = os.environ.get("PRACTICE_OFFLINE_PATH") or os.path.join(
     os.path.expanduser("~"), ".leetcode-senpai", "practice_offline.json")
 
 # ---- LLM -----------------------------------------------------------------------
-# Enrichment/coaching layer. Optional: when the selected provider's API key is
+# Enrichment/coaching layer. Optional: when the OpenRouter API key is
 # unset, every LLM-dependent feature degrades gracefully instead of erroring.
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai").lower()
-LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-5.6-luna")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+LLM_PROVIDER = "openrouter"
+# OpenRouter model IDs include the model vendor (e.g. openai/ or google/).
+LLM_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-5.6-luna").strip()
 
-LLM_OPTIONS = {
-    "openai": [
-        "gpt-5.6-luna",
-        "gpt-5.6-terra",
-        "gpt-5.6-sol",
-    ],
-    "gemini": [
-        "gemini-3.5-flash",
-        "gemini-3.1-pro-preview",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-    ],
-}
 
 # ---- Scheduler ------------------------------------------------------------------
 # "fsrs" (modern, fits your review history) or "sm2" (legacy escape hatch).

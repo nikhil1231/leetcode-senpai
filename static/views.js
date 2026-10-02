@@ -1172,7 +1172,7 @@
     const hasCookie = !!localStorage.getItem("lc_session");
     const llmOptions = c.llm_options || {};
     const providerOptions = Object.keys(llmOptions);
-    const provider = c.llm_provider || providerOptions[0] || "openai";
+    const provider = c.llm_provider || providerOptions[0] || "openrouter";
     const model = c.llm_model || (llmOptions[provider] || [])[0] || "";
     const providerSelect = providerOptions.map((p) =>
       `<option value="${escapeHtml(p)}"${p === provider ? " selected" : ""}>${escapeHtml(p)}</option>`).join("");
@@ -1194,9 +1194,9 @@
       <div class="section-title">Coach model</div>
       <div class="settings-row">
         <div class="settings-field"><label>Provider</label><div class="select is-fullwidth"><select id="cfg-llm-provider">${providerSelect}</select></div></div>
-        <div class="settings-field"><label>Model</label><div class="select is-fullwidth"><select id="cfg-llm-model">${modelSelect}</select></div></div>
+        <div class="settings-field"><label>Model</label><input id="cfg-llm-model" class="input" list="cfg-llm-models" value="${escapeHtml(model)}" placeholder="vendor/model" /><datalist id="cfg-llm-models">${modelSelect}</datalist></div>
       </div>
-      <p class="help">API keys stay in environment variables. OpenAI uses OPENAI_API_KEY; Gemini uses GEMINI_API_KEY or GOOGLE_API_KEY. Current status: ${c.llm_enabled ? "enabled" : "disabled"}.</p>
+      <p class="help">Models are loaded from OpenRouter and support structured output. You can also enter a model ID. The API key stays on the server in OPENROUTER_API_KEY. Current status: ${c.llm_enabled ? "enabled" : "disabled"}.</p>
 
       <div class="section-title">Scheduling &amp; weighting</div>
       <div class="settings-row">
@@ -1242,22 +1242,21 @@
       App.checkLeetCodeAuth();
     });
     $("#btn-save-sched").addEventListener("click", async () => {
-      await api("/config", "POST", {
-        review_limit: +$("#cfg-review").value, new_limit: +$("#cfg-new").value,
-        drill_limit: +$("#cfg-drill").value, drill_min_signal: +$("#cfg-drill-signal").value,
-        weakness_weight: +$("#cfg-weak").value, breadth_weight: +$("#cfg-breadth").value,
-        mistake_weight: +$("#cfg-mistake").value,
-        goal_reviews_per_week: +$("#cfg-grev").value, goal_new_per_week: +$("#cfg-gnew").value,
-        discover_min_like_ratio: +$("#cfg-ratio").value, discover_min_votes: +$("#cfg-votes").value,
-        llm_provider: $("#cfg-llm-provider").value, llm_model: $("#cfg-llm-model").value,
-      });
-      toast("Settings saved");
-      App.loadOverview();
-    });
-    $("#cfg-llm-provider").addEventListener("change", () => {
-      const p = $("#cfg-llm-provider").value;
-      $("#cfg-llm-model").innerHTML = (llmOptions[p] || []).map((m) =>
-        `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+      try {
+        await api("/config", "POST", {
+          review_limit: +$("#cfg-review").value, new_limit: +$("#cfg-new").value,
+          drill_limit: +$("#cfg-drill").value, drill_min_signal: +$("#cfg-drill-signal").value,
+          weakness_weight: +$("#cfg-weak").value, breadth_weight: +$("#cfg-breadth").value,
+          mistake_weight: +$("#cfg-mistake").value,
+          goal_reviews_per_week: +$("#cfg-grev").value, goal_new_per_week: +$("#cfg-gnew").value,
+          discover_min_like_ratio: +$("#cfg-ratio").value, discover_min_votes: +$("#cfg-votes").value,
+          llm_provider: $("#cfg-llm-provider").value, llm_model: $("#cfg-llm-model").value,
+        });
+        toast("Settings saved");
+        App.loadOverview();
+      } catch (e) {
+        toast(e.message);
+      }
     });
     $("#btn-backfill").addEventListener("click", async () => {
       $("#settings-status").innerHTML = '<span class="spinner spinner-sm"></span> Backfilling…';

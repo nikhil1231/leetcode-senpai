@@ -102,15 +102,33 @@ AUTH_MODE=local \
 GOOGLE_APPLICATION_CREDENTIALS=/path/key.json \
 GOOGLE_CLOUD_PROJECT=your-project \
 DEV_UID=<your-firebase-uid> \
-OPENAI_API_KEY=<optional — unlocks the coaching layer> \
-LLM_PROVIDER=openai \
-LLM_MODEL=gpt-5.6-luna \
+OPENROUTER_API_KEY=<optional — unlocks the coaching layer> \
+LLM_PROVIDER=openrouter \
+LLM_MODEL=openai/gpt-5.6-luna \
 uv run run.py
 ```
 Open http://127.0.0.1:8000. Without the selected provider's API key everything still works; the
 LLM-powered features degrade gracefully. In **Settings** set your username,
 coach provider/model, and
 `LEETCODE_SESSION` cookie; in **Discover** import a pack and backfill history.
+
+### OpenRouter coaching
+
+Set `OPENROUTER_API_KEY` in the runtime environment (`.env.local` for local
+runs and Docker Compose). The default model is `openai/gpt-5.6-luna`; override
+it with `LLM_MODEL` or choose a model in **Settings → Coach model**.
+The picker fetches OpenRouter's current text models with structured-output
+support and caches the list for ten minutes. You can also enter a
+`vendor/model` ID directly, including when the catalog is unavailable.
+A model must support strict JSON schema output to run coaching tasks.
+
+All coaching requests use OpenRouter. Existing saved OpenAI and Gemini
+choices are read as `openai/<model>` and `google/<model>` respectively;
+practice history is unchanged. Direct OpenAI/Gemini API keys are no longer
+used. Configure the OpenRouter key before deploying this migration.
+Without it, coaching is disabled while core practice features still work.
+
+API details: [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs).
 
 ### Run on startup
 
@@ -148,7 +166,7 @@ The repo also includes a `Dockerfile` for the app image and `docker-compose.yml`
 for Docker supervision.
 
 1. Keep app secrets in `.env.local` as above (`GOOGLE_CLOUD_PROJECT`, `DEV_UID`,
-   optional `OPENAI_API_KEY`, `GEMINI_API_KEY`, etc.).
+   optional `OPENROUTER_API_KEY` and `LLM_MODEL`).
 2. Copy `.env.example` to `.env` and set `FIREBASE_SERVICE_ACCOUNT_JSON` to the
    host path of your Firebase service-account key.
 3. Start it:

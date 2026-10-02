@@ -2358,7 +2358,9 @@ def api_get_config(uid: str = Depends(auth.require_user)):
     return {
         **settings,
         "llm_enabled": selected["enabled"],
-        "llm_options": config.LLM_OPTIONS,
+        "llm_provider": selected["provider"],
+        "llm_model": selected["model"],
+        "llm_options": llm.model_options(settings),
     }
 
 
@@ -2392,20 +2394,19 @@ def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     provider = updates.get("llm_provider")
     model = updates.get("llm_model")
-    if provider is not None:
-        provider = provider.lower()
-        if provider not in config.LLM_OPTIONS:
-            raise HTTPException(400, "unsupported LLM provider")
-        updates["llm_provider"] = provider
-    effective_provider = provider or store.get_settings().get("llm_provider")
-    if provider is not None and model is None:
-        current_model = store.get_settings().get("llm_model")
-        if current_model not in config.LLM_OPTIONS[provider]:
-            updates["llm_model"] = config.LLM_OPTIONS[provider][0]
-    if model is not None and model not in config.LLM_OPTIONS.get(effective_provider, []):
-        raise HTTPException(400, "unsupported model for provider")
+    if provider is not None and provider.strip().lower() != "openrouter":
+        raise HTTPException(400, "unsupported LLM provider; use openrouter")
+    if model is not None:
+        model = model.strip()
+        if not llm.valid_model(model):
+            raise HTTPException(400, "use an OpenRouter model ID such as openai/gpt-5.6-luna")
+    if provider is not None or model is not None:
+        updates["llm_provider"] = "openrouter"
+        updates["llm_model"] = model or llm.current_model(store.get_settings())["model"]
     store.update_settings(updates)
-    return store.get_settings()
+    settings = store.get_settings()
+    selected = llm.current_model(settings)
+    return {**settings, "llm_provider": selected["provider"], "llm_model": selected["model"]}
 
 
 @app.get("/api/me")

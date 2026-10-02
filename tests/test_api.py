@@ -2005,8 +2005,8 @@ def test_config_roundtrip(client):
         "drill_limit": 4,
         "drill_min_signal": 0.5,
         "mistake_weight": 0.3,
-        "llm_provider": "openai",
-        "llm_model": "gpt-5.6-luna",
+        "llm_provider": "openrouter",
+        "llm_model": "openai/gpt-5.6-luna",
     })
     cfg = client.get("/api/config").json()
     assert cfg["review_limit"] == 9
@@ -2014,9 +2014,27 @@ def test_config_roundtrip(client):
     assert cfg["drill_limit"] == 4
     assert cfg["drill_min_signal"] == 0.5
     assert cfg["mistake_weight"] == 0.3
-    assert cfg["llm_provider"] == "openai"
-    assert cfg["llm_model"] == "gpt-5.6-luna"
+    assert cfg["llm_provider"] == "openrouter"
+    assert cfg["llm_model"] == "openai/gpt-5.6-luna"
     assert "llm_options" in cfg
+
+
+
+def test_config_accepts_new_model_without_static_allowlist(client):
+    response = client.post("/api/config", json={"llm_model": "vendor/future-model"})
+    assert response.status_code == 200
+    assert response.json()["llm_provider"] == "openrouter"
+    assert client.get("/api/config").json()["llm_model"] == "vendor/future-model"
+
+
+@pytest.mark.parametrize("update", [
+    {"llm_provider": "openai"},
+    {"llm_model": "bare-model"},
+    {"llm_model": ""},
+    {"llm_model": "vendor/model with spaces"},
+])
+def test_config_rejects_invalid_llm_selection(client, update):
+    assert client.post("/api/config", json=update).status_code == 400
 
 
 # ---- solution grading -----------------------------------------------------------
@@ -2907,3 +2925,20 @@ def test_self_grading_a_recall_validates_its_input(client, monkeypatch):
     solve = client.store.add_attempt({"slug": "two-sum", "kind": "new", "solved_at": 1})
     assert client.post(f"/api/review/recall/{solve}/self-grade",
                        json={"confidence": 2}).status_code == 404
+
+
+@pytest.mark.parametrize(("provider", "model", "expected"), [
+    ("openai", "gpt-5.6-luna", "openai/gpt-5.6-luna"),
+    ("gemini", "gemini-2.5-flash", "google/gemini-2.5-flash"),
+])
+def test_config_migrates_saved_provider_choice(client, provider, model, expected):
+    client.store.settings.update({"llm_provider": provider, "llm_model": model})
+    config = client.get("/api/config").json()
+    assert config["llm_provider"] == "openrouter"
+    assert config["llm_model"] == expected
+    assert expected in config["llm_options"]["openrouter"]
+    assert client.get("/api/me").json()["llm_model"] == expected
+    response = client.post("/api/config", json={"llm_provider": "openrouter"})
+    assert response.status_code == 200
+    assert response.json()["llm_model"] == expected
+    assert client.store.get_settings()["llm_provider"] == "openrouter"

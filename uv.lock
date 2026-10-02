@@ -552,24 +552,6 @@ wheels = [
 ]
 
 [[package]]
-name = "google-genai"
-version = "1.9.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "google-auth" },
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "requests" },
-    { name = "typing-extensions" },
-    { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/17/b9/fae20a998946f811d81b14b4e2da41d0d7779c3e63dedf4538c16832fa56/google_genai-1.9.0.tar.gz", hash = "sha256:eda833dcef2e3b9a05bff96ff4e0066740988199bcee0b2480cfce9909b18a26", size = 151602, upload-time = "2025-04-01T03:23:05.686Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/be/12/3a5a11589a0b967b371c773d35cc54c75f2f44259d3d767b826d708b6377/google_genai-1.9.0-py3-none-any.whl", hash = "sha256:2140f72e6e5b89d8105fa70ae551c699b5e39492ca5f95053e1f7e99ecbdbd35", size = 149646, upload-time = "2025-04-01T03:23:04.312Z" },
-]
-
-[[package]]
 name = "google-resumable-media"
 version = "2.10.2"
 source = { registry = "https://pypi.org/simple" }
@@ -786,7 +768,6 @@ dependencies = [
     { name = "fastapi" },
     { name = "firebase-admin" },
     { name = "fsrs" },
-    { name = "google-genai" },
     { name = "httpx" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "uvicorn", extra = ["standard"] },
@@ -803,7 +784,6 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.115.6" },
     { name = "firebase-admin", specifier = "==6.6.0" },
     { name = "fsrs", specifier = "==4.1.1" },
-    { name = "google-genai", specifier = "==1.9.0" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = "==2.14.0" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.34.0" },

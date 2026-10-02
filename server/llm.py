@@ -6,7 +6,7 @@ Design rules (from the V2 plan):
     to callers. Features check `enabled()` and degrade instead of breaking.
   * Raw text stays the source of truth; whatever this returns is derived data,
     stamped elsewhere with PROMPT_VERSION so it can be re-run cheaply.
-  * The transport is swappable. OpenAI and Gemini share the single
+  * OpenRouter handles model routing through the single
     `_raw_generate()` choke point, which tests monkeypatch.
 
 Each task registers a pydantic response schema + a prompt builder. `extract`
@@ -16,6 +16,9 @@ mode, validates against the schema, and hands back a plain dict.
 import asyncio
 import json
 import logging
+import re
+import threading
+import time
 from typing import Annotated, Callable, Literal, Optional
 
 import httpx
@@ -460,30 +463,31 @@ def _trunc(code, limit=2000):
 
 
 # ---- public API -----------------------------------------------------------------
-def _selected(settings: Optional[dict] = None) -> tuple[str, str]:
-    settings = settings or {}
-    provider = (settings.get("llm_provider") or config.LLM_PROVIDER or "openai").lower()
-    model = settings.get("llm_model") or config.LLM_MODEL
+def normalize_model(model: str) -> str:
+    """Translate pre-OpenRouter model IDs without changing stored user data."""
+    model = model.strip()
+    if "/" in model:
+        return model
+    if model.startswith("gpt-"):
+        return f"openai/{model}"
+    if model.startswith("gemini-"):
+        return f"google/{model}"
+    return config.LLM_MODEL if "/" in config.LLM_MODEL else "openai/gpt-5.6-luna"
 
-    # Compatibility for existing Gemini-only local/dev environments: if no
-    # per-user choice has been stored and OpenAI has no key, keep Gemini alive.
-    if (
-        provider == "openai"
-        and not config.OPENAI_API_KEY
-        and config.GEMINI_API_KEY
-        and not settings.get("llm_provider")
-    ):
-        return "gemini", "gemini-2.5-flash"
-    return provider, model
+
+def valid_model(model: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._:/-]+", model)) and len(model) <= 200
+
+
+def _selected(settings: Optional[dict] = None) -> tuple[str, str]:
+    # Old Firestore settings may still name openai/gemini. All requests now
+    # use OpenRouter; the saved model vendor becomes part of the model ID.
+    model = (settings or {}).get("llm_model") or config.LLM_MODEL
+    return "openrouter", normalize_model(model)
 
 
 def enabled(settings: Optional[dict] = None) -> bool:
-    provider, _ = _selected(settings)
-    if provider == "openai":
-        return bool(config.OPENAI_API_KEY)
-    if provider == "gemini":
-        return bool(config.GEMINI_API_KEY)
-    return False
+    return bool((config.OPENROUTER_API_KEY or "").strip())
 
 
 def current_model(settings: Optional[dict] = None) -> dict:
@@ -491,117 +495,107 @@ def current_model(settings: Optional[dict] = None) -> dict:
     return {"provider": provider, "model": model, "enabled": enabled(settings)}
 
 
-_client = None
+_catalog_models: list[str] = []
+_catalog_expires = 0.0
+_catalog_lock = threading.Lock()
 
 
-def _get_client():
-    global _client
-    if _client is None:
-        from google import genai
-        _client = genai.Client(api_key=config.GEMINI_API_KEY)
-    return _client
+def available_models() -> list[str]:
+    """Cache compatible text models; catalog outages retain the last good list."""
+    global _catalog_models, _catalog_expires
+    with _catalog_lock:
+        if time.monotonic() < _catalog_expires:
+            return list(_catalog_models)
+        try:
+            resp = httpx.get("https://openrouter.ai/api/v1/models", timeout=5)
+            resp.raise_for_status()
+            models = sorted({
+                m["id"] for m in resp.json()["data"]
+                if valid_model(m.get("id", ""))
+                and "structured_outputs" in m.get("supported_parameters", [])
+                and "text" in m.get("architecture", {}).get("output_modalities", [])
+            })
+            if not models:
+                raise ValueError("OpenRouter returned no compatible models")
+            _catalog_models = models
+            _catalog_expires = time.monotonic() + 600
+        except Exception:
+            log.warning("Could not refresh OpenRouter model catalog", exc_info=True)
+            _catalog_expires = time.monotonic() + 60
+        return list(_catalog_models)
 
 
-def _strip_defaults(node):
-    """Recursively drop `default` keys from a JSON schema in place.
-
-    The Gemini API rejects any response schema that carries default values
-    ("Default value is not supported in the response schema"), but our pydantic
-    models use defaults so validation stays lenient when the model omits a
-    field. Sending a defaults-free copy keeps both sides happy.
-    """
-    if isinstance(node, dict):
-        node.pop("default", None)
-        for v in node.values():
-            _strip_defaults(v)
-    elif isinstance(node, list):
-        for v in node:
-            _strip_defaults(v)
-    return node
+def model_options(settings: Optional[dict] = None) -> dict:
+    _, selected = _selected(settings)
+    return {"openrouter": sorted(set(available_models()) | {selected})}
 
 
-def _gemini_schema(schema) -> dict:
-    return _strip_defaults(schema.model_json_schema())
-
-
-def _openai_strict_schema(node):
-    """Normalize Pydantic JSON Schema to OpenAI structured-output constraints."""
+def _strict_schema(node):
+    """Normalize Pydantic schemas for strict structured output."""
     if isinstance(node, dict):
         node.pop("default", None)
         if node.get("type") == "object":
-            props = node.get("properties") or {}
-            node["required"] = list(props.keys())
+            node["required"] = list((node.get("properties") or {}).keys())
             node["additionalProperties"] = False
-        for v in node.values():
-            _openai_strict_schema(v)
+        for value in node.values():
+            _strict_schema(value)
     elif isinstance(node, list):
-        for v in node:
-            _openai_strict_schema(v)
+        for value in node:
+            _strict_schema(value)
     return node
 
 
-def _openai_schema(schema) -> dict:
+def _response_format(schema) -> dict:
     return {
         "type": "json_schema",
-        "name": schema.__name__,
-        "strict": True,
-        "schema": _openai_strict_schema(schema.model_json_schema()),
+        "json_schema": {
+            "name": schema.__name__,
+            "strict": True,
+            "schema": _strict_schema(schema.model_json_schema()),
+        },
     }
 
 
-def _response_text(resp: dict) -> Optional[str]:
-    if resp.get("output_text"):
-        return resp["output_text"]
-    for item in resp.get("output", []) or []:
-        for part in item.get("content", []) or []:
-            if isinstance(part, dict) and part.get("text"):
-                return part["text"]
-    return None
-
-
 def _raw_generate(provider: str, model: str, system: str, prompt: str, schema) -> Optional[str]:
-    """The single transport choke point. Returns a JSON string or None.
-
-    Tests monkeypatch this to avoid network calls.
-    """
-    if provider == "openai":
-        resp = httpx.post(
-            "https://api.openai.com/v1/responses",
-            headers={
-                "Authorization": f"Bearer {config.OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "instructions": system,
-                "input": prompt,
-                "text": {"format": _openai_schema(schema)},
-                "store": False,
-            },
-            timeout=60,
-        )
-        if resp.is_error:
-            raise RuntimeError(
-                f"OpenAI {resp.status_code}: {resp.text[:1000] or resp.reason_phrase}"
-            )
-        return _response_text(resp.json())
-
-    if provider != "gemini":
+    """Single transport choke point; tests replace this to avoid network calls."""
+    if provider != "openrouter":
         raise ValueError(f"unsupported LLM provider {provider}")
-
-    from google.genai import types
-    client = _get_client()
-    resp = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system,
-            response_mime_type="application/json",
-            response_schema=_gemini_schema(schema),
-            temperature=0.2,
-        ),
+    resp = httpx.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "X-Title": "LeetCode Senpai",
+        },
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": _response_format(schema),
+            "provider": {"require_parameters": True},
+            "stream": False,
+        },
+        timeout=60,
     )
-    return resp.text
+    # Do not surface provider response bodies: they can echo prompts or secrets.
+    if resp.is_error:
+        raise RuntimeError(f"OpenRouter request failed (HTTP {resp.status_code})")
+    data = resp.json()
+    if data.get("error"):
+        raise RuntimeError("OpenRouter could not complete the request")
+    choices = data.get("choices") or []
+    if not choices:
+        return None
+    choice = choices[0]
+    if choice.get("finish_reason") == "length":
+        raise RuntimeError("OpenRouter response exceeded the output limit")
+    message = choice.get("message") or {}
+    if message.get("refusal"):
+        raise RuntimeError("The model declined this request")
+    content = message.get("content")
+    return content if isinstance(content, str) else None
 
 
 async def extract_or_error(
