@@ -90,22 +90,47 @@
         </div>
       </header>
 
-      <!-- Active session focus mode (timer + hints) -->
+      <!-- Active session focus mode. On LeetCode's page it's a centred card; in the
+           app's editor it's the whole screen: this header over the statement and
+           editor (#editor-pane) and the coach column (#run-coach). -->
       <section id="active-run" class="active-run hidden">
         <div class="active-run-inner" aria-live="polite">
           <div class="active-kicker"><span class="dot"></span><span id="active-status">Current run</span></div>
           <h2 id="active-title"></h2>
+          <span id="active-diff" class="tag active-diff hidden"></span>
           <p id="active-kind" class="active-kind"></p>
           <div class="active-clock" aria-label="Elapsed solving time">
             <span class="active-clock-label">Elapsed</span>
             <strong id="active-timer" class="timer active-timer">00:00</strong>
             <span id="active-par" class="active-par"></span>
           </div>
+          <div id="run-stats" class="run-stats"></div>
+          <span id="run-lc" class="run-lc hidden"></span>
           <div class="active-actions">
             <a id="active-link" class="button is-primary is-lg" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
+            <button id="btn-resume-session" class="button is-primary resume-btn" type="button">Resume</button>
+            <!-- The editor's Focus / Run / Submit, while it's mounted. -->
+            <div id="editor-head" class="editor-head"></div>
+          </div>
+        </div>
+        <div id="editor-pane" class="editor-pane hidden"></div>
+        <aside id="run-coach" class="run-coach" aria-label="Coach">
+          <div class="coach-head">
+            <span class="coach-title">Coach</span>
+            <span id="coach-model" class="coach-model-name"></span>
+            <button id="btn-coach-toggle" class="panel-toggle" type="button" aria-label="Hide the coach" title="Hide the coach">&#x203A;</button>
+          </div>
+          <div class="active-notes">
+            <p id="active-takeaway" class="active-takeaway hidden"></p>
+            <div id="plan-check-panel" class="plan-critique hidden"></div>
+            <div id="hint-panel" class="hint-panel hidden"></div>
+            <div id="give-up-panel" class="give-up-panel hidden"></div>
+            <div id="nudge" class="nudge hidden"></div>
+            <p id="coach-empty" class="coach-empty"></p>
+          </div>
+          <div class="coach-actions">
             <button id="btn-hint" class="button hint-btn" type="button" title="An interviewer's nudge about the code you've written">Ask for a hint</button>
             <button id="btn-give-up" class="button is-ghost is-small give-up-btn hidden" type="button" title="Hear the approach in plain English, then write it yourself. The solve counts as needing the solution.">Give up</button>
-            <button id="btn-resume-session" class="button is-primary resume-btn" type="button">Resume</button>
             <div class="run-menu">
               <button id="btn-run-menu" class="button is-ghost icon-button" type="button"
                       aria-haspopup="menu" aria-expanded="false" aria-controls="run-menu"
@@ -118,15 +143,7 @@
               </div>
             </div>
           </div>
-          <div class="active-notes">
-            <p id="active-takeaway" class="active-takeaway hidden"></p>
-            <div id="hint-panel" class="hint-panel hidden"></div>
-            <div id="give-up-panel" class="give-up-panel hidden"></div>
-            <div id="plan-check-panel" class="plan-critique hidden"></div>
-            <div id="nudge" class="nudge hidden"></div>
-          </div>
-        </div>
-        <div id="editor-pane" class="editor-pane hidden"></div>
+        </aside>
       </section>
 
       <main>

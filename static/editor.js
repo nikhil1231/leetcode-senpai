@@ -147,6 +147,7 @@
   }
 
   function showDoubts(doubts) {
+    showConsole("result");
     $("#editor-result").innerHTML = `<div class="editor-confirm">
       <p><b>Submit anyway?</b></p>${doubts.map((d) => `<p class="small">${esc(d)}</p>`).join("")}
       <div class="editor-confirm-actions">
@@ -221,7 +222,9 @@
     run.judging = on;
     $("#editor-run").disabled = on || !run.canJudge || run.runsLeft === 0;
     $("#editor-submit").disabled = on || !run.canJudge;
-    if (on) $("#editor-result").innerHTML = `<p class="small editor-pending">${kind === "run" ? "Running" : "Judging"}…</p>`;
+    if (!on) return;
+    showConsole("result");
+    $("#editor-result").innerHTML = `<p class="small editor-pending">${kind === "run" ? "Running" : "Judging"}…</p>`;
   }
 
   const block = (label, value, cls = "") => value == null || value === "" ? "" :
@@ -238,6 +241,7 @@
   }
 
   function showError(message) {
+    showConsole("result");
     $("#editor-result").innerHTML = `<p class="editor-verdict is-bad">${esc(message)}</p>`;
   }
 
@@ -289,6 +293,7 @@
   // The input that broke a submit becomes a case you can Run against.
   function addCase(input) {
     if (!run) return;
+    showConsole("tests");
     const box = $("#editor-input");
     const current = box.value.replace(/\s+$/, "");
     if (!current.includes(input.trim())) {
@@ -396,37 +401,128 @@
   const lcLink = (url, label = "Open on LeetCode") => url
     ? `<a class="editor-lc-link" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>` : "";
 
+  const MOD = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘" : "Ctrl+";
+
+  // The statement as one scroll, with tabs that jump to its Examples and
+  // Constraints — found by their headings, so a statement without them gets
+  // no tabs rather than empty ones.
+  const SECTIONS = [["statement", "Statement", null], ["examples", "Examples", /^Example\b/i],
+                    ["constraints", "Constraints", /^Constraints\b/i]];
+
+  function statementParts(html) {
+    const tpl = document.createElement("template");  // inert: nothing in it loads
+    tpl.innerHTML = `<div>${html}</div>`;
+    const box = tpl.content.firstChild;
+    const found = [];
+    for (const [key, label, re] of SECTIONS) {
+      if (!re) continue;
+      const head = [...box.querySelectorAll("strong, b")].find((el) => re.test(el.textContent.trim()));
+      if (!head) continue;
+      let el = head;
+      while (el.parentElement && el.parentElement !== box) el = el.parentElement;
+      el.dataset.sec = key;
+      found.push([key, label]);
+    }
+    return { html: box.innerHTML, tabs: found.length ? [SECTIONS[0].slice(0, 2), ...found] : [] };
+  }
+
+  function statementHtml(state, url) {
+    const raw = sanitizeProblemHtml(state.content_html);
+    const { html, tabs } = raw ? statementParts(raw) : { html: "", tabs: [] };
+    return `
+      <div class="editor-statement">
+        <div class="pane-head">
+          <div class="pane-tabs" role="tablist">${tabs.map(([key, label], i) =>
+            `<button class="pane-tab" type="button" role="tab" data-sec="${key}" aria-selected="${i === 0}">${label}</button>`).join("")
+            || `<span class="pane-title">Statement</span>`}</div>
+          <button id="editor-hide-statement" class="panel-toggle" type="button" aria-label="Hide the statement" title="Hide the statement">&#x2039;</button>
+        </div>
+        <div id="editor-statement-body" class="editor-statement-body recall-statement">${html
+          || `<p class="small">Statement unavailable — it's on LeetCode.</p>`}
+          <p class="editor-lc">${lcLink(url)}</p></div>
+      </div>
+      <button id="editor-show-statement" class="panel-rail" type="button" title="Show the statement">
+        <span>&#x203A;</span><span class="panel-rail-label">Statement</span></button>`;
+  }
+
   function paneHtml(state, url) {
     return `
-      <div class="editor-statement recall-statement">${sanitizeProblemHtml(state.content_html)
-        || `<p class="small">Statement unavailable — it's on LeetCode.</p>`}
-        <p class="editor-lc">${lcLink(url)}</p></div>
+      ${statementHtml(state, url)}
       <div id="editor-split" class="editor-split" role="separator" aria-orientation="vertical"
            aria-label="Resize the statement" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <div class="editor-work">
-        <div id="editor-cm" class="editor-cm"></div>
-        <div class="editor-bar">
-          <button id="editor-run" class="button" type="button" title="Run on the test input (Ctrl/⌘ + ')">Run</button>
-          <button id="editor-submit" class="button is-primary" type="button" title="Submit (Ctrl/⌘ + Enter)">Submit</button>
-          <button id="editor-copy" class="button is-ghost" type="button">Copy code</button>
-          <button id="editor-reset" class="button is-ghost" type="button" title="Put the starter code back (Ctrl/⌘ + Z undoes it)">Reset</button>
-          ${state.interview ? `<span class="small editor-mode" title="No highlighting or auto-closing brackets, and a couple of Runs: trace it by hand">Interview mode</span>` : ""}
-          <button id="editor-toggle-statement" class="button is-ghost editor-toggle" type="button">Hide statement</button>
-          ${state.can_judge ? "" : `<span class="small editor-nocookie">Set your LeetCode cookie in Settings to run and submit.</span>`}
-        </div>
         ${state.optimizing ? optimizingHtml(state.optimizing) : ""}
+        <div id="editor-cm" class="editor-cm"></div>
         <p id="editor-notice" class="small editor-notice hidden"></p>
-        <div class="editor-console">
-          <div class="editor-console-input">
-            ${edgesHtml(state.planned_edge_cases || [])}
-            <label class="label-sm" for="editor-input">Test input</label>
-            <textarea id="editor-input" class="editor-input" rows="4" spellcheck="false"></textarea>
+        <div id="editor-console" class="editor-console">
+          <div class="console-head">
+            <div class="pane-tabs" role="tablist">
+              <button class="pane-tab" type="button" role="tab" data-tab="tests" aria-selected="true">Tests</button>
+              <button class="pane-tab" type="button" role="tab" data-tab="result" aria-selected="false">Result</button>
+            </div>
+            <div class="console-tools">
+              ${state.interview ? `<span class="editor-mode" title="No highlighting or auto-closing brackets, and a couple of Runs: trace it by hand">Interview mode</span>` : ""}
+              <button id="editor-copy" class="console-tool" type="button">Copy</button>
+              <button id="editor-reset" class="console-tool" type="button" title="Put the starter code back (${MOD}Z undoes it)">Reset</button>
+              <span class="console-keys" title="Run (${MOD}') · Submit (${MOD}Enter)"><kbd>${MOD}'</kbd> run</span>
+              <button id="editor-console-toggle" class="panel-toggle" type="button" aria-label="Collapse the console" title="Collapse the console">&#x2304;</button>
+            </div>
           </div>
-          <div id="editor-result" class="editor-result" aria-live="polite">
-            <p class="small editor-pending">Run (Ctrl/⌘ + ') to see each case here.</p>
+          <div class="console-panel" data-panel="tests">
+            ${edgesHtml(state.planned_edge_cases || [])}
+            <label class="label-sm" for="editor-input">Test input <span class="help-inline">one argument per line, case after case</span></label>
+            <textarea id="editor-input" class="editor-input" rows="4" spellcheck="false"></textarea>
+            ${state.can_judge ? "" : `<p class="small editor-nocookie">Set your LeetCode cookie in Settings to run and submit.</p>`}
+          </div>
+          <div id="editor-result" class="console-panel editor-result hidden" data-panel="result" aria-live="polite">
+            <p class="small editor-pending">Run (${MOD}') to see each case here.</p>
           </div>
         </div>
       </div>`;
+  }
+
+  // The run header's editor controls: Focus folds both side panels away.
+  function headHtml() {
+    return `
+      <button id="editor-focus" class="button is-ghost" type="button" aria-pressed="false" title="Just the editor: fold away the statement and the coach">Focus</button>
+      <button id="editor-run" class="button" type="button" title="Run on the test input (${MOD}')">Run</button>
+      <button id="editor-submit" class="button is-primary" type="button" title="Submit (${MOD}Enter)">Submit</button>`;
+  }
+
+  // ---- console tabs -------------------------------------------------------------------
+  function showConsole(tab) {
+    $$("#editor-console .console-head .pane-tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === tab)));
+    $$("#editor-console .console-panel").forEach((p) => p.classList.toggle("hidden", p.dataset.panel !== tab));
+    if (readLayout().console) { saveLayout({ console: false }); applyLayout(); }
+  }
+
+  // Tabs jump within the one scroll; the tab lit is the section on screen.
+  function bindStatementTabs() {
+    const body = $("#editor-statement-body");
+    const tabs = $$(".editor-statement .pane-tab");
+    if (!tabs.length) return;
+    const target = (key) => key === "statement" ? body : body.querySelector(`[data-sec="${key}"]`);
+    const top = (el) => el === body ? 0 : el.offsetTop - body.offsetTop - 12;
+    const light = (lit) => tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.sec === lit)));
+    // A tab picked stays lit while its scroll plays out, and when there's no
+    // room to scroll it into place.
+    let picked = null, release = null;
+    tabs.forEach((t) => t.addEventListener("click", () => {
+      picked = t.dataset.sec;
+      light(picked);
+      clearTimeout(release);
+      release = setTimeout(() => { picked = null; }, 800);
+      body.scrollTo({ top: top(target(picked)), behavior: "smooth" });
+    }));
+    const spy = () => {
+      if (picked) return;
+      let lit = "statement";
+      for (const t of tabs) if (t.dataset.sec !== "statement" && top(target(t.dataset.sec)) <= body.scrollTop + 4) lit = t.dataset.sec;
+      // Scrolled to the end, the last section is the one being read.
+      if (body.scrollTop > 0 && body.scrollTop + body.clientHeight >= body.scrollHeight - 2) lit = tabs[tabs.length - 1].dataset.sec;
+      light(lit);
+    };
+    body.addEventListener("scroll", spy, { passive: true });
   }
 
   // Away is the tab hidden *or* another window in front of it — a second
@@ -456,14 +552,27 @@
     try { localStorage.setItem(LAYOUT_KEY, JSON.stringify({ ...readLayout(), ...patch })); } catch (_) {}
   }
 
+  // `hidden` is the statement folded away, `coach` the coach, `console` the
+  // console down to its tab row.
   function applyLayout() {
-    const { pct, hidden } = readLayout();
+    const { pct, hidden, coach, console: folded } = readLayout();
     const pane = $("#editor-pane");
     const w = Math.min(STATEMENT_PCT.max, Math.max(STATEMENT_PCT.min, Number(pct) || STATEMENT_PCT.def));
     pane.style.setProperty("--statement-w", `${w}%`);
     pane.classList.toggle("statement-hidden", Boolean(hidden));
-    $("#editor-toggle-statement").textContent = hidden ? "Show statement" : "Hide statement";
+    pane.classList.toggle("console-folded", Boolean(folded));
+    $("#active-run").classList.toggle("coach-hidden", Boolean(coach));
+    $("#editor-focus")?.setAttribute("aria-pressed", String(Boolean(hidden && coach)));
   }
+
+  // Bound once: the coach column outlives any one editor.
+  // Folded, the whole coach rail is the button that opens it.
+  $("#run-coach").addEventListener("click", (e) => {
+    const folded = $("#active-run").classList.contains("coach-hidden");
+    if (!e.target.closest("#btn-coach-toggle") && !folded) return;
+    saveLayout({ coach: !folded });
+    applyLayout();
+  });
 
   function bindSplit() {
     const pane = $("#editor-pane");
@@ -488,10 +597,17 @@
       setPct(pct + (e.key === "ArrowLeft" ? -2 : 2));
     });
     split.addEventListener("dblclick", () => setPct(STATEMENT_PCT.def));
-    $("#editor-toggle-statement").addEventListener("click", () => {
-      saveLayout({ hidden: !readLayout().hidden });
-      applyLayout();
+    const set = (patch) => { saveLayout(patch); applyLayout(); };
+    $("#editor-hide-statement").addEventListener("click", () => set({ hidden: true }));
+    $("#editor-show-statement").addEventListener("click", () => set({ hidden: false }));
+    $("#editor-focus").addEventListener("click", () => {
+      const { hidden, coach } = readLayout();
+      const focused = hidden && coach;
+      set({ hidden: !focused, coach: !focused });
     });
+    $("#editor-console-toggle").addEventListener("click", () => set({ console: !readLayout().console }));
+    $$("#editor-console .console-head .pane-tab").forEach((t) =>
+      t.addEventListener("click", () => showConsole(t.dataset.tab)));
   }
 
   // Back to the starter code. Logged as a marker plus a checkpoint, so the
@@ -526,6 +642,7 @@
     const pane = $("#editor-pane");
     pane.classList.remove("hidden");
     $("#active-run").classList.add("has-editor");
+    document.body.classList.add("has-editor-run");
     pane.innerHTML = `<p class="small">Opening the editor…</p>`;
     let settle;
     const r = {
@@ -609,6 +726,8 @@
       Object.assign(r, { lastLogged: state.code, seq: state.seq });
     }
     pane.innerHTML = paneHtml(state, active.url);
+    $("#editor-head").innerHTML = headHtml();
+    bindStatementTabs();
     $("#editor-input").value = r.input;
     $("#editor-input").addEventListener("input", () => { r.input = $("#editor-input").value; persist(r); });
     if (r.edges.length) {
@@ -677,8 +796,10 @@
     window.removeEventListener("focus", comeBack);
     if (r.view) r.view.destroy();
     $("#editor-pane").innerHTML = "";
+    $("#editor-head").innerHTML = "";
     $("#editor-pane").classList.add("hidden");
-    $("#active-run").classList.remove("has-editor");
+    $("#active-run").classList.remove("has-editor", "coach-hidden");
+    document.body.classList.remove("has-editor-run");
     await done;
   }
 

@@ -457,6 +457,11 @@ async function loadOverview({ force = false } = {}) {
       <span class="coach-dot"></span>
       <span class="coach-model">Coach ${llmEnabled ? escapeHtml(coachLabel) : "off"}</span>
     </div>`;
+  $("#coach-model").textContent = llmEnabled ? llmModel : "off";
+  // The same numbers, pared down, for the editor's full-screen run header.
+  $("#run-stats").innerHTML = `<span><b>${o.solved}</b>/${o.total_problems}</span>`
+    + `<span class="${o.due_reviews ? "is-due" : ""}"><b>${o.due_reviews}</b> due</span>`
+    + `<span><b>${o.streak}</b> streak</span><span><b>${o.xp_today}</b> XP</span>`;
 
   (o.newly_mastered || []).forEach((m) =>
     toast(`🎉 Topic mastered: ${m.category}!`));
@@ -513,11 +518,15 @@ function renderLcWarning(state) {
   const copy = LC_WARNING[state];
   // "ok", and "unknown" — a LeetCode outage must never masquerade as an expired
   // cookie, or the warning stops meaning anything.
+  const runEl = $("#run-lc");
+  runEl.classList.toggle("hidden", !copy);
   if (!copy) return el.classList.add("hidden");
   const [label, title] = copy;
   el.textContent = label;
   el.title = title;
   el.classList.remove("hidden");
+  runEl.textContent = "Cookie";
+  runEl.title = `${label} — set it in Settings once the run is over.`;
 }
 
 $("#lc-warning").addEventListener("click", () => goTab("settings"));
@@ -907,6 +916,9 @@ function applyActive(active, editorState = null) {
     run.classList.remove("hidden");
     $("#active-title").textContent = active.title;
     $("#active-link").href = active.url;
+    const diff = active.difficulty || "";
+    $("#active-diff").textContent = diff;
+    $("#active-diff").className = `tag active-diff diff-${diff.toLowerCase()}${diff ? "" : " hidden"}`;
     $("#active-kind").textContent = active.kind === "mock" ? "Mock interview problem"
       : active.kind === "optimize" ? "Optimizing an accepted solve — a better Accepted replaces it."
       : "Solve this problem before returning to the rest of the dashboard.";
@@ -972,9 +984,9 @@ function setDashboardLocked(locked) {
 // Coach prose, escaped, with `code` spans kept as code.
 const coachText = (t) => escapeHtml(t).replace(/`([^`]+)`/g, "<code>$1</code>");
 
-// The hints so far, drawn from the run itself — a reload keeps them. Unnumbered:
-// in the editor they're live, so there's no ladder to count down, and the
-// button stays until the server says there's nothing more to give.
+// The hints so far, drawn from the run itself — a reload keeps them. One card
+// each, numbered in the order given — not a ladder counting down: in the editor
+// they're live, and the button stays until the server says there's nothing more.
 function setHints(active) {
   const hints = active.hints || [];
   const btn = $("#btn-hint");
@@ -984,11 +996,18 @@ function setHints(active) {
   btn.textContent = hints.length ? "Another hint" : "Ask for a hint";
   const panel = $("#hint-panel");
   panel.classList.toggle("hidden", !hints.length);
-  const html = hints.length ? `
-    <div class="note-head"><span>${hints.length === 1 ? "Hint" : "Hints"}</span>
-      <button id="btn-clear-marks" class="note-action hidden" type="button">Clear marks</button></div>
-    <ul class="hint-list">${hints.map((h, i) =>
-      `<li${i === hints.length - 1 ? ' class="is-latest"' : ""}>${coachText(h)}</li>`).join("")}</ul>` : "";
+  const html = hints.map((h, i) => {
+    const latest = i === hints.length - 1;
+    return `<div class="hint-card${latest ? " is-latest" : ""}">
+      <div class="note-head"><span>Hint ${i + 1}</span>${latest
+        ? `<button id="btn-clear-marks" class="note-action hidden" type="button">Clear marks</button>` : ""}</div>
+      <p>${coachText(h)}</p></div>`;
+  }).join("");
+  $("#coach-empty").textContent = active.hints_available
+    ? "Stuck? A hint reads the code you've written and points, without giving the fix."
+    : active.kind === "mock" ? "A mock runs without hints — it's you and the clock."
+    : active.kind === "optimize" ? "No hints while optimizing — the Accepted is already yours."
+    : "No hints for this one.";
   // Redrawn only on a change, so a refresh doesn't replay the newest hint's entrance.
   if (panel._drawn !== html) {
     panel._drawn = html;
