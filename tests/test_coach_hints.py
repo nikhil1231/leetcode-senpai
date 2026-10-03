@@ -45,8 +45,8 @@ def test_a_statement_reads_as_plain_text():
 def test_giving_up_without_an_llm_explains_from_cached_content():
     assert coach.give_up_fallback({"canonical_summary": {
         "key_ideas": ["Slide a window", "Shrink on a repeat."], "time": "O(n)", "space": "O(k)"}}) \
-        == "Slide a window. Shrink on a repeat. That's O(n) time and O(k) space."
-    assert coach.give_up_fallback({"hint_ladder": ["one.", "two."]}) == "one. two."
+        == ["Slide a window.", "Shrink on a repeat. That's O(n) time and O(k) space."]
+    assert coach.give_up_fallback({"hint_ladder": ["one.", "two."]}) == ["one.", "two."]
     assert coach.give_up_fallback({}) is None
 
 
@@ -62,8 +62,10 @@ def test_the_review_sees_what_each_hint_said_and_that_you_gave_up():
     events = [{"t": 0, "k": "c", "code": "x"},
               {"t": 60_000, "k": "hint", "level": 1, "text": "Trace it on 'abba'."},
               {"t": 120_000, "k": "hint", "level": 2},
-              {"t": 180_000, "k": "giveup"}]
+              {"t": 180_000, "k": "giveup"},
+              {"t": 240_000, "k": "giveup", "step": 2, "text": "Shrink on a repeat."}]
     text = recording.timeline_for_llm(events)
     assert "asked for a hint: \"Trace it on 'abba'.\"" in text
     assert "revealed hint 2" in text
     assert "gave up and heard the approach explained" in text
+    assert "walked to step 2: \"Shrink on a repeat.\"" in text

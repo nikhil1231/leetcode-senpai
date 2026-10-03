@@ -185,6 +185,38 @@ async def record_editor_solve(store, session, sub, code, events):
     return aid
 
 
+def record_unsolved(store, session, code, now):
+    """Log a run ended without an Accepted; returns the attempt id. It rates like
+    any solve — needing the solution by default — so the card comes back soon,
+    but `unsolved` keeps it out of the solved counts."""
+    extra = _editor_extra(store, session)
+    if extra:
+        extra["finished_on"] = None
+        doc = store.get_recording(session["id"]) or {}
+        failed = recording.failed_tests(recording.parse(doc["events"]) if doc.get("events") else [])
+        wrong = extra["recording"].get("failed_submits")
+    else:
+        failed, wrong = [], None
+    aid = store.add_attempt({
+        "slug": session["slug"], "solved_at": now,
+        "time_taken_sec": run_clock(session, now),
+        "runtime_percentile": None, "memory_percentile": None,
+        "lang": leetcode.EDITOR_LANG if extra else None,
+        "wrong_before_ac": wrong, "submission_id": None, "code": code or None,
+        "confidence": None, "independence": None, "mistake_note": None,
+        "approach": None, "source": "ended", "kind": session.get("kind", "adhoc"),
+        **_plan_fields(session),
+        "failed_tests": failed,
+        "hint_level_used": session.get("hint_level", 0),
+        "gave_up": True, "unsolved": True,
+        "complexity_time": None, "complexity_space": None,
+        "solution_grading_status": None,
+        **extra,
+    })
+    store.update_session(session["id"], {"status": "completed", "attempt_id": aid})
+    return aid
+
+
 async def _failed_tests(slug, start_ts, end_ts, wrong, auth):
     """The inputs that broke the wrong submissions before this AC, when there
     were any. It's what tells a plan grade which edge case actually bit.

@@ -129,8 +129,11 @@
             <p id="coach-empty" class="coach-empty"></p>
           </div>
           <div class="coach-actions">
-            <button id="btn-hint" class="button hint-btn" type="button" title="An interviewer's nudge about the code you've written">Ask for a hint</button>
-            <button id="btn-give-up" class="button is-ghost is-small give-up-btn hidden" type="button" title="Hear the approach in plain English, then write it yourself. The solve counts as needing the solution.">Give up</button>
+            <div class="assist-group" role="group" aria-label="Help">
+              <button id="btn-hint" class="button hint-btn" type="button" title="An interviewer's nudge about the code you've written">Ask for a hint</button>
+              <button id="btn-give-up" class="button give-up-btn hidden" type="button" title="Get walked to a solution a step at a time, writing each step yourself. The solve counts as needing the solution.">Give up</button>
+            </div>
+            <button id="btn-end-run" class="button end-btn hidden" type="button" title="Stop here without an Accepted. The run is kept and goes to rating; cancelling throws it away.">End</button>
             <div class="run-menu">
               <button id="btn-run-menu" class="button is-ghost icon-button" type="button"
                       aria-haspopup="menu" aria-expanded="false" aria-controls="run-menu"

@@ -185,7 +185,7 @@ def time_to_solve_trend(problems, attempts, today=None):
     for a in scheduler._solved_attempts(attempts):
         t = a.get("time_taken_sec")
         ts = a.get("solved_at")
-        if not t or not ts:
+        if not t or not ts or scheduler.ended_unsolved(a):
             continue
         diff = diff_of.get(a["slug"], "Unknown")
         d = dt.datetime.fromtimestamp(ts).date()
@@ -209,6 +209,8 @@ def pace_projection(problems, attempts, today=None, window_days=14):
     first_solves = {}
     for a in scheduler._solved_attempts(attempts):
         if a["slug"] not in library or a.get("kind") == "recall" or a.get("source") == "recall":
+            continue
+        if scheduler.ended_unsolved(a):
             continue
         ts = a.get("solved_at") or 0
         first_solves[a["slug"]] = min(first_solves.get(a["slug"], ts), ts)

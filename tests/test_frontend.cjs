@@ -527,7 +527,7 @@ test('stopping an optimize run goes back to rating that solve, not the queue hea
   assert.equal(ui.run('currentAttempt.id'), 'optimized');
 });
 
-test('a hint asks with the code on screen, lists unnumbered and draws its marks', async () => {
+test('a hint asks with the code on screen, shows cards and draws its marks', async () => {
   const calls = [];
   const ui = app(async (path, opts) => {
     calls.push([path, opts && opts.body ? JSON.parse(opts.body) : null]);
@@ -543,23 +543,60 @@ test('a hint asks with the code on screen, lists unnumbered and draws its marks'
   assert.equal(ui.run('window.ticked'), true);
   assert.equal(ui.run('activeSession.hint_level'), 2);
   const html = ui.node('#hint-panel').innerHTML;
-  assert.match(html, /<ul class="hint-list">/);
-  assert.match(html, /<li class="is-latest">What does <code>seen<\/code> hold\?<\/li>/);
-  assert.doesNotMatch(html, /of \d/);
+  assert.match(html, /<div class="hint-card is-latest">/);
+  assert.match(html, /<span>Hint 2<\/span>/);
+  assert.match(html, /<p>What does <code>seen<\/code> hold\?<\/p>/);
   assert.equal(ui.node('#btn-hint').textContent, 'Another hint');
   assert.equal(ui.run('window.marks[0].note'), 'here?');
 });
 
-test('giving up takes a second click, then keeps the approach on screen', async () => {
+test('giving up takes a second click, then walks a step per Next with marks', async () => {
   const calls = [];
-  const ui = app(async (path) => { calls.push(path); return response({ text: 'Slide a window.' }); });
+  let steps = [{ text: 'Keep a `seen` map.', marks: [{ line: 3, text: 'x', note: 'here' }] }];
+  const ui = app(async (path, opts) => {
+    calls.push([path, opts && opts.body ? JSON.parse(opts.body) : null]);
+    return response({ steps, done: steps.length > 1 });
+  });
+  ui.run(`window.Editor = { tick() {}, flush: async () => {}, code: () => "CODE",
+          showMarks: (m) => { window.marks = m; return m.length; } }`);
   ui.run('activeSession = { session_id: "s1", give_up_available: true }');
   const btn = ui.node('#btn-give-up');
   await btn.listeners.click();
   assert.equal(btn.textContent, 'Sure? Click again');
-  assert.equal(calls.filter((p) => p.endsWith('/give-up')).length, 0);
+  assert.equal(calls.filter(([p]) => p.endsWith('/give-up')).length, 0);
   await btn.listeners.click();
-  assert.equal(calls.filter((p) => p.endsWith('/give-up')).length, 1);
-  assert.equal(ui.run('activeSession.give_up'), 'Slide a window.');
-  assert.match(ui.node('#give-up-panel').innerHTML, /The approach[\s\S]*Slide a window\./);
+  const asks = () => calls.filter(([p]) => p.endsWith('/give-up'));
+  assert.deepEqual(asks()[0][1], { code: 'CODE', seen: 0 });
+  assert.equal(ui.run('window.marks[0].note'), 'here');
+  let html = ui.node('#give-up-panel').innerHTML;
+  assert.match(html, /<li class="is-latest">Keep a <code>seen<\/code> map\.<\/li>/);
+  assert.match(html, /id="btn-walk-next"/);
+
+  steps = [...steps, { text: 'Return the pair.', marks: [] }];
+  await ui.run('giveUpStep()');
+  assert.deepEqual(asks()[1][1], { code: 'CODE', seen: 1 });
+  html = ui.node('#give-up-panel').innerHTML;
+  assert.match(html, /<li>Keep a[\s\S]*<li class="is-latest">Return the pair\.<\/li>/);
+  assert.doesNotMatch(html, /btn-walk-next/);
+  assert.equal(ui.run('activeSession.give_up.done'), true);
+});
+
+test('ending takes a second click, sends the code and opens the rating', async () => {
+  const calls = [];
+  const ui = app(async (path, opts) => {
+    calls.push([path, opts && opts.body ? JSON.parse(opts.body) : null]);
+    if (path.endsWith('/session/end')) return response({ ok: true, attempt_id: 'a1', pending: [] });
+    return response({ active: null, pending: [] });
+  });
+  ui.run(`window.Editor = { tick() {}, flush: async () => {}, code: () => "CODE",
+          discard: (id) => { window.discarded = id; } }`);
+  ui.run('activeSession = { session_id: "s1", end_available: true }');
+  const btn = ui.node('#btn-end-run');
+  await btn.listeners.click();
+  assert.equal(btn.textContent, 'Sure?');
+  assert.equal(calls.filter(([p]) => p.endsWith('/session/end')).length, 0);
+  await btn.listeners.click();
+  const [, body] = calls.find(([p]) => p.endsWith('/session/end'));
+  assert.deepEqual(body, { code: 'CODE' });
+  assert.equal(ui.run('window.discarded'), 's1');
 });

@@ -84,6 +84,12 @@ class HintRequest(BaseModel):
     code: Optional[str] = Field(None, max_length=60000)
 
 
+class GiveUpRequest(HintRequest):
+    # How many steps the client has on screen: a repeat of the same ask (a
+    # double click, a retry) gets the step it already made, not another.
+    seen: int = Field(0, ge=0)
+
+
 class EditorOptimize(BaseModel):
     attempt_id: str
 
@@ -921,7 +927,8 @@ def _active_payload(prob, s, settings):
         "hints": _hints_given(prob, s),
         "hints_available": _hints_available(prob, s, settings),
         "give_up_available": _assisted(s) and (llm.enabled(settings) or bool(coach.give_up_fallback(prob))),
-        "give_up": s.get("give_up_text") if s.get("gave_up") else None,
+        "give_up": _walk(s) if s.get("gave_up") else None,
+        "end_available": _assisted(s),
         "plan_status": s.get("plan_status"),
         "surface": s.get("surface") or "leetcode",
         "interview": bool(s.get("interview")),
@@ -1097,29 +1104,83 @@ async def api_session_hint(body: Optional[HintRequest] = None,
             "available": _hints_available(prob, s, settings)}
 
 
+def _walk(s):
+    """A run's give-up walkthrough so far. Runs from before the walkthrough
+    hold one block of text: it's their first step."""
+    steps = s.get("give_up_steps")
+    if steps is None:
+        steps = [{"text": s["give_up_text"], "marks": []}] if s.get("give_up_text") else []
+    return {"steps": steps, "done": bool(s.get("give_up_done"))}
+
+
 @app.post("/api/session/give-up")
-async def api_session_give_up(body: Optional[HintRequest] = None,
+async def api_session_give_up(body: Optional[GiveUpRequest] = None,
                               uid: str = Depends(auth.require_user)):
-    """Hear the approach in words and still write it yourself. Asked once per
-    run; the solve it ends in is marked as having needed the solution."""
+    """Get walked to a solution one step at a time, writing each yourself.
+
+    Each ask past the steps already on screen makes the next one, read off the
+    code as it is now — so it follows the approach you're on and notices a step
+    not yet written. Without an LLM, or if the first step fails, it walks the
+    cached key ideas instead. The first step marks the solve as having needed
+    the solution."""
     store = get_store(uid)
     s = store.latest_active_session()
     if not s:
         raise HTTPException(400, "no active session")
     if not _assisted(s):
         raise HTTPException(400, "nothing to give up on this run")
-    if s.get("gave_up") and s.get("give_up_text"):
-        return {"text": s["give_up_text"]}
+    walk = _walk(s)
+    steps = walk["steps"]
+    if walk["done"] or len(steps) > (body.seen if body else 0):
+        return walk
+    settings = store.get_settings()
     prob = store.get_problem(s["slug"]) or {}
-    code = body.code if body and body.code else (store.get_recording(s["id"]) or {}).get("code")
-    if coach.untouched(code, prob.get("starter_code")):
+    src = s.get("give_up_src") or ("llm" if steps else None)
+    step = None
+    if src != "cached" and llm.enabled(settings):
+        doc = store.get_recording(s["id"]) or {}
+        code = (body.code if body and body.code is not None else None) or doc.get("code")
+        if coach.untouched(code, prob.get("starter_code")):
+            code = None
+        events = recording.parse(doc["events"]) if doc.get("events") else []
+        step = await coach.give_up_step(prob, s, code, steps, s.get("give_up_track"),
+                                        recording.last_judged(events), settings=settings)
+        if step:
+            src = "llm"
+        elif steps:
+            return {**walk, "error": "Couldn't get the next step — try again."}
+    if not step:
+        cached = coach.give_up_fallback(prob) or []
+        if len(steps) >= len(cached):
+            return {**walk, "done": bool(steps)}
+        src = "cached"
+        step = {"text": cached[len(steps)], "marks": [], "done": len(steps) + 1 >= len(cached)}
+    steps = steps + [{"text": step["text"], "marks": step["marks"]}]
+    store.update_session(s["id"], {
+        "gave_up": True, "give_up_steps": steps, "give_up_done": step["done"],
+        "give_up_src": src, "give_up_track": step.get("track") or s.get("give_up_track")})
+    _log_server_event(store, s, {"k": "giveup", "step": len(steps), "text": step["text"]})
+    return {"steps": steps, "done": step["done"]}
+
+
+@app.post("/api/session/end")
+async def api_session_end(body: Optional[HintRequest] = None,
+                          uid: str = Depends(auth.require_user)):
+    """Stop here without an Accepted. Unlike cancelling, the run is kept: it's
+    logged as an unsolved attempt and goes to rating like a solve."""
+    store = get_store(uid)
+    s = store.latest_active_session()
+    if not s:
+        raise HTTPException(400, "no active session")
+    if not _assisted(s):
+        raise HTTPException(400, "nothing to end on this run")
+    code = body.code if body and body.code is not None else (store.get_recording(s["id"]) or {}).get("code")
+    if coach.untouched(code, (store.get_problem(s["slug"]) or {}).get("starter_code")):
         code = None
-    text = await coach.give_up(prob, s, code, settings=store.get_settings())
-    if not text:
-        return {"text": None}
-    store.update_session(s["id"], {"gave_up": True, "give_up_text": text})
-    _log_server_event(store, s, {"k": "giveup"})
-    return {"text": text}
+    _log_server_event(store, s, {"k": "end"})
+    async with _poll_lock(uid):
+        aid = poller.record_unsolved(store, s, code, int(time.time()))
+    return {"ok": True, "attempt_id": aid, "pending": _pending(store)}
 
 
 # One detection pass per user at a time. The session timer and a focus-triggered

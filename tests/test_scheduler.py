@@ -217,6 +217,20 @@ def test_overview_counts_drills_today_separately():
     assert ov["xp_today"] == 40
 
 
+def test_a_run_ended_unsolved_is_practice_but_not_a_solve():
+    today = dt.date(2026, 1, 10)
+    ended = {"slug": "3sum", "solved_at": _ts(today), "kind": "adhoc", "source": "ended",
+             "unsolved": True, "time_taken_sec": 1800, "confidence": 1, "independence": "solution"}
+    solved = {"slug": "two-sum", "solved_at": _ts(today), "kind": "adhoc", "time_taken_sec": 600}
+    ov = scheduler.overview(_problems(), [ended, solved], [], today=today)
+    assert ov["solved"] == 1 and ov["streak"] == 1
+    stats = {t["category"]: t for t in scheduler.topic_stats(_problems(), [ended, solved])}
+    assert stats["Two Pointers"]["solved"] == 0
+    assert insights.pace_projection(_problems(), [ended, solved], today=today)["solved"] == 1
+    trend = insights.time_to_solve_trend(_problems(), [ended, solved], today=today)
+    assert "Medium" not in trend and trend["Easy"][0]["n"] == 1
+
+
 def test_topic_solved_counts_only_library_problems():
     today = dt.date(2026, 1, 10)
     problems = _problems() + [

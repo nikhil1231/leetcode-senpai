@@ -965,9 +965,20 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .button.hint-btn:hover { background: rgba(245, 181, 68, .16); color: var(--amber); }
 .button.hint-btn:disabled { background: transparent; border-color: var(--line-hi); color: var(--muted); }
 .button.hint-btn[aria-busy="true"], .button.give-up-btn[aria-busy="true"] { cursor: progress; animation: pulse 1.2s ease-in-out infinite; }
-.button.give-up-btn { color: var(--muted); border-color: var(--line); }
-.button.give-up-btn:hover { color: var(--text-2); }
-.button.give-up-btn[data-armed] { color: var(--red); border-color: rgba(251, 113, 133, .4); }
+/* Hint and Give up are one control, two strengths of help; End stands apart. */
+.assist-group { display: flex; min-width: 0; }
+.assist-group > .button, .button.end-btn { white-space: nowrap; }
+.assist-group > .button { border-radius: 0; }
+.assist-group > .button:first-child { border-radius: 9px 0 0 9px; }
+.assist-group > .button:last-child, .assist-group > .button:has(+ .hidden) { border-top-right-radius: 9px; border-bottom-right-radius: 9px; }
+.assist-group > .button + .button { margin-left: -1px; }
+.button.give-up-btn { border-color: rgba(167, 139, 250, .38); background: rgba(167, 139, 250, .07); color: var(--accent-2); }
+.button.give-up-btn:hover { background: rgba(167, 139, 250, .15); color: var(--accent-2); }
+.button.give-up-btn[data-armed], .button.end-btn[data-armed] { color: var(--red); border-color: rgba(251, 113, 133, .5); background: rgba(251, 113, 133, .12); position: relative; }
+.button.end-btn { gap: 7px; border-color: rgba(251, 113, 133, .3); background: transparent; color: var(--red); }
+.button.end-btn::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: currentColor; }
+.button.end-btn:hover { background: rgba(251, 113, 133, .1); color: var(--red); }
+.button.end-btn[aria-busy="true"] { cursor: progress; animation: pulse 1.2s ease-in-out infinite; }
 .resume-btn { display: none; }
 .active-run.is-paused .resume-btn { display: inline-flex; }
 
@@ -1018,6 +1029,12 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
   color: var(--amber); font-size: 11px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase;
 }
 .give-up-panel .note-head { color: var(--accent-2); }
+.walk-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; }
+.walk-steps li { color: var(--muted); }
+.walk-steps li.is-latest { color: var(--text); animation: hint-in .25s ease-out; }
+.walk-steps li::marker { color: var(--accent-2); font-weight: 650; }
+.walk-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+#btn-walk-next[aria-busy="true"] { cursor: progress; animation: pulse 1.2s ease-in-out infinite; }
 .note-meta { color: var(--muted); font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 12px; }
 .note-action {
   padding: 0; border: 0; background: none; color: var(--muted); font: inherit;
@@ -2733,6 +2750,8 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .active-run.has-editor .active-notes:not(:has(> :not(.hidden):not(.coach-empty))) .coach-empty { display: block; }
 .coach-empty { margin: 0; padding: 2px; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .active-run.has-editor .coach-actions { order: 0; flex: none; margin: 0; padding: 12px 14px; border-top: 1px solid var(--line); }
+.active-run.has-editor .coach-actions { flex-wrap: wrap; }
+.active-run.has-editor .coach-actions .assist-group { flex: 1 1 150px; }
 .active-run.has-editor .coach-actions .hint-btn { flex: 1 1 auto; }
 .active-run.has-editor .run-menu-list { top: auto; bottom: calc(100% + 6px); }
 .active-run.coach-hidden .run-coach { cursor: pointer; }

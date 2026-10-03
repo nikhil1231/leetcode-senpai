@@ -54,6 +54,12 @@ def _solved_attempts(attempts):
     return [a for a in attempts if not _is_sprint_attempt(a)]
 
 
+def ended_unsolved(a):
+    """A run ended without an Accepted: practice that counts toward the card and
+    the streak, but not as a solve or a solve time."""
+    return bool(a.get("unsolved"))
+
+
 def _recently_attempted_slugs(attempts, today, days):
     """Slugs with an attempt in the last `days` — a cooldown so drills and sprint
     rounds don't re-serve a problem the moment it's been practiced."""
@@ -300,7 +306,8 @@ def topic_stats(problems, attempts, enrichments=None):
             elif verdict == "wrong":
                 c["sprint_wrong"] += 1
             continue
-        c["solved"].add(a["slug"])
+        if not ended_unsolved(a):
+            c["solved"].add(a["slug"])
         if a.get("confidence") is not None:
             # A coach-graded recall still says how well the topic is known, but
             # its 0..3 grade must sit on the 1..3 scale: a failed recall is low.
@@ -1111,7 +1118,7 @@ def overview(problems, attempts, reviews, today=None):
     today_d = _today(today)
     total_problems = sum(1 for p in problems if _in_library(p))
     solved_attempts = _solved_attempts(attempts)
-    solved = len({a["slug"] for a in solved_attempts})
+    solved = len({a["slug"] for a in solved_attempts if not ended_unsolved(a)})
     due = sum(1 for r in reviews if r.get("due_date") and r["due_date"] <= _iso(today_d))
     leeches = sum(1 for r in reviews if r.get("leech"))
     dates = {

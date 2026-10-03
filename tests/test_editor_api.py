@@ -575,18 +575,35 @@ def test_mocks_and_optimize_runs_get_no_hints_or_giving_up(client):
     assert client.post("/api/session/give-up").status_code == 400
 
 
-def test_giving_up_explains_once_and_marks_the_solve(client, monkeypatch):
-    asked = _coach(monkeypatch, {"give_up": {"approach": "Keep a map of what you've seen."}})
+def test_giving_up_walks_one_step_per_ask_reading_the_code_each_time(client, monkeypatch):
+    replies = {"give_up_step": {"track": "hash map of seen values, O(n)",
+                                "step": "Keep a map of what you've seen.",
+                                "marks": ["3: start the loop here"], "done": False}}
+    asked = _coach(monkeypatch, replies)
     sid = _start(client)
     assert client.get("/api/session/active").json()["active"]["give_up_available"] is True
     client.get(f"/api/editor/state?session_id={sid}")
-    assert client.post("/api/session/give-up", json={"code": WRONG}).json() == {
-        "text": "Keep a map of what you've seen."}
-    assert asked[0][1]["code"] == WRONG
-    client.post("/api/session/give-up", json={"code": WRONG})
-    assert len(asked) == 1  # asked once per run
-    assert client.get("/api/session/active").json()["active"]["give_up"] == "Keep a map of what you've seen."
-    assert [e["k"] for e in _events(client, sid)][-1] == "giveup"
+    first = client.post("/api/session/give-up", json={"code": WRONG}).json()
+    assert first == {"steps": [{"text": "Keep a map of what you've seen.", "marks": [
+        {"line": 3, "text": "        return [0, 0]", "note": "start the loop here"}]}], "done": False}
+    assert "return [0, 0]" in asked[0][1]["code"] and asked[0][1]["track"] is None
+    # The same ask again (a double click) gets the step already made.
+    assert client.post("/api/session/give-up", json={"code": WRONG}).json() == first
+    assert len(asked) == 1
+
+    replies["give_up_step"] = {"track": "", "step": "Now return the pair.", "marks": [], "done": True}
+    second = client.post("/api/session/give-up", json={"code": RIGHT, "seen": 1}).json()
+    assert [st["text"] for st in second["steps"]] == ["Keep a map of what you've seen.", "Now return the pair."]
+    assert second["done"] is True
+    assert asked[1][1]["track"] == "hash map of seen values, O(n)"  # stays on the chosen track
+    assert asked[1][1]["steps"] == ["Keep a map of what you've seen."]
+    assert "return [0, 1]" in asked[1][1]["code"]
+    client.post("/api/session/give-up", json={"code": RIGHT, "seen": 2})
+    assert len(asked) == 2  # done: nothing more to ask
+    assert client.get("/api/session/active").json()["active"]["give_up"] == {
+        "steps": second["steps"], "done": True}
+    assert [(e["k"], e.get("step")) for e in _events(client, sid) if e["k"] == "giveup"] == [
+        ("giveup", 1), ("giveup", 2)]
 
     started = client.store.get_session(sid)["started_at"]
     _submits(monkeypatch, [{"status": "Accepted", "accepted": True, "submission_id": 12,
@@ -597,9 +614,52 @@ def test_giving_up_explains_once_and_marks_the_solve(client, monkeypatch):
     assert client.store.get_attempt(done["attempt_id"])["gave_up"] is True
 
 
+def test_a_failed_step_mid_walk_keeps_the_walk_and_says_so(client, monkeypatch):
+    replies = {"give_up_step": {"track": "t", "step": "First.", "marks": [], "done": False}}
+    _coach(monkeypatch, replies)
+    _start(client)
+    client.post("/api/session/give-up", json={"code": WRONG})
+    del replies["give_up_step"]
+    r = client.post("/api/session/give-up", json={"code": WRONG, "seen": 1}).json()
+    assert [st["text"] for st in r["steps"]] == ["First."] and r["done"] is False and r["error"]
+
+
+def test_ending_a_run_keeps_it_as_an_unsolved_attempt_to_rate(client):
+    sid = _start(client)
+    client.get(f"/api/editor/state?session_id={sid}")
+    assert client.get("/api/session/active").json()["active"]["end_available"] is True
+    r = client.post("/api/session/end", json={"code": WRONG}).json()
+    a = client.store.get_attempt(r["attempt_id"])
+    assert a["unsolved"] is True and a["gave_up"] is True and a["confidence"] is None
+    assert a["code"] == WRONG and a["submission_id"] is None and a["via"] == "editor"
+    assert [p["id"] for p in r["pending"]] == [r["attempt_id"]]
+    assert client.store.get_session(sid)["status"] == "completed"
+    assert client.get("/api/session/active").json()["active"] is None
+    assert [e["k"] for e in _events(client, sid)][-1] == "end"
+    assert client.post("/api/session/end").status_code == 400
+
+
+def test_mocks_have_no_end_unsolved(client):
+    client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock"})
+    assert client.get("/api/session/active").json()["active"]["end_available"] is False
+    assert client.post("/api/session/end").status_code == 400
+
+
+def test_a_run_from_before_the_walkthrough_keeps_its_approach_as_step_one(client):
+    sid = client.post("/api/session/start", json={"slug": "two-sum"}).json()["session_id"]
+    client.store.update_session(sid, {"gave_up": True, "give_up_text": "Hash the complements."})
+    assert client.get("/api/session/active").json()["active"]["give_up"] == {
+        "steps": [{"text": "Hash the complements.", "marks": []}], "done": False}
+
+
 def test_giving_up_without_an_llm_uses_the_cached_summary(client):
     client.store.upsert_problem({"slug": "two-sum", "canonical_summary": {
         "key_ideas": ["Hash the complements"], "time": "O(n)", "space": "O(n)"}})
+    client.store.upsert_problem({"slug": "two-sum", "canonical_summary": {
+        "key_ideas": ["Hash the complements", "Look each one up"], "time": "O(n)", "space": "O(n)"}})
     client.post("/api/session/start", json={"slug": "two-sum"})
-    assert client.post("/api/session/give-up").json()["text"] == \
-        "Hash the complements. That's O(n) time and O(n) space."
+    first = client.post("/api/session/give-up").json()
+    assert first == {"steps": [{"text": "Hash the complements.", "marks": []}], "done": False}
+    last = client.post("/api/session/give-up", json={"seen": 1}).json()
+    assert last["steps"][-1]["text"] == "Look each one up. That's O(n) time and O(n) space."
+    assert last["done"] is True

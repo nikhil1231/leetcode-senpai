@@ -11,7 +11,8 @@ only when the code moved since the last one, so time spent thinking costs nothin
   sub    submit          {code, submission_id, result}  also a checkpoint
   pause / resume / blur / focus
   hint   hint asked for  {level, text?}          level counts hints taken this run
-  giveup gave up         {}                      heard the approach in words
+  giveup gave up         {step?, text?}          a step of the walkthrough to a solution
+  end    ended unsolved  {}                      stopped without an Accepted
   edge   edge case       {case, on}              a planned edge case ticked (or not)
   reset                                          back to the starter code (a "c" follows)
 
@@ -429,7 +430,13 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
             entries.append([t, f"asked for a hint: \"{_one_line(ev['text'], 160)}\""
                                if ev.get("text") else f"revealed hint {ev.get('level')}", None])
         elif k == "giveup":
-            entries.append([t, "gave up and heard the approach explained", None])
+            if (ev.get("step") or 1) == 1:
+                entries.append([t, "gave up and heard the approach explained"
+                                   + (f": \"{_one_line(ev['text'], 160)}\"" if ev.get("text") else ""), None])
+            else:
+                entries.append([t, f"walked to step {ev['step']}: \"{_one_line(ev.get('text') or '', 160)}\"", None])
+        elif k == "end":
+            entries.append([t, "ended the run without an Accepted", None])
         elif k == "reset":
             entries.append([t, "reset the code to the starter", None])
         elif k == "edge" and ev.get("on"):

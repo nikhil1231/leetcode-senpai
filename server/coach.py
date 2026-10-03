@@ -75,14 +75,14 @@ def parse_marks(raw, code, limit=2):
 
 
 def give_up_fallback(prob):
-    """The approach from cached content, for when no LLM can explain it."""
+    """The approach as steps from cached content, for when no LLM can walk it."""
     canon = prob.get("canonical_summary") or {}
-    ideas = [i for i in canon.get("key_ideas") or [] if i]
+    ideas = [i.rstrip(".") + "." for i in canon.get("key_ideas") or [] if i]
     if ideas:
-        cost = f" That's {canon['time']} time and {canon['space']} space." if canon.get("time") and canon.get("space") else ""
-        return " ".join(i.rstrip(".") + "." for i in ideas) + cost
-    ladder = prob.get("hint_ladder") or []
-    return " ".join(ladder) or None
+        if canon.get("time") and canon.get("space"):
+            ideas[-1] += f" That's {canon['time']} time and {canon['space']} space."
+        return ideas
+    return [h for h in prob.get("hint_ladder") or [] if h] or None
 
 
 async def live_hint(prob, s, code, previous, last_judged, minutes, settings=None):
@@ -101,19 +101,25 @@ async def live_hint(prob, s, code, previous, last_judged, minutes, settings=None
     return {"text": text, "marks": parse_marks(res.get("marks"), code)}
 
 
-async def give_up(prob, s, code, settings=None):
-    """The approach in spoken English, tailored to the code so far when there's an LLM."""
-    if llm.enabled(settings):
-        res = await llm.extract("give_up", {
-            "title": prob.get("title", s["slug"]), "difficulty": prob.get("difficulty"),
-            "category": prob.get("neetcode_category"),
-            "statement": statement_text(prob.get("content_html")),
-            "code": (code or "")[:6000] or None,
-        }, settings=settings)
-        text = " ".join(((res or {}).get("approach") or "").split())
-        if text:
-            return text
-    return give_up_fallback(prob)
+async def give_up_step(prob, s, code, steps, track, last_judged, settings=None):
+    """The next step of a give-up walkthrough, read off the code on screen:
+    {text, marks, track, done}, or None on any failure. One call per step, so
+    each reads what was actually written after the last."""
+    plan = " — ".join(x for x in (s.get("predicted_category"), s.get("predicted_approach")) if x)
+    res = await llm.extract("give_up_step", {
+        "title": prob.get("title", s["slug"]), "difficulty": prob.get("difficulty"),
+        "category": prob.get("neetcode_category"),
+        "statement": statement_text(prob.get("content_html")),
+        "plan": plan, "track": track, "last_judged": last_judged,
+        "steps": [st["text"] for st in steps],
+        "code": numbered(code)[:6000] if code else None,
+    }, settings=settings)
+    text = " ".join(((res or {}).get("step") or "").split())
+    if not text:
+        return None
+    return {"text": text, "marks": parse_marks(res.get("marks"), code, limit=3),
+            "track": " ".join((res.get("track") or "").split()) or track,
+            "done": bool(res.get("done"))}
 
 
 async def ensure_canonical(store, slug):

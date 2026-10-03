@@ -957,7 +957,7 @@ async function refreshActive() {
 }
 
 // Run controls that act on the server's copy of the run: off until it has one.
-const RUN_CONTROLS = ["#btn-hint", "#btn-give-up", "#btn-plan-check", "#btn-check-solve",
+const RUN_CONTROLS = ["#btn-hint", "#btn-give-up", "#btn-end-run", "#btn-plan-check", "#btn-check-solve",
                       "#btn-pause-session", "#btn-cancel-session"];
 
 function applyActive(active, editorState = null) {
@@ -980,6 +980,7 @@ function applyActive(active, editorState = null) {
     if (previousId !== active.session_id) setRunMenu(false);
     setHints(active);
     setGiveUp(active);
+    setEndRun(active);
     setPlanCheck(active);
     setPauseButton(active);
     startTimer(active);
@@ -1070,21 +1071,44 @@ function setHints(active) {
   }
 }
 
-// Giving up is a one-time step down from hints: the approach in words, kept on
-// screen for the rest of the run, with the code still yours to write.
+// Giving up walks you to a solution a step at a time: each Next reads the code
+// as it is now, so it follows the approach you're on. Stop whenever you've got
+// it. The steps stay on screen for the rest of the run.
 function setGiveUp(active) {
+  const walk = active.give_up;
+  const steps = walk ? walk.steps || [] : [];
   const btn = $("#btn-give-up");
-  btn.classList.toggle("hidden", !active.give_up_available || Boolean(active.give_up));
+  btn.classList.toggle("hidden", !active.give_up_available || Boolean(walk));
   btn.removeAttribute("aria-busy");
   btn.disabled = false;
   btn.textContent = "Give up";
   delete btn.dataset.armed;
   const panel = $("#give-up-panel");
-  panel.classList.toggle("hidden", !active.give_up);
-  const html = active.give_up ? `
-    <div class="note-head"><span>The approach</span><span class="note-meta">your turn to write it</span></div>
-    <p>${coachText(active.give_up)}</p>` : "";
-  if (panel._drawn !== html) { panel._drawn = html; panel.innerHTML = html; }
+  panel.classList.toggle("hidden", !walk);
+  const html = walk ? `
+    <div class="note-head"><span>Walkthrough</span><span class="note-meta">${walk.done
+      ? "that's all of it" : "write each step, then ask for the next"}</span></div>
+    <ol class="walk-steps">${steps.map((st, i) => `<li${i === steps.length - 1 ? ' class="is-latest"' : ""}>${coachText(st.text)}</li>`).join("")}</ol>
+    ${walk.done ? "" : `<div class="walk-actions"><button id="btn-walk-next" class="button is-small" type="button" title="Reads your code as it is now">Next step</button>
+      <span class="note-meta">Got it from here? Just keep writing.</span></div>`}` : "";
+  if (panel._drawn !== html) {
+    panel._drawn = html;
+    panel.innerHTML = html;
+    $("#btn-walk-next")?.addEventListener("click", () => giveUpStep());
+  }
+  $("#btn-walk-next")?.removeAttribute("aria-busy");
+  if ($("#btn-walk-next")) $("#btn-walk-next").disabled = false;
+}
+
+// Ending stops the run without an Accepted but keeps it: it's logged unsolved and
+// rated like a solve. Cancelling is the one that throws a run away.
+function setEndRun(active) {
+  const btn = $("#btn-end-run");
+  btn.classList.toggle("hidden", !active.end_available);
+  btn.removeAttribute("aria-busy");
+  btn.disabled = !active.session_id;
+  btn.textContent = "End";
+  delete btn.dataset.armed;
 }
 
 // The rarer run actions live behind ⋯; the menu closes on a pick, a click
@@ -1272,23 +1296,63 @@ $("#btn-give-up").addEventListener("click", async () => {
     return;
   }
   clearTimeout(btn._disarm);
-  const sessionId = activeSession.session_id;
   btn.disabled = true;
   btn.setAttribute("aria-busy", "true");
   btn.textContent = "Give up";
+  await giveUpStep();
+});
+
+// The next walkthrough step for the code on screen; its marks show where it lands.
+async function giveUpStep() {
+  if (!activeSession) return;
+  const sessionId = activeSession.session_id;
+  const next = $("#btn-walk-next");
+  if (next) { next.disabled = true; next.setAttribute("aria-busy", "true"); }
+  const seen = activeSession.give_up?.steps?.length || 0;
   try {
     const code = await editorCodeForCoach();
-    const r = await api("/session/give-up", "POST", code == null ? {} : { code });
+    const r = await api("/session/give-up", "POST", code == null ? { seen } : { code, seen });
     if (!activeSession || activeSession.session_id !== sessionId) return;
-    if (!r.text) {
+    if (!r.steps?.length) {
       activeSession = { ...activeSession, give_up_available: false };
-      toast("No explanation available for this one — the solution is on LeetCode.");
+      toast("No walkthrough available for this one — the solution is on LeetCode.");
     } else {
-      activeSession = { ...activeSession, give_up: r.text };
+      activeSession = { ...activeSession, give_up: { steps: r.steps, done: r.done } };
+      if (r.error) toast(r.error);
+      else if (r.steps.length > seen) {
+        const shown = window.Editor?.showMarks(r.steps[r.steps.length - 1].marks || []) || 0;
+        $("#btn-clear-marks")?.classList.toggle("hidden", !shown);
+      }
     }
     setGiveUp(activeSession);
   } catch (e) {
     setGiveUp(activeSession);
+    toast(e.message);
+  }
+}
+
+// Two clicks, like giving up: ending can't be taken back.
+$("#btn-end-run").addEventListener("click", async () => {
+  if (!activeSession) return;
+  const btn = $("#btn-end-run");
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = "1";
+    btn.textContent = "Sure?";
+    btn._disarm = setTimeout(() => setEndRun(activeSession || {}), 4000);
+    return;
+  }
+  clearTimeout(btn._disarm);
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  const sessionId = activeSession.session_id;
+  try {
+    const code = await editorCodeForCoach();
+    const r = await api("/session/end", "POST", code == null ? {} : { code });
+    pauseRequestId++;
+    window.Editor?.discard(sessionId);
+    await onEditorSolved(r);
+  } catch (e) {
+    setEndRun(activeSession || {});
     toast(e.message);
   }
 });
@@ -1435,7 +1499,10 @@ function openAnnotate(attempt) {
   renderAnnotateFacts(attempt);
   // Default independence from the run: gave up → solution; leaned on hints → hints.
   const usedHints = (attempt.hint_level_used || 0) >= 2;
-  selectPill("#conf-group", "2");
+  const heading = $("#annotate-heading");
+  heading.textContent = attempt.unsolved ? "Run ended" : "Solved!";
+  heading.classList.toggle("celebrate", !attempt.unsolved);
+  selectPill("#conf-group", attempt.unsolved ? "1" : "2");
   selectPill("#indep-group", attempt.gave_up ? "solution" : usedHints ? "hints" : "solo");
   // What you did usually is what you planned; start from the plan and edit.
   const plan = attempt.plan || {};
@@ -1462,7 +1529,7 @@ function openAnnotate(attempt) {
   initAnnotateGrade(attempt);
   // Only while unrated: the server won't reopen a solve once it's rated.
   $("#btn-optimize-annotate").classList.toggle("hidden",
-    !(attempt.via === "editor" && attempt.code && attempt.confidence == null));
+    !(attempt.via === "editor" && attempt.code && attempt.confidence == null && !attempt.unsolved));
   // Detection asked for the code and didn't get it: the likeliest reason is
   // the cookie, so find out now rather than on the next reload.
   if (!attempt.code && attempt.submission_id) checkLeetCodeAuth();
@@ -1476,6 +1543,7 @@ function renderAnnotateFacts(attempt) {
   // was accepted, never when the problem was opened. Say that outright instead
   // of rendering an em-dash where a time should be, and ask for one below.
   const untimed = attempt.time_taken_sec == null && attempt.source === "detected";
+  if (attempt.unsolved) facts.push("Ended <b>unsolved</b>");
   if (untimed) facts.push("Solved <b>outside a session</b>");
   else facts.push(`Time <b>${fmtTime(attempt.time_taken_sec)}</b>${solvePaceHtml(attempt)}`);
   // The clock above covers the whole sitting once you've resubmitted, so the
@@ -1659,7 +1727,7 @@ function initAnnotateGrade(attempt) {
   stopAnnotateGrading();
   panel.classList.add("hidden");
   $("#annotate-grade-body").innerHTML = "";
-  if (!llmEnabled) return;
+  if (!llmEnabled || attempt.unsolved) return;
   // Grading reads the submitted code, and the code only reaches us with the
   // LeetCode session cookie. A solve detected while it was dead arrives
   // without it; grading fetches it again with whatever cookie this browser

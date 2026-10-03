@@ -122,8 +122,14 @@ class LiveHint(BaseModel):
     marks: list[str] = Field(default_factory=list, description="0-2 items, each '<line number>: <note under 8 words>'")
 
 
-class GiveUpExplainer(BaseModel):
-    approach: str = Field("", description="3-5 spoken sentences, no code")
+class GiveUpStep(BaseModel):
+    # Flat, like LiveHint: marks are "line: note" strings, parsed in coach.py.
+    # `heading` comes first so the model reads their code before choosing.
+    heading: str = Field("", description="one sentence describing ONLY their code and plan as written: the approach it is heading for and whether that passes the constraints; 'nothing yet' if empty")
+    track: str = Field("", description="the approach being walked, a few words plus its time complexity")
+    step: str = Field("", description="1-3 spoken sentences, under 60 words: the one next thing to write")
+    marks: list[str] = Field(default_factory=list, description="1-3 items, each '<line number>: <note under 8 words>'; empty only with no code")
+    done: bool = Field(False, description="true when nothing is left to write after this step")
 
 
 class CanonicalSummary(BaseModel):
@@ -396,18 +402,56 @@ TASKS: dict[str, Task] = {
             f"Their code (line numbers added):\n{p.get('code')}"
         ),
     ),
-    "give_up": Task(
-        GiveUpExplainer,
-        "The candidate in a coding interview has given up and wants the answer, "
-        "explained the way an interviewer would talk it through so they can still "
-        "implement it themselves. In 3-5 plain spoken sentences: the key insight, "
-        "the approach step by step, and the time/space complexity. No code, no "
-        "pseudocode, no variable names from a reference solution. If their code is "
-        "already partly on the right track, say which part to keep.",
+    # Stable parts first — instructions, then the statement — so the prefix is
+    # cached across a run's steps; what changes per step (steps, code) goes last.
+    "give_up_step": Task(
+        GiveUpStep,
+        "The candidate in a coding interview has given up and wants to be walked "
+        "to a working solution one step at a time, writing every step themselves. "
+        "You give ONE step per turn; they write it, then ask for the next.\n"
+        "FOLLOW THEIR APPROACH, NOT THE TEXTBOOK ONE. First fill heading by "
+        "reading their code and plan as they are — not what you'd write. If "
+        "their approach would pass the constraints, walk them to the end of THAT approach, keeping their structure "
+        "and names, even when a faster one exists. Do not swap it out. Only if it "
+        "cannot work (wrong, or too slow) say why in "
+        "one sentence and switch to the closest approach that does, keeping what "
+        "you can. Judge speed by the stated constraints, not by what's optimal: "
+        "about 10^8 simple operations pass, so O(n^2) passes for n up to 10^4 "
+        "and fails at 10^5. When the code is too early to tell (a bare loop fits several "
+        "approaches), follow their plan; with no plan either, use the standard "
+        "optimal approach. Once a track is given below, stay on it — unless "
+        "their code has since gone a different way that also works: their code "
+        "wins, follow it and update track.\n"
+        "THE FIRST STEP names the approach and why it works in one sentence, then "
+        "gives the first thing to write. Fill track with it: a few words plus its "
+        "time complexity.\n"
+        "EACH LATER STEP: first check their code against the steps already given. "
+        "If the last step isn't in the code yet, or is wrong, don't move on — say "
+        "what's missing or off, more concretely than before, and point at where it "
+        "goes. If they've written ahead, skip what's done. Otherwise give the next "
+        "smallest meaningful piece: a structure to set up, a loop, a condition, an "
+        "update, a return, an edge case. One piece per step, never a list of "
+        "several — the rest comes when they ask.\n"
+        "Speak plainly, 1-3 sentences under 60 words. You may name data "
+        "structures and their variables and quote a short expression in "
+        "backticks, but never write out whole lines or blocks — they type it.\n"
+        "marks: 1-3 annotations pinned to non-blank lines of THEIR code, each "
+        "'<line number>: <note>' with the note under 8 words, showing where this "
+        "step lands: the line to change, or the line new code goes after ('4: "
+        "the loop goes below this', '7: this bound is off'). Leave marks empty "
+        "only when there is no code yet.\n"
+        "done: true when this step finishes the solution, or their code already "
+        "solves the problem by any approach that passes — then the step says so "
+        "and tells them to run it; a faster approach can get a clause, never "
+        "another step.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
             f"Statement:\n{p.get('statement') or '(unavailable)'}\n\n"
-            f"Their code so far:\n{p.get('code') or '(none)'}"
+            f"Candidate's plan: {p.get('plan') or '(none stated)'}\n"
+            f"Track: {p.get('track') or '(not chosen yet — this is the first step)'}\n"
+            f"Steps given so far, in order: {json.dumps(p.get('steps') or [])}\n"
+            f"Last judged: {p.get('last_judged') or '(not run yet)'}\n\n"
+            f"Their code now (line numbers added):\n{p.get('code') or '(none yet)'}"
         ),
     ),
     "canonical_summary": Task(
