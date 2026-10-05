@@ -253,7 +253,7 @@
       : `<p class="editor-verdict ${r.passed ? "is-good" : "is-bad"}">${r.passed ? "All cases match" : "Mismatch"}
            <span class="small">${r.correct ?? 0}/${r.total} cases · ${esc(r.runtime || "")}</span></p>`;
     const cases = r.error ? [] : (r.cases || []);
-    const ok = (c) => c.output === c.expected;
+    const ok = (c) => c.ok ?? c.output === c.expected;
     const tabs = cases.length ? `<div class="editor-case-tabs" role="tablist">${cases.map((c, i) =>
       `<button class="editor-case-tab ${ok(c) ? "is-good" : "is-bad"}" type="button" role="tab" data-i="${i}">
          ${ok(c) ? "✓" : "✗"} Case ${i + 1}</button>`).join("")}</div><div id="editor-case" role="tabpanel"></div>` : "";

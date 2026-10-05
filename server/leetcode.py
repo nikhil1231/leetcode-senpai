@@ -431,6 +431,20 @@ def _cases(data_input, total):
     return ["\n".join(lines[i:i + per]) for i in range(0, len(lines), per)]
 
 
+def _case_verdicts(d, answers, expected, total):
+    """Per-case pass/fail from the judge, not string equality — problems that
+    accept any order (or float tolerance) match without matching textually.
+    compare_result is the judge's per-case "1"/"0" string; failing that, a run
+    the judge marked correct passed every case."""
+    cmp = d.get("compare_result") or ""
+    if len(cmp) == total and set(cmp) <= {"0", "1"}:
+        return [c == "1" for c in cmp]
+    if d.get("correct_answer"):
+        return [True] * total
+    return [i < len(answers) and i < len(expected) and answers[i] == expected[i]
+            for i in range(total)]
+
+
 async def run_code(slug, question_id, code, data_input, auth):
     """Auth required. Judge `code` on `data_input` against LeetCode's reference
     answer, like the editor's Run. Raises JudgeError when it can't be judged."""
@@ -443,10 +457,12 @@ async def run_code(slug, question_id, code, data_input, auth):
     answers = d.get("code_answer") or []
     expected = d.get("expected_code_answer") or []
     stdout = d.get("std_output_list") or []
+    ok = _case_verdicts(d, answers, expected, total)
     cases = [{"input": inputs[i] if i < len(inputs) else "",
               "output": answers[i] if i < len(answers) else None,
               "expected": expected[i] if i < len(expected) else None,
-              "stdout": stdout[i] if i < len(stdout) else ""}
+              "stdout": stdout[i] if i < len(stdout) else "",
+              "ok": ok[i]}
              for i in range(total)]
     error = _judge_error(d)
     return {

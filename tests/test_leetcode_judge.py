@@ -64,7 +64,7 @@ async def test_run_sends_the_editor_shape_and_splits_cases(lc):
     assert lc["checks"] == 2  # one still-judging answer, then the verdict
     assert r["passed"] is False and (r["correct"], r["total"]) == (2, 3)
     assert r["cases"][1] == {"input": "[3,2,4]\n6", "output": "[0,0]", "expected": "[1,2]",
-                             "stdout": ""}
+                             "stdout": "", "ok": False}
 
 
 async def test_submit_reads_the_failing_case(lc):
@@ -97,3 +97,14 @@ async def test_blank_lines_in_the_input_are_dropped_before_judging(lc):
 def test_cases_fall_back_to_one_block_when_lines_do_not_divide():
     assert leetcode._cases("a\nb\nc", 2) == ["a\nb\nc"]
     assert leetcode._cases("a\nb\nc\nd", 2) == ["a\nb", "c\nd"]
+
+
+def test_case_verdicts_trust_the_judge_over_text():
+    # Any-order answers: text differs, judge says every case matched.
+    d = {"compare_result": "11", "correct_answer": True}
+    assert leetcode._case_verdicts(d, ["[[1],[2]]", "[]"], ["[[2],[1]]", "[]"], 2) == [True, True]
+    d = {"compare_result": "10", "correct_answer": False}
+    assert leetcode._case_verdicts(d, ["[1]", "[2]"], ["[1]", "[3]"], 2) == [True, False]
+    # No per-case string: a correct run passed everything, else compare text.
+    assert leetcode._case_verdicts({"correct_answer": True}, ["b"], ["a"], 1) == [True]
+    assert leetcode._case_verdicts({}, ["a", "b"], ["a"], 2) == [True, False]
