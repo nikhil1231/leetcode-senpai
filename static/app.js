@@ -84,6 +84,17 @@ const fmtTime = (s) => {
   const m = Math.floor(s / 60), sec = s % 60;
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 };
+// A solve's time is planning plus coding, as an interview's clock counts it
+// (plans.solve_sec): the run clock is stored apart, and the plan added on read.
+const planSecOf = (a) => (a.plan_status === "skipped" ? 0 : a.plan_time_sec || 0);
+const solveSecOf = (a, key = "time_taken_sec") => (a[key] == null ? null : a[key] + planSecOf(a));
+// "27:10 (plan 5:02 · code 22:08)", or just the time when there was no plan.
+function solveTimeHtml(a, key = "time_taken_sec") {
+  const plan = planSecOf(a);
+  const split = plan && a[key] != null
+    ? ` <span class="small">(plan ${fmtTime(plan)} · code ${fmtTime(a[key])})</span>` : "";
+  return `<b>${fmtTime(solveSecOf(a, key))}</b>${split}`;
+}
 const pct = (v) => (v == null ? "—" : v.toFixed(1) + "%");
 const escapeHtml = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -222,7 +233,7 @@ const editorialLinkHtml = (slug) => slug
   ? `<p class="small grade-editorial"><a href="${escapeHtml(leetcodeEditorialUrl(slug))}" target="_blank" rel="noopener">Read the editorial ↗</a></p>`
   : "";
 
-window.H = { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader,
+window.H = { $, $$, api, fmtTime, solveSecOf, pct, badge, escapeHtml, toast, cxOptions, loader,
   beginRender, COMPLEXITIES, sanitizeProblemHtml };
 
 renderComplexityFields("#annotate-complexities", {
@@ -894,7 +905,7 @@ function pendingRun(ctx, body) {
   const active = {
     session_id: null, slug: ctx.slug, kind: ctx.kind, title: ctx.title || ctx.slug,
     url: ctx.url || leetcodeProblemUrl(ctx.slug), started_at: Math.floor(Date.now() / 1000),
-    elapsed_sec: 0, is_paused: false, paused_at: null, paused_sec: 0,
+    elapsed_sec: 0, plan_sec: body.plan_time_sec || 0, is_paused: false, paused_at: null, paused_sec: 0,
     hint_level: 0, hints_available: false, give_up_available: false, plan_status: body.plan_status,
     surface: body.surface, interview: body.interview, par_sec: e ? e.par_sec : null,
     takeaway: null, plan_check_available: false, plan_check: null,
@@ -1207,9 +1218,10 @@ function startTimer(session) {
   session._timerBaseElapsed = baseElapsed;
   session._timerBaseWall = baseWall;
   const tick = () => {
-    const elapsed = session.is_paused
+    // The plan's minutes were on the clock already: it shows, and paces, from there.
+    const elapsed = (session.plan_sec || 0) + (session.is_paused
       ? baseElapsed
-      : baseElapsed + Math.max(0, Math.floor(Date.now() / 1000) - baseWall);
+      : baseElapsed + Math.max(0, Math.floor(Date.now() / 1000) - baseWall));
     $("#active-timer").textContent = fmtTime(elapsed);
     // Past interview pace for the difficulty: the clock says so, quietly.
     const over = Boolean(session.par_sec) && elapsed >= session.par_sec;
@@ -1545,13 +1557,13 @@ function renderAnnotateFacts(attempt) {
   const untimed = attempt.time_taken_sec == null && attempt.source === "detected";
   if (attempt.unsolved) facts.push("Ended <b>unsolved</b>");
   if (untimed) facts.push("Solved <b>outside a session</b>");
-  else facts.push(`Time <b>${fmtTime(attempt.time_taken_sec)}</b>${solvePaceHtml(attempt)}`);
+  else facts.push(`Time ${solveTimeHtml(attempt)}${solvePaceHtml(attempt)}`);
   // The clock above covers the whole sitting once you've resubmitted, so the
   // first AC is worth stating separately — the gap is how long the clean-up took.
   if (attempt.resubmissions) {
     facts.push(`Accepted subs <b>${attempt.resubmissions + 1}</b>`);
     if (attempt.first_ac_time_taken_sec != null) {
-      facts.push(`First AC <b>${fmtTime(attempt.first_ac_time_taken_sec)}</b>`);
+      facts.push(`First AC <b>${fmtTime(solveSecOf(attempt, "first_ac_time_taken_sec"))}</b>`);
     }
   }
   // After "Keep optimizing", where the percentiles started from.
@@ -1581,8 +1593,9 @@ function renderAnnotateFacts(attempt) {
 
 // "/ 25m pace", amber when the solve ran past it.
 function solvePaceHtml(a) {
-  if (!a.par_sec || a.time_taken_sec == null) return "";
-  const over = a.time_taken_sec > a.par_sec;
+  const taken = solveSecOf(a);
+  if (!a.par_sec || taken == null) return "";
+  const over = taken > a.par_sec;
   return ` <span class="small${over ? " is-over" : ""}">/ ${Math.round(a.par_sec / 60)}m pace</span>`;
 }
 
@@ -2729,7 +2742,7 @@ function previousSolveHtml(a) {
   if (!p) return "";
   const when = p.solved_at ? new Date(p.solved_at * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
   const time = p.time_taken_sec != null && a.time_taken_sec != null
-    ? `${fmtTime(p.time_taken_sec)} → <b>${fmtTime(a.time_taken_sec)}</b>` : "";
+    ? `${fmtTime(solveSecOf(p))} → <b>${fmtTime(solveSecOf(a))}</b>` : "";
   const diffLines = (p.diff || "").split("\n").map((line) => {
     const cls = line.startsWith("+") ? "is-add" : line.startsWith("-") ? "is-del" : line.startsWith("@@") ? "is-hunk" : "";
     return `<span class="${cls}">${escapeHtml(line)}</span>`;
@@ -2780,9 +2793,9 @@ async function openDetail(attemptId) {
     <h2>${escapeHtml(a.title || a.slug)} ${a.difficulty ? badge(a.difficulty) : ""}</h2>
     <div class="detail-meta small">${escapeHtml(a.neetcode_category || "")} · ${a.solved_at ? new Date(a.solved_at * 1000).toLocaleString() : ""}</div>
     <div class="facts">
-      ${a.time_taken_sec != null ? `<span>Time <b>${fmtTime(a.time_taken_sec)}</b>${solvePaceHtml(a)}</span>` : ""}
+      ${a.time_taken_sec != null ? `<span>Time ${solveTimeHtml(a)}${solvePaceHtml(a)}</span>` : ""}
       ${a.resubmissions ? `<span>Accepted subs <b>${a.resubmissions + 1}</b></span>` : ""}
-      ${a.first_ac_time_taken_sec != null ? `<span>First AC <b>${fmtTime(a.first_ac_time_taken_sec)}</b></span>` : ""}
+      ${a.first_ac_time_taken_sec != null ? `<span>First AC <b>${fmtTime(solveSecOf(a, "first_ac_time_taken_sec"))}</b></span>` : ""}
       ${a.confidence ? `<span>Conf <b>${["", "Low", "Med", "High"][a.confidence]}</b></span>` : ""}
       ${a.independence ? `<span><b>${a.independence}</b></span>` : ""}
       ${a.interview ? `<span><b>Interview mode</b></span>` : ""}

@@ -76,6 +76,17 @@ async def test_the_timeline_opens_with_the_solve_against_interview_pace(monkeypa
         "Interview pace for Easy is 15m; this solve took 20:00 of clock time (over pace).")
 
 
+async def test_the_pace_line_counts_planning_and_says_how_much(monkeypatch):
+    store, recorded, _ = _store()
+    store.update_attempt(recorded, {"time_taken_sec": 12 * 60, "plan_status": "planned",
+                                    "plan_time_sec": 5 * 60})
+    seen = _llm(monkeypatch, REVIEW)
+    await enrich.review_process(store, recorded)
+    assert seen[0][1]["timeline"].startswith(
+        "Interview pace for Easy is 15m; this solve took 17:00 of clock time "
+        "(05:00 planning, then the coding below) (over pace).")
+
+
 async def test_an_interview_mode_solve_is_read_as_one(monkeypatch):
     store, recorded, _ = _store()
     store.update_attempt(recorded, {"interview": True})

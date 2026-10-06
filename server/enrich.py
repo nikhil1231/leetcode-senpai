@@ -251,11 +251,14 @@ async def review_process(store, attempt_id):
 def _process_timeline(attempt, rec, difficulty=None):
     text = recording.timeline_for_llm(recording.parse(rec.get("events")))
     par = config.SOLVE_PAR_SEC.get(difficulty)
-    taken = attempt.get("time_taken_sec")
+    taken = plans.solve_sec(attempt)
     if par and taken is not None:
         verdict = "over" if taken > par else "within"
+        planned = plans.plan_sec(attempt)
+        split = (f" ({recording.mmss(planned * 1000)} planning, then the coding below)"
+                 if planned else "")
         text = (f"Interview pace for {difficulty} is {par // 60}m; this solve took "
-                f"{recording.mmss(taken * 1000)} of clock time ({verdict} pace).\n" + text)
+                f"{recording.mmss(taken * 1000)} of clock time{split} ({verdict} pace).\n" + text)
     if attempt.get("interview"):
         text = (f"Solved in interview mode: no syntax highlighting and at most "
                 f"{config.INTERVIEW_RUN_LIMIT} Runs, so few Runs is by design — judge how "

@@ -486,6 +486,19 @@ test('lock-in switches to the run and opens the editor before the start answers'
   assert.equal(ui.node('#btn-pause-session').disabled, false);
 });
 
+test('the run clock starts from the plan time, and a solve shows the split', async () => {
+  const ui = app(async () => response({ pending: [] }));
+  ui.run('activeSession = { session_id: "s1", kind: "review", elapsed_sec: 600, plan_sec: 300, par_sec: 900 }');
+  ui.run('startTimer(activeSession)');
+  // Ten minutes coded after five planned is fifteen on an interview's clock: at pace.
+  assert.equal(ui.node('#active-timer').textContent, '15:00');
+  const shown = ui.run('solveTimeHtml({ time_taken_sec: 720, plan_status: "planned", plan_time_sec: 302 })');
+  assert.match(shown, /<b>17:02<\/b>/);
+  assert.match(shown, /plan 05:02 · code 12:00/);
+  assert.equal(ui.run('solveTimeHtml({ time_taken_sec: 720, plan_status: "skipped", plan_time_sec: 60 })'), '<b>12:00</b>');
+  assert.match(ui.run('solvePaceHtml({ time_taken_sec: 720, plan_time_sec: 302, par_sec: 900 })'), /is-over/);
+});
+
 test('a lock-in whose start fails puts the dashboard back', async () => {
   const ui = app(async (path) => (String(path).includes('/session/start')
     ? { ok: false, status: 503, statusText: 'x', json: async () => ({ detail: "You're offline." }) }

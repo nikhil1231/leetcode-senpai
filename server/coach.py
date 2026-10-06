@@ -10,7 +10,7 @@ import html
 import re
 import time
 
-from . import llm
+from . import llm, plans
 
 
 # ---- problem-level cached content -----------------------------------------------
@@ -287,7 +287,7 @@ def _gather_week_data(store, d):
             "difficulty": p.get("difficulty"),
             "kind": a.get("kind"), "confidence": a.get("confidence"),
             "independence": a.get("independence"),
-            "time_min": round((a.get("time_taken_sec") or 0) / 60, 1) or None,
+            "time_min": round((plans.solve_sec(a) or 0) / 60, 1) or None,
             "mistake_tags": tags,
             "prediction_verdict": e.get("prediction_verdict"),
             "pattern_used": e.get("pattern_used"),

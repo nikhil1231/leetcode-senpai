@@ -734,3 +734,15 @@ def test_solve_habits_read_recorded_solves_and_pace():
     assert h["edge_misses"][0] == {"case": "empty input", "count": 2}
     assert (h["over_pace_rate"], h["timed"]) == (0.5, 4)
     assert insights.solve_habits(problems, [], [], {})["recorded"] == 0
+
+
+def test_planning_counts_against_pace_and_the_solve_time_trend():
+    from server import insights
+    problems = [{"slug": "a", "difficulty": "Easy"}]
+    # 12 minutes of code fits a 15m Easy; with 5 of planning before it, it doesn't.
+    attempts = [{"id": "1", "slug": "a", "solved_at": 1_700_000_000, "time_taken_sec": 720,
+                 "plan_status": "planned", "plan_time_sec": 300}]
+    h = insights.solve_habits(problems, attempts, [], {"Easy": 900})
+    assert (h["over_pace_rate"], h["timed"]) == (1.0, 1)
+    trend = insights.time_to_solve_trend(problems, attempts)
+    assert [pt["median_min"] for pt in trend["Easy"]] == [17.0]

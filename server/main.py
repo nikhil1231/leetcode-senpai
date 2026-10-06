@@ -918,6 +918,8 @@ def _active_payload(prob, s, settings):
     return {
         "session_id": s["id"], "slug": s["slug"], "started_at": s["started_at"],
         "kind": s.get("kind"), "elapsed_sec": poller.run_clock(s, now),
+        # The plan's minutes are on the solve's clock too: it shows from there.
+        "plan_sec": plans.plan_sec(s),
         "paused_at": paused_at, "paused_sec": s.get("paused_sec", 0) or 0,
         "is_paused": bool(paused_at),
         "title": prob.get("title", s["slug"]), "url": prob.get("url"),
@@ -1380,7 +1382,7 @@ def api_editor_optimize(body: EditorOptimize, uid: str = Depends(auth.require_us
            "kind": "optimize", "optimizes": a["id"], "attempt_id": None, "hint_level": 0,
            "paused_at": None, "paused_sec": 0, "surface": "editor", "interview": False,
            # The solve's clock runs on from where it stopped, not from zero.
-           "elapsed_base_sec": a.get("time_taken_sec")}
+           "elapsed_base_sec": a.get("time_taken_sec"), "plan_time_sec": plans.plan_sec(a)}
     sid = store.add_session(doc)
     return {"active": _active_payload(prob, {**doc, "id": sid}, store.get_settings())}
 
@@ -1653,6 +1655,7 @@ def _previous_solve(store, a):
         if len(diff) > _DIFF_MAX_CHARS:
             diff = diff[:_DIFF_MAX_CHARS] + "\n…"
     return {"solved_at": prev.get("solved_at"), "time_taken_sec": prev.get("time_taken_sec"),
+            "plan_time_sec": plans.plan_sec(prev),
             "wrong_before_ac": prev.get("wrong_before_ac"), "same_code": bool(
                 prev.get("code") and prev.get("code") == a.get("code")),
             "diff": diff}
@@ -1706,7 +1709,7 @@ def api_history(limit: int = 50, uid: str = Depends(auth.require_user)):
             continue
         out.append({
             **common,
-            "time_taken_sec": a.get("time_taken_sec"),
+            "time_taken_sec": a.get("time_taken_sec"), "plan_time_sec": plans.plan_sec(a),
             "runtime_percentile": a.get("runtime_percentile"), "lang": a.get("lang"),
             "confidence": a.get("confidence"), "independence": a.get("independence"),
             "mistake_note": a.get("mistake_note"), "has_code": bool(a.get("code")),

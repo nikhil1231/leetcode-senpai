@@ -56,6 +56,23 @@ def planned_edge_cases(attempt):
     return out
 
 
+# ---- the solve's clock -----------------------------------------------------------
+# An interview's clock starts when the question is asked, so a solve's time is
+# planning plus coding. Both stay stored apart (time_taken_sec is the run clock);
+# the total is read off them, so older rows keep their meaning.
+def plan_sec(attempt):
+    """Seconds spent planning before the run clock started; 0 when skipped or unknown."""
+    if attempt.get("plan_status") == "skipped":
+        return 0
+    return attempt.get("plan_time_sec") or 0
+
+
+def solve_sec(attempt, key="time_taken_sec"):
+    """Planning plus the run clock at `key` (or the first AC's), None when untimed."""
+    coded = attempt.get(key)
+    return None if coded is None else coded + plan_sec(attempt)
+
+
 # ---- big-O ---------------------------------------------------------------------
 _KEEP_WORDS = ("sqrt", "log", "min", "max")
 _SUPERSCRIPTS = {"²": "^2", "³": "^3", "·": "*", "×": "*", "⋅": "*", "√": "sqrt"}

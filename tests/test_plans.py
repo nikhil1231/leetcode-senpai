@@ -152,3 +152,17 @@ def test_a_run_opens_with_only_its_own_problems_latest_lesson():
     assert (t["text"], t["scope"], t["slug"]) == ("lesson b", "problem", "two-sum")
     # Another problem's lesson, however close, isn't this one's.
     assert plans.last_takeaway(attempts, enr, "contains-duplicate") is None
+
+
+def test_a_solve_is_timed_from_the_plan_not_the_first_keystroke():
+    planned = {"plan_status": "planned", "plan_time_sec": 300, "time_taken_sec": 1200,
+               "first_ac_time_taken_sec": 900}
+    assert plans.solve_sec(planned) == 1500
+    assert plans.solve_sec(planned, "first_ac_time_taken_sec") == 1200
+    # Staring at it with no idea yet is on the clock too.
+    assert plans.solve_sec({"plan_status": "blank", "plan_time_sec": 60, "time_taken_sec": 600}) == 660
+    # Skipped, or from before plans were timed: the run clock is all there is.
+    assert plans.solve_sec({"plan_status": "skipped", "plan_time_sec": 60, "time_taken_sec": 600}) == 600
+    assert plans.solve_sec({"time_taken_sec": 600}) == 600
+    # Untimed stays untimed: a plan alone isn't a solve time.
+    assert plans.solve_sec({"plan_time_sec": 300}) is None

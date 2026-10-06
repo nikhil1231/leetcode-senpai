@@ -46,6 +46,16 @@ def test_the_run_and_the_solve_carry_interview_pace_for_their_difficulty(client)
     assert r["active"]["par_sec"] == main.config.SOLVE_PAR_SEC["Easy"]
 
 
+def test_the_run_clock_shows_from_the_plan_time(client):
+    r = client.post("/api/session/start", json={
+        "slug": "two-sum", "surface": "editor", "plan_status": "blank", "plan_time_sec": 240}).json()
+    assert r["active"]["plan_sec"] == 240
+    assert client.get("/api/session/active").json()["active"]["plan_sec"] == 240
+    skipped = client.post("/api/session/start", json={
+        "slug": "two-sum", "surface": "editor", "plan_status": "skipped"}).json()
+    assert skipped["active"]["plan_sec"] == 0
+
+
 def test_a_run_opens_with_the_last_lesson_and_keeps_it(client):
     aid = client.store.add_attempt({"slug": "two-sum", "solved_at": 100, "confidence": 2})
     client.store.upsert_enrichment(aid, {"attempt_id": aid, "process_review": {

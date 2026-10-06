@@ -179,11 +179,11 @@ def mastery_radar(problems, attempts, days=30, today=None):
 
 # ---- time-to-solve trend --------------------------------------------------------
 def time_to_solve_trend(problems, attempts, today=None):
-    """Weekly median solve time (minutes) per difficulty."""
+    """Weekly median solve time (minutes, planning included) per difficulty."""
     diff_of = {p["slug"]: p.get("difficulty", "Unknown") for p in problems}
     by_diff_week = {}
     for a in scheduler._solved_attempts(attempts):
-        t = a.get("time_taken_sec")
+        t = plans.solve_sec(a)
         ts = a.get("solved_at")
         if not t or not ts or scheduler.ended_unsolved(a):
             continue
@@ -644,8 +644,9 @@ def solve_habits(problems, attempts, enrichments, par_by_difficulty):
     over = []
     for a in solves:
         par = par_by_difficulty.get((prob.get(a.get("slug")) or {}).get("difficulty"))
-        if par and a.get("time_taken_sec") is not None:
-            over.append(1 if a["time_taken_sec"] > par else 0)
+        taken = plans.solve_sec(a)
+        if par and taken is not None:
+            over.append(1 if taken > par else 0)
 
     return {
         "recorded": len(recorded),

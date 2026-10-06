@@ -1,6 +1,6 @@
 // Tab renderers. Exposed as window.Views. Uses window.H, window.App, window.Charts.
 (function () {
-  const { $, $$, api, fmtTime, pct, badge, escapeHtml, toast, cxOptions, loader,
+  const { $, $$, api, fmtTime, solveSecOf, pct, badge, escapeHtml, toast, cxOptions, loader,
     beginRender } = window.H;
   const App = window.App, Charts = window.Charts;
 
@@ -956,7 +956,7 @@
           <td>${typeTag(t)}</td>
           <td class="small">${escapeHtml(r.actual_category || r.neetcode_category || "")}</td>
           <td class="small">${r.solved_at ? new Date(r.solved_at * 1000).toLocaleDateString() : "—"}</td>
-          <td>${fmtTime(r.time_taken_sec)}</td>
+          <td>${fmtTime(solveSecOf(r))}</td>
           <td>${confLabel(r.confidence)}</td>
           <td class="small">${r.independence || "—"}</td>
           <td class="small">${coachRead(r)}</td>
