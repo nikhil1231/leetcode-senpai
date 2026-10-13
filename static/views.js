@@ -1227,7 +1227,14 @@
         <button class="button is-ghost" id="btn-backfill">Backfill recent history</button>
         <button class="button is-ghost" id="btn-sweep">Run coach enrichment now</button>
       </div>
-      <div class="help" id="settings-status"></div>`;
+      <div class="help" id="settings-status"></div>
+
+      <div class="section-title">Account</div>
+      ${App.signOutHtml()
+        ? `<p class="help">Signed in: ${escapeHtml(App.accountIdentity())}</p><div class="buttons">${App.signOutHtml()}</div>`
+        : '<p class="help">Running in local mode — there is no session to sign out of.</p>'}`;
+    const signoutBtn = $("#btn-signout");
+    if (signoutBtn) signoutBtn.addEventListener("click", App.signOut);
 
     $("#btn-save-cfg").addEventListener("click", async () => {
       await api("/config", "POST", { username: $("#cfg-username").value });

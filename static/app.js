@@ -2928,21 +2928,25 @@ function renderUserChip() {
   const updatedHtml = updated
     ? `<span class="last-updated" title="${escapeHtml(updated)}">Updated ${escapeHtml(updated)}</span>`
     : "";
-  // Under Access the edge owns the session, so signing out is a link to
-  // Cloudflare's logout endpoint rather than a Firebase call — the SDK is not
-  // even on the page in that mode.
-  const identity = ACCESS ? "Cloudflare Access" : (userEmail || "local mode");
-  const signout = ACCESS
-    ? '<a class="button is-ghost is-small" href="/cdn-cgi/access/logout">Sign out</a>'
-    : userEmail
-      ? '<button id="btn-signout" class="button is-ghost is-small">Sign out</button>'
-      : "";
   $("#user-chip").innerHTML = `
     ${updatedHtml}
-    <span class="small user-identity">${escapeHtml(identity)}</span>
-    ${signout}`;
-  const btn = $("#btn-signout");
-  if (btn) btn.addEventListener("click", () => firebase.auth().signOut());
+    <span class="small user-identity">${escapeHtml(accountIdentity())}</span>`;
+}
+
+function accountIdentity() {
+  return ACCESS ? "Cloudflare Access" : (userEmail || "local mode");
+}
+
+// Under Access the edge owns the session, so signing out is a link to
+// Cloudflare's logout endpoint rather than a Firebase call — the SDK is not
+// even on the page in that mode. Local mode has no session to end.
+function signOutHtml() {
+  if (ACCESS) return '<a class="button is-ghost" href="/cdn-cgi/access/logout">Sign out</a>';
+  return userEmail ? '<button id="btn-signout" class="button is-ghost" type="button">Sign out</button>' : "";
+}
+
+function signOut() {
+  if (!ACCESS && userEmail) firebase.auth().signOut();
 }
 
 function showUserChip(email) {
@@ -2979,7 +2983,7 @@ async function onEditorSolved(res) {
 }
 
 window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOverview, render,
-  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth, onEditorSolved, openCookieModal,
+  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth, onEditorSolved, openCookieModal, accountIdentity, signOutHtml, signOut,
   get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------
