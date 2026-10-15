@@ -484,6 +484,7 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
 .coach-chip.ai-on .coach-dot { background: var(--green); box-shadow: 0 0 0 3px rgba(53, 211, 154, .16); }
 .coach-chip .coach-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #user-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; min-width: 0; }
+#user-chip .last-updated { font-size: 10.5px; }
 #user-chip .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .content { display: flex; flex-direction: column; min-width: 0; }

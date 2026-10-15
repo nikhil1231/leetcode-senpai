@@ -466,7 +466,7 @@ async function loadOverview({ force = false } = {}) {
   $("#coach-chip").innerHTML = `
     <div class="coach-chip${llmEnabled ? " ai-on" : ""}" title="${escapeHtml(coachLabel)}">
       <span class="coach-dot"></span>
-      <span class="coach-model">Coach ${llmEnabled ? escapeHtml(coachLabel) : "off"}</span>
+      <span class="coach-model">${llmEnabled ? escapeHtml(llmModel) : "Coach off"}</span>
     </div>`;
   $("#coach-model").textContent = llmEnabled ? llmModel : "off";
   // The same numbers, pared down, for the editor's full-screen run header.
@@ -2928,9 +2928,7 @@ function renderUserChip() {
   const updatedHtml = updated
     ? `<span class="last-updated" title="${escapeHtml(updated)}">Updated ${escapeHtml(updated)}</span>`
     : "";
-  $("#user-chip").innerHTML = `
-    ${updatedHtml}
-    <span class="small user-identity">${escapeHtml(accountIdentity())}</span>`;
+  $("#user-chip").innerHTML = updatedHtml;
 }
 
 function accountIdentity() {
