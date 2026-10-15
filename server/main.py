@@ -1311,14 +1311,15 @@ def _log_server_event(store, s, ev):
         _append_recording(store, s, server_events=[{"t": _run_ms(s), **ev}])
 
 
-async def _hydrate_editor(store, slug):
+async def _hydrate_editor(store, slug, lc=None):
     """The problem, with what the editor needs fetched from LeetCode once when an
-    older import predates it. Public data: no cookie involved."""
+    older import predates it. The session is sent when there is one: LeetCode
+    withholds a premium problem's starter code from anonymous requests."""
     p = store.get_problem(slug) or {}
     if p.get("question_id") and p.get("starter_code") and p.get("content_html"):
         return p
     try:
-        meta = await leetcode.question(slug)
+        meta = await leetcode.question(slug, lc)
     except Exception:
         meta = None
     if not meta:
@@ -1340,7 +1341,7 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
     run resumed on reload or another device — the code as last recorded."""
     store = get_store(uid)
     s = _editor_session(store, session_id)
-    p = await _hydrate_editor(store, s["slug"])
+    p = await _hydrate_editor(store, s["slug"], lc)
     starter = p.get("starter_code")
     optimizing = None
     if s.get("kind") == "optimize":
@@ -1418,9 +1419,9 @@ async def _judge_or_error(call):
         return None, "LeetCode didn't answer — try again, or open the problem on LeetCode."
 
 
-async def _editor_judging(store, body):
+async def _editor_judging(store, body, lc):
     s = _editor_session(store, body.session_id)
-    p = await _hydrate_editor(store, s["slug"])
+    p = await _hydrate_editor(store, s["slug"], lc)
     if not p.get("question_id"):
         raise HTTPException(409, "This problem can't be judged here yet — open it on LeetCode.")
     # Whatever the page hadn't sent yet goes in first: it's what led to this code.
@@ -1432,7 +1433,7 @@ async def _editor_judging(store, body):
 async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user),
                          lc=Depends(auth.leetcode_auth)):
     store = get_store(uid)
-    s, p = await _editor_judging(store, body)
+    s, p = await _editor_judging(store, body, lc)
     if _runs_left(s, store.get_recording(s["id"])) == 0:
         return {"ok": False, "runs_left": 0,
                 "error": "Interview mode: no Runs left — trace it by hand, then submit."}
@@ -1454,7 +1455,7 @@ async def api_editor_submit(body: EditorJudge, uid: str = Depends(auth.require_u
     """Submit for judging. An Accepted is logged on the spot — no waiting for the
     feed — and comes back with the pending list so the rating modal opens at once."""
     store = get_store(uid)
-    s, p = await _editor_judging(store, body)
+    s, p = await _editor_judging(store, body, lc)
     result, err = await _judge_or_error(leetcode.submit_code(
         s["slug"], p["question_id"], body.code, lc))
     if err:
@@ -2278,7 +2279,7 @@ async def api_recall_context(slug: str, editor: bool = False,
         raise HTTPException(404, "unknown problem")
     prefetch = None
     if editor:
-        p = await _hydrate_editor(store, slug)
+        p = await _hydrate_editor(store, slug, lc)
         prefetch = {
             "available": bool(p.get("question_id") and p.get("starter_code")),
             "can_judge": leetcode.has_auth(lc),

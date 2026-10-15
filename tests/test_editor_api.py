@@ -502,6 +502,15 @@ def test_editor_is_unavailable_without_problem_metadata(client, monkeypatch):
     assert r.status_code == 409
 
 
+def test_premium_starter_code_is_fetched_with_the_session(client, monkeypatch):
+    async def question(slug, auth=None):
+        if not auth:  # LeetCode withholds premium snippets from anonymous requests
+            return {"question_id": "1"}
+        return {"question_id": "1", "starter_code": STARTER}
+    monkeypatch.setattr(main.leetcode, "question", question)
+    sid = _start(client)
+    assert client.get(f"/api/editor/state?session_id={sid}").json()["available"] is True
+
 def test_state_reports_a_missing_cookie(client):
     main.app.dependency_overrides[auth.leetcode_auth] = lambda: None
     sid = _start(client)
