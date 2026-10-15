@@ -2069,18 +2069,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
   if (!$("#annotate-modal").classList.contains("hidden") && saveBtn.dataset.saved !== "1") {
     saveBtn.disabled = false;
   }
-  if (r.similar) {
-    setTimeout(() => offerSimilar(r.similar), 400);
-  }
 });
-
-function offerSimilar(sim) {
-  if (confirm(`You struggled with that. Want to queue a similar problem (${sim.title}) as follow-up practice?`)) {
-    api("/import/problem", "POST", { slug: sim.slug })
-      .then(() => toast(`Added ${sim.title} to your library.`))
-      .catch((e) => toast(e.message));
-  }
-}
 
 // ---- recall modal --------------------------------------------------------------
 async function openRecall(slug, title, category, attemptId = null, gradingStatus = null, kind = "adhoc") {
