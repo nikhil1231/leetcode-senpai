@@ -547,7 +547,7 @@ def normalize_model(model: str) -> str:
 
 
 def valid_model(model: str) -> bool:
-    return bool(re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._:/-]+", model)) and len(model) <= 200
+    return bool(re.fullmatch(r"~?[A-Za-z0-9._-]+/[A-Za-z0-9._:/-]+", model)) and len(model) <= 200
 
 
 def _selected(settings: Optional[dict] = None) -> tuple[str, str]:
@@ -650,8 +650,9 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema) -
         },
         timeout=60,
     )
-    # Do not surface provider response bodies: they can echo prompts or secrets.
+    # Keep provider response bodies out of the UI (they can echo prompts); log only.
     if resp.is_error:
+        log.warning("OpenRouter HTTP %s for %s: %s", resp.status_code, model, resp.text[:500])
         raise RuntimeError(f"OpenRouter request failed (HTTP {resp.status_code})")
     data = resp.json()
     if data.get("error"):

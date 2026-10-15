@@ -230,3 +230,10 @@ async def test_openrouter_timeout_degrades(enable_llm, monkeypatch):
     result, error = await llm.extract_or_error("grade_prediction", {})
     assert result is None
     assert "ReadTimeout" in error
+
+
+def test_valid_model_accepts_latest_aliases():
+    assert llm.valid_model("~openai/gpt-luna-latest")
+    assert llm.valid_model("openai/gpt-5.6-luna")
+    assert not llm.valid_model("~~openai/x")
+    assert not llm.valid_model("openai")

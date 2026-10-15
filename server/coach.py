@@ -245,7 +245,8 @@ async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_sp
     human-readable reason when no grade could be produced. When the LLM is
     disabled both are None (the solve is already logged and scheduled).
     """
-    if not llm.enabled() or not code:
+    settings = store.get_settings()
+    if not llm.enabled(settings) or not code:
         return None, None
     canonical = await ensure_canonical(store, slug)
     canon_ideas = ", ".join((canonical or {}).get("key_ideas", [])) if canonical else None
@@ -262,12 +263,13 @@ async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_sp
         "self_independence": self_independence,
         "self_note": self_note,
         "self_approach": self_approach,
-    })
+    }, settings=settings)
 
 
 async def clarify_recall(store, attempt, question):
     """Answer a one-off clarification question about a completed recall grade."""
-    if not llm.enabled():
+    settings = store.get_settings()
+    if not llm.enabled(settings):
         return None
     p = store.get_problem(attempt["slug"]) or {}
     return await llm.extract("clarify_recall", {
@@ -278,7 +280,7 @@ async def clarify_recall(store, attempt, question):
         "recall_space": attempt.get("complexity_space"),
         "recall_grade": attempt.get("recall_grade"),
         "question": question,
-    })
+    }, settings=settings)
 
 
 # ---- weekly coach report --------------------------------------------------------
