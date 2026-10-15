@@ -1358,6 +1358,14 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
 #tab-history .table td:nth-child(8) { min-width: 180px; line-height: 1.5; }
 #tab-problems .table td:nth-child(n+4) { white-space: nowrap; }
 .hist-row { cursor: pointer; }
+.table.is-hoverable tbody tr.hist-day:hover td { background: transparent; }
+.hist-day td { padding: 22px 12px 8px; border-bottom: 1px solid var(--line); }
+.hist-day:first-child td { padding-top: 8px; }
+.hist-day-label { font-size: 12px; font-weight: 600; color: var(--text); letter-spacing: .02em; }
+.hist-day-count {
+  margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line);
+}
 .tag.type-recall { background: var(--accent-soft); color: var(--accent); }
 .tag.type-drill  { background: rgba(53, 211, 154, .13); color: var(--green); }
 .tag.type-sprint { background: rgba(245, 181, 68, .13); color: var(--amber); }

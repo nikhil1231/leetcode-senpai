@@ -945,6 +945,15 @@
     rows.forEach((r) => { counts[historyType(r)]++; });
     const fbtn = (f, label) =>
       `<button class="button is-small" data-f="${f}">${label} <span class="ml-1 has-text-grey">${counts[f]}</span></button>`;
+    const dayKey = (ts) => { const d = new Date(ts * 1000); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+    const dayLabel = (ts) => {
+      if (!ts) return "Undated";
+      const now = Date.now() / 1000;
+      if (dayKey(ts) === dayKey(now)) return "Today";
+      if (dayKey(ts) === dayKey(now - 86400)) return "Yesterday";
+      return new Date(ts * 1000).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    };
+    let lastDay = null;
     el.innerHTML = `
       <div class="buttons has-addons type-filter" id="history-filter">
         ${fbtn("all", "All")}${fbtn("solve", "Completions")}${fbtn("drill", "Drills")}${fbtn("sprint", "Sprints")}${fbtn("recall", "Recalls")}
@@ -953,8 +962,14 @@
       <thead><tr><th>Problem</th><th>Type</th><th>Topic</th><th>When</th><th>Time</th><th>Conf</th><th>How</th><th>Coach read</th><th></th></tr></thead>
       <tbody>${rows.map((r) => {
         const t = historyType(r);
-        return `
-        <tr class="hist-row" data-id="${r.id}" data-type="${t}">
+        const day = r.solved_at ? dayKey(r.solved_at) : "";
+        const head = day !== lastDay ? `
+        <tr class="hist-day" data-day="${day}"><td colspan="9">
+          <span class="hist-day-label">${dayLabel(r.solved_at)}</span><span class="hist-day-count"></span>
+        </td></tr>` : "";
+        lastDay = day;
+        return `${head}
+        <tr class="hist-row" data-id="${r.id}" data-type="${t}" data-day="${day}">
           <td><a href="${r.url}" target="_blank" onclick="event.stopPropagation()">${escapeHtml(r.title)}</a> ${badge(r.difficulty)} ${predBadge(r)}</td>
           <td>${typeTag(t)}</td>
           <td class="small">${escapeHtml(r.actual_category || r.neetcode_category || "")}</td>
@@ -971,6 +986,11 @@
     const applyFilter = () => {
       $$("#tab-history .hist-row").forEach((tr) =>
         tr.classList.toggle("hidden", historyFilter !== "all" && tr.dataset.type !== historyFilter));
+      $$("#tab-history .hist-day").forEach((tr) => {
+        const n = $$(`#tab-history .hist-row[data-day="${tr.dataset.day}"]:not(.hidden)`).length;
+        tr.classList.toggle("hidden", !n);
+        tr.querySelector(".hist-day-count").textContent = n;
+      });
       $$("#history-filter button").forEach((b) =>
         b.classList.toggle("is-primary", b.dataset.f === historyFilter));
     };
