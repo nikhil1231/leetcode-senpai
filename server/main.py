@@ -149,6 +149,13 @@ class RecallSubmit(BaseModel):
     complexity_time: str | None = None
     complexity_space: str | None = None
     confidence: int | None = None  # user's confirmed self-grade (overrides LLM)
+    hints: list[str] = Field(default_factory=list)
+
+
+class RecallHintRequest(BaseModel):
+    slug: str
+    recall_text: str = Field("", max_length=8000)
+    previous: list[str] = Field(default_factory=list)
 
 
 class RecallSelfGrade(BaseModel):
@@ -2035,14 +2042,14 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
         "mistake_note": None, "approach": body.recall_text,
         "complexity_time": body.complexity_time, "complexity_space": body.complexity_space,
         "source": "recall", "kind": "recall", "grading_status": status,
-        "recall_grade": None, "grading_error": None,
+        "recall_grade": None, "grading_error": None, "recall_hints": body.hints,
     })
     if not is_manual:
         store.update_attempt(aid, {"grading_started_at": now})
         try:
             graded, err = await coach.grade_recall(
                 store, body.slug, body.recall_text,
-                body.complexity_time, body.complexity_space,
+                body.complexity_time, body.complexity_space, hints=body.hints,
             )
         except Exception as exc:
             graded, err = None, str(exc)
@@ -2080,6 +2087,17 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
     _save_card(store, body.slug, new_state, aid)
     return {"ok": True, "attempt_id": aid, "grading_status": "viewed",
             "review": new_state, "graded": None}
+
+
+@app.post("/api/review/recall/hint")
+async def api_recall_hint(body: RecallHintRequest, uid: str = Depends(auth.require_user)):
+    """A nudge for a stuck recall. Nothing is saved: the hints ride along with
+    the recall when it's submitted, so its grade knows it wasn't unaided."""
+    store = get_store(uid)
+    if not store.get_problem(body.slug):
+        raise HTTPException(404, "unknown problem")
+    hint = await coach.recall_hint(store, body.slug, body.recall_text.strip(), body.previous)
+    return {"hint": hint}
 
 
 @app.post("/api/review/recall/{attempt_id}/self-grade")

@@ -1025,7 +1025,7 @@ def test_today_hides_completed_recall_from_current_sprint(client):
 
 
 def test_recall_grading_waits_and_schedules(client, monkeypatch):
-    async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
+    async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None, hints=None):
         return {"grade": 3, "feedback": "solid", "key_ideas_missed": []}, None
 
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
@@ -1092,7 +1092,7 @@ def test_recall_clarification_does_not_update_attempt_or_review(client, monkeypa
 
 
 def test_recall_grading_failure_surfaces_error(client, monkeypatch):
-    async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None):
+    async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None, hints=None):
         return None, "AuthError: invalid API key"
 
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
@@ -2942,3 +2942,28 @@ def test_config_migrates_saved_provider_choice(client, provider, model, expected
     assert response.status_code == 200
     assert response.json()["llm_model"] == expected
     assert client.store.get_settings()["llm_provider"] == "openrouter"
+
+
+def test_recall_hint_falls_back_to_the_ladder_without_llm(client):
+    client.store.upsert_problem({"slug": "two-sum", "hint_ladder": ["look back", "a map", "store complements"]})
+    r = client.post("/api/review/recall/hint", json={"slug": "two-sum", "recall_text": "", "previous": ["look back"]})
+    assert r.status_code == 200 and r.json()["hint"] == "a map"
+    r = client.post("/api/review/recall/hint", json={
+        "slug": "two-sum", "previous": ["look back", "a map", "store complements"]})
+    assert r.json()["hint"] is None
+    assert client.post("/api/review/recall/hint", json={"slug": "nope"}).status_code == 404
+
+
+def test_recall_hints_reach_the_grader_and_the_attempt(client, monkeypatch):
+    seen = {}
+
+    async def fake_grade(store, slug, recall_text, recall_time=None, recall_space=None, hints=None):
+        seen["hints"] = hints
+        return {"grade": 2}, None
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.coach, "grade_recall", fake_grade)
+    r = client.post("/api/review/recall", json={
+        "slug": "two-sum", "recall_text": "hashmap", "hints": ["a map"]})
+    assert seen["hints"] == ["a map"]
+    assert client.store.get_attempt(r.json()["attempt_id"])["recall_hints"] == ["a map"]

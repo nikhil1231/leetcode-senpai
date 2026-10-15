@@ -1418,9 +1418,13 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
 .overlay-card.recall-wide > .label-sm,
 .overlay-card.recall-wide > #recall-text,
 .overlay-card.recall-wide > .columns,
+.overlay-card.recall-wide > #recall-hints,
 .overlay-card.recall-wide > #recall-grade,
 .overlay-card.recall-wide > #recall-actions { grid-column: 2; }
 .overlay-card.recall-wide > #recall-text { min-height: 190px; }
+.recall-hints { margin-top: 14px; }
+.recall-hints.hidden { display: none; }
+.recall-hints .hint-card { padding: 11px 13px; border: 1px solid rgba(245, 181, 68, .3); border-radius: 12px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
 
 .recall-statement {
   max-height: 62vh;

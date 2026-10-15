@@ -112,6 +112,10 @@ class RecallClarification(BaseModel):
     reply: str = ""
 
 
+class RecallHint(BaseModel):
+    hint: str = Field("", description="1-2 short sentences, under 35 words, words or pseudocode only")
+
+
 class HintLadder(BaseModel):
     hints: list[str] = Field(default_factory=list, description="exactly 3, escalating; rung 3 outlines the approach")
 
@@ -339,14 +343,37 @@ TASKS: dict[str, Task] = {
         "flawless 3/3 still gets its strengths named; leave negatives empty only "
         "when the recall is already the optimal approach with nothing to add. Use "
         "the canonical ideas and their past solution ONLY to identify the intended "
-        "method, never as text to reproduce.",
+        "method, never as text to reproduce. If they asked for hints first, the "
+        "recall wasn't fully from memory: grade at most 2.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('category')}).\n"
             f"Canonical optimal key ideas: {p.get('canonical') or '(unknown)'}\n"
             f"Their own past solution (reference only, to identify the intended "
             f"method — do NOT grade its syntax):\n{_trunc(p.get('past_code'), 1200)}\n"
             f"--- their recall now ---\n{p.get('recall_text')}\n"
-            f"Stated complexity: time={p.get('recall_time') or '?'}, space={p.get('recall_space') or '?'}"
+            f"Stated complexity: time={p.get('recall_time') or '?'}, space={p.get('recall_space') or '?'}\n"
+            f"Hints they asked for first: {json.dumps(p.get('hints') or [])}"
+        ),
+    ),
+    "recall_hint": Task(
+        RecallHint,
+        "The solver is recalling, from memory and in words, the METHOD for a problem "
+        "they have solved before, and is stuck. Give ONE small nudge from where "
+        "their recall is now: 1-2 short sentences, under 35 words. NEVER write code "
+        "— words, or at most a line of pseudocode. Do not hand over the whole method: "
+        "prefer a pointed question or observation (\"What would you need to remember "
+        "about the elements you've already seen?\"). If their recall is blank, nudge "
+        "toward the key observation without naming the pattern. If it is on a wrong "
+        "track, say what breaks, not the fix. Escalate gently past earlier hints; "
+        "never repeat one. Use the canonical ideas and their past solution only to "
+        "know where to point. Plain text, no markdown.",
+        lambda p: (
+            f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
+            f"Statement:\n{p.get('statement') or '(unavailable)'}\n\n"
+            f"Canonical optimal key ideas: {p.get('canonical') or '(unknown)'}\n"
+            f"Their past solution (reference only):\n{_trunc(p.get('past_code'), 1200)}\n"
+            f"Hints already given, oldest first: {json.dumps(p.get('previous') or [])}\n\n"
+            f"--- their recall so far ---\n{p.get('recall_text') or '(blank)'}"
         ),
     ),
     "clarify_recall": Task(

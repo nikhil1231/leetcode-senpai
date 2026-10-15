@@ -186,7 +186,7 @@ async def grade_prediction(store, slug, predicted_category, predicted_approach=N
 
 
 # ---- recall grading -------------------------------------------------------------
-async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=None):
+async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=None, hints=None):
     """Grade an approach-recall against the user's past code + canonical ideas.
 
     Returns (result, error): result is a dict {grade, optimal, analysis,
@@ -206,7 +206,33 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
         "title": p.get("title", slug), "category": p.get("neetcode_category"),
         "canonical": canon_ideas, "past_code": past_code,
         "recall_text": recall_text, "recall_time": recall_time, "recall_space": recall_space,
+        "hints": hints,
     }, settings=settings)
+
+
+async def recall_hint(store, slug, recall_text, previous):
+    """A nudge for a stuck recall, read off what's written so far — words, never
+    code. Without an LLM, or if the call fails, the problem's next ladder rung.
+    None when there's nothing more to give."""
+    settings = store.get_settings()
+    p = store.get_problem(slug) or {}
+    if llm.enabled(settings):
+        past = [a for a in store.attempts_for_slug(slug) if a.get("code")]
+        canonical = await ensure_canonical(store, slug)
+        res = await llm.extract("recall_hint", {
+            "title": p.get("title", slug), "difficulty": p.get("difficulty"),
+            "category": p.get("neetcode_category"),
+            "statement": statement_text(p.get("content_html")),
+            "canonical": ", ".join((canonical or {}).get("key_ideas", [])) or None,
+            "past_code": past[-1]["code"] if past else None,
+            "previous": previous[-6:], "recall_text": recall_text,
+        }, settings=settings)
+        text = " ".join(((res or {}).get("hint") or "").split())
+        if text:
+            return text
+    ladder = await ensure_hint_ladder(store, slug) or []
+    rest = [h for h in ladder if h not in previous]
+    return rest[0] if rest else None
 
 
 async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_space=None,

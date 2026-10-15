@@ -2084,8 +2084,9 @@ function offerSimilar(sim) {
 
 // ---- recall modal --------------------------------------------------------------
 async function openRecall(slug, title, category, attemptId = null, gradingStatus = null, kind = "adhoc") {
-  currentRecall = { slug, title, category, attempt_id: attemptId, grading_status: gradingStatus, kind };
+  currentRecall = { slug, title, category, attempt_id: attemptId, grading_status: gradingStatus, kind, hints: [] };
   stopRecallGrading();
+  renderRecallHints();
   $("#recall-problem").textContent = title || slug;
   $("#recall-statement").innerHTML = loader("Loading problem prompt...");
   const help = $("#recall-statement").nextElementSibling;
@@ -2100,10 +2101,12 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
   $("#recall-grade").innerHTML = "";
   $("#recall-actions").innerHTML =
     `<button id="btn-close-recall" class="button is-ghost">Cancel</button>
+     ${llmEnabled ? `<button id="btn-hint-recall" class="button" type="button" title="A small nudge from what you've written so far — words, not code">Hint</button>` : ""}
      <button id="btn-code-recall" class="button" type="button" title="Write it out in the editor instead — a full re-solve, compared with your last one">Code it instead</button>
      <button id="btn-submit-recall" class="button is-primary">${llmEnabled ? "Check my recall" : "Grade & schedule"}</button>`;
   wireRecallButtons();
   $("#btn-code-recall").addEventListener("click", codeRecall);
+  if ($("#btn-hint-recall")) $("#btn-hint-recall").addEventListener("click", recallHint);
   $("#recall-modal").classList.remove("hidden");
   try {
     const ctx = await api(`/problem/${encodeURIComponent(slug)}/recall-context`);
@@ -2125,6 +2128,39 @@ function codeRecall() {
   if (!r) return;
   $("#recall-modal").classList.add("hidden");
   startFlow(r.slug, r.kind || "adhoc", "", r.title, r.category);
+}
+
+// Stuck mid-recall: a nudge read off what's written so far, never code. The
+// hints go in with the recall, so its grade knows it wasn't from memory alone.
+async function recallHint() {
+  const r = currentRecall;
+  const btn = $("#btn-hint-recall");
+  if (!r || !btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  try {
+    const res = await api("/review/recall/hint", "POST", {
+      slug: r.slug, recall_text: $("#recall-text").value, previous: r.hints,
+    });
+    if (!currentRecall || currentRecall.hints !== r.hints) return;
+    if (!res.hint) { toast("No more hints for this one."); return; }
+    r.hints.push(res.hint);
+    renderRecallHints();
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+    btn.textContent = r.hints.length ? "Another hint" : "Hint";
+  }
+}
+
+function renderRecallHints() {
+  const hints = (currentRecall && currentRecall.hints) || [];
+  const panel = $("#recall-hints");
+  panel.classList.toggle("hidden", !hints.length);
+  panel.innerHTML = hints.map((h, i) => `<div class="hint-card${i === hints.length - 1 ? " is-latest" : ""}">
+    <div class="note-head"><span>Hint ${i + 1}</span></div><p>${coachText(h)}</p></div>`).join("");
 }
 
 function wireRecallButtons() {
@@ -2272,6 +2308,7 @@ async function submitRecall() {
     slug: currentRecall.slug, recall_text: text,
     complexity_time: complexityValue("recall-time"),
     complexity_space: complexityValue("recall-space"),
+    hints: currentRecall.hints || [],
   };
   if (!llmEnabled) {
     // manual self-grade path: ask confidence via pills inline
