@@ -2021,15 +2021,31 @@ body.has-active-session #user-chip {
 
 .pack-card .goal-track { width: 120px; }
 
-.chart-group-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12px; }
+.chart-dumbbells { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto auto; column-gap: 10px; }
 
-.chart-group-bars { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.chart-dumbbell-row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; font-size: 12px; }
 
-.chart-group-item { display: grid; grid-template-columns: 58px minmax(0, 1fr) 32px; gap: 6px; align-items: center; }
+.chart-dumbbell-track { position: relative; height: 14px; }
 
-.chart-group-name, .chart-group-meta { color: var(--muted); }
+.chart-dumbbell-track::before { content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 2px; border-radius: 1px; background: var(--track); }
 
-.chart-group-meta { display: flex; justify-content: flex-end; min-width: 80px; }
+.chart-dumbbell-seg { position: absolute; top: 5px; height: 4px; border-radius: 2px; background: var(--c); }
+
+.chart-dumbbell-dot { position: absolute; top: 2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; border: 2px solid var(--c); box-sizing: border-box; }
+
+.chart-dumbbell-dot.is-from { background: var(--panel); }
+
+.chart-dumbbell-dot.is-to { background: var(--c); }
+
+.chart-dumbbell-axis { color: var(--muted); font-size: 10px; }
+
+.chart-dumbbell-ticks { position: relative; height: 12px; }
+
+.chart-dumbbell-ticks > span { position: absolute; transform: translateX(-50%); }
+
+.chart-dumbbell-legend { white-space: nowrap; }
+
+.chart-group-meta { display: flex; color: var(--muted); justify-content: flex-end; min-width: 80px; }
 
 .failure-mode-box { min-width: 0; }
 

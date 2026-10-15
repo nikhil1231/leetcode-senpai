@@ -18,26 +18,30 @@
     return `<div class="chart-bars">${rows}</div>`;
   }
 
-  // Grouped horizontal bars: data = [{label, values:[{label, value, color}], hint, meta}].
-  function groupedBars(data, opts = {}) {
+  // Dumbbell rows on one shared axis: data = [{label, from, to, display, color, hint, meta}].
+  // Hollow dot = from, filled dot = to, joined by a segment in the row's colour.
+  function dumbbells(data, opts = {}) {
     if (!data.length) return `<p class="empty">No data yet.</p>`;
-    const max = opts.max || Math.max(...data.flatMap((d) => d.values.map((v) => v.value)), 1);
+    const max = opts.max || Math.max(...data.flatMap((d) => [d.from, d.to]), 1);
+    const pct = (v) => Math.max(0, Math.min(100, (v / max) * 100));
     const rows = data.map((d) => {
-      const bars = d.values.map((v) => {
-        const w = Math.round((v.value / max) * 100);
-        return `<span class="chart-group-item" title="${esc(v.label)} ${esc(v.display != null ? v.display : v.value)}">
-          <span class="chart-group-name">${esc(v.label)}</span>
-          <span class="chart-bar-track"><span class="chart-bar-fill" style="width:${w}%;background:${v.color || "var(--accent)"}"></span></span>
-          <span class="chart-bar-val">${esc(v.display != null ? v.display : v.value)}</span>
-        </span>`;
-      }).join("");
-      return `<div class="chart-group-row" title="${esc(d.hint || "")}">
+      const a = pct(d.from), b = pct(d.to);
+      const color = d.color || "var(--accent)";
+      return `<div class="chart-dumbbell-row" title="${esc(d.hint || "")}">
         <span class="chart-bar-label">${esc(d.label)}</span>
-        <span class="chart-group-bars">${bars}</span>
+        <span class="chart-dumbbell-track" style="--c:${color}">
+          <span class="chart-dumbbell-seg" style="left:${Math.min(a, b)}%;width:${Math.abs(a - b)}%"></span>
+          <span class="chart-dumbbell-dot is-from" style="left:${a}%"></span>
+          <span class="chart-dumbbell-dot is-to" style="left:${b}%"></span>
+        </span>
+        <span class="chart-bar-val">${esc(d.display || "")}</span>
         <span class="chart-group-meta">${d.meta || ""}</span>
       </div>`;
     }).join("");
-    return `<div class="chart-bars chart-grouped">${rows}</div>`;
+    const ticks = Array.from({ length: Math.floor(max) + 1 }, (_, i) => `<span style="left:${pct(i)}%">${i}</span>`).join("");
+    const legend = opts.legend ? `<span class="chart-dumbbell-legend">${opts.legend}</span>` : "";
+    return `<div class="chart-bars chart-dumbbells">${rows}
+      <div class="chart-dumbbell-row chart-dumbbell-axis"><span>${legend}</span><span class="chart-dumbbell-ticks">${ticks}</span></div></div>`;
   }
 
   // Forecast strip: counts = [n...] over `days` days from start (ISO).
@@ -110,5 +114,5 @@
       ${paths}</svg><div class="legend small">${legend}</div>`;
   }
 
-  window.Charts = { bars, groupedBars, forecast, radar, lines };
+  window.Charts = { bars, dumbbells, forecast, radar, lines };
 })();

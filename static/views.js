@@ -788,16 +788,19 @@
     const topHtml = top
       ? `<div><div class="small">Most overrated topic</div><div class="name">${escapeHtml(top)}</div></div>`
       : `<div><div class="small">Most overrated topic</div><div class="name">No overrated topic flagged yet</div></div>`;
-    const chartRows = rows.map((r) => ({
-      label: r.category.replace(/ .*/, ""),
-      hint: `${r.category}: self ${quality(r.self_quality)}, objective ${quality(r.objective_quality)}, gap ${gap(r.gap)}; ${calibrationEvidenceText(r)}`,
-      values: [
-        { label: "self", value: r.self_quality || 0, display: quality(r.self_quality), color: "var(--accent)" },
-        { label: "obj", value: r.objective_quality || 0, display: quality(r.objective_quality), color: "var(--green)" },
-      ],
-      meta: `${calibrationEvidenceHtml(r)}<span class="tag ${r.overconfident ? "is-warning is-light" : "is-light"}">gap ${escapeHtml(gap(r.gap))}</span>`,
-    }));
-    return `<div class="calibration-panel"><div class="calibration-topline">${topHtml}${countHtml}</div>${Charts.groupedBars(chartRows, { max: 5 })}${calibrationExamplesHtml(rows)}</div>`;
+    const chartRows = rows.map((r) => {
+      const g = Number(r.gap) || 0;
+      return {
+        label: r.category.replace(/ .*/, ""),
+        hint: `${r.category}: self ${quality(r.self_quality)}, objective ${quality(r.objective_quality)}, gap ${gap(r.gap)}; ${calibrationEvidenceText(r)}`,
+        from: r.self_quality || 0,
+        to: r.objective_quality || 0,
+        display: `${quality(r.self_quality)} → ${quality(r.objective_quality)}`,
+        color: g > 0.05 ? "var(--red)" : g < -0.05 ? "var(--green)" : "var(--muted)",
+        meta: `${calibrationEvidenceHtml(r)}<span class="tag ${r.overconfident ? "is-warning is-light" : "is-light"}">gap ${escapeHtml(gap(r.gap))}</span>`,
+      };
+    });
+    return `<div class="calibration-panel"><div class="calibration-topline">${topHtml}${countHtml}</div>${Charts.dumbbells(chartRows, { max: 5, legend: "○ self → ● obj" })}${calibrationExamplesHtml(rows)}</div>`;
   }
 
   function calibrationExamplesHtml(rows) {
