@@ -44,3 +44,13 @@ def _offline_llm_catalog(monkeypatch):
     monkeypatch.setattr(llm.config, "OPENROUTER_API_KEY", None)
     monkeypatch.setattr(llm, "_catalog_models", [])
     monkeypatch.setattr(llm, "_catalog_expires", float("inf"))
+
+
+@pytest.fixture(autouse=True)
+def _no_unmocked_model_calls(monkeypatch, request):
+    from server import llm
+    if request.module.__name__ == 'tests.test_llm':
+        return
+    def reject(*args, **kwargs):
+        raise RuntimeError("Unmocked model call in test")
+    monkeypatch.setattr(llm, "_raw_generate", reject)

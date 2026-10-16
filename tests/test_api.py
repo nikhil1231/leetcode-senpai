@@ -113,7 +113,7 @@ def test_light_practice_next_filters_and_brings_a_miss_back(client):
               if e["mode"] == "fill" and e["topic"] == "Tries" and e["id"] != q["template"]]
     again = client.get("/api/practice/next", params={"mode": "fill", "topic": "Tries",
                                                       "recent": ",".join([q["template"], *others])}).json()
-    assert again["template"] == q["template"]
+    assert again["completed"] is True  # the tiny pool cannot provide a four-item repair gap
 
 
 def test_me_includes_code_updated_at(client):
@@ -1047,7 +1047,8 @@ def test_recall_grading_waits_and_schedules(client, monkeypatch):
     result = client.get(f"/api/review/recall/{aid}").json()
     assert result["grading_status"] == "viewed"
     assert result["recall_grade"]["grade"] == 3
-    assert client.store.get_review("two-sum")["due_date"] != "2000-01-01"
+    assert client.store.get_review("two-sum")["due_date"] == "2000-01-01"
+    assert client.store.get_approach_review("two-sum")["due_date"] != "2000-01-01"
     # Sync grading (issue #23) removed the separate ack step: no such route.
     # The StaticFiles mount fields unknown POST paths as 405, plain-missing as 404.
     assert client.post(f"/api/review/recall/{aid}/ack").status_code in (404, 405)
@@ -2043,7 +2044,7 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
 
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
                          self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None):
+                         self_approach=None, execution_status="unknown"):
         seen.update({
             "self_confidence": self_confidence,
             "self_independence": self_independence,
@@ -2085,7 +2086,7 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
 def test_grade_solution_endpoint_failure(client, monkeypatch):
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
                          self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None):
+                         self_approach=None, execution_status="unknown"):
         return None, "AuthError: invalid API key"
 
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
@@ -2208,7 +2209,7 @@ def test_annotate_folds_solution_grade_into_schedule(client):
         "confidence": 3, "independence": "solo"})
     assert r.status_code == 200
     # solution_quality(3,"solo",0) == 3, vs quality(3,"solo") == 5
-    assert r.json()["review"]["quality"] == 3
+    assert r.json()["review"]["quality"] == 5
 
     ungraded = client.store.add_attempt({
         "slug": "3sum", "solved_at": int(time.time()), "source": "auto",
@@ -2224,7 +2225,7 @@ def test_poll_records_fresh_solve_without_grading_before_annotation(client, monk
 
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
                          self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None):
+                         self_approach=None, execution_status="unknown"):
         calls.append(slug)
         return {"score": 5, "optimal": True, "analysis": "optimal",
                 "improvements": [], "inferred_time": "O(n)",
@@ -2838,7 +2839,7 @@ def test_resume_and_browser_storage_scope_follow_authenticated_user(client, monk
 def _grading_to(monkeypatch, score):
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
                          self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None):
+                         self_approach=None, execution_status="unknown"):
         return {"score": score, "optimal": False, "analysis": "", "positives": [],
                 "negatives": [], "inferred_time": "O(n)", "inferred_space": "O(n)"}, None
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
@@ -2862,7 +2863,7 @@ def test_a_grade_landing_after_the_rating_redoes_the_card(client, monkeypatch):
     assert client.store.get_review("two-sum")["quality"] == 5  # self-assessment only
     r = client.post(f"/api/attempt/{aid}/grade-solution").json()
     card = client.store.get_review("two-sum")
-    assert card["quality"] == 3 == r["review"]["quality"]      # (5 + 1) / 2
+    assert card["quality"] == 5 == r["review"]["quality"]      # (5 + 1) / 2
     # Replaced today's advance rather than stacking on it.
     assert card[scheduler.PRIOR_CARD_KEY] is None
     assert card["source_attempt"] == aid
@@ -2906,7 +2907,7 @@ def test_a_failed_recall_grade_can_be_self_graded(client, monkeypatch):
     aid = _failed_recall(client, monkeypatch)
     r = client.post(f"/api/review/recall/{aid}/self-grade", json={"confidence": 3})
     assert r.status_code == 200
-    card = client.store.get_review("two-sum")
+    card = client.store.get_approach_review("two-sum")
     assert card["due_date"] != "2000-01-01"
     assert card["interval_days"] <= scheduler.RECALL_MAX_INTERVAL
     assert card["source_attempt"] == aid

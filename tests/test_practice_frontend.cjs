@@ -56,7 +56,8 @@ function ui(api, sessionStorage = memoryStorage()) {
     addEventListener(event, fn) { if (event === 'keydown') keydown = fn; },
     querySelector() { return null; },
   };
-  const window = { sessionStorage, Views: {}, H: { $: node, escapeHtml: x => String(x), api, loader: x => x } };
+  const wrappedApi = (p, ...args) => ['/practice/exposure', '/practice/timing'].includes(p) ? Promise.resolve({ok: true}) : api(p, ...args);
+  const window = { sessionStorage, Views: {}, H: { $: node, escapeHtml: x => String(x), api: wrappedApi, loader: x => x } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../static/practice.js'), 'utf8'),
     { window, document, URLSearchParams });
   const html = () => node('#tab-practice').innerHTML;
@@ -110,7 +111,7 @@ test('a number key answers a choice, the answer shows at once, Enter serves the 
   await view.key('Enter');
   assert.equal(calls.filter(([u]) => u.startsWith('/practice/next')).length, 2);
   assert.match(view.html(), /v1:fill-dp:2|Stairs/);
-  assert.match(view.node('#practice-tally').innerHTML + view.html(), /1 answered · 0 right/);
+  assert.match(view.node('#practice-tally').innerHTML + view.html(), /1 \/ 5 answered · 0 right/);
   await view.key('Escape');
   assert.match(view.html(), /Last run: 1 answered, 0 right/);
   assert.match(view.html(), /1 to revisit/);
@@ -294,7 +295,7 @@ test('refresh after an answer restores feedback and counts it only once', async 
     const restored = ui(api, storage);
     await restored.render();
     await restored.click('#practice-resume');
-    assert.equal(restored.node('#practice-tally').textContent, '1 answered · 1 right');
+    assert.equal(restored.node('#practice-tally').textContent, '1 / 5 answered · 1 right');
     assert.match(restored.node('#practice-feedback').innerHTML, /That’s right/);
     assert.equal(restored.node('option:0').disabled, true);
   }
@@ -322,7 +323,7 @@ test('refresh during a lost save response reconciles the server without repostin
   await restored.render();
   await restored.click('#practice-resume');
   assert.equal(posts, 0);
-  assert.equal(restored.node('#practice-tally').textContent, '1 answered · 1 right');
+  assert.equal(restored.node('#practice-tally').textContent, '1 / 5 answered · 1 right');
   assert.equal(JSON.parse(storage.getItem(roundKey)).pendingAnswer, null);
 });
 
@@ -351,7 +352,7 @@ test('an interrupted unsaved submission retries the same answer and assistance f
   assert.equal(payload.answer, 'ways[i-1]+ways[i-2]');
   assert.equal(payload.assisted, true);
   assert.equal(payload.recall, true);
-  assert.equal(restored.node('#practice-tally').textContent, '1 answered · 1 right');
+  assert.equal(restored.node('#practice-tally').textContent, '1 / 5 answered · 1 right');
 });
 
 test('refresh retries an interrupted guess without adding another answer', async () => {
@@ -376,7 +377,7 @@ test('refresh retries an interrupted guess without adding another answer', async
   await restored.render();
   await restored.click('#practice-resume');
   assert.equal(guesses, 1);
-  assert.equal(restored.node('#practice-tally').textContent, '1 answered · 1 right');
+  assert.equal(restored.node('#practice-tally').textContent, '1 / 5 answered · 1 right');
   assert.match(restored.node('#practice-feedback').innerHTML, /Marked as a guess/);
   await restored.key('Escape');
   assert.match(restored.html(), /Revisit · Stairs/);
@@ -451,7 +452,7 @@ test('offline practice says answers are kept locally and counts what is waiting 
   await view.click('mode:fill');
   assert.match(view.html(), /offline, saved locally/);
   await view.key('2');
-  assert.match(view.node('#practice-tally').textContent, /1 answered · 1 right · offline, saved locally/);
+  assert.match(view.node('#practice-tally').textContent, /1 \/ 5 answered · 1 right · offline, saved locally/);
   await view.key('Escape');
   assert.match(view.html(), /1 answer waiting to sync/);
 });
@@ -460,4 +461,22 @@ test('online practice with nothing pending shows no sync note', async () => {
   const view = ui(async url => url === '/practice' ? { ...catalog(), sync: { offline: false, unsynced: 0 } } : choiceQ());
   await view.render();
   assert.doesNotMatch(view.html(), /Offline|waiting to sync|saved locally/);
+});
+
+test('a completed filtered pool ends the round without rendering an invalid question', async () => {
+  const view = ui(async url => url === '/practice' ? catalog() : {completed: true});
+  await view.render();
+  await view.click('mode:fill');
+  assert.match(view.html(), /Mixed/);
+  assert.doesNotMatch(view.html(), /undefined/);
+});
+
+test('familiar fill exercises default to retrieval and record choice exposure when revealed', async () => {
+  const view = ui(async url => url === '/practice' ? catalog() : {...choiceQ(), familiar: true});
+  await view.render();
+  await view.click('mode:fill');
+  assert.match(view.html(), /Show choices/);
+  assert.match(view.html(), /Your answer/);
+  await view.click('#practice-recall');
+  assert.match(view.html(), /Answer from memory/);
 });

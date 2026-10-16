@@ -6,9 +6,10 @@
 (function () {
   const { $, escapeHtml: esc, api, loader } = window.H;
   const MIXED = { id: "", title: "Mixed", duration: "30 sec – 3 min", description: "A bit of everything, weighted toward what you miss." };
-  let catalog = null, topic = "", lastRun = null, roundSize = 0, difficulty = "", recallFirst = false;
+  let catalog = null, topic = "", lastRun = null, roundSize = 5, difficulty = "", recallFirst = false;
   let run = null;  // { mode, topic, recent, answered, correct, next }
   let current = null, result = null, loading = false, submitting = false, ticket = 0, assisted = false, recall = false;
+  let exposedAt = null, feedbackAt = null, timingUncertain = false;
   let savedRound = null, draft = "", pendingAnswer = null, pendingGuess = false;
   const root = () => $("#tab-practice");
   const modeOf = id => [MIXED, ...catalog.modes].find(m => m.id === id);
@@ -50,7 +51,7 @@
     const snapshot = { version: 1, savedAt: Date.now(),
       run: { mode: run.mode, topic: run.topic, limit: run.limit, recent: run.recent.slice(-50),
              answered: run.answered - (result ? 1 : 0), correct: run.correct - (result?.correct ? 1 : 0), outcomes: compact },
-      questionId: current?.id || null, draft, assisted, recall, recallFirst, difficulty,
+      questionId: current?.id || null, exposedAt, draft, assisted, recall, recallFirst, difficulty,
       pendingAnswer, pendingGuess };
     try { window.sessionStorage.setItem(storageKey(), JSON.stringify(snapshot)); }
     catch (_) {} // A full or disabled store must never block practice.
@@ -62,6 +63,8 @@
     run = { ...snapshot.run, recent: [...snapshot.run.recent], outcomes: [...snapshot.run.outcomes], next: null };
     topic = run.topic; roundSize = run.limit; difficulty = snapshot.difficulty;
     recallFirst = !!snapshot.recallFirst; recall = !!snapshot.recall; assisted = !!snapshot.assisted;
+    exposedAt = snapshot.exposedAt || Date.now();
+    timingUncertain = true;
     draft = snapshot.draft; pendingAnswer = snapshot.pendingAnswer; pendingGuess = !!snapshot.pendingGuess;
     current = null; result = null; loading = true;
     root().innerHTML = `${runBar()}${loader("Restoring your round…")}`;
@@ -174,7 +177,17 @@
     advance();
   }
 
+  function saveTiming() {
+    if (!current) return;
+    const origin = result ? feedbackAt : exposedAt;
+    if (!origin) return;
+    api('/practice/timing', 'POST', {question_id: current.id,
+      kind: result ? 'feedback' : 'abandoned', elapsed_sec: Math.max(0, (Date.now() - origin)/1000),
+      uncertain: timingUncertain}).catch(() => {});
+  }
+
   function stop() {
+    saveTiming();
     ticket++;
     forgetRound();
     if (run && run.answered) lastRun = { answered: run.answered, correct: run.correct, outcomes: run.outcomes };
@@ -185,6 +198,7 @@
   async function advance() {
     if (submitting) return;
     if (run.limit && run.answered >= run.limit) { stop(); return; }
+    saveTiming();
     const t = ++ticket, pending = run.next || fetchNext();
     run.next = null; current = null; result = null; loading = true;
     draft = ""; pendingAnswer = null; pendingGuess = false;
@@ -194,7 +208,10 @@
     try {
       const q = await pending;
       if (t !== ticket) return;
-      current = q; assisted = false; recall = recallFirst && ["trace", "fill"].includes(q.mode);
+      if (q.completed) { stop(); return; }
+      current = q; assisted = false; recall = (recallFirst || !!q.familiar) && ["trace", "fill"].includes(q.mode);
+      exposedAt = Date.now(); feedbackAt = null; timingUncertain = false;
+      api('/practice/exposure', 'POST', {question_id: q.id, choices: q.input_type === 'choice' && !recall, exposed_at: Math.floor(exposedAt / 1000)}).catch(() => {});
       run.recent = [...run.recent, q.template].slice(-50);
       saveRound();
       renderQuestion();
@@ -235,7 +252,9 @@
       $("#practice-recall").addEventListener("click", () => {
         if (submitting || result) return;
         assisted = true;
-        recall = !recall; saveRound(); renderQuestion();
+        recall = !recall;
+        if (!recall) api('/practice/exposure', 'POST', {question_id: current.id, choices: true, exposed_at: Math.floor(exposedAt / 1000)}).catch(() => {});
+        saveRound(); renderQuestion();
       });
     }
     root().querySelectorAll("[data-option]").forEach(b => b.addEventListener("click", () => submit(false, b.dataset.option)));
@@ -276,7 +295,7 @@
           return;
         }
       }
-      pendingAnswer = { question_id: q.id, answer: reveal ? null : answer, reveal, assisted, recall };
+      pendingAnswer = { question_id: q.id, answer: reveal ? null : answer, reveal, assisted, recall, timing_uncertain: timingUncertain, answered_at: Math.floor(Date.now()/1000), exposed_at: Math.floor(exposedAt/1000), elapsed_sec: exposedAt ? (Date.now() - exposedAt) / 1000 : null };
       saveRound();
       const r = await api("/practice/answer", "POST", pendingAnswer);
       // Keep the outcome even if the run stopped during the save.
@@ -291,7 +310,7 @@
   }
 
   function acceptResult(r) {
-    result = r;
+    result = r; feedbackAt = Date.now();
     if (r.sync) catalog.sync = r.sync;
     catalog.status[r.template] = r.correct ? (r.assisted || r.guessed ? "uncertain" : "learned") : "missed";
     pendingAnswer = null;
@@ -352,6 +371,7 @@
     $("#practice-next").focus();
   }
 
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') timingUncertain = true; });
   document.addEventListener("keydown", e => {
     if (e.repeat || !run || root().classList.contains("hidden") || e.metaKey || e.ctrlKey || e.altKey) return;
     if (document.querySelector(".overlay:not(.hidden)")) return;

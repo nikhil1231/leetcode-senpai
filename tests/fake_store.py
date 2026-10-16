@@ -25,9 +25,21 @@ class FakeStore:
         self.settings = {}
         self.flags = {}
         self.light_practice = {}
+        self.practice_exposures = {}
         self.recordings = {}
+        self.learning_state = {}
+        self.approach_reviews = {}
+
+    def record_practice_exposure(self, question_id, result):
+        old = self.practice_exposures.get(question_id) or {}
+        self.practice_exposures[question_id] = {**result, 'exposed_at': old.get('exposed_at') or result['exposed_at']}
+        return self.practice_exposures[question_id]
 
     def save_light_practice(self, question_id, result):
+        exposed = self.practice_exposures.get(question_id) or {}
+        if exposed:
+            result = {**result, 'exposed_at': exposed.get('exposed_at'),
+                      'assisted': bool(exposed.get('assisted') or result.get('assisted'))}
         return dict(self.light_practice.setdefault(question_id, dict(result)))
 
     def get_light_practice(self, question_id):
@@ -43,7 +55,34 @@ class FakeStore:
 
     def list_light_practice(self):
         return sorted((dict(r) for r in self.light_practice.values()),
-                      key=lambda r: r["answered_at"], reverse=True)[:200]
+                      key=lambda r: r["answered_at"], reverse=True)[:500]
+
+    def iter_light_practice(self, page_size=500):
+        yield from sorted(self.light_practice.values(), key=lambda r: r['question_id'])
+
+    def list_practice_state(self):
+        from server.practice_state import rebuild
+        records = {**self.practice_exposures, **self.light_practice}
+        templates = {r['template'] for r in records.values()}
+        return {t: rebuild(r for r in records.values() if r['template'] == t) for t in templates}
+
+    def list_learning_state(self):
+        return [{**doc, 'id': key} for key, doc in self.learning_state.items()]
+
+    def get_learning_state(self, key):
+        return self.learning_state.get(key)
+
+    def save_learning_state(self, key, doc):
+        self.learning_state[key] = doc
+
+    def list_approach_reviews(self):
+        return list(self.approach_reviews.values())
+
+    def get_approach_review(self, slug):
+        return self.approach_reviews.get(slug)
+
+    def upsert_approach_review(self, slug, doc):
+        self.approach_reviews[slug] = {**doc, 'slug': slug}
 
     # problems
     def list_problems(self):

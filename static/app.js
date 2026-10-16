@@ -936,6 +936,7 @@ function applyActive(active, editorState = null) {
     setTakeaway(active.takeaway);
     if (previousId !== active.session_id) setRunMenu(false);
     setHints(active);
+    $('#btn-learning').classList.toggle('hidden', !active.recovery_available);
     setGiveUp(active);
     setEndRun(active);
     setPlanCheck(active);
@@ -1507,6 +1508,7 @@ function openAnnotate(attempt) {
   if (attempt.slug) meta.push(attempt.slug);
   $("#annotate-problem-meta").textContent = meta.join(" · ");
   renderAnnotateFacts(attempt);
+  $('#annotate-skills').innerHTML = (attempt.available_skills || []).length ? `<p>Which techniques did this solution use?</p>${attempt.available_skills.map(s => `<label><input type="checkbox" data-skill="${escapeHtml(s.id)}" ${(attempt.demonstrated_skill_ids || []).includes(s.id) ? 'checked' : ''}> ${escapeHtml(s.name)}</label>`).join('')}` : '';
   // Default independence from the run: gave up → solution; leaned on hints → hints.
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   const heading = $("#annotate-heading");
@@ -1799,6 +1801,16 @@ function stopAnnotateGrading() {
   if (annotateGradeTimer) { clearInterval(annotateGradeTimer); annotateGradeTimer = null; }
 }
 
+function assessmentDimensionsHtml(a) {
+  if (!a) return '';
+  const d = a.dimensions || {};
+  return `<p class="small"><b>Execution:</b> ${escapeHtml(a.execution_status || 'unknown')} · <b>Help:</b> ${escapeHtml(a.assistance || 'unknown')}</p>
+    <p class="small"><b>Constraints:</b> ${escapeHtml(d.constraints || 'unassessed')}</p>
+    ${d.clarity ? `<p><b>Clarity:</b> ${escapeHtml(d.clarity)}</p>` : ''}
+    ${d.optional_optimisation ? `<p><b>Optional optimisation:</b> ${escapeHtml(d.optional_optimisation)}</p>` : ''}
+    ${(a.correctness_objections || []).map(c => `<p><b>Correctness objection (${escapeHtml(c.verification)}):</b> ${escapeHtml(c.explanation)}</p>`).join('')}`;
+}
+
 function renderSolutionGrade(g) {
   g = g || {};
   stopAnnotateGrading();
@@ -1810,6 +1822,8 @@ function renderSolutionGrade(g) {
   panel.innerHTML = `
     <div class="grade-score">Score <b>${g.score}/5</b>${
       g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
+    ${(g.corrections || []).map(c => `<p class="small"><b>Assessment correction:</b> the saved code returns ${escapeHtml(c.observed_output)} for ${escapeHtml(c.input)}. The original code objection was disproved. Original feedback is retained below; recorded help remains part of this attempt.</p>`).join('')}
+    ${assessmentDimensionsHtml(g.assessment)}
     ${g.analysis ? `<p class="grade-analysis">${escapeHtml(g.analysis)}</p>` : ""}
     ${hasCx ? `<p class="small"><b>Complexity:</b> time ${escapeHtml(g.inferred_time || "?")}, space ${escapeHtml(g.inferred_space || "?")}</p>` : ""}
     ${positives.length ? `<div class="grade-bullets grade-positives"><b>Positives</b><ul>${
@@ -2008,6 +2022,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
   try {
     r = await api(`/attempt/${attemptId}/annotate`, "POST", {
       confidence, independence,
+      demonstrated_skill_ids: currentAttempt.available_skills ? Array.from(document.querySelectorAll('#annotate-skills input:checked')).map(b => b.dataset.skill) : null,
       mistake_note: $("#annotate-note").value || null,
       approach: $("#annotate-approach").value || null,
       complexity_time: complexityValue("annotate-time"),
@@ -2026,6 +2041,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
   if (currentAttempt) {
     Object.assign(currentAttempt, {
       confidence, independence,
+      demonstrated_skill_ids: currentAttempt.available_skills ? Array.from(document.querySelectorAll('#annotate-skills input:checked')).map(b => b.dataset.skill) : null,
       mistake_note: $("#annotate-note").value || null,
       approach: $("#annotate-approach").value || null,
       complexity_time: complexityValue("annotate-time"),
@@ -2071,7 +2087,7 @@ $("#btn-save-annotate").addEventListener("click", async () => {
 
 // ---- recall modal --------------------------------------------------------------
 async function openRecall(slug, title, category, attemptId = null, gradingStatus = null, kind = "adhoc") {
-  currentRecall = { slug, title, category, attempt_id: attemptId, grading_status: gradingStatus, kind, hints: [] };
+  currentRecall = { openedAt: Date.now(), slug, title, category, attempt_id: attemptId, grading_status: gradingStatus, kind, hints: [] };
   stopRecallGrading();
   renderRecallHints();
   $("#recall-problem").textContent = title || slug;
@@ -2293,6 +2309,7 @@ async function submitRecall() {
   const text = $("#recall-text").value.trim();
   const body = {
     slug: currentRecall.slug, recall_text: text,
+    elapsed_sec: currentRecall.openedAt ? (Date.now() - currentRecall.openedAt) / 1000 : null,
     complexity_time: complexityValue("recall-time"),
     complexity_space: complexityValue("recall-space"),
     hints: currentRecall.hints || [],
@@ -2688,6 +2705,8 @@ function solutionDetailGradeHtml(g, status, err) {
     return gradeStatusHtml(status, err);
   }
   return `<div class="recall-grade detail-grade">
+    ${(g.corrections || []).map(c => `<p class="small"><b>Assessment correction:</b> the saved code returns ${escapeHtml(c.observed_output)} for ${escapeHtml(c.input)}. The original code objection was disproved. Original feedback is retained below; recorded help remains part of this attempt.</p>`).join('')}
+    ${assessmentDimensionsHtml(g.assessment)}
     <div class="grade-score">Solution grade${hasScore ? `: <b>${escapeHtml(g.score)}/5</b>` : ""}${
       g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
     ${g.analysis || g.feedback ? `<p class="grade-analysis">${escapeHtml(g.analysis || g.feedback)}</p>` : ""}
@@ -3032,3 +3051,64 @@ function boot() {
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
 else boot();
+
+
+// Focused lessons overlay the current editor, preserving its draft and clock.
+$('#learning-close').addEventListener('click', () => $('#learning-modal').classList.add('hidden'));
+$('#btn-learning').addEventListener('click', async () => {
+  try {
+    const offer = await api('/learning/recovery');
+    if (!offer.sequence) { toast('No focused lesson is available for this problem yet.'); return; }
+    await window.openLearningSequence(offer.sequence);
+  } catch (e) { toast(e.message); }
+});
+
+window.openLearningSequence = async function openLearningSequence(sequence) {
+  const state = await api('/learning/sequence', 'POST', {sequence, action: 'open'});
+  const lesson = await api(`/learning/sequence/${encodeURIComponent(sequence)}`);
+  const draftKey = `learning-draft:${sequence}:${state.episode}`;
+  let draft = {};
+  try { draft = JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) {}
+  $('#learning-title').textContent = lesson.title;
+  $('#learning-body').innerHTML = `<p>${escapeHtml(lesson.principle)}</p><p>${escapeHtml(lesson.worked)}</p>
+    <label class="label-sm" for="learning-explanation">${escapeHtml(lesson.explain)}</label>
+    <textarea id="learning-explanation" class="input" rows="2"></textarea>
+    <p>${escapeHtml(lesson.objective)}</p><pre><code>${escapeHtml(lesson.code)}</code></pre>
+    <label class="label-sm" for="learning-answer">Complete the missing step</label><textarea id="learning-answer" class="input" rows="2"></textarea>
+    <button id="learning-check" class="button is-primary">Check this step</button>
+    <button id="learning-decline" class="button">Dismiss for this session</button><p id="learning-result"></p>`;
+  $('#learning-explanation').value = draft.explanation || state.explanation || '';
+  $('#learning-answer').value = draft.answer || state.answer || '';
+  const saveDraft = () => { try { localStorage.setItem(draftKey, JSON.stringify({answer: $('#learning-answer').value, explanation: $('#learning-explanation').value})); } catch (_) {} };
+  $('#learning-answer').addEventListener('input', saveDraft);
+  $('#learning-explanation').addEventListener('input', saveDraft);
+  $('#learning-check').addEventListener('click', async () => {
+    try {
+      const r = await api('/learning/sequence', 'POST', {sequence, action: 'complete', answer: $('#learning-answer').value, explanation: $('#learning-explanation').value});
+      $('#learning-result').textContent = r.correct ? 'Step complete. A later application check will appear in Today.' : lesson.incorrect;
+    } catch (e) { toast(e.message); }
+  });
+  $('#learning-decline').addEventListener('click', async () => {
+    await api('/learning/sequence', 'POST', {sequence, action: 'decline'});
+    $('#learning-modal').classList.add('hidden');
+    $('#btn-learning').classList.add('hidden');
+  });
+  $('#learning-modal').classList.remove('hidden');
+};
+
+window.openLearningApplication = async function (key) {
+  const q = await api(`/learning/application/${encodeURIComponent(key)}`);
+  const opened = Date.now();
+  $('#learning-title').textContent = 'Later application';
+  $('#learning-body').innerHTML = `<p>${escapeHtml(q.prompt)}</p><label for="application-answer">Your answer</label>
+    <textarea id="application-answer" class="input" rows="3"></textarea>
+    <label><input id="application-seen" type="checkbox"> I have seen this task before</label>
+    <button id="application-submit" class="button is-primary">Check</button><p id="application-result"></p>`;
+  $('#application-submit').addEventListener('click', async () => {
+    const r = await api('/learning/application', 'POST', {id: key, answer: $('#application-answer').value,
+      seen_before: $('#application-seen').checked, elapsed_sec: (Date.now()-opened)/1000});
+    $('#application-result').textContent = r.probe_correct ? 'Correct application.' : 'This application needs more practice.';
+    $('#application-submit').disabled = true;
+  });
+  $('#learning-modal').classList.remove('hidden');
+};

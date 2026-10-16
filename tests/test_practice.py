@@ -866,8 +866,8 @@ def test_walkthroughs_are_available_without_executing_snippets():
 
 def test_full_problem_links_require_two_unassisted_reps_of_the_concept():
     from server.practice_skills import related_problems
-    a = {"question_id": "a", "template": "fill-search", "correct": True}
-    b = {"question_id": "b", "template": "trace-search", "correct": True}
+    a = {"question_id": "a", "template": "fill-search", "correct": True, "answered_at": 1}
+    b = {"question_id": "b", "template": "trace-search", "correct": True, "answered_at": 86401}
     assert not related_problems("fill-search", [a])
     assert not related_problems("fill-search", [a, a])
     assert not related_problems("fill-search", [a, {**b, "guessed": True}])

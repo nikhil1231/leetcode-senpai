@@ -13,8 +13,9 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
   const nodes = new Map();
   const node = (sel) => {
     if (!nodes.has(sel)) nodes.set(sel, {
-      value: '', disabled: false, innerHTML: '', listeners: {}, style: { setProperty() {} },
+      value: '', disabled: false, innerHTML: '', listeners: {}, style: { setProperty() {}, removeProperty() {} },
       classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+      setAttribute() {}, removeAttribute() {}, querySelectorAll() { return []; },
       addEventListener(ev, fn) { this.listeners[ev] = fn; },
     });
     return nodes.get(sel);
@@ -24,8 +25,10 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
   const storage = new Map(saved ? [['editor-run:v1:s1', JSON.stringify(saved)]] : []);
   const intervals = [];
   const win = {};
-  const doc = { visibilityState: 'visible', focused: true, hasFocus() { return this.focused; },
-                addEventListener(ev, fn) { win['doc:' + ev] = fn; }, removeEventListener() {} };
+  const doc = { body: node('body'),
+                createElement() { return {set innerHTML(value) { this.content = {firstChild: {innerHTML: value.slice(5,-6), querySelectorAll() {return [];}}}; }}; }, visibilityState: 'visible', focused: true, hasFocus() { return this.focused; },
+                setAttribute() {}, removeAttribute() {}, querySelectorAll() { return []; },
+      addEventListener(ev, fn) { win['doc:' + ev] = fn; }, removeEventListener() {} };
   const serverState = { available: true, can_judge: true, content_html: '<p>x</p>',
                         starter_code: STARTER, example_testcases: ['[1]'], code: STARTER,
                         seq: 0, now_ms: 0, ...state };
@@ -52,8 +55,10 @@ function editor({ state = {}, saved = null, api: apiImpl } = {}) {
   const context = vm.createContext({
     window: { H: { $: node, $$: () => [], escapeHtml: (s) => String(s), api, toast() {}, sanitizeProblemHtml: (h) => h || '' },
               CM, App: { onEditorSolved() {} },
-              addEventListener(ev, fn) { win[ev] = fn; }, removeEventListener() {} },
+              setAttribute() {}, removeAttribute() {}, querySelectorAll() { return []; },
+      addEventListener(ev, fn) { win[ev] = fn; }, removeEventListener() {} },
     document: doc,
+    navigator: {platform: "Linux"},
     localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v),
                     removeItem: (k) => storage.delete(k) },
     setInterval(fn) { intervals.push(fn); return intervals.length; }, clearInterval() {},

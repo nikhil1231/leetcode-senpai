@@ -58,11 +58,21 @@ def related_problems(template, results):
     slugs = PROBLEMS.get(skill, ())
     if not slugs:
         return []
-    secure = {r["question_id"] for r in results
+    secure = {r["template"] for r in results
               if concept(r.get("template")) == skill and r.get("correct")
               and not any(r.get(flag) for flag in ("revealed", "guessed", "assisted"))
               and r.get("question_id")}
-    if len(secure) < 2:
+    times = [r.get('answered_at') or 0 for r in results if r.get('template') in secure]
+    if len(secure) < 2 or not times or max(times) - min(times) < 86400:
         return []
     return [{"title": slug.replace("-", " ").title(),
              "url": f"https://leetcode.com/problems/{slug}/"} for slug in slugs]
+
+SKILL_IDS = {
+    'Search boundaries': 'search.boundaries', 'Unique windows': 'window.invariant',
+    'BFS discovery': 'graph.traversal', 'Prefix frequencies': 'hash.lookup',
+    'Distinct pair positions': 'hash.lookup', 'Monotonic stacks': 'stack.order',
+    'Top-k heaps': 'heap.candidates', 'Backtracking snapshots': 'backtrack.state',
+    'Interval boundaries': 'interval.merge_boundaries', 'Best subarray state': 'dp.state',
+    'Sorted pair search': 'pointer.regions', 'Coin combinations': 'dp.state',
+}

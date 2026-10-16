@@ -173,6 +173,39 @@ class OfflinePractice:
             self.flush_in_background()
         return results
 
+    def record_practice_exposure(self, qid, result):
+        with _User(self.uid) as user:
+            old = user.setdefault('exposures', {}).get(qid) or {}
+            user['exposures'][qid] = {**result, 'exposed_at': old.get('exposed_at') or result['exposed_at'],
+                                       'assisted': bool(old.get('assisted') or result.get('assisted'))}
+            local = user['exposures'][qid]
+        try:
+            saved = _call(self.remote.record_practice_exposure, qid, local)
+        except Offline:
+            return local
+        return saved
+
+    def scheduling_results(self):
+        # Read durable state, including templates beyond the recent 500. Merge
+        # original offline events by ID/revision before chronologically reducing.
+        try:
+            states = _call(self.remote.list_practice_state)
+        except Offline:
+            states = None
+        with _User(self.uid) as user:
+            if states is not None:
+                user['scheduling_state'] = states
+            records = {}
+            for state in user.get('scheduling_state', {}).values():
+                records.update(state.get('events') or {})
+            records.update(user.get('exposures') or {})
+            for qid, local in user['results'].items():
+                remote = records.get(qid) or {}
+                chosen = local if local.get('revision', 0) >= remote.get('revision', 0) else remote
+                records[qid] = {**chosen, 'guessed': bool(local.get('guessed') or remote.get('guessed')),
+                                'assisted': bool(local.get('assisted') or remote.get('assisted'))}
+            return list(records.values())
+
     def get_light_practice(self, qid):
         with _User(self.uid) as user:
             if qid in user["pending"]:
@@ -193,6 +226,11 @@ class OfflinePractice:
         return doc
 
     def save_light_practice(self, qid, result):
+        with _User(self.uid) as user:
+            exposed = (user.get('exposures') or {}).get(qid) or {}
+            if exposed:
+                result = {**result, 'exposed_at': exposed['exposed_at'],
+                          'assisted': bool(exposed.get('assisted') or result.get('assisted'))}
         with _User(self.uid) as user:
             if qid in user["results"]:
                 return dict(user["results"][qid])
@@ -232,6 +270,13 @@ class OfflinePractice:
 
     def flush(self):
         """Replay pending writes in order; stop at the first network failure."""
+        with _User(self.uid) as user:
+            exposures = list((user.get('exposures') or {}).items())
+        for qid, exposure in exposures:
+            try:
+                _call(self.remote.record_practice_exposure, qid, exposure)
+            except Offline:
+                return
         with _User(self.uid) as user:
             queue = [(qid, op, copy.deepcopy(user["results"].get(qid)))
                      for qid, op in user["pending"].items()]

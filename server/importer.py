@@ -3,7 +3,7 @@ resolve a pasted URL/number to a startable problem, and backfill solve history."
 import asyncio
 import re
 
-from . import leetcode, packs, scheduler
+from . import config, curriculum, leetcode, packs, scheduler
 
 # Politeness delay between LeetCode calls during bulk import (tests set to 0).
 POLITE_DELAY = 0.4
@@ -63,6 +63,10 @@ def _problem_doc(slug, existing, meta, category, packs_list):
         "packs": packs_list,
         "in_library": bool(packs_list),
     }
+    if config.LEARNING_FEATURES['taxonomy']:
+        doc.update(curriculum.classify(slug, (meta or {}).get('tags') or existing.get('leetcode_tags', []), existing))
+    elif existing.get('neetcode_category'):
+        doc['neetcode_category'] = existing['neetcode_category']
     doc["in_neetcode150"] = "neetcode150" in packs_list
     if meta:
         doc.update({
@@ -93,7 +97,7 @@ async def import_problem(store, slug, auth=None, pack_name="custom"):
         or existing.get("neetcode_category") or "Arrays & Hashing"
     doc = _problem_doc(slug, existing, meta, category, _merge_packs(existing, pack_name))
     store.upsert_problem(doc)
-    return {"slug": slug, "title": doc["title"], "category": category,
+    return {"slug": slug, "title": doc["title"], "category": doc['neetcode_category'],
             "difficulty": doc["difficulty"]}
 
 
@@ -256,7 +260,7 @@ async def resolve_problem(store, query, auth=None, limit=6):
                     "error": f"No LeetCode problem called \u201c{value}\u201d."}
         return {"candidates": [_candidate(
             value, meta["title"], meta["difficulty"],
-            packs.category_from_tags(meta["tags"]), False, meta.get("frontend_id"),
+            curriculum.classify(value, meta['tags'])['neetcode_category'], False, meta.get("frontend_id"),
         )], "exact": True}
 
     if kind == "number":
@@ -287,7 +291,7 @@ async def resolve_problem(store, query, auth=None, limit=6):
             out.append(_from_catalog(existing))
             continue
         out.append(_candidate(q["slug"], q["title"], q["difficulty"],
-                              packs.category_from_tags(q.get("tags") or []),
+                              curriculum.classify(q['slug'], q.get('tags') or [])['neetcode_category'],
                               False, q.get("frontend_id")))
     if not out:
         return {"candidates": [], "exact": False,
