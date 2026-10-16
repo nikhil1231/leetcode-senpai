@@ -596,6 +596,8 @@ $("#cookie-modal").addEventListener("keydown", (e) => { if (e.key === "Escape") 
 
 // ---- session start flow --------------------------------------------------------
 async function startFlow(slug, kind, mode, title, category, recallAttemptId, gradingStatus) {
+  // One run at a time: a minimised one comes back rather than being replaced.
+  if (activeSession) { setRunMinimised(false); return toast("Finish or end this run first."); }
   if (mode === "recall") return openRecall(slug, title, category, recallAttemptId, gradingStatus, kind);
   if (kind !== "mock") return openPredict({ slug, kind, title, category });
   return startSession({ slug, kind, surface: "editor" });
@@ -956,7 +958,7 @@ function applyActive(active, editorState = null) {
     $("#give-up-panel").classList.add("hidden");
     $("#plan-check-panel").classList.add("hidden");
     $("#nudge").classList.add("hidden");
-    setDashboardLocked(false);
+    setRunMinimised(false);
     stopTimer();
     window.Editor?.unmount();
   }
@@ -973,6 +975,8 @@ function setTakeaway(t) {
 
 function setDashboardLocked(locked) {
   document.body.classList.toggle("has-active-session", locked);
+  // Minimised, the run steps aside and the app is usable again under it.
+  locked = locked && !runMinimised;
   // The cookie warning stays live during a run: knowing now means you can fix it
   // before the AC lands, and its modal opens over the run.
   ["#tabs", "#overview", "#user-chip", "#coach-chip", "main"].forEach((sel) => {
@@ -987,6 +991,18 @@ function setDashboardLocked(locked) {
     }
   });
 }
+
+// Minimise: the run is kept and its clock runs, but the app is back — to fix the
+// cookie in Settings, say — with a pill in the topbar for the way back.
+let runMinimised = false;
+function setRunMinimised(on) {
+  runMinimised = on && !!activeSession;
+  document.body.classList.toggle("run-minimised", runMinimised);
+  $("#btn-back-to-run").classList.toggle("hidden", !runMinimised);
+  setDashboardLocked(!!activeSession);
+}
+$("#btn-minimise-run").addEventListener("click", () => setRunMinimised(true));
+$("#btn-back-to-run").addEventListener("click", () => setRunMinimised(false));
 
 // Coach prose, escaped, with `code` spans kept as code.
 const coachText = (t) => escapeHtml(t).replace(/`([^`]+)`/g, "<code>$1</code>");

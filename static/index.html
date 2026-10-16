@@ -82,6 +82,8 @@
         <div class="topbar-side">
           <!-- Only ever rendered when the LeetCode cookie is missing or dead. -->
           <button id="lc-warning" class="lc-warning hidden" type="button"></button>
+          <!-- Only while a run is minimised: the way back to it. -->
+          <button id="btn-back-to-run" class="back-to-run hidden" type="button" title="The clock is still running">Back to run</button>
           <div id="overview" class="overview"></div>
           <button id="btn-quick-start" class="quick-start" type="button"
                   aria-label="Start any problem"
@@ -110,6 +112,7 @@
           <div class="active-actions">
             <a id="active-link" class="button is-primary is-lg" href="#" target="_blank" rel="noopener">Open on LeetCode</a>
             <button id="btn-resume-session" class="button is-primary resume-btn" type="button">Resume</button>
+            <button id="btn-minimise-run" class="button is-ghost" type="button" title="Back to the app — Settings and the rest — with the run kept and its clock running">Minimise</button>
             <!-- The editor's Focus / Run / Submit, while it's mounted. -->
             <div id="editor-head" class="editor-head"></div>
           </div>

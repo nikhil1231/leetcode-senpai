@@ -535,6 +535,33 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
   flex: 0 0 7px;
   box-shadow: 0 0 0 3px rgba(251, 113, 133, .18);
 }
+.back-to-run {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border: 1px solid rgba(53, 211, 154, .4);
+  border-radius: 999px;
+  background: rgba(53, 211, 154, .12);
+  color: var(--green);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.back-to-run:hover { background: rgba(53, 211, 154, .2); }
+.back-to-run.hidden { display: none; }
+.back-to-run::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.8s var(--ease) infinite; }
+/* Minimised: the run is hidden, not gone, and the app is whole again. */
+body.run-minimised #active-run { display: none; }
+body.run-minimised.has-active-session main { display: block; }
+body.run-minimised.has-editor-run .shell { display: grid; }
+body.run-minimised.has-editor-run .sidebar { display: flex; }
+body.run-minimised.has-editor-run .topbar { display: flex; }
+body.run-minimised.has-active-session .sidebar,
+body.run-minimised.has-active-session .overview,
+body.run-minimised.has-active-session #tabs,
+body.run-minimised.has-active-session #user-chip { opacity: 1; filter: none; pointer-events: auto; }
 /* Start any problem: a plus to the right of the stats. Text made it read as a
    primary action competing with the queue; the glyph keeps it available without
    claiming the eye. Focus mode hides it outright — a run is already going, and
