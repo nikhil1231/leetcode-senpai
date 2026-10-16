@@ -264,8 +264,12 @@
             ${drills}
           </div>
         </div>
-        ${q.learning_recovery ? `<button class="button learning-recovery" data-sequence="${escapeHtml(q.learning_recovery.sequence)}">Focused practice: ${escapeHtml(q.learning_recovery.title)}</button>` : ''}
-        ${(q.learning_checks || []).map(c => `<button class="button learning-application" data-check="${escapeHtml(c.id)}">Later application check</button>`).join('')}
+        ${q.learning_recovery || (q.learning_checks || []).length ? `<div class="learning-cta-row">
+          ${q.learning_recovery ? `<button class="learning-cta learning-recovery" data-sequence="${escapeHtml(q.learning_recovery.sequence)}">
+            <span class="learning-cta-kicker">Focused practice</span><span class="learning-cta-title">${escapeHtml(q.learning_recovery.title)}</span><span class="learning-cta-go">Start &rarr;</span></button>` : ''}
+          ${(q.learning_checks || []).map(c => `<button class="learning-cta learning-application" data-check="${escapeHtml(c.id)}">
+            <span class="learning-cta-kicker">Spaced check</span><span class="learning-cta-title">Later application check</span><span class="learning-cta-go">Answer &rarr;</span></button>`).join('')}
+        </div>` : ''}
         ${expansion ? `<div class="today-expansion">${expansion}</div>` : ""}
       </div>`;
     $$("#tab-today button[data-slug][data-kind]").forEach((b) => b.addEventListener("click", () =>

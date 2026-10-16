@@ -3054,7 +3054,12 @@ else boot();
 
 
 // Focused lessons overlay the current editor, preserving its draft and clock.
-$('#learning-close').addEventListener('click', () => $('#learning-modal').classList.add('hidden'));
+const closeLearning = () => $('#learning-modal').classList.add('hidden');
+$('#learning-close').addEventListener('click', closeLearning);
+$('#learning-modal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeLearning(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#learning-modal').classList.contains('hidden')) { e.preventDefault(); closeLearning(); }
+});
 $('#btn-learning').addEventListener('click', async () => {
   try {
     const offer = await api('/learning/recovery');
@@ -3070,13 +3075,19 @@ window.openLearningSequence = async function openLearningSequence(sequence) {
   let draft = {};
   try { draft = JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) {}
   $('#learning-title').textContent = lesson.title;
-  $('#learning-body').innerHTML = `<p>${escapeHtml(lesson.principle)}</p><p>${escapeHtml(lesson.worked)}</p>
-    <label class="label-sm" for="learning-explanation">${escapeHtml(lesson.explain)}</label>
-    <textarea id="learning-explanation" class="input" rows="2"></textarea>
-    <p>${escapeHtml(lesson.objective)}</p><pre><code>${escapeHtml(lesson.code)}</code></pre>
-    <label class="label-sm" for="learning-answer">Complete the missing step</label><textarea id="learning-answer" class="input" rows="2"></textarea>
-    <button id="learning-check" class="button is-primary">Check this step</button>
-    <button id="learning-decline" class="button">Dismiss for this session</button><p id="learning-result"></p>`;
+  $('#learning-body').innerHTML = `<div class="learning-principle"><p>${escapeHtml(lesson.principle)}</p>
+    <p class="learning-worked"><span>Example</span>${escapeHtml(lesson.worked)}</p></div>
+    <section class="learning-step"><span class="learning-step-n">1</span><div>
+      <label class="learning-q" for="learning-explanation">${escapeHtml(lesson.explain)}</label>
+      <textarea id="learning-explanation" class="input" rows="3" placeholder="Explain in your own words…"></textarea></div></section>
+    <section class="learning-step"><span class="learning-step-n">2</span><div>
+      <p class="learning-q">${escapeHtml(lesson.objective)}</p><pre class="code">${escapeHtml(lesson.code)}</pre>
+      <label class="label-sm" for="learning-answer">Complete the missing step</label>
+      <textarea id="learning-answer" class="input mono" rows="2"></textarea></div></section>
+    <p id="learning-result" class="learning-result"></p>
+    <div class="overlay-actions learning-actions">
+      <button id="learning-decline" class="button is-ghost">Dismiss for this session</button>
+      <button id="learning-check" class="button is-primary">Check this step</button></div>`;
   $('#learning-explanation').value = draft.explanation || state.explanation || '';
   $('#learning-answer').value = draft.answer || state.answer || '';
   const saveDraft = () => { try { localStorage.setItem(draftKey, JSON.stringify({answer: $('#learning-answer').value, explanation: $('#learning-explanation').value})); } catch (_) {} };
@@ -3086,6 +3097,7 @@ window.openLearningSequence = async function openLearningSequence(sequence) {
     try {
       const r = await api('/learning/sequence', 'POST', {sequence, action: 'complete', answer: $('#learning-answer').value, explanation: $('#learning-explanation').value});
       $('#learning-result').textContent = r.correct ? 'Step complete. A later application check will appear in Today.' : lesson.incorrect;
+      $('#learning-result').className = `learning-result ${r.correct ? 'is-ok' : 'is-bad'}`;
     } catch (e) { toast(e.message); }
   });
   $('#learning-decline').addEventListener('click', async () => {
@@ -3100,14 +3112,17 @@ window.openLearningApplication = async function (key) {
   const q = await api(`/learning/application/${encodeURIComponent(key)}`);
   const opened = Date.now();
   $('#learning-title').textContent = 'Later application';
-  $('#learning-body').innerHTML = `<p>${escapeHtml(q.prompt)}</p><label for="application-answer">Your answer</label>
+  $('#learning-body').innerHTML = `<div class="learning-principle"><p>${escapeHtml(q.prompt)}</p></div>
+    <label class="label-sm" for="application-answer">Your answer</label>
     <textarea id="application-answer" class="input" rows="3"></textarea>
-    <label><input id="application-seen" type="checkbox"> I have seen this task before</label>
-    <button id="application-submit" class="button is-primary">Check</button><p id="application-result"></p>`;
+    <label class="learning-seen"><input id="application-seen" type="checkbox"> I have seen this task before</label>
+    <p id="application-result" class="learning-result"></p>
+    <div class="overlay-actions learning-actions"><button id="application-submit" class="button is-primary">Check</button></div>`;
   $('#application-submit').addEventListener('click', async () => {
     const r = await api('/learning/application', 'POST', {id: key, answer: $('#application-answer').value,
       seen_before: $('#application-seen').checked, elapsed_sec: (Date.now()-opened)/1000});
     $('#application-result').textContent = r.probe_correct ? 'Correct application.' : 'This application needs more practice.';
+    $('#application-result').className = `learning-result ${r.probe_correct ? 'is-ok' : 'is-bad'}`;
     $('#application-submit').disabled = true;
   });
   $('#learning-modal').classList.remove('hidden');

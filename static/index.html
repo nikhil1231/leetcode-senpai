@@ -402,8 +402,14 @@
 
   <div id="learning-modal" class="overlay hidden">
     <div class="overlay-card wide" role="dialog" aria-modal="true" aria-labelledby="learning-title">
-      <h2 id="learning-title">Focused practice</h2><div id="learning-body"></div>
-      <button id="learning-close" class="button" type="button">Return</button>
+      <div class="modal-titlebar">
+        <div>
+          <p class="learning-kicker">Focused practice</p>
+          <h2 class="modal-title" id="learning-title">Focused practice</h2>
+        </div>
+        <button id="learning-close" class="button is-ghost icon-button" type="button" aria-label="Close" title="Close (Esc)">&times;</button>
+      </div>
+      <div id="learning-body"></div>
     </div>
   </div>
 
