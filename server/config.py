@@ -151,10 +151,10 @@ def init_firebase_admin():
     except ValueError:
         return firebase_admin.get_app()
 
-# Rollback keeps additive readers and stored evidence. New flows are opt-in
-# until their migration and pilot checks have completed.
+# Rollback keeps additive readers and stored evidence. All switches default on;
+# set LEARNING_<NAME>=false to disable one.
 LEARNING_FEATURES = {
     name: os.environ.get('LEARNING_' + name.upper(), default).lower() == 'true'
     for name, default in [('taxonomy', 'true'), ('assessment', 'true'),
-        ('evidence', 'true'), ('recovery', 'false'), ('quickfire', 'true')]
+        ('evidence', 'true'), ('recovery', 'true'), ('quickfire', 'true')]
 }

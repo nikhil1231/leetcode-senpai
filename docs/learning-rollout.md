@@ -12,7 +12,7 @@ Skill evidence is deliberately conservative: catalog teaching tags do not demons
 
 Quickfire stores transactionally rebuilt scheduling state independently of the 500-answer history view. The offline mirror retains source IDs, revisions and original timestamps; revisions and guessed flags survive replay. Immediate successes cannot compound intervals. Exposures and choices are persisted; corrective retries require the four-item gap and are limited. A filtered pool can complete, rounds default to five, and familiar trace/fill exercises prefer typed retrieval. Authored equivalent forms are supported without evaluating input expressions; unsupported forms are labelled unverified.
 
-Six versioned lesson sequences provide worked examples, a short explanation, partial completion and reserved applications. Lessons overlay the live editor; they do not create full solves or restart its clock. Declines persist for the session. The recovery switch remains off by default for staged rollout. Enable with `LEARNING_RECOVERY=true` after reviewing the content. Reserved applications appear approximately 7 and 21 days after learning, with actual delays recorded. Delayed results are descriptive one-user observations, not causal estimates.
+Six versioned lesson sequences provide worked examples, a short explanation, partial completion and reserved applications. Lessons overlay the live editor; they do not create full solves or restart its clock. Declines persist for the session. The recovery switch is now on by default (disable with `LEARNING_RECOVERY=false`). Reserved applications appear approximately 7 and 21 days after learning, with actual delays recorded. Delayed results are descriptive one-user observations, not causal estimates.
 
 ## Migration and rollback
 
@@ -27,7 +27,7 @@ Run from the integration checkout with the normal local environment configured:
 
 Each step dry-runs by default. Apply writes a private, mode-0600 backup under `~/.leetcode-senpai/learning-backups`, then changes only differing records. Repeating a step is idempotent. `--restore BACKUP.json` restores that step's affected records; use it before subsequent practice writes to those same records. Source attempts, grades and timestamps are preserved; the evidence step only adds the known correction metadata. Full implementation review cards are not reset. Quickfire migration pages all source answers.
 
-Independent switches: `LEARNING_TAXONOMY`, `LEARNING_ASSESSMENT`, `LEARNING_EVIDENCE`, `LEARNING_RECOVERY`, `LEARNING_QUICKFIRE`. Readers remain compatible when a switch is disabled. Disabling assessment skips new coach grades; disabling Quickfire retention marks new answers as practice-only. Recovery is initially disabled; the other repairs are enabled. Rollback retains additive records and source history.
+Independent switches: `LEARNING_TAXONOMY`, `LEARNING_ASSESSMENT`, `LEARNING_EVIDENCE`, `LEARNING_RECOVERY`, `LEARNING_QUICKFIRE`. Readers remain compatible when a switch is disabled. Disabling assessment skips new coach grades; disabling Quickfire retention marks new answers as practice-only. All five switches are enabled by default. Rollback retains additive records and source history.
 
 ## Validation and pilot limits
 
