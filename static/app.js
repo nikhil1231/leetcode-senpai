@@ -1047,38 +1047,89 @@ function setDashboardLocked(locked) {
 // Coach prose, escaped, with `code` spans kept as code.
 const coachText = (t) => escapeHtml(t).replace(/`([^`]+)`/g, "<code>$1</code>");
 
-// The hints so far, drawn from the run itself — a reload keeps them. One card
-// each, numbered in the order given — not a ladder counting down: in the editor
-// they're live, and the button stays until the server says there's nothing more.
+// The run's chat with the interviewer, drawn from the run itself — a reload keeps
+// it. Hints and replies come from the other side, each stamped with the clock;
+// while one's coming, a typing indicator stands in for it. The hint button stays
+// until the server says there's nothing more.
+let coachPending = null;  // {text, t} of the message on its way, or {} for a bare hint
+
 function setHints(active) {
-  const hints = active.hints || [];
+  const chat = active.chat || [];
   const btn = $("#btn-hint");
   btn.classList.toggle("hidden", !active.hints_available);
   btn.removeAttribute("aria-busy");
-  btn.disabled = false;
-  btn.textContent = hints.length ? "Another hint" : "Ask for a hint";
+  btn.disabled = Boolean(coachPending);
+  if (coachPending) btn.setAttribute("aria-busy", "true");
+  btn.textContent = chat.some((m) => m.role === "coach") ? "Another hint" : "Ask for a hint";
+  $("#coach-chat").classList.toggle("hidden", !active.chat_available);
+  const lastCoach = chat.map((m) => m.role).lastIndexOf("coach");
+  const stamp = (t) => (t == null ? "" : `<span class="chat-time">${fmtTime(t)}</span>`);
+  const msgs = chat.map((m, i) => m.role === "me"
+    ? `<div class="chat-msg is-me">${stamp(m.t)}<p>${escapeHtml(m.text)}</p></div>`
+    : `<div class="hint-card${i === lastCoach ? " is-latest" : ""}">
+      ${m.t != null || i === lastCoach ? `<div class="note-head">${stamp(m.t) || "<span></span>"}${i === lastCoach
+        ? `<button id="btn-clear-marks" class="note-action hidden" type="button">Clear marks</button>` : ""}</div>` : ""}
+      <p>${coachText(m.text)}</p></div>`);
+  if (coachPending?.text) msgs.push(`<div class="chat-msg is-me">${stamp(coachPending.t)}<p>${escapeHtml(coachPending.text)}</p></div>`);
+  if (coachPending) msgs.push(`<div class="hint-card chat-typing" aria-label="The interviewer is typing"><span></span><span></span><span></span></div>`);
+  const html = msgs.join("");
   const panel = $("#hint-panel");
-  panel.classList.toggle("hidden", !hints.length);
-  const html = hints.map((h, i) => {
-    const latest = i === hints.length - 1;
-    return `<div class="hint-card${latest ? " is-latest" : ""}">
-      <div class="note-head"><span>Hint ${i + 1}</span>${latest
-        ? `<button id="btn-clear-marks" class="note-action hidden" type="button">Clear marks</button>` : ""}</div>
-      <p>${coachText(h)}</p></div>`;
-  }).join("");
-  $("#coach-empty").textContent = active.hints_available
+  panel.classList.toggle("hidden", !msgs.length);
+  $("#coach-empty").textContent = active.chat_available
+    ? "Stuck? Think out loud below, or ask for a hint. The interviewer reads your code and points, without giving the fix."
+    : active.hints_available
     ? "Stuck? A hint reads the code you've written and points, without giving the fix."
     : active.kind === "mock" ? "A mock runs without hints — it's you and the clock."
     : active.kind === "optimize" ? "No hints while optimizing — the Accepted is already yours."
     : "No hints for this one.";
   // Redrawn only on a change, so a refresh doesn't replay the newest hint's entrance.
   if (panel._drawn !== html) {
+    const clearShown = $("#btn-clear-marks") && !$("#btn-clear-marks").classList.contains("hidden");
     panel._drawn = html;
     panel.innerHTML = html;
+    if (clearShown) $("#btn-clear-marks")?.classList.remove("hidden");
     $("#btn-clear-marks")?.addEventListener("click", () => {
       window.Editor?.clearMarks();
       $("#btn-clear-marks").classList.add("hidden");
     });
+    // The newest message, yours or the typing dots or the reply, in full view.
+    panel.lastElementChild?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+// A hint, or a reply to what you typed, read off the chat so far and the code on screen.
+async function askCoach(message = "") {
+  if (!activeSession || coachPending) return false;
+  const sessionId = activeSession.session_id;
+  coachPending = message ? { text: message, t: activeClockSeconds() } : {};
+  setHints(activeSession);
+  try {
+    const code = await editorCodeForCoach();
+    const body = code == null ? {} : { code };
+    if (message) body.message = message;
+    const r = await api("/session/hint", "POST", body);
+    coachPending = null;
+    if (!activeSession || activeSession.session_id !== sessionId) return true;
+    if (r.hint == null) {
+      activeSession = { ...activeSession, hints_available: Boolean(r.available),
+                        chat: r.chat || activeSession.chat };
+      toast(r.available ? "Couldn't get a reply just now — try again."
+        : llmEnabled ? "No more hints for this one." : "Hints need the coach enabled.");
+      setHints(activeSession);
+      return true;
+    }
+    activeSession = { ...activeSession, hint_level: r.level, chat: r.chat,
+                      hints: [...(activeSession.hints || []), r.hint],
+                      hints_available: r.available !== false };
+    setHints(activeSession);
+    const shown = window.Editor?.showMarks(r.marks || []) || 0;
+    $("#btn-clear-marks")?.classList.toggle("hidden", !shown);
+    return true;
+  } catch (e) {
+    coachPending = null;
+    if (activeSession) setHints(activeSession);
+    toast(e.message);
+    return false;
   }
 }
 
@@ -1234,6 +1285,9 @@ function startTimer(session) {
 }
 function stopTimer() { if (timerInterval) clearInterval(timerInterval); timerInterval = null; }
 
+// The stopwatch as shown: the plan's minutes and the run clock.
+const activeClockSeconds = () => (activeSession?.plan_sec || 0) + activeElapsedSeconds();
+
 function activeElapsedSeconds(session = activeSession) {
   if (!session) return 0;
   const baseElapsed = session._timerBaseElapsed ?? session.elapsed_sec ?? 0;
@@ -1266,35 +1320,19 @@ async function editorCodeForCoach() {
   return ed.code();
 }
 
-$("#btn-hint").addEventListener("click", async () => {
-  if (!activeSession) return;
-  const sessionId = activeSession.session_id;
-  const btn = $("#btn-hint");
-  // The label stays put while it loads: a relabelled button reflows the bar.
-  btn.disabled = true;
-  btn.setAttribute("aria-busy", "true");
-  try {
-    const code = await editorCodeForCoach();
-    const r = await api("/session/hint", "POST", code == null ? {} : { code });
-    if (!activeSession || activeSession.session_id !== sessionId) return;
-    if (r.hint == null) {
-      activeSession = { ...activeSession, hints_available: Boolean(r.available) };
-      toast(r.available ? "Couldn't get a hint just now — try again."
-        : llmEnabled ? "No more hints for this one." : "Hints need the coach enabled.");
-      setHints(activeSession);
-      return;
-    }
-    activeSession = { ...activeSession, hint_level: r.level,
-                      hints: [...(activeSession.hints || []), r.hint],
-                      hints_available: r.available !== false };
-    setHints(activeSession);
-    const shown = window.Editor?.showMarks(r.marks || []) || 0;
-    $("#btn-clear-marks")?.classList.toggle("hidden", !shown);
-  } catch (e) {
-    setHints(activeSession);
-    toast(e.message);
-  }
+$("#btn-hint").addEventListener("click", () => askCoach());
+
+// Enter sends; Shift+Enter is a new line. The text comes back if the send fails.
+$("#coach-input").addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  e.preventDefault();
+  const input = e.target;
+  const text = input.value.trim();
+  if (!text || coachPending) return;
+  input.value = "";
+  if (!(await askCoach(text)) && !input.value) input.value = text;
 });
+$("#coach-chat").addEventListener("submit", (e) => e.preventDefault());
 
 // Two clicks: giving up marks the solve as needing the solution, so a stray
 // click shouldn't. The second must come within a few seconds.

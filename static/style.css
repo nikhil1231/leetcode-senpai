@@ -1023,6 +1023,29 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .hint-card { border-color: rgba(245, 181, 68, .3); background: rgba(245, 181, 68, .06); }
 .hint-card p { margin: 0; }
 .hint-card.is-latest { color: var(--text); animation: hint-in .25s ease-out; }
+.hint-card .chat-time, .chat-msg .chat-time { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.chat-msg {
+  align-self: flex-end; max-width: 88%; padding: 9px 13px;
+  border: 1px solid var(--line-hi); border-radius: 12px 12px 4px 12px; background: var(--panel);
+  font-size: 13.5px; line-height: 1.55; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere;
+  animation: hint-in .2s ease-out;
+}
+.chat-msg .chat-time { display: block; margin-bottom: 3px; color: var(--muted); font-size: 11px; text-align: right; }
+.chat-msg p { margin: 0; }
+.hint-card.chat-typing { align-self: flex-start; display: flex; gap: 5px; padding: 13px 15px; }
+.chat-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+.chat-typing span:nth-child(2) { animation-delay: .2s; }
+.chat-typing span:nth-child(3) { animation-delay: .4s; }
+.coach-chat { flex: none; padding: 10px 14px 12px; }
+.coach-chat.hidden { display: none; }
+.coach-chat textarea {
+  display: block; width: 100%; min-height: 44px; max-height: 160px; resize: vertical; padding: 9px 11px;
+  border: 1px solid var(--line-hi); border-radius: 10px; background: var(--panel); color: var(--text);
+  font: inherit; font-size: 13.5px; line-height: 1.5;
+}
+.coach-chat textarea:focus { outline: none; border-color: rgba(245, 181, 68, .5); }
+.active-run:not(.has-editor) .coach-chat { display: none; }
+.active-run.coach-hidden .coach-chat { display: none; }
 .active-takeaway b { color: var(--text); }
 .give-up-panel p { margin: 0; }
 .note-head {
@@ -2548,7 +2571,7 @@ body.has-editor-run .shell { display: block; }
 body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .active-run.has-editor {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 380px);
+  grid-template-columns: minmax(0, 1fr) min(var(--coach-w, clamp(280px, 24vw, 380px)), 50vw);
   grid-template-rows: auto minmax(0, 1fr);
   align-items: stretch;
   height: 100vh;
@@ -2624,6 +2647,12 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 }
 .editor-split:hover::after, .editor-split:focus-visible::after { left: 1px; width: 3px; background: var(--accent); }
 .editor-pane.hidden { display: none; }
+.coach-split { display: none; }
+.active-run.has-editor .run-coach { position: relative; }
+.active-run.has-editor:not(.coach-hidden) .coach-split {
+  display: block; position: absolute; top: 0; bottom: 0; left: -3px; width: 5px; z-index: 2;
+}
+.coach-split:not(:hover):not(:focus-visible)::after { background: transparent; }
 
 /* Pane headers: a row of underlined tabs, a fold button at the end. */
 .pane-head, .console-head, .active-run.has-editor .run-coach .coach-head {
@@ -2801,7 +2830,7 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
   .active-run.has-editor .active-actions { margin-left: auto; }
   .editor-pane { grid-template-columns: 1fr; grid-template-rows: none; }
   .editor-pane.statement-hidden { grid-template-columns: 1fr; }
-  .editor-split { display: none; }
+  .editor-split, .active-run.has-editor:not(.coach-hidden) .coach-split { display: none; }
   .panel-rail { flex-direction: row; justify-content: center; border-right: 0; border-bottom: 1px solid var(--line); }
   .panel-rail-label, .coach-hidden .coach-title { writing-mode: horizontal-tb; }
   .editor-statement { border-bottom: 1px solid var(--line); }

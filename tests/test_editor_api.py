@@ -543,10 +543,10 @@ def test_a_live_hint_reads_the_code_on_screen_and_points_at_its_lines(client, mo
     assert r["marks"] == [{"line": 3, "text": "        return [0, 0]", "note": "is this always right?"}]
     task, payload = asked[0]
     assert task == "live_hint" and "  3 |         return [0, 0]" in payload["code"]
-    assert payload["statement"] == "Two Sum" and payload["previous"] == []
+    assert payload["statement"] == "Two Sum" and payload["chat"] == ""
 
     client.post("/api/session/hint", json={"code": WRONG})
-    assert asked[1][1]["previous"] == ["What does index 0 hold?"]
+    assert asked[1][1]["chat"].endswith("Interviewer: What does index 0 hold?")
     active = client.get("/api/session/active").json()["active"]
     assert active["hint_level"] == 2 and active["hints"] == ["What does index 0 hold?"] * 2
     assert active["hints_available"] is True  # live hints don't run out
@@ -565,6 +565,26 @@ def test_with_only_the_starter_or_a_failed_call_it_falls_back_to_the_ladder(clie
     assert [t for t, _ in asked] == ["live_hint"]
     # The ladder is spent, but the next live hint may still land.
     assert client.get("/api/session/active").json()["active"]["hints_available"] is True
+
+
+def test_the_coach_chat_answers_what_you_say_and_keeps_the_conversation(client, monkeypatch):
+    asked = _coach(monkeypatch, {"live_hint": {"hint": "What would sorting the queries buy you?", "marks": []}})
+    sid = _start(client)
+    client.get(f"/api/editor/state?session_id={sid}")
+    active = client.get("/api/session/active").json()["active"]
+    assert active["chat_available"] and active["chat"] == []
+    # A message gets a reply even on untouched code: you're thinking out loud.
+    r = client.post("/api/session/hint", json={"code": STARTER, "message": "  Sort  by start?  "}).json()
+    assert r["hint"] == "What would sorting the queries buy you?" and r["level"] == 1
+    assert [(m["role"], m["text"]) for m in r["chat"]] == [
+        ("me", "Sort by start?"), ("coach", "What would sorting the queries buy you?")]
+    assert all(isinstance(m["t"], int) for m in r["chat"])
+    assert "Candidate: Sort by start?" in asked[-1][1]["chat"]
+    client.post("/api/session/hint", json={"code": WRONG})
+    assert "Interviewer: What would sorting" in asked[-1][1]["chat"]
+    chat = client.get("/api/session/active").json()["active"]["chat"]
+    assert [m["role"] for m in chat] == ["me", "coach", "coach"]
+    assert client.store.get_session(sid)["chat"] == chat
 
 
 def test_on_leetcodes_page_hints_are_the_ladder_and_run_out(client):

@@ -122,7 +122,7 @@ class HintLadder(BaseModel):
 
 class LiveHint(BaseModel):
     # Flat, like PlanGrade: marks are "line: note" strings, parsed in coach.py.
-    hint: str = Field("", description="1-2 short spoken sentences, under 35 words")
+    hint: str = Field("", description="1-3 short spoken sentences, under 60 words")
     marks: list[str] = Field(default_factory=list, description="0-2 items, each '<line number>: <note under 8 words>'")
 
 
@@ -399,9 +399,13 @@ TASKS: dict[str, Task] = {
     ),
     "live_hint": Task(
         LiveHint,
-        "You are a supportive senior engineer running a live coding interview. The "
-        "candidate asked for a hint. Read THEIR code and say what you would say out "
-        "loud across the table: 1-2 short sentences, under 35 words, plain speech. "
+        "You are a supportive senior engineer running a live coding interview, "
+        "chatting with the candidate. If the last turn of the conversation is "
+        "theirs, reply to it: answer a clarifying question, react to their "
+        "reasoning, or nudge them on from where their thinking is. Otherwise they "
+        "asked for a hint. Read THEIR code and say what you would say out loud "
+        "across the table: 1-2 short sentences, under 35 words (up to 60 when "
+        "answering them), plain speech. "
         "Respond to where they actually are — a bug, a stall, a wrong turn, a "
         "missed case, or a next step — not to the problem in general.\n"
         "NEVER GIVE AWAY THE ANSWER. Do not name the algorithm, pattern or data "
@@ -409,7 +413,7 @@ TASKS: dict[str, Task] = {
         "write code, or describe the solution's steps. Prefer a pointed question or "
         "an observation that lets them find it themselves (\"What happens to your "
         "window when you see a character twice?\", \"Trace line 6 on 'abba'.\"). "
-        "Escalate gently past the earlier hints; never repeat one. If the code "
+        "Escalate gently past your earlier replies; never repeat one. If the code "
         "hasn't moved since the last hint, go one notch more concrete on the same "
         "issue rather than restating it — but even then name the problem, never "
         "the fix; the candidate has a separate Give up button for that. Plain "
@@ -425,7 +429,7 @@ TASKS: dict[str, Task] = {
             f"Candidate's plan: {p.get('plan') or '(none stated)'}\n"
             f"Minutes in: {p.get('minutes')}\n"
             f"Last judged: {p.get('last_judged') or '(not run yet)'}\n"
-            f"Hints already given, oldest first: {json.dumps(p.get('previous') or [])}\n\n"
+            f"Conversation so far, oldest first:\n{p.get('chat') or '(nothing yet)'}\n\n"
             f"Their code (line numbers added):\n{p.get('code')}"
         ),
     ),

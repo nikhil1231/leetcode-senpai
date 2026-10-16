@@ -8,7 +8,7 @@ Collections:
   problems/{slug}                      global problem catalog
   users/{uid}/attempts/{id}            solve/recall/mock attempts
   users/{uid}/reviews/{slug}           spaced-repetition cards
-  users/{uid}/sessions/{id}            active/finished solve sessions
+  users/{uid}/sessions/{id}            active/finished solve sessions (with the run's coach chat)
   users/{uid}/recordings/{session_id}  in-app editor change log (never listed wholesale)
   users/{uid}/enrichments/{attempt_id} LLM-derived structure (never source of truth)
   users/{uid}/reports/{iso_week}       weekly coach reports

@@ -21,6 +21,7 @@
   const STORE_PREFIX = "editor-run:v1:";
   const LAYOUT_KEY = "editor-layout:v1";
   const STATEMENT_PCT = { min: 20, max: 70, def: 42 };
+  const COACH_PX = { min: 260, max: 720 };  // and the stylesheet caps it at half the window
 
   let run = null;  // the mounted run: see mount()
   let cmLoading = null;
@@ -555,13 +556,17 @@
   // `hidden` is the statement folded away, `coach` the coach, `console` the
   // console down to its tab row.
   function applyLayout() {
-    const { pct, hidden, coach, console: folded } = readLayout();
+    const { pct, hidden, coach, coachW, console: folded } = readLayout();
     const pane = $("#editor-pane");
     const w = Math.min(STATEMENT_PCT.max, Math.max(STATEMENT_PCT.min, Number(pct) || STATEMENT_PCT.def));
     pane.style.setProperty("--statement-w", `${w}%`);
     pane.classList.toggle("statement-hidden", Boolean(hidden));
     pane.classList.toggle("console-folded", Boolean(folded));
     $("#active-run").classList.toggle("coach-hidden", Boolean(coach));
+    // No saved width: the stylesheet's default, which follows the window.
+    const cw = Number(coachW) ? Math.round(Math.min(COACH_PX.max, Math.max(COACH_PX.min, Number(coachW)))) : null;
+    if (cw) $("#active-run").style.setProperty("--coach-w", `${cw}px`);
+    else $("#active-run").style.removeProperty("--coach-w");
     $("#editor-focus")?.setAttribute("aria-pressed", String(Boolean(hidden && coach)));
   }
 
@@ -573,6 +578,31 @@
     saveLayout({ coach: !folded });
     applyLayout();
   });
+
+  // The coach's left edge drags its width, like the statement's split.
+  (() => {
+    const split = $("#coach-split");
+    const setW = (w) => { saveLayout({ coachW: w }); applyLayout(); };
+    const width = () => $("#run-coach").getBoundingClientRect().width;
+    split.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      split.setPointerCapture(e.pointerId);
+      const right = $("#run-coach").getBoundingClientRect().right;
+      const move = (ev) => setW(right - ev.clientX);
+      const up = () => {
+        split.removeEventListener("pointermove", move);
+        split.removeEventListener("pointerup", up);
+      };
+      split.addEventListener("pointermove", move);
+      split.addEventListener("pointerup", up);
+    });
+    split.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      setW(width() + (e.key === "ArrowLeft" ? 20 : -20));
+    });
+    split.addEventListener("dblclick", () => setW(null));
+  })();
 
   function bindSplit() {
     const pane = $("#editor-pane");

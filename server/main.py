@@ -82,6 +82,8 @@ class PauseSession(BaseModel):
 
 class HintRequest(BaseModel):
     code: Optional[str] = Field(None, max_length=60000)
+    # Something the candidate said in the coach chat; the reply answers it.
+    message: Optional[str] = Field(None, max_length=4000)
 
 
 class GiveUpRequest(HintRequest):
@@ -935,6 +937,8 @@ def _active_payload(prob, s, settings):
         # Only the hints already given, so a reload keeps them on screen.
         "hints": _hints_given(prob, s),
         "hints_available": _hints_available(prob, s, settings),
+        "chat": _chat(prob, s),
+        "chat_available": _chat_available(s, settings),
         "give_up_available": _assisted(s) and (llm.enabled(settings) or bool(coach.give_up_fallback(prob))),
         "give_up": _walk(s) if s.get("gave_up") else None,
         "end_available": _assisted(s),
@@ -967,6 +971,19 @@ def _hints_given(prob, s):
     if s.get("hint_log") is not None:
         return [h["text"] for h in s["hint_log"]]
     return (prob.get("hint_ladder") or [])[:s.get("hint_level", 0)]
+
+
+def _chat(prob, s):
+    """The run's coach chat: what you said and each hint, stamped with the run
+    clock. Runs from before the chat hold only their hints, unstamped."""
+    if s.get("chat") is not None:
+        return s["chat"]
+    return [{"role": "coach", "text": t} for t in _hints_given(prob, s)]
+
+
+def _chat_available(s, settings):
+    """Talking to the interviewer needs the editor and an LLM to answer."""
+    return _assisted(s) and s.get("surface") == "editor" and llm.enabled(settings)
 
 
 def _hints_available(prob, s, settings):
@@ -1069,12 +1086,13 @@ def api_session_cancel(uid: str = Depends(auth.require_user)):
 @app.post("/api/session/hint")
 async def api_session_hint(body: Optional[HintRequest] = None,
                            uid: str = Depends(auth.require_user)):
-    """Give the active run a hint.
+    """Give the active run a hint, or answer what the candidate said.
 
-    In the editor, with code past the starter and an LLM, it's a live hint: what
-    an interviewer would say about the code on screen, with up to two marks
-    pinned to its lines. Otherwise — or if that call fails — it's the problem's
-    next ladder rung. Every hint counts toward hint_level and is logged.
+    In the editor, with an LLM and either a message or code past the starter,
+    it's a live reply: what an interviewer would say to the chat so far and the
+    code on screen, with up to two marks pinned to its lines. Otherwise — or if
+    that call fails — it's the problem's next ladder rung. Every reply counts
+    toward hint_level and is logged; the message and reply join the run's chat.
     """
     store = get_store(uid)
     s = store.latest_active_session()
@@ -1086,30 +1104,39 @@ async def api_session_hint(body: Optional[HintRequest] = None,
     prob = store.get_problem(s["slug"]) or {}
     log_ = list(s.get("hint_log") or [{"text": t, "src": "ladder"} for t in _hints_given(prob, s)])
     rung = _ladder_rung(s)
+    now = int(time.time())
+    clock = poller.run_clock(s, now)
+    chat = list(_chat(prob, s))
+    message = " ".join((body.message or "").split()) if body else ""
+    if message:
+        # The stamp is the stopwatch on screen: planning time and all.
+        chat.append({"role": "me", "text": message, "t": plans.plan_sec(s) + clock})
+        store.update_session(s["id"], {"chat": chat})
     hint = None
     if s.get("surface") == "editor" and llm.enabled(settings):
         doc = store.get_recording(s["id"]) or {}
         code = (body.code if body and body.code is not None else None) or doc.get("code") or ""
-        if not coach.untouched(code, prob.get("starter_code")):
+        if message or not coach.untouched(code, prob.get("starter_code")):
             events = recording.parse(doc["events"]) if doc.get("events") else []
             hint = await coach.live_hint(
-                prob, s, code, [h["text"] for h in log_], recording.last_judged(events),
-                poller.run_clock(s, int(time.time())) // 60, settings=settings)
+                prob, s, code, chat, recording.last_judged(events), clock // 60, settings=settings)
             if hint:
                 hint["src"] = "live"
     if not hint:
         ladder = await coach.ensure_hint_ladder(store, s["slug"])
         if not ladder or rung >= len(ladder):
-            return {"hint": None, "level": s.get("hint_level", 0), "exhausted": True,
+            return {"hint": None, "level": s.get("hint_level", 0), "exhausted": True, "chat": chat,
                     "llm": llm.enabled(settings), "available": _hints_available(prob, s, settings)}
         hint = {"text": ladder[rung], "marks": [], "src": "ladder"}
         rung += 1
     level = s.get("hint_level", 0) + 1
     log_.append({"text": hint["text"], "src": hint["src"]})
-    store.update_session(s["id"], {"hint_level": level, "hint_log": log_, "ladder_rung": rung})
+    chat.append({"role": "coach", "text": hint["text"],
+                 "t": plans.plan_sec(s) + poller.run_clock(s, int(time.time()))})
+    store.update_session(s["id"], {"hint_level": level, "hint_log": log_, "ladder_rung": rung, "chat": chat})
     _log_server_event(store, s, {"k": "hint", "level": level, "text": hint["text"]})
     s = {**s, "hint_level": level, "hint_log": log_, "ladder_rung": rung}
-    return {"hint": hint["text"], "marks": hint["marks"], "level": level,
+    return {"hint": hint["text"], "marks": hint["marks"], "level": level, "chat": chat,
             "available": _hints_available(prob, s, settings)}
 
 

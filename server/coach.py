@@ -85,15 +85,25 @@ def give_up_fallback(prob):
     return [h for h in prob.get("hint_ladder") or [] if h] or None
 
 
-async def live_hint(prob, s, code, previous, last_judged, minutes, settings=None):
-    """A hint about the code on screen: {text, marks}, or None on any failure."""
+def transcript(chat, limit=12):
+    """A run's chat as prompt lines, newest `limit` turns, stamped with the clock."""
+    def stamp(m):
+        return f"[{m['t'] // 60:02d}:{m['t'] % 60:02d}] " if m.get("t") is not None else ""
+    return "\n".join(f"{stamp(m)}{'Candidate' if m['role'] == 'me' else 'Interviewer'}: {m['text']}"
+                     for m in chat[-limit:])
+
+
+async def live_hint(prob, s, code, chat, last_judged, minutes, settings=None):
+    """The interviewer's next turn — a reply to the candidate's last message, or
+    a hint when the last turn is the interviewer's: {text, marks}, or None on any
+    failure."""
     plan = " — ".join(x for x in (s.get("predicted_category"), s.get("predicted_approach")) if x)
     res = await llm.extract("live_hint", {
         "title": prob.get("title", s["slug"]), "difficulty": prob.get("difficulty"),
         "category": prob.get("neetcode_category"),
         "statement": statement_text(prob.get("content_html")),
         "plan": plan, "minutes": minutes, "last_judged": last_judged,
-        "previous": previous[-6:], "code": numbered(code)[:6000],
+        "chat": transcript(chat), "code": numbered(code)[:6000],
     }, settings=settings)
     text = " ".join(((res or {}).get("hint") or "").split())
     if not text:

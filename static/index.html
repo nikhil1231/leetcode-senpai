@@ -116,6 +116,8 @@
         </div>
         <div id="editor-pane" class="editor-pane hidden"></div>
         <aside id="run-coach" class="run-coach" aria-label="Coach">
+          <div id="coach-split" class="editor-split coach-split" role="separator" aria-orientation="vertical"
+               aria-label="Resize the coach" tabindex="0" title="Drag to resize · double-click to reset"></div>
           <div class="coach-head">
             <span class="coach-title">Coach</span>
             <span id="coach-model" class="coach-model-name"></span>
@@ -124,11 +126,15 @@
           <div class="active-notes">
             <p id="active-takeaway" class="active-takeaway hidden"></p>
             <div id="plan-check-panel" class="plan-critique hidden"></div>
+            <div id="nudge" class="nudge hidden"></div>
             <div id="hint-panel" class="hint-panel hidden"></div>
             <div id="give-up-panel" class="give-up-panel hidden"></div>
-            <div id="nudge" class="nudge hidden"></div>
             <p id="coach-empty" class="coach-empty"></p>
           </div>
+          <form id="coach-chat" class="coach-chat hidden" autocomplete="off">
+            <textarea id="coach-input" rows="2" maxlength="4000" placeholder="Message the interviewer"
+                      aria-label="Talk to the interviewer"></textarea>
+          </form>
           <div class="coach-actions">
             <div class="assist-group" role="group" aria-label="Help">
               <button id="btn-hint" class="button hint-btn" type="button" title="An interviewer's nudge about the code you've written">Ask for a hint</button>
