@@ -74,6 +74,17 @@ async def test_a_crashed_run_keeps_what_it_printed(lc, monkeypatch):
     assert r["error"] and r["stdout"] == ["a\n", "b\n"]
 
 
+async def test_a_timed_out_run_reports_its_status(lc, monkeypatch):
+    monkeypatch.setitem(RUN_CHECK, "status_msg", "Time Limit Exceeded")
+    monkeypatch.setitem(RUN_CHECK, "status_runtime", "N/A")
+    monkeypatch.setitem(RUN_CHECK, "total_testcases", None)
+    monkeypatch.setitem(RUN_CHECK, "total_correct", None)
+    monkeypatch.setitem(RUN_CHECK, "last_testcase", "[1,3,4,2,2]")
+    r = await leetcode.run_code("two-sum", "1", "code", "[1,3,4,2,2]", AUTH)
+    assert r["passed"] is False and r["error"] == r["status"] == "Time Limit Exceeded"
+    assert r["input"] == "[1,3,4,2,2]"
+
+
 async def test_submit_reads_the_failing_case(lc):
     r = await leetcode.submit_code("two-sum", 1, "code", AUTH)
     path, body, _ = lc["posts"][0]

@@ -464,9 +464,11 @@ async def run_code(slug, question_id, code, data_input, auth):
               "stdout": stdout[i] if i < len(stdout) else "",
               "ok": ok[i]}
              for i in range(total)]
-    error = _judge_error(d)
+    status = d.get("status_msg")
+    # A time or memory limit carries no error text, only its status.
+    error = _judge_error(d) or (status if status and status != "Accepted" else None)
     return {
-        "status": d.get("status_msg"),
+        "status": status,
         # A run's status reads "Accepted" whenever the code ran at all; whether
         # it matched the reference answer is correct_answer.
         "passed": bool(d.get("correct_answer")) and not error,

@@ -252,7 +252,7 @@
   // start — so a run's results fit beside the input instead of below the fold.
   function showRun(r) {
     const head = r.error
-      ? `<p class="editor-verdict is-bad">${esc(r.status || "Error")}</p><pre class="editor-error">${esc(r.error)}</pre>
+      ? `<p class="editor-verdict is-bad">${esc(r.status || "Error")}</p>${r.error === r.status ? "" : `<pre class="editor-error">${esc(r.error)}</pre>`}
          ${block("Failing input", r.input)}
          ${(r.stdout || []).map((out, i) => block(`Stdout · case ${i + 1}`, out)).join("")}`
       : `<p class="editor-verdict ${r.passed ? "is-good" : "is-bad"}">${r.passed ? "All cases match" : "Mismatch"}
