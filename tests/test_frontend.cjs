@@ -465,7 +465,6 @@ test('lock-in switches to the run and opens the editor before the start answers'
           example_testcases: ["[1]"], interview_runs: 2, par_sec: 900 } }`);
   ui.node('#predict-approach').value = 'hash';
   ui.node('#predict-time').value = 'O(n)';
-  ui.node('#predict-edge-cases').value = 'empty; Empty; dupes';
   const started = ui.run('doStart("planned")');
   // Painted from the click: no id yet, controls that need one are off.
   const [pending, state] = ui.run('window.mounts[0]');
@@ -474,7 +473,7 @@ test('lock-in switches to the run and opens the editor before the start answers'
   assert.equal(ui.node('#active-par').textContent, '15m pace');
   assert.equal(ui.node('#btn-pause-session').disabled, true);
   assert.equal(state.code, 'S');
-  assert.deepEqual([...state.planned_edge_cases], ['empty', 'dupes']);
+  assert.deepEqual([...state.planned_edge_cases], []);
 
   await new Promise((r) => setImmediate(r));
   answer(response({ url: 'u', active: { ...pending, session_id: 's1', hints_available: true },

@@ -1893,7 +1893,9 @@ pre.code {
 
 .overlay-card.predict-wide > #predict-statement { grid-column: 1; margin-top: 12px; }
 
-.overlay-card.predict-wide > .predict-form { grid-column: 2; }
+.overlay-card.predict-wide > .predict-form { grid-column: 2; align-self: stretch; display: flex; flex-direction: column; margin-bottom: 14px; }
+
+#predict-approach { flex: 1; min-height: 120px; }
 
 .predict-form > .label-sm:first-child { margin-top: 12px; }
 
@@ -2286,10 +2288,6 @@ body.has-active-session #user-chip {
   background: var(--panel2);
 }
 .predict-clock.is-over, .is-over { color: var(--amber); }
-.predict-more { margin-top: 14px; border-top: 1px solid var(--line-soft); padding-top: 10px; }
-.predict-more summary { cursor: pointer; font-size: 13px; color: var(--text-2); }
-.predict-more summary:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; border-radius: 4px; }
-.predict-more[open] summary { margin-bottom: 2px; }
 .predict-keys { margin-top: 12px; }
 .predict-keys kbd {
   font: inherit; font-size: 11px; padding: 0 5px;

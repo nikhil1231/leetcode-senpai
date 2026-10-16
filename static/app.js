@@ -645,25 +645,6 @@ async function startSession(body, { tabOpened = false, pending = null } = {}) {
     : "Timer started — open the problem with the link above.");
 }
 
-function renderPredictPatterns() {
-  const root = $("#predict-patterns");
-  if (!root) return;
-  const seen = new Set();
-  const opts = categories.filter((c) => {
-    const val = (c || "").trim();
-    if (!val || seen.has(val)) return false;
-    seen.add(val);
-    return true;
-  });
-  root.innerHTML = opts.length
-    ? opts.map((c) => `<button type="button" data-val="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("")
-    : `<input id="predict-category-freeform" class="input" type="text" autocomplete="off" placeholder="Pattern category" />`;
-  root.querySelectorAll("button").forEach((btn) => {
-    btn.classList.remove("sel");
-    btn.addEventListener("click", () => selectPill("#predict-patterns", btn.dataset.val));
-  });
-}
-
 // ---- start any problem (paste a URL, number or title) --------------------------
 // Resolving is read-only; nothing is imported until a run actually starts, so
 // a mistyped paste leaves no trace in the catalog.
@@ -776,7 +757,6 @@ $("#quickstart-input").addEventListener("keydown", (e) => {
 // are optional. Nothing here waits on the network once you commit — the plan is
 // graded after the solve, and critiqued mid-run only if you ask.
 const PLAN_SOFT_LIMIT_SEC = 5 * 60;
-const PREDICT_MORE_KEY = "predict_more_open";
 const PREDICT_INTERVIEW_KEY = "predict_interview";
 let planOpenedAt = 0;
 let planClockTimer = null;
@@ -796,10 +776,6 @@ function stopPlanClock() {
   planClockTimer = null;
 }
 
-function rememberedPredictMore() {
-  try { return localStorage.getItem(PREDICT_MORE_KEY) === "1"; } catch (e) { return false; }
-}
-
 async function openPredict(ctx) {
   pendingStart = ctx;
   $("#predict-problem").textContent = ctx.title || ctx.slug;
@@ -807,13 +783,9 @@ async function openPredict(ctx) {
   $("#predict-approach").value = "";
   setComplexityValue("predict-time", "");
   setComplexityValue("predict-space", "");
-  $("#predict-edge-cases").value = "";
-  $("#predict-more").open = rememberedPredictMore();
   try { $("#predict-interview").checked = localStorage.getItem(PREDICT_INTERVIEW_KEY) === "1"; } catch (e) { /* per-browser nicety */ }
   $("#predict-on-leetcode").checked = false;
   syncPredictSurface();
-  if (!categories.length) await loadCategories();
-  renderPredictPatterns();
   updatePlanReady();
   $("#predict-modal").classList.remove("hidden");
   planOpenedAt = Date.now();
@@ -841,31 +813,11 @@ function closePredict() {
   pendingStart = null;
 }
 
-function selectedPredictionCategory() {
-  const selected = $("#predict-patterns button.sel");
-  if (selected && selected.dataset.val) return selected.dataset.val;
-  const input = $("#predict-category-freeform");
-  return input && input.value.trim() ? input.value.trim() : null;
-}
-
-// Deduplicated as plans.planned_edge_cases does, so the editor opened before the
-// start answers ticks off the same cases the server stored.
-function plannedEdgeCases() {
-  const seen = new Set();
-  return $("#predict-edge-cases").value
-    .split(/\n|;/)
-    .map((s) => s.trim())
-    .filter((s) => s && !seen.has(s.toLowerCase()) && seen.add(s.toLowerCase()))
-    .slice(0, 3);
-}
-
 function currentPlanBody() {
   return {
-    predicted_category: selectedPredictionCategory(),
     predicted_approach: $("#predict-approach").value.trim() || null,
     complexity_target_time: complexityValue("predict-time"),
     complexity_target_space: complexityValue("predict-space"),
-    planned_edge_cases: plannedEdgeCases(),
   };
 }
 
@@ -938,15 +890,7 @@ $("#predict-on-leetcode").addEventListener("change", syncPredictSurface);
 $("#predict-interview").addEventListener("change", () => {
   try { localStorage.setItem(PREDICT_INTERVIEW_KEY, $("#predict-interview").checked ? "1" : "0"); } catch (e) { /* per-browser nicety */ }
 });
-$("#predict-more").addEventListener("toggle", () => {
-  try { localStorage.setItem(PREDICT_MORE_KEY, $("#predict-more").open ? "1" : "0"); } catch (e) { /* per-browser nicety */ }
-});
-// Enter walks approach → time → lock in; Ctrl/⌘+Enter locks in from anywhere.
-$("#predict-approach").addEventListener("keydown", (e) => {
-  if (e.key !== "Enter" || e.shiftKey || e.metaKey || e.ctrlKey) return;
-  e.preventDefault();
-  $("#predict-time").focus();
-});
+// Enter in the time field locks in; Ctrl/⌘+Enter locks in from anywhere.
 $("#predict-time").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.metaKey || e.ctrlKey) return;
   e.preventDefault();

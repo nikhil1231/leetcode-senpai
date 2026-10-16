@@ -233,20 +233,12 @@
       <div id="predict-statement" class="recall-statement"></div>
 
       <div class="predict-form">
-        <label class="label-sm" for="predict-approach">Approach <span class="help-inline">one line: the key idea, data structure or invariant</span></label>
-        <textarea id="predict-approach" class="textarea" rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sliding window over counts, shrink while a char repeats"></textarea>
+        <label class="label-sm" for="predict-approach">Approach <span class="help-inline">the key idea, data structure or invariant</span></label>
+        <textarea id="predict-approach" class="textarea" rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sliding window over counts, shrink while a char repeats"></textarea>
 
         <div id="predict-complexities" class="complexity-fields mt-2"></div>
 
-        <details id="predict-more" class="predict-more">
-          <summary>Pattern &amp; edge cases <span class="help-inline">optional</span></summary>
-          <label class="label-sm">Pattern</label>
-          <div class="pill-group predict-patterns" id="predict-patterns"></div>
-          <label class="label-sm" for="predict-edge-cases">Edge cases you'll handle</label>
-          <textarea id="predict-edge-cases" class="textarea" rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="One per line, up to 3"></textarea>
-        </details>
-
-        <p class="help predict-keys">Enter moves to the next field · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> locks in</p>
+        <p class="help predict-keys"><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> locks in</p>
 
         <div class="overlay-actions predict-actions">
           <span class="predict-surface-group">
