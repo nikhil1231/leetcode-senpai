@@ -85,6 +85,13 @@ def classify(slug, tags=(), existing=None, pack_category=None):
             'skill_ids': PROBLEM_SKILLS.get(slug, [CATEGORY_SKILLS[cat]] if cat in CATEGORY_SKILLS else [])}
 
 
+def skill_options(skill_ids):
+    """Every technique, this problem's own first, so tagging is a real choice."""
+    own = [s for s in skill_ids if s in SKILLS]
+    return [{'id': sid, 'name': SKILLS[sid]['name'], 'suggested': sid in own}
+            for sid in own + [s for s in SKILLS if s not in own]]
+
+
 def entry_tasks(category, problems):
     """Prefer the authored starter; fall back to an available low-difficulty task."""
     pool = [p for p in problems if p.get('neetcode_category') == category

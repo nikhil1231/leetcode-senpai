@@ -995,16 +995,12 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .button.hint-btn[aria-busy="true"], .button.give-up-btn[aria-busy="true"] { cursor: progress; animation: pulse 1.2s ease-in-out infinite; }
 /* Hint and Give up are one control, two strengths of help; End stands apart. */
 .assist-group { display: flex; min-width: 0; }
-.assist-group > .button, .button.end-btn { white-space: nowrap; }
-.assist-group > .button { border-radius: 0; }
-.assist-group > .button:first-child { border-radius: 9px 0 0 9px; }
-.assist-group > .button:last-child, .assist-group > .button:has(+ .hidden) { border-top-right-radius: 9px; border-bottom-right-radius: 9px; }
-.assist-group > .button + .button { margin-left: -1px; }
+.assist-group { gap: 6px; }
+.coach-actions .icon-button svg { display: block; }
 .button.give-up-btn { border-color: rgba(167, 139, 250, .38); background: rgba(167, 139, 250, .07); color: var(--accent-2); }
 .button.give-up-btn:hover { background: rgba(167, 139, 250, .15); color: var(--accent-2); }
 .button.give-up-btn[data-armed], .button.end-btn[data-armed] { color: var(--red); border-color: rgba(251, 113, 133, .5); background: rgba(251, 113, 133, .12); position: relative; }
-.button.end-btn { gap: 7px; border-color: rgba(251, 113, 133, .3); background: transparent; color: var(--red); }
-.button.end-btn::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: currentColor; }
+.button.end-btn { border-color: rgba(251, 113, 133, .3); background: transparent; color: var(--red); }
 .button.end-btn:hover { background: rgba(251, 113, 133, .1); color: var(--red); }
 .button.end-btn[aria-busy="true"] { cursor: progress; animation: pulse 1.2s ease-in-out infinite; }
 .resume-btn { display: none; }
@@ -2839,8 +2835,6 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .coach-empty { margin: 0; padding: 2px; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .active-run.has-editor .coach-actions { order: 0; flex: none; margin: 0; padding: 12px 14px; border-top: 1px solid var(--line); }
 .active-run.has-editor .coach-actions { flex-wrap: wrap; }
-.active-run.has-editor .coach-actions .assist-group { flex: 1 1 150px; }
-.active-run.has-editor .coach-actions .hint-btn { flex: 1 1 auto; }
 .active-run.has-editor .run-menu-list { top: auto; bottom: calc(100% + 6px); }
 .active-run.coach-hidden .run-coach { cursor: pointer; }
 .active-run.coach-hidden .run-coach:hover { background: var(--panel); }
@@ -2934,3 +2928,14 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .learning-cta-kicker { grid-area: kicker; font-size: 11px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
 .learning-cta-title { grid-area: title; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .learning-cta-go { grid-area: go; font-size: 13px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+
+/* Technique picker in the annotate modal: toggle chips, this problem's own first. */
+.annotate-skills { margin: 14px 0 0; }
+.skill-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.skill-chip { position: relative; cursor: pointer; }
+.skill-chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.skill-chip span { display: inline-block; padding: 4px 10px; border: 1px solid var(--line-hi); border-radius: 999px; font-size: 12px; color: var(--text-2); }
+.skill-chip.is-suggested span { border-color: rgba(167, 139, 250, .45); }
+.skill-chip:hover span { background: var(--panel3); color: var(--text); }
+.skill-chip input:focus-visible + span { outline: 2px solid var(--accent-2); outline-offset: 1px; }
+.skill-chip input:checked + span { background: rgba(167, 139, 250, .18); border-color: var(--accent-2); color: var(--text); }

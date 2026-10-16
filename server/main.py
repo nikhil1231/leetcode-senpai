@@ -302,8 +302,8 @@ def _pending(store):
         p = pm.get(a["slug"], {})
         out.append({
             **a, "title": p.get("title", a["slug"]),
-            'available_skills': [{'id': sid, 'name': curriculum.SKILLS[sid]['name']}
-                for sid in curriculum.classify(a['slug'], p.get('leetcode_tags'), p)['skill_ids']],
+            'available_skills': curriculum.skill_options(
+                curriculum.classify(a['slug'], p.get('leetcode_tags'), p)['skill_ids']),
             "frontend_id": p.get("frontend_id"), "difficulty": p.get("difficulty"),
             "neetcode_category": p.get("neetcode_category"), "url": p.get("url"),
             "par_sec": config.SOLVE_PAR_SEC.get(p.get("difficulty")),
@@ -1665,10 +1665,8 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
         "complexity_time": body.complexity_time, "complexity_space": body.complexity_space,
     }
     if body.demonstrated_skill_ids is not None:
-        problem = store.get_problem(attempt['slug']) or {}
-        offered = curriculum.classify(attempt['slug'], problem.get('leetcode_tags'), problem)['skill_ids']
-        if not set(body.demonstrated_skill_ids) <= set(offered):
-            raise HTTPException(400, 'Choose a technique offered for this problem')
+        if not set(body.demonstrated_skill_ids) <= set(curriculum.SKILLS):
+            raise HTTPException(400, 'Unknown technique')
         fields['demonstrated_skill_ids'] = body.demonstrated_skill_ids
     # Only meaningful for a run that started from a plan.
     if plans.has_plan(attempt):
@@ -1819,7 +1817,7 @@ def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
     skills = curriculum.classify(a['slug'], prob.get('leetcode_tags'), prob)['skill_ids']
     if a.get('solution_grade') and a.get('assessment_corrections'):
         a = {**a, 'solution_grade': {**a['solution_grade'], 'corrections': a['assessment_corrections']}}
-    return {**a, 'available_skills': [{'id': sid, 'name': curriculum.SKILLS[sid]['name']} for sid in skills], "title": prob.get("title"), "difficulty": prob.get("difficulty"),
+    return {**a, 'available_skills': curriculum.skill_options(skills), "title": prob.get("title"), "difficulty": prob.get("difficulty"),
             "previous_solve": _previous_solve(store, a),
             "neetcode_category": prob.get("neetcode_category"), "url": prob.get("url"),
             "par_sec": config.SOLVE_PAR_SEC.get(prob.get("difficulty")),

@@ -1014,6 +1014,12 @@ const coachText = (t) => escapeHtml(t).replace(/`([^`]+)`/g, "<code>$1</code>");
 // until the server says there's nothing more.
 let coachPending = null;  // {text, t} of the message on its way, or {} for a bare hint
 
+// Icon buttons: the label is the tooltip and the accessible name.
+function setBtnLabel(btn, text) {
+  btn.title = text;
+  btn.setAttribute("aria-label", text);
+}
+
 function setHints(active) {
   const chat = active.chat || [];
   const btn = $("#btn-hint");
@@ -1021,7 +1027,7 @@ function setHints(active) {
   btn.removeAttribute("aria-busy");
   btn.disabled = Boolean(coachPending);
   if (coachPending) btn.setAttribute("aria-busy", "true");
-  btn.textContent = chat.some((m) => m.role === "coach") ? "Another hint" : "Ask for a hint";
+  setBtnLabel(btn, chat.some((m) => m.role === "coach") ? "Another hint" : "Ask for a hint");
   $("#coach-chat").classList.toggle("hidden", !active.chat_available);
   const lastCoach = chat.map((m) => m.role).lastIndexOf("coach");
   const stamp = (t) => (t == null ? "" : `<span class="chat-time">${fmtTime(t)}</span>`);
@@ -1104,7 +1110,7 @@ function setGiveUp(active) {
   btn.classList.toggle("hidden", !active.give_up_available || Boolean(walk));
   btn.removeAttribute("aria-busy");
   btn.disabled = false;
-  btn.textContent = "Give up";
+  setBtnLabel(btn, "Give up");
   delete btn.dataset.armed;
   const panel = $("#give-up-panel");
   panel.classList.toggle("hidden", !walk);
@@ -1130,7 +1136,7 @@ function setEndRun(active) {
   btn.classList.toggle("hidden", !active.end_available);
   btn.removeAttribute("aria-busy");
   btn.disabled = !active.session_id;
-  btn.textContent = "End";
+  setBtnLabel(btn, "End");
   delete btn.dataset.armed;
 }
 
@@ -1302,14 +1308,14 @@ $("#btn-give-up").addEventListener("click", async () => {
   const btn = $("#btn-give-up");
   if (!btn.dataset.armed) {
     btn.dataset.armed = "1";
-    btn.textContent = "Sure? Click again";
+    setBtnLabel(btn, "Sure? Click again");
     btn._disarm = setTimeout(() => setGiveUp(activeSession || {}), 4000);
     return;
   }
   clearTimeout(btn._disarm);
   btn.disabled = true;
   btn.setAttribute("aria-busy", "true");
-  btn.textContent = "Give up";
+  setBtnLabel(btn, "Give up");
   await giveUpStep();
 });
 
@@ -1348,7 +1354,7 @@ $("#btn-end-run").addEventListener("click", async () => {
   const btn = $("#btn-end-run");
   if (!btn.dataset.armed) {
     btn.dataset.armed = "1";
-    btn.textContent = "Sure?";
+    setBtnLabel(btn, "Sure? Click again");
     btn._disarm = setTimeout(() => setEndRun(activeSession || {}), 4000);
     return;
   }
@@ -1508,7 +1514,10 @@ function openAnnotate(attempt) {
   if (attempt.slug) meta.push(attempt.slug);
   $("#annotate-problem-meta").textContent = meta.join(" · ");
   renderAnnotateFacts(attempt);
-  $('#annotate-skills').innerHTML = (attempt.available_skills || []).length ? `<p>Which techniques did this solution use?</p>${attempt.available_skills.map(s => `<label><input type="checkbox" data-skill="${escapeHtml(s.id)}" ${(attempt.demonstrated_skill_ids || []).includes(s.id) ? 'checked' : ''}> ${escapeHtml(s.name)}</label>`).join('')}` : '';
+  const skillOpts = attempt.available_skills || [];
+  $('#annotate-skills').classList.toggle('hidden', !skillOpts.length);
+  $('#annotate-skills').innerHTML = skillOpts.length ? `<span class="label-sm">Techniques used <span class="help-inline">optional — tap any this solution relied on</span></span>
+    <div class="skill-chips">${skillOpts.map(s => `<label class="skill-chip${s.suggested ? ' is-suggested' : ''}"><input type="checkbox" data-skill="${escapeHtml(s.id)}" ${(attempt.demonstrated_skill_ids || []).includes(s.id) ? 'checked' : ''}><span>${escapeHtml(s.name)}</span></label>`).join('')}</div>` : '';
   // Default independence from the run: gave up → solution; leaned on hints → hints.
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   const heading = $("#annotate-heading");
