@@ -472,6 +472,10 @@ async def run_code(slug, question_id, code, data_input, auth):
         "passed": bool(d.get("correct_answer")) and not error,
         "correct": d.get("total_correct"), "total": total,
         "cases": cases, "error": error, "runtime": d.get("status_runtime"),
+        # The case it was on when it crashed.
+        "input": (d.get("last_testcase") or None) if error else None,
+        # What each case printed before the crash, the last one up to it.
+        "stdout": stdout if error else [],
     }
 
 

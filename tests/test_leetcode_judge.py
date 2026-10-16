@@ -67,6 +67,13 @@ async def test_run_sends_the_editor_shape_and_splits_cases(lc):
                              "stdout": "", "ok": False}
 
 
+async def test_a_crashed_run_keeps_what_it_printed(lc, monkeypatch):
+    monkeypatch.setitem(RUN_CHECK, "runtime_error", "IndexError\nLine 3 in twoSum (Solution.py)")
+    monkeypatch.setitem(RUN_CHECK, "std_output_list", ["a\n", "b\n"])
+    r = await leetcode.run_code("two-sum", "1", "code", "[3,3]\n6", AUTH)
+    assert r["error"] and r["stdout"] == ["a\n", "b\n"]
+
+
 async def test_submit_reads_the_failing_case(lc):
     r = await leetcode.submit_code("two-sum", 1, "code", AUTH)
     path, body, _ = lc["posts"][0]

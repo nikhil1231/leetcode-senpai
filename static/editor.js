@@ -22,6 +22,7 @@
   const LAYOUT_KEY = "editor-layout:v1";
   const STATEMENT_PCT = { min: 20, max: 70, def: 42 };
   const COACH_PX = { min: 260, max: 720 };  // and the stylesheet caps it at half the window
+  const CONSOLE_PX = { min: 120, editor: 150 };  // the editor keeps at least `editor` above it
 
   let run = null;  // the mounted run: see mount()
   let cmLoading = null;
@@ -224,6 +225,7 @@
     $("#editor-run").disabled = on || !run.canJudge || run.runsLeft === 0;
     $("#editor-submit").disabled = on || !run.canJudge;
     if (!on) return;
+    showErrorLine(null);
     showConsole("result");
     $("#editor-result").innerHTML = `<p class="small editor-pending">${kind === "run" ? "Running" : "Judging"}…</p>`;
   }
@@ -250,7 +252,9 @@
   // start — so a run's results fit beside the input instead of below the fold.
   function showRun(r) {
     const head = r.error
-      ? `<p class="editor-verdict is-bad">${esc(r.status || "Error")}</p><pre class="editor-error">${esc(r.error)}</pre>`
+      ? `<p class="editor-verdict is-bad">${esc(r.status || "Error")}</p><pre class="editor-error">${esc(r.error)}</pre>
+         ${block("Failing input", r.input)}
+         ${(r.stdout || []).map((out, i) => block(`Stdout · case ${i + 1}`, out)).join("")}`
       : `<p class="editor-verdict ${r.passed ? "is-good" : "is-bad"}">${r.passed ? "All cases match" : "Mismatch"}
            <span class="small">${r.correct ?? 0}/${r.total} cases · ${esc(r.runtime || "")}</span></p>`;
     const cases = r.error ? [] : (r.cases || []);
@@ -259,13 +263,14 @@
       `<button class="editor-case-tab ${ok(c) ? "is-good" : "is-bad"}" type="button" role="tab" data-i="${i}">
          ${ok(c) ? "✓" : "✗"} Case ${i + 1}</button>`).join("")}</div><div id="editor-case" role="tabpanel"></div>` : "";
     $("#editor-result").innerHTML = head + tabs;
+    if (r.error) showErrorLine(errorLine(r.error));
     if (!cases.length) return;
     const pick = (i) => {
       const c = cases[i];
       $$("#editor-result .editor-case-tab").forEach((t) => t.setAttribute("aria-selected", String(Number(t.dataset.i) === i)));
-      $("#editor-case").innerHTML = `${block("Input", c.input)}
-        <div class="editor-io-pair">${block("Output", c.output, ok(c) ? "" : "is-off")}${block("Expected", c.expected)}</div>
-        ${block("Stdout", c.stdout)}`;
+      $("#editor-case").innerHTML = `<div class="editor-io-split">
+        <div class="editor-io-main">${block("Input", c.input)}${block("Output", c.output, ok(c) ? "" : "is-off")}${block("Expected", c.expected)}</div>
+        <div>${block("Stdout", c.stdout)}</div></div>`;
     };
     $("#editor-result .editor-case-tabs").addEventListener("click", (e) => {
       const tab = e.target.closest(".editor-case-tab");
@@ -284,10 +289,11 @@
       <p class="editor-verdict ${good ? "is-good" : "is-bad"}">${esc(r.status || "")}
         <span class="small">${r.correct ?? "?"}/${r.total ?? "?"} tests${esc(beats)}</span></p>
       ${block("Error", r.error, "is-error")}
-      ${block("Failing input", r.input)}
-      <div class="editor-io-pair">${block("Output", r.output, "is-off")}${block("Expected", r.expected)}</div>
-      ${block("Stdout", r.stdout)}
+      <div class="editor-io-split">
+        <div class="editor-io-main">${block("Failing input", r.input)}${block("Output", r.output, "is-off")}${block("Expected", r.expected)}</div>
+        <div>${block("Stdout", r.stdout)}</div></div>
       ${!good && r.input ? `<button id="editor-add-case" class="button is-small" type="button">Add to test input</button>` : ""}`;
+    if (r.error) showErrorLine(errorLine(r.error));
     if (!good && r.input) $("#editor-add-case").addEventListener("click", () => addCase(r.input));
   }
 
@@ -368,6 +374,29 @@
   }
 
   function clearMarks() { showMarks([]); }
+
+  // The line of your code an error names: the innermost traceback frame that
+  // isn't LeetCode's driver, or a compile error's "line N".
+  function errorLine(text) {
+    for (const m of String(text).matchAll(/\bline (\d+)(?: in (\S+))?/gi)) {
+      if (m[2] === "_driver" || m[2] === "<module>") continue;
+      return Number(m[1]);
+    }
+    return null;
+  }
+
+  // Marks the line an error points at until the next Run or Submit.
+  function showErrorLine(n) {
+    const r = run;
+    if (!r || !r.view || !r.errorMark) return;
+    const { CM } = r;
+    const doc = r.view.state.doc;
+    const ok = n != null && n >= 1 && n <= doc.lines;
+    const ranges = ok ? [CM.Decoration.line({ class: "cm-error-line" }).range(doc.line(n).from)] : [];
+    const effects = [r.errorMark.set.of(CM.Decoration.set(ranges))];
+    if (ok) effects.push(CM.EditorView.scrollIntoView(doc.line(n).from, { y: "center" }));
+    r.view.dispatch({ effects });
+  }
 
   const code = () => (run && run.view ? currentCode() : null);
 
@@ -455,6 +484,8 @@
         ${state.optimizing ? optimizingHtml(state.optimizing) : ""}
         <div id="editor-cm" class="editor-cm"></div>
         <p id="editor-notice" class="small editor-notice hidden"></p>
+        <div id="console-split" class="console-split" role="separator" aria-orientation="horizontal"
+             aria-label="Resize the console" tabindex="0" title="Drag to resize · double-click to reset"></div>
         <div id="editor-console" class="editor-console">
           <div class="console-head">
             <div class="pane-tabs" role="tablist">
@@ -554,9 +585,9 @@
   }
 
   // `hidden` is the statement folded away, `coach` the coach, `console` the
-  // console down to its tab row.
+  // console down to its tab row, `consoleH` its dragged height.
   function applyLayout() {
-    const { pct, hidden, coach, coachW, console: folded } = readLayout();
+    const { pct, hidden, coach, coachW, console: folded, consoleH } = readLayout();
     const pane = $("#editor-pane");
     const w = Math.min(STATEMENT_PCT.max, Math.max(STATEMENT_PCT.min, Number(pct) || STATEMENT_PCT.def));
     pane.style.setProperty("--statement-w", `${w}%`);
@@ -567,6 +598,9 @@
     const cw = Number(coachW) ? Math.round(Math.min(COACH_PX.max, Math.max(COACH_PX.min, Number(coachW)))) : null;
     if (cw) $("#active-run").style.setProperty("--coach-w", `${cw}px`);
     else $("#active-run").style.removeProperty("--coach-w");
+    const ch = Number(consoleH) ? Math.round(Math.max(CONSOLE_PX.min, Number(consoleH))) : null;
+    if (ch) pane.style.setProperty("--console-h", `${ch}px`);
+    else pane.style.removeProperty("--console-h");
     $("#editor-focus")?.setAttribute("aria-pressed", String(Boolean(hidden && coach)));
   }
 
@@ -627,6 +661,7 @@
       setPct(pct + (e.key === "ArrowLeft" ? -2 : 2));
     });
     split.addEventListener("dblclick", () => setPct(STATEMENT_PCT.def));
+    bindConsoleSplit();
     const set = (patch) => { saveLayout(patch); applyLayout(); };
     $("#editor-hide-statement").addEventListener("click", () => set({ hidden: true }));
     $("#editor-show-statement").addEventListener("click", () => set({ hidden: false }));
@@ -638,6 +673,35 @@
     $("#editor-console-toggle").addEventListener("click", () => set({ console: !readLayout().console }));
     $$("#editor-console .console-head .pane-tab").forEach((t) =>
       t.addEventListener("click", () => showConsole(t.dataset.tab)));
+  }
+
+  // The console's top edge drags its height; the editor keeps a usable minimum.
+  function bindConsoleSplit() {
+    const split = $("#console-split");
+    const work = () => $("#editor-pane .editor-work").getBoundingClientRect();
+    const setH = (h) => {
+      if (h != null) h = Math.min(work().height - CONSOLE_PX.editor, Math.max(CONSOLE_PX.min, h));
+      saveLayout({ consoleH: h });
+      applyLayout();
+    };
+    split.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      split.setPointerCapture(e.pointerId);
+      const bottom = work().bottom;
+      const move = (ev) => setH(bottom - ev.clientY);
+      const up = () => {
+        split.removeEventListener("pointermove", move);
+        split.removeEventListener("pointerup", up);
+      };
+      split.addEventListener("pointermove", move);
+      split.addEventListener("pointerup", up);
+    });
+    split.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      setH($("#editor-console").getBoundingClientRect().height + (e.key === "ArrowUp" ? 20 : -20));
+    });
+    split.addEventListener("dblclick", () => setH(null));
   }
 
   // Back to the starter code. Logged as a marker plus a checkpoint, so the
@@ -760,6 +824,9 @@
     bindStatementTabs();
     $("#editor-input").value = r.input;
     $("#editor-input").addEventListener("input", () => { r.input = $("#editor-input").value; persist(r); });
+    $("#editor-input").addEventListener("keydown", (e) => {
+      if (e.key === "'" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); judge("run"); }
+    });
     if (r.edges.length) {
       $("#editor-edges").addEventListener("change", onEdgeTick);
       $$("#editor-edges input").forEach((box) => { box.checked = r.checked.includes(r.edges[Number(box.dataset.i)]); });
@@ -767,6 +834,7 @@
 
     r.readOnly = new CM.Compartment();
     r.marks = marksExtension(CM);
+    r.errorMark = marksExtension(CM);
     r.view = new CM.EditorView({
       parent: $("#editor-cm"),
       state: CM.EditorState.create({
@@ -785,7 +853,7 @@
             ...CM.defaultKeymap, ...CM.historyKeymap, CM.indentWithTab,
           ]),
           r.readOnly.of(CM.EditorState.readOnly.of(false)),
-          ...(r.marks ? [r.marks.field] : []),
+          ...(r.marks ? [r.marks.field, r.errorMark.field] : []),
           CM.EditorView.theme({}, { dark: true }),
         ],
       }),
