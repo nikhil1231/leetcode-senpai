@@ -35,7 +35,7 @@ def test_pack_registry_has_expected():
 
 def test_category_from_tags_fallback():
     assert packs.category_from_tags(["Two Pointers"]) == "Two Pointers"
-    assert packs.category_from_tags(["Nonsense"]) == "Arrays & Hashing"
+    assert packs.category_from_tags(["Nonsense"]) == "Unclassified"
 
 
 async def test_import_pack_marks_library(store, fake_lc):

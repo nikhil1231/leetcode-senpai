@@ -1,0 +1,19 @@
+{
+  "code": "class Solution:\n    def sortColors(self, nums: list[int]) -> None:\n        \"\"\"\n        Do not return anything, modify nums in-place instead.\n        \"\"\"\n        p0, p2 = 0, len(nums) - 1\n\n        for i in range(len(nums)):\n            while nums[p2] == 2 and p2:\n                p2 -= 1\n            while nums[p0] == 0 and p0 < len(nums) - 1:\n                p0 += 1\n            if nums[i] == 2 and i < p2:\n                nums[i], nums[p2] = nums[p2], nums[i]\n            if nums[i] == 0 and i > p0:\n                nums[i], nums[p0] = nums[p0], nums[i]",
+  "code_identity": "f519771457e82ad6aa0a1fe63b952d3c0e71dd9a52f1cb901fcf6c72f4b2bae6",
+  "case": [
+    1,
+    2,
+    0
+  ],
+  "claimed": [
+    1,
+    0,
+    2
+  ],
+  "expected": [
+    0,
+    1,
+    2
+  ]
+}

@@ -155,7 +155,15 @@ TAG_TO_CATEGORY = {
 
 def category_from_tags(tags):
     """Pick the best NeetCode category for a list of LeetCode topic tag names."""
-    for t in tags or []:
-        if t in TAG_TO_CATEGORY:
-            return TAG_TO_CATEGORY[t]
-    return "Arrays & Hashing"
+    tags = set(tags or [])
+    if 'Dynamic Programming' in tags:
+        return '2-D DP' if 'Matrix' in tags else '1-D DP'
+    priority = ['Shortest Path', 'Minimum Spanning Tree', 'Topological Sort',
+                'Union Find', 'Graph', 'Tree', 'Binary Tree', 'Binary Search Tree',
+                'Breadth-First Search', 'Trie', 'Backtracking', 'Sliding Window',
+                'Monotonic Stack', 'Stack', 'Heap (Priority Queue)', 'Binary Search',
+                'Linked List', 'Interval', 'Greedy', 'Two Pointers',
+                'Bit Manipulation', 'Geometry', 'Math', 'Hash Table', 'Array', 'String']
+    if 'Depth-First Search' in tags and not tags & {'Tree', 'Binary Tree', 'Binary Search Tree'}:
+        return 'Graphs'
+    return next((TAG_TO_CATEGORY[t] for t in priority if t in tags), 'Unclassified')

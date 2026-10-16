@@ -6,6 +6,7 @@ return on a widening interval (1, 3, 9… days). Revealing an answer counts as a
 miss. No I/O, no LLM.
 """
 from .practice_skills import concept
+from .practice_state import rebuild
 
 DAY = 86400
 GAP = 4          # a missed exercise waits at least this many others in a run
@@ -16,6 +17,8 @@ def _histories(results):
     """template -> [(answered_at, ok)], oldest first."""
     out = {}
     for r in sorted(results, key=lambda r: r.get("answered_at") or 0):
+        if r.get('exposure_only'):
+            continue
         ok = bool(r.get("correct")) and not r.get("revealed") and not r.get("guessed") and not r.get("assisted")
         out.setdefault(r.get("template"), []).append((r.get("answered_at") or 0, ok))
     return out
@@ -50,14 +53,20 @@ def pick(candidates, results, recent, now, rng, metadata=None):
     for t in pool:
         h = history.get(t)
         if not h:
-            fresh.append(t)
+            if t not in recent:
+                fresh.append(t)
             continue
-        at, ok = h[-1]
-        if not ok:
-            missed.append(t)
+        state = rebuild(r for r in results if r.get('template') == t)
+        if state['status'] == 'missed':
+            # At most one corrective retry, with the real four-item gap.
+            last = len(recent) - 1 - recent[::-1].index(t) if t in recent else None
+            if recent.count(t) < 2 and (last is None or len(recent) - last - 1 >= GAP):
+                missed.append(t)
             continue
-        streak = next((i for i, (_, x) in enumerate(reversed(h)) if not x), len(h))
-        (fresh if now - at >= DAY * 3 ** (streak - 1) else rest).append(t)
+        due = state['due_at']
+        (fresh if due is not None and now >= due and now - state['last_exposure'] >= DAY else rest).append(t)
+        if t in recent and recent.count(t) >= 1 and t in fresh:
+            fresh.remove(t)
 
     if missed and (not fresh or rng.random() < MISS_SHARE):
         # Oldest miss first: the one that has waited longest.
@@ -86,4 +95,4 @@ def pick(candidates, results, recent, now, rng, metadata=None):
                 weights[i] *= 1.5 if ready else 0.35
         return rng.choices(fresh, weights)[0]
     # Everything was answered correctly recently: least recently seen.
-    return min(rest, key=lambda t: history[t][-1][0])
+    return None

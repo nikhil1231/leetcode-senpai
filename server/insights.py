@@ -682,6 +682,7 @@ def build(store, today=None):
     return {
         "forecast": review_forecast(reviews, today=today),
         "mastery_radar": mastery_radar(problems, attempts, today=today),
+        'topic_evidence': scheduler.topic_stats(problems, attempts),
         "time_trend": time_to_solve_trend(problems, attempts, today=today),
         "pace": pace_projection(problems, attempts, today=today),
         "failure_modes": failure_modes(enrichments, days=30, attempts=attempts, today=today),

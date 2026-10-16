@@ -264,11 +264,15 @@
             ${drills}
           </div>
         </div>
+        ${q.learning_recovery ? `<button class="button learning-recovery" data-sequence="${escapeHtml(q.learning_recovery.sequence)}">Focused practice: ${escapeHtml(q.learning_recovery.title)}</button>` : ''}
+        ${(q.learning_checks || []).map(c => `<button class="button learning-application" data-check="${escapeHtml(c.id)}">Later application check</button>`).join('')}
         ${expansion ? `<div class="today-expansion">${expansion}</div>` : ""}
       </div>`;
     $$("#tab-today button[data-slug][data-kind]").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, b.dataset.kind, b.dataset.mode, b.dataset.title, b.dataset.cat,
         b.dataset.attempt || null, b.dataset.status || null)));
+    $$('#tab-today .learning-recovery').forEach(b => b.addEventListener('click', () => window.openLearningSequence(b.dataset.sequence)));
+    $$('#tab-today .learning-application').forEach(b => b.addEventListener('click', () => window.openLearningApplication(b.dataset.check)));
     $$("#tab-today .import-one").forEach((b) => b.addEventListener("click", async () => {
       b.disabled = true; b.textContent = "…";
       await api("/import/problem", "POST", { slug: b.dataset.slug });
@@ -314,7 +318,7 @@
             <h2 class="section-title">Library progress</h2>
             <div class="progress-count">${solved}<em>/${total}</em></div>
           </div>
-          <p class="progress-sub">${coverage}% covered · ${mastery}% mastery${
+          <p class="progress-sub">${solved} of ${total} problems covered${
             cleared ? ` · ${cleared} famil${cleared === 1 ? "y" : "ies"} cleared` : ""}</p>
           <button id="btn-goto-topics" class="button is-ghost is-small" type="button">Topic map</button>
         </div>
@@ -427,8 +431,8 @@
   }
 
   function masteryPill(t) {
-    if (!t.solved) return `<span class="mastery-pill is-empty">not started</span>`;
-    return `<span class="mastery-pill" style="--pill:${masteryColor(t.mastery)}">${Math.round(t.mastery * 100)}% mastery</span>`;
+    if (!t.solved) return `<span class="mastery-pill is-empty">untested</span>`;
+    return `<span class="mastery-pill">${t.implementation_count || 0} independent · ${t.retention_count || 0} later checks</span>`;
   }
 
   function topicNode(t, focus) {
@@ -611,7 +615,7 @@
         <div class="column"><div class="panel-box"><h3>Pace</h3>${paceHtml(d.pace)}</div></div>
       </div>
       <div class="columns">
-        <div class="column"><div class="panel-box"><h3>Mastery radar</h3>${Charts.radar(d.mastery_radar)}</div></div>
+        <div class="column"><div class="panel-box"><h3>Topic evidence</h3>${(d.topic_evidence || []).map(t => `<p>${escapeHtml(t.category)}: ${t.solved} of ${t.total} covered · ${t.implementation_count} independent implementations · ${t.retention_count} later checks</p>`).join('')}</div></div>
         <div class="column"><div class="panel-box"><h3>Time to solve (weekly median)</h3>${Charts.lines(d.time_trend, { yLabel: "min" })}</div></div>
       </div>
       <div class="columns">

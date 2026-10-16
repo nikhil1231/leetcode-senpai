@@ -24,9 +24,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (auth, coach, config, connectivity, enrich, gamify, importer, insights,
+from . import (assessment, auth, coach, config, connectivity, enrich, gamify, importer, insights,
                leetcode, llm, mock, neetcode150, packs, plans, poller, practice,
-               practice_offline, practice_queue, recording, scheduler)
+               practice_offline, practice_queue, recording, scheduler, learning_evidence, curriculum, learning_sequences)
 from . import store as store_mod
 from .store import get_store
 
@@ -112,7 +112,17 @@ class EditorJudge(BaseModel):
     events: list[dict] = Field(default_factory=list, max_length=500)
 
 
+class PracticeExposure(BaseModel):
+    exposed_at: int | None = Field(None, ge=0)
+    question_id: str = Field(max_length=100)
+    choices: bool = False
+
+
 class PracticeAnswer(BaseModel):
+    timing_uncertain: bool = False
+    answered_at: int | None = Field(None, ge=0)
+    exposed_at: int | None = Field(None, ge=0)
+    elapsed_sec: float | None = Field(None, ge=0, le=604800)
     assisted: bool = False
     recall: bool = False
     question_id: str = Field(max_length=100)
@@ -121,6 +131,7 @@ class PracticeAnswer(BaseModel):
 
 
 class Annotate(BaseModel):
+    demonstrated_skill_ids: list[str] | None = Field(None, max_length=20)
     confidence: int
     independence: str
     mistake_note: str | None = None
@@ -146,6 +157,7 @@ class ManualAttempt(BaseModel):
 
 
 class RecallSubmit(BaseModel):
+    elapsed_sec: float | None = Field(None, ge=0, le=604800)
     slug: str
     recall_text: str
     complexity_time: str | None = None
@@ -290,6 +302,8 @@ def _pending(store):
         p = pm.get(a["slug"], {})
         out.append({
             **a, "title": p.get("title", a["slug"]),
+            'available_skills': [{'id': sid, 'name': curriculum.SKILLS[sid]['name']}
+                for sid in curriculum.classify(a['slug'], p.get('leetcode_tags'), p)['skill_ids']],
             "frontend_id": p.get("frontend_id"), "difficulty": p.get("difficulty"),
             "neetcode_category": p.get("neetcode_category"), "url": p.get("url"),
             "par_sec": config.SOLVE_PAR_SEC.get(p.get("difficulty")),
@@ -531,6 +545,8 @@ async def _grade_solution(store, attempt, lc=None):
     """Grade an attempt's code and persist the result. Returns the response dict
     the modal expects: {grading_status, graded, grading_error[, cookie_state]}.
     Never raises."""
+    if not config.LEARNING_FEATURES['assessment']:
+        return {'grading_status': 'skipped', 'graded': None, 'grading_error': None}
     if not attempt.get("code") and attempt.get("submission_id"):
         attempt, problem = await _recover_code(store, attempt, lc)
         if problem:
@@ -545,6 +561,7 @@ async def _grade_solution(store, attempt, lc=None):
             attempt.get("complexity_time"), attempt.get("complexity_space"),
             attempt.get("confidence"), attempt.get("independence"),
             attempt.get("mistake_note"), attempt.get("approach"),
+            execution_status=assessment.observed(attempt),
         )
     except Exception as exc:  # defensive; coach already swallows LLM errors
         graded, err = None, str(exc)
@@ -557,7 +574,24 @@ async def _grade_solution(store, attempt, lc=None):
                 "grading_error": err or "grading returned no result"}
     if graded.get("negatives") and not graded.get("improvements"):
         graded = {**graded, "improvements": graded.get("negatives") or []}
+    latest = store.get_attempt(attempt['id']) or {}
+    if assessment.code_identity(latest.get('code')) != assessment.code_identity(code):
+        return {'grading_status': 'skipped', 'graded': None, 'grading_error': 'Submission changed during grading; grade the saved revision again.'}
+    normalized = assessment.normalize(attempt, store.get_problem(attempt['slug']) or {}, graded)
+    if attempt['slug'] == 'sort-colors':
+        problem = store.get_problem(attempt['slug']) or {}
+        normalized['correctness_objections'] = [await assessment.verify_sort_colors(
+            attempt, claim, problem.get('question_id'), lc) for claim in normalized['correctness_objections']]
+    if assessment.code_identity((store.get_attempt(attempt['id']) or {}).get('code')) != assessment.code_identity(code):
+        return {'grading_status': 'skipped', 'graded': None, 'grading_error': 'Submission changed during verification'}
+    graded = {**graded, 'assessment': normalized}
+    history = list(latest.get("assessment_history") or [])
+    if attempt.get("solution_grade"):
+        history.append({"grade": attempt["solution_grade"], "assessment": attempt.get("assessment"), "replaced_at": int(time.time())})
     store.update_attempt(attempt["id"], {
+        "assessment": normalized,
+        "assessment_history": history,
+        'assessment_revision': latest.get('assessment_revision', 0) + 1,
         "solution_grade": {**graded, "prompt_version": SOLUTION_PROMPT_VERSION},
         "solution_grading_status": "viewed", "solution_grading_error": None,
     })
@@ -613,6 +647,15 @@ def _decorate_recall_items(items, latest):
 
 
 def _with_recall_state(queue, store):
+    have = {r['slug'] for r in queue.get('reviews', [])}
+    for review in store.list_approach_reviews():
+        if review.get('due_date', '9999') <= _today_iso() and review['slug'] not in have:
+            p = store.get_problem(review['slug']) or {}
+            if p:
+                item = scheduler.review_card(review, p, 0)
+                item.update(mode='recall', reason='Approach recall', evidence_dimension='approach')
+                queue.setdefault('reviews', []).append(item)
+                have.add(review['slug'])
     queue["reviews"] = _decorate_recall_items(
         queue.get("reviews", []), _latest_recall_by_slug(store))
     return queue
@@ -742,12 +785,53 @@ def api_practice_next(mode: str = "", topic: str = "", recent: str = "", difficu
     candidates = {e["id"]: e["topic"] for e in metadata.values()
                   if (not mode or e["mode"] == mode) and (not topic or e["topic"] == topic) and (not difficulty or e["difficulty"] == difficulty)}
     try:
-        template = practice_queue.pick(candidates, _practice_store(uid).list_light_practice(),
+        results = _practice_store(uid).scheduling_results()
+        template = practice_queue.pick(candidates, results,
                                        recent.split(",")[-50:] if recent else [], int(time.time()),
                                        random.Random(secrets.randbits(64)), metadata=metadata)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
-    return practice.public_question(practice.question(template, secrets.randbits(32)))
+    if template is None:
+        return {'completed': True, 'reason': 'No due, unseen or useful repair exercises match this filter.'}
+    question = practice.public_question(practice.question(template, secrets.randbits(32)))
+    question['familiar'] = any(r.get('template') == template and not r.get('exposure_only') for r in results)
+    return question
+
+
+@app.post('/api/practice/exposure')
+def api_practice_exposure(body: PracticeExposure, uid: str = Depends(auth.require_user)):
+    try:
+        q = practice.from_id(body.question_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _practice_store(uid).record_practice_exposure(q['id'], {
+        'question_id': q['id'], 'template': q['template'], 'exposed_at': body.exposed_at if body.exposed_at is not None else int(time.time()),
+        'exposure_only': True, 'assisted': body.choices})
+    return {'ok': True}
+
+
+class PracticeTiming(BaseModel):
+    question_id: str = Field(max_length=100)
+    kind: Literal['feedback', 'abandoned']
+    elapsed_sec: float = Field(ge=0, le=604800)
+    uncertain: bool = False
+
+
+@app.post('/api/practice/timing')
+def api_practice_timing(body: PracticeTiming, uid: str = Depends(auth.require_user)):
+    try:
+        practice.from_id(body.question_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    store = get_store(uid)
+    key = 'timing-' + body.kind + '-' + body.question_id
+    old = store.get_learning_state(key) or {}
+    duration = max(body.elapsed_sec, (old.get('timing') or {}).get('elapsed_sec', 0))
+    doc = {'record_kind': body.kind, 'source_question': body.question_id,
+           'timing': {'elapsed_sec': duration, 'source': 'measured',
+                      'uncertain_sec': duration if body.uncertain else None}}
+    store.save_learning_state(key, doc)
+    return {'ok': True}
 
 
 @app.post("/api/practice/guess")
@@ -779,7 +863,18 @@ def api_practice_answer(body: PracticeAnswer, uid: str = Depends(auth.require_us
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     result["assisted"] = body.assisted
-    result["answered_at"] = int(time.time())
+    now = int(time.time())
+    if body.answered_at is not None and body.answered_at > now + 60:
+        raise HTTPException(400, 'Answer timestamp is in the future; check the device clock')
+    result["answered_at"] = body.answered_at if body.answered_at is not None else now
+    if body.exposed_at is not None:
+        if body.exposed_at > result['answered_at']:
+            raise HTTPException(400, 'Exposure must precede the answer')
+        result['exposed_at'] = body.exposed_at
+    result['practice_only'] = not config.LEARNING_FEATURES['quickfire']
+    result['skill_id'] = practice.practice_skills.SKILL_IDS.get(practice.practice_skills.concept(q['template']))
+    result['timing'] = {'elapsed_sec': body.elapsed_sec, 'source': 'measured' if body.elapsed_sec is not None else 'missing',
+                        'uncertain_sec': body.elapsed_sec if body.timing_uncertain else None}
     # A retry after a lost response returns the first saved result, rather than
     # turning a revealed answer into a correct attempt or counting it twice.
     store = _practice_store(uid)
@@ -823,6 +918,9 @@ def api_today(bg: BackgroundTasks, uid: str = Depends(auth.require_user)):
             exclude_slugs=exclude_slugs,
         )
         _store_drill_cache(store, queue["drills"])
+    if config.LEARNING_FEATURES['recovery']:
+        queue['learning_checks'] = learning_sequences.due_checks(store.list_learning_state(), int(time.time()))
+        queue['learning_recovery'] = learning_sequences.recommendation(learning_evidence.project(problems, attempts))
     return _with_recall_state(queue, store)
 
 
@@ -942,6 +1040,7 @@ def _active_payload(prob, s, settings):
         "give_up_available": _assisted(s) and (llm.enabled(settings) or bool(coach.give_up_fallback(prob))),
         "give_up": _walk(s) if s.get("gave_up") else None,
         "end_available": _assisted(s),
+        'recovery_available': config.LEARNING_FEATURES['recovery'] and not s.get('lesson_declined'),
         "plan_status": s.get("plan_status"),
         "surface": s.get("surface") or "leetcode",
         "interview": bool(s.get("interview")),
@@ -1131,6 +1230,9 @@ async def api_session_hint(body: Optional[HintRequest] = None,
         rung += 1
     level = s.get("hint_level", 0) + 1
     log_.append({"text": hint["text"], "src": hint["src"]})
+    events = list(s.get('assistance_events') or [])
+    events.append({'kind': 'conceptual_hint', 'source': hint['src'], 'at': int(time.time())})
+    store.update_session(s['id'], {'assistance_events': events})
     chat.append({"role": "coach", "text": hint["text"],
                  "t": plans.plan_sec(s) + poller.run_clock(s, int(time.time()))})
     store.update_session(s["id"], {"hint_level": level, "hint_log": log_, "ladder_rung": rung, "chat": chat})
@@ -1527,11 +1629,13 @@ def _schedule_solve(store, attempt):
     current = store.get_review(slug)
     if current:
         current = {**current, "slug": slug}
+    attempt = assessment.episode_attempt(attempt, store.attempts_for_slug(slug))
+    store.update_attempt(attempt['id'], {'assistance_events': attempt['assistance_events']})
     graded = attempt.get("solution_grade") or {}
     plan_held = attempt.get("plan_held") if plans.has_plan(attempt) else None
     new_state = scheduler.advance_review(
-        current, attempt["confidence"], attempt["independence"],
-        solution_score=graded.get("score"),
+        current, attempt["confidence"], 'solution' if attempt.get('unsolved') else assessment.independence(attempt),
+        solution_score=None,
         plan_cap=plans.quality_cap(plans.plan_status(attempt), plan_held))
     _save_card(store, slug, new_state, attempt.get("id"))
     return new_state
@@ -1539,6 +1643,7 @@ def _schedule_solve(store, attempt):
 
 def _save_card(store, slug, card, attempt_id):
     card["slug"] = slug
+    card['evidence_dimension'] = 'implementation'
     card[scheduler.SOURCE_ATTEMPT_KEY] = attempt_id
     store.upsert_review(slug, card)
 
@@ -1559,6 +1664,12 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
         "mistake_note": body.mistake_note, "approach": body.approach,
         "complexity_time": body.complexity_time, "complexity_space": body.complexity_space,
     }
+    if body.demonstrated_skill_ids is not None:
+        problem = store.get_problem(attempt['slug']) or {}
+        offered = curriculum.classify(attempt['slug'], problem.get('leetcode_tags'), problem)['skill_ids']
+        if not set(body.demonstrated_skill_ids) <= set(offered):
+            raise HTTPException(400, 'Choose a technique offered for this problem')
+        fields['demonstrated_skill_ids'] = body.demonstrated_skill_ids
     # Only meaningful for a run that started from a plan.
     if plans.has_plan(attempt):
         fields["plan_held"] = body.plan_held
@@ -1614,6 +1725,7 @@ async def api_grade_plan(attempt_id: str, uid: str = Depends(auth.require_user))
     if not plans.has_plan(attempt):
         raise HTTPException(400, "this solve has no plan to grade")
     enrichment, err = await enrich.grade_plan(store, attempt_id)
+    _record_assessment(store, attempt_id, 'plan', (enrichment or {}).get('plan_grade'))
     attempt = store.get_attempt(attempt_id)
     return {"ok": True, "llm": llm.enabled(store.get_settings()), "error": err,
             "plan": _plan_review(store, attempt, enrichment)}
@@ -1704,7 +1816,10 @@ def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
         raise HTTPException(404, "no such attempt")
     prob = store.get_problem(a["slug"]) or {}
     enrichment = store.get_enrichment(attempt_id)
-    return {**a, "title": prob.get("title"), "difficulty": prob.get("difficulty"),
+    skills = curriculum.classify(a['slug'], prob.get('leetcode_tags'), prob)['skill_ids']
+    if a.get('solution_grade') and a.get('assessment_corrections'):
+        a = {**a, 'solution_grade': {**a['solution_grade'], 'corrections': a['assessment_corrections']}}
+    return {**a, 'available_skills': [{'id': sid, 'name': curriculum.SKILLS[sid]['name']} for sid in skills], "title": prob.get("title"), "difficulty": prob.get("difficulty"),
             "previous_solve": _previous_solve(store, a),
             "neetcode_category": prob.get("neetcode_category"), "url": prob.get("url"),
             "par_sec": config.SOLVE_PAR_SEC.get(prob.get("difficulty")),
@@ -2010,6 +2125,7 @@ async def api_sprint_grade(body: SprintGrade, uid: str = Depends(auth.require_us
                 "grading_error": grading_error,
             })
         store.upsert_enrichment(aid, enrichment)
+        _record_assessment(store, aid, 'sprint', {'analysis': enrichment.get('prediction_note')})
         results.append({
             "attempt_id": aid,
             "round_id": body.round_id,
@@ -2047,6 +2163,30 @@ def _add_sprint_attempt(store, body: SprintSubmit, why: str):
     })
 
 
+def _record_assessment(store, attempt_id, kind, opinion=None):
+    attempt = store.get_attempt(attempt_id) or {}
+    problem = store.get_problem(attempt.get('slug')) or {}
+    assessments = dict(attempt.get('assessments') or {})
+    current = assessments.get(kind)
+    history = list(attempt.get('assessment_history') or [])
+    if current:
+        history.append({'kind': kind, 'assessment': current, 'replaced_at': int(time.time())})
+    assessments[kind] = assessment.normalize(attempt, problem, opinion)
+    store.update_attempt(attempt_id, {'assessments': assessments, 'assessment_history': history})
+
+
+def _save_approach_card(store, slug, card, attempt_id):
+    """A late model response may revise its observation, never a newer card."""
+    current = store.get_approach_review(slug)
+    source = store.get_attempt(current.get('source_attempt')) if current else None
+    attempt = store.get_attempt(attempt_id) or {}
+    if source and (source.get('solved_at') or 0) > (attempt.get('solved_at') or 0):
+        return current
+    card.update(slug=slug, source_attempt=attempt_id)
+    store.upsert_approach_review(slug, card)
+    return card
+
+
 # ---- recall reviews -------------------------------------------------------------
 @app.post("/api/review/recall")
 async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
@@ -2059,7 +2199,9 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
     if is_manual and body.confidence is None:
         raise HTTPException(400, "confidence is required when recall grading is manual")
     conf = body.confidence if body.confidence is not None else None
-    indep = "solo" if body.confidence is not None else None
+    hint_events = [e for e in (store.get_flags().get('recall_help') or [])
+                   if e.get('slug') == body.slug and int(time.time()) - e.get('at', 0) < 86400]
+    indep = "hints" if body.hints or hint_events else "solo"
     status = "viewed" if is_manual else "pending"
     now = int(time.time())
     aid = store.add_attempt({
@@ -2071,6 +2213,9 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
         "complexity_time": body.complexity_time, "complexity_space": body.complexity_space,
         "source": "recall", "kind": "recall", "grading_status": status,
         "recall_grade": None, "grading_error": None, "recall_hints": body.hints,
+        "assistance_events": hint_events, "assessment_version": assessment.VERSION,
+        "self_confidence": conf,
+        "timing": {'elapsed_sec': body.elapsed_sec, 'source': 'measured' if body.elapsed_sec is not None else 'missing'},
     })
     if not is_manual:
         store.update_attempt(aid, {"grading_started_at": now})
@@ -2091,28 +2236,30 @@ async def api_recall(body: RecallSubmit, uid: str = Depends(auth.require_user)):
                     "review": None, "graded": None,
                     "grading_error": err or "grading returned no result"}
 
-        current = store.get_review(body.slug)
+        current = store.get_approach_review(body.slug)
         if current:
             current = {**current, "slug": body.slug}
         grade = (graded or {}).get("grade", 0)
-        new_state = scheduler.advance_review(current, None, None, grade=grade or 0)
-        _save_card(store, body.slug, new_state, aid)
+        new_state = scheduler.advance_review(current, None, indep, grade=grade or 0)
+        new_state = _save_approach_card(store, body.slug, new_state, aid)
         store.update_attempt(aid, {
             "grading_status": "viewed",
             "recall_grade": graded,
             "grading_error": None,
             "grading_completed_at": int(time.time()),
-            "confidence": grade,
-            "independence": "solo",
+            "confidence": None,
+            "independence": indep,
         })
+        _record_assessment(store, aid, 'recall', graded)
         return {"ok": True, "attempt_id": aid, "grading_status": "viewed",
                 "review": new_state, "graded": graded}
 
-    current = store.get_review(body.slug)
+    current = store.get_approach_review(body.slug)
     if current:
         current = {**current, "slug": body.slug}
-    new_state = scheduler.advance_review(current, body.confidence, "solo", recall=True)
-    _save_card(store, body.slug, new_state, aid)
+    new_state = scheduler.advance_review(current, body.confidence, indep, recall=True)
+    new_state = _save_approach_card(store, body.slug, new_state, aid)
+    _record_assessment(store, aid, 'recall')
     return {"ok": True, "attempt_id": aid, "grading_status": "viewed",
             "review": new_state, "graded": None}
 
@@ -2125,6 +2272,10 @@ async def api_recall_hint(body: RecallHintRequest, uid: str = Depends(auth.requi
     if not store.get_problem(body.slug):
         raise HTTPException(404, "unknown problem")
     hint = await coach.recall_hint(store, body.slug, body.recall_text.strip(), body.previous)
+    if hint:
+        events = [e for e in store.get_flags().get('recall_help', []) if int(time.time()) - e.get('at', 0) < 86400]
+        events.append({'slug': body.slug, 'kind': 'conceptual_hint', 'source': 'recall_hint', 'at': int(time.time())})
+        store.set_flag('recall_help', events)
     return {"hint": hint}
 
 
@@ -2143,15 +2294,17 @@ def api_recall_self_grade(attempt_id: str, body: RecallSelfGrade,
     if attempt.get("grading_status") != "failed":
         raise HTTPException(400, "only a recall whose grading failed can be self-graded")
     slug = attempt["slug"]
+    indep = assessment.independence(attempt)
     store.update_attempt(attempt_id, {
-        "confidence": body.confidence, "independence": "solo",
+        "confidence": body.confidence, "self_confidence": body.confidence, "independence": indep,
         "grading_status": "viewed", "grading_error": None, "self_graded": True,
     })
-    current = store.get_review(slug)
+    current = store.get_approach_review(slug)
     if current:
         current = {**current, "slug": slug}
-    new_state = scheduler.advance_review(current, body.confidence, "solo", recall=True)
-    _save_card(store, slug, new_state, attempt_id)
+    new_state = scheduler.advance_review(current, body.confidence, indep, recall=True)
+    new_state = _save_approach_card(store, slug, new_state, attempt_id)
+    _record_assessment(store, attempt_id, 'recall')
     return {"ok": True, "attempt_id": attempt_id, "grading_status": "viewed",
             "review": new_state, "graded": None}
 
@@ -2182,6 +2335,132 @@ async def api_recall_clarify(attempt_id: str, body: RecallClarify,
     if not result or not result.get("reply"):
         raise HTTPException(400, "Recall clarification is unavailable.")
     return {"reply": result["reply"]}
+
+
+# ---- learning evidence and optional focused recovery -----------------------------
+class LearningStep(BaseModel):
+    sequence: str
+    answer: str = Field('', max_length=2000)
+    explanation: str = Field('', max_length=2000)
+    action: Literal['open', 'complete', 'decline'] = 'open'
+
+
+@app.get('/api/learning/evidence')
+def api_learning_evidence(uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    if not config.LEARNING_FEATURES['evidence']:
+        return {'version': learning_evidence.VERSION, 'skills': {}, 'evaluation': None, 'recovery': None}
+    attempts = store.list_attempts()
+    answers = list(store.iter_light_practice())
+    records = store.list_learning_state()
+    events = learning_evidence.project(store.list_problems(), attempts, answers, learning_records=records)
+    return {'version': learning_evidence.VERSION, 'skills': learning_evidence.reduce(events),
+            'evaluation': learning_evidence.evaluate(attempts + answers + [r for r in records if r.get('probe_answered_at') or r.get('record_kind') in ('feedback', 'abandoned')], events),
+            'recovery': learning_sequences.recommendation(events) if config.LEARNING_FEATURES['recovery'] else None}
+
+
+@app.get('/api/learning/recovery')
+def api_learning_recovery(uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    session = store.latest_active_session()
+    if not config.LEARNING_FEATURES['recovery'] or not session or session.get('lesson_declined'):
+        return {'sequence': None}
+    skills = curriculum.PROBLEM_SKILLS.get(session['slug'], [])
+    for key, seq in learning_sequences.SEQUENCES.items():
+        if seq['skill'] in skills:
+            return {'sequence': key, 'title': seq['title']}
+    return {'sequence': None}
+
+
+class ApplicationAnswer(BaseModel):
+    id: str = Field(max_length=200)
+    answer: str = Field('', max_length=2000)
+    seen_before: bool = False
+    reveal: bool = False
+    elapsed_sec: float | None = Field(None, ge=0, le=604800)
+
+
+@app.get('/api/learning/application/{key}')
+def api_learning_application(key: str, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    record = store.get_learning_state(key)
+    now = int(time.time())
+    if not config.LEARNING_FEATURES['recovery'] or not record or record.get('probe_due_at', now+1) > now:
+        raise HTTPException(404, 'No application check is due')
+    if not record.get('probe_opened_at'):
+        store.save_learning_state(key, {**record, 'probe_opened_at': now})
+    probe = learning_sequences.application(record['sequence'], record.get('probe_index', 1))
+    return {'id': key, 'prompt': probe['prompt'], 'assessment_objective': 'Apply the principle to a different task',
+            'result': record.get('probe_correct') if record.get('probe_answered_at') else None}
+
+
+@app.post('/api/learning/application')
+def api_learning_application_answer(body: ApplicationAnswer, uid: str = Depends(auth.require_user)):
+    store = get_store(uid)
+    record = store.get_learning_state(body.id)
+    now = int(time.time())
+    if not config.LEARNING_FEATURES['recovery'] or not record or not record.get('probe_opened_at'):
+        raise HTTPException(404, 'Application unavailable')
+    if record.get('probe_answered_at'):
+        return record
+    origin = store.get_learning_state(record.get('learning_origin', body.id)) or record
+    last_exposure = origin.get('last_exposure_at', origin['opened_at'])
+    skill = learning_sequences.SEQUENCES[record['sequence']]['skill']
+    for answer in store.iter_light_practice():
+        if answer.get('skill_id') == skill and (answer.get('answered_at') or 0) <= now:
+            last_exposure = max(last_exposure, answer.get('answered_at') or 0)
+    state = {**record, 'probe_answer': body.answer, 'probe_answered_at': now,
+        'probe_correct': not body.reveal and learning_sequences.check_application(record['sequence'], body.answer, record.get('probe_index', 1)),
+        'probe_assisted': body.reveal, 'probe_novel': not body.seen_before and now - record['probe_opened_at'] <= 3600,
+        'probe_delay_sec': now - last_exposure,
+        'timing': {'elapsed_sec': body.elapsed_sec, 'source': 'measured' if body.elapsed_sec is not None else 'missing'}}
+    store.save_learning_state(body.id, state)
+    if record.get('probe_index', 1) == 1:
+        key = body.id + '-21'
+        if not store.get_learning_state(key):
+            store.save_learning_state(key, {'sequence': record['sequence'], 'version': learning_sequences.VERSION,
+                'opened_at': record['opened_at'], 'probe_index': 2, 'learning_origin': body.id,
+                'probe_due_at': record['opened_at'] + 21 * 86400})
+    return state
+
+
+@app.get('/api/learning/sequence/{sequence}')
+def api_learning_sequence(sequence: str, uid: str = Depends(auth.require_user)):
+    if not config.LEARNING_FEATURES['recovery'] or sequence not in learning_sequences.SEQUENCES:
+        raise HTTPException(404, 'Sequence unavailable')
+    return {'version': learning_sequences.VERSION, **learning_sequences.public(sequence)}
+
+
+@app.post('/api/learning/sequence')
+def api_learning_step(body: LearningStep, uid: str = Depends(auth.require_user)):
+    if not config.LEARNING_FEATURES['recovery'] or body.sequence not in learning_sequences.SEQUENCES:
+        raise HTTPException(404, 'Sequence unavailable')
+    store = get_store(uid)
+    session = store.latest_active_session()
+    episode = session['id'] if session else 'review'
+    key = 'recovery-' + body.sequence + '-' + episode
+    old = store.get_learning_state(key) or {}
+    now = int(time.time())
+    state = {**old, 'sequence': body.sequence, 'version': learning_sequences.VERSION,
+             'episode': episode, 'last_action': body.action, 'updated_at': now}
+    if body.action == 'open':
+        state['last_exposure_at'] = now
+        state.setdefault('opened_at', now)
+        if session and not old.get('opened_at'):
+            events = list(session.get('assistance_events') or [])
+            events.append({'kind': 'solution', 'source': key, 'at': now})
+            store.update_session(session['id'], {'assistance_events': events})
+    elif body.action == 'complete':
+        state['last_exposure_at'] = now
+        state.update(answer=body.answer, explanation=body.explanation,
+                     correct=learning_sequences.check(body.sequence, body.answer),
+                     evidence_kind='supported_practice')
+        if state['correct']:
+            state.setdefault('probe_due_at', now + 7 * 86400)
+    if body.action == 'decline' and session:
+        store.update_session(session['id'], {'lesson_declined': True})
+    store.save_learning_state(key, state)
+    return state
 
 
 # ---- problems + discover --------------------------------------------------------

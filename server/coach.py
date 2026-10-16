@@ -215,6 +215,8 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
     return await llm.extract_or_error("grade_recall", {
         "title": p.get("title", slug), "category": p.get("neetcode_category"),
         "canonical": canon_ideas, "past_code": past_code,
+        "statement": statement_text(p.get("content_html"), limit=12000),
+        "objective": "Explain the approach and recurrence; storage optimisation is optional unless explicitly required.",
         "canon_time": (canonical or {}).get("time"),
         "canon_space": (canonical or {}).get("space"),
         "recall_text": recall_text, "recall_time": recall_time, "recall_space": recall_space,
@@ -249,7 +251,7 @@ async def recall_hint(store, slug, recall_text, previous):
 
 async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_space=None,
                          self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None):
+                         self_approach=None, execution_status="unknown"):
     """Grade an accepted solution's code against the canonical optimal approach.
 
     Returns (result, error): result is a dict {score, optimal, analysis,
@@ -275,6 +277,8 @@ async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_sp
         "self_independence": self_independence,
         "self_note": self_note,
         "self_approach": self_approach,
+        "execution_status": execution_status,
+        "statement": statement_text(p.get("content_html"), limit=12000),
     }, settings=settings)
 
 

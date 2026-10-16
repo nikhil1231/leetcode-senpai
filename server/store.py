@@ -152,25 +152,89 @@ class FirestoreStore:
 
     # Kept separate: a small recognition exercise is not an accepted solve or
     # a spaced-repetition review. create() makes submission retries idempotent.
+    def _practice_write(self, question_id, result=None, guessed=False, exposure=False):
+        from google.cloud import firestore
+        from . import practice_state
+        ref = self._user_ref().collection('light_practice').document(question_id)
+        template = (result or {}).get('template')
+        if not template:
+            existing = ref.get().to_dict()
+            if not existing:
+                raise ValueError('Only a saved correct answer can be marked as guessed')
+            template = existing['template']
+        state_ref = self._user_ref().collection('practice_state').document(template)
+        @firestore.transactional
+        def write(transaction):
+            old = ref.get(transaction=transaction).to_dict()
+            state = state_ref.get(transaction=transaction).to_dict() or {}
+            saved = old or result
+            events = dict(state.get('events') or {})
+            previous = events.get(question_id) or {}
+            if exposure:
+                saved = {**previous, **(old or result), 'exposed_at': previous.get('exposed_at') or result['exposed_at']}
+                if old:
+                    saved['assisted'] = bool(old.get('assisted') or result.get('assisted'))
+            elif not old and previous:
+                saved = {**result, 'exposed_at': previous.get('exposed_at'),
+                         'assisted': bool(previous.get('assisted') or result.get('assisted'))}
+            if guessed:
+                if not old or not old.get('correct') or old.get('revealed'):
+                    raise ValueError('Only a saved correct answer can be marked as guessed')
+                saved = {**old, 'guessed': True, 'revision': old.get('revision', 0) + (not old.get('guessed'))}
+            events[question_id] = saved
+            if not exposure or old:
+                transaction.set(ref, saved)
+            transaction.set(state_ref, practice_state.rebuild(events.values()))
+            return saved
+        return write(self.db.transaction())
+
+    def record_practice_exposure(self, question_id, result):
+        return self._practice_write(question_id, result, exposure=True)
+
     def save_light_practice(self, question_id, result):
-        from google.api_core.exceptions import AlreadyExists
-        ref = self._user_ref().collection("light_practice").document(question_id)
-        try:
-            ref.create(result)
-        except AlreadyExists:
-            return ref.get().to_dict()
-        return result
+        return self._practice_write(question_id, result)
 
     def get_light_practice(self, question_id):
-        return self._user_ref().collection("light_practice").document(question_id).get().to_dict()
+        return self._user_ref().collection('light_practice').document(question_id).get().to_dict()
 
     def mark_light_practice_guess(self, question_id):
-        ref = self._user_ref().collection("light_practice").document(question_id)
-        result = ref.get().to_dict()
-        if not result or not result.get("correct") or result.get("revealed"):
-            raise ValueError("Only a saved correct answer can be marked as guessed")
-        ref.update({"guessed": True})
-        return {**result, "guessed": True}
+        return self._practice_write(question_id, guessed=True)
+
+    def list_practice_state(self):
+        return {d.id: d.to_dict() for d in self._user_ref().collection('practice_state').stream()}
+
+    def iter_light_practice(self, page_size=500):
+        """All source answers; pagination is independent of the UI window."""
+        collection = self._user_ref().collection('light_practice')
+        cursor = None
+        while True:
+            query = collection.order_by('__name__').limit(page_size)
+            if cursor is not None:
+                query = query.start_after(cursor)
+            page = list(query.stream())
+            for doc in page:
+                yield doc.to_dict()
+            if len(page) < page_size:
+                break
+            cursor = page[-1]
+
+    def list_learning_state(self):
+        return [{**d.to_dict(), 'id': d.id} for d in self._user_ref().collection('learning_state').stream()]
+
+    def get_learning_state(self, key):
+        return self._user_ref().collection('learning_state').document(key).get().to_dict()
+
+    def save_learning_state(self, key, doc):
+        self._user_ref().collection('learning_state').document(key).set(doc)
+
+    def list_approach_reviews(self):
+        return [d.to_dict() for d in self._user_ref().collection('approach_reviews').stream()]
+
+    def get_approach_review(self, slug):
+        return self._user_ref().collection('approach_reviews').document(slug).get().to_dict()
+
+    def upsert_approach_review(self, slug, doc):
+        self._user_ref().collection('approach_reviews').document(slug).set({**doc, 'slug': slug})
 
     def list_light_practice(self):
         from google.cloud.firestore_v1 import Query

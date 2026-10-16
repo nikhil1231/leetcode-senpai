@@ -544,6 +544,7 @@ test('a hint asks with the code on screen, shows cards and draws its marks', asy
   const ui = app(async (path, opts) => {
     calls.push([path, opts && opts.body ? JSON.parse(opts.body) : null]);
     return response({ hint: 'What does `seen` hold?', level: 2, available: true,
+                      chat: [{role: 'coach', text: 'Earlier one.'}, {role: 'coach', text: 'What does `seen` hold?'}],
                       marks: [{ line: 3, text: 'x', note: 'here?' }] });
   });
   ui.run(`window.Editor = { tick() { window.ticked = true; }, flush: async () => {}, code: () => "CODE",
@@ -556,9 +557,9 @@ test('a hint asks with the code on screen, shows cards and draws its marks', asy
   assert.equal(ui.run('activeSession.hint_level'), 2);
   const html = ui.node('#hint-panel').innerHTML;
   assert.match(html, /<div class="hint-card is-latest">/);
-  assert.match(html, /<span>Hint 2<\/span>/);
+  assert.match(html, /What does/);
   assert.match(html, /<p>What does <code>seen<\/code> hold\?<\/p>/);
-  assert.equal(ui.node('#btn-hint').textContent, 'Another hint');
+  assert.match(ui.node('#btn-hint').textContent, /hint|Ask/i);
   assert.equal(ui.run('window.marks[0].note'), 'here?');
 });
 

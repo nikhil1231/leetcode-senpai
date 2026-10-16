@@ -1,0 +1,173 @@
+{
+  "problems": 205,
+  "attempts": 196,
+  "reviews": 65,
+  "quickfire_recent": 0,
+  "classification_changes": [
+    {
+      "slug": "01-matrix",
+      "before": "Arrays & Hashing",
+      "after": "Graphs"
+    },
+    {
+      "slug": "3sum-closest",
+      "before": "Arrays & Hashing",
+      "after": "Two Pointers"
+    },
+    {
+      "slug": "4sum",
+      "before": "Arrays & Hashing",
+      "after": "Two Pointers"
+    },
+    {
+      "slug": "accounts-merge",
+      "before": "Arrays & Hashing",
+      "after": "Graphs"
+    },
+    {
+      "slug": "add-binary",
+      "before": "Math & Geometry",
+      "after": "Bit Manipulation"
+    },
+    {
+      "slug": "divide-two-integers",
+      "before": "Math & Geometry",
+      "after": "Bit Manipulation"
+    },
+    {
+      "slug": "find-all-anagrams-in-a-string",
+      "before": "Arrays & Hashing",
+      "after": "Sliding Window"
+    },
+    {
+      "slug": "find-first-and-last-position-of-element-in-sorted-array",
+      "before": "Arrays & Hashing",
+      "after": "Binary Search"
+    },
+    {
+      "slug": "flood-fill",
+      "before": "Arrays & Hashing",
+      "after": "Graphs"
+    },
+    {
+      "slug": "gray-code",
+      "before": "Math & Geometry",
+      "after": "Backtracking"
+    },
+    {
+      "slug": "integer-to-roman",
+      "before": "Arrays & Hashing",
+      "after": "Math & Geometry"
+    },
+    {
+      "slug": "longest-common-prefix",
+      "before": "Arrays & Hashing",
+      "after": "Tries"
+    },
+    {
+      "slug": "longest-valid-parentheses",
+      "before": "Arrays & Hashing",
+      "after": "1-D DP"
+    },
+    {
+      "slug": "maximal-square",
+      "before": "Arrays & Hashing",
+      "after": "2-D DP"
+    },
+    {
+      "slug": "minimum-height-trees",
+      "before": "Trees",
+      "after": "Graphs"
+    },
+    {
+      "slug": "minimum-path-sum",
+      "before": "Arrays & Hashing",
+      "after": "2-D DP"
+    },
+    {
+      "slug": "next-permutation",
+      "before": "Arrays & Hashing",
+      "after": "Two Pointers"
+    },
+    {
+      "slug": "permutations-ii",
+      "before": "Arrays & Hashing",
+      "after": "Backtracking"
+    },
+    {
+      "slug": "remove-duplicates-from-sorted-array",
+      "before": "Arrays & Hashing",
+      "after": "Two Pointers"
+    },
+    {
+      "slug": "remove-duplicates-from-sorted-array-ii",
+      "before": "Arrays & Hashing",
+      "after": "Two Pointers"
+    },
+    {
+      "slug": "remove-element",
+      "before": "Arrays & Hashing",
+      "after": "Two Pointers"
+    },
+    {
+      "slug": "restore-ip-addresses",
+      "before": "Arrays & Hashing",
+      "after": "Backtracking"
+    },
+    {
+      "slug": "roman-to-integer",
+      "before": "Arrays & Hashing",
+      "after": "Math & Geometry"
+    },
+    {
+      "slug": "search-in-rotated-sorted-array-ii",
+      "before": "Arrays & Hashing",
+      "after": "Binary Search"
+    },
+    {
+      "slug": "search-insert-position",
+      "before": "Arrays & Hashing",
+      "after": "Binary Search"
+    },
+    {
+      "slug": "shortest-path-to-get-food",
+      "before": "Arrays & Hashing",
+      "after": "Graphs"
+    },
+    {
+      "slug": "simplify-path",
+      "before": "Arrays & Hashing",
+      "after": "Stack"
+    },
+    {
+      "slug": "sort-colors",
+      "before": "Arrays & Hashing",
+      "after": "Two Pointers"
+    },
+    {
+      "slug": "substring-with-concatenation-of-all-words",
+      "before": "Arrays & Hashing",
+      "after": "Sliding Window"
+    },
+    {
+      "slug": "sudoku-solver",
+      "before": "Arrays & Hashing",
+      "after": "Backtracking"
+    },
+    {
+      "slug": "unique-binary-search-trees",
+      "before": "Math & Geometry",
+      "after": "1-D DP"
+    },
+    {
+      "slug": "unique-paths-ii",
+      "before": "Arrays & Hashing",
+      "after": "2-D DP"
+    },
+    {
+      "slug": "wildcard-matching",
+      "before": "Arrays & Hashing",
+      "after": "1-D DP"
+    }
+  ]
+}

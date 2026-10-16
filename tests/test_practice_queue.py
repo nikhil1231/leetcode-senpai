@@ -21,8 +21,8 @@ def test_empty_candidates_raise():
         pick({}, [], [], NOW, random.Random(0))
 
 
-def test_a_single_candidate_repeats_even_if_just_served():
-    assert pick(candidates("a"), [], ["a"], NOW, random.Random(0)) == "a"
+def test_a_single_candidate_finishes_once_served():
+    assert pick(candidates("a"), [], ["a"], NOW, random.Random(0)) is None
 
 
 def test_unseen_exercises_are_served_and_just_served_ones_are_held_back():
@@ -60,14 +60,14 @@ def test_correct_answers_return_on_a_widening_interval():
     assert pick(cands, once, [], NOW, random.Random(0)) == "a"  # due after a day
     twice = [r("a", 5 * DAY), r("a", 1 * DAY + 1), r("b", 1)]
     # Two in a row: not due for three days, so the least recently seen comes back.
-    assert pick(cands, twice, [], NOW, random.Random(0)) == "a"
+    assert pick(cands, twice, [], NOW, random.Random(0)) is None
     assert pick({"a": "T", "b": "T", "c": "T"}, twice, [], NOW, random.Random(0)) == "c"
 
 
-def test_everything_recently_learned_serves_the_least_recent():
+def test_everything_recently_learned_finishes():
     cands = candidates("a", "b", "c")
     results = [r("a", 30), r("b", 90), r("c", 60)]
-    assert pick(cands, results, [], NOW, random.Random(0)) == "b"
+    assert pick(cands, results, [], NOW, random.Random(0)) is None
 
 
 def test_new_questions_lean_toward_topics_with_more_misses():

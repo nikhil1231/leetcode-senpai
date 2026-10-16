@@ -88,7 +88,19 @@ class RecallResult(BaseModel):
     negatives: list[str] = Field(default_factory=list, description="gaps or the better/target approach to learn; empty ONLY for a flawless optimal recall")
 
 
+class CorrectnessObjection(BaseModel):
+    input: str
+    expected_output: str
+    claimed_actual_output: str
+    explanation: str
+
+
 class SolutionGrade(BaseModel):
+    correctness_objections: list[CorrectnessObjection] = Field(default_factory=list)
+    constraint_analysis: str = ""
+    clarity: str = ""
+    optimisation: str = ""
+
     score: int = Field(0, ge=0, le=5, description="1 barely works … 5 optimal & clean")
     optimal: bool = False
     analysis: str = ""  # 1-2 sentence summary of the submitted solution's quality
@@ -271,7 +283,12 @@ TASKS: dict[str, Task] = {
     ),
     "grade_solution": Task(
         SolutionGrade,
-        "You grade an accepted coding-interview solution out of 5 on optimality and "
+        "Use the supplied execution status; ended-unsolved is never accepted. "
+        "Treat noncanonical valid methods fairly. Missing constraints are unknown. "
+        "Separate execution, invariant, constraints, complexity, clarity and optional optimisation. "
+        "Correctness objections require structured input, expected_output, claimed_actual_output and explanation; "
+        "they remain unverified until run. Never override an observed judge acceptance. "
+        "You grade a coding-interview solution out of 5 on optimality and "
         "clarity, comparing against the canonical optimal approach. Score 5 only if "
         "the complexity is optimal AND the code is clean/idiomatic; 3-4 for a correct "
         "but suboptimal or messy solution; 1-2 for brute force or hard-to-read code. "
@@ -290,7 +307,9 @@ TASKS: dict[str, Task] = {
             f"Solver note: {p.get('self_note') or '(none)'}\n"
             f"Solver stated approach: {p.get('self_approach') or '(none)'}\n"
             f"Solver claimed time={p.get('claim_time') or '?'}, space={p.get('claim_space') or '?'}.\n"
-            f"--- their accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
+            f"Execution status: {p.get('execution_status', 'unknown')}\n"
+            f"Statement and constraints: {p.get('statement') or '(unknown; do not invent)'}\n"
+            f"--- submitted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
         ),
     ),
     "review_process": Task(
@@ -324,6 +343,8 @@ TASKS: dict[str, Task] = {
     ),
     "grade_recall": Task(
         RecallResult,
+        "Assess only the stated objective. A correct recurrence earns full credit when storage optimisation "
+        "is optional. Do not require code-level detail for an explanatory answer. "
         "You grade a from-memory recall of the METHOD for a problem the solver has "
         "seen before. This is a NO-CODE exercise — grade the approach's gist, not "
         "an implementation; IGNORE pseudocode syntax, variable names, and off-by-one "
@@ -335,8 +356,8 @@ TASKS: dict[str, Task] = {
         "a non-canonical method with optimal time and space can earn 3/3. grade: 0 "
         "only for a blank answer or a method that would not produce correct results; "
         "1 vague gist; 2 a valid method that solves it but is suboptimal in time or "
-        "space, OR an optimal-family approach missing its crucial trick; 3 a correct "
-        "method with optimal time and space complexity WITH its crucial trick. Set "
+        "space when optimality is explicitly the objective, OR an approach missing its crucial trick; 3 a correct "
+        "method meeting the stated retrieval objective, including a correct recurrence without rolling storage. Set "
         "optimal=true when their recalled method matches the canonical optimal time "
         "and space, even if it is a different approach. Write a 1-2 sentence analysis. In "
         "positives, credit what they got right as CONCEPTS (the working idea, a "
@@ -358,6 +379,8 @@ TASKS: dict[str, Task] = {
             f"space={p.get('canon_space') or '?'}.\n"
             f"Their own past solution (reference only, to identify the intended "
             f"method — do NOT grade its syntax):\n{_trunc(p.get('past_code'), 1200)}\n"
+            f"Objective: {p.get('objective') or 'Explain the method; optional storage optimisation is not required.'}\n"
+            f"Statement and constraints: {p.get('statement') or '(unknown)'}\n"
             f"--- their recall now ---\n{p.get('recall_text')}\n"
             f"Stated complexity: time={p.get('recall_time') or '?'}, space={p.get('recall_space') or '?'}\n"
             f"Hints they asked for first: {json.dumps(p.get('hints') or [])}"

@@ -131,6 +131,7 @@
             <div id="plan-check-panel" class="plan-critique hidden"></div>
             <div id="nudge" class="nudge hidden"></div>
             <div id="hint-panel" class="hint-panel hidden"></div>
+            <div id="learning-panel" class="panel-box hidden"></div>
             <div id="give-up-panel" class="give-up-panel hidden"></div>
             <p id="coach-empty" class="coach-empty"></p>
           </div>
@@ -140,6 +141,7 @@
           </form>
           <div class="coach-actions">
             <div class="assist-group" role="group" aria-label="Help">
+              <button id="btn-learning" class="button hidden" type="button">I’m stuck — focused lesson</button>
               <button id="btn-hint" class="button hint-btn" type="button" title="An interviewer's nudge about the code you've written">Ask for a hint</button>
               <button id="btn-give-up" class="button give-up-btn hidden" type="button" title="Get walked to a solution a step at a time, writing each step yourself. The solve counts as needing the solution.">Give up</button>
             </div>
@@ -395,6 +397,13 @@
         <button id="btn-close-sprint" class="button is-ghost icon-button" type="button" aria-label="Close" title="Close">&times;</button>
       </div>
       <div id="sprint-body"></div>
+    </div>
+  </div>
+
+  <div id="learning-modal" class="overlay hidden">
+    <div class="overlay-card wide" role="dialog" aria-modal="true" aria-labelledby="learning-title">
+      <h2 id="learning-title">Focused practice</h2><div id="learning-body"></div>
+      <button id="learning-close" class="button" type="button">Return</button>
     </div>
   </div>
 

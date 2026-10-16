@@ -9,7 +9,7 @@ so SM-2 and FSRS share one interface; see fsrs_engine.py for the FSRS side.
 """
 import datetime as dt
 
-from . import config, plans
+from . import config, plans, curriculum
 from .neetcode150 import CATEGORY_FAMILIES, CATEGORY_ORDER, FAMILY_ORDER
 
 CONF_TO_Q = {1: 3, 2: 4, 3: 5}  # low / medium / high on SM-2's 0..5 scale
@@ -115,7 +115,9 @@ def solution_quality(confidence, independence, solution_score):
     q = quality(confidence, independence)
     if solution_score is None:
         return q
-    blended = (q + SOLUTION_TO_Q.get(solution_score, q) + 1) // 2
+    # Editorial scores mix correctness, clarity and optional optimisation.
+    # Only observed completion and help determine retention.
+    blended = q
     # Correct code cannot demonstrate independent recall when help was needed.
     return min(q, blended) if independence in ("hints", "solution") else blended
 
@@ -162,6 +164,10 @@ def advance_review(current, confidence, independence, today=None, grade=None,
         q = solution_quality(confidence, independence, solution_score)
     else:
         q = quality(confidence, independence)
+    if independence == "solution":
+        q = 1
+    elif independence == "hints":
+        q = min(q, 3)
     if grade is None and plan_cap is not None:
         q = min(q, plan_cap)
     today_d = _today(today)
@@ -331,7 +337,18 @@ def topic_stats(problems, attempts, enrichments=None):
         avg_rt = _mean(c["rt"], None)
         conf_norm = (avg_conf - 1) / 2
         mastery = 0.5 * conf_norm + 0.5 * independence if solved else 0.0
+        successes = [a for a in attempts if cat_of.get(a.get('slug')) == cat and curriculum.independent(a)]
+        independent_slugs = {a['slug'] for a in successes}
+        later = {a['slug'] for a in successes if any(
+            b['slug'] == a['slug'] and (a.get('solved_at') or 0) - (b.get('solved_at') or 0) >= 86400
+            for b in successes)}
         row = {
+            'entry_tasks': [p['slug'] for p in curriculum.entry_tasks(cat, problems)],
+            'entry_import': curriculum.STARTERS.get(cat),
+            'prerequisite_options': curriculum.prerequisite_options(cat, problems),
+            "implementation_count": len(independent_slugs), "retention_count": len(later),
+            "transfer_count": sum(bool(a.get('transfer_probe') and a.get('novelty_confirmed') and not a.get('prior_exposure')) for a in successes),
+            "evidence_label": f"{solved} of {total} problems covered; implemented independently on {len(independent_slugs)}; retained on a later check: {len(later)}",
             "category": cat, "total": total, "solved": solved,
             "coverage": round(coverage, 3),
             "avg_confidence": round(avg_conf, 2) if c["confs"] else None,
@@ -424,9 +441,17 @@ def mistake_density(problems, attempts, enrichments, days=30, today=None):
             continue
         sev = e.get("severity") or _SEVERITY_DEFAULT
         raw[cat] = raw.get(cat, 0.0) + len(tags) * sev
+    from . import learning_evidence
+    events = learning_evidence.project(problems, attempts)
+    summaries = learning_evidence.reduce(events)
+    for cat, skill in curriculum.CATEGORY_SKILLS.items():
+        if skill in summaries:
+            raw[cat] = len(summaries[skill]['recent_needs'])
     if not raw:
         return {}
     peak = max(raw.values())
+    if not peak:
+        return {}
     return {cat: round(v / peak, 3) for cat, v in raw.items()}
 
 
@@ -892,6 +917,8 @@ def review_mode(review):
     """"full" re-solve or quick "recall". A long gap earns a re-solve; so does a
     weak last rating (a failure, hints, a plan that fell apart — quality <= 3):
     a card you couldn't code last time isn't checked with a paragraph."""
+    if review.get('evidence_dimension') == 'implementation':
+        return 'full'
     if review.get("leech") or (review.get("interval_days") or 0) >= RECALL_INTERVAL_CAP:
         return "full"
     q = review.get("quality")
@@ -1009,14 +1036,15 @@ def build_daily_queue(problems, attempts, reviews, settings, today=None, enrichm
             continue
         cat = p["neetcode_category"]
         st = stats.get(cat, {})
-        gate = _difficulty_gate(solved_per_cat.get(cat, 0))
-        if p.get("difficulty", "Unknown") not in gate:
+        if not curriculum.eligible(p, problems, attempts):
             continue
         score = (w_weak * st.get("weakness", 1.0)
                  + w_breadth * (1 - st.get("coverage", 0.0))
                  + w_mistake * mistakes.get(cat, 0.0))
         scored.append((score, p, cat))
-    scored.sort(key=lambda x: x[0], reverse=True)
+    scored.sort(key=lambda x: (-x[0],
+        x[1]['slug'] != curriculum.STARTERS.get(x[2]),
+        _DIFFICULTY_ORDER.get(x[1].get('difficulty'), 3), x[1]['slug']))
 
     new_out = []
     used_cats = set()

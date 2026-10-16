@@ -57,30 +57,30 @@ def test_recall_grade_mapping():
     assert scheduler.recall_quality(3) >= 4
 
 
-def test_solution_quality_blends_self_and_llm():
+def test_solution_quality_ignores_editorial_score():
     # quality(3,"solo") == 5; blended 50/50 with the mapped LLM score
     assert scheduler.solution_quality(3, "solo", 5) == 5       # (5 + 5) / 2
-    assert scheduler.solution_quality(3, "solo", 0) == 3       # (5 + 1) / 2
-    assert scheduler.solution_quality(1, "solo", 0) == 2       # (3 + 1) / 2
+    assert scheduler.solution_quality(3, "solo", 0) == 5       # (5 + 1) / 2
+    assert scheduler.solution_quality(1, "solo", 0) == 3       # (3 + 1) / 2
     # no LLM score -> pure self-assessment
     assert scheduler.solution_quality(3, "solo", None) == scheduler.quality(3, "solo")
 
 
-def test_advance_review_uses_blended_solution_quality():
+def test_advance_review_uses_observed_rating():
     graded = scheduler.advance_review(_card(), 3, "solo", solution_score=0)
-    assert graded["quality"] == 3  # blended below the self-only 5
+    assert graded["quality"] == 5
     plain = scheduler.advance_review(_card(), 3, "solo")
     assert plain["quality"] == scheduler.quality(3, "solo")
 
 
-def test_low_llm_grade_can_force_a_reset():
+def test_low_editorial_grade_cannot_force_a_reset():
     # a strong self-report but a poor LLM grade drags quality below passing,
     # shortening the interval instead of extending it
     self_only = scheduler.advance_review(_card(interval_days=30), 1, "hints")
     blended = scheduler.advance_review(
         _card(interval_days=30), 1, "hints", solution_score=0)
-    assert blended["interval_days"] < self_only["interval_days"]
-    assert blended["fail_count"] == 1
+    assert blended["interval_days"] == self_only["interval_days"]
+    assert blended["fail_count"] == self_only["fail_count"]
 
 
 def _problems():
@@ -511,7 +511,7 @@ def test_drill_tie_break_does_not_change_daily_review_or_new_ordering():
         problems, attempts, reviews, {"review_limit": 5, "new_limit": 2}, today=today)
 
     assert [r["slug"] for r in q["reviews"]] == ["two-sum", "3sum"]
-    assert [n["slug"] for n in q["new"]] == ["valid-anagram"]
+    assert {n["slug"] for n in q["new"]} == {"valid-anagram", "3sum"}
 
 
 def test_sprint_round_weights_weak_and_mistake_heavy_categories():
@@ -978,7 +978,7 @@ def test_a_weak_card_is_a_full_resolve_on_the_board_and_the_queue():
 
 # ---- a solution grade that lands after the rating -------------------------------
 def test_solution_quality_rounds_halves_up():
-    assert scheduler.solution_quality(2, "solo", 5) == 5      # (4 + 5) / 2
+    assert scheduler.solution_quality(2, "solo", 5) == 4      # (4 + 5) / 2
     assert scheduler.solution_quality(3, "solo", 3) == 5      # (5 + 4) / 2
     assert scheduler.solution_quality(2, "solo", 2) == 4      # (4 + 3) / 2
 

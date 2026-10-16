@@ -236,11 +236,18 @@ def grade(q, answer=None, reveal=False, recall=False):
                         return ast.literal_eval(text)
                 correct = type(state(answer)) is type(state(key)) and state(answer) == state(key)
             else:
-                correct = ast.dump(ast.parse(answer.strip())) == ast.dump(ast.parse(key.strip()))
+                accepted = [key]
+                if q['template'] == 'fill-search':
+                    accepted.append('1 + mid')  # integer addition, authored equivalent
+                elif q['template'] == 'fill-bfs':
+                    accepted.append('seen.update([neighbor])')
+                correct = any(ast.dump(ast.parse(answer.strip())) == ast.dump(ast.parse(form)) for form in accepted)
         except (ValueError, SyntaxError, TypeError, AttributeError, RecursionError):
             correct = False
         result = grade(q, q["answer"] if correct else next(o["id"] for o in q["options"] if o["id"] != q["answer"]))
         result.update(answer=answer, recall=True)
+        if not correct:
+            result.update(unverified=True, feedback="I can't verify this form. Compare it with the supported answer.")
         result.pop("mistake", None)
         return result
 
