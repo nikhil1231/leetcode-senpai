@@ -791,6 +791,16 @@
     setPaused(active.is_paused);
   }
 
+  // Undo/redo keys with redo on Mod-Shift-z — Ctrl+Shift+Z, ⌘+Shift+Z on macOS —
+  // and nothing else. CodeMirror's own historyKeymap puts redo on Ctrl+Y on
+  // Windows/Linux and its Ctrl+Shift+Z binding is Linux-only, so on Windows the
+  // chord did nothing. Rebuilt from its entries, reusing its redo command.
+  function historyKeys(CM) {
+    const redo = CM.historyKeymap.find((b) => b.key === "Mod-y")?.run;
+    return [...CM.historyKeymap.filter((b) => b.key !== "Mod-y" && !b.linux),
+            { key: "Mod-Shift-z", run: redo, preventDefault: true }];
+  }
+
   function build(r, state, CM, active) {
     const pane = $("#editor-pane");
     if (!state.available) {
@@ -850,7 +860,7 @@
             { key: "Mod-'", run: () => { judge("run"); return true; } },
             { key: "Mod-Enter", run: () => { judge("submit"); return true; } },
             ...(state.interview ? [] : CM.closeBracketsKeymap),
-            ...CM.defaultKeymap, ...CM.historyKeymap, CM.indentWithTab,
+            ...CM.defaultKeymap, ...historyKeys(CM), CM.indentWithTab,
           ]),
           r.readOnly.of(CM.EditorState.readOnly.of(false)),
           ...(r.marks ? [r.marks.field, r.errorMark.field] : []),
