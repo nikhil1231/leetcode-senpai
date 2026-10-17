@@ -1501,6 +1501,10 @@ $("#btn-pause-session").addEventListener("click", togglePause);
 $("#btn-resume-session").addEventListener("click", togglePause);
 
 // ---- annotation modal ----------------------------------------------------------
+function skillPickLabel(n) {
+  return n === 0 ? 'none picked' : n === 1 ? '1 picked' : `${n} picked`;
+}
+
 function openAnnotate(attempt) {
   currentAttempt = attempt;
   $("#annotate-title").textContent = attempt.title;
@@ -1515,9 +1519,21 @@ function openAnnotate(attempt) {
   $("#annotate-problem-meta").textContent = meta.join(" · ");
   renderAnnotateFacts(attempt);
   const skillOpts = attempt.available_skills || [];
+  const pickedSkills = attempt.demonstrated_skill_ids || [];
   $('#annotate-skills').classList.toggle('hidden', !skillOpts.length);
-  $('#annotate-skills').innerHTML = skillOpts.length ? `<span class="label-sm">Techniques used <span class="help-inline">optional — tap any this solution relied on</span></span>
-    <div class="skill-chips">${skillOpts.map(s => `<label class="skill-chip${s.suggested ? ' is-suggested' : ''}"><input type="checkbox" data-skill="${escapeHtml(s.id)}" ${(attempt.demonstrated_skill_ids || []).includes(s.id) ? 'checked' : ''}><span>${escapeHtml(s.name)}</span></label>`).join('')}</div>` : '';
+  $('#annotate-skills').innerHTML = skillOpts.length ? `<details class="skill-picker"${pickedSkills.length ? ' open' : ''}>
+    <summary class="label-sm skill-picker-head">
+      <span class="skill-picker-label">Techniques used <span class="help-inline">optional — pick any this solution relied on</span></span>
+      <span class="skill-picker-count">${skillPickLabel(pickedSkills.length)}</span><span class="skill-picker-caret" aria-hidden="true"></span>
+    </summary>
+    <div class="skill-chips">${skillOpts.map(s => `<label class="skill-chip${s.suggested ? ' is-suggested' : ''}"><input type="checkbox" data-skill="${escapeHtml(s.id)}" ${pickedSkills.includes(s.id) ? 'checked' : ''}><span>${escapeHtml(s.name)}</span></label>`).join('')}</div>
+  </details>` : '';
+  // The closed dropdown still has to show what's picked, so keep the count live.
+  const chips = $('#annotate-skills .skill-chips');
+  if (chips) chips.addEventListener('change', () => {
+    $('#annotate-skills .skill-picker-count').textContent =
+      skillPickLabel(chips.querySelectorAll('input:checked').length);
+  });
   // Default independence from the run: gave up → solution; leaned on hints → hints.
   const usedHints = (attempt.hint_level_used || 0) >= 2;
   const heading = $("#annotate-heading");

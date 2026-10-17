@@ -2927,9 +2927,30 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .learning-cta-title { grid-area: title; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .learning-cta-go { grid-area: go; font-size: 13px; font-weight: 600; color: var(--accent); white-space: nowrap; }
 
-/* Technique picker in the annotate modal: toggle chips, this problem's own first. */
+/* Technique picker in the annotate modal: a collapsed dropdown of toggle chips,
+   this problem's own first, with the pick count on the closed trigger. */
 .annotate-skills { margin: 14px 0 0; }
-.skill-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.skill-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.skill-picker-head::-webkit-details-marker { display: none; }
+.skill-picker-head:hover .skill-picker-label { color: var(--text); }
+.skill-picker-label { flex: 1; min-width: 0; }
+.skill-picker-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.skill-picker-caret {
+  width: 5px;
+  height: 5px;
+  border-right: 1.6px solid var(--muted);
+  border-bottom: 1.6px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform .2s var(--ease);
+}
+.skill-picker[open] .skill-picker-caret { transform: translateY(2px) rotate(-135deg); }
+.skill-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 176px; overflow-y: auto; }
 .skill-chip { position: relative; cursor: pointer; }
 .skill-chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .skill-chip span { display: inline-block; padding: 4px 10px; border: 1px solid var(--line-hi); border-radius: 999px; font-size: 12px; color: var(--text-2); }
