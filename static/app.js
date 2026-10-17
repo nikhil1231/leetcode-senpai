@@ -326,6 +326,7 @@ function setPageHeading(tab) {
 }
 $$("#tabs li").forEach((li) => {
   li.addEventListener("click", () => {
+    window.AppSections?.leaveDesign();
     $$("#tabs li").forEach((b) => b.classList.remove("is-active"));
     li.classList.add("is-active");
     $$(".tab").forEach((t) => t.classList.add("hidden"));
@@ -335,9 +336,10 @@ $$("#tabs li").forEach((li) => {
     render(li.dataset.tab);
   });
 });
-function currentActiveTab() { return $("#tabs li.is-active").dataset.tab; }
+function currentActiveTab() { return document.body.classList.contains('section-design') ? 'design' : $("#tabs li.is-active").dataset.tab; }
 // Programmatic navigation for in-page links (e.g. Today's "Topic map" button).
 function goTab(tab) {
+  if (tab === 'design') return window.AppSections?.select('system-design');
   const li = $(`#tabs li[data-tab="${tab}"]`);
   if (li) li.click();
 }
@@ -980,7 +982,7 @@ function setTakeaway(t) {
 function setDashboardLocked(locked) {
   document.body.classList.toggle("has-active-session", locked);
   // Minimised, the run steps aside and the app is usable again under it.
-  locked = locked && !runMinimised;
+  locked = locked && !runMinimised && !document.body.classList.contains('section-design');
   // The cookie warning stays live during a run: knowing now means you can fix it
   // before the AC lands, and its modal opens over the run.
   ["#tabs", "#overview", "#user-chip", "#coach-chip", "main"].forEach((sel) => {
@@ -1417,7 +1419,7 @@ function detectSolves({ force = false, followup = true } = {}) {
         // this solve if a better submission has taken it over since it opened.
         const fresh = currentAttempt && pending.find((p) => p.id === currentAttempt.id);
         if (fresh && fresh.submission_id !== currentAttempt.submission_id) refreshAnnotate(fresh);
-      } else if (rateable(pending).length) {
+      } else if (rateable(pending).length && !document.body.classList.contains('section-design')) {
         openAnnotate(rateable(pending)[0]);
       }
       const logged = res.new_attempts && res.new_attempts.length;
@@ -2961,7 +2963,7 @@ async function startApp() {
   // end-to-end (header, then a blank gap) before the Today queue even started
   // loading. render("today") paints its own loader immediately and fetches
   // /today in parallel with the rest.
-  render("today");
+  render(currentActiveTab());
   // Not awaited: this one leaves the building for leetcode.com, and nothing on
   // the page is waiting on the answer. The pill appears if and when it lands.
   checkLeetCodeAuth();

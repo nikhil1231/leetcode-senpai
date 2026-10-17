@@ -346,10 +346,15 @@ when browser storage is unavailable; only refresh recovery is disabled.
 
 ### System Design
 
-The System Design tab provides three authored cases: a read-heavy link service,
+Choose System Design from the switcher in the top-left app title. It has its own
+navigation, separate from the LeetCode workspace (`/#/system-design`).
+The section provides three authored cases: a read-heavy link service,
 reliable asynchronous jobs, and reservations without double booking. Choose learning
 or interview mode, save a structured design, and sketch connections with `A -> B`.
-Drafts are saved to account-scoped Firestore records; pending edits are also retained
+A case brief lets you choose guided or interview practice, time, and target depth.
+The design workspace groups your answer into Scope, Architecture, and Trade-offs,
+with the brief, coach, and feedback in a companion panel. Drafts are saved to
+account-scoped Firestore records; pending edits are also retained
 in the browser tab. Conflicting versions require an explicit choice before saving.
 
 Six short lessons and twelve deterministic exercises support targeted repairs and

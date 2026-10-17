@@ -48,19 +48,27 @@
 
   <div id="app" class="shell hidden">
     <aside class="sidebar">
-      <div class="brand">
+      <div class="section-switcher">
+      <button class="brand" id="section-trigger" type="button" aria-expanded="false" aria-controls="section-menu" aria-label="Switch learning section">
         <img class="app-logo" src="/app-icon.png" alt="" aria-hidden="true" />
         <div class="brand-text">
           <span class="brand-name">Leetcode Senpai</span>
           <span class="brand-sub">Interview prep</span>
         </div>
+        <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+      </button>
+      <div id="section-menu" class="section-menu hidden" aria-labelledby="section-menu-title">
+        <div class="section-menu-heading" id="section-menu-title">Your learning spaces<span>Choose what to work on</span></div>
+        <button type="button" data-section="leetcode" class="section-option"><span class="section-option-icon">&lt;/&gt;</span><span><strong>LeetCode</strong><small>Algorithms, patterns &amp; problem solving</small></span><span class="section-check" aria-hidden="true">✓</span></button>
+        <button type="button" data-section="system-design" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="2" width="8" height="6" rx="1.5"/><rect x="2" y="16" width="7" height="6" rx="1.5"/><rect x="15" y="16" width="7" height="6" rx="1.5"/><path d="M12 8v4H5.5v4M12 12h6.5v4"/></svg><span><strong>System Design</strong><small>Architecture, trade-offs &amp; clear reasoning</small></span><span class="section-check" aria-hidden="true">✓</span></button>
+        <div class="section-menu-foot">Two disciplines. One interview toolkit.</div>
+      </div>
       </div>
 
       <nav class="nav" id="tabs" aria-label="Sections">
         <ul>
           <li class="is-active" data-tab="today"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-today" /></svg><span>Today</span></a></li>
           <li data-tab="practice"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-drill" /></svg><span>Quickfire</span></a></li>
-          <li data-tab="design"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-topics" /></svg><span>System Design</span></a></li>
           <li data-tab="discover"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-discover" /></svg><span>Discover</span></a></li>
           <li data-tab="topics"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-topics" /></svg><span>Topics</span></a></li>
           <li data-tab="insights"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-insights" /></svg><span>Insights</span></a></li>
@@ -69,6 +77,16 @@
           <li data-tab="problems"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-problems" /></svg><span>Problems</span></a></li>
           <li data-tab="settings"><a><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-settings" /></svg><span>Settings</span></a></li>
         </ul>
+      </nav>
+
+      <nav id="design-nav" class="design-nav hidden" aria-label="System Design">
+        <span class="design-nav-label">SYSTEM DESIGN</span>
+        <button type="button" data-design-view="home"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-today"/></svg>Overview</button>
+        <button type="button" data-design-view="cases"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-topics"/></svg>Design cases</button>
+        <button type="button" data-design-view="skills"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-drill"/></svg>Skill drills</button>
+        <button type="button" data-design-view="lessons"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-playbook"/></svg>Lessons</button>
+        <button type="button" data-design-view="progress"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-insights"/></svg>Your progress</button>
+        <div class="design-nav-note">Think it through.<br>Build it simply.<br>Explain the trade-offs.</div>
       </nav>
 
       <div class="sidebar-foot">
@@ -457,6 +475,7 @@
   <script src="/views.js?v=__ASSET_VER__"></script>
   <script src="/practice.js?v=__ASSET_VER__"></script>
   <script src="/system-design.js?v=__ASSET_VER__"></script>
+  <script src="/sections.js?v=__ASSET_VER__"></script>
   <script src="/editor.js?v=__ASSET_VER__"></script>
 </body>
 </html>

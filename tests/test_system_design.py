@@ -270,6 +270,8 @@ def test_profile_revision_and_time_budget_control_recommendation(client):
 
 def test_assets_are_versioned_and_navigation_is_present(client):
     html = client.get('/').text
-    assert 'data-tab="design"' in html and 'id="tab-design"' in html
+    assert 'data-tab="design"' not in html and 'id="tab-design"' in html
+    assert 'id="section-trigger"' in html and 'data-section="system-design"' in html
+    assert 'id="design-nav"' in html and '/sections.js?v=' in html
     assert '/system-design.js?v=' in html and '/system-design.css?v=' in html
     assert 'system-design.js' in main._VERSIONED_ASSETS

@@ -613,3 +613,20 @@ test('ending takes a second click, sends the code and opens the rating', async (
   assert.deepEqual(body, { code: 'CODE' });
   assert.equal(ui.run('window.discarded'), 's1');
 });
+
+test('system design reports its own active view outside the LeetCode tab list', () => {
+  const ui=app(async()=>response({}));
+  ui.node('body').classList.contains=c=>c==='section-design';
+  assert.equal(ui.run('currentActiveTab()'),'design');
+});
+
+test('a coding run does not make the system design workspace inert', () => {
+  const ui=app(async()=>response({}));
+  ui.node('body').classList.contains=c=>c==='section-design';
+  let locked=0,unlocked=0;
+  ui.node('main').setAttribute=()=>locked++;
+  ui.node('main').removeAttribute=()=>unlocked++;
+  ui.run('setDashboardLocked(true)');
+  assert.equal(locked,0);
+  assert.equal(unlocked,2);
+});
