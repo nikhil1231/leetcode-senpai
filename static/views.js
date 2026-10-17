@@ -222,20 +222,25 @@
       "Fresh practice selected to expand coverage without crowding out spaced repetition.",
       q.new.length ? list(q.new.map(item)) : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>"
     );
-    const sprintAction = `
-      <button id="btn-start-sprint" class="sprint-card" type="button">
-        <span class="sprint-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#i-drill" /></svg></span>
-        <span class="sprint-copy">
-          <span class="sprint-title">Sprint round</span>
-          <span class="sprint-sub">Pattern reps, 60 seconds each</span>
-        </span>
-        <span class="sprint-go" aria-hidden="true">›</span>
+    // Sprint round and focused practice are peers: both are timed-ish drill modes,
+    // both are one click. Icon and title only — the sub-lines were the same length
+    // as the titles and were read once.
+    const recovery = q.learning_recovery;
+    const drillTile = (cls, glyph, title, attrs = "") => `
+      <button class="drill-tile ${cls}" type="button"${attrs}>
+        <span class="drill-tile-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#${glyph}" /></svg></span>
+        <span class="drill-tile-title">${escapeHtml(title)}</span>
       </button>`;
+    const drillTiles = `<div class="drill-tiles">
+      ${drillTile("", "i-drill", "Sprint round", ' id="btn-start-sprint"')}
+      ${recovery ? drillTile("learning-recovery", "i-focus", recovery.title,
+        ` data-sequence="${escapeHtml(recovery.sequence)}"`) : ""}
+    </div>`;
     const drills = section(
       "Focused drills",
       (q.drills && q.drills.length) || 0,
       "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
-      sprintAction + (q.drills && q.drills.length
+      drillTiles + (q.drills && q.drills.length
         ? list(q.drills.map(item))
         : "<p class='empty'>No focused drills queued.</p>")
     );
@@ -264,9 +269,7 @@
             ${drills}
           </div>
         </div>
-        ${q.learning_recovery || (q.learning_checks || []).length ? `<div class="learning-cta-row">
-          ${q.learning_recovery ? `<button class="learning-cta learning-recovery" data-sequence="${escapeHtml(q.learning_recovery.sequence)}">
-            <span class="learning-cta-kicker">Focused practice</span><span class="learning-cta-title">${escapeHtml(q.learning_recovery.title)}</span><span class="learning-cta-go">Start &rarr;</span></button>` : ''}
+        ${(q.learning_checks || []).length ? `<div class="learning-cta-row">
           ${(q.learning_checks || []).map(c => `<button class="learning-cta learning-application" data-check="${escapeHtml(c.id)}">
             <span class="learning-cta-kicker">Spaced check</span><span class="learning-cta-title">Later application check</span><span class="learning-cta-go">Answer &rarr;</span></button>`).join('')}
         </div>` : ''}
