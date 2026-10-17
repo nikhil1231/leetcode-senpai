@@ -29,6 +29,7 @@ from . import (assessment, auth, coach, config, connectivity, enrich, gamify, im
                practice_offline, practice_queue, recording, scheduler, learning_evidence, curriculum, learning_sequences)
 from . import store as store_mod
 from .store import get_store
+from .system_design import router as system_design_router
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(ROOT, "static")
@@ -51,6 +52,7 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Leetcode Senpai V2", lifespan=lifespan)
+app.include_router(system_design_router)
 
 # Responses are JSON and highly compressible — the problem catalog alone is
 # ~130KB of repetitive text. Costs nothing on loopback, matters a lot over wifi.
@@ -2815,7 +2817,7 @@ def api_health():
 
 
 # ---- static frontend ------------------------------------------------------------
-_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js",
+_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js", "system-design.js", "system-design.css",
                      "editor.js", "vendor/codemirror.js")
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}

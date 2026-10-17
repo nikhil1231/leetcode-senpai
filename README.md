@@ -343,3 +343,27 @@ up to 24 hours. Resume checks the server's saved answer before retrying an
 interrupted submission, so an answer is counted only once. Stopping, finishing,
 discarding, or starting a new round clears the checkpoint. Practice still works
 when browser storage is unavailable; only refresh recovery is disabled.
+
+### System Design
+
+The System Design tab provides three authored cases: a read-heavy link service,
+reliable asynchronous jobs, and reservations without double booking. Choose learning
+or interview mode, save a structured design, and sketch connections with `A -> B`.
+Drafts are saved to account-scoped Firestore records; pending edits are also retained
+in the browser tab. Conflicting versions require an explicit choice before saving.
+
+Six short lessons and twelve deterministic exercises support targeted repairs and
+delayed checks. Revealed answers and lesson-assisted attempts remain marked as
+assisted. Evidence summaries describe observed work, not mastery or hiring scores.
+
+Coaching uses the existing OpenRouter key. `SD_TUTOR_MODEL` defaults to
+`openai/gpt-6.1-sol` with medium reasoning; `SD_ASSESSOR_MODEL` defaults to
+`openai/gpt-6-astra` with high reasoning. Full assessments run on an immutable copy
+of the design and case contract. Feedback records the actual model and quotes the
+saved answer; retries reuse that snapshot. These model defaults require evaluation
+on representative candidate answers before treating assessment quality as validated.
+Without coaching configured, saved designs, lessons, and exercises still work.
+
+Assessment jobs run within the web process. After a restart, a pending job can be
+retried after three minutes; no separate durable worker is required for this release.
+System Design storage requires the server's normal Firestore connectivity.

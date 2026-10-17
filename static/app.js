@@ -310,6 +310,7 @@ function handleAuthFailure(status) {
 const TAB_HEADINGS = {
   today: ["Today", "Your queue for the day"],
   practice: ["Quickfire", "Quick reps for a few spare minutes. Works offline."],
+  design: ["System Design", "Design, explain, repair, and revisit."],
   discover: ["Discover", "Curated packs and highly-rated problems"],
   topics: ["Topics", "Coverage and mastery across the map"],
   insights: ["Insights", "What the data says about your prep"],
@@ -330,6 +331,7 @@ $$("#tabs li").forEach((li) => {
     $$(".tab").forEach((t) => t.classList.add("hidden"));
     $("#tab-" + li.dataset.tab).classList.remove("hidden");
     setPageHeading(li.dataset.tab);
+    window.SystemDesign?.onTab(li.dataset.tab);
     render(li.dataset.tab);
   });
 });
@@ -368,6 +370,7 @@ const renderedRev = {};  // tab -> the revision its DOM was built from
 // `force` redraws regardless — for the rare case where the view depends on
 // something the server's counters don't cover.
 async function render(tab, { force = false } = {}) {
+  if (tab === "design" && window.Views.renderDesign) return window.Views.renderDesign();
   const el = $("#tab-" + tab);
   const fn = window.Views["render" + tab.charAt(0).toUpperCase() + tab.slice(1)]
     || window.Views.renderToday;

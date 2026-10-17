@@ -662,10 +662,14 @@ def _response_format(schema) -> dict:
     }
 
 
-def _raw_generate(provider: str, model: str, system: str, prompt: str, schema) -> Optional[str]:
+def _raw_generate(provider: str, model: str, system: str, prompt: str, schema, *, options=None):
     """Single transport choke point; tests replace this to avoid network calls."""
     if provider != "openrouter":
         raise ValueError(f"unsupported LLM provider {provider}")
+    extra = {}
+    if options:
+        extra = {"reasoning": {"effort": options["effort"], "exclude": True},
+                 "max_tokens": options["max_tokens"]}
     resp = httpx.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
@@ -682,8 +686,9 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema) -
             "response_format": _response_format(schema),
             "provider": {"require_parameters": True},
             "stream": False,
+            **extra,
         },
-        timeout=60,
+        timeout=(options or {}).get("timeout", 60),
     )
     # Keep provider response bodies out of the UI (they can echo prompts); log only.
     if resp.is_error:
@@ -702,6 +707,9 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema) -
     if message.get("refusal"):
         raise RuntimeError("The model declined this request")
     content = message.get("content")
+    if options and options.get('metadata'):
+        return {"content": content if isinstance(content, str) else None,
+                "model": data.get("model", model), "usage": data.get("usage") or {}}
     return content if isinstance(content, str) else None
 
 

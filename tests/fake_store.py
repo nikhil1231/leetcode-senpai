@@ -5,6 +5,7 @@ insights, importer, endpoints) be exercised without credentials.
 """
 import uuid
 import zlib
+from copy import deepcopy
 
 from server import config
 from server.store import _slugify
@@ -29,6 +30,22 @@ class FakeStore:
         self.recordings = {}
         self.learning_state = {}
         self.approach_reviews = {}
+        self.design_records = {}
+
+    def get_design_record(self, key):
+        return deepcopy(self.design_records.get(key))
+
+    def list_design_records(self):
+        return deepcopy(list(self.design_records.values()))
+
+    def put_design_record(self, key, doc, expected_revision=None):
+        old = self.design_records.get(key)
+        actual = old.get('revision', 0) if old else None
+        if actual != expected_revision:
+            raise ValueError('This design changed in another request. Reload before saving.')
+        saved = {**deepcopy(doc), 'id': key, 'revision': (actual or 0) + 1}
+        self.design_records[key] = saved
+        return deepcopy(saved)
 
     def record_practice_exposure(self, question_id, result):
         old = self.practice_exposures.get(question_id) or {}

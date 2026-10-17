@@ -150,6 +150,27 @@ class FirestoreStore:
     def _user_ref(self):
         return self.db.collection("users").document(self.uid)
 
+    def get_design_record(self, key):
+        return self._user_ref().collection('system_design').document(key).get().to_dict()
+
+    def list_design_records(self):
+        return [d.to_dict() for d in self._user_ref().collection('system_design').stream()]
+
+    def put_design_record(self, key, doc, expected_revision=None):
+        """Create or compare-and-swap. A stale tab cannot overwrite newer work."""
+        from google.cloud import firestore
+        ref = self._user_ref().collection('system_design').document(key)
+        @firestore.transactional
+        def write(transaction):
+            old = ref.get(transaction=transaction).to_dict()
+            actual = old.get('revision', 0) if old else None
+            if actual != expected_revision:
+                raise ValueError('This design changed in another request. Reload before saving.')
+            saved = {**doc, 'id': key, 'revision': (actual or 0) + 1}
+            transaction.set(ref, saved)
+            return saved
+        return write(self.db.transaction())
+
     # Kept separate: a small recognition exercise is not an accepted solve or
     # a spaced-repetition review. create() makes submission retries idempotent.
     def _practice_write(self, question_id, result=None, guessed=False, exposure=False):
