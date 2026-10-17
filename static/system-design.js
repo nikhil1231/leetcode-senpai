@@ -7,7 +7,9 @@
   let active = false, paused = false, lastTick = 0, screen = 'home', error = '', epoch = 0;
   let conflictDraft = null, chatDraft = '';
   const root = () => $('#tab-design');
-  const id = () => window.crypto.randomUUID().replaceAll('-', '');
+  // getRandomValues also works on plain HTTP LAN origins.
+  const id = () => Array.from(window.crypto.getRandomValues(new Uint8Array(16)),
+    byte => byte.toString(16).padStart(2, '0')).join('');
   const call = (path = '', method = 'GET', body) => api('/system-design' + path, method, body);
   const date = t => new Date(t * 1000).toLocaleDateString();
   const clock = n => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
