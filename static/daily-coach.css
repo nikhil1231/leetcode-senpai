@@ -1,0 +1,44 @@
+#tab-coach { max-width: 1120px; }
+.dc-hero { padding: 28px; margin-bottom: 22px; border: 1px solid var(--accent-line); border-radius: var(--radius-lg); background: linear-gradient(120deg, var(--accent-soft), var(--panel)); }
+.dc-eyebrow { color: var(--accent-2); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.dc-hero h2 { margin: 8px 0 12px; font-size: clamp(24px, 3vw, 32px); }
+.dc-hero p, .dc-panel p, .dc-goal p { line-height: 1.65; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.dc-goal-copy { border-left: 2px solid var(--accent); padding: 8px 14px; }
+.dc-toolbar, .dc-actions, .dc-history { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 14px 0; }
+.dc-toolbar label { display: grid; gap: 6px; font-size: 12px; color: var(--text-2); }
+.dc-toolbar .input { width: auto; }
+.dc-status { color: var(--accent-2); line-height: 1.6; overflow-wrap: anywhere; }
+.dc-panel { padding: 22px; margin: 16px 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.dc-panel h3 { margin: 0 0 12px; font-size: 17px; }
+.dc-panel p + h3 { margin-top: 24px; }
+.dc-panel ul { padding-left: 20px; line-height: 1.65; color: var(--text-2); }
+.dc-panel li { margin-bottom: 12px; }
+.dc-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.dc-columns .dc-panel { margin: 0; }
+.dc-observations { list-style: none; padding: 0 !important; }
+.dc-confidence { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.dc-adjustment { border-color: var(--accent-line); }
+.dc-adjustment h3 { margin-top: 12px; }
+.dc-citations { display: flex; flex-wrap: wrap; gap: 4px; }
+.dc-citations .button { font-size: 11px; padding: 3px 6px; min-height: 26px; }
+.dc-report-head { margin: 24px 0 16px; }
+.dc-report-head h2 { font-size: clamp(20px, 2.5vw, 25px); line-height: 1.4; margin: 10px 0; overflow-wrap: anywhere; }
+.dc-goal { color: var(--text-2); font-size: 13px; }
+.dc-panel summary, .dc-goal summary { cursor: pointer; line-height: 1.6; }
+.dc-panel label { display: block; margin: 14px 0 7px; font-size: 13px; }
+.dc-panel textarea, #cfg-target-job { width: 100%; resize: vertical; line-height: 1.6; min-height: 100px; }
+.dc-evidence-list > details { padding: 14px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.dc-evidence-list summary { font-size: 13px; }
+.dc-evidence-list summary span { color: var(--accent-2); }
+.dc-evidence-list dl > div { display: flex; gap: 18px; font-size: 12px; margin: 7px 0; }
+.dc-evidence-list dt { min-width: 120px; color: var(--muted); }
+.dc-evidence-list dd { margin: 0; color: var(--text-2); }
+.dc-summary { display: flex; gap: 20px; align-items: center; justify-content: space-between; padding: 20px; margin-bottom: 20px; border: 1px solid var(--accent-line); border-radius: var(--radius); background: var(--accent-soft); }
+.dc-summary h2 { font-size: 16px; margin: 0 0 8px; }
+.dc-summary p { margin: 0; line-height: 1.6; color: var(--text-2); overflow-wrap: anywhere; }
+.dc-summary .button { flex-shrink: 0; }
+@media (max-width: 700px) {
+  .dc-columns { grid-template-columns: 1fr; }
+  .dc-hero, .dc-panel { padding: 16px; }
+  .dc-summary { align-items: start; flex-direction: column; gap: 12px; }
+}

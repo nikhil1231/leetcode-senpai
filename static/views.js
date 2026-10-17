@@ -135,6 +135,7 @@
     }
 
     const prepHtml = [
+      '<div id="daily-coach-summary"></div>',
       progressPanel(families),
       await weeklyReportBanner(reportWrap.report),
       mockCard(mock),
@@ -287,6 +288,7 @@
     $("#btn-goto-topics") && $("#btn-goto-topics").addEventListener("click", () => App.goTab("topics"));
     $("#btn-start-mock") && $("#btn-start-mock").addEventListener("click", () => App.startMock());
     $("#btn-start-sprint") && $("#btn-start-sprint").addEventListener("click", () => App.startSprint());
+    window.DailyCoach?.mountSummary();
   }
 
   // Library progress, summarised from the same tree the Topics map renders:
@@ -1206,6 +1208,21 @@
     const modelSelect = (llmOptions[provider] || []).map((m) =>
       `<option value="${escapeHtml(m)}"${m === model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("");
     el.innerHTML = `
+      <div class="section-title">Learning coach</div>
+      <div class="settings-field">
+        <label for="cfg-target-job">Target job</label>
+        <textarea id="cfg-target-job" class="input" rows="4" maxlength="4000" placeholder="Senior backend engineer on a distributed-systems team. Describe the role, seniority, and interview or on-the-job expectations.">${escapeHtml(c.target_job || "")}</textarea>
+        <p class="help">This goal feeds the daily process coach across coding, system design, coding knowledge, and future learning sections. It reviews how you practise, not the correctness of your answers.</p>
+      </div>
+      <div class="settings-field"><label for="cfg-daily-enabled"><input id="cfg-daily-enabled" type="checkbox"${c.daily_coach_enabled ? " checked" : ""}> Generate daily learning reviews automatically</label></div>
+      <div class="settings-row">
+        <div class="settings-field"><label for="cfg-daily-timezone">Review timezone</label><input id="cfg-daily-timezone" class="input" value="${escapeHtml(c.daily_coach_timezone || "UTC")}" placeholder="Asia/Kolkata" /></div>
+        <div class="settings-field"><label for="cfg-daily-time">Daily review time</label><input id="cfg-daily-time" class="input" type="time" value="${escapeHtml(c.daily_coach_time || "00:05")}" required /></div>
+      </div>
+      <p class="help">At this time, the coach reviews the previous completed local day. Default: shortly after midnight. The browser can be closed; the app server must be running. After a restart it checks the latest eligible day. An empty target job pauses generation. Suggestions never automatically change your curriculum.</p>
+      <div class="buttons"><button class="button is-primary" id="btn-save-learning-coach" type="button">Save learning coach</button></div>
+      <p id="learning-coach-settings-status" class="help" role="status" aria-live="polite"></p>
+
       <div class="section-title">LeetCode account</div>
       <div class="settings-field"><label>Username</label><input id="cfg-username" class="input" value="${escapeHtml(c.username || "")}" /></div>
       <div class="settings-field">
@@ -1262,6 +1279,27 @@
         : '<p class="help">Running in local mode — there is no session to sign out of.</p>'}`;
     const signoutBtn = $("#btn-signout");
     if (signoutBtn) signoutBtn.addEventListener("click", App.signOut);
+
+    $("#btn-save-learning-coach").addEventListener("click", async () => {
+      const button = $("#btn-save-learning-coach");
+      const status = $("#learning-coach-settings-status");
+      button.disabled = true;
+      status.textContent = "Saving…";
+      try {
+        await api("/config", "POST", {
+          target_job: $("#cfg-target-job").value,
+          daily_coach_enabled: $("#cfg-daily-enabled").checked,
+          daily_coach_timezone: $("#cfg-daily-timezone").value.trim(),
+          daily_coach_time: $("#cfg-daily-time").value,
+        });
+        status.textContent = "Learning coach saved. Your target job will guide new reviews.";
+        toast("Learning coach saved");
+      } catch (e) {
+        status.textContent = e.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
 
     $("#btn-save-cfg").addEventListener("click", async () => {
       await api("/config", "POST", { username: $("#cfg-username").value });

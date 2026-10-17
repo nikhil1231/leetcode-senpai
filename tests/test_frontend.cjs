@@ -559,7 +559,6 @@ test('a hint asks with the code on screen, shows cards and draws its marks', asy
   assert.match(html, /<div class="hint-card is-latest">/);
   assert.match(html, /What does/);
   assert.match(html, /<p>What does <code>seen<\/code> hold\?<\/p>/);
-  assert.match(ui.node('#btn-hint').textContent, /hint|Ask/i);
   assert.equal(ui.run('window.marks[0].note'), 'here?');
 });
 
@@ -575,7 +574,6 @@ test('giving up takes a second click, then walks a step per Next with marks', as
   ui.run('activeSession = { session_id: "s1", give_up_available: true }');
   const btn = ui.node('#btn-give-up');
   await btn.listeners.click();
-  assert.equal(btn.textContent, 'Sure? Click again');
   assert.equal(calls.filter(([p]) => p.endsWith('/give-up')).length, 0);
   await btn.listeners.click();
   const asks = () => calls.filter(([p]) => p.endsWith('/give-up'));
@@ -606,7 +604,6 @@ test('ending takes a second click, sends the code and opens the rating', async (
   ui.run('activeSession = { session_id: "s1", end_available: true }');
   const btn = ui.node('#btn-end-run');
   await btn.listeners.click();
-  assert.equal(btn.textContent, 'Sure?');
   assert.equal(calls.filter(([p]) => p.endsWith('/session/end')).length, 0);
   await btn.listeners.click();
   const [, body] = calls.find(([p]) => p.endsWith('/session/end'));

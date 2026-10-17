@@ -142,6 +142,13 @@ def _firestore_client():
     return firestore.client()
 
 
+def daily_coach_uids():
+    """Existing users who have explicitly supplied a career goal."""
+    return [d.id for d in _firestore_client().collection("users").stream()
+            if (s := (d.to_dict() or {}).get("settings", {})).get("target_job", "").strip()
+            and s.get("daily_coach_enabled", True)]
+
+
 class FirestoreStore:
     def __init__(self, uid):
         self.uid = uid
@@ -149,6 +156,9 @@ class FirestoreStore:
 
     def _user_ref(self):
         return self.db.collection("users").document(self.uid)
+
+    def list_design_records(self):
+        return [d.to_dict() for d in self._user_ref().collection('system_design').stream()]
 
     # Kept separate: a small recognition exercise is not an accepted solve or
     # a spaced-repetition review. create() makes submission retries idempotent.
@@ -375,6 +385,9 @@ class FirestoreStore:
         item["id"] = snap.id
         return item
 
+    def list_sessions(self):
+        return [{**d.to_dict(), "id": d.id} for d in self._sessions().stream()]
+
     def list_active_sessions(self):
         def load():
             out = []
@@ -464,6 +477,58 @@ class FirestoreStore:
             reports.sort(key=lambda r: r.get("iso_week", ""), reverse=True)
             return reports[0] if reports else None
         return _cached(("reports", self.uid), load)
+
+    # ---- daily learning-process coach ---------------------------------------
+    def _daily_reviews(self):
+        return self._user_ref().collection("daily_reviews")
+
+    @staticmethod
+    def _daily_review_key(date, timezone):
+        import hashlib
+        return date + "_" + hashlib.sha256(timezone.encode()).hexdigest()[:16]
+
+    def get_daily_review(self, date, timezone):
+        return self._daily_reviews().document(self._daily_review_key(date, timezone)).get().to_dict()
+
+    def list_daily_reviews(self, timezone):
+        from google.cloud.firestore_v1 import Query
+        query = self._daily_reviews().where(filter=_where("timezone", "==", timezone))
+        return [d.to_dict() for d in query.stream()]
+
+    def upsert_daily_review(self, date, timezone, doc):
+        from google.cloud import firestore
+        ref = self._daily_reviews().document(self._daily_review_key(date, timezone))
+
+        @firestore.transactional
+        def save(transaction):
+            old = ref.get(transaction=transaction).to_dict() or {}
+            saved = {**doc, "date": date, "timezone": timezone,
+                     "feedback": old.get("feedback") or {"status": "pending", "note": ""}}
+            transaction.set(ref, saved)
+            return saved
+
+        result = save(self.db.transaction())
+        _invalidate(("daily_reviews", self.uid))
+        return result
+
+    def update_daily_review_feedback(self, date, timezone, status, note):
+        from google.cloud import firestore
+        ref = self._daily_reviews().document(self._daily_review_key(date, timezone))
+
+        @firestore.transactional
+        def save(transaction):
+            old = ref.get(transaction=transaction).to_dict()
+            if not old:
+                return None
+            feedback = {"status": status, "note": note, "at": int(_time.time())}
+            transaction.update(ref, {"feedback": feedback})
+            return {**old, "feedback": feedback}
+
+        result = save(self.db.transaction())
+        if result:
+            _invalidate(("daily_reviews", self.uid))
+        return result
+
 
     # ---- playbooks (per-category cheat sheets) ------------------------------
     def _playbooks(self):
@@ -590,6 +655,7 @@ class FirestoreStore:
             "mocks": _revisions.get(("mocks", self.uid), 0),
             "sprint_rounds": _revisions.get(("sprint_rounds", self.uid), 0),
             "reports": _revisions.get(("reports", self.uid), 0),
+            "daily_reviews": _revisions.get(("daily_reviews", self.uid), 0),
             "userdoc": _revisions.get(("userdoc", self.uid), 0),
         }
 
