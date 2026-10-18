@@ -1,7 +1,8 @@
 """FastAPI app: authenticated REST API + static frontend (V2).
 
-Firestore-only. The LeetCode cookie arrives per-request as a header and is used
-transiently. The LLM-powered coaching layer (enrichment, hints, recall grading,
+Firestore-only. The LeetCode session cookie and CSRF token are stored on the
+user document and shared by every device; the last save wins. The LLM-powered
+coaching layer (enrichment, hints, recall grading,
 weekly reports, playbooks) degrades gracefully when the selected provider's API
 key is unset; most coaching jobs run off the critical path, while recall grading
 intentionally waits so the review is scheduled immediately.
@@ -215,6 +216,13 @@ class SettingsUpdate(BaseModel):
     discover_min_votes: int | None = None
     llm_provider: str | None = None
     llm_model: str | None = None
+
+
+class LeetCodeCookieUpdate(BaseModel):
+    # A blank field keeps the stored value, so updating just one half of the
+    # pair does not silently drop the other.
+    session: str | None = Field(default=None, max_length=10000)
+    csrf: str | None = Field(default=None, max_length=10000)
 
 
 class ImportPack(BaseModel):
@@ -2742,10 +2750,14 @@ def api_mock_list(uid: str = Depends(auth.require_user)):
 # ---- settings -------------------------------------------------------------------
 @app.get("/api/config")
 def api_get_config(uid: str = Depends(auth.require_user)):
-    settings = get_store(uid).get_settings()
+    store = get_store(uid)
+    settings = store.get_settings()
     selected = llm.current_model(settings)
+    lc = store.get_leetcode_auth()
     return {
         **settings,
+        "leetcode_session_set": bool(lc),
+        "leetcode_csrf_set": bool(lc and lc.get("csrf")),
         "llm_enabled": selected["enabled"],
         "llm_provider": selected["provider"],
         "llm_model": selected["model"],
@@ -2768,6 +2780,8 @@ async def api_leetcode_status(uid: str = Depends(auth.require_user),
     must not be reported as an expired cookie, or the warning stops meaning
     anything.
     """
+    if lc and lc.get("unavailable"):
+        return {"state": "unknown", "username": None}
     if not leetcode.has_auth(lc):
         return {"state": "missing", "username": None}
     try:
@@ -2775,6 +2789,25 @@ async def api_leetcode_status(uid: str = Depends(auth.require_user),
     except Exception:
         return {"state": "unknown", "username": None}
     return {"state": "ok" if username else "expired", "username": username}
+
+
+@app.post("/api/leetcode-auth")
+def api_set_leetcode_auth(body: LeetCodeCookieUpdate, uid: str = Depends(auth.require_user)):
+    """Persist the cookie pair for every device. Last write wins."""
+    store = get_store(uid)
+    existing = store.get_leetcode_auth() or {}
+    session = (body.session or "").strip() or existing.get("session")
+    csrf = (body.csrf or "").strip() or existing.get("csrf")
+    if not session:
+        raise HTTPException(400, "paste the LEETCODE_SESSION value")
+    store.save_leetcode_auth(session, csrf)
+    return {"ok": True, "leetcode_session_set": True, "leetcode_csrf_set": bool(csrf)}
+
+
+@app.delete("/api/leetcode-auth")
+def api_clear_leetcode_auth(uid: str = Depends(auth.require_user)):
+    get_store(uid).clear_leetcode_auth()
+    return {"ok": True, "leetcode_session_set": False, "leetcode_csrf_set": False}
 
 
 @app.post("/api/config")

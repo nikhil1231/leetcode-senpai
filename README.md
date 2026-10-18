@@ -34,18 +34,20 @@ Firestore connectivity. Migrate any old `local_data.json` with
 ## Architecture
 ```
 Browser (static SPA on Firebase Hosting)
-   │  Google sign-in -> ID token (Bearer)         LeetCode cookie (localStorage)
-   ▼                                               sent as X-LC-* headers
+   │  Google sign-in -> ID token (Bearer)
+   ▼
 Cloud Run  ── FastAPI (server/) ──► Firestore (Admin SDK, per-user data)
    │                              └► LLM API (enrichment, off critical path)
-   └── calls LeetCode GraphQL using the cookie (transient, never stored)
+   └── calls LeetCode GraphQL using the stored cookie
 ```
 - **Firestore is locked** (`firestore.rules` deny-all); all access is through the
   backend's Admin SDK.
 - **Backend verifies** the Firebase ID token and checks the email allowlist on
   every request (`server/auth.py`).
-- **The LeetCode session cookie** lives only in your browser's `localStorage`,
-  is sent per-request as a header, and is never persisted or logged server-side.
+- **The LeetCode session cookie and csrftoken** are saved on your Firestore user
+  document, so every signed-in device shares them. Saving from any device
+  overwrites the previous pair (last write wins); the values are never returned
+  to the browser or logged.
 - **LLM output is derived data**, never the source of truth. Raw notes/code
   are kept; enrichments are stamped with a prompt version and re-runnable.
 

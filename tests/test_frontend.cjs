@@ -315,20 +315,22 @@ test('a solve with no captured code still promises a grade while the cookie may 
   assert.match(ui.node('#annotate-grade-body').innerHTML, /Save your rating/);
 });
 
-test('a solve that lands without its code re-checks the cookie at once', () => {
-  const ui = app(async () => response({}));
+test('a solve that lands without its code re-checks the cookie at once', async () => {
+  const ui = app(async () => response({ state: 'missing' }));
   ui.run(`llmEnabled = true; lastLcCheckAt = Date.now();
           openAnnotate({ id: "attempt-one", slug: "two-sum", submission_id: 7, code: null })`);
-  // No cookie in the stub's localStorage, so the answer is immediate.
+  await new Promise((r) => setImmediate(r));
   assert.equal(ui.run('lcState'), 'missing');
   assert.match(ui.node('#annotate-grade-body').innerHTML, /grade-cookie-form/);
 });
 
-test('coming back to the page re-checks the cookie at most every few minutes', () => {
-  const ui = app(async () => response({}));
+test('coming back to the page re-checks the cookie at most every few minutes', async () => {
+  const ui = app(async () => response({ state: 'missing' }));
   ui.run('lastLcCheckAt = Date.now(); lcState = "ok"; recheckLeetCodeAuth()');
+  await new Promise((r) => setImmediate(r));
   assert.equal(ui.run('lcState'), 'ok');
   ui.run('lastLcCheckAt = Date.now() - LC_RECHECK_GAP_MS; recheckLeetCodeAuth()');
+  await new Promise((r) => setImmediate(r));
   assert.equal(ui.run('lcState'), 'missing');
 });
 
@@ -352,9 +354,14 @@ test('saving a manual log never promises a grade', async () => {
 
 test('a cookie that dies before grading is replaced and graded without leaving the modal', async () => {
   const calls = [];
+  const saved = [];
   let cookieGood = false;
-  const ui = app(async (path) => {
+  const ui = app(async (path, opts) => {
     calls.push(path);
+    if (path.endsWith('/leetcode-auth')) {
+      saved.push(JSON.parse(opts.body));
+      return response({ ok: true });
+    }
     if (path.endsWith('/leetcode-status')) return response({ state: 'ok' });
     if (path.endsWith('/grade-solution')) {
       return response(cookieGood
@@ -373,34 +380,33 @@ test('a cookie that dies before grading is replaced and graded without leaving t
   cookieGood = true;
   ui.node('#grade-cookie-input').value = ' fresh-cookie ';
   await ui.node('#grade-cookie-form').listeners.submit({ preventDefault() {} });
-  assert.equal(ui.run('stored.lc_session'), 'fresh-cookie');
+  assert.deepEqual(saved, [{ session: 'fresh-cookie', csrf: null }]);
   assert.equal(ui.run('lcState'), 'ok');
   assert.equal(calls.filter((p) => p.endsWith('/grade-solution')).length, 2);
   assert.match(ui.node('#annotate-grade-body').innerHTML, /Score <b>4\/5<\/b>/);
   assert.equal(ui.node('#btn-save-annotate').dataset.saved, '1');
 });
 
-// The stub's localStorage.getItem answers null, i.e. no cookie in this browser.
-test('no cookie in this browser warns without asking the server', async () => {
+// The cookie lives on the server, so the browser cannot know it is missing
+// without asking — every page load pays that one round-trip.
+test('the server is asked even when this browser has no cookie', async () => {
   let calls = 0;
-  const ui = app(async () => { calls++; return response({ state: 'ok' }); });
+  const ui = app(async () => { calls++; return response({ state: 'missing' }); });
   await ui.run('checkLeetCodeAuth()');
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
   assert.equal(ui.node('#lc-warning').textContent, 'LeetCode cookie not set');
 });
 
 test('a cookie LeetCode refuses is reported as expired', async () => {
   const ui = app(async () => response({ state: 'expired' }));
-  ui.run(`localStorage.getItem = () => "a-cookie"; checkLeetCodeAuth()`);
-  await new Promise((r) => setImmediate(r));
+  await ui.run('checkLeetCodeAuth()');
   assert.equal(ui.node('#lc-warning').textContent, 'LeetCode cookie expired');
 });
 
 test('an unreachable LeetCode is never reported as a dead cookie', async () => {
   for (const outcome of ['unknown', 'ok']) {
     const ui = app(async () => response({ state: outcome }));
-    ui.run(`localStorage.getItem = () => "a-cookie";
-            $("#lc-warning").textContent = "stale"; checkLeetCodeAuth()`);
+    ui.run(`$("#lc-warning").textContent = "stale"; checkLeetCodeAuth()`);
     await new Promise((r) => setImmediate(r));
     // Hidden, and so never seen — the stub can't hide, so assert the state that
     // drives it rather than the class.
@@ -410,8 +416,7 @@ test('an unreachable LeetCode is never reported as a dead cookie', async () => {
 
 test('a failed status request leaves the warning alone', async () => {
   const ui = app(async () => { throw new Error('offline'); });
-  ui.run(`localStorage.getItem = () => "a-cookie";
-          $("#lc-warning").textContent = ""; checkLeetCodeAuth()`);
+  ui.run(`$("#lc-warning").textContent = ""; checkLeetCodeAuth()`);
   await new Promise((r) => setImmediate(r));
   assert.equal(ui.node('#lc-warning').textContent, '');
 });
@@ -559,7 +564,7 @@ test('a hint asks with the code on screen, shows cards and draws its marks', asy
   assert.match(html, /<div class="hint-card is-latest">/);
   assert.match(html, /What does/);
   assert.match(html, /<p>What does <code>seen<\/code> hold\?<\/p>/);
-  assert.match(ui.node('#btn-hint').textContent, /hint|Ask/i);
+  assert.match(ui.node('#btn-hint').title, /hint|Ask/i);
   assert.equal(ui.run('window.marks[0].note'), 'here?');
 });
 
@@ -575,7 +580,7 @@ test('giving up takes a second click, then walks a step per Next with marks', as
   ui.run('activeSession = { session_id: "s1", give_up_available: true }');
   const btn = ui.node('#btn-give-up');
   await btn.listeners.click();
-  assert.equal(btn.textContent, 'Sure? Click again');
+  assert.equal(btn.title, 'Sure? Click again');
   assert.equal(calls.filter(([p]) => p.endsWith('/give-up')).length, 0);
   await btn.listeners.click();
   const asks = () => calls.filter(([p]) => p.endsWith('/give-up'));
@@ -606,7 +611,7 @@ test('ending takes a second click, sends the code and opens the rating', async (
   ui.run('activeSession = { session_id: "s1", end_available: true }');
   const btn = ui.node('#btn-end-run');
   await btn.listeners.click();
-  assert.equal(btn.textContent, 'Sure?');
+  assert.equal(btn.title, 'Sure? Click again');
   assert.equal(calls.filter(([p]) => p.endsWith('/session/end')).length, 0);
   await btn.listeners.click();
   const [, body] = calls.find(([p]) => p.endsWith('/session/end'));

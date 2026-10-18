@@ -39,10 +39,6 @@ const api = async (path, method = "GET", body) => {
   const headers = { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" };
   const token = await getToken();
   if (token) headers["Authorization"] = "Bearer " + token;
-  const sess = localStorage.getItem("lc_session");
-  const csrf = localStorage.getItem("lc_csrf");
-  if (sess) headers["X-LC-Session"] = sess;
-  if (csrf) headers["X-LC-Csrf"] = csrf;
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch("/api" + path, opts);
@@ -513,11 +509,15 @@ function recheckLeetCodeAuth() {
   checkLeetCodeAuth();
 }
 
+// The cookie lives on the server (Firestore), not in this browser, so a save is
+// visible to every device — the last one wins. An empty csrf keeps the stored
+// one, matching the Settings fields that say "leave blank to keep".
+async function saveLeetCodeCookie(session, csrf) {
+  return api("/leetcode-auth", "POST", { session, csrf: csrf || null });
+}
+
 async function checkLeetCodeAuth() {
   lastLcCheckAt = Date.now();
-  // No cookie in this browser is already the answer — don't spend a round-trip
-  // on a question localStorage just settled.
-  if (!localStorage.getItem("lc_session")) return renderLcWarning("missing");
   let state;
   try {
     ({ state } = await api("/leetcode-status"));
@@ -575,9 +575,16 @@ $("#cookie-form").addEventListener("submit", async (e) => {
   const btn = $("#btn-save-cookie");
   btn.disabled = true;
   btn.textContent = "Checking…";
-  // Stored exactly as Settings stores it, then checked against LeetCode.
-  localStorage.setItem("lc_session", session);
-  if (csrf) localStorage.setItem("lc_csrf", csrf);
+  // Persist first so every device gets it, then check it against LeetCode.
+  try {
+    await saveLeetCodeCookie(session, csrf);
+  } catch (e) {
+    err.textContent = e.message || "Couldn't save the cookie.";
+    err.classList.remove("hidden");
+    btn.disabled = false;
+    btn.textContent = "Save cookie";
+    return;
+  }
   let state = "unknown";
   try { ({ state } = await api("/leetcode-status")); } catch (_) {}
   lastLcCheckAt = Date.now();
@@ -1875,7 +1882,7 @@ function markAnnotateDone() {
 function renderSolutionNeedsCookie(state, attemptId, note = "") {
   stopAnnotateGrading();
   $("#annotate-grade").classList.remove("hidden");
-  const why = state === "missing" ? "no LeetCode cookie is set in this browser"
+  const why = state === "missing" ? "no LeetCode cookie is saved"
     : "your LeetCode cookie has expired";
   $("#annotate-grade-body").innerHTML = `
     <p class="missed"><b>Can't fetch your code:</b> ${why}. Paste a fresh
@@ -1893,7 +1900,7 @@ function renderSolutionNeedsCookie(state, attemptId, note = "") {
     const btn = $("#grade-cookie-form button");
     btn.disabled = true;
     btn.textContent = "Checking…";
-    localStorage.setItem("lc_session", value);
+    try { await saveLeetCodeCookie(value); } catch (_) {}
     let state = "unknown";
     try { ({ state } = await api("/leetcode-status")); } catch (_) {}
     renderLcWarning(state);
@@ -3054,7 +3061,7 @@ async function onEditorSolved(res) {
 }
 
 window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOverview, render,
-  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth, onEditorSolved, openCookieModal, accountIdentity, signOutHtml, signOut,
+  currentActiveTab, goTab, api, runSweep, checkLeetCodeAuth, saveLeetCodeCookie, onEditorSolved, openCookieModal, accountIdentity, signOutHtml, signOut,
   get llmEnabled() { return llmEnabled; } };
 
 // ---- boot ----------------------------------------------------------------------

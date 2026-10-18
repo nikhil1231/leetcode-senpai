@@ -1203,7 +1203,8 @@
     const el = $("#tab-settings");
     beginRender(el, "Loading settings…");
     const c = await api("/config");
-    const hasCookie = !!localStorage.getItem("lc_session");
+    const hasCookie = !!c.leetcode_session_set;
+    const hasCsrf = !!c.leetcode_csrf_set;
     const llmOptions = c.llm_options || {};
     const providerOptions = Object.keys(llmOptions);
     const provider = c.llm_provider || providerOptions[0] || "openrouter";
@@ -1216,12 +1217,12 @@
       <div class="section-title">LeetCode account</div>
       <div class="settings-field"><label>Username</label><input id="cfg-username" class="input" value="${escapeHtml(c.username || "")}" /></div>
       <div class="settings-field">
-        <label>LEETCODE_SESSION cookie ${hasCookie ? "✅ set (this browser)" : "(not set)"}</label>
+        <label>LEETCODE_SESSION cookie ${hasCookie ? "✅ set (all devices)" : "(not set)"}</label>
         <input id="cfg-session" class="input" type="password" placeholder="${hasCookie ? "••• leave blank to keep" : "paste cookie value"}" />
-        <div class="help">Stored only in this browser and sent per-request; never saved server-side. Unlocks % beaten, code, wrong-attempt counts, and Discover.</div>
+        <div class="help">Saved to your account in Firestore and shared by every device; the last save wins. Unlocks % beaten, code, wrong-attempt counts, and Discover.</div>
       </div>
       <div class="settings-field"><label>csrftoken cookie</label>
-        <input id="cfg-csrf" class="input" type="password" placeholder="${localStorage.getItem('lc_csrf') ? '••• leave blank to keep' : 'paste csrftoken'}" /></div>
+        <input id="cfg-csrf" class="input" type="password" placeholder="${hasCsrf ? '••• leave blank to keep' : 'paste csrftoken'}" /></div>
       <div class="buttons"><button class="button is-primary" id="btn-save-cfg">Save</button>
         <button class="button is-ghost" id="btn-clear-cookie">Clear cookie</button></div>
 
@@ -1272,13 +1273,14 @@
 
     $("#btn-save-cfg").addEventListener("click", async () => {
       await api("/config", "POST", { username: $("#cfg-username").value });
-      if ($("#cfg-session").value) localStorage.setItem("lc_session", $("#cfg-session").value.trim());
-      if ($("#cfg-csrf").value) localStorage.setItem("lc_csrf", $("#cfg-csrf").value.trim());
+      const session = $("#cfg-session").value.trim();
+      const csrf = $("#cfg-csrf").value.trim();
+      if (session || csrf) await App.saveLeetCodeCookie(session, csrf);
       toast("Saved"); renderSettings();
       App.checkLeetCodeAuth();  // the header warning is about to be right or wrong
     });
-    $("#btn-clear-cookie").addEventListener("click", () => {
-      localStorage.removeItem("lc_session"); localStorage.removeItem("lc_csrf");
+    $("#btn-clear-cookie").addEventListener("click", async () => {
+      await api("/leetcode-auth", "DELETE");
       toast("Cookie cleared"); renderSettings();
       App.checkLeetCodeAuth();
     });

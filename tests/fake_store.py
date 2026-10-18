@@ -25,6 +25,7 @@ class FakeStore:
         self.sprint_rounds = {}
         self.settings = {}
         self.flags = {}
+        self.leetcode_auth = None
         self.light_practice = {}
         self.practice_exposures = {}
         self.recordings = {}
@@ -288,6 +289,18 @@ class FakeStore:
 
     def set_flag(self, key, value):
         self.flags[key] = value
+
+    def get_leetcode_auth(self):
+        saved = self.leetcode_auth or {}
+        if not saved.get("session"):
+            return None
+        return {"session": saved["session"], "csrf": saved.get("csrf")}
+
+    def save_leetcode_auth(self, session, csrf=None):
+        self.leetcode_auth = {"session": session, "csrf": csrf}
+
+    def clear_leetcode_auth(self):
+        self.leetcode_auth = None
 
     # revisions
     def revisions(self):

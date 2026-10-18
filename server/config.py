@@ -1,8 +1,8 @@
 """App-level configuration from environment variables.
 
 User-level settings (username, tuning weights, goals) live per-user in the
-store, not here. The LeetCode session cookie is never stored server-side — it
-arrives on each request as a header and is used transiently.
+store, not here. The LeetCode session cookie and CSRF token are stored per-user
+in Firestore and shared by every device.
 
 V2 note: storage is **Firestore only**. There is no local JSON backend; the app
 requires Firestore connectivity. For local dev, run with AUTH_MODE=local plus a

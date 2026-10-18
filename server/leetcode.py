@@ -1,9 +1,8 @@
 """Thin async client over LeetCode's unofficial GraphQL endpoint.
 
 The session cookie is NOT read from config — it is passed in per call as an
-`auth` dict {"session": ..., "csrf": ...}, which the API layer pulls from the
-request headers (the value lives in the browser's localStorage). It is used
-transiently and never persisted or logged server-side.
+`auth` dict {"session": ..., "csrf": ...}, which the API layer loads from the
+user's Firestore document (shared by all devices). It is never logged.
 
 Public data (recent accepted submissions, question metadata) needs only a
 username. Private data (% beaten, code, wrong-attempt counts) needs the cookie,

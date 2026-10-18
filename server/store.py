@@ -23,6 +23,8 @@ import time as _time
 from . import config
 
 _firestore_app = None
+_firestore_db = None
+_client_guard = threading.Lock()
 
 # ---- single-flight snapshot cache -----------------------------------------------
 # Every endpoint re-streams whole collections (problems/attempts/reviews/…), and
@@ -135,11 +137,16 @@ def _where(field, op, value):
 
 
 def _firestore_client():
-    global _firestore_app
-    from firebase_admin import firestore
-    if _firestore_app is None:
-        _firestore_app = config.init_firebase_admin()
-    return firestore.client()
+    global _firestore_app, _firestore_db
+    if _firestore_db is not None:
+        return _firestore_db
+    with _client_guard:
+        if _firestore_db is None:
+            from firebase_admin import firestore
+            if _firestore_app is None:
+                _firestore_app = config.init_firebase_admin()
+            _firestore_db = firestore.client()
+    return _firestore_db
 
 
 class FirestoreStore:
@@ -591,6 +598,30 @@ class FirestoreStore:
     def set_flag(self, key, value):
         current = self._user_doc().get("flags", {})
         self._user_ref().set({"flags": {**current, key: value}}, merge=True)
+        _invalidate(("userdoc", self.uid))
+
+    # ---- LeetCode credentials ----------------------------------------------
+    # One credential pair per user, shared by every device. Writes are a plain
+    # overwrite (no compare-and-set): the last save wins, which is the intended
+    # semantics for a cookie pasted from whichever machine has a fresh one.
+    def get_leetcode_auth(self):
+        saved = self._user_doc().get("leetcode_auth") or {}
+        if not saved.get("session"):
+            return None
+        return {"session": saved["session"], "csrf": saved.get("csrf")}
+
+    def save_leetcode_auth(self, session, csrf=None):
+        self._user_ref().set({
+            "leetcode_auth": {
+                "session": session,
+                "csrf": csrf,
+                "updated_at": int(_time.time()),
+            },
+        }, merge=True)
+        _invalidate(("userdoc", self.uid))
+
+    def clear_leetcode_auth(self):
+        self._user_ref().set({"leetcode_auth": None}, merge=True)
         _invalidate(("userdoc", self.uid))
 
     # ---- revisions ----------------------------------------------------------

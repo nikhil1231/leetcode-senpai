@@ -9,9 +9,9 @@ Three modes, picked by AUTH_MODE:
   has no login page of its own.
 - "local"    — bypassed entirely, for local dev against real Firestore.
 """
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
-from . import access, config
+from . import access, config, store
 
 
 def _require_access(assertion: str | None) -> str:
@@ -65,9 +65,20 @@ async def require_user(authorization: str = Header(None),
     return decoded["uid"]
 
 
-def leetcode_auth(x_lc_session: str = Header(None), x_lc_csrf: str = Header(None)):
-    """Pull the LeetCode cookie out of request headers (browser localStorage).
-    Used transiently; never persisted."""
-    if not x_lc_session:
-        return None
-    return {"session": x_lc_session, "csrf": x_lc_csrf}
+# Returned when the credentials cannot be read (Firestore offline). Callers
+# treat it as "no auth", and the status endpoint reports "unknown" rather than
+# claiming the cookie is missing.
+CREDENTIALS_UNAVAILABLE = {"unavailable": True}
+
+
+def leetcode_auth(uid: str = Depends(require_user)):
+    """The caller's saved LeetCode credentials, from Firestore.
+
+    One pair per user, shared by every device. Kept out of settings so it is
+    never echoed back by the config endpoint; callers get the raw values only
+    long enough to put them on a LeetCode request.
+    """
+    try:
+        return store.get_store(uid).get_leetcode_auth()
+    except Exception:
+        return CREDENTIALS_UNAVAILABLE

@@ -2154,7 +2154,7 @@ def test_grade_solution_asks_for_a_cookie_when_none_is_set(client):
     body = client.post(f"/api/attempt/{aid}/grade-solution").json()
     assert body["grading_status"] == "needs_cookie"
     assert body["cookie_state"] == "missing"
-    # A cookie missing from this browser says nothing about the solve itself.
+    # A cookie missing from the account says nothing about the solve itself.
     assert client.store.get_attempt(aid).get("solution_grading_status") is None
 
 
@@ -2713,6 +2713,46 @@ def test_a_leetcode_outage_is_unknown_not_expired(client, monkeypatch):
 
     _with_cookie(client, monkeypatch, signed_in_as)
     assert client.get("/api/leetcode-status").json() == {"state": "unknown", "username": None}
+
+
+def test_leetcode_status_is_unknown_when_saved_credentials_cannot_load(client, monkeypatch):
+    main.app.dependency_overrides.pop(auth.leetcode_auth, None)
+
+    def down(uid):
+        raise RuntimeError("firestore unavailable")
+
+    monkeypatch.setattr(auth.store, "get_store", down)
+    assert client.get("/api/leetcode-status").json() == {"state": "unknown", "username": None}
+
+
+def test_leetcode_auth_persists_for_every_device_and_last_write_wins(client, monkeypatch):
+    # No header override here: the real dependency must read the saved pair.
+    main.app.dependency_overrides.pop(auth.leetcode_auth, None)
+    monkeypatch.setattr(auth.store, "get_store", lambda uid: client.store)
+
+    async def signed_in_as(auth_):
+        return "kunde"
+
+    monkeypatch.setattr(main.leetcode, "signed_in_as", signed_in_as)
+    assert client.get("/api/config").json()["leetcode_session_set"] is False
+
+    assert client.post("/api/leetcode-auth", json={"session": "first", "csrf": "c1"}).status_code == 200
+    assert client.store.get_leetcode_auth() == {"session": "first", "csrf": "c1"}
+    assert client.get("/api/leetcode-status").json() == {"state": "ok", "username": "kunde"}
+    cfg = client.get("/api/config").json()
+    assert cfg["leetcode_session_set"] is True and cfg["leetcode_csrf_set"] is True
+
+    # A later save from another device replaces the pair outright.
+    client.post("/api/leetcode-auth", json={"session": "second", "csrf": "c2"})
+    assert client.store.get_leetcode_auth() == {"session": "second", "csrf": "c2"}
+
+    # Updating one half leaves the other intact.
+    client.post("/api/leetcode-auth", json={"csrf": "c3"})
+    assert client.store.get_leetcode_auth() == {"session": "second", "csrf": "c3"}
+
+    assert client.delete("/api/leetcode-auth").status_code == 200
+    assert client.store.get_leetcode_auth() is None
+    assert client.get("/api/leetcode-status").json() == {"state": "missing", "username": None}
 
 
 async def test_overlapping_polls_log_a_session_solve_once(client, monkeypatch):
