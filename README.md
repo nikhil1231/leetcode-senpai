@@ -26,6 +26,56 @@ submissions — no browser extension.
   score trend; weekly goals, daily XP, mastery moments.
 - **FSRS** scheduler (swappable back to SM-2 via `SCHEDULER=sm2`).
 
+## Daily learning-process coach
+
+Set **Settings → Learning coach → Target job** to the role, seniority, and work
+or interview expectations you are aiming for. The free-text goal is persisted
+per user and included in the daily coach's prompt; it is not limited to
+LeetCode. Choose an IANA timezone, a review time, and whether automatic reviews
+are enabled. Emptying the goal pauses generation.
+
+**Learning Coach** shows a short review of how you practised: what you worked
+on, evidence-backed observations, productive habits, at most one adjustment,
+a next-session plan, and optional curriculum proposals. Recommendations never
+modify the curriculum automatically. Open an **Evidence** link to inspect the
+supporting activity. Save a reflection/correction, mark advice worth trying, or
+dismiss it; the next daily reviews receive the previous seven recommendations
+and their feedback.
+
+The server checks once a minute. At the configured local time (default
+**00:05 UTC**) it reviews the **previous completed local calendar day**, including
+up to 13 preceding days for trend context. The browser need not remain open.
+The application server must remain running; scale-to-zero hosting needs an
+always-running instance or an external job invoking
+`server.daily_coach_worker.tick`. After downtime, the worker checks the latest
+eligible day, rather than issuing a burst of historical model calls. Older
+days can be requested manually. Local days respect daylight-saving boundaries.
+
+Manual generation can review a selected day or produce a labelled partial-day
+preview for today. The scheduled run replaces that preview after the day closes.
+Completed reviews are cached; **Regenerate** explicitly refreshes them using
+the current goal. A changed goal also invalidates the cached interpretation.
+Missing goals, missing model keys, empty days, and provider errors produce
+explicit states, not invented reviews. Failed regeneration preserves the last
+saved review and feedback.
+
+Sources currently include coding attempts and uncompleted session starts,
+Quickfire, recorded lessons/application checks, and system-design practice.
+Only process metadata enters this prompt—never raw code, answer text, chat
+transcripts, or assessment rubrics. Imported historical solves do not count as
+new practice; repeated assessments do not count as additional practice.
+Evidence is capped at 240 source records with current-day space reserved;
+coverage/truncation and latest-snapshot limitations are disclosed. Unrecorded
+subjects, outside learning, and unknown time are not proof of gaps. AI
+interpretations remain fallible: use citations and corrections, not these
+reviews as a readiness grade.
+
+Reviews live at `users/{uid}/daily_reviews`, keyed by date and timezone.
+The authenticated API is `GET/POST /api/coach/daily` and
+`POST /api/coach/daily/{date}/feedback`. Future subjects join through the
+normalisation boundary in `server/daily_coach.py`, without changing the
+career-goal prompt or review UI.
+
 ## Storage: Firestore only
 V2 is **Firestore-only** — there is no local JSON backend. The app requires
 Firestore connectivity. Migrate any old `local_data.json` with

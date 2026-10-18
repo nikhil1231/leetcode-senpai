@@ -31,6 +31,8 @@ from . import (assessment, auth, coach, config, connectivity, enrich, gamify, im
 from . import store as store_mod
 from .store import get_store
 from .system_design import router as system_design_router
+from . import daily_coach_worker
+from .daily_coach_api import router as daily_coach_router
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(ROOT, "static")
@@ -49,11 +51,18 @@ async def lifespan(_app):
                          daemon=True).start()
         # Quickfire answers saved while offline in an earlier run.
         _practice_store(config.DEV_UID).flush_in_background()
-    yield
+    review_worker = asyncio.create_task(daily_coach_worker.run())
+    try:
+        yield
+    finally:
+        review_worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await review_worker
 
 
 app = FastAPI(title="Leetcode Senpai V2", lifespan=lifespan)
 app.include_router(system_design_router)
+app.include_router(daily_coach_router)
 
 # Responses are JSON and highly compressible — the problem catalog alone is
 # ~130KB of repetitive text. Costs nothing on loopback, matters a lot over wifi.
@@ -201,6 +210,10 @@ class OverrideTags(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    target_job: str | None = Field(default=None, max_length=4000)
+    daily_coach_enabled: bool | None = Field(default=None, strict=True)
+    daily_coach_timezone: str | None = None
+    daily_coach_time: str | None = None
     username: str | None = None
     poll_interval_seconds: int | None = None
     review_limit: int | None = None
@@ -2814,6 +2827,19 @@ def api_clear_leetcode_auth(uid: str = Depends(auth.require_user)):
 def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    import re
+
+    if "target_job" in updates:
+        updates["target_job"] = updates["target_job"].strip()
+    if "daily_coach_timezone" in updates:
+        try:
+            ZoneInfo(updates["daily_coach_timezone"])
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(400, "daily_coach_timezone must be a valid IANA timezone")
+    if "daily_coach_time" in updates:
+        if not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", updates["daily_coach_time"]):
+            raise HTTPException(400, "daily_coach_time must be HH:MM in 24-hour time")
     provider = updates.get("llm_provider")
     model = updates.get("llm_model")
     if provider is not None and provider.strip().lower() != "openrouter":
@@ -2851,7 +2877,7 @@ def api_health():
 
 # ---- static frontend ------------------------------------------------------------
 _VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js", "system-design.js", "system-design.css", "sections.js",
-                     "editor.js", "vendor/codemirror.js")
+                     "editor.js", "vendor/codemirror.js", "daily-coach.js", "daily-coach.css")
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
 

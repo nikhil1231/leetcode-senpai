@@ -305,6 +305,7 @@ function handleAuthFailure(status) {
 // what the tab is for, so no section needs to re-explain itself.
 const TAB_HEADINGS = {
   today: ["Today", "Your queue for the day"],
+  coach: ["Learning Coach", "Daily process reviews guided by your target job"],
   practice: ["Quickfire", "Quick reps for a few spare minutes. Works offline."],
   design: ["System Design", "Design, explain, repair, and revisit."],
   discover: ["Discover", "Curated packs and highly-rated problems"],

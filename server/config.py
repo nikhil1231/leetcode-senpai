@@ -84,6 +84,10 @@ INTERVIEW_RUN_LIMIT = 2
 SOLVE_PAR_SEC = {"Easy": 15 * 60, "Medium": 25 * 60, "Hard": 40 * 60}
 
 DEFAULT_SETTINGS = {
+    "target_job": "",
+    "daily_coach_enabled": True,
+    "daily_coach_timezone": "UTC",
+    "daily_coach_time": "00:05",
     "username": "kunde",
     "poll_interval_seconds": 20,
     "review_limit": 5,

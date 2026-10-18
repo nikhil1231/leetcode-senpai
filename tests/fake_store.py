@@ -20,6 +20,7 @@ class FakeStore:
         self.sessions = {}
         self.enrichments = {}
         self.reports = {}
+        self.daily_reviews = {}
         self.playbooks = {}
         self.mocks = {}
         self.sprint_rounds = {}
@@ -174,6 +175,9 @@ class FakeStore:
     def list_active_sessions(self):
         return [dict(s) for s in self.sessions.values() if s.get("status") == "active"]
 
+    def list_sessions(self):
+        return deepcopy(list(self.sessions.values()))
+
     def latest_active_session(self):
         active = self.list_active_sessions()
         active.sort(key=lambda s: s.get("started_at", 0), reverse=True)
@@ -227,6 +231,27 @@ class FakeStore:
         if not self.reports:
             return None
         return self.reports[max(self.reports)]
+
+    def get_daily_review(self, date, timezone):
+        return deepcopy(self.daily_reviews.get((date, timezone)))
+
+    def list_daily_reviews(self, timezone):
+        return deepcopy([r for (date, zone), r in self.daily_reviews.items() if zone == timezone])
+
+    def upsert_daily_review(self, date, timezone, doc):
+        old = self.daily_reviews.get((date, timezone), {})
+        saved = {**deepcopy(doc), "date": date, "timezone": timezone,
+                 "feedback": deepcopy(old.get("feedback") or {"status": "pending", "note": ""})}
+        self.daily_reviews[date, timezone] = saved
+        return deepcopy(saved)
+
+    def update_daily_review_feedback(self, date, timezone, status, note):
+        old = self.daily_reviews.get((date, timezone))
+        if old is None:
+            return None
+        old["feedback"] = {"status": status, "note": note}
+        return deepcopy(old)
+
 
     # playbooks
     def get_playbook(self, category):
@@ -321,5 +346,6 @@ class FakeStore:
             "mocks": fp(self.mocks),
             "sprint_rounds": fp(self.sprint_rounds),
             "reports": fp(self.reports),
+            "daily_reviews": fp({str(k): v for k, v in self.daily_reviews.items()}),
             "userdoc": fp({"s": self.settings, "f": self.flags}),
         }
