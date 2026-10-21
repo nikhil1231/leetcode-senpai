@@ -295,7 +295,7 @@
     $("#btn-goto-topics") && $("#btn-goto-topics").addEventListener("click", () => App.goTab("topics"));
     $("#btn-start-mock") && $("#btn-start-mock").addEventListener("click", () => App.startMock());
     $("#btn-start-sprint") && $("#btn-start-sprint").addEventListener("click", () => App.startSprint());
-    window.DailyCoach?.mountSummary();
+    if (window.Senpai) window.Senpai.mountToday(); else window.DailyCoach?.mountSummary();
   }
 
   // Library progress, summarised from the same tree the Topics map renders:
@@ -1216,19 +1216,43 @@
     const modelSelect = (llmOptions[provider] || []).map((m) =>
       `<option value="${escapeHtml(m)}"${m === model ? " selected" : ""}>${escapeHtml(m)}</option>`).join("");
     el.innerHTML = `
-      <div class="section-title">Learning coach</div>
+      <div class="section-title">Senpai</div>
       <div class="settings-field">
-        <label for="cfg-target-job">Target job</label>
-        <textarea id="cfg-target-job" class="input" rows="4" maxlength="4000" placeholder="Senior backend engineer on a distributed-systems team. Describe the role, seniority, and interview or on-the-job expectations.">${escapeHtml(c.target_job || "")}</textarea>
-        <p class="help">This goal feeds the daily process coach across coding, system design, coding knowledge, and future learning sections. It reviews how you practise, not the correctness of your answers.</p>
+        <label for="cfg-target-job">Career target</label>
+        ${c.target_job_source === "job_scout"
+          ? `<p class="dc-goal-copy">${escapeHtml(c.target_job || "")}</p><p class="help">Synced from Job Scout, which owns your career target. <a href="${escapeHtml(c.job_scout_settings_url || "#")}" target="_blank" rel="noopener">Edit it in Job Scout</a>.</p>`
+          : `<textarea id="cfg-target-job" class="input" rows="4" maxlength="4000" placeholder="Senior backend engineer on a distributed-systems team. Describe the role, seniority, and interview or on-the-job expectations.">${escapeHtml(c.target_job || "")}</textarea>
+        <p class="help">${c.job_scout_configured ? "Job Scout has no career target yet; set it there and Senpai will sync it. Until then this one is used." : "Job Scout is not connected on this server, so the target is kept here."}</p>`}
       </div>
-      <div class="settings-field"><label for="cfg-daily-enabled"><input id="cfg-daily-enabled" type="checkbox"${c.daily_coach_enabled ? " checked" : ""}> Generate daily learning reviews automatically</label></div>
+      <div class="settings-field">
+        <label for="cfg-senpai-charter">Senpai charter</label>
+        <textarea id="cfg-senpai-charter" class="input" rows="5" maxlength="3000">${escapeHtml(c.senpai_charter || "")}</textarea>
+        <p class="help">How you want to be taught. Senpai follows it; what Senpai may change on its own is enforced by the limits below, not by this text.</p>
+      </div>
       <div class="settings-row">
-        <div class="settings-field"><label for="cfg-daily-timezone">Review timezone</label><input id="cfg-daily-timezone" class="input" value="${escapeHtml(c.daily_coach_timezone || "UTC")}" placeholder="Asia/Kolkata" /></div>
-        <div class="settings-field"><label for="cfg-daily-time">Daily review time</label><input id="cfg-daily-time" class="input" type="time" value="${escapeHtml(c.daily_coach_time || "00:05")}" required /></div>
+        <div class="settings-field"><label for="cfg-senpai-weekly">Learning time / week (min)</label><input id="cfg-senpai-weekly" class="input" type="number" min="30" max="3000" value="${escapeHtml(String(c.senpai_weekly_minutes))}" /></div>
+        <div class="settings-field"><label for="cfg-senpai-session">Session length (min)</label><input id="cfg-senpai-session" class="input" type="number" min="10" max="240" value="${escapeHtml(String(c.senpai_session_minutes))}" /></div>
+        <div class="settings-field"><label for="cfg-senpai-mode">Default mode</label><div class="select is-fullwidth"><select id="cfg-senpai-mode">${[["mixed","Mixed"],["retrieval","Retrieval"],["learn","Learn"],["interview","Interview conditions"]].map(([v,l]) => `<option value="${v}"${c.senpai_mode === v ? " selected" : ""}>${l}</option>`).join("")}</select></div></div>
+        <div class="settings-field"><label for="cfg-senpai-depth">Depth</label><div class="select is-fullwidth"><select id="cfg-senpai-depth">${[["balanced","Balanced"],["deep","Deep (fewer, longer)"],["broad","Broad (more, shorter)"]].map(([v,l]) => `<option value="${v}"${c.senpai_depth === v ? " selected" : ""}>${l}</option>`).join("")}</select></div></div>
       </div>
-      <p class="help">At this time, the coach reviews the previous completed local day. Default: shortly after midnight. The browser can be closed; the app server must be running. After a restart it checks the latest eligible day. An empty target job pauses generation. Suggestions never automatically change your curriculum.</p>
-      <div class="buttons"><button class="button is-primary" id="btn-save-learning-coach" type="button">Save learning coach</button></div>
+      <div class="settings-field"><label for="cfg-senpai-focus">Your focus, in your words (optional)</label><input id="cfg-senpai-focus" class="input" maxlength="1000" value="${escapeHtml(c.senpai_focus_note || "")}" placeholder="e.g. graphs feel shaky; design interviews in three weeks" /></div>
+      <div class="settings-field"><label for="cfg-daily-enabled"><input id="cfg-daily-enabled" type="checkbox"${c.daily_coach_enabled ? " checked" : ""}> Generate daily reviews automatically</label></div>
+      <div class="settings-row">
+        <div class="settings-field"><label for="cfg-daily-timezone">Timezone</label><input id="cfg-daily-timezone" class="input" value="${escapeHtml(c.daily_coach_timezone || "UTC")}" placeholder="Europe/London" /></div>
+        <div class="settings-field"><label for="cfg-daily-time">Daily review time</label><input id="cfg-daily-time" class="input" type="time" value="${escapeHtml(c.daily_coach_time || "00:05")}" required /></div>
+        <div class="settings-field"><label for="cfg-senpai-day">Weekly review day</label><div class="select is-fullwidth"><select id="cfg-senpai-day">${[[1,'Monday'],[2,'Tuesday'],[3,'Wednesday'],[4,'Thursday'],[5,'Friday'],[6,'Saturday'],[7,'Sunday']].map(([v, l]) => `<option value="${v}"${+c.senpai_weekly_day === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      </div>
+      <details class="settings-field"><summary>Senpai's limits</summary>
+        <p class="help">What Senpai may change without asking. Anything beyond these, removing protected objectives, or more time, waits for your approval.</p>
+        <div class="settings-row">
+          <div class="settings-field"><label for="cfg-senpai-lr">Learning rate</label><input id="cfg-senpai-lr" class="input" type="number" step="0.05" min="0" max="1" value="${escapeHtml(String(c.senpai_learning_rate))}" /></div>
+          <div class="settings-field"><label for="cfg-senpai-shift">Max weekly shift</label><input id="cfg-senpai-shift" class="input" type="number" step="0.01" min="0" max="0.5" value="${escapeHtml(String(c.senpai_max_weekly_shift))}" /></div>
+          <div class="settings-field"><label for="cfg-senpai-maxfocus">Max focus</label><input id="cfg-senpai-maxfocus" class="input" type="number" min="1" max="6" value="${escapeHtml(String(c.senpai_max_focus))}" /></div>
+          <div class="settings-field"><label for="cfg-senpai-cooldown">Focus cooldown (days)</label><input id="cfg-senpai-cooldown" class="input" type="number" min="0" max="60" value="${escapeHtml(String(c.senpai_focus_cooldown_days))}" /></div>
+          <div class="settings-field"><label for="cfg-senpai-weeks">Weeks of evidence for a new priority</label><input id="cfg-senpai-weeks" class="input" type="number" min="1" max="8" value="${escapeHtml(String(c.senpai_min_evidence_weeks))}" /></div>
+        </div>
+      </details>
+      <div class="buttons"><button class="button is-primary" id="btn-save-learning-coach" type="button">Save Senpai</button></div>
       <p id="learning-coach-settings-status" class="help" role="status" aria-live="polite"></p>
 
       <div class="section-title">LeetCode account</div>
@@ -1243,7 +1267,7 @@
       <div class="buttons"><button class="button is-primary" id="btn-save-cfg">Save</button>
         <button class="button is-ghost" id="btn-clear-cookie">Clear cookie</button></div>
 
-      <div class="section-title">Coach model</div>
+      <div class="section-title">AI model</div>
       <div class="settings-row">
         <div class="settings-field"><label>Provider</label><div class="select is-fullwidth"><select id="cfg-llm-provider">${providerSelect}</select></div></div>
         <div class="settings-field"><label>Model</label><input id="cfg-llm-model" class="input" list="cfg-llm-models" value="${escapeHtml(model)}" placeholder="vendor/model" /><datalist id="cfg-llm-models">${modelSelect}</datalist></div>
@@ -1294,14 +1318,27 @@
       button.disabled = true;
       status.textContent = "Saving…";
       try {
+        const num = (id) => Number($(id).value);
         await api("/config", "POST", {
-          target_job: $("#cfg-target-job").value,
+          ...($("#cfg-target-job") ? { target_job: $("#cfg-target-job").value } : {}),
           daily_coach_enabled: $("#cfg-daily-enabled").checked,
           daily_coach_timezone: $("#cfg-daily-timezone").value.trim(),
           daily_coach_time: $("#cfg-daily-time").value,
+          senpai_charter: $("#cfg-senpai-charter").value,
+          senpai_weekly_minutes: num("#cfg-senpai-weekly"),
+          senpai_session_minutes: num("#cfg-senpai-session"),
+          senpai_mode: $("#cfg-senpai-mode").value,
+          senpai_depth: $("#cfg-senpai-depth").value,
+          senpai_focus_note: $("#cfg-senpai-focus").value,
+          senpai_weekly_day: num("#cfg-senpai-day"),
+          senpai_learning_rate: num("#cfg-senpai-lr"),
+          senpai_max_weekly_shift: num("#cfg-senpai-shift"),
+          senpai_max_focus: num("#cfg-senpai-maxfocus"),
+          senpai_focus_cooldown_days: num("#cfg-senpai-cooldown"),
+          senpai_min_evidence_weeks: num("#cfg-senpai-weeks"),
         });
-        status.textContent = "Learning coach saved. Your target job will guide new reviews.";
-        toast("Learning coach saved");
+        status.textContent = "Senpai saved.";
+        toast("Senpai saved");
       } catch (e) {
         status.textContent = e.message;
       } finally {

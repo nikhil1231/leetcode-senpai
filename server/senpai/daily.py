@@ -1,14 +1,18 @@
-"""Career-goal-driven process reviews. Source answers/code never enter this prompt."""
+"""Senpai's daily review: process evidence against the plan. Source answers/code never enter this prompt."""
 import asyncio
 from collections import Counter
 import datetime as dt
 import threading
+import logging
 import time
 from zoneinfo import ZoneInfo
 
-from . import llm
+from .. import llm
+from . import service
 
-PROMPT_VERSION = 1
+log = logging.getLogger(__name__)
+
+PROMPT_VERSION = 2
 MAX_EVENTS = 240
 _locks = {}
 _lock_guard = threading.Lock()
@@ -124,7 +128,7 @@ def collect_activity(store, date, timezone, now=None):
                 r.get('exercise_id'), r.get('format', 'practice'), topic=r.get('skill'),
                 assisted=r.get('assisted'), revealed=r.get('revealed'), elapsed_sec=r.get('elapsed_sec'))
         elif kind in ('quiz', 'quickfire'):
-            from .system_design_learning import rows
+            from ..system_design_learning import rows
             for answer in rows([r]):
                 add('design-learning:' + answer['id'], 'System design', answer['answered_at'],
                     answer['question_id'], 'lesson check' if kind == 'quiz' else 'quickfire',
@@ -145,6 +149,9 @@ def collect_activity(store, date, timezone, now=None):
             add('lesson:' + key, 'Coding knowledge', r.get('updated_at'), r['sequence'],
                 'supported lesson ' + r['last_action'])
 
+    for t in store.list_senpai('senpai_teaching'):
+        add('teaching:' + str(t.get('id')), 'Senpai teaching', t.get('at'), t.get('capability_id'),
+            'guided explanation with Senpai', mode=t.get('mode'), assistance=t.get('assistance'))
     all_events = sorted(events.values(), key=lambda e: (e['at'], e['id']))
     today = [e for e in all_events if e['at'] >= start]
     prior = [e for e in all_events if e['at'] < start]
@@ -166,7 +173,7 @@ async def generate(store, date=None, force=False, now=None):
     settings = await asyncio.to_thread(store.get_settings)
     goal = settings.get('target_job', '').strip()
     if not goal:
-        raise ReviewUnavailable('Add your target job in Settings before generating a learning review.')
+        raise ReviewUnavailable('Add your career target (in Job Scout, or in Settings) before generating a review.')
     timezone = settings.get('daily_coach_timezone', 'UTC')
     date = date or review_date(settings, now)
     try:
@@ -189,14 +196,15 @@ async def generate(store, date=None, force=False, now=None):
                 and (not old.get('partial') or partial)):
             return old
         if not llm.enabled(settings):
-            raise ReviewUnavailable('The coach model is unavailable. Configure OPENROUTER_API_KEY on the server.')
+            raise ReviewUnavailable("Senpai's model is unavailable. Configure OPENROUTER_API_KEY on the server.")
         activity = await asyncio.to_thread(collect_activity, store, date, timezone, now)
         if not activity['day_activity_count']:
             raise ReviewUnavailable('No recorded learning activity for this day. No review was invented.')
         prior = await asyncio.to_thread(store.list_daily_reviews, timezone)
         prior = sorted((r for r in prior if r['date'] < date), key=lambda r: r['date'], reverse=True)[:7]
+        context = await asyncio.to_thread(senpai_context, store, now)
         payload = {'target_job': goal, 'date': date, 'timezone': timezone, 'partial_day': partial,
-                   **activity, 'previous_recommendations': [
+                   **activity, 'senpai': context, 'previous_recommendations': [
                        {'date': r['date'], 'adjustment': r.get('adjustment'),
                         'curriculum_suggestions': r.get('curriculum_suggestions', []),
                         'feedback': r.get('feedback')} for r in prior]}
@@ -215,6 +223,12 @@ async def generate(store, date=None, force=False, now=None):
             cited.append(result['adjustment'])
         if any(not set(item['evidence_ids']) <= ids for item in cited):
             raise ReviewUnavailable('The model cited activity that was not supplied. Any saved review is unchanged.')
+        known = {c['id'] for c in context['capabilities']} | set(context['capability_ids'])
+        if result.get('adjustment'):
+            result['adjustment']['capability_ids'] = [c for c in result['adjustment'].get('capability_ids', []) if c in known]
+        # A plan change citing unknown evidence is dropped, not the whole review.
+        result['plan_changes'] = [c for c in result.get('plan_changes', [])
+                                  if set(c['evidence_ids']) <= ids | known]
         report = {**result, 'date': date, 'timezone': timezone, 'target_job': goal,
                   'generated_at': int(time.time() if now is None else now), 'partial': partial,
                   'prompt_version': PROMPT_VERSION, 'model': llm.current_model(settings)['model'],
@@ -222,9 +236,31 @@ async def generate(store, date=None, force=False, now=None):
         report['limitations'] = list(dict.fromkeys(activity['limitations'] + result['limitations']))
         if partial:
             report['limitations'].append('This is a partial-day preview. The scheduled review will replace it after the day ends.')
-        return await asyncio.to_thread(store.upsert_daily_review, date, timezone, report)
+        saved = await asyncio.to_thread(store.upsert_daily_review, date, timezone, report)
+        if not partial:
+            try:
+                await asyncio.to_thread(service.after_daily_review, store, saved, now)
+            except Exception:
+                log.exception('Senpai follow-through failed for %s; the review itself is saved', date)
+        return saved
     finally:
         lock.release()
+
+
+def senpai_context(store, now=None):
+    """Bounded plan/capability/intervention context for the daily prompt."""
+    from . import capabilities as caps_mod, interventions, policy
+    now = int(time.time() if now is None else now)
+    b = service.bundle(store, now)
+    plan = service.load_plan(store, now)
+    items = service.update_interventions(store, b, now)
+    focus = [f['capability_id'] for f in policy.active_focus(plan)]
+    session = store.get_senpai('senpai_sessions', b['today']) or {}
+    return {'charter': b['settings'].get('senpai_charter', ''), 'plan': service.plan_summary(plan, now),
+            'capabilities': caps_mod.digest(b['rows'], focus), 'capability_ids': [r['id'] for r in b['rows']],
+            'interventions': interventions.summary(items), 'ineffective': interventions.summary(interventions.ineffective(items), 4),
+            'next_session': [{k: bl[k] for k in ('title', 'activity', 'minutes', 'why')} for bl in session.get('blocks', [])][:8],
+            'learning_preferences': {k: b['settings'].get('senpai_' + k) for k in ('weekly_minutes', 'session_minutes', 'mode', 'depth', 'focus_note')}}
 
 
 async def run_due(store, now=None):

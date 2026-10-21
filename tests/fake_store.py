@@ -33,6 +33,37 @@ class FakeStore:
         self.learning_state = {}
         self.approach_reviews = {}
         self.design_records = {}
+        self.senpai = {}
+
+    def _senpai_coll(self, coll):
+        from server.store import FirestoreStore
+        if coll not in FirestoreStore.SENPAI:
+            raise ValueError(f"unknown Senpai collection {coll}")
+        return self.senpai.setdefault(coll, {})
+
+    def get_senpai(self, coll, key):
+        return deepcopy(self._senpai_coll(coll).get(key))
+
+    def list_senpai(self, coll):
+        return deepcopy(list(self._senpai_coll(coll).values()))
+
+    def put_senpai(self, coll, key, doc):
+        self._senpai_coll(coll)[key] = deepcopy(doc)
+        return deepcopy(doc)
+
+    def create_senpai(self, coll, key, doc):
+        c = self._senpai_coll(coll)
+        if key in c:
+            return None
+        c[key] = deepcopy(doc)
+        return deepcopy(doc)
+
+    def cas_senpai(self, coll, key, doc, expected_revision):
+        old = self._senpai_coll(coll).get(key)
+        if (old.get('revision') if old else None) != expected_revision:
+            raise ValueError("Senpai's plan changed in another request. Reload and try again.")
+        self._senpai_coll(coll)[key] = deepcopy(doc)
+        return deepcopy(doc)
 
     def get_design_record(self, key):
         return deepcopy(self.design_records.get(key))
@@ -348,4 +379,5 @@ class FakeStore:
             "reports": fp(self.reports),
             "daily_reviews": fp({str(k): v for k, v in self.daily_reviews.items()}),
             "userdoc": fp({"s": self.settings, "f": self.flags}),
+            "senpai": zlib.crc32(repr(self.senpai).encode()) & 0xFFFFFFFF,
         }

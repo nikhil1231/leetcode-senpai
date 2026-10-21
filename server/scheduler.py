@@ -994,6 +994,9 @@ def build_daily_queue(problems, attempts, reviews, settings, today=None, enrichm
     w_weak = settings.get("weakness_weight", 0.6)
     w_breadth = settings.get("breadth_weight", 0.4)
     w_mistake = settings.get("mistake_weight", 0.2)
+    # Senpai's active focus (category names): a bounded nudge, never a filter.
+    focus = set(settings.get("senpai_focus_categories") or ())
+    w_focus = settings.get("senpai_focus_weight", 0.3)
 
     prob_by_slug = {p["slug"]: p for p in problems}
     stats = {s["category"]: s for s in topic_stats(problems, attempts)}
@@ -1040,7 +1043,8 @@ def build_daily_queue(problems, attempts, reviews, settings, today=None, enrichm
             continue
         score = (w_weak * st.get("weakness", 1.0)
                  + w_breadth * (1 - st.get("coverage", 0.0))
-                 + w_mistake * mistakes.get(cat, 0.0))
+                 + w_mistake * mistakes.get(cat, 0.0)
+                 + (w_focus if cat in focus else 0.0))
         scored.append((score, p, cat))
     scored.sort(key=lambda x: (-x[0],
         x[1]['slug'] != curriculum.STARTERS.get(x[2]),

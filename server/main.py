@@ -32,8 +32,8 @@ from . import store as store_mod
 from .store import get_store
 from .system_design import router as system_design_router
 from .system_design_learning import router as system_design_learning_router
-from . import daily_coach_worker
-from .daily_coach_api import router as daily_coach_router
+from .senpai import jobscout as senpai_jobscout, service as senpai_service, worker as senpai_worker
+from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(ROOT, "static")
@@ -52,7 +52,7 @@ async def lifespan(_app):
                          daemon=True).start()
         # Quickfire answers saved while offline in an earlier run.
         _practice_store(config.DEV_UID).flush_in_background()
-    review_worker = asyncio.create_task(daily_coach_worker.run())
+    review_worker = asyncio.create_task(senpai_worker.run())
     try:
         yield
     finally:
@@ -64,7 +64,10 @@ async def lifespan(_app):
 app = FastAPI(title="Leetcode Senpai V2", lifespan=lifespan)
 app.include_router(system_design_router)
 app.include_router(system_design_learning_router)
-app.include_router(daily_coach_router)
+app.include_router(senpai_router)
+# The daily review API, under its old path (kept for compatibility) and under Senpai's.
+app.include_router(senpai_daily_router, prefix="/api/coach/daily")
+app.include_router(senpai_daily_router, prefix="/api/senpai/daily")
 
 # Responses are JSON and highly compressible — the problem catalog alone is
 # ~130KB of repetitive text. Costs nothing on loopback, matters a lot over wifi.
@@ -216,6 +219,18 @@ class SettingsUpdate(BaseModel):
     daily_coach_enabled: bool | None = Field(default=None, strict=True)
     daily_coach_timezone: str | None = None
     daily_coach_time: str | None = None
+    senpai_charter: str | None = Field(default=None, max_length=3000)
+    senpai_weekly_minutes: int | None = Field(default=None, ge=30, le=3000)
+    senpai_session_minutes: int | None = Field(default=None, ge=10, le=240)
+    senpai_mode: Literal["mixed", "retrieval", "learn", "interview"] | None = None
+    senpai_depth: Literal["balanced", "deep", "broad"] | None = None
+    senpai_focus_note: str | None = Field(default=None, max_length=1000)
+    senpai_weekly_day: int | None = Field(default=None, ge=1, le=7)
+    senpai_learning_rate: float | None = Field(default=None, ge=0, le=1)
+    senpai_max_weekly_shift: float | None = Field(default=None, ge=0, le=0.5)
+    senpai_max_focus: int | None = Field(default=None, ge=1, le=6)
+    senpai_focus_cooldown_days: int | None = Field(default=None, ge=0, le=60)
+    senpai_min_evidence_weeks: int | None = Field(default=None, ge=1, le=8)
     username: str | None = None
     poll_interval_seconds: int | None = None
     review_limit: int | None = None
@@ -928,6 +943,10 @@ def api_today(bg: BackgroundTasks, uid: str = Depends(auth.require_user)):
     problems, attempts, reviews, enrichments, settings = _gather(
         store.list_problems, store.list_attempts, store.list_reviews,
         store.list_enrichments, store.get_settings)
+    try:  # Senpai's focus nudges new-problem choice; a missing plan just means no nudge.
+        settings = {**settings, "senpai_focus_categories": senpai_service.focus_categories(store)}
+    except Exception:
+        pass
     queue = scheduler.build_daily_queue(
         problems, attempts, reviews, settings, enrichments=enrichments,
     )
@@ -2777,6 +2796,8 @@ def api_get_config(uid: str = Depends(auth.require_user)):
         "llm_provider": selected["provider"],
         "llm_model": selected["model"],
         "llm_options": llm.model_options(settings),
+        "job_scout_configured": senpai_jobscout.configured(),
+        "job_scout_settings_url": senpai_jobscout.public_links()["settings"],
     }
 
 
@@ -2833,7 +2854,12 @@ def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
     import re
 
     if "target_job" in updates:
+        current = store.get_settings()
+        if (senpai_jobscout.configured() and current.get("target_job_source") == "job_scout"
+                and updates["target_job"].strip() != current.get("target_job", "")):
+            raise HTTPException(409, "Your career target is synced from Job Scout; edit it there.")
         updates["target_job"] = updates["target_job"].strip()
+        updates.setdefault("target_job_source", current.get("target_job_source", "local"))
     if "daily_coach_timezone" in updates:
         try:
             ZoneInfo(updates["daily_coach_timezone"])
@@ -2879,7 +2905,7 @@ def api_health():
 
 # ---- static frontend ------------------------------------------------------------
 _VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js", "system-design.js", "system-design-learning.js", "system-design.css", "sections.js",
-                     "editor.js", "vendor/codemirror.js", "daily-coach.js", "daily-coach.css")
+                     "editor.js", "vendor/codemirror.js", "daily-coach.js", "daily-coach.css", "senpai.js")
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
 

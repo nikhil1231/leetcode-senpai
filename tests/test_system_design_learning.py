@@ -215,7 +215,7 @@ def test_repeat_answers_do_not_inflate_independent_accuracy_or_reviews():
 
 
 def test_daily_coach_records_learning_once_without_answer_text(client):
-    from server.daily_coach import collect_activity
+    from server.senpai.daily import collect_activity
     post(client, '/course/lessons/indexes/open')
     quiz = post(client, '/course/quizzes', request_id=rid(), lesson_id='indexes')
     q = quiz['questions'][0]

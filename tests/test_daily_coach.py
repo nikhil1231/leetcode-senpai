@@ -7,7 +7,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from server import auth, daily_coach as coach, daily_coach_api as api, daily_coach_worker as worker, llm, main
+from server import auth, llm, main
+from server.senpai import api, daily as coach, worker
 from tests.fake_store import FakeStore
 
 

@@ -555,6 +555,58 @@ class FirestoreStore:
         return result
 
 
+    # ---- Senpai: plan, state, decisions, proposals, interventions ----------
+    # One subcollection per record type under users/{uid}. Documents in
+    # `senpai` (plan, state, job_context) carry a revision for compare-and-swap.
+    SENPAI = ('senpai', 'senpai_plans', 'senpai_decisions', 'senpai_proposals',
+              'senpai_interventions', 'senpai_sessions', 'senpai_weekly', 'senpai_teaching')
+
+    def _senpai(self, coll):
+        if coll not in self.SENPAI:
+            raise ValueError(f"unknown Senpai collection {coll}")
+        return self._user_ref().collection(coll)
+
+    def get_senpai(self, coll, key):
+        if coll == 'senpai':  # plan/state/job_context: read on hot paths, so served from the cached list
+            return next((dict(d) for d in self.list_senpai(coll) if d.get('_key') == key), None)
+        return self._senpai(coll).document(key).get().to_dict()
+
+    def list_senpai(self, coll):
+        return list(_cached((coll, self.uid), lambda: [d.to_dict() for d in self._senpai(coll).stream()]))
+
+    def put_senpai(self, coll, key, doc):
+        doc = {**doc, '_key': key}
+        self._senpai(coll).document(key).set(doc)
+        _invalidate((coll, self.uid))
+        return doc
+
+    def create_senpai(self, coll, key, doc):
+        """Create once; a duplicate (retried or concurrent) execution returns None."""
+        from google.api_core.exceptions import AlreadyExists
+        try:
+            self._senpai(coll).document(key).create({**doc, '_key': key})
+        except AlreadyExists:
+            return None
+        _invalidate((coll, self.uid))
+        return doc
+
+    def cas_senpai(self, coll, key, doc, expected_revision):
+        """Write only if the stored revision is still `expected_revision` (None: absent)."""
+        from google.cloud import firestore
+        ref = self._senpai(coll).document(key)
+
+        @firestore.transactional
+        def write(transaction):
+            old = ref.get(transaction=transaction).to_dict()
+            actual = old.get('revision') if old else None
+            if actual != expected_revision:
+                raise ValueError('Senpai\'s plan changed in another request. Reload and try again.')
+            transaction.set(ref, {**doc, '_key': key})
+            return doc
+        result = write(self.db.transaction())
+        _invalidate((coll, self.uid))
+        return result
+
     # ---- playbooks (per-category cheat sheets) ------------------------------
     def _playbooks(self):
         return self._user_ref().collection("playbooks")
@@ -706,6 +758,7 @@ class FirestoreStore:
             "reports": _revisions.get(("reports", self.uid), 0),
             "daily_reviews": _revisions.get(("daily_reviews", self.uid), 0),
             "userdoc": _revisions.get(("userdoc", self.uid), 0),
+            "senpai": sum(_revisions.get((c, self.uid), 0) for c in self.SENPAI),
         }
 
 

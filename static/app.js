@@ -305,7 +305,7 @@ function handleAuthFailure(status) {
 // what the tab is for, so no section needs to re-explain itself.
 const TAB_HEADINGS = {
   today: ["Today", "Your queue for the day"],
-  coach: ["Learning Coach", "Daily process reviews guided by your target job"],
+  senpai: ["Senpai", "Your learning plan, today's session, and teaching"],
   practice: ["Quickfire", "Quick reps for a few spare minutes. Works offline."],
   design: ["System Design", "Design, explain, repair, and revisit."],
   discover: ["Discover", "Curated packs and highly-rated problems"],
@@ -314,7 +314,7 @@ const TAB_HEADINGS = {
   playbook: ["Playbook", "Synthesized cheat sheets per pattern"],
   history: ["History", "Every attempt you have logged"],
   problems: ["Problems", "Your imported library"],
-  settings: ["Settings", "Account, coach, and scheduling"],
+  settings: ["Settings", "Account, Senpai, and scheduling"],
 };
 function setPageHeading(tab) {
   const [title, sub] = TAB_HEADINGS[tab] || TAB_HEADINGS.today;
@@ -337,6 +337,7 @@ function currentActiveTab() { return document.body.classList.contains('section-d
 // Programmatic navigation for in-page links (e.g. Today's "Topic map" button).
 function goTab(tab) {
   if (tab === 'design') return window.AppSections?.select('system-design');
+  if (tab === 'coach') tab = 'senpai';  // the Learning Coach is now Senpai
   const li = $(`#tabs li[data-tab="${tab}"]`);
   if (li) li.click();
 }

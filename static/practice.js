@@ -399,4 +399,6 @@
     start("");
   };
   window.Views.renderPractice = renderPractice;
+  // Senpai opens Quickfire on one topic; the library filter starts there.
+  window.PracticePreset = (preset) => { if (preset?.topic) { topic = preset.topic; if (catalog) renderLibrary(); } };
 })();

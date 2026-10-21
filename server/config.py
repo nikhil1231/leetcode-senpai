@@ -83,8 +83,33 @@ INTERVIEW_RUN_LIMIT = 2
 # against it. (The plan's "time target" is a big-O, not minutes.)
 SOLVE_PAR_SEC = {"Easy": 15 * 60, "Medium": 25 * 60, "Hard": 40 * 60}
 
+# Job Scout owns the career target and career context; Senpai reads it, read-only.
+# Unset JOB_SCOUT_URL (e.g. on a laptop) and Senpai keeps the locally saved target.
+JOB_SCOUT_URL = os.environ.get("JOB_SCOUT_URL", "").rstrip("/")
+JOB_SCOUT_TOKEN = os.environ.get("JOB_SCOUT_TOKEN", "")
+JOB_SCOUT_PUBLIC_URL = os.environ.get("JOB_SCOUT_PUBLIC_URL", "https://jobs.nikhil.ing").rstrip("/")
+
+SENPAI_CHARTER = """Teach me, don't just assign work. Prefer retrieval and explanation before more volume.
+Diagnose before prescribing remedial work; an untouched topic is unknown, not weak.
+Use my real projects as context when it helps. Keep advice to one change at a time.
+Respect interview mode: no hints there unless I ask, and record any help as assistance."""
+
 DEFAULT_SETTINGS = {
     "target_job": "",
+    # Where target_job came from: "local" (typed here) or "job_scout" (a synced copy).
+    "target_job_source": "local",
+    "senpai_charter": SENPAI_CHARTER,
+    "senpai_weekly_minutes": 420,
+    "senpai_session_minutes": 60,
+    "senpai_mode": "mixed",
+    "senpai_depth": "balanced",
+    "senpai_focus_note": "",
+    "senpai_weekly_day": 7,  # ISO weekday of the weekly review (7 = Sunday)
+    "senpai_learning_rate": 0.5,
+    "senpai_max_weekly_shift": 0.10,
+    "senpai_max_focus": 3,
+    "senpai_focus_cooldown_days": 7,
+    "senpai_min_evidence_weeks": 2,
     "daily_coach_enabled": True,
     "daily_coach_timezone": "UTC",
     "daily_coach_time": "00:05",

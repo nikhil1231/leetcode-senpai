@@ -26,55 +26,63 @@ submissions — no browser extension.
   score trend; weekly goals, daily XP, mastery moments.
 - **FSRS** scheduler (swappable back to SM-2 via `SCHEDULER=sm2`).
 
-## Daily learning-process coach
+## Senpai (learning planner and teacher)
 
-Set **Settings → Learning coach → Target job** to the role, seniority, and work
-or interview expectations you are aiming for. The free-text goal is persisted
-per user and included in the daily coach's prompt; it is not limited to
-LeetCode. Choose an IANA timezone, a review time, and whether automatic reviews
-are enabled. Emptying the goal pauses generation.
+**Senpai** owns learning evidence, curriculum sequencing, practice sessions, teaching interventions and
+learning-time allocation. **Job Scout** owns the career target, experience evidence, job requirements, employer
+research, applications and interview context. Senpai reads Job Scout's bounded brief
+(`GET /api/senpai/context`, see the Job Scout README) and never writes career records. Code: `server/senpai/`.
 
-**Learning Coach** shows a short review of how you practised: what you worked
-on, evidence-backed observations, productive habits, at most one adjustment,
-a next-session plan, and optional curriculum proposals. Recommendations never
-modify the curriculum automatically. Open an **Evidence** link to inspect the
-supporting activity. Save a reflection/correction, mark advice worth trying, or
-dismiss it; the next daily reviews receive the previous seven recommendations
-and their feedback.
+- **Career target** — synced from Job Scout (Settings there → Career target) and mirrored into
+  `settings.target_job` with `target_job_source: job_scout`; editing it here is refused while synced. Without
+  `JOB_SCOUT_URL`/`JOB_SCOUT_TOKEN` (e.g. on a laptop) the target typed in Settings is used. A Job Scout outage
+  keeps the last good copy.
+- **Plan** (`senpai/plan`, every revision in `senpai_plans`) — weekly minutes, an allocation across Coding (DSA),
+  System design, Behavioural and Role stack (the last two are outside the app), protected minimums, at most a
+  few focus capabilities, objectives (some protected), and temporary, expiring overlays such as an imminent
+  interview. Focus nudges the Today queue's new-problem choice.
+- **Authority** (`server/senpai/policy.py`, pure) — automatic: activity selection, sessions, checkpoints, small
+  focus changes, interview overlays within limits, and allocation moves damped by a learning rate × confidence,
+  capped per ISO week and floored at protected minimums. Needs approval: undamped allocation changes, protected
+  objectives, time commitments, protections and Senpai's own limits. Market signals become a focus only after
+  persisting for N weeks *with fresh postings* — the same vacancies seen again are not new evidence. Limits live in
+  Settings → Senpai's limits; the Charter there shapes teaching style but grants no permissions.
+- **Capabilities** — status per DSA skill and system-design category from recorded evidence only: untested,
+  practised (solved, technique unconfirmed), stale, needs a check, overdue, developing, demonstrated. Inactivity is
+  unknown, never weakness; CV claims, job fit and model interpretations are never mastery.
+- **Sessions** — assembled each day (and on demand) from existing material: due reviews, new problems,
+  application checks, recovery lessons, Quickfire, system-design lessons and checks, design cases. The budget is
+  split by the effective allocation; retention checks come first; stale/untested capabilities get a quick
+  diagnostic before remedial work. Modes: mixed, retrieval, learn, interview (unassisted, capped runs). No fixed
+  recipe. Shown on Today and in the Senpai tab; blocks tick off from recorded evidence.
+- **Daily** — the scheduled review (below) now also receives the plan, capability statuses, earlier advice with
+  outcomes and the charter. Its one adjustment becomes a tracked intervention (targets + intended outcome); up to
+  two plan changes go through policy; tomorrow's session is prepared. Regeneration never re-executes changes.
+- **Weekly** (configurable day) — sync Job Scout, add interview overlays, update sustained signals, and (with the
+  model) propose explained, validated plan changes and up to two questions only you can answer.
+- **Teaching** — "Teach me" on any capability: diagnose, explain, scaffold, use your projects as context; modes
+  learn / independent (conceptual hints) / interview (clarifications). Bounded tools (find resources, inspect
+  evidence, schedule a checkpoint, propose a focus). Help is logged and recorded as assistance on a run in
+  progress; generated exercises are labelled unvalidated and never count as evidence. Needs the model.
+- **Follow-through** — each intervention records whether it was tried (from evidence) and, after its check date,
+  whether it helped; ineffective advice is fed back so it is revised, not repeated.
+- **History** — every decision (`senpai_decisions`) with rationale, evidence ids, plan revisions and follow-up;
+  a Markdown snapshot is rendered from the structured state (`GET /api/senpai/snapshot.md`).
 
-The server checks once a minute. At the configured local time (default
-**00:05 UTC**) it reviews the **previous completed local calendar day**, including
-up to 13 preceding days for trend context. The browser need not remain open.
-The application server must remain running; scale-to-zero hosting needs an
-always-running instance or an external job invoking
-`server.daily_coach_worker.tick`. After downtime, the worker checks the latest
-eligible day, rather than issuing a burst of historical model calls. Older
-days can be requested manually. Local days respect daylight-saving boundaries.
+API: `/api/senpai` (overview), `/today`, `/session`, `/changes`, `/proposals/{id}/approve|reject`,
+`/questions/{id}`, `/interventions/{id}`, `/checkpoints`, `/capabilities/{id}`, `/teach`, `/sync`, `/weekly`,
+`/history`, `/snapshot.md`; daily reviews at `/api/senpai/daily` (and the old `/api/coach/daily`).
 
-Manual generation can review a selected day or produce a labelled partial-day
-preview for today. The scheduled run replaces that preview after the day closes.
-Completed reviews are cached; **Regenerate** explicitly refreshes them using
-the current goal. A changed goal also invalidates the cached interpretation.
-Missing goals, missing model keys, empty days, and provider errors produce
-explicit states, not invented reviews. Failed regeneration preserves the last
-saved review and feedback.
+### Daily review
 
-Sources currently include coding attempts and uncompleted session starts,
-Quickfire, recorded lessons/application checks, and system-design practice.
-Only process metadata enters this prompt—never raw code, answer text, chat
-transcripts, or assessment rubrics. Imported historical solves do not count as
-new practice; repeated assessments do not count as additional practice.
-Evidence is capped at 240 source records with current-day space reserved;
-coverage/truncation and latest-snapshot limitations are disclosed. Unrecorded
-subjects, outside learning, and unknown time are not proof of gaps. AI
-interpretations remain fallible: use citations and corrections, not these
-reviews as a readiness grade.
-
-Reviews live at `users/{uid}/daily_reviews`, keyed by date and timezone.
-The authenticated API is `GET/POST /api/coach/daily` and
-`POST /api/coach/daily/{date}/feedback`. Future subjects join through the
-normalisation boundary in `server/daily_coach.py`, without changing the
-career-goal prompt or review UI.
+Senpai reviews the previous completed local day at the configured time (default 00:05 in your timezone),
+including up to 13 preceding days for trend context; the browser need not be open, the server must be running.
+After downtime it checks the latest eligible day rather than bursting historical calls. Manual generation can
+review a selected day or a labelled partial-day preview of today. Only process metadata enters the prompt —
+never raw code, answer text, chat transcripts or assessment rubrics. Imported historical solves are not new
+practice; repeated assessments are not additional practice. Evidence is capped at 240 records. Missing goals,
+missing model keys, empty days and provider errors produce explicit states, not invented reviews. Reviews live at
+`users/{uid}/daily_reviews`.
 
 ## Storage: Firestore only
 V2 is **Firestore-only** — there is no local JSON backend. The app requires
