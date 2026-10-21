@@ -2542,9 +2542,9 @@ body.has-active-session #user-chip {
 .light-tally { margin-left: auto; color: var(--muted); }
 .light-question { margin-top: 14px; padding: 26px 30px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius-lg); }
 .light-question-meta { color: var(--text-2); font-size: 12px; margin-bottom: 12px; }
-.light-question h2 { font-size: 22px; }
 .light-question h2:focus { outline: none; }
-.light-prompt { font-size: 15px; line-height: 1.65; margin: 12px 0 18px; }
+.light-prompt { font-size: 17px; font-weight: 600; line-height: 1.55; margin: 12px 0 18px; }
+.light-rules { color: var(--text-2); font-size: 13px; line-height: 1.55; margin: -10px 0 18px; }
 .light-code { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px; overflow-x: auto; font-size: 13px; line-height: 1.7; margin: 0 0 20px; }
 .light-options { display: grid; gap: 8px; }
 .light-option { display: flex; gap: 12px; align-items: baseline; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; line-height: 1.55; overflow-wrap: anywhere; }

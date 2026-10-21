@@ -120,21 +120,21 @@ def question(template, seed):
             _choice(q, options, explanation, rng)
         return q
     if row[0] == "break":
-        q.update(input_type="array", prompt="Give a nonempty JSON array of at most 12 integers (each between -100 and 100) where this function returns the wrong result.")
+        q.update(input_type="array", rules=practice_generated.BREAK_RULES, prompt="")
         if template == "break-last":
-            q["prompt"] += " It should return True exactly when a value appears more than once."
+            q["prompt"] = "It should return True exactly when a value appears more than once."
             q.update(code="def has_duplicate(nums):\n    seen = set()\n    for x in nums[:-1]:\n        if x in seen:\n            return True\n        seen.add(x)\n    return False",
                      example=[rng.randint(-5, 5)] * 2,
                      explanation="The slice nums[:-1] skips the final value. A duplicate whose second occurrence is last is never detected.")
         elif template == "break-max":
-            q["prompt"] += " It should return the largest value in the array."
+            q["prompt"] = "It should return the largest value in the array."
             q.update(code="def maximum(nums):\n    best = 0\n    for x in nums:\n        best = max(best, x)\n    return best",
                      example=[-rng.randint(1, 9)],
                      explanation="Starting at zero invents a value that may not be in the array. On an all-negative array the result is wrong. Initialize best to nums[0].")
         else:
             target = rng.randint(-9, 9)
             q.update(target=target, example=[target],
-                     prompt=q["prompt"] + f" The array must be strictly increasing. The target is {target}; return its index, or -1 if absent.",
+                     prompt=f"The array must be strictly increasing. The target is {target}; return its index, or -1 if absent.",
                      code=f"def search(nums, target={target}):\n    lo, hi = 0, len(nums) - 1\n    while lo < hi:\n        mid = (lo + hi) // 2\n        if nums[mid] == target:\n            return mid\n        if nums[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1",
                      explanation="When lo == hi there is still one candidate, but the loop exits without checking it. Use lo <= hi with these inclusive bounds.")
         return q

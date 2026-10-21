@@ -15,7 +15,7 @@ const catalog = () => ({
 const arrayQ = (n = 1) => ({ id: `v1:break-last:${n}`, template: 'break-last', mode: 'break', title: 'Last element',
   topic: 'Arrays', code: 'return False', prompt: 'Find an input', input_type: 'array' });
 const choiceQ = (n = 1) => ({ id: `v1:fill-dp:${n}`, template: 'fill-dp', mode: 'fill', title: 'Stairs', topic: 'DP',
-  code: 'ways[i] = ___', prompt: 'Fill it', input_type: 'choice',
+  code: 'ways[i] = ___', prompt: `Fill blank ${n}`, input_type: 'choice',
   options: [{ id: '2', text: 'a' }, { id: '0', text: 'b' }, { id: '1', text: 'c' }] });
 const graded = (q, extra = {}) => ({ question_id: q.id, template: q.template, mode: q.mode, correct: true,
   revealed: false, explanation: 'Because.', expected: true, actual: false, correct_option: '0', solution: 'b', ...extra });
@@ -110,7 +110,7 @@ test('a number key answers a choice, the answer shows at once, Enter serves the 
   assert.match(nexts[1][0], /recent=fill-dp/);
   await view.key('Enter');
   assert.equal(calls.filter(([u]) => u.startsWith('/practice/next')).length, 2);
-  assert.match(view.html(), /v1:fill-dp:2|Stairs/);
+  assert.match(view.html(), /Fill blank 2/);
   assert.match(view.node('#practice-tally').innerHTML + view.html(), /1 \/ 5 answered · 0 right/);
   await view.key('Escape');
   assert.match(view.html(), /Last run: 1 answered, 0 right/);

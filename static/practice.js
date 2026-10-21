@@ -237,8 +237,8 @@
     const q = current, choice = q.input_type === "choice" && !recall;
     root().innerHTML = `<div class="light-workspace">${runBar()}
       <article class="light-question" aria-labelledby="practice-question-title">
-        <div class="light-question-meta"><span>${esc(catalog.modes.find(m => m.id === q.mode).title)} · ${esc(q.topic)}${q.skill ? ` · ${esc(q.skill)} · ${esc(q.difficulty)}` : ""}</span></div>
-        <h2 id="practice-question-title" tabindex="-1">${esc(q.title)}</h2><p class="light-prompt">${esc(q.prompt)}</p>
+        <div class="light-question-meta"><span>${esc(catalog.modes.find(m => m.id === q.mode).title)}${q.difficulty ? ` · ${esc(q.difficulty)}` : ""}</span></div>
+        <h2 id="practice-question-title" class="light-prompt" tabindex="-1">${esc(q.prompt)}</h2>${q.rules ? `<p class="light-rules">${esc(q.rules)}</p>` : ""}
         ${q.code ? `<pre class="light-code"><code>${esc(q.code)}</code></pre>` : ""}
         ${q.input_type === "choice" && ["trace", "fill"].includes(q.mode) ? `<button id="practice-recall" class="button is-small" type="button">${recall ? "Show choices" : "Answer from memory"}</button>` : ""}
         ${choice ? `<div class="light-options" role="group" aria-label="Answer choices">${q.options.map((o, i) => `<button class="light-option" type="button" data-option="${esc(o.id)}"><kbd class="light-key">${i + 1}</kbd><span>${esc(o.text)}</span></button>`).join("")}</div>` :

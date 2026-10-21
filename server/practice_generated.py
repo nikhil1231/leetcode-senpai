@@ -151,8 +151,11 @@ def trace(template, rng):
     return {"prompt": prompt, "code": code}, _options(answer, distractors), explanation
 
 
+BREAK_RULES = "Give a nonempty JSON array of at most 12 integers (each between -100 and 100) that makes this function return the wrong result."
+
+
 def broken(template, rng):
-    q = {"input_type": "array", "prompt": "Give a nonempty JSON array of at most 12 integers (each between -100 and 100) that makes this function return the wrong result. "}
+    q = {"input_type": "array", "rules": BREAK_RULES, "prompt": ""}
     if template in MORE_BREAKS:
         suffix, code, example, explanation, extra = MORE_BREAKS[template][1](rng)
         q.update(code=code, example=example, explanation=explanation, **extra)
