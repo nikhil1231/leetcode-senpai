@@ -31,6 +31,7 @@ from . import (assessment, auth, coach, config, connectivity, enrich, gamify, im
 from . import store as store_mod
 from .store import get_store
 from .system_design import router as system_design_router
+from .system_design_learning import router as system_design_learning_router
 from . import daily_coach_worker
 from .daily_coach_api import router as daily_coach_router
 
@@ -62,6 +63,7 @@ async def lifespan(_app):
 
 app = FastAPI(title="Leetcode Senpai V2", lifespan=lifespan)
 app.include_router(system_design_router)
+app.include_router(system_design_learning_router)
 app.include_router(daily_coach_router)
 
 # Responses are JSON and highly compressible — the problem catalog alone is
@@ -2876,7 +2878,7 @@ def api_health():
 
 
 # ---- static frontend ------------------------------------------------------------
-_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js", "system-design.js", "system-design.css", "sections.js",
+_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js", "system-design.js", "system-design-learning.js", "system-design.css", "sections.js",
                      "editor.js", "vendor/codemirror.js", "daily-coach.js", "daily-coach.css")
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}

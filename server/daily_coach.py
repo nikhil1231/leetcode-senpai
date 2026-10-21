@@ -123,6 +123,16 @@ def collect_activity(store, date, timezone, now=None):
             add('design-practice:' + key, 'System design', r.get('answered_at'),
                 r.get('exercise_id'), r.get('format', 'practice'), topic=r.get('skill'),
                 assisted=r.get('assisted'), revealed=r.get('revealed'), elapsed_sec=r.get('elapsed_sec'))
+        elif kind in ('quiz', 'quickfire'):
+            from .system_design_learning import rows
+            for answer in rows([r]):
+                add('design-learning:' + answer['id'], 'System design', answer['answered_at'],
+                    answer['question_id'], 'lesson check' if kind == 'quiz' else 'quickfire',
+                    topic=answer['lesson_id'], assisted=answer.get('assisted'),
+                    revealed=answer.get('revealed'), guessed=answer.get('guessed'),
+                    elapsed_sec=answer.get('elapsed_sec'))
+        elif kind == 'course_lesson':
+            add('design-course:' + key, 'System design', r.get('at'), r.get('lesson_id'), 'lesson opened')
         elif kind == 'exposure':
             add('design-lesson:' + key, 'System design', r.get('at'), r.get('skill'), 'lesson opened')
     for r in store.list_learning_state():

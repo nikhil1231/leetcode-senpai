@@ -19,7 +19,7 @@ function harness(hash='') {
     nodes.set(key,n);return n;
   }
   const options=['leetcode','system-design'].map(k=>{const n=node('option '+k);n.dataset.section=k;return n;});
-  const views=['home','cases','skills','lessons','progress'].map(k=>{const n=node('view '+k);n.dataset.designView=k;return n;});
+  const views=['home','cases','skills','lessons','progress','curriculum','quickfire'].map(k=>{const n=node('view '+k);n.dataset.designView=k;return n;});
   node('#section-menu').classList.add('hidden');
   const location={hash};
   const history={pushState(a,b,url){routes.push(url);location.hash=url;},replaceState(a,b,url){location.hash=url;}};
@@ -73,4 +73,13 @@ test('returning to LeetCode restores the tab the learner left',()=>{
   const h=harness();h.context.currentActiveTab=()=> 'settings';
   h.sections.select('system-design');h.sections.select('leetcode');
   assert.deepEqual(h.tabs,['settings']);
+});
+
+test('curriculum, quickfire and individual lessons support direct links and back navigation',()=>{
+  for(const view of ['curriculum','quickfire','lesson/request-flow']) {
+    const h=harness('#/system-design/'+view);
+    assert.equal(h.opened[0][0],view);
+    h.sections.setView(view.startsWith('lesson/')?'lesson':view);
+    assert.equal(h.views.find(v=>v.dataset.designView===(view.startsWith('lesson/')?'lessons':view)).attrs['aria-current'],'page');
+  }
 });

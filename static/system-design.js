@@ -77,7 +77,7 @@
       try {
         const result = await call('/sessions/' + sid);
         if (ticket !== epoch || session?.id !== sid || !active) return;
-        assessments = result.assessments;
+        assessments = result.assessments;renderModelChip();
         // Refresh feedback only: a late result must not replace unsaved text.
         const node = $('#sd-assessments');
         if (node) { node.innerHTML = assessmentHtml(); wire(node); }
@@ -161,7 +161,7 @@
       <p><strong>${esc(lesson.principle)}</strong></p><p>${esc(lesson.worked)}</p>
       <p><b>Explain:</b> ${esc(lesson.question)}</p><p><b>Repair your design:</b> ${esc(lesson.repair)}</p>
       ${lesson.source ? `<p><a href="${esc(lesson.source[1])}" target="_blank" rel="noopener noreferrer">${esc(lesson.source[0])}</a></p>` : ''}
-      ${button('Close lesson', 'close-lesson')}</article>`;
+      <p><a href="#/system-design/lesson/${lesson.id}">Open the full lesson and knowledge check →</a></p>${button('Close lesson', 'close-lesson')}</article>`;
   }
 
   function assessmentHtml() {
@@ -213,11 +213,11 @@
   function homeHtml() {
     if (screen === 'cases') return pageIntro('DESIGN PRACTICE','One brief. Many defensible designs.','Work through a realistic case, explain your choices, and revisit the weak spots.') + caseCards() + savedHtml(20);
     if (screen === 'skills') return skillsHtml();
-    if (screen === 'lessons') return lessonsHtml();
+    if (['lessons','curriculum','lesson','quickfire'].includes(screen)) return window.DesignLearning.render(screen,catalog);
     if (screen === 'progress') return progressHtml();
     const r = catalog.recommendation;
     const title = r.kind === 'case' ? caseNames[r.id] : (catalog.exercises.find(q=>q.id===r.id)?.title || 'A focused design decision');
-    return pageIntro('A LITTLE PRACTICE, BETTER DECISIONS','Think through the system.','Build your reasoning one design, one trade-off, and one useful lesson at a time.') +
+    return pageIntro('LEARN, PRACTISE, THEN DESIGN','Build your system design foundations.','Follow the curriculum, test one concept, or work through a complete design at your own pace.') + window.DesignLearning.overview(catalog) +
       `<div class="sd-overview-grid"><section class="sd-next"><div class="sd-eyebrow"><span class="sd-live-dot"></span>YOUR NEXT SESSION</div><h3>${esc(title)}</h3><p>${esc(r.reason)}</p><div class="sd-next-bottom"><span>${catalog.profile.minutes} min · ${catalog.profile.level==='mid'?'Mid-level':esc(catalog.profile.level)} depth</span>${button(r.kind==='case'?'Explore the brief →':'Start drill →','recommended','',true)}</div></section>
       <section class="sd-how"><span class="sd-eyebrow">THE PRACTICE LOOP</span><ol><li><span>01</span><div><strong>Make a decision</strong><p>Start with the guarantees. Keep it simple.</p></div></li><li><span>02</span><div><strong>Pressure-test it</strong><p>Trace failures and explain the trade-offs.</p></div></li><li><span>03</span><div><strong>Repair one weak spot</strong><p>Practise it, then check it again later.</p></div></li></ol></section></div>
       <div class="sd-section-title"><div><h3>Choose a design challenge</h3><p>Three systems. Three different kinds of reasoning.</p></div>${button('All cases →','view','data-view="cases"')}</div>${caseCards()}${savedHtml(3)}
@@ -226,14 +226,10 @@
   function skillsHtml() {
     return pageIntro('FOCUSED PRACTICE','Small decisions. Stronger instincts.','A short exercise isolates one skill. Make your choice before opening the explanation.') + `<div class="sd-drill-list">${catalog.exercises.map((q,i)=>`<button type="button" class="sd-drill-row" data-sd="practice" data-id="${q.id}"><span class="sd-row-number">0${i+1}</span><span><small>${esc(catalog.skills[q.skill])}</small><strong>${esc(q.title)}</strong></span><span class="sd-duration">2–5 min</span><span class="sd-row-arrow">→</span></button>`).join('')}</div>`;
   }
-  function lessonsHtml() {
-    return pageIntro('THE ESSENTIALS','Understand it. Then use it.','Each lesson gives you one principle, a worked example, and a way to apply it to your design.') + `<div class="sd-lesson-grid">${Object.entries(catalog.skills).map(([k,v],i)=>`<button type="button" class="sd-lesson-card ${lesson?.skill===k?'is-active':''}" data-sd="lesson" data-skill="${k}"><span class="sd-eyebrow">LESSON 0${i+1}</span><h3>${esc(v)}</h3><span>Read & reflect <span aria-hidden="true">↗</span></span></button>`).join('')}</div>${lessonHtml()}`;
-  }
   function progressHtml() {
-    const observed = Object.values(catalog.evidence).some(v=>v.designs || v.needs_work);
-    return pageIntro('YOUR LEARNING RECORD','Evidence, over time.','See what your saved designs demonstrate and what deserves another look.') +
-      `${!observed?`<div class="sd-empty-state"><span class="sd-mini-icon">◎</span><h3>Your first design is the starting point.</h3><p>Once a design has been reviewed, observations will appear here. Independent attempts and later checks stay separate.</p>${button('Explore the cases →','view','data-view="cases"',true)}</div>`:''}
-      <div class="sd-panel sd-progress-panel"><div class="sd-section-title"><h3>Skill observations</h3><span>From reviewed designs</span></div><div class="sd-scroll"><table class="sd-evidence"><thead><tr><th>Skill</th><th>Demonstrated</th><th>Independent cases</th><th>Later checks</th><th>Needs work</th></tr></thead><tbody>${Object.entries(catalog.evidence).map(([k,v])=>`<tr><td>${esc(catalog.skills[k])}</td><td>${v.designs||'—'}</td><td>${v.independent_cases||'—'}</td><td>${v.later_checks||'—'}</td><td>${v.needs_work||'—'}</td></tr>`).join('')}</tbody></table></div><p class="sd-muted">These are AI observations, not a mastery score. A later check requires independent work at least a day later. Regrading the same answer adds no evidence.</p></div>${savedHtml(20)}`;
+    return window.DesignLearning.render('progress',catalog) +
+      `
+      <div class="sd-panel sd-progress-panel"><div class="sd-section-title"><h3>Design assessment observations</h3><span>From reviewed designs</span></div><div class="sd-scroll"><table class="sd-evidence"><thead><tr><th>Skill</th><th>Demonstrated</th><th>Independent cases</th><th>Later checks</th><th>Needs work</th></tr></thead><tbody>${Object.entries(catalog.evidence).map(([k,v])=>`<tr><td>${esc(catalog.skills[k])}</td><td>${v.designs||'—'}</td><td>${v.independent_cases||'—'}</td><td>${v.later_checks||'—'}</td><td>${v.needs_work||'—'}</td></tr>`).join('')}</tbody></table></div><p class="sd-muted">These are AI observations, not a mastery score. A later check requires independent work at least a day later. Regrading the same answer adds no evidence.</p></div>${savedHtml(20)}`;
   }
   function setupHtml() {
     const c = caseOf(selectedCase);
@@ -268,12 +264,15 @@
 
   function paint() {
     if (!catalog || !root()) return;
+    window.DesignLearning.setCatalog(catalog,screen);
     root().innerHTML = `<div id="sd-error" class="sd-error" role="alert" ${error?'':'hidden'}>${esc(error)}</div>` +
       (screen==='workspace'?workspaceHtml():screen==='exercise'?exerciseHtml():screen==='setup'?setupHtml():homeHtml());
     wire(root());
+    window.DesignLearning.wire(root());
+    renderModelChip();
     if (document.body.classList.contains('section-design')) {
       window.AppSections?.setView(screen);
-      history.replaceState(null, '', '#/system-design' + (screen==='home'?'':'/'+screen));
+      history.replaceState(null, '', '#/system-design' + (screen==='home'?'':'/'+(screen==='lesson'?window.DesignLearning.route():screen)));
     }
     if (screen==='workspace') {
       root().querySelectorAll('[role="tab"]').forEach(n=>n.addEventListener('keydown',event=>{
@@ -410,6 +409,7 @@
     }
     if(navigation!==viewEpoch)return;
     stopTimers();
+    window.DesignLearning.stop();
     if(view==='workspace') {
       let sid;try{sid=sessionStorage.getItem(activeKey());}catch(_){}
       if(sid){
@@ -421,24 +421,41 @@
     try {
       const fresh=await call();
       if(navigation!==viewEpoch)return;
-      screen=['home','cases','skills','lessons','progress'].includes(view)?view:'home';
+      if(view.startsWith('lesson/')) {
+        window.DesignLearning.setCatalog(fresh,'lesson');
+        await window.DesignLearning.openLesson(view.slice(7));
+        if(navigation!==viewEpoch)return;
+        screen='lesson';
+      } else screen=['home','cases','skills','lessons','progress','curriculum','quickfire'].includes(view)?view:'home';
       lesson=null;error='';catalog=fresh;paint();
       root().scrollIntoView({block:'start'});
+      $('#sd-heading')?.focus({preventScroll:true});
     } catch(e) {error=e.message;paint();}
   }
 
   function onTab(tab) {
     const wasActive=active;
     if(tab!=='design') {
-      viewEpoch++;stopTimers(); active=false; clearTimeout(debounce);
+      viewEpoch++;stopTimers(); window.DesignLearning.stop(); active=false; clearTimeout(debounce);
       if(session && wasActive) { session.timing_uncertain=true; stash(); if(!busy)saveDraft().catch(()=>{}); }
-    } else { active=true; startTimers(); }
+    } else { active=true; startTimers(); window.DesignLearning.startClock(); }
   }
   document.addEventListener('visibilitychange',()=>{
     if(document.visibilityState==='hidden') { stopTimers(); if(session){session.timing_uncertain=true;stash();if(!busy)saveDraft().catch(()=>{});} }
     else if(active)startTimers();
   });
   window.addEventListener('beforeunload',event=>{stash();if(dirty){event.preventDefault();event.returnValue='';}});
+  function renderModelChip() {
+    const node=$('#design-coach-chip');
+    if(!node||!catalog)return;
+    const reviewing=assessments.some(a=>a.status==='pending' && Date.now()/1000-(a.started_at||a.created_at)<180);
+    const current=reviewing?'Review · '+catalog.profiles.assessor.model:'Tutor · '+catalog.profiles.tutor.model;
+    node.innerHTML=`<details class="sd-model-chip"><summary><span class="coach-dot ${catalog.coach_enabled?'is-on':''}"></span><span>${catalog.coach_enabled?esc(current):'Coach off'}</span></summary><div><p><b>Tutor:</b> ${esc(catalog.profiles.tutor.model)}</p><p><b>Assessor:</b> ${esc(catalog.profiles.assessor.model)}</p><p>${catalog.coach_enabled?'AI coaching is connected.':'Lessons, checks, and Quickfire work without AI coaching.'}</p></div></details>`;
+  }
   window.Views.renderDesign=renderDesign;
-  window.SystemDesign={onTab,diagram,openView,isBusy:()=>busy};
+  window.SystemDesign={onTab,diagram,openView,isBusy:()=>busy||window.DesignLearning.isBusy(),
+    repaint:paint,setCatalog(value){catalog=value;},
+    async openCase(key){
+      await openView('cases');selectedCase=key;selectedMode='learn';screen='setup';paint();
+    }};
 })();

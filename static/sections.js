@@ -3,7 +3,7 @@
   'use strict';
   const { $ } = window.H;
   const trigger = $('#section-trigger'), menu = $('#section-menu');
-  const views = ['home', 'cases', 'skills', 'lessons', 'progress', 'workspace'];
+  const views = ['home', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire'];
   let design = false, lastLeetcodeTab = 'today';
   function close(focus = false) {
     menu.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false');
@@ -16,7 +16,7 @@
     $('#tabs').classList.toggle('hidden', on);
     $('#design-nav').classList.toggle('hidden', !on);
     trigger.querySelector('.brand-name').textContent = on ? 'System Design' : 'Leetcode Senpai';
-    trigger.querySelector('.brand-sub').textContent = on ? 'Interview workspace' : 'Interview prep';
+    trigger.querySelector('.brand-sub').textContent = on ? 'Learn and practise' : 'Interview prep';
     trigger.setAttribute('aria-label', 'Switch learning section. Current: ' + (on?'System Design':'LeetCode'));
     menu.querySelectorAll('[data-section]').forEach(n => {
       const selected = (n.dataset.section === 'system-design') === on;
@@ -28,11 +28,11 @@
   }
   function setView(view) {
     $('#design-nav').querySelectorAll('[data-design-view]').forEach(n => {
-      const selected = n.dataset.designView === ({setup:'cases',workspace:'cases',exercise:'skills'}[view] || view);
+      const selected = n.dataset.designView === ({setup:'cases',workspace:'cases',exercise:'skills',lesson:'lessons'}[view] || view);
       n.classList.toggle('is-active', selected);
       if (selected) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
     });
-    const titles = {home:'Overview', cases:'Design cases', skills:'Skill drills', lessons:'Lessons', progress:'Your progress', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
+    const titles = {home:'Overview', curriculum:'Curriculum', quickfire:'Quickfire', lesson:'Lesson', cases:'Design cases', skills:'Skill drills', lessons:'Lessons', progress:'Your progress', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
     $('#page-title').textContent = titles[view] || 'System Design';
     $('#page-sub').textContent = 'System Design';
   }
@@ -55,8 +55,8 @@
     else window.SystemDesign.openView(view);
   }
   function route() {
-    const match = location.hash.match(/^#\/system-design(?:\/([^/]+))?$/);
-    if (match) select('system-design', views.includes(match[1]) ? match[1] : 'home', false);
+    const match = location.hash.match(/^#\/system-design(?:\/([^/]+)(?:\/([a-z0-9-]+))?)?$/);
+    if (match) select('system-design', match[1]==='lesson'&&match[2] ? 'lesson/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
     else if (design) select('leetcode', 'home', false);
   }
   trigger.addEventListener('click', () => {

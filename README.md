@@ -424,3 +424,53 @@ Without coaching configured, saved designs, lessons, and exercises still work.
 Assessment jobs run within the web process. After a restart, a pending job can be
 retried after three minutes; no separate durable worker is required for this release.
 System Design storage requires the server's normal Firestore connectivity.
+
+### System Design curriculum and Quickfire
+
+**Curriculum** is the learning map: eight categories, 32 ordered lessons, and
+individual learning objectives with recorded check results. Prerequisites suggest
+an order without locking topics. **Lessons** offers the same searchable course;
+every lesson has a worked example, trade-off, misconception, further reading, and
+three authored knowledge checks. Mark it read and attempt all three checks to
+complete it. A perfect check is recorded separately; retakes retain their history.
+The original six repair lessons now link into this course. Historical lesson
+openings remain exposure, without invented completion or scores.
+
+**System Design Quickfire** contains another 96 authored multiple-choice questions,
+separate from the 96 lesson checks. Choose category, topic, beginner/standard/mixed
+difficulty, adaptive/mistakes/learned practice, and five, ten, or continuous rounds.
+Keys 1–3 select a choice, Enter checks/continues, and Escape stops. Reveals and
+“I guessed” are recorded. Grading makes no model calls.
+
+Lesson checks schedule separate application questions for later review. Review
+state is per question/concept rather than the six broad design-assessment skills.
+Misses, guesses, reveals, and supported work return sooner; clean answers on later
+days extend the interval. Same-day feedback exposure marks repeat questions as
+supported. Reading a related lesson also marks Quickfire within 24 hours as
+supported. An unfinished Quickfire round and selected answer can be recovered
+after refreshing the same tab for up to 24 hours; the server's saved answer wins
+when a submission response was interrupted. Browser storage is optional.
+
+**Your progress** shows course coverage, latest/best lesson scores, accuracy with
+sample counts, supported attempts, due reviews, recent answer explanations, and
+the existing full-design observations. Accuracy counts the first independent
+answer per question per UTC day; guessed responses count as uncertain. Topic
+strength/weakness labels require at least three independent attempts and use the
+latest five. Unknown topics remain unassessed. Quiz completion is not a claim of
+full-design mastery. The daily process coach receives activity metadata once per
+answer, without raw answer text or explanations.
+
+Learning records share the account-scoped `system_design` collection, using
+`course_lesson`, `quiz`, and `quickfire` record kinds. Started quizzes/questions
+retain immutable grading contracts and stable choice IDs. Submission retries
+reuse the same result. No migration or model key is needed. New profiles default
+to foundation depth; saved profile choices are preserved. The System Design
+sidebar chip shows its own tutor and assessor configurations; saved AI feedback
+continues to identify the model that produced it.
+
+Relevant regression checks:
+
+```bash
+uv run --locked pytest tests/test_system_design.py tests/test_system_design_learning.py tests/test_daily_coach.py
+node --test tests/test_sections_frontend.cjs tests/test_system_design_learning_frontend.cjs
+```

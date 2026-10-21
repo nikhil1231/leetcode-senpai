@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 from . import auth, llm, system_design_coach as coach
 from .store import get_store
+from .system_design_learning import course_summary
+from .system_design_curriculum import LEGACY_LESSONS, public_lesson
 from .system_design_content import (VERSION, CASES, FIELDS, SKILLS, LESSONS,
                                     EXERCISES, public_case, public_exercise, check_exercise)
 
@@ -161,7 +163,7 @@ def recommendation(records, minutes, now):
 @router.get('')
 def catalog(store=Depends(design_store)):
     records = store.list_design_records()
-    profile = store.get_design_record('profile') or {'level': 'mid', 'minutes': 15, 'revision': None}
+    profile = store.get_design_record('profile') or {'level': 'foundation', 'minutes': 15, 'revision': None}
     sessions = sorted((r for r in records if r.get('kind') == 'session'), key=lambda r: r['updated_at'], reverse=True)
     return {'cases': [public_case(k) for k in CASES], 'skills': SKILLS, 'fields': FIELDS,
             'profile': profile, 'coach_enabled': llm.enabled(store.get_settings()),
@@ -170,6 +172,7 @@ def catalog(store=Depends(design_store)):
             'sessions': [{k: r[k] for k in ('id', 'case_id', 'mode', 'updated_at', 'elapsed_sec')} for r in sessions[:20]],
             'evidence': evidence(records), 'reviews': list(review_schedule(records).values()),
             'recommendation': recommendation(records, profile['minutes'], int(time.time())),
+            'course': course_summary(records),
             'storage_scope': hashlib.sha256(store.uid.encode()).hexdigest()[:20]}
 
 
@@ -189,8 +192,8 @@ def start(body: Start, store=Depends(design_store)):
             raise HTTPException(409, 'Request ID already used for a different design')
         return old
     now = int(time.time())
-    level = (store.get_design_record('profile') or {}).get('level', 'mid')
-    recent_help = any((r.get('kind') == 'exposure' and r.get('skill') in CASES[body.case_id]['skills']
+    level = (store.get_design_record('profile') or {}).get('level', 'foundation')
+    recent_help = any((r.get('kind') in ('exposure', 'course_lesson') and r.get('skill') in CASES[body.case_id]['skills']
                        and now - r.get('at', 0) < DAY) or
                       (r.get('kind') == 'assessment' and r.get('status') == 'complete'
                        and r['snapshot']['case_id'] == body.case_id and now - r.get('finished_at', 0) < DAY)
@@ -321,7 +324,7 @@ def lesson(skill: str, body: dict, store=Depends(design_store)):
     if body.get('session_id'):
         session = record(store, body['session_id'], 'session')
         session = put(store, session['id'], {**session, 'assisted': True}, session['revision'])
-    return {'lesson': LESSONS[skill], 'session': session}
+    return {'lesson': {**LESSONS[skill], **public_lesson(LEGACY_LESSONS[skill])}, 'session': session}
 
 
 @router.post('/practice')
