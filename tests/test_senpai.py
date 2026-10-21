@@ -447,3 +447,18 @@ def test_only_one_diagnostic_beyond_focus_per_session():
     many = [{'id': f'dsa:s{i}', 'bucket': 'dsa', 'name': f'T{i}', 'status': 'untested', 'signals': {}} for i in range(6)]
     s = sessions.prepare(plan(), NOW, 'd', many, {}, {}, {f'T{i}' for i in range(6)}, budget=120, mode='retrieval')
     assert sum(b['kind'] == 'diagnostic' for b in s['blocks']) == 1
+
+
+def test_worker_visits_the_access_user_without_a_target(monkeypatch):
+    from server.senpai import worker
+    from server import store as store_mod
+    store = seeded()
+    store.update_settings({'target_job': ''})
+    seen = []
+    monkeypatch.setattr(config, 'AUTH_MODE', 'access')
+    monkeypatch.setattr(config, 'ACCESS_UID', 'senpai')
+    monkeypatch.setattr(store_mod, 'daily_coach_uids', lambda: [])
+    monkeypatch.setattr(worker.store_mod, 'get_store', lambda uid: seen.append(uid) or store)
+    fake_context(monkeypatch, {**context(), 'career_target': {'text': 'Platform engineer'}})
+    asyncio.run(worker.tick(now=NOW))
+    assert seen == ['senpai'] and store.get_settings()['target_job'] == 'Platform engineer'

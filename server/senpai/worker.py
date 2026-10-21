@@ -16,6 +16,10 @@ async def tick(uids=None, now=None):
     """One observable scheduling pass, also usable by a one-shot deployment job."""
     if uids is None:
         uids = [config.DEV_UID] if config.local_mode() else await asyncio.to_thread(store_mod.daily_coach_uids)
+        if config.access_mode() and config.ACCESS_UID not in uids:
+            # The career target may only arrive with the first Job Scout sync, and Senpai's
+            # weekly review does not need one: the Access user is always visited.
+            uids = list(uids) + [config.ACCESS_UID]
     for uid in uids:
         try:
             store = await asyncio.to_thread(store_mod.get_store, uid)
