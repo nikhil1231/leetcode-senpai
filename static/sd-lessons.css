@@ -158,10 +158,10 @@
 .sd-arch-node.is-missing rect { stroke:#f5b544; stroke-dasharray:5 4; fill:#f5b5440d; }
 .sd-arch-q { fill:#f5b544; stroke:none; font:700 18px var(--font); }
 .sd-arch-edge line { stroke:#4f5d68; stroke-width:1.4; transition:stroke .3s; }
-.sd-arch-edge text { fill:var(--muted); font:10px var(--font-mono); paint-order:stroke; stroke:var(--panel); stroke-width:4px; }
+.sd-arch-elabel { fill:var(--muted); font:10px var(--font-mono); paint-order:stroke; stroke:var(--panel); stroke-width:4px; stroke-linejoin:round; }
 .sd-arch marker path { fill:#4f5d68; }
 .sd-arch-edge.is-lit line { stroke:var(--accent); stroke-width:2.6; stroke-dasharray:7 5; animation:sd-flow .6s linear infinite; }
-.sd-arch-edge.is-lit text { fill:var(--accent); }
+.sd-arch-elabel.is-lit { fill:var(--accent); }
 .sd-arch-edge.is-past line { stroke:#8ad9c277; }
 @keyframes sd-flow { to { stroke-dashoffset:-12; } }
 .sd-arch-paths { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
@@ -363,3 +363,6 @@
 }
 .sd-choice-picked { position:relative; }
 .sd-choice-picked::after { content:'your answer'; position:absolute; right:12px; top:10px; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.sd-sort-select { background:var(--panel3); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:12px var(--font); max-width:240px; }
+.sd-sort-answer { font-size:12px; color:#35d39a; margin-left:8px; }
+.sd-seg { flex-wrap:wrap; }

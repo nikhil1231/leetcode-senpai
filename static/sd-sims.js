@@ -474,37 +474,41 @@
 
   // ---------- 10. Retry storms and backoff ----------
   registry.backoff = (el, cfg, api) => simple(el, cfg, api,
-    { strategy: 'immediate', clients: 2000, outage: 10, capacity: 400, maxAttempts: 12 },
-    [{ key: 'strategy', label: 'Retry strategy', type: 'select', options: [['immediate', 'Fixed 100 ms delay'], ['exp', 'Exponential backoff (100 ms × 2ⁿ, cap 20 s)'], ['jitter', 'Exponential + full jitter'], ['budget', 'Exponential + jitter + 10% retry budget']] },
+    { strategy: 'immediate', clients: 2000, outage: 10, capacity: 400, deadline: 30 },
+    [{ key: 'strategy', label: 'Retry strategy', type: 'select', options: [['immediate', 'Fixed 100 ms delay'], ['exp', 'Exponential backoff (100 ms × 2ⁿ, cap 20 s)'], ['jitter', 'Exponential + full jitter'], ['budget', 'Exponential + jitter + retry budget (10% of capacity)']] },
       { key: 'clients', label: 'Clients', min: 200, max: 10000, step: 100 },
       { key: 'outage', label: 'Dependency down for', min: 1, max: 30, fmt: v => v + ' s' },
-      { key: 'capacity', label: 'Dependency capacity', min: 100, max: 2000, step: 50, fmt: v => v + '/s' }],
+      { key: 'capacity', label: 'Dependency capacity', min: 100, max: 2000, step: 50, fmt: v => v + '/s' },
+      { key: 'deadline', label: 'Each client gives up after', min: 5, max: 60, fmt: v => v + ' s' }],
     s => {
       const r = rng(2), dt = 0.1, T = 60, steps = T / dt;
-      const next = new Float64Array(s.clients), attempts = new Int32Array(s.clients), done = new Uint8Array(s.clients);
-      for (let i = 0; i < s.clients; i++) next[i] = r() * 1; // first try within 1 s
-      const load = new Array(T).fill(0), good = new Array(T).fill(0); let gaveUp = 0, finishedAt = Infinity, retries = 0, firstTries = 0;
+      const next = new Float64Array(s.clients), first = new Float64Array(s.clients), attempts = new Int32Array(s.clients), done = new Uint8Array(s.clients);
+      for (let i = 0; i < s.clients; i++) { next[i] = r(); first[i] = next[i]; }
+      const load = new Array(T).fill(0), good = new Array(T).fill(0); let gaveUp = 0, served = 0, finishedAt = Infinity, tokens = 50;
       for (let step = 0; step < steps; step++) {
         const t = step * dt, due = [];
+        tokens = Math.min(100, tokens + 0.1 * s.capacity * dt);
         for (let i = 0; i < s.clients; i++) if (!done[i] && next[i] <= t) due.push(i);
-        load[Math.floor(t)] += due.length;
-        const up = t >= s.outage, budgetOK = s.strategy !== 'budget' ? Infinity : Math.max(5, firstTries * 0.1);
-        const capTick = s.capacity * dt;
-        // Overload collapse: when offered load exceeds capacity, goodput degrades.
+        const capTick = s.capacity * dt, up = t >= s.outage;
+        // Overload collapse: past capacity, goodput degrades as the server thrashes.
         const succProb = !up ? 0 : due.length <= capTick ? 1 : capTick / due.length * Math.max(0.3, 1 - 0.4 * (due.length / capTick - 1) / 4);
+        let sent = 0;
         due.forEach(i => {
-          attempts[i]++; if (attempts[i] === 1) firstTries++; else retries++;
-          if (r() < succProb) { done[i] = 1; good[Math.floor(t)]++; return; }
-          if (attempts[i] >= s.maxAttempts || (s.strategy === 'budget' && attempts[i] > 1 && retries > budgetOK)) { done[i] = 1; gaveUp++; return; }
-          const n = attempts[i], base = Math.min(20, 0.1 * 2 ** n);
-          next[i] = t + (s.strategy === 'immediate' ? 0.1 : s.strategy === 'exp' ? base : r() * base);
+          if (attempts[i] > 0 && s.strategy === 'budget') { if (tokens < 1) { done[i] = 1; gaveUp++; return; } tokens--; }
+          attempts[i]++; sent++;
+          if (r() < succProb) { done[i] = 1; served++; good[Math.floor(t)]++; return; }
+          const base = Math.min(20, 0.1 * 2 ** attempts[i]);
+          const wait = s.strategy === 'immediate' ? 0.1 : s.strategy === 'exp' ? base : r() * base;
+          if (t + wait - first[i] > s.deadline) { done[i] = 1; gaveUp++; return; }
+          next[i] = t + wait;
         });
-        if (finishedAt === Infinity && done.every(Boolean)) finishedAt = t;
+        load[Math.floor(t)] += sent;
+        if (finishedAt === Infinity && served + gaveUp === s.clients) finishedAt = t;
       }
-      const peak = Math.max(...load), served = s.clients - gaveUp - [...done].filter(d => !d).length;
-      return { metrics: { peakLoad: peak, gaveUp, recovered: finishedAt, strategy: s.strategy, servedPct: Math.round(100 * served / s.clients) },
+      const peak = Math.max(...load), afterPeak = Math.max(...load.slice(Math.ceil(s.outage)));
+      return { metrics: { peakLoad: peak, afterRecoveryPeak: afterPeak, gaveUp, recovered: finishedAt, strategy: s.strategy, servedPct: Math.round(100 * served / s.clients) },
         html: stats([{ label: 'Peak attempts / s', value: fmt(peak), tone: peak > s.capacity * 2 ? 'bad' : '' }, { label: 'Clients served', value: Math.round(100 * served / s.clients) + '%', tone: served < s.clients ? 'warn' : 'ok' },
-          { label: 'Gave up', value: fmt(gaveUp), tone: gaveUp ? 'warn' : '' }, { label: 'Everyone finished by', value: isFinite(finishedAt) ? finishedAt.toFixed(1) + ' s' : '> 60 s' }]) +
+          { label: 'Gave up (deadline or budget)', value: fmt(gaveUp), tone: gaveUp ? 'warn' : '' }, { label: 'All clients resolved by', value: isFinite(finishedAt) ? finishedAt.toFixed(1) + ' s' : '> 60 s' }]) +
           chart({ series: [{ label: 'Attempts / s', cls: 's3', values: load }, { label: 'Successes / s', cls: 's1', values: good }], xMax: T, xLabel: 'seconds', yLabel: 'per second', hlines: [{ y: s.capacity, label: 'capacity', cls: 'is-limit' }], bands: [{ from: 0, to: s.outage, label: 'dependency down' }] }) };
     });
 

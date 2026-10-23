@@ -58,11 +58,17 @@ class LessonError(ValueError):
 
 # Prose values are written plainly (colons, quotes and # are common in them); they are
 # turned into literal block scalars before YAML parsing so authors needn't quote them.
-PROSE = re.compile(r'^(\s*(?:- )?)(prompt|explain|explanation|reveal|intro|caption|steps|hint|given|model|say|weak|strong|why|text|label|note|takeaway|title|q|a|summary|debrief): (?![|>\'"{\[])(.+)$', re.M)
+PROSE = re.compile(r'^(\s*(?:- )?)(prompt|explain|explanation|reveal|intro|caption|steps|hint|given|model|say|weak|strong|why|text|label|note|takeaway|title|q|a|summary|debrief): (.+)$', re.M)
 
 
 def _prose(text):
-    return PROSE.sub(lambda m: f'{m[1]}{m[2]}: |-\n{" " * (len(m[1]) + 2)}{m[3]}', text)
+    def literal(m):
+        value = m[3].strip()
+        quoted = len(value) > 1 and value[0] in '\'"' and value[-1] == value[0]
+        if quoted or value[0] in '|>{[':
+            return m[0]
+        return f'{m[1]}{m[2]}: |-\n{" " * (len(m[1]) + 2)}{value}'
+    return PROSE.sub(literal, text)
 
 
 def _shift(seed, n):

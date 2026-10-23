@@ -114,7 +114,7 @@
   // ---------- Sort into buckets ----------
   R.sort = b => {
     const items = shuffle(b.items.map((it, i) => ({ ...it, i })), b.key + b.prompt);
-    return frame(b, `<div class="sd-prompt">${md(b.prompt)}</div><div class="sd-sort">${items.map(it => `<div class="sd-sort-item" data-i="${it.i}"><span class="sd-sort-text">${inline(it.text)}</span><span class="sd-seg">${b.buckets.map((name, k) => `<button type="button" data-b="bucket" data-k="${k}">${inline(name)}</button>`).join('')}</span><div class="sd-sort-why" hidden></div></div>`).join('')}</div><div class="sd-actions">${button('Check', 'check', '', true)}</div><div class="sd-reveal" hidden></div>`, b.title);
+    return frame(b, `<div class="sd-prompt">${md(b.prompt)}</div><div class="sd-sort">${items.map(it => `<div class="sd-sort-item" data-i="${it.i}"><span class="sd-sort-text">${inline(it.text)}</span>${b.buckets.length > 4 ? `<select class="sd-sort-select" data-b="bucketsel" aria-label="Choose a category"><option value="">Choose…</option>${b.buckets.map((name, k) => `<option value="${k}">${esc(name)}</option>`).join('')}</select>` : `<span class="sd-seg">${b.buckets.map((name, k) => `<button type="button" data-b="bucket" data-k="${k}">${inline(name)}</button>`).join('')}</span>`}<div class="sd-sort-why" hidden></div></div>`).join('')}</div><div class="sd-actions">${button('Check', 'check', '', true)}</div><div class="sd-reveal" hidden></div>`, b.title);
   };
   W.sort = (el, b, ctx) => {
     const picks = {};
@@ -123,6 +123,10 @@
       picks[row.dataset.i] = Number(n.dataset.k);
       row.querySelectorAll('[data-b=bucket]').forEach(o => o.classList.toggle('is-on', o === n));
     })));
+    el.querySelectorAll('[data-b=bucketsel]').forEach(sel => sel.addEventListener('change', () => {
+      const row = sel.closest('.sd-sort-item');
+      if (sel.value === '') delete picks[row.dataset.i]; else picks[row.dataset.i] = Number(sel.value);
+    }));
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       if (Object.keys(picks).length < b.items.length) { const r = el.querySelector('.sd-reveal'); r.hidden = false; r.innerHTML = '<p class="sd-muted">Place every item first.</p>'; return; }
       el.dataset.checked = '1'; let right = 0;
@@ -130,6 +134,8 @@
         const it = b.items[row.dataset.i], ok = picks[row.dataset.i] === it.bucket; right += ok;
         row.classList.add(ok ? 'is-right' : 'is-wrong');
         row.querySelectorAll('[data-b=bucket]').forEach(o => { o.disabled = true; o.classList.toggle('is-answer', Number(o.dataset.k) === it.bucket); });
+        const sel = row.querySelector('[data-b=bucketsel]');
+        if (sel) { sel.disabled = true; if (!ok) sel.insertAdjacentHTML('afterend', `<span class="sd-sort-answer">→ ${inline(b.buckets[it.bucket])}</span>`); }
         if (it.why) { const w = row.querySelector('.sd-sort-why'); w.hidden = false; w.innerHTML = inline(it.why); }
       });
       el.querySelector('[data-b=check]').disabled = true;
@@ -327,22 +333,24 @@
   R.arch = b => {
     const nodes = b.nodes, W_ = 230, H_ = 96;
     const cols = Math.max(...nodes.map(n => n.x)) + 1, rows = Math.max(...nodes.map(n => n.y)) + 1;
-    const pos = n => ({ x: 20 + n.x * W_ + 64, y: 16 + n.y * H_ + 26 });
-    const by = Object.fromEntries(nodes.map(n => [n.id, n]));
-    const edges = b.edges.map(([a, c, label], i) => {
+    const half = n => Math.min(105, Math.max(64, (Math.max(String(n.label).length * 7, String(n.note || '').length * 5.4) + 62) / 2));
+    const pos = n => ({ x: 20 + n.x * W_ + 90, y: 16 + n.y * H_ + 26 });
+    const by = Object.fromEntries(nodes.map(n => [n.id, n])), labels = [];
+    const edges = b.edges.map(([a, c, label]) => {
       const p = pos(by[a]), q = pos(by[c]);
       const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
       const ox = dx / len, oy = dy / len;
-      const cut = (u, v) => Math.min(64 / Math.abs(u || 1e-9), 26 / Math.abs(v || 1e-9));
-      const s = cut(ox, oy);
-      const x1 = p.x + ox * s, y1 = p.y + oy * s, x2 = q.x - ox * (s + 4), y2 = q.y - oy * (s + 4);
-      return `<g class="sd-arch-edge" data-edge="${esc(a)}>${esc(c)}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-end="url(#sd-arrow-${b.key})"/>${label ? `<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 5}" text-anchor="middle">${esc(label)}</text>` : ''}</g>`;
+      const cut = (n) => Math.min(half(n) / Math.abs(ox || 1e-9), 26 / Math.abs(oy || 1e-9));
+      const s1 = cut(by[a]), s2 = cut(by[c]);
+      const x1 = p.x + ox * s1, y1 = p.y + oy * s1, x2 = q.x - ox * (s2 + 4), y2 = q.y - oy * (s2 + 4);
+      labels.push(label ? `<text class="sd-arch-elabel" data-edge="${esc(a)}>${esc(c)}" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 5}" text-anchor="middle">${esc(label)}</text>` : '');
+      return `<g class="sd-arch-edge" data-edge="${esc(a)}>${esc(c)}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-end="url(#sd-arrow-${b.key})"/></g>`;
     }).join('');
     const boxes = nodes.map(n => {
-      const p = pos(n), hidden = b.missing === n.id;
-      return `<g class="sd-arch-node is-${esc(n.kind || 'service')} ${hidden ? 'is-missing' : ''}" data-node="${esc(n.id)}" transform="translate(${p.x},${p.y})"><rect x="-64" y="-26" width="128" height="52" rx="8"/><g class="sd-arch-icon" transform="translate(-44,0)">${hidden ? '<text x="0" y="5" text-anchor="middle" class="sd-arch-q">?</text>' : KIND_ICON[n.kind || 'service'] || KIND_ICON.service}</g><text class="sd-arch-label" x="-28" y="${n.note ? -2 : 4}">${hidden ? 'Missing piece' : esc(n.label)}</text>${n.note && !hidden ? `<text class="sd-arch-note" x="-28" y="12">${esc(n.note)}</text>` : ''}</g>`;
+      const p = pos(n), hidden = b.missing === n.id, h = half(n);
+      return `<g class="sd-arch-node is-${esc(n.kind || 'service')} ${hidden ? 'is-missing' : ''}" data-node="${esc(n.id)}" transform="translate(${p.x},${p.y})"><rect x="${-h}" y="-26" width="${2 * h}" height="52" rx="8"/><g class="sd-arch-icon" transform="translate(${-h + 20},0)">${hidden ? '<text x="0" y="5" text-anchor="middle" class="sd-arch-q">?</text>' : KIND_ICON[n.kind || 'service'] || KIND_ICON.service}</g><text class="sd-arch-label" x="${-h + 36}" y="${n.note ? -2 : 4}">${hidden ? 'Missing piece' : esc(n.label)}</text>${n.note && !hidden ? `<text class="sd-arch-note" x="${-h + 36}" y="12">${esc(n.note)}</text>` : ''}</g>`;
     }).join('');
-    const svg = `<div class="sd-arch-wrap"><svg class="sd-arch" style="max-width:${(cols * W_ + 40) * 1.1}px" viewBox="0 0 ${cols * W_ + 40} ${rows * H_ + 20}" role="img" aria-label="${esc(b.title || 'Architecture diagram')}"><defs><marker id="sd-arrow-${b.key}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>${edges}${boxes}</svg></div>`;
+    const svg = `<div class="sd-arch-wrap"><svg class="sd-arch" style="max-width:${(cols * W_ + 40) * 1.1}px" viewBox="0 0 ${cols * W_ + 40} ${rows * H_ + 20}" role="img" aria-label="${esc(b.title || 'Architecture diagram')}"><defs><marker id="sd-arrow-${b.key}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>${edges}${boxes}${labels.join('')}</svg></div>`;
     const paths = b.paths ? `<div class="sd-arch-paths">${b.paths.map((p, i) => button('▶ ' + p.label, 'path', `data-i="${i}"`)).join('')}</div><div class="sd-arch-caption" aria-live="polite"></div>` : '';
     const quiz = b.missing ? `<div class="sd-prompt">${md(b.prompt || 'Which component belongs in the missing box?')}</div><div class="sd-predict-choices">${b.choices.map((c, i) => `<button type="button" class="sd-option" data-b="pick" data-i="${i}"><span class="sd-option-key">${String.fromCharCode(65 + i)}</span><span>${inline(c)}</span></button>`).join('')}</div><div class="sd-reveal" hidden></div>` : '';
     return frame(b, `${b.caption ? `<div class="sd-prompt">${md(b.caption)}</div>` : ''}${svg}${paths}${quiz}`, b.title);
@@ -352,13 +360,14 @@
     el.querySelectorAll('[data-b=path]').forEach(n => n.addEventListener('click', () => {
       clearInterval(timer);
       const path = b.paths[Number(n.dataset.i)], cap = el.querySelector('.sd-arch-caption');
-      el.querySelectorAll('.sd-arch-edge').forEach(e => e.classList.remove('is-lit', 'is-past'));
+      el.querySelectorAll('.sd-arch-edge,.sd-arch-elabel').forEach(e => e.classList.remove('is-lit', 'is-past'));
       let i = 0;
       const step = () => {
         if (!el.isConnected || i >= path.steps.length) { clearInterval(timer); if (i >= path.steps.length) ctx.done(b, null); return; }
-        el.querySelectorAll('.sd-arch-edge.is-lit').forEach(e => { e.classList.remove('is-lit'); e.classList.add('is-past'); });
+        el.querySelectorAll('.sd-arch-edge.is-lit,.sd-arch-elabel.is-lit').forEach(e => { e.classList.remove('is-lit'); e.classList.add('is-past'); });
         const [a, c, note] = path.steps[i];
-        (el.querySelector(`[data-edge="${CSS.escape(a + '>' + c)}"]`) || el.querySelector(`[data-edge="${CSS.escape(c + '>' + a)}"]`))?.classList.add('is-lit');
+        const key = el.querySelector(`.sd-arch-edge[data-edge="${CSS.escape(a + '>' + c)}"]`) ? a + '>' + c : c + '>' + a;
+        el.querySelectorAll(`[data-edge="${CSS.escape(key)}"]`).forEach(e => e.classList.add('is-lit'));
         cap.innerHTML = `<span class="sd-step-n">${i + 1}/${path.steps.length}</span> ${inline(note || '')}`;
         i++;
       };
