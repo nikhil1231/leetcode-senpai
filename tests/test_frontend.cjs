@@ -544,6 +544,25 @@ test('stopping an optimize run goes back to rating that solve, not the queue hea
   assert.equal(ui.run('currentAttempt.id'), 'optimized');
 });
 
+test('optimization offers chat, hint and end controls without giving up', () => {
+  const ui = app(async () => response({}));
+  for (const selector of ['#coach-chat', '#btn-hint', '#btn-end-run', '#btn-give-up']) {
+    ui.node(selector).classList.toggle = (name, hidden) => {
+      if (name === 'hidden') ui.node(selector).hidden = hidden;
+    };
+  }
+  ui.run(`activeSession = { session_id: 's1', kind: 'optimize', chat_available: true,
+    hints_available: true, end_available: true, give_up_available: false };
+    setHints(activeSession); setEndRun(activeSession); setGiveUp(activeSession)`);
+  assert.equal(ui.node('#coach-chat').hidden, false);
+  assert.equal(ui.node('#btn-hint').hidden, false);
+  assert.equal(ui.node('#btn-end-run').hidden, false);
+  assert.equal(ui.node('#btn-give-up').hidden, true);
+  assert.match(ui.node('#coach-input').placeholder, /optimizations/);
+  assert.match(ui.node('#coach-empty').textContent, /follow-up/);
+  assert.match(ui.node('#coach-empty').textContent, /End keeps your accepted solution/);
+});
+
 test('a hint asks with the code on screen, shows cards and draws its marks', async () => {
   const calls = [];
   const ui = app(async (path, opts) => {

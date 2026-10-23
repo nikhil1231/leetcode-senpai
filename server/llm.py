@@ -620,6 +620,21 @@ TASKS: dict[str, Task] = {
             f"Their code (line numbers added):\n{p.get('code')}"
         ),
     ),
+    "optimize_hint": Task(
+        LiveHint,
+        "You are a coding coach discussing a solution after an Accepted submission. "
+        "The current code may include edits since that acceptance. Answer the user's "
+        "latest question directly, including explanations, algorithms or code when useful. "
+        "If they asked for a hint instead, assess THEIR current code's time and auxiliary "
+        "space complexity and suggest one concrete optimization to explore. If it is "
+        "already optimal under the problem's constraints, say so and briefly explain why; "
+        "do not invent improvements or judge optimality from runtime percentiles. "
+        "Distinguish asymptotic improvements from constant-factor trade-offs. "
+        "Keep replies concise, in plain text with optional backtick code spans. "
+        "marks: optionally 0-2 annotations on real lines of their code, each "
+        "'<line number>: <note>' with the note under 8 words.",
+        lambda p: TASKS["live_hint"].build(p),
+    ),
     # Stable parts first — instructions, then the statement — so the prefix is
     # cached across a run's steps; what changes per step (steps, code) goes last.
     "give_up_step": Task(

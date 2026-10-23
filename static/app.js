@@ -1043,6 +1043,9 @@ function setHints(active) {
   if (coachPending) btn.setAttribute("aria-busy", "true");
   setBtnLabel(btn, chat.some((m) => m.role === "coach") ? "Another hint" : "Ask for a hint");
   $("#coach-chat").classList.toggle("hidden", !active.chat_available);
+  const optimizing = active.kind === "optimize";
+  $("#coach-input").placeholder = optimizing ? "Ask about your solution or optimizations" : "Message the interviewer";
+  $("#coach-input").setAttribute("aria-label", optimizing ? "Talk to the coach" : "Talk to the interviewer");
   const lastCoach = chat.map((m) => m.role).lastIndexOf("coach");
   const stamp = (t) => (t == null ? "" : `<span class="chat-time">${fmtTime(t)}</span>`);
   const msgs = chat.map((m, i) => m.role === "me"
@@ -1056,12 +1059,15 @@ function setHints(active) {
   const html = msgs.join("");
   const panel = $("#hint-panel");
   panel.classList.toggle("hidden", !msgs.length);
-  $("#coach-empty").textContent = active.chat_available
+  $("#coach-empty").textContent = optimizing
+    ? active.chat_available
+      ? "Accepted! Ask a follow-up below, or request an optimization hint. End keeps your accepted solution and returns to rating."
+      : "Enable the coach to discuss optimizations or ask follow-up questions. End keeps your accepted solution."
+    : active.chat_available
     ? "Stuck? Think out loud below, or ask for a hint. The interviewer reads your code and points, without giving the fix."
     : active.hints_available
     ? "Stuck? A hint reads the code you've written and points, without giving the fix."
     : active.kind === "mock" ? "A mock runs without hints — it's you and the clock."
-    : active.kind === "optimize" ? "No hints while optimizing — the Accepted is already yours."
     : "No hints for this one.";
   // Redrawn only on a change, so a refresh doesn't replay the newest hint's entrance.
   if (panel._drawn !== html) {
@@ -1143,8 +1149,8 @@ function setGiveUp(active) {
   if ($("#btn-walk-next")) $("#btn-walk-next").disabled = false;
 }
 
-// Ending stops the run without an Accepted but keeps it: it's logged unsolved and
-// rated like a solve. Cancelling is the one that throws a run away.
+// Ending goes to rating: an optimize run keeps its Accepted; a solve still
+// without one is logged unsolved. Cancelling throws a run away.
 function setEndRun(active) {
   const btn = $("#btn-end-run");
   btn.classList.toggle("hidden", !active.end_available);

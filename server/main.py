@@ -1083,7 +1083,7 @@ def _active_payload(prob, s, settings):
         "chat_available": _chat_available(s, settings),
         "give_up_available": _assisted(s) and (llm.enabled(settings) or bool(coach.give_up_fallback(prob))),
         "give_up": _walk(s) if s.get("gave_up") else None,
-        "end_available": _assisted(s),
+        "end_available": s.get("kind") != "mock",
         'recovery_available': config.LEARNING_FEATURES['recovery'] and not s.get('lesson_declined'),
         "plan_status": s.get("plan_status"),
         "surface": s.get("surface") or "leetcode",
@@ -1100,8 +1100,7 @@ def _active_payload(prob, s, settings):
 
 
 def _assisted(s):
-    """Hints and giving up are for solves: a mock runs without them, and an
-    optimize run is past needing them."""
+    """Solve assistance and walkthroughs exclude mocks and accepted solves."""
     return s.get("kind") not in ("mock", "optimize")
 
 
@@ -1126,11 +1125,13 @@ def _chat(prob, s):
 
 def _chat_available(s, settings):
     """Talking to the interviewer needs the editor and an LLM to answer."""
-    return _assisted(s) and s.get("surface") == "editor" and llm.enabled(settings)
+    return s.get("kind") != "mock" and s.get("surface") == "editor" and llm.enabled(settings)
 
 
 def _hints_available(prob, s, settings):
     """In the editor with an LLM, hints never run out; else it's the ladder's rungs."""
+    if s.get("kind") == "optimize":
+        return _chat_available(s, settings)
     if not _assisted(s):
         return False
     if s.get("surface") == "editor" and llm.enabled(settings):
@@ -1241,7 +1242,8 @@ async def api_session_hint(body: Optional[HintRequest] = None,
     s = store.latest_active_session()
     if not s:
         raise HTTPException(400, "no active session")
-    if not _assisted(s):
+    optimizing = s.get("kind") == "optimize"
+    if not _assisted(s) and not optimizing:
         raise HTTPException(400, "no hints on this run")
     settings = store.get_settings()
     prob = store.get_problem(s["slug"]) or {}
@@ -1259,13 +1261,18 @@ async def api_session_hint(body: Optional[HintRequest] = None,
     if s.get("surface") == "editor" and llm.enabled(settings):
         doc = store.get_recording(s["id"]) or {}
         code = (body.code if body and body.code is not None else None) or doc.get("code") or ""
-        if message or not coach.untouched(code, prob.get("starter_code")):
+        if optimizing and not code:
+            code = (store.get_attempt(s.get("optimizes")) or {}).get("code") or ""
+        if optimizing or message or not coach.untouched(code, prob.get("starter_code")):
             events = recording.parse(doc["events"]) if doc.get("events") else []
             hint = await coach.live_hint(
                 prob, s, code, chat, recording.last_judged(events), clock // 60, settings=settings)
             if hint:
                 hint["src"] = "live"
     if not hint:
+        if optimizing:
+            return {"hint": None, "level": s.get("hint_level", 0), "chat": chat,
+                    "llm": llm.enabled(settings), "available": _hints_available(prob, s, settings)}
         ladder = await coach.ensure_hint_ladder(store, s["slug"])
         if not ladder or rung >= len(ladder):
             return {"hint": None, "level": s.get("hint_level", 0), "exhausted": True, "chat": chat,
@@ -1348,12 +1355,15 @@ async def api_session_give_up(body: Optional[GiveUpRequest] = None,
 @app.post("/api/session/end")
 async def api_session_end(body: Optional[HintRequest] = None,
                           uid: str = Depends(auth.require_user)):
-    """Stop here without an Accepted. Unlike cancelling, the run is kept: it's
-    logged as an unsolved attempt and goes to rating like a solve."""
+    """Stop and rate the run: keep an existing Accepted, otherwise log unsolved."""
     store = get_store(uid)
     s = store.latest_active_session()
     if not s:
         raise HTTPException(400, "no active session")
+    if s.get("kind") == "optimize":
+        _log_server_event(store, s, {"k": "end"})
+        store.update_session(s["id"], {"status": "completed", "attempt_id": s["optimizes"]})
+        return {"ok": True, "attempt_id": s["optimizes"], "pending": _pending(store)}
     if not _assisted(s):
         raise HTTPException(400, "nothing to end on this run")
     code = body.code if body and body.code is not None else (store.get_recording(s["id"]) or {}).get("code")

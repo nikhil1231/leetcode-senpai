@@ -605,13 +605,68 @@ def test_a_run_from_before_live_hints_keeps_its_rungs(client):
     assert client.get("/api/session/active").json()["active"]["hints"] == ["one", "two", "three"]
 
 
-def test_mocks_and_optimize_runs_get_no_hints_or_giving_up(client):
+def test_mocks_get_no_hints_or_giving_up(client):
     client.store.upsert_problem({"slug": "two-sum", "hint_ladder": ["one"]})
     client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock"})
     active = client.get("/api/session/active").json()["active"]
     assert active["hints_available"] is False and active["give_up_available"] is False
     assert client.post("/api/session/hint").status_code == 400
     assert client.post("/api/session/give-up").status_code == 400
+
+
+def test_optimization_chat_reads_current_code_and_keeps_the_accepted_solve(client, monkeypatch):
+    aid, _ = _accepted(client, monkeypatch)
+    original = dict(client.store.get_attempt(aid))
+    asked = _coach(monkeypatch, {"optimize_hint": {
+        "hint": "This is already optimal in time and auxiliary space.", "marks": []}})
+    active = client.post("/api/editor/optimize", json={"attempt_id": aid}).json()["active"]
+    sid = active["session_id"]
+    assert active["chat_available"] and active["hints_available"] and active["end_available"]
+    assert active["give_up_available"] is False
+    assert client.post("/api/session/give-up").status_code == 400
+
+    # A hint before the editor mounts still sees the accepted code.
+    hint = client.post("/api/session/hint").json()
+    assert "already optimal" in hint["hint"] and hint["available"]
+    assert "  3 |         return [0, 0]" in asked[-1][1]["code"]
+    client.get(f"/api/editor/state?session_id={sid}")
+    reply = client.post("/api/session/hint", json={
+        "message": "Why is it optimal?", "code": FAST}).json()
+    assert "Candidate: Why is it optimal?" in asked[-1][1]["chat"]
+    assert "return sorted(range(2))" in asked[-1][1]["code"]
+    refreshed = client.get("/api/session/active").json()["active"]
+    assert refreshed["chat"] == reply["chat"]
+    assert [m["role"] for m in refreshed["chat"]] == ["coach", "me", "coach"]
+    assert client.store.get_attempt(aid) == original
+
+
+def test_optimization_coach_failure_does_not_offer_unsolved_problem_hints(client, monkeypatch):
+    aid, _ = _accepted(client, monkeypatch)
+    _coach(monkeypatch, {"optimize_hint": None})
+    client.store.upsert_problem({"slug": "two-sum", "hint_ladder": ["Solve it this way."]})
+    client.post("/api/editor/optimize", json={"attempt_id": aid})
+    reply = client.post("/api/session/hint", json={"message": "Can I improve it?"}).json()
+    assert reply["hint"] is None and reply["available"] is True
+    assert [m["role"] for m in reply["chat"]] == ["me"]
+    monkeypatch.setattr(main.llm, "enabled", lambda settings=None: False)
+    active = client.get("/api/session/active").json()["active"]
+    assert not active["chat_available"] and not active["hints_available"]
+    assert active["end_available"] and not active["give_up_available"]
+
+
+def test_ending_optimization_returns_the_existing_accepted_solve_to_rating(client, monkeypatch):
+    aid, _ = _accepted(client, monkeypatch)
+    original = dict(client.store.get_attempt(aid))
+    active = client.post("/api/editor/optimize", json={"attempt_id": aid}).json()["active"]
+    sid = active["session_id"]
+    client.get(f"/api/editor/state?session_id={sid}")
+    ended = client.post("/api/session/end", json={"code": FAST}).json()
+    assert ended["attempt_id"] == aid and [p["id"] for p in ended["pending"]] == [aid]
+    assert len(client.store.attempts) == 1 and client.store.get_attempt(aid) == original
+    assert client.store.get_session(sid)["status"] == "completed"
+    assert client.store.get_session(sid)["attempt_id"] == aid
+    assert client.get("/api/session/active").json()["active"] is None
+    assert _events(client, sid)[-1]["k"] == "end"
 
 
 def test_giving_up_walks_one_step_per_ask_reading_the_code_each_time(client, monkeypatch):

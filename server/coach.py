@@ -98,7 +98,8 @@ async def live_hint(prob, s, code, chat, last_judged, minutes, settings=None):
     a hint when the last turn is the interviewer's: {text, marks}, or None on any
     failure."""
     plan = " — ".join(x for x in (s.get("predicted_category"), s.get("predicted_approach")) if x)
-    res = await llm.extract("live_hint", {
+    task = "optimize_hint" if s.get("kind") == "optimize" else "live_hint"
+    res = await llm.extract(task, {
         "title": prob.get("title", s["slug"]), "difficulty": prob.get("difficulty"),
         "category": prob.get("neetcode_category"),
         "statement": statement_text(prob.get("content_html")),
