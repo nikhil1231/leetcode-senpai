@@ -93,9 +93,9 @@ code: |
           seq = 0
       last_ms = now
       return (now << 22) | (WORKER_ID << 12) | seq
-bug: [1, 8, 9]
+bug: [1, 8, 10]
 explain: |
-  **Line 1:** random worker IDs collide. With 300 processes picking from 1,024 values, the birthday bound makes a collision overwhelmingly likely, and two workers sharing an ID produce identical IDs in the same millisecond. Assign worker IDs from a coordinator (ZooKeeper/etcd lease, a database row, or the pod ordinal). **Line 8:** the sequence isn't bounded. At more than 4,096 IDs in a millisecond it overflows into the worker bits. Wait for the next millisecond instead. **Line 9:** if the clock moves backwards (NTP step), `now < last_ms` falls into this branch, resets the sequence and reissues IDs from an earlier millisecond. Detect the regression and wait (or refuse) until the clock passes `last_ms`. (It also needs a lock if called from several threads.)
+  **Line 1:** random worker IDs collide. With 300 processes picking from 1,024 values, the birthday bound makes a collision overwhelmingly likely, and two workers sharing an ID produce identical IDs in the same millisecond. Assign worker IDs from a coordinator (ZooKeeper/etcd lease, a database row, or the pod ordinal). **Line 8:** the sequence isn't bounded. At more than 4,096 IDs in a millisecond it overflows into the worker bits. Wait for the next millisecond instead. **Line 10:** if the clock moves backwards (NTP step), `now < last_ms` falls into the `else` branch, resets the sequence and reissues IDs from an earlier millisecond. Detect the regression and wait (or refuse) until the clock passes `last_ms`. (It also needs a lock if called from several threads.)
 fix: |
   WORKER_ID = lease_worker_id()                      # unique, from a coordinator
   last_ms, seq, lock = -1, 0, threading.Lock()

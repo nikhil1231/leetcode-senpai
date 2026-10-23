@@ -114,9 +114,9 @@ code: |
     "viewer_ids": ["u_1", "u_2", "u_3", "..."],
     "created_at": "2026-03-01T10:00:00Z"
   }
-bug: [5, 7]
+bug: [6, 7]
 explain: |
-  **Line 7:** `viewer_ids` grows with every view — unbounded, rewritten on each view, and quickly the biggest part of the document. Store a counter (and per-user views elsewhere if needed). **Line 5:** embedding every answer, each with its own embedded comments, means popular questions grow without bound, concurrent answers contend on one document, and you can't paginate answers efficiently. Store answers as their own documents keyed by `question_id`. (Line 3's embedded author name is a reasonable denormalisation if a stale reputation figure is acceptable.)
+  **Line 7:** `viewer_ids` grows with every view — unbounded, rewritten on each view, and quickly the biggest part of the document. Store a counter (and per-user views elsewhere if needed). **Line 6:** embedding every answer, each with its own embedded comments, means popular questions grow without bound, concurrent answers contend on one document, and you can't paginate answers efficiently. Store answers as their own documents keyed by `question_id`. (Line 4's embedded author name is a reasonable denormalisation if a stale reputation figure is acceptable.)
 ```
 
 ## Schemas evolve: expand, migrate, contract

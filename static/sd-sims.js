@@ -459,14 +459,15 @@
       const replicaShare = s.replicas ? s.replicas / (s.replicas + 1) : 0;
       const primaryPerReq = writesPerReq + readsPerReq * (1 - replicaShare), replicaPerReq = readsPerReq * replicaShare;
       const primaryCap = dbCap / Math.max(primaryPerReq, 1e-9), replicaCap = s.replicas ? s.replicas * dbCap / Math.max(replicaPerReq, 1e-9) : Infinity;
-      const conns = s.api * s.pool, connCap = conns > maxConn ? maxConn / s.api * s.perApi / s.pool * s.api : Infinity;
+      const conns = s.api * s.pool, connCap = conns > maxConn ? apiCap * (maxConn / conns) * 0.8 : Infinity; // over-subscribed pools thrash
       const tiers = [['Load balancer', 100000], ['API servers', apiCap], ['DB connections', connCap], ['Primary database', primaryCap], ['Read replicas', replicaCap]];
       const thr = Math.min(s.load, ...tiers.map(t => t[1])), limit = tiers.reduce((a, b) => (b[1] < a[1] ? b : a));
       const cost = s.api * 120 + { 1: 400, 2: 1600, 3: 6400 }[s.dbSize] * (1 + s.replicas) + (s.cacheHit ? 300 : 0);
       const util = tiers.map(([name, cap]) => ({ name, cap, u: Math.min(1.5, s.load / cap) }));
       const worst = Math.max(...util.map(u => u.u)), latency = worst >= 1 ? Infinity : 30 / (1 - worst);
-      return { metrics: { throughput: Math.round(thr), served: thr >= s.load ? 1 : 0, bottleneck: limit[0], cost, load: s.load },
-        html: stats([{ label: 'Served', value: fmt(thr) + ' / ' + fmt(s.load) + ' rps', tone: thr >= s.load ? 'ok' : 'bad' }, { label: 'Bottleneck', value: thr >= s.load ? 'none at this load' : limit[0], tone: thr >= s.load ? 'ok' : 'bad' },
+      const ok = worst < 0.9, busiest = util.reduce((a, b) => (b.u > a.u ? b : a));
+      return { metrics: { throughput: Math.round(thr), served: ok ? 1 : 0, bottleneck: busiest.name, cost, load: s.load, worst: Math.round(worst * 100) },
+        html: stats([{ label: 'Served', value: fmt(thr) + ' / ' + fmt(s.load) + ' rps', tone: ok ? 'ok' : thr >= s.load ? 'warn' : 'bad' }, { label: ok ? 'Busiest tier' : 'Bottleneck', value: `${busiest.name} (${Math.round(worst * 100)}%)`, tone: ok ? 'ok' : 'bad' },
           { label: 'Latency (queueing estimate)', value: ms(latency), tone: latency > 200 ? 'warn' : '' }, { label: 'Monthly cost (illustrative)', value: '$' + fmt(cost) },
           ...(conns > maxConn ? [{ label: 'Connections', value: `${fmt(conns)} > DB max ${fmt(maxConn)}`, tone: 'bad' }] : [])]) +
           bars(util.filter(u => isFinite(u.cap)).map(u => ({ label: u.name, value: u.u * 100, mark: 100, cls: u.u >= 1 ? 'is-dead' : u.u > 0.8 ? 'is-warn' : 'c0', text: `${Math.round(u.u * 100)}% of ${fmt(u.cap)} rps` })), 150) };
