@@ -258,7 +258,7 @@
 
   // ---------- 5. Quorums: N, R, W and partitions ----------
   registry.quorum = (el, cfg, api) => {
-    const state = { n: 3, w: 2, r: 2 }, r = rng(3);
+    const state = { n: 3, w: 2, r: 2, ...(cfg.initial || {}) }, r = rng(3);
     let down = new Set(), versions = [], log = [], latest = 1;
     const { ctl, out, view } = shell(el, '<div class="sim-quorum"></div>');
     const reset = () => { versions = new Array(state.n).fill(1); latest = 1; down = new Set([...down].filter(i => i < state.n)); log = []; };
