@@ -203,7 +203,7 @@
       const top = Math.max(pct(users, 99.9), s.tailMs) * 1.1, buckets = 40, hist = new Array(buckets).fill(0);
       users.forEach(v => { hist[Math.min(buckets - 1, Math.floor(v / top * buckets))]++; });
       const slow = 1 - (1 - s.tail / 100) ** s.fanout;
-      const metrics = { p50: pct(users, 50), p99: pct(users, 99), mean, fanout: s.fanout, slowShare: Math.round(slow * 100), hedge: s.hedge };
+      const metrics = { ...s, p50: pct(users, 50), p99: pct(users, 99), mean, slowShare: Math.round(slow * 100) };
       return {
         metrics,
         html: stats([{ label: 'Mean', value: ms(mean) }, { label: 'p50', value: ms(pct(users, 50)) }, { label: 'p95', value: ms(pct(users, 95)) },
