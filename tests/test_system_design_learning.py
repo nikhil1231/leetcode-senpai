@@ -352,3 +352,20 @@ def test_supported_correct_answers_are_not_mistakes(client):
     assert fire(client, mode='mistakes')['empty']
     lesson = next(l for l in client.get('/api/system-design').json()['course']['lessons'] if l['id'] == 'indexes')
     assert lesson['mistakes'] == 0 and not lesson['needs_review']
+
+
+def test_recall_grading_validates_model_output(client, monkeypatch):
+    import json as _json
+    from server import system_design_coach as coach
+    block = next(b for b in LESSONS['cache-aside']['blocks'] if b['type'] == 'recall')
+    monkeypatch.setattr(coach.llm, 'enabled', lambda settings=None: True)
+    good = {'points': [{'point': p, 'status': 'covered', 'note': 'ok'} for p in block['points']], 'feedback': 'Solid.'}
+    monkeypatch.setattr(coach.llm, '_raw_generate', lambda *a, **k: {'content': _json.dumps(good), 'model': 'm'})
+    post(client, '/course/lessons/cache-aside/open')
+    result = post(client, '/course/lessons/cache-aside/recall', block=block['key'], text='Cache-aside reads first; write-behind acks early.')
+    assert result['grade']['feedback'] == 'Solid.'
+    assert client.store.get_design_record(result['id'])['grade']['prompt_version'] == coach.PROMPT_VERSION
+    tampered = {**good, 'points': good['points'][:-1]}
+    monkeypatch.setattr(coach.llm, '_raw_generate', lambda *a, **k: {'content': _json.dumps(tampered), 'model': 'm'})
+    result = post(client, '/course/lessons/cache-aside/recall', block=block['key'], text='Another attempt at the answer.')
+    assert result['grade'] is None and result['message']

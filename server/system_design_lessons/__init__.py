@@ -85,10 +85,23 @@ def _permute(seed, items):
     return out
 
 
+def _flat(value, where):
+    """Plain list items like `- Cache-aside: reads…` parse as one-key mappings; undo that."""
+    if isinstance(value, dict) and len(value) == 1:
+        (k, v), = value.items()
+        return f'{k}: {v}'
+    if not isinstance(value, (str, int, float)):
+        raise LessonError(f'{where}: expected text, got {value!r}')
+    return str(value)
+
+
 def _check_block(lesson, kind, data, n):
     where = f'{lesson} block {n} ({kind})'
     if not isinstance(data, dict):
         raise LessonError(f'{where}: expected a mapping')
+    for field in ('points', 'choices') + (('items',) if kind == 'order' else ()):
+        if isinstance(data.get(field), list):
+            data[field] = [_flat(x, where) for x in data[field]]
     missing = [k for k in REQUIRED[kind] if k not in data]
     if missing:
         raise LessonError(f'{where}: missing {missing}')
@@ -158,7 +171,7 @@ def _question(lesson, meta, raw, kind, n):
             raise LessonError(f'{qid}: tolerance must be positive')
         return q
     if fmt == 'order':
-        items = raw['items']
+        items = [_flat(x, qid) for x in raw['items']]
         if not 3 <= len(items) <= 7:
             raise LessonError(f'{qid}: order needs 3-7 items')
         ids = [f'c{i}' for i in range(len(items))]
