@@ -1,0 +1,38 @@
+/* The page coach reuses the live editor's header, messages and composer. */
+#btn-quick-start { background: var(--panel); border: 1px solid var(--line-hi); box-shadow: none; }
+#btn-quick-start svg { stroke: var(--text-2); }
+#btn-page-coach { margin-left: -8px; }
+#btn-page-coach:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+body.section-design .topbar-side { display: flex !important; }
+body.section-design .topbar-side > :not(#btn-page-coach) { display: none !important; }
+body.section-design .topbar { position: sticky; top: 0; }
+body.has-editor-run:not(.run-minimised):not(.section-design) #btn-page-coach,
+body.has-editor-run:not(.run-minimised):not(.section-design) .page-coach { display: none; }
+.page-coach {
+  position: fixed; top: 68px; bottom: 0; right: 0; z-index: 45;
+  width: min(400px, 100vw); display: flex; flex-direction: column;
+  background: var(--bg-elev); border-left: 1px solid var(--line);
+  box-shadow: -12px 0 36px #0003;
+}
+.section-design .page-coach { top: 72px; }
+.page-coach .coach-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+#page-coach-clear { margin-left: auto; white-space: nowrap; }
+.page-coach-context { flex: none; margin: 0; padding: 10px 14px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+.page-coach-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+.page-coach .hint-card { flex-shrink: 0; padding: 12px; border: 1px solid rgba(245,181,68,.3); border-radius: 12px; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.page-coach .chat-msg { flex-shrink: 0; }
+.page-coach-empty { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.page-coach-error { margin: 0; padding: 0 14px; color: var(--amber); font-size: 13px; }
+.page-coach .coach-chat { border-top: 1px solid var(--line); margin-top: 10px; }
+.page-coach-send { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.page-coach-send span { font-size: 10px; color: var(--muted); }
+@media (min-width: 1200px) {
+  body.page-coach-open .content > main { width: calc(100% - 400px); margin-left: 0; margin-right: 400px; }
+  body.page-coach-open .content > .active-run { margin-right: 400px; }
+}
+@media (max-width: 960px) {
+  .page-coach, .section-design .page-coach { top: 0; z-index: 80; }
+  #btn-page-coach { position: absolute; top: 12px; right: 16px; margin: 0; }
+  .topbar { padding-right: 64px; z-index: 41; }
+  .section-design .topbar { padding-right: 64px; }
+}

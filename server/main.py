@@ -103,6 +103,20 @@ class HintRequest(BaseModel):
     message: Optional[str] = Field(None, max_length=4000)
 
 
+class PageChatTurn(BaseModel):
+    role: Literal["me", "coach"]
+    text: str = Field(max_length=2000)
+    page: str = Field(default="", max_length=160)
+
+
+class PageChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    page: str = Field(max_length=160)
+    section: Literal["leetcode", "system-design"]
+    context: str = Field(default="", max_length=12000)
+    history: list[PageChatTurn] = Field(default_factory=list, max_length=8)
+
+
 class GiveUpRequest(HintRequest):
     # How many steps the client has on screen: a repeat of the same ask (a
     # double click, a retry) gets the step it already made, not another.
@@ -2895,6 +2909,24 @@ def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
     return {**settings, "llm_provider": selected["provider"], "llm_model": selected["model"]}
 
 
+@app.post("/api/coach/page-chat")
+async def api_page_chat(body: PageChatRequest, uid: str = Depends(auth.require_user)):
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(400, "Write a message first.")
+    settings = get_store(uid).get_settings()
+    if not llm.enabled(settings):
+        raise HTTPException(503, "AI coaching is unavailable. Check the coach configuration in Settings.")
+    result = await llm.extract("page_chat", {
+        "message": message, "page": body.page, "section": body.section,
+        "context": body.context, "history": [turn.model_dump() for turn in body.history],
+    }, settings=settings)
+    reply = (result or {}).get("reply", "").strip()
+    if not reply:
+        raise HTTPException(502, "The coach could not reply. Your message is kept; try again.")
+    return {"reply": reply, "model": llm.current_model(settings)["model"]}
+
+
 @app.get("/api/me")
 def api_me(uid: str = Depends(auth.require_user)):
     settings = get_store(uid).get_settings()
@@ -2915,7 +2947,7 @@ def api_health():
 
 # ---- static frontend ------------------------------------------------------------
 _VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js", "system-design.js", "system-design-learning.js", "system-design.css", "sections.js",
-                     "editor.js", "vendor/codemirror.js", "daily-coach.js", "daily-coach.css", "senpai.js")
+                     "editor.js", "vendor/codemirror.js", "daily-coach.js", "daily-coach.css", "senpai.js", "page-coach.js", "page-coach.css")
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
 

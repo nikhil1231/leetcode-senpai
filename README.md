@@ -182,6 +182,12 @@ support and caches the list for ten minutes. You can also enter a
 `vendor/model` ID directly, including when the catalog is unavailable.
 A model must support strict JSON schema output to run coaching tasks.
 
+The sparkle button in the top right opens a page-aware coach in both learning
+spaces, outside the live coding editor (which keeps its own coach). Each message
+includes up to 12,000 characters of current page text, visible drafts, selections
+and feedback, plus the last eight chat turns. Settings and credential dialogs are
+excluded. Chat stays in memory until refreshed or cleared with **New chat**.
+
 All coaching requests use OpenRouter. Existing saved OpenAI and Gemini
 choices are read as `openai/<model>` and `google/<model>` respectively;
 practice history is unchanged. Direct OpenAI/Gemini API keys are no longer

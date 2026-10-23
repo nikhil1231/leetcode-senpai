@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="/system-design.css?v=__ASSET_VER__" />
   <link rel="stylesheet" href="/sd-lessons.css?v=__ASSET_VER__" />
   <link rel="stylesheet" href="/daily-coach.css?v=__ASSET_VER__" />
+  <link rel="stylesheet" href="/page-coach.css?v=__ASSET_VER__" />
 </head>
 <body>
   <!-- Icon sprite: referenced by <use> in the nav so the markup stays readable. -->
@@ -118,6 +119,10 @@
                   title="Start any problem by URL, number or title">
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus" /></svg>
           </button>
+          <button id="btn-page-coach" class="quick-start" type="button" aria-label="Ask AI about this page"
+                  title="Ask AI about this page" aria-expanded="false" aria-controls="page-coach">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/><path d="m20 2 .6 1.4L22 4l-1.4.6L20 6l-.6-1.4L18 4l1.4-.6Z"/></svg>
+          </button>
         </div>
       </header>
 
@@ -202,6 +207,20 @@
         <section id="tab-problems" class="tab hidden"></section>
         <section id="tab-settings" class="tab hidden"></section>
       </main>
+      <aside id="page-coach" class="page-coach hidden" aria-label="AI page coach">
+        <div class="coach-head">
+          <span class="coach-title">Coach</span><span id="page-coach-model" class="coach-model-name"></span>
+          <button id="page-coach-clear" class="button is-ghost is-small" type="button" title="Clear this chat">New chat</button>
+          <button id="page-coach-close" class="panel-toggle" type="button" aria-label="Close AI coach">&#x203A;</button>
+        </div>
+        <p id="page-coach-context" class="page-coach-context"></p>
+        <div id="page-coach-messages" class="page-coach-messages" role="log" aria-live="polite"></div>
+        <p id="page-coach-error" class="page-coach-error" role="status"></p>
+        <form id="page-coach-form" class="coach-chat" autocomplete="off">
+          <textarea id="page-coach-input" rows="3" maxlength="4000" placeholder="Ask about this question or your mistake…" aria-label="Message the AI coach"></textarea>
+          <div class="page-coach-send"><span>Enter to send · Shift+Enter for a new line</span><button id="page-coach-send" class="button is-primary is-small" type="submit">Send</button></div>
+        </form>
+      </aside>
     </div>
   </div>
 
@@ -490,5 +509,6 @@
   <script src="/system-design.js?v=__ASSET_VER__"></script>
   <script src="/sections.js?v=__ASSET_VER__"></script>
   <script src="/editor.js?v=__ASSET_VER__"></script>
+  <script src="/page-coach.js?v=__ASSET_VER__"></script>
 </body>
 </html>
