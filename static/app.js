@@ -3124,28 +3124,64 @@ window.openLearningSequence = async function openLearningSequence(sequence) {
     <p class="learning-worked"><span>Example</span>${escapeHtml(lesson.worked)}</p></div>
     <section class="learning-step"><span class="learning-step-n">1</span><div>
       <label class="learning-q" for="learning-explanation">${escapeHtml(lesson.explain)}</label>
+      <p class="label-sm">Reflection — saved for you, not automatically graded.</p>
       <textarea id="learning-explanation" class="input" rows="3" placeholder="Explain in your own words…"></textarea></div></section>
     <section class="learning-step"><span class="learning-step-n">2</span><div>
       <p class="learning-q">${escapeHtml(lesson.objective)}</p><pre class="code">${escapeHtml(lesson.code)}</pre>
       <label class="label-sm" for="learning-answer">Complete the missing step</label>
       <textarea id="learning-answer" class="input mono" rows="2"></textarea></div></section>
-    <p id="learning-result" class="learning-result"></p>
+    <p id="learning-result" class="learning-result" role="status" aria-live="polite"></p>
     <div class="overlay-actions learning-actions">
       <button id="learning-decline" class="button is-ghost">Dismiss for this session</button>
       <button id="learning-check" class="button is-primary">Check this step</button></div>`;
-  $('#learning-explanation').value = draft.explanation || state.explanation || '';
-  $('#learning-answer').value = draft.answer || state.answer || '';
-  const saveDraft = () => { try { localStorage.setItem(draftKey, JSON.stringify({answer: $('#learning-answer').value, explanation: $('#learning-explanation').value})); } catch (_) {} };
-  $('#learning-answer').addEventListener('input', saveDraft);
-  $('#learning-explanation').addEventListener('input', saveDraft);
-  $('#learning-check').addEventListener('click', async () => {
+  const explanation = $('#learning-explanation'), answer = $('#learning-answer');
+  const result = $('#learning-result'), check = $('#learning-check'), decline = $('#learning-decline');
+  let completed = false;
+  explanation.value = state.correct ? state.explanation || '' : draft.explanation ?? state.explanation ?? '';
+  answer.value = state.correct ? state.answer || '' : draft.answer ?? state.answer ?? '';
+  const showResult = (r) => {
+    completed = r.correct === true;
+    const reviewDate = r.probe_due_at ? new Date(r.probe_due_at * 1000).toLocaleDateString() : '';
+    result.textContent = completed
+      ? `Correct — focused practice complete. ${lesson.correct_feedback} A separate retention review${reviewDate ? ` on ${reviewDate}` : ''} will appear in Today.`
+      : `Not quite. ${lesson.incorrect} Edit the missing step and try again.`;
+    result.className = `learning-result ${completed ? 'is-ok' : 'is-bad'}`;
+    answer.readOnly = explanation.readOnly = completed;
+    decline.classList.toggle('hidden', completed);
+    check.textContent = completed ? 'Done' : 'Try again';
+  };
+  const saveDraft = () => {
+    try { localStorage.setItem(draftKey, JSON.stringify({answer: answer.value, explanation: explanation.value})); } catch (_) {}
+    result.textContent = '';
+    result.className = 'learning-result';
+    check.textContent = 'Check this step';
+  };
+  answer.addEventListener('input', saveDraft);
+  explanation.addEventListener('input', saveDraft);
+  if (state.correct || (state.correct === false && answer.value === state.answer && explanation.value === state.explanation)) showResult(state);
+  check.addEventListener('click', async () => {
+    if (completed) { closeLearning(); return; }
+    if (check.disabled) return;
+    check.disabled = decline.disabled = true;
+    answer.readOnly = explanation.readOnly = true;
+    check.textContent = 'Checking…';
     try {
-      const r = await api('/learning/sequence', 'POST', {sequence, action: 'complete', answer: $('#learning-answer').value, explanation: $('#learning-explanation').value});
-      $('#learning-result').textContent = r.correct ? 'Step complete. A later application check will appear in Today.' : lesson.incorrect;
-      $('#learning-result').className = `learning-result ${r.correct ? 'is-ok' : 'is-bad'}`;
-    } catch (e) { toast(e.message); }
+      const r = await api('/learning/sequence', 'POST', {sequence, action: 'complete', answer: answer.value, explanation: explanation.value});
+      showResult(r);
+      if (completed) {
+        try { localStorage.removeItem(draftKey); } catch (_) {}
+        refreshBehindModal();
+      }
+    } catch (e) {
+      result.textContent = `Could not check this step: ${e.message}. Your answers are kept; try again.`;
+      result.className = 'learning-result is-bad';
+      check.textContent = 'Try again';
+    } finally {
+      check.disabled = decline.disabled = false;
+      answer.readOnly = explanation.readOnly = completed;
+    }
   });
-  $('#learning-decline').addEventListener('click', async () => {
+  decline.addEventListener('click', async () => {
     await api('/learning/sequence', 'POST', {sequence, action: 'decline'});
     $('#learning-modal').classList.add('hidden');
     $('#btn-learning').classList.add('hidden');

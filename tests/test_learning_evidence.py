@@ -131,7 +131,7 @@ def test_authored_sequences_have_separate_held_out_content_and_valid_objectives(
     assert len(lessons.SEQUENCES) == 6
     for key, lesson in lessons.SEQUENCES.items():
         assert lesson['skill'] in curriculum.SKILLS
-        assert set(('principle','worked','explain','objective','code','incorrect')) <= lesson.keys()
+        assert set(('principle','worked','explain','objective','code','incorrect','correct_feedback')) <= lesson.keys()
         assert 'probe' not in lessons.public(key) and 'accepted' not in lessons.public(key)
         for answer in lesson['accepted']:
             assert lessons.check(key, answer)
@@ -189,6 +189,10 @@ def test_recovery_and_delayed_application_preserve_session_and_raw_history(clien
     completed = client.post('/api/learning/sequence', json={'sequence':'partition','action':'complete',
         'answer':'right -= 1','explanation':'Incoming value is unknown'}).json()
     assert completed['correct'] and not client.store.attempts
+    assert completed['probe_due_at'] == clock[0] + 7*86400
+    reopened = client.post('/api/learning/sequence', json={'sequence':'partition'}).json()
+    assert reopened['correct'] and reopened['answer'] == 'right -= 1'
+    assert reopened['explanation'] == 'Incoming value is unknown'
     s = client.store.get_session(sid)
     assert s['started_at'] == 10 and s['assistance_events'][0]['kind'] == 'solution'
     key = next(iter(client.store.learning_state))

@@ -41,7 +41,8 @@ function app(fetch) {
       querySelector: node, querySelectorAll: () => [], body: node('body'),
     },
     stored: {},
-    localStorage: { getItem: () => null, setItem(k, v) { context.stored[k] = v; } }, fetch,
+    localStorage: { getItem: (k) => context.stored[k] ?? null,
+      setItem(k, v) { context.stored[k] = v; }, removeItem(k) { delete context.stored[k]; } }, fetch,
     setInterval(fn) { const id = nextTimer++; intervals.set(id, fn); return id; },
     clearInterval(id) { intervals.delete(id); },
     setTimeout(fn, ms) { const id = nextTimer++; timeouts.set(id, { fn, ms }); return id; },
@@ -653,4 +654,102 @@ test('a coding run does not make the system design workspace inert', () => {
   ui.run('setDashboardLocked(true)');
   assert.equal(locked,0);
   assert.equal(unlocked,2);
+});
+
+const focusedLesson = {
+  title: 'Interval boundaries', principle: 'Touching endpoints overlap.', worked: 'Merge [3,6].',
+  explain: 'Why do equal endpoints overlap?', objective: 'Keep the farthest endpoint.',
+  code: 'end = ___', incorrect: 'Replacing end by b can lose the boundary.',
+  correct_feedback: 'Taking the maximum preserves the farthest endpoint.',
+};
+
+test('focused practice checks immediately, prevents duplicate submits and finishes with Done', async () => {
+  let resolveCheck, submissions = 0;
+  const urls = [];
+  const ui = app(async (url, opts) => {
+    urls.push(url);
+    if (url.endsWith('/learning/sequence/intervals')) return response(focusedLesson);
+    if (url.endsWith('/learning/sequence')) {
+      const body = JSON.parse(opts.body);
+      if (body.action === 'open') return response({ episode: 's1' });
+      submissions++;
+      assert.equal(body.answer, 'max(end, b)');
+      assert.equal(body.explanation, 'Equal endpoints overlap');
+      return new Promise((resolve) => { resolveCheck = resolve; });
+    }
+    return response({});
+  });
+  await ui.run('window.openLearningSequence("intervals")');
+  assert.match(ui.node('#learning-body').innerHTML, /not automatically graded/);
+  assert.match(ui.node('#learning-body').innerHTML, /role="status"/);
+  ui.node('#learning-answer').value = 'max(end, b)';
+  ui.node('#learning-explanation').value = 'Equal endpoints overlap';
+  ui.node('#learning-answer').listeners.input();
+  const check = ui.node('#learning-check');
+  const pending = check.listeners.click();
+  assert.equal(check.disabled, true);
+  assert.equal(check.textContent, 'Checking…');
+  assert.equal(ui.node('#learning-answer').readOnly, true);
+  await check.listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(submissions, 1);
+  resolveCheck(response({ correct: true, probe_due_at: 1793404800 }));
+  await pending;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(ui.node('#learning-result').textContent, /Correct — focused practice complete.*maximum preserves/);
+  assert.match(ui.node('#learning-result').textContent, /separate retention review/);
+  assert.equal(check.textContent, 'Done');
+  assert.equal(check.disabled, false);
+  assert.equal(ui.run('stored["learning-draft:intervals:s1"]'), undefined);
+  assert.ok(urls.some((url) => url.endsWith('/overview')));
+  let closed = false;
+  ui.node('#learning-modal').classList.add = (name) => { closed = name === 'hidden'; };
+  await check.listeners.click();
+  assert.equal(closed, true);
+  assert.equal(submissions, 1);
+});
+
+test('focused practice keeps wrong answers editable, clears stale feedback and recovers after errors', async () => {
+  let fail = false;
+  const ui = app(async (url, opts) => {
+    if (url.endsWith('/learning/sequence/intervals')) return response(focusedLesson);
+    if (JSON.parse(opts.body).action === 'open') return response({ episode: 's1' });
+    if (fail) throw new Error('Offline');
+    return response({ correct: false });
+  });
+  await ui.run('window.openLearningSequence("intervals")');
+  ui.node('#learning-answer').value = 'b';
+  const check = ui.node('#learning-check');
+  await check.listeners.click();
+  assert.match(ui.node('#learning-result').textContent, /Not quite.*lose the boundary/);
+  assert.equal(ui.node('#learning-answer').readOnly, false);
+  assert.equal(check.textContent, 'Try again');
+  ui.node('#learning-answer').value = 'max(end, b)';
+  ui.node('#learning-answer').listeners.input();
+  assert.equal(ui.node('#learning-result').textContent, '');
+  assert.equal(check.textContent, 'Check this step');
+  fail = true;
+  await check.listeners.click();
+  assert.match(ui.node('#learning-result').textContent, /Could not check this step: Offline/);
+  assert.equal(ui.node('#learning-answer').value, 'max(end, b)');
+  assert.equal(ui.node('#learning-answer').readOnly, false);
+  assert.equal(check.disabled, false);
+});
+
+test('reopening completed focused practice restores its saved result instead of a stale draft', async () => {
+  let submissions = 0;
+  const ui = app(async (url) => {
+    if (url.endsWith('/learning/sequence/intervals')) return response(focusedLesson);
+    submissions++;
+    return response({ episode: 's1', correct: true, answer: 'max(end, b)', explanation: 'Saved reflection' });
+  });
+  ui.run('stored["learning-draft:intervals:s1"] = JSON.stringify({answer: "b", explanation: "stale"})');
+  await ui.run('window.openLearningSequence("intervals")');
+  assert.equal(ui.node('#learning-answer').value, 'max(end, b)');
+  assert.equal(ui.node('#learning-explanation').value, 'Saved reflection');
+  assert.equal(ui.node('#learning-answer').readOnly, true);
+  assert.match(ui.node('#learning-result').textContent, /Correct — focused practice complete/);
+  assert.equal(ui.node('#learning-check').textContent, 'Done');
+  await ui.node('#learning-check').listeners.click();
+  assert.equal(submissions, 1); // Only the open action; Done never regrades.
 });
