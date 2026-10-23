@@ -142,7 +142,8 @@
       { key: 'coalesce', label: 'Coalesce concurrent misses (single-flight)', type: 'toggle' },
       { key: 'warm', label: 'Start with a warm cache (filled at t=0)', type: 'toggle' },
       { key: 'outage', label: 'Cache outage from t=60s to t=75s', type: 'toggle' },
-      { key: 'dbCap', label: 'Database capacity', min: 100, max: 3000, step: 50, fmt: v => v + ' q/s' }],
+      { key: 'dbCap', label: 'Database capacity', min: 100, max: 3000, step: 50, fmt: v => v + ' q/s' },
+      { key: 'dbLatency', label: 'Recompute time on a miss', min: 10, max: 1000, step: 10, fmt: v => v + ' ms' }],
     s => {
       const r = rng(11), T = 180, N = s.keys;
       const cdf = new Float64Array(N); let acc = 0;
@@ -152,7 +153,7 @@
       const ttl = () => s.ttl * (s.jitter ? 0.8 + 0.4 * r() : 1);
       if (s.warm) for (let k = 0; k < Math.min(s.size, N); k++) cache.set(k, { readyAt: 0, expires: ttl() });
       const db = new Array(T).fill(0), hits = new Array(T).fill(0), total = new Array(T).fill(0);
-      const lat = s.dbLatency / 1000; let coalesced = 0;
+      const lat = s.dbLatency / 1000; let coalesced = 0, dupes = 0;
       const n = s.rps * T;
       for (let i = 0; i < n; i++) {
         const now = (i + r()) / s.rps, sec = Math.min(T - 1, Math.floor(now)), k = pick();
@@ -162,6 +163,7 @@
         if (e && now < e.expires && now >= e.readyAt) { hits[sec]++; cache.delete(k); cache.set(k, e); continue; }
         if (e && now < e.readyAt && s.coalesce) { coalesced++; hits[sec]++; continue; }
         db[sec]++;
+        if (e && now < e.readyAt) dupes++;
         if (!(e && now < e.readyAt && !s.coalesce && e.loading)) {
           cache.delete(k); cache.set(k, { readyAt: now + lat, expires: now + lat + ttl(), loading: true });
           if (cache.size > s.size) cache.delete(cache.keys().next().value);
@@ -170,12 +172,12 @@
       const hitRate = hits.reduce((a, b) => a + b, 0) / Math.max(1, total.reduce((a, b) => a + b, 0));
       const over = db.filter(v => v > s.dbCap).length, peak = Math.max(...db);
       const steady = db.slice(Math.min(T - 1, s.ttl * 2 + 5)).filter(v => isFinite(v));
-      const metrics = { hitRate: Math.round(hitRate * 100), peakDb: peak, overloadSeconds: over, coalesce: s.coalesce ? 1 : 0, jitter: s.jitter ? 1 : 0, outage: s.outage ? 1 : 0, steadyPeak: Math.max(0, ...steady), avgDb: Math.round(db.reduce((a, b) => a + b, 0) / T), size: s.size, ttl: s.ttl, skew: s.skew, rps: s.rps, dbCap: s.dbCap };
+      const metrics = { hitRate: Math.round(hitRate * 100), peakDb: peak, overloadSeconds: over, coalesce: s.coalesce ? 1 : 0, jitter: s.jitter ? 1 : 0, outage: s.outage ? 1 : 0, steadyPeak: Math.max(0, ...steady), avgDb: Math.round(db.reduce((a, b) => a + b, 0) / T), dupes, size: s.size, ttl: s.ttl, skew: s.skew, rps: s.rps, dbCap: s.dbCap };
       return {
         metrics,
         html: stats([{ label: 'Hit rate', value: Math.round(hitRate * 100) + '%', tone: hitRate > 0.9 ? 'ok' : hitRate < 0.6 ? 'warn' : '' },
           { label: 'Avg DB load', value: fmt(db.reduce((a, b) => a + b, 0) / T) + ' q/s' }, { label: 'Peak DB load', value: fmt(peak) + ' q/s', tone: peak > s.dbCap ? 'bad' : '' },
-          { label: 'Seconds over DB capacity', value: String(over), tone: over ? 'bad' : 'ok' }, ...(s.coalesce ? [{ label: 'Misses coalesced', value: fmt(coalesced) }] : [])]) +
+          { label: 'Seconds over DB capacity', value: String(over), tone: over ? 'bad' : 'ok' }, { label: 'Duplicate refills (same key, already loading)', value: fmt(dupes), tone: dupes > 1000 ? 'warn' : '' }, ...(s.coalesce ? [{ label: 'Misses coalesced', value: fmt(coalesced) }] : [])]) +
           chart({ series: [{ label: 'Database queries / s', cls: 's3', values: db }, { label: 'Cache hits / s', cls: 's1', values: hits }], xMax: T, xLabel: 'seconds', yLabel: 'per second', hlines: [{ y: s.dbCap, label: 'DB capacity', cls: 'is-limit' }], bands: s.outage ? [{ from: 60, to: 75, label: 'cache down' }] : [] }),
       };
     });
@@ -345,8 +347,7 @@
       if (m.log) xs[0] = 1;
       const vals = xs.map(x => m.model(s, x)), cur = m.model(s, s.x);
       const mk = list => list.map(([k, label, cls]) => ({ label, cls, values: vals.map(v => v[k]), xs }));
-      api.metrics(Object.fromEntries(Object.entries(cur).map(([k, v]) => [k, v])));
-      return { metrics: { x: s.x, ...cur }, html: stats(m.read(cur, s)) + chart({ series: mk(m.series), xMax: m.xMax, logX: m.log, xLabel: m.xLabel, yLabel: m.yLabel, yMax: m.yMax, vlines: [{ x: s.x, label: 'you' }] }) + (m.series2 ? chart({ series: mk(m.series2).map(z => ({ ...z, values: z.values.map(v => isFinite(v) ? v : NaN) })), xMax: m.xMax, logX: m.log, xLabel: m.xLabel, yLabel: 'ms', vlines: [{ x: s.x }], yFmt: v => fmt(v) }) : '') };
+      return { metrics: { ...s, ...cur }, html: stats(m.read(cur, s)) + chart({ series: mk(m.series), xMax: m.xMax, logX: m.log, xLabel: m.xLabel, yLabel: m.yLabel, yMax: m.yMax, vlines: [{ x: s.x, label: 'you' }] }) + (m.series2 ? chart({ series: mk(m.series2).map(z => ({ ...z, values: z.values.map(v => isFinite(v) ? v : NaN) })), xMax: m.xMax, logX: m.log, xLabel: m.xLabel, yLabel: 'ms', vlines: [{ x: s.x }], yFmt: v => fmt(v) }) : '') };
     });
   };
 

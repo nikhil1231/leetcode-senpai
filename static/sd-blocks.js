@@ -297,7 +297,8 @@
         ctx.done(b, best && bad === 0);
         return;
       }
-      now.innerHTML = `<div class="sd-incident-card">${md(node.text)}<div class="sd-incident-options">${node.options.map((o, i) => `<button type="button" class="sd-option" data-i="${i}"><span class="sd-option-key">${i + 1}</span><span>${inline(o.label)}</span></button>`).join('')}</div></div>`;
+      const shown = shuffle(node.options.map((o, i) => i), b.key + key);
+      now.innerHTML = `<div class="sd-incident-card">${md(node.text)}<div class="sd-incident-options">${shown.map((i, n) => `<button type="button" class="sd-option" data-i="${i}"><span class="sd-option-key">${n + 1}</span><span>${inline(node.options[i].label)}</span></button>`).join('')}</div></div>`;
       now.querySelectorAll('[data-i]').forEach(n => n.addEventListener('click', () => {
         const o = node.options[Number(n.dataset.i)];
         o.quality === 'good' ? good++ : o.quality === 'bad' && bad++;

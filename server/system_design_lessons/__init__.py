@@ -56,6 +56,15 @@ class LessonError(ValueError):
     pass
 
 
+# Prose values are written plainly (colons, quotes and # are common in them); they are
+# turned into literal block scalars before YAML parsing so authors needn't quote them.
+PROSE = re.compile(r'^(\s*(?:- )?)(prompt|explain|explanation|reveal|intro|caption|steps|hint|given|model|say|weak|strong|why|text|label|note|takeaway|title|q|a|summary|debrief): (?![|>\'"{\[])(.+)$', re.M)
+
+
+def _prose(text):
+    return PROSE.sub(lambda m: f'{m[1]}{m[2]}: |-\n{" " * (len(m[1]) + 2)}{m[3]}', text)
+
+
 def _shift(seed, n):
     return int(hashlib.sha256(seed.encode()).hexdigest()[:8], 16) % n
 
@@ -169,7 +178,7 @@ def parse(text, name='lesson'):
     if not text.startswith('---\n'):
         raise LessonError(f'{name}: missing frontmatter')
     _, front, body = text.split('---\n', 2)
-    meta = yaml.safe_load(front)
+    meta = yaml.safe_load(_prose(front))
     missing = [k for k in FRONT if k not in meta]
     if missing:
         raise LessonError(f'{name}: frontmatter missing {missing}')
@@ -185,7 +194,7 @@ def parse(text, name='lesson'):
             blocks.append({'type': 'md', 'text': prose})
         pos = m.end()
         try:
-            data = yaml.safe_load(m.group(2))
+            data = yaml.safe_load(_prose(m.group(2)))
         except yaml.YAMLError as exc:
             raise LessonError(f'{name}: bad YAML in {lang} block: {exc}') from exc
         if lang == 'questions':
