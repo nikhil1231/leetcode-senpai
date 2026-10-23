@@ -543,7 +543,7 @@
   // ---------- 12. Composite index planner ----------
   registry.index = (el, cfg, api) => {
     const cols = { customer_id: 10000, status: 5, created_at: 1e6, total: 1e5 }, ROWS = 2e6;
-    const state = { i1: 'customer_id', i2: 'created_at', i3: '', include: false, q: cfg.query || 'history' };
+    const state = { i1: 'customer_id', i2: 'created_at', i3: '', include: false, q: cfg.query || 'history', ...(cfg.initial || {}) };
     const QUERIES = {
       history: { sql: "SELECT id, total FROM orders\nWHERE customer_id = ?\nORDER BY created_at DESC\nLIMIT 20", eq: ['customer_id'], range: null, order: 'created_at', select: ['total'], limit: 20 },
       status: { sql: "SELECT id FROM orders\nWHERE status = 'pending'\n  AND created_at > now() - interval '1 hour'", eq: ['status'], range: 'created_at', order: null, select: [], limit: null, rangeSel: 1 / 720 },
@@ -586,7 +586,7 @@
           { label: 'Sort needed', value: sortAvoided ? 'no' : 'yes', tone: sortAvoided ? 'ok' : 'warn' }, { label: 'Index-only', value: covering ? 'yes' : 'no', tone: covering ? 'ok' : '' },
           { label: 'Extra writes per INSERT', value: idx.length ? '+1 index (+' + idx.length * 8 + ' B/key)' : '0' }]) +
         `<ul class="sim-notes">${notes.map(n => `<li>${n}</li>`).join('')}</ul><p class="sim-note">Table: 2M orders, 10k customers, 5 statuses. Estimates assume uniform data — real planners use statistics, which is why you check with <code>EXPLAIN ANALYZE</code>.</p>`;
-      api.metrics({ rowsRead: Math.round(examined), sortAvoided: sortAvoided ? 1 : 0, covering: covering ? 1 : 0, query: state.q, writeCost });
+      api.metrics({ rowsRead: Math.round(examined), sortAvoided: sortAvoided ? 1 : 0, covering: covering ? 1 : 0, query: state.q, writeCost, indexCols: idx.length, include: state.include ? 1 : 0 });
     };
     controls(ctl, [{ key: 'q', label: 'Query', type: 'select', options: [['history', 'Customer order history'], ['cust_status', 'Customer’s shipped orders'], ['status', 'Recent pending orders'], ['range_first', 'Range then equality'], ['total', 'Large orders']] },
       { key: 'i1', label: 'Index column 1', type: 'select', options: opts }, { key: 'i2', label: 'Index column 2', type: 'select', options: opts }, { key: 'i3', label: 'Index column 3', type: 'select', options: opts },

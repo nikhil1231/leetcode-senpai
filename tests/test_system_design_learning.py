@@ -286,7 +286,7 @@ def test_account_boundaries_and_invalid_inputs(client):
 
 
 def test_repeat_answers_do_not_inflate_independent_accuracy_or_reviews():
-    a = {'id': '1', 'kind': 'quickfire', 'question_id': 'indexes-fire-1-v1', 'lesson_id': 'indexes',
+    a = {'id': '1', 'kind': 'quickfire', 'question_id': 'indexes-fire-1-v2', 'lesson_id': 'indexes',
          'result': {'answered_at': 100, 'correct': True, 'assisted': False}}
     b = {**deepcopy(a), 'id': '2'}
     b['result']['answered_at'] = 105
