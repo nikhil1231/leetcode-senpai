@@ -53,7 +53,8 @@
       const celebPushed = s.strategy === 'push' || (s.strategy === 'hybrid' && s.celebFollowers < s.threshold);
       const normalPushed = s.strategy !== 'pull';
       const writes = (normalPushed ? normalPosts * s.avgFollowers : 0) + (celebPushed ? celebPosts * s.celebFollowers : 0);
-      const celebFollowed = Math.min(s.follows, Math.max(1, s.follows * 0.05));
+      // Share of followed accounts with at least T followers falls off as a power law in T.
+      const celebFollowed = s.follows * Math.min(1, (1e4 / s.threshold) ** 0.8);
       const perRead = s.strategy === 'push' ? 1 : s.strategy === 'pull' ? s.follows : 1 + (celebPushed ? 0 : celebFollowed);
       const readQueries = s.reads * perRead;
       const worstDelivery = celebPushed && s.celebFollowers > 1e6 ? s.celebFollowers / 1e6 : 0.05; // seconds at 1M inserts/s per post
