@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from . import auth
+from . import auth, system_design_coach as coach
 from .store import get_store
 from .system_design_curriculum import (CATEGORIES, LESSONS, QUESTIONS, VERSION,
                                         LEGACY_LESSONS, public_lesson, public_question)
@@ -41,10 +41,22 @@ class StartQuiz(BaseModel):
 
 class Answer(BaseModel):
     question_id: str
-    answer: str = Field(default='', max_length=20)
+    # One choice ID, comma-separated IDs (multi/order) or a number (numeric).
+    answer: str = Field(default='', max_length=400)
     reveal: bool = False
     guessed: bool = False
+    confidence: Literal['', 'sure', 'unsure'] = ''
     elapsed_sec: int = Field(default=0, ge=0, le=86400)
+
+
+class Activity(BaseModel):
+    block: str = Field(pattern=r'^b\d{1,3}$')
+    correct: bool | None = None
+
+
+class Recall(BaseModel):
+    block: str = Field(pattern=r'^b\d{1,3}$')
+    text: str = Field(min_length=1, max_length=3000)
 
 
 class NextQuestion(BaseModel):
@@ -68,6 +80,11 @@ def rows(records):
             out.append({**r['result'], 'id': r['id'], 'question_id': r['question_id'],
                         'lesson_id': r['lesson_id'], 'source': 'quickfire'})
     return sorted(out, key=lambda a: (a['answered_at'], a['id']))
+
+
+def active(qid):
+    q = QUESTIONS.get(qid.replace('-check-', '-fire-'))
+    return bool(q) and not q.get('retired')
 
 
 def clean(a):
@@ -97,7 +114,8 @@ def schedules(answers):
 def course_summary(records, now=None):
     now = int(time.time()) if now is None else now
     answers = rows(records)
-    review = schedules(answers)
+    # Retired v1 questions stay in history but no longer ask for review.
+    review = {k: v for k, v in schedules(answers).items() if active(k)}
     states = {r['lesson_id']: r for r in records if r.get('kind') == 'course_lesson'}
     for r in records:
         if r.get('kind') == 'exposure' and r.get('skill') in LEGACY_LESSONS:
@@ -121,10 +139,12 @@ def course_summary(records, now=None):
         last_by_question = {}
         for a in topic_answers:
             last_by_question[a['question_id']] = a
-        mistakes = sum(needs_repair(a) for a in last_by_question.values())
+        mistakes = sum(needs_repair(a) for k, a in last_by_question.items() if active(k))
         due = sum(v['lesson_id'] == key and v['due_at'] <= now for v in review.values())
         passed = any(all(a['correct'] and not a['revealed'] for a in r['answers'].values()) for r in complete)
         latest_score = sum(a['correct'] and not a['revealed'] for a in complete[-1]['answers'].values()) if complete else None
+        latest_total = len(complete[-1]['answers']) if complete else None
+        activities = state.get('activities', {})
         done = bool(state.get('read_at') and complete)
         calibration = ('not_assessed' if not independent else 'more_practice'
                        if len(recent) < 3 else 'needs_work'
@@ -135,6 +155,9 @@ def course_summary(records, now=None):
             objective_progress.append({'title': title, 'status': 'not_checked' if not last else
                                        'passed' if last['correct'] and not last['revealed'] else 'review'})
         lessons.append({k: item[k] for k in ('id', 'category', 'skill', 'title', 'minutes', 'objectives', 'prerequisite', 'case_id')} | {
+            'check_count': len(item['quiz_ids']), 'latest_total': latest_total,
+            'activities_total': item.get('interactive', 0),
+            'activities_done': sum(1 for a in activities.values() if a.get('done')),
             'objective_progress': objective_progress, 'opened': bool(state.get('opened_at')), 'read': bool(state.get('read_at')),
             'completed': done, 'passed': passed, 'quiz_attempts': len(quizzes),
             'latest_score': latest_score, 'best_score': max((sum(a['correct'] and not a['revealed'] for a in r['answers'].values()) for r in complete), default=None),
@@ -157,7 +180,7 @@ def course_summary(records, now=None):
     return {'categories': categories, 'lessons': lessons, 'next_lesson': next_lesson['id'] if next_lesson else None,
             'totals': {'lessons': len(lessons), 'completed': sum(l['completed'] for l in lessons),
                        'passed': sum(l['passed'] for l in lessons), 'due': sum(l['due'] for l in lessons),
-                       'quickfire_questions': sum(q['kind'] == 'quickfire' for q in QUESTIONS.values()),
+                       'quickfire_questions': sum(q['kind'] == 'quickfire' and not q.get('retired') for q in QUESTIONS.values()),
                        'quickfire_attempts': len(fire_answers),
                        'independent_attempts': sum(l['independent_attempts'] for l in lessons),
                        'independent_correct': sum(l['independent_correct'] for l in lessons),
@@ -188,6 +211,47 @@ def mark_read(key: str, store=Depends(store_for)):
     return put(store, state['id'], {**state, 'read_at': int(time.time())}, state['revision'])
 
 
+def lesson_block(key, block, kind=None):
+    if key not in LESSONS:
+        raise HTTPException(404, 'Unknown lesson')
+    found = next((b for b in LESSONS[key].get('blocks', []) if b.get('key') == block), None)
+    if not found or (kind and found['type'] != kind):
+        raise HTTPException(404, 'Unknown activity')
+    return found
+
+
+@router.post('/course/lessons/{key}/activity')
+def record_activity(key: str, body: Activity, store=Depends(store_for)):
+    """In-lesson exercises are supported learning: recorded for progress, never scheduled."""
+    lesson_block(key, body.block)
+    for _ in range(3):
+        state = read(store, 'course_' + key, 'course_lesson')
+        activities = dict(state.get('activities', {}))
+        old = activities.get(body.block, {})
+        activities[body.block] = {'done': True, 'first_correct': old.get('first_correct', body.correct),
+                                  'attempts': old.get('attempts', 0) + 1, 'at': int(time.time())}
+        try:
+            return put(store, state['id'], {**state, 'activities': activities}, state['revision'])
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+    raise HTTPException(409, 'Reload to recover the saved lesson')
+
+
+@router.post('/course/lessons/{key}/recall')
+async def grade_recall(key: str, body: Recall, store=Depends(store_for)):
+    """Free recall is saved first; model feedback is optional and derived."""
+    block = lesson_block(key, body.block, 'recall')
+    now = time.time()
+    doc = put(store, 'recall_' + secrets.token_hex(16), {'kind': 'recall', 'lesson_id': key, 'block': body.block,
+                                                         'text': body.text, 'created_at': now})
+    grade_result, message = await coach.grade_recall(block, body.text, store.get_settings())
+    if grade_result:
+        doc = put(store, doc['id'], {**doc, 'grade': grade_result}, doc['revision'])
+    return {'id': doc['id'], 'grade': grade_result, 'message': message, 'points': block['points'],
+            'model': block['model']}
+
+
 def quiz_public(doc):
     result = {k: deepcopy(v) for k, v in doc.items() if k != 'contracts'}
     result['questions'] = [public_contract(doc['contracts'][k]) for k in doc['question_ids']]
@@ -205,7 +269,8 @@ def start_quiz(body: StartQuiz, store=Depends(store_for)):
             raise HTTPException(409, 'Request ID already used')
         return quiz_public(old)
     ids = LESSONS[body.lesson_id]['quiz_ids']
-    doc = put(store, key, {'kind': 'quiz', 'lesson_id': body.lesson_id, 'content_version': VERSION,
+    doc = put(store, key, {'kind': 'quiz', 'lesson_id': body.lesson_id,
+                          'content_version': LESSONS[body.lesson_id].get('version', VERSION),
                           'created_at': time.time(), 'question_ids': ids, 'answers': {},
                           'contracts': {k: deepcopy(QUESTIONS[k]) for k in ids}})
     return quiz_public(doc)
@@ -216,15 +281,52 @@ def get_quiz(key: str, store=Depends(store_for)):
     return quiz_public(read(store, key, 'quiz'))
 
 
-def grade(contract, body, assisted, now):
-    valid = {c['id'] for c in contract['choices']}
-    if not body.reveal and body.answer not in valid:
+def number(text):
+    return f'{text:,.10g}'
+
+
+def judge(contract, answer):
+    """(is_correct, correct_answer) for every question format; raises on malformed input."""
+    fmt = contract.get('format', 'choice')
+    by_id = {c['id']: c for c in contract['choices']}
+    if fmt == 'numeric':
+        expected = contract['correct']
+        right = {'text': f"{number(expected)} {contract.get('unit', '')}".strip()}
+        if answer is None:
+            return False, right
+        try:
+            value = float(answer.replace(',', '').strip())
+        except ValueError as exc:
+            raise HTTPException(422, 'Enter a number') from exc
+        return abs(value - expected) <= contract['tolerance'] * abs(expected), right
+    if fmt in ('multi', 'order'):
+        ids = contract['correct']
+        joiner = ' → ' if fmt == 'order' else ' · '
+        right = {'ids': ids, 'text': joiner.join(by_id[k]['text'] for k in ids)}
+        if answer is None:
+            return False, right
+        picked = [k for k in answer.split(',') if k]
+        if not picked or any(k not in by_id for k in picked) or len(set(picked)) != len(picked):
+            raise HTTPException(422, 'Choose an answer first')
+        if fmt == 'order' and len(picked) != len(ids):
+            raise HTTPException(422, 'Place every item in order')
+        return (picked == ids if fmt == 'order' else set(picked) == set(ids)), right
+    right = by_id[contract['correct']]
+    if answer is None:
+        return False, right
+    if answer not in by_id:
         raise HTTPException(422, 'Choose an answer first')
-    correct = next(c for c in contract['choices'] if c['id'] == contract['correct'])
-    return {'answer': body.answer, 'correct': not body.reveal and body.answer == correct['id'],
-            'revealed': body.reveal, 'guessed': body.guessed, 'assisted': assisted,
+    return answer == right['id'], right
+
+
+def grade(contract, body, assisted, now):
+    correct, right = judge(contract, None if body.reveal else body.answer)
+    return {'answer': body.answer, 'correct': correct and not body.reveal,
+            'revealed': body.reveal, 'guessed': body.guessed or (correct and body.confidence == 'unsure'),
+            'confidence': body.confidence, 'assisted': assisted,
             'answered_at': now, 'elapsed_sec': body.elapsed_sec, 'timing_source': 'visible_active',
-            'explanation': contract['explanation'], 'correct_answer': correct,
+            'explanation': contract['explanation'], 'correct_answer': right, 'whys': contract.get('whys', {}),
+            'format': contract.get('format', 'choice'), 'unit': contract.get('unit', ''),
             'question_title': contract['prompt'], 'choices': contract['choices'],
             'content_version': contract['version']}
 
@@ -251,7 +353,7 @@ def quiz_answer(key: str, body: Answer, store=Depends(store_for)):
 
 
 def public_contract(contract, order=None):
-    item = {k: deepcopy(v) for k, v in contract.items() if k not in ('correct', 'explanation')}
+    item = {k: deepcopy(v) for k, v in contract.items() if k not in ('correct', 'explanation', 'whys', 'retired', 'tolerance')}
     if order:
         choices = {c['id']: c for c in item['choices']}
         item['choices'] = [choices[k] for k in order]
@@ -281,7 +383,7 @@ def next_question(body: NextQuestion, store=Depends(store_for)):
     review = schedules(answers)
     latest = {a['question_id']: a for a in answers}
     learned = {r['lesson_id'] for r in records if r.get('kind') == 'course_lesson' and r.get('read_at')}
-    candidates = [q for q in QUESTIONS.values() if q['kind'] == 'quickfire'
+    candidates = [q for q in QUESTIONS.values() if q['kind'] == 'quickfire' and not q.get('retired')
                   and (not body.category or q['category'] == body.category)
                   and (not body.lesson_id or q['lesson_id'] == body.lesson_id)
                   and (body.difficulty == 'mixed' or q['difficulty'] == body.difficulty)
@@ -313,7 +415,7 @@ def next_question(body: NextQuestion, store=Depends(store_for)):
     order = [c['id'] for c in item['choices']]
     secrets.SystemRandom().shuffle(order)
     doc = put(store, key, {'kind': 'quickfire', 'question_id': item['id'], 'lesson_id': item['lesson_id'],
-                           'skill': item['skill'], 'content_version': VERSION, 'created_at': now,
+                           'skill': item['skill'], 'content_version': item['version'], 'created_at': now,
                            'filters': filters, 'choice_order': order, 'contract': deepcopy(item)})
     return fire_public(doc)
 

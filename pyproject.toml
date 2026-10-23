@@ -12,6 +12,8 @@ dependencies = [
     # firebase-admin pulls it in too, but an import deserves its own line.
     "pyjwt[crypto]==2.14.0",
     "fsrs==4.1.1",
+    # Authored system design lessons are Markdown with YAML blocks.
+    "pyyaml==6.0.3",
 ]
 
 [dependency-groups]

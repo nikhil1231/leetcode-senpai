@@ -2,9 +2,13 @@
 
 New semantics require a new question/version; historical attempts keep their contract.
 The six assessment skills remain separate from the finer learning taxonomy.
+Rewritten lessons live in `system_design_lessons`; they replace a v1 lesson's prose and
+questions, and the v1 questions stay gradeable but are retired from new practice.
 """
 import hashlib
 from copy import deepcopy
+
+from . import system_design_lessons as rich
 
 VERSION = 1
 CATEGORIES = [
@@ -515,10 +519,41 @@ LEGACY_LESSONS = {'requirements': 'guarantees', 'reads': 'cache-freshness',
                   'concurrency': 'concurrent-holds', 'operations': 'observability'}
 
 
+def _apply_rich():
+    """Merge rewritten lessons in course order; untouched v1 lessons keep their place."""
+    loaded = rich.load()
+    known = {c[0]: c for c in CATEGORIES + rich.NEW_CATEGORIES}
+    CATEGORIES[:] = [known[k] for k in rich.ORDER]
+    order = [k for keys in rich.ORDER.values() for k in keys if k in loaded or k in LESSONS]
+    merged, previous = {}, None
+    for key in order:
+        if key in loaded:
+            item = loaded[key]
+            for qid in LESSONS.get(key, {}).get('quiz_ids', []) + LESSONS.get(key, {}).get('quickfire_ids', []):
+                QUESTIONS[qid]['retired'] = True
+            QUESTIONS.update(deepcopy(item['questions']))
+            ids = list(item['questions'])
+            lesson = dict(id=key, version=rich.VERSION, category=item['category'], skill=item['skill'],
+                          title=item['title'], minutes=item['minutes'], principle=item['summary'],
+                          objectives=item['objectives'], sources=[tuple(s) for s in item['sources']],
+                          case_id=item.get('case'), blocks=item['blocks'], interactive=item['interactive'],
+                          quiz_ids=[q for q in ids if '-check-' in q],
+                          quickfire_ids=[q for q in ids if '-fire-' in q])
+        else:
+            lesson = LESSONS[key]
+        merged[key] = {**lesson, 'prerequisite': previous}
+        previous = key
+    LESSONS.clear()
+    LESSONS.update(merged)
+
+
+_apply_rich()
+
+
 def public_question(key, order=None):
     item = deepcopy(QUESTIONS[key])
-    item.pop('correct')
-    item.pop('explanation')
+    for k in ('correct', 'explanation', 'whys', 'retired'):
+        item.pop(k, None)
     if order:
         by_id = {c['id']: c for c in item['choices']}
         item['choices'] = [by_id[k] for k in order]

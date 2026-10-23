@@ -770,6 +770,7 @@ dependencies = [
     { name = "fsrs" },
     { name = "httpx" },
     { name = "pyjwt", extra = ["crypto"] },
+    { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -786,6 +787,7 @@ requires-dist = [
     { name = "fsrs", specifier = "==4.1.1" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = "==2.14.0" },
+    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.34.0" },
 ]
 

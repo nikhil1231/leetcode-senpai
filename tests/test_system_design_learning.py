@@ -40,23 +40,102 @@ def answer_fire(client, item, **fields):
 
 
 def test_course_has_complete_ordered_content_and_distinct_question_pools():
-    assert len(LESSONS) == 32 and len(QUESTIONS) == 192 and len(CATEGORIES) == 8
+    assert len(CATEGORIES) == 10
     previous = None
     prompts = set()
     for key, lesson in LESSONS.items():
         assert lesson['prerequisite'] == previous
-        assert len(lesson['quiz_ids']) == len(lesson['quickfire_ids']) == 3
-        assert lesson['objectives'] and lesson['worked'] and lesson['tradeoff'] and lesson['mistake']
+        assert len(lesson['quiz_ids']) >= 3 and len(lesson['quickfire_ids']) >= 3
+        assert lesson['objectives'] and (lesson.get('blocks') or lesson.get('worked'))
         for qid in lesson['quiz_ids'] + lesson['quickfire_ids']:
             q = QUESTIONS[qid]
-            assert q['lesson_id'] == key
+            assert q['lesson_id'] == key and not q.get('retired')
             assert q['prompt'] not in prompts
             prompts.add(q['prompt'])
-            assert len({c['text'] for c in q['choices']}) == len(q['choices']) == 3
-            assert q['correct'] in {c['id'] for c in q['choices']}
+            assert len({c['text'] for c in q['choices']}) == len(q['choices'])
+            fmt = q.get('format', 'choice')
+            ids = {c['id'] for c in q['choices']}
+            if fmt == 'choice':
+                assert q['correct'] in ids and len(ids) >= 3
+            elif fmt in ('multi', 'order'):
+                assert set(q['correct']) <= ids
+            else:
+                assert q['correct'] > 0 and not ids
             assert q['explanation']
         previous = key
-    assert all(sum(l['category'] == c[0] for l in LESSONS.values()) == 4 for c in CATEGORIES)
+    assert {l['category'] for l in LESSONS.values()} <= {c[0] for c in CATEGORIES}
+
+
+def test_rewritten_lessons_retire_but_keep_v1_questions():
+    rich = [k for k, l in LESSONS.items() if l.get('blocks')]
+    assert 'cache-aside' in rich
+    retired = [q for q in QUESTIONS.values() if q.get('retired')]
+    assert retired and all(q['lesson_id'] in rich and q['version'] == 1 for q in retired)
+
+
+def test_judge_grades_every_format():
+    choice = {'choices': [{'id': 'c0', 'text': 'a'}, {'id': 'c1', 'text': 'b'}], 'correct': 'c1'}
+    assert learning.judge(choice, 'c1')[0] and not learning.judge(choice, 'c0')[0]
+    multi = {**choice, 'format': 'multi', 'correct': ['c0', 'c1']}
+    assert learning.judge(multi, 'c1,c0')[0] and not learning.judge(multi, 'c0')[0]
+    order = {**choice, 'format': 'order', 'correct': ['c1', 'c0']}
+    assert learning.judge(order, 'c1,c0')[0] and not learning.judge(order, 'c0,c1')[0]
+    numeric = {'format': 'numeric', 'choices': [], 'correct': 95.0, 'tolerance': 0.01, 'unit': '%'}
+    assert learning.judge(numeric, '95.5')[0] and not learning.judge(numeric, '90')[0]
+    assert learning.judge(numeric, None)[1]['text'] == '95 %'
+    for contract, bad in ((choice, 'c9'), (multi, 'c0,c0'), (order, 'c0'), (numeric, 'lots')):
+        with pytest.raises(Exception):
+            learning.judge(contract, bad)
+
+
+def test_lesson_parser_rejects_broken_content():
+    from server import system_design_lessons as rich
+    good = open(rich.HERE + '/cache-aside.md', encoding='utf-8').read()
+    assert rich.parse(good, 'x')['interactive'] > 5
+    with pytest.raises(rich.LessonError):
+        rich.parse(good.replace('answer: 3\n  explain', 'answer: 30\n  explain'), 'x')
+    with pytest.raises(rich.LessonError):
+        rich.parse(good.replace('```questions', '```nothing'), 'x')
+
+
+def test_unsure_correct_answers_count_as_guesses_and_activities_record(client, monkeypatch):
+    post(client, '/course/lessons/cache-aside/open')
+    quiz = post(client, '/course/quizzes', request_id=rid(), lesson_id='cache-aside')
+    q = quiz['questions'][0]
+    contract = QUESTIONS[q['id']]
+    answer = contract['correct'] if isinstance(contract['correct'], str) else ','.join(contract['correct'])
+    saved = post(client, '/course/quizzes/' + quiz['id'] + '/answer', question_id=q['id'], answer=answer, confidence='unsure')
+    assert saved['answers'][q['id']]['correct'] and saved['answers'][q['id']]['guessed']
+    assert 'whys' not in q and 'whys' in saved['answers'][q['id']]
+    block = next(b['key'] for b in LESSONS['cache-aside']['blocks'] if b['type'] == 'predict')
+    state = post(client, '/course/lessons/cache-aside/activity', block=block, correct=True)
+    state = post(client, '/course/lessons/cache-aside/activity', block=block, correct=False)
+    assert state['activities'][block]['first_correct'] is True and state['activities'][block]['attempts'] == 2
+    lesson = next(l for l in client.get('/api/system-design').json()['course']['lessons'] if l['id'] == 'cache-aside')
+    assert lesson['activities_done'] == 1 and lesson['check_count'] == 4
+    assert client.post('/api/system-design/course/lessons/cache-aside/activity', json={'block': 'b999'}).status_code == 404
+
+
+def test_recall_is_saved_without_a_model(client, monkeypatch):
+    monkeypatch.setattr(learning.coach.llm, 'enabled', lambda settings=None: False)
+    post(client, '/course/lessons/cache-aside/open')
+    block = next(b for b in LESSONS['cache-aside']['blocks'] if b['type'] == 'recall')
+    result = post(client, '/course/lessons/cache-aside/recall', block=block['key'], text='Cache-aside reads the cache first.')
+    assert result['grade'] is None and result['points'] == block['points'] and result['message']
+    assert client.store.get_design_record(result['id'])['text'].startswith('Cache-aside')
+
+
+def test_retired_questions_leave_practice_and_review(client):
+    old = 'cache-aside-fire-1-v1'
+    assert QUESTIONS[old]['retired']
+    for _ in range(12):
+        item = fire(client, lesson_id='cache-aside')
+        assert not item['question']['id'].endswith('-v1')
+    records = [{'kind': 'quickfire', 'id': 'f1', 'question_id': old, 'lesson_id': 'cache-aside',
+                'result': {'correct': False, 'revealed': False, 'answered_at': 0}}]
+    summary = learning.course_summary(records, now=10 ** 9)
+    lesson = next(l for l in summary['lessons'] if l['id'] == 'cache-aside')
+    assert lesson['due'] == 0 and lesson['mistakes'] == 0 and len(summary['history']) == 1
 
 
 def test_empty_course_has_no_invented_mastery(client):
