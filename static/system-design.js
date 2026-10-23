@@ -182,7 +182,8 @@
     }).join('');
   }
 
-  const caseNames = {links:'Link service', jobs:'Document processing', seats:'Seat reservations'};
+  const baseCaseNames = {links:'Link service', jobs:'Document processing', seats:'Seat reservations'};
+  const caseNames = new Proxy(baseCaseNames, {get: (t, k) => t[k] || catalog?.cases?.find(c => c.id === k)?.name || String(k)});
   const caseDetails = {links:['01', '20k reads / sec', 'Freshness · caching · durability'], jobs:['02', '30 jobs / sec', 'Queues · retries · recovery'], seats:['03', '5-minute holds', 'Concurrency · consistency · ownership']};
   const steps = [
     {title:'Define the system', short:'Scope', fields:['requirements','interfaces'], note:'Make the guarantees explicit. Then describe the interface and the state it changes.'},
@@ -194,14 +195,15 @@
     return `<div class="sd-page-intro"><span class="sd-eyebrow">${kicker}</span><h2 tabindex="-1" id="sd-heading">${title}</h2><p>${description}</p></div>`;
   }
   function caseCards() {
-    return `<div class="sd-case-grid">${catalog.cases.map(c => {
-      const [n,metric,tags] = caseDetails[c.id];
+    return `<div class="sd-case-grid">${catalog.cases.map((c,i) => {
+      const [n,metric,tags] = caseDetails[c.id] || [String(i+1).padStart(2,'0'), c.metric||'', c.tags||''];
       return `<article class="sd-case-card"><div class="sd-case-top"><span class="sd-case-number">${n}</span><span>${esc(c.family)}</span></div>
         <div class="sd-case-symbol" aria-hidden="true">${caseGlyph(c.id)}</div><h3>${esc(caseNames[c.id])}</h3><p>${esc(c.summary)}</p>
         <div class="sd-case-tags">${esc(tags)}</div><div class="sd-case-bottom"><span>${metric}</span>${button('Explore case →','case',`data-case="${c.id}"`)}</div></article>`;
     }).join('')}</div>`;
   }
   function caseGlyph(key) {
+    if (!['links','jobs','seats'].includes(key)) return '<svg viewBox="0 0 104 65" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="20" width="22" height="22" rx="5"/><rect x="41" y="8" width="22" height="22" rx="5"/><rect x="41" y="36" width="22" height="22" rx="5"/><rect x="76" y="20" width="22" height="22" rx="5"/><path d="M28 31h13m22-12 13 10M63 47l13-10"/></svg>';
     const shapes = key === 'links' ? '<rect x="5" y="18" width="35" height="25" rx="6"/><rect x="60" y="18" width="35" height="25" rx="6"/><path d="M40 30h20m-6-5 6 5-6 5"/>' : key === 'jobs' ? '<rect x="4" y="18" width="23" height="25" rx="5"/><rect x="39" y="12" width="23" height="37" rx="5"/><rect x="75" y="18" width="23" height="25" rx="5"/><path d="M27 30h12m23 0h13M46 24h9m-9 7h9m-9 7h9"/>' : '<rect x="37" y="20" width="27" height="27" rx="6"/><path d="M12 12h18v7m-6-5 6 5 5-6M88 12H71v7m-5-6 5 6 6-5M50 47v11"/><circle cx="12" cy="12" r="3"/><circle cx="88" cy="12" r="3"/>';
     return `<svg viewBox="0 0 104 65" fill="none" stroke="currentColor" stroke-width="1.6">${shapes}</svg>`;
   }

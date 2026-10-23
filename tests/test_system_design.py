@@ -61,7 +61,7 @@ def enable_model(monkeypatch, callback=None):
 
 def test_catalog_does_not_expose_rubrics_or_answers(client):
     data = client.get('/api/system-design').json()
-    assert len(data['cases']) == 3
+    assert len(data['cases']) == 13 and all('rubric' not in c for c in data['cases'])
     assert data['coach_enabled'] is False
     assert all('rubric' not in c for c in data['cases'])
     assert all('correct' not in q and 'explanation' not in q for q in data['exercises'])

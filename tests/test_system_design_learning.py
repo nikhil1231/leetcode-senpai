@@ -72,6 +72,12 @@ def test_course_has_complete_ordered_content_and_distinct_question_pools():
     assert {l['category'] for l in LESSONS.values()} <= {c[0] for c in CATEGORIES}
 
 
+def test_every_linked_case_exists():
+    from server.system_design_content import CASES
+    assert all(l['case_id'] in CASES for l in LESSONS.values() if l.get('case_id'))
+    assert all(set(c['skills']) <= set(sd.SKILLS) for c in CASES.values())
+
+
 def test_rewritten_lessons_retire_but_keep_v1_questions():
     rich = [k for k, l in LESSONS.items() if l.get('blocks')]
     assert 'cache-aside' in rich
