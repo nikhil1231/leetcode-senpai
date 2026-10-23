@@ -1030,7 +1030,7 @@ let coachPending = null;  // {text, t} of the message on its way, or {} for a ba
 
 // Icon buttons: the label is the tooltip and the accessible name.
 function setBtnLabel(btn, text) {
-  btn.title = text;
+  btn.dataset.tip = text;
   btn.setAttribute("aria-label", text);
 }
 

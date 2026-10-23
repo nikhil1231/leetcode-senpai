@@ -998,6 +998,16 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .assist-group { display: flex; min-width: 0; }
 .assist-group { gap: 6px; }
 .coach-actions .icon-button svg { display: block; }
+/* Icon buttons say what they do on hover, at once. */
+.coach-actions .icon-button { position: relative; }
+.coach-actions .icon-button[data-tip]::after {
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; z-index: 31;
+  transform: translateX(-50%); padding: 5px 8px; border: 1px solid var(--line-hi); border-radius: 7px;
+  background: var(--panel); box-shadow: var(--shadow); color: var(--text); font-size: 12px; font-weight: 500;
+  white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s;
+}
+.coach-actions .icon-button:hover::after, .coach-actions .icon-button:focus-visible::after { opacity: 1; }
+.coach-actions .icon-button[aria-expanded="true"]::after { display: none; }
 .button.give-up-btn { border-color: rgba(167, 139, 250, .38); background: rgba(167, 139, 250, .07); color: var(--accent-2); }
 .button.give-up-btn:hover { background: rgba(167, 139, 250, .15); color: var(--accent-2); }
 .button.give-up-btn[data-armed], .button.end-btn[data-armed] { color: var(--red); border-color: rgba(251, 113, 133, .5); background: rgba(251, 113, 133, .12); position: relative; }
