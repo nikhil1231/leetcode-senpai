@@ -482,9 +482,44 @@ to foundation depth; saved profile choices are preserved. The System Design
 sidebar chip shows its own tutor and assessor configurations; saved AI feedback
 continues to identify the model that produced it.
 
+### Knowledge ledger, papers and drills
+
+Everything gradeable is a countable **item**: lesson-check and Quickfire questions, every
+gradeable lesson block (predict, estimate, fill the gaps, sort, order, spot the bug, recall,
+incident, missing-box diagrams, find-the-step timelines), the skill drills and the estimation
+templates. `server/knowledge.py` is the section-agnostic engine (pure): a section declares
+items and reports answer events; `server/system_design_items.py` is the system design adapter,
+deriving events from existing records, so earlier history counts without a migration.
+
+- **Knowledge number** — each item has a stability S and recall R(t) = (1 + t/9S)⁻¹. The number
+  is the sum of R over items whose latest answer was clean: roughly how many you would get right
+  today. Same-day repeats never grow S; misses shrink it. Shown with its 60-day history.
+- **Past papers** — timed, mixed papers (short 15 / standard 30 / long 50 marks, about a minute
+  a mark) composed toward shaky, fading and unseen items, two per topic, written answers last.
+  Nothing is revealed until you finish. Deterministic items get partial credit (multi-select,
+  order, estimates, blanks, sort items, bug lines). Written answers are marked by the model
+  against their rubric points, and an examiner's report explains each lost mark; without the
+  model you mark them yourself. Grade boundaries (A* 85, A 75, B 65, C 50, D 35) are described
+  in interview terms. Review and mistakes papers are unranked.
+- **Results slip** — after a paper, Quickfire round or drill sprint: marks, new items, items
+  that became solid, the knowledge change and any personal bests broken.
+- **Personal bests** — best paper per scope, fastest A* pace, longest Quickfire streak (shown
+  live in rounds), most marks in a day, best estimation sprint.
+- **Knowledge map** — one square per item, coloured by status and fading with recall.
+- **Mistakes book** — latest answer wrong, revealed or guessed; an item clears only when answered
+  correctly on a later day.
+- **Estimation drills** — 13 parametric back-of-envelope templates, endless; Blitz (3 minutes) or
+  Ten. Within 25% counts.
+- **Today** — one button on the overview: clear mistakes, top up fading items, continue the
+  course, or sit a mixed paper. `GET /api/activity` merges LeetCode solves and system design
+  marks into one practice calendar and streak.
+
+Records are additive `paper` and `sprint` kinds in the `system_design` collection.
+
 Relevant regression checks:
 
 ```bash
+uv run --locked pytest tests/test_knowledge.py tests/test_system_design_items.py tests/test_system_design_papers.py tests/test_system_design_drills.py tests/test_activity.py
 uv run --locked pytest tests/test_system_design.py tests/test_system_design_learning.py tests/test_daily_coach.py
 node --test tests/test_sections_frontend.cjs tests/test_system_design_learning_frontend.cjs
 ```

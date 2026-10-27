@@ -217,13 +217,20 @@
     if (screen === 'skills') return skillsHtml();
     if (['lessons','curriculum','lesson','quickfire'].includes(screen)) return window.DesignLearning.render(screen,catalog);
     if (screen === 'progress') return progressHtml();
+    if (screen === 'papers') return window.DesignPapers.render(catalog);
+    if (screen === 'drills') return window.DesignDrills.render();
+    if (screen === 'mistakes') return pageIntro('MISTAKES BOOK','Every miss, in one place.','Wrong, revealed and guessed answers land here. An item clears when you answer it correctly on a later day, so a same-day fix waits for confirmation.') + window.DesignLedger.slot('mistakes');
     const r = catalog.recommendation;
     const title = r.kind === 'case' ? caseNames[r.id] : (catalog.exercises.find(q=>q.id===r.id)?.title || 'A focused design decision');
-    return pageIntro('LEARN, PRACTISE, THEN DESIGN','Build your system design foundations.','Follow the curriculum, test one concept, or work through a complete design at your own pace.') + window.DesignLearning.overview(catalog) +
+    return pageIntro('LEARN, PRACTISE, THEN DESIGN','Build your system design foundations.','Follow the curriculum, test one concept, or work through a complete design at your own pace.') + todaySlot() + window.DesignLedger.slot('knowledge') + window.DesignLearning.overview(catalog) +
       `<div class="sd-overview-grid"><section class="sd-next"><div class="sd-eyebrow"><span class="sd-live-dot"></span>YOUR NEXT SESSION</div><h3>${esc(title)}</h3><p>${esc(r.reason)}</p><div class="sd-next-bottom"><span>${catalog.profile.minutes} min · ${catalog.profile.level==='mid'?'Mid-level':esc(catalog.profile.level)} depth</span>${button(r.kind==='case'?'Explore the brief →':'Start drill →','recommended','',true)}</div></section>
       <section class="sd-how"><span class="sd-eyebrow">THE PRACTICE LOOP</span><ol><li><span>01</span><div><strong>Make a decision</strong><p>Start with the guarantees. Keep it simple.</p></div></li><li><span>02</span><div><strong>Pressure-test it</strong><p>Trace failures and explain the trade-offs.</p></div></li><li><span>03</span><div><strong>Repair one weak spot</strong><p>Practise it, then check it again later.</p></div></li></ol></section></div>
       <div class="sd-section-title"><div><h3>Choose a design challenge</h3><p>Three systems. Three different kinds of reasoning.</p></div>${button('All cases →','view','data-view="cases"')}</div>${caseCards()}${savedHtml(3)}
-      <div class="sd-bottom-links"><button type="button" data-sd="view" data-view="skills"><span class="sd-mini-icon">↯</span><span><strong>Have five minutes?</strong><small>Practise one focused decision.</small></span><span>→</span></button><button type="button" data-sd="view" data-view="lessons"><span class="sd-mini-icon">≡</span><span><strong>Need a concept to click?</strong><small>Read a short, worked lesson.</small></span><span>→</span></button></div>`;
+      <div class="sd-bottom-links"><button type="button" data-sd="view" data-view="skills"><span class="sd-mini-icon">↯</span><span><strong>Have five minutes?</strong><small>Practise one focused decision.</small></span><span>→</span></button><button type="button" data-sd="view" data-view="lessons"><span class="sd-mini-icon">≡</span><span><strong>Need a concept to click?</strong><small>Read a short, worked lesson.</small></span><span>→</span></button></div>` + window.DesignLedger.slot('activity');
+  }
+  function todaySlot() {
+    const next = catalog.course.lessons.find(l => l.id === catalog.course.next_lesson);
+    return window.DesignLedger.slot('today', next ? `data-next="${esc(next.id)}" data-next-title="${esc(next.title)}"` : '');
   }
   function skillsHtml() {
     return pageIntro('FOCUSED PRACTICE','Small decisions. Stronger instincts.','A short exercise isolates one skill. Make your choice before opening the explanation.') + `<div class="sd-drill-list">${catalog.exercises.map((q,i)=>`<button type="button" class="sd-drill-row" data-sd="practice" data-id="${q.id}"><span class="sd-row-number">0${i+1}</span><span><small>${esc(catalog.skills[q.skill])}</small><strong>${esc(q.title)}</strong></span><span class="sd-duration">2–5 min</span><span class="sd-row-arrow">→</span></button>`).join('')}</div>`;
@@ -271,6 +278,9 @@
       (screen==='workspace'?workspaceHtml():screen==='exercise'?exerciseHtml():screen==='setup'?setupHtml():homeHtml());
     wire(root());
     window.DesignLearning.wire(root());
+    if (screen==='papers') window.DesignPapers.wire(root()); else window.DesignPapers.stop();
+    if (screen==='drills') window.DesignDrills.wire(root()); else window.DesignDrills.stop();
+    window.DesignLedger.mount(root());
     renderModelChip();
     if (document.body.classList.contains('section-design')) {
       window.AppSections?.setView(screen);
@@ -388,6 +398,7 @@
     }));
   }
 
+  const VIEWS = ['home','cases','skills','lessons','progress','curriculum','quickfire','papers','mistakes','drills'];
   let loading = null;
   async function renderDesign() {
     active=true;
@@ -422,13 +433,19 @@
     }
     try {
       const fresh=await call();
+      window.DesignLedger.invalidate();
       if(navigation!==viewEpoch)return;
       if(view.startsWith('lesson/')) {
         window.DesignLearning.setCatalog(fresh,'lesson');
         await window.DesignLearning.openLesson(view.slice(7));
         if(navigation!==viewEpoch)return;
         screen='lesson';
-      } else screen=['home','cases','skills','lessons','progress','curriculum','quickfire'].includes(view)?view:'home';
+      } else {
+        screen=VIEWS.includes(view)?view:'home';
+        if(screen==='papers')await window.DesignPapers.open();
+        if(screen==='drills')await window.DesignDrills.open();
+        if(navigation!==viewEpoch)return;
+      }
       lesson=null;error='';catalog=fresh;paint();
       root().scrollIntoView({block:'start'});
       $('#sd-heading')?.focus({preventScroll:true});
@@ -438,7 +455,7 @@
   function onTab(tab) {
     const wasActive=active;
     if(tab!=='design') {
-      viewEpoch++;stopTimers(); window.DesignLearning.stop(); active=false; clearTimeout(debounce);
+      viewEpoch++;stopTimers(); window.DesignLearning.stop(); window.DesignPapers.stop(); window.DesignDrills.stop(); active=false; clearTimeout(debounce);
       if(session && wasActive) { session.timing_uncertain=true; stash(); if(!busy)saveDraft().catch(()=>{}); }
     } else { active=true; startTimers(); window.DesignLearning.startClock(); }
   }
@@ -455,7 +472,7 @@
     node.innerHTML=`<details class="sd-model-chip"><summary><span class="coach-dot ${catalog.coach_enabled?'is-on':''}"></span><span>${catalog.coach_enabled?esc(current):'Coach off'}</span></summary><div><p><b>Tutor:</b> ${esc(catalog.profiles.tutor.model)}</p><p><b>Assessor:</b> ${esc(catalog.profiles.assessor.model)}</p><p>${catalog.coach_enabled?'AI coaching is connected.':'Lessons, checks, and Quickfire work without AI coaching.'}</p></div></details>`;
   }
   window.Views.renderDesign=renderDesign;
-  window.SystemDesign={onTab,diagram,openView,isBusy:()=>busy||window.DesignLearning.isBusy(),
+  window.SystemDesign={onTab,diagram,openView,isBusy:()=>busy||window.DesignLearning.isBusy()||window.DesignPapers.isBusy()||window.DesignDrills.isBusy(),
     repaint:paint,setCatalog(value){catalog=value;},
     async openCase(key){
       await openView('cases');selectedCase=key;selectedMode='learn';screen='setup';paint();

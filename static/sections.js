@@ -3,7 +3,7 @@
   'use strict';
   const { $ } = window.H;
   const trigger = $('#section-trigger'), menu = $('#section-menu');
-  const views = ['home', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire'];
+  const views = ['home', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire', 'papers', 'mistakes', 'drills'];
   let design = false, lastLeetcodeTab = 'today';
   function close(focus = false) {
     menu.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false');
@@ -32,7 +32,7 @@
       n.classList.toggle('is-active', selected);
       if (selected) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
     });
-    const titles = {home:'Overview', curriculum:'Curriculum', quickfire:'Quickfire', lesson:'Lesson', cases:'Design cases', skills:'Skill drills', lessons:'Lessons', progress:'Your progress', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
+    const titles = {home:'Overview', curriculum:'Curriculum', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', lesson:'Lesson', cases:'Design cases', skills:'Skill drills', lessons:'Lessons', progress:'Your progress', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
     $('#page-title').textContent = titles[view] || 'System Design';
     $('#page-sub').textContent = 'System Design';
   }
