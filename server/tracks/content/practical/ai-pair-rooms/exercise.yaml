@@ -1,0 +1,44 @@
+id: ai-pair-rooms
+title: 'AI pair round: meeting-room bookings'
+category: assisted
+minutes: 45
+level: core
+language: python
+brief: |
+  An AI-assisted round in the usual shape: one small codebase you didn't write, three phases, and an AI pair you may use as much as you like. You are marked on **how you drive it**, not on how much it writes.
+
+  **Phase 1: the bug report.** Two complaints from the office app:
+
+  - "I can't book Ada for 10:00 to 11:00, even though the 9:00 standup ends at 10:00."
+  - "The free-slot finder offered me a slot in Turing, and when I tried to book it, it was taken." (This happens when meetings were booked out of order.)
+
+  Someone already pasted the first complaint into an assistant. Its answer is in `AI_SUGGESTION.md`. Decide whether to trust it.
+
+  **Phase 2: a feature.** Implement `find_room(start, end, people)`: the smallest free room that seats `people`, with ties going to the alphabetically first name, or `None`.
+
+  **Phase 3: scale.** One room now holds thousands of bookings, and booking and checking a slot must stay fast. A scan of every booking per call is too slow; aim for O(log n) to find a clash.
+
+  Hidden checks run when you submit. They cover the edge cases a plausible patch misses, plus a timing check for phase 3. When you submit, explain your work to the interviewer in the walkthrough box.
+files: [rooms.py]
+readonly: [AI_SUGGESTION.md, test_phase1.py, test_phase2.py]
+tests: [test_phase1.py, test_phase2.py]
+checks: [check_edges.py, check_scale.py]
+rubric:
+  - I ran the tests and read rooms.py before asking the AI anything
+  - I checked the AI's suggested patch against the half-open spec instead of applying it as it was
+  - I found the out-of-order free-slots bug, which the AI never mentioned
+  - My prompts were specific (file, function, expected behaviour), not "fix it"
+  - I read every AI-written line before running it, and could explain it
+  - Phase 3 finds clashes with a sorted index (bisect), not a scan
+hints:
+  - Write the overlap rule for half-open ranges on paper first. Does the AI's version hold if the new meeting comes before the existing one?
+  - free_slots walks the bookings in the order they are stored. In what order are they stored?
+  - If bookings in a room never overlap and are sorted by start, a new booking can only clash with its two neighbours.
+discussion: |
+  **The AI's patch was half right.** Two half-open ranges overlap when `a_start < b_end and b_start < a_end`. Both comparisons must be strict. The suggested patch fixed only the first one, so a meeting that *ends* as another *starts* still clashes. It passed the visible test because that test only books the later meeting second. This is the kind of mistake interviewers want you to catch: plausible, test-passing, and wrong at a boundary the test doesn't cover. Writing the rule down before reading the diff catches it.
+
+  **The bug it never mentioned.** `free_slots` assumes bookings are sorted, but `book` appends them in arrival order. The assistant answered only the question asked, which is how many interview assistants behave (some are told not to volunteer bugs). The bug report said "booked out of order"; reproduce exactly that in a test.
+
+  **Phase 3.** Keep each room's bookings sorted by start, with a parallel list of starts for `bisect`. Because bookings never overlap, a new range can only clash with the bookings just before and after its insertion point. `insert` is O(n) memory movement, but it's fast in practice; mention a balanced tree or `sortedcontainers` if asked.
+
+  **What the interviewer is watching:** did you reproduce before prompting, give the AI a precise task ("make overlaps() treat [start, end) as half-open in both directions"), read the diff against the spec, add a failing test for the out-of-order case before fixing it, and say what you were doing as you did it? A candidate who pastes the brief and applies whatever comes back can still pass phase 1's visible tests, and fails everything else.

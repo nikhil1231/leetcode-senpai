@@ -30,6 +30,7 @@ COURSES = {
     },
     'ai': {
         'categories': [
+            ('assisted', 'AI-assisted coding', 'The round where you fix, extend and scale code with an AI pair, and are marked on how you drive it.'),
             ('models', 'How LLMs behave', 'Tokens, context, sampling, prompting and structured output.'),
             ('retrieval', 'Retrieval and RAG', 'Embeddings, vector search and grounded answers.'),
             ('evaluation', 'Evals', 'Measuring quality so changes are decisions, not vibes.'),
@@ -37,12 +38,26 @@ COURSES = {
             ('production', 'Production AI', 'Latency, cost, serving, safety and an AI system design case.'),
         ],
         'order': {
+            'assisted': ['ai-coding-round', 'ai-debugging', 'ai-workflow'],
             'models': ['llm-basics', 'prompting'],
             'retrieval': ['embeddings', 'rag'],
             'evaluation': ['evals'],
             'agents': ['agents'],
-            'production': ['serving', 'guardrails', 'design-support-assistant'],
+            'production': ['serving', 'guardrails', 'design-support-assistant', 'design-review-assistant'],
         },
+        # The rounds of a typical AI engineering loop, and what in the app prepares you for each.
+        'rounds': [
+            ('assisted', 'AI-assisted coding', 'Fix, extend and scale unfamiliar code with an AI pair. Scored on approach, control, verification and communication.',
+             ['ai-coding-round', 'ai-debugging'], ['ai-pair-rooms', 'ai-pair-chunker']),
+            ('practical', 'LLM practical coding', 'Small production pieces around a model: retries with backoff, rate limits, chunking, retrieval.',
+             ['prompting', 'embeddings'], ['retry-backoff', 'rate-limiter', 'ai-pair-chunker']),
+            ('depth', 'LLM and RAG depth', 'Tokens and sampling, RAG vs fine-tuning, embeddings, evals and agents, explained and defended.',
+             ['llm-basics', 'prompting', 'embeddings', 'rag', 'evals', 'agents'], []),
+            ('design', 'AI system design', 'An open prompt (support bot, review assistant, agent) covering retrieval, evals, failure modes, cost and safety.',
+             ['rag', 'evals', 'serving', 'guardrails', 'design-support-assistant', 'design-review-assistant'], []),
+            ('workflow', 'How you use AI', '"How do you use AI in your work?" and project deep dives on what you shipped.',
+             ['ai-workflow'], []),
+        ],
     },
 }
 
@@ -168,7 +183,27 @@ def heatmap(track, views):
     return out
 
 
-def overview(track, records, now):
+def rounds(track, course, exercises=None):
+    """Readiness per interview round: lesson items held, plus practical exercises held.
+
+    `course` is overview()'s course rows; `exercises` maps exercise id -> {title, minutes, status}.
+    """
+    by_id = {l['id']: l for c in course for l in c['lessons']}
+    exercises = exercises or {}
+    out = []
+    for rid, title, blurb, lesson_ids, exercise_ids in COURSES[track].get('rounds', []):
+        ls = [by_id[k] for k in lesson_ids]
+        exs = [{'id': e, **exercises[e]} for e in exercise_ids if e in exercises]
+        items = sum(l['items'] for l in ls) + len(exs)
+        held = sum(l['held'] for l in ls) + sum(e['status'] in ('solid', 'learning') for e in exs)
+        out.append({'id': rid, 'title': title, 'blurb': blurb, 'items': items, 'held': held,
+                    'pct': round(100 * held / items) if items else 0,
+                    'lessons': [{k: l[k] for k in ('id', 'title', 'checked', 'held', 'items')} for l in ls],
+                    'exercises': exs})
+    return out
+
+
+def overview(track, records, now, exercises=None):
     evs = events(track, records)
     its = items(track)
     s = knowledge.summary(its, evs, now)
@@ -198,4 +233,4 @@ def overview(track, records, now):
     return {'knowledge': s['knowledge'], 'total': s['total'], 'pct': s['pct'], 'counts': s['counts'],
             'due': s['due'], 'mistakes': s['mistakes'], 'history': s['history'], 'daily': s['daily'],
             'heatmap': heatmap(track, s['items']), 'course': course, 'next_lesson': nxt,
-            'answers': len(evs)}
+            'rounds': rounds(track, course, exercises), 'answers': len(evs)}

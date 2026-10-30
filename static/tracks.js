@@ -14,8 +14,11 @@
     experience: [['home', 'Overview', 'i-today'], ['stories', 'Story bank', 'i-playbook'], ['drill', 'Timed answers', 'i-drill'], ['dives', 'Deep dives', 'i-topics'], ['mistakes', 'Mistakes book', 'i-insights']],
     practical: [['home', 'Exercises', 'i-today'], ['mistakes', 'Mistakes book', 'i-insights']],
   };
+  const TRACK_NAV = { ai: [NAV.course[0], ['round', 'AI round', 'i-playbook'], ...NAV.course.slice(1)] };
+  // Extra prep for an interview round that lives in another section.
+  const ROUND_LINKS = { workflow: [['experience', 'dives', 'Deep dives on your CV']] };
   const NOTES = { course: 'Read it once.<br>Recall it often.<br>Explain it simply.', experience: 'Specific.<br>Measured.<br>In the first person.', practical: 'Run the tests.<br>Change one thing.<br>Say what you see.' };
-  const VIEW_TITLES = { home: 'Overview', lessons: 'Lessons', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise' };
+  const VIEW_TITLES = { home: 'Overview', lessons: 'Lessons', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round' };
   const ACTIVE = { lesson: 'lessons', story: 'stories', dive: 'dives', claim: 'dives', exercise: 'home' };
   const registry = { course: {} };
   let current = { track: null, view: 'home', arg: null, seq: 0 };
@@ -31,13 +34,13 @@
     const el = $('#track-nav'); if (!el) return;
     const kind = KIND[track];
     el.innerHTML = `<span class="design-nav-label">${esc(TITLES[track].toUpperCase())}</span>` +
-      NAV[kind].map(([v, label, icon]) => `<button type="button" data-track-view="${v}"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#${icon}"/></svg>${label}</button>`).join('') +
+      (TRACK_NAV[track] || NAV[kind]).map(([v, label, icon]) => `<button type="button" data-track-view="${v}"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#${icon}"/></svg>${label}</button>`).join('') +
       `<div class="design-nav-note">${NOTES[kind]}</div>`;
     el.querySelectorAll('[data-track-view]').forEach(n => n.addEventListener('click', () => window.AppSections.select(track, n.dataset.trackView)));
   }
   function markNav(view) {
     document.querySelectorAll('#track-nav [data-track-view]').forEach(n => {
-      const on = n.dataset.trackView === (ACTIVE[view] || view);
+      const on = n.dataset.trackView === (current.track === 'ai' && view === 'exercise' ? 'round' : ACTIVE[view] || view);
       n.classList.toggle('is-active', on);
       if (on) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
     });
@@ -162,6 +165,15 @@
     const state = l.checked ? 'Checked ✓' : l.opened ? `${l.activities_done}/${l.interactive} activities` : 'Not started';
     return `<button type="button" class="sd-lesson-card tr-lesson-card ${l.checked ? 'is-done' : ''}" data-t="lesson" data-id="${l.id}"><span class="sd-eyebrow">${l.minutes} MIN · ${l.held}/${l.items} HELD</span><h3>${esc(l.title)}</h3><p class="tr-card-sum">${esc(l.summary.split('. ')[0])}.</p><span><span>${state}</span><span>Open →</span></span></button>`;
   }
+  const shortTitle = t => { const s = t.replace(/^AI pair round: /, ''); return s[0].toUpperCase() + s.slice(1); };
+  const ROUND_STATUS = { solid: 'is-held', learning: 'is-held', shaky: 'is-shaky', fading: 'is-fading' };
+  function loopHtml(rounds) {
+    if (!rounds?.length) return '';
+    return `<section class="tr-cat tr-loop"><div class="tr-cat-head"><h3>Your interview loop</h3><p class="sd-muted">The rounds of a typical AI engineering loop, and how much of each you hold right now.</p></div>
+      <ol class="tr-rounds">${rounds.map(r => `<li class="tr-round"><div class="tr-round-main"><b>${esc(r.title)}</b><p class="sd-muted">${esc(r.blurb)}</p>
+        <div class="tr-round-links">${r.id === 'assisted' ? `<button type="button" class="tr-chip is-lead" data-t="go" data-view="round">Playbook →</button>` : ''}${r.lessons.map(l => `<button type="button" class="tr-chip ${l.checked ? 'is-held' : ''}" data-t="lesson" data-id="${l.id}" title="${l.held}/${l.items} held">${l.checked ? '✓ ' : ''}${esc(l.title.split(' - ')[0].replace(/^AI system design: /, 'Design: '))}</button>`).join('')}${r.exercises.map(e => `<button type="button" class="tr-chip is-ex ${ROUND_STATUS[e.status] || ''}" data-t="exercise" data-id="${e.id}">▶ ${esc(shortTitle(e.title))}</button>`).join('')}${(ROUND_LINKS[r.id] || []).map(([s, v, label]) => `<button type="button" class="tr-chip is-ex" data-t="section" data-section="${s}" data-view="${v}">↗ ${esc(label)}</button>`).join('')}</div></div>
+        <div class="tr-round-meter"><span class="tr-round-pct">${r.pct}%</span><div class="sd-course-bar"><span style="width:${r.pct}%"></span></div><small>${r.held} of ${r.items} held</small></div></li>`).join('')}</ol></section>`;
+  }
   C.home = async ctx => {
     const d = await ctx.call('');
     if (ctx.stale()) return;
@@ -173,8 +185,10 @@
         <section class="sd-panel tr-next"><span class="sd-eyebrow">LEARN</span><h3>${next ? esc(next.title) : 'Every lesson checked'}</h3><p class="sd-muted">${next ? `${next.minutes} minutes · ${next.interactive} activities, then a short check.` : 'Keep the knowledge alive with Quickfire and the mistakes book.'}</p>${next ? btn(next.opened ? 'Continue lesson' : 'Start lesson', 'lesson', `data-id="${next.id}"`, !d.due) : ''}</section>
         <section class="sd-panel tr-next"><span class="sd-eyebrow">FIX</span><h3>${d.mistakes.fix.length} to fix · ${d.mistakes.confirm.length} to confirm</h3><p class="sd-muted">Wrong answers wait here until you get them right on a later day.</p>${btn('Open the mistakes book', 'go', 'data-view="mistakes"')}</section>
       </div>
+      ${loopHtml(d.rounds)}
       ${d.course.map(c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`).join('')}`;
-    wireActions(ctx.root, { go: n => ctx.go(n.dataset.view), lesson: n => ctx.go('lesson/' + n.dataset.id) });
+    wireActions(ctx.root, { go: n => ctx.go(n.dataset.view), lesson: n => ctx.go('lesson/' + n.dataset.id), exercise: n => ctx.go('exercise/' + n.dataset.id),
+      section: n => window.AppSections.select(n.dataset.section, n.dataset.view) });
   };
   C.lessons = async ctx => {
     const d = await ctx.call('');
@@ -241,6 +255,7 @@
     let right = 0;
     const d = await ctx.call('');
     if (ctx.stale()) return;
+    const titles = Object.fromEntries(d.course.flatMap(c => c.lessons.map(l => [l.id, l.title.split(' - ')[0]])));
     ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">QUICKFIRE · ${ROUND} QUESTIONS</span><h2>Retrieval practice</h2><p>Mistakes first, then fading items, then new questions from lessons you have opened. ${d.due ? `<b>${d.due}</b> due now.` : ''}</p></div><section class="sd-panel tr-fire"><div class="tr-fire-slot"></div></section>`;
     const slot = ctx.root.querySelector('.tr-fire-slot');
     async function next() {
@@ -252,7 +267,7 @@
       if (ctx.stale()) return;
       if (!res.question) { slot.innerHTML = `<p>No more questions this round.</p>${btn('Overview', 'go', 'data-view="home"')}`; return; }
       seen.push(res.question.id);
-      slot.innerHTML = `<p class="sd-muted tr-fire-meta">${esc(res.question.lesson_id.replace(/-/g, ' '))}</p>` + questionHtml(res.question, seen.length, ROUND);
+      slot.innerHTML = `<p class="sd-muted tr-fire-meta">${esc(titles[res.question.lesson_id] || res.question.lesson_id.replace(/-/g, ' '))}</p>` + questionHtml(res.question, seen.length, ROUND);
       wireQuestion(slot, res.question, r => {
         if (r.correct) right++;
         slot.querySelector('.tr-q-result').insertAdjacentHTML('beforeend', `<div class="sd-actions">${btn('Next →', 'next', '', true)}</div>`);
@@ -273,6 +288,6 @@
   window.Tracks = {
     open, register(kind, views) { registry[kind] = { ...(registry[kind] || {}), ...views }; },
     md, inline, esc, btn, when, knowledgeHtml, mistakesHtml, wireActions, call: (path, method, body) => call(path, method, body),
-    current: () => ({ ...current }),
+    current: () => ({ ...current }), shortTitle,
   };
 })();

@@ -49,7 +49,12 @@ def get_track(track: str, store=Depends(store_for)):
         raise HTTPException(404, 'Unknown track')
     records, now, meta = store.list_track_records(track), time.time(), TRACKS[track]
     if meta['kind'] == 'course':
-        body = courses.overview(track, records, now)
+        exercises = None
+        if courses.COURSES[track].get('rounds'):
+            groups = practical.overview(store.list_track_records('practical'), now)['groups']
+            exercises = {e['id']: {k: e[k] for k in ('title', 'minutes', 'status', 'best', 'open')}
+                         for g in groups for e in g['exercises']}
+        body = courses.overview(track, records, now, exercises)
     elif meta['kind'] == 'experience':
         body = experience.overview(records, now, store.get_senpai('senpai', 'job_context'))
     else:

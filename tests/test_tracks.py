@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server import auth, main
-from server.tracks import courses, experience, http, practical
+from server.tracks import ai_round, courses, experience, http, practical
 from server.tracks.experience_content import PROMPTS, STAR_CHECKS
 from tests.fake_store import FakeStore
 
@@ -64,6 +64,23 @@ def test_exercise_solutions_pass_and_starters_fail(key, tmp_path):
         else:
             assert result['passed'] < result['total']
         shutil.rmtree(root)
+
+
+@pytest.mark.parametrize('key', [k for k, ex in practical.EXERCISES.items() if ex['category'] == 'assisted'])
+def test_ai_suggestion_passes_the_bug_tests_but_not_the_checks(key, tmp_path):
+    """The canned AI patch is the point of an AI-assisted round: plausible, green on the visible
+    bug tests, and caught only by the edge cases a careful candidate would test."""
+    folder = os.path.join(practical.HERE, key, 'ai_patch')
+    ex = practical.EXERCISES[key]
+    for name, text in ex['contents'].items():
+        (tmp_path / name).write_text(text)
+    for name in os.listdir(folder):
+        shutil.copy(os.path.join(folder, name), tmp_path / name)
+    phase1 = practical_runner.run(['test_phase1'], str(tmp_path))
+    assert phase1['passed'] == phase1['total'] > 0
+    edges = practical_runner.run(['check_edges'], str(tmp_path))
+    assert edges['passed'] < edges['total']
+    assert 'AI_SUGGESTION.md' in ex['readonly'] and practical.public(ex)['pair'] is True
 
 
 def test_review_exercises_hide_issues_until_submitted():
@@ -137,6 +154,44 @@ def test_practical_clean_rules():
     review = practical.EXERCISES['review-webhook']
     assert practical.clean(review, {'found': list(range(6))})
     assert not practical.clean(review, {'found': [0, 1]})
+
+
+def test_process_signals_reward_reading_first_and_specific_prompts():
+    base = {'started_at': 0, 'runs': [{'at': 60, 'passed': 1, 'total': 3}, {'at': 900, 'passed': 3, 'total': 3}],
+            'edits': [400, 880], 'checks': {'passed': 5, 'total': 5},
+            'walkthrough': 'The overlap check was inclusive on both sides. ' * 8 + 'I added a test for both orders and ran the suite.'}
+    good = ai_round.signals(base, [{'text': 'In rooms.py make overlaps() half-open in both directions', 'at': 200}])
+    assert all(a['ok'] for a in good['areas'])
+    assert good['stats'] == {'prompts': 1, 'runs': 2, 'runs_before_first_prompt': 1, 'seconds_to_first_prompt': 200}
+    rushed = {**base, 'runs': [{'at': 300, 'passed': 3, 'total': 3}], 'edits': [500], 'walkthrough': 'Fixed it.',
+              'checks': {'passed': 3, 'total': 5}}
+    bad = {a['key']: a for a in ai_round.signals(rushed, [{'text': 'fix it', 'at': 20}, {'text': 'rewrite the whole file', 'at': 90}])['areas']}
+    assert not any(a['ok'] for a in bad.values())
+    assert any('re-running' in n for n in bad['verification']['notes'])
+    assert any('2 hidden checks failed' in n for n in bad['verification']['notes'])
+    none = {a['key']: a['ok'] for a in ai_round.signals({**base, 'walkthrough': ''}, [])['areas']}
+    assert none == {'approach': None, 'control': None, 'verification': True, 'communication': False}
+
+
+def test_vague_prompts():
+    for text in ('fix it', 'Fix the bug.', 'please solve this', 'make it work', 'rewrite the entire module'):
+        assert ai_round.vague(text), text
+    for text in ('Why does free_slots return a taken slot?', 'Write a test for `overlaps` with adjacent ranges',
+                 'Explain what chunk() does when overlap is larger than the gap to the last space'):
+        assert not ai_round.vague(text), text
+
+
+def test_ai_overview_maps_the_interview_loop():
+    o = courses.overview('ai', [], 0, {'ai-pair-rooms': {'title': 'Rooms', 'minutes': 45, 'status': 'solid'},
+                                       'ai-pair-chunker': {'title': 'Chunker', 'minutes': 45, 'status': 'unseen'}})
+    assert o['course'][0]['id'] == 'assisted' and o['next_lesson']['id'] == 'ai-coding-round'
+    first = o['rounds'][0]
+    assert first['id'] == 'assisted' and [e['id'] for e in first['exercises']] == ['ai-pair-rooms', 'ai-pair-chunker']
+    assert first['held'] == 1 and first['items'] > 2
+    known = {k for spec in courses.COURSES['ai']['rounds'] for k in spec[3]}
+    assert known <= set(courses.lessons('ai'))
+    assert {e for spec in courses.COURSES['ai']['rounds'] for e in spec[4]} <= set(practical.EXERCISES)
+    assert courses.overview('fundamentals', [], 0)['rounds'] == []
 
 
 # ---- HTTP ------------------------------------------------------------------------------
@@ -229,6 +284,34 @@ def test_practical_attempt_submit_and_review_marking(client):
     assert marked['clean'] is True
     o = ok(client.get('/api/tracks/practical'))
     assert o['knowledge'] > 0
+
+
+def test_ai_pair_round_logs_prompts_and_reviews_the_process(client):
+    ex = ok(client.get('/api/tracks/practical/exercises/ai-pair-rooms'))
+    assert ex['exercise']['pair'] and ex['chat'] == []
+    attempt = ok(client.post('/api/tracks/practical/exercises/ai-pair-rooms/attempts'))
+    url = f'/api/tracks/practical/attempts/{attempt["id"]}'
+    run = ok(client.put(url, json={'files': {}, 'revision': attempt['revision'], 'run': {'passed': 1, 'total': 6}}))
+    assert run['edits'] == [] and len(run['runs']) == 1
+    logged = ok(client.post(url + '/assist', json={'message': 'In rooms.py, make overlaps() half-open both ways', 'logged': True}))
+    assert logged == {'reply': None, 'logged': True, 'message': None}
+    offline = ok(client.post(url + '/assist', json={'message': 'Why does free_slots offer taken slots?'}))
+    assert offline['reply'] is None and 'own assistant' in offline['message']
+    assert [m['role'] for m in ok(client.get('/api/tracks/practical/exercises/ai-pair-rooms'))['chat']] == ['user', 'user']
+    edited = ok(client.put(url, json={'files': {'rooms.py': '# fixed'}, 'revision': run['revision']}))
+    assert len(edited['edits']) == 1
+    n = len(practical.EXERCISES['ai-pair-rooms']['rubric'])
+    done = ok(client.post(url + '/submit', json={
+        'files': {}, 'revision': edited['revision'], 'tests': {'passed': 6, 'total': 6},
+        'checks': {'passed': 7, 'total': 7}, 'rubric': [True] * n, 'walkthrough': 'The bug was the inclusive overlap.'}))
+    process = done['attempt']['process']
+    assert [a['key'] for a in process['areas']] == ['approach', 'control', 'verification', 'communication']
+    assert process['stats']['prompts'] == 2 and done['attempt']['process_review'] is None
+    assert client.post(url + '/assist', json={'message': 'hello'}).status_code == 409
+    other = ok(client.post('/api/tracks/practical/exercises/retry-backoff/attempts'))
+    assert client.post(f'/api/tracks/practical/attempts/{other["id"]}/assist', json={'message': 'hi'}).status_code == 409
+    o = ok(client.get('/api/tracks/ai'))
+    assert o['rounds'][0]['exercises'][0]['id'] == 'ai-pair-rooms'
 
 
 def test_revealing_the_solution_first_means_not_held(client):

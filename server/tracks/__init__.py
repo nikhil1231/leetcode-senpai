@@ -11,7 +11,7 @@ TRACKS = {
     'fundamentals': {'title': 'Fundamentals', 'kind': 'course', 'bucket': 'stack',
                      'blurb': 'Languages, Linux, networking, databases, cloud and delivery: the role-stack questions.'},
     'ai': {'title': 'AI Engineering', 'kind': 'course', 'bucket': 'stack',
-           'blurb': 'LLMs, retrieval, evals, agents and serving: what AI engineering interviews ask.'},
+           'blurb': 'The AI-assisted coding round, then LLMs, retrieval, evals, agents and AI system design: what AI engineering interviews ask.'},
     'experience': {'title': 'Experience', 'kind': 'experience', 'bucket': 'behavioural',
                    'blurb': 'A story bank from your CV, timed behavioural answers and technical deep dives on your own work.'},
     'practical': {'title': 'Practical Coding', 'kind': 'practical', 'bucket': 'stack',

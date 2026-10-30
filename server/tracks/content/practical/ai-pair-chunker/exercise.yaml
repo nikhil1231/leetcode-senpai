@@ -1,0 +1,44 @@
+id: ai-pair-chunker
+title: 'AI pair round: the RAG ingestion chunker'
+category: assisted
+minutes: 45
+level: core
+language: python
+brief: |
+  An AI-assisted round on the ingestion side of a retrieval (RAG) system. You didn't write this code. Use the AI pair as much as you like; you are marked on **how you drive it**.
+
+  **Phase 1: the bug report.** From the support-bot team:
+
+  - "Questions about the end of long documents never find an answer, and short documents don't appear in search at all."
+  - "Ingesting the Pricing FAQ hung the worker until it was killed." (The FAQ is indexed with a large overlap.)
+
+  Someone already pasted the failing tests into an assistant. Its answer is in `AI_SUGGESTION.md`.
+
+  **Phase 2: a feature.** Implement `Index.upsert(doc_id, text)` in `index.py`. Chunk the text, give each chunk its `chunk_id`, embed only chunk ids the document doesn't already have (each distinct id once, in one `embed` call), drop vectors for ids that are no longer in the document, and return `(embedded, removed)` as counts of distinct ids.
+
+  **Phase 3: scale.** The staff handbook is 8,000 clauses in 800 paragraphs, separated by blank lines. After a one-line edit, re-indexing must re-embed only the edited paragraph's chunks (embeddings are billed per call), and take under half a second. Think about what a one-line edit does to every fixed-size window after it.
+
+  Hidden checks run when you submit: edge cases a plausible patch misses, and the phase 3 budget. When you submit, explain your work to the interviewer in the walkthrough box.
+files: [chunker.py, index.py]
+readonly: [AI_SUGGESTION.md, test_phase1.py, test_phase2.py]
+tests: [test_phase1.py, test_phase2.py]
+checks: [check_edges.py, check_scale.py]
+rubric:
+  - I ran the tests and read both files before asking the AI anything
+  - I checked the AI's patch against the second complaint (the hang) instead of stopping when the tests went green
+  - I reproduced the hang with a small input, with a guard so it couldn't freeze my run
+  - My prompts were specific (function, input, expected behaviour), not "fix it"
+  - I read every AI-written line before running it, and could explain it
+  - Phase 3 chunks each paragraph separately and uses sets, so an edit stays local and cheap
+hints:
+  - Trace `chunk('a b c d e f', size=4, overlap=3)` by hand. Does `start` always move forward?
+  - What should `chunk('')` return? What does the AI's patch return?
+  - Insert three characters near the start of a long text. Which chunk boundaries move?
+discussion: |
+  **The AI fixed the symptom it was shown.** Appending the remainder makes both failing tests pass. But it never looked at the second complaint: when a chunk ends early at a space, `end - overlap` can land at or before `start`, so the loop stops moving forward or goes backwards forever. It also adds an empty chunk for an empty document. The fix is to loop `while start < len(text)`, stop after the chunk that reaches the end, and only overlap when it moves forward. Green tests after an AI patch tell you the cases you *wrote down* work, not that the bug report is closed. Read the report again before declaring victory.
+
+  **Reproducing a hang safely.** In an interview, say it out loud: "I suspect an infinite loop, so I'll reproduce it with a tiny input and a step limit." A step counter in the loop, a timeout, or `sys.settrace` (as the hidden check does) turns a hang into a failing test.
+
+  **Phase 3 is the RAG lesson.** Content-addressed ids only help if unchanged text produces unchanged chunks. Fixed-size windows over the whole document shift after any insertion, so every later chunk gets a new id and is re-embedded, which costs money and time. Chunking on structure (paragraphs, sections, headings) keeps an edit local. Use sets for the old and new ids: list membership turns 6,000 chunks into 36 million comparisons.
+
+  **Follow-ups an interviewer might ask:** How would you pick chunk size and overlap? (Treat them as hyperparameters and tune them on a retrieval eval: recall@k on real questions.) How do you delete a document everywhere? How do you re-embed everything when you change embedding models? (A new index version, built side by side, then switched.)

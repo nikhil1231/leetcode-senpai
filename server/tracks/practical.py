@@ -3,9 +3,12 @@
 Each exercise is a folder in `content/practical/<id>/`: `exercise.yaml`, starter and test files in
 `files/`, and a reference answer in `solution/`. Code runs in the browser (Pyodide in a worker), so
 the server never executes user code; it stores attempts and the results the browser reports.
+AI-assisted rounds add an AI pair (or a log of prompts sent to your own tool) and a process
+review of how you drove it (`ai_round`), since that, not the code, is what those rounds score.
 Extra edge-case checks are sent only at submission. An exercise counts as held when a submission
 passes every test and check, meets most of its rubric, and came before the solution was opened.
 """
+import difflib
 import os
 import secrets
 import time
@@ -14,8 +17,8 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import knowledge
-from . import coach
+from .. import knowledge, llm
+from . import ai_round, coach
 from .http import put, store_for
 
 TRACK = 'practical'
@@ -25,11 +28,13 @@ CATEGORIES = [
     ('extend', 'Extend', 'Add a feature to existing code without breaking it, and leave it cleaner.'),
     ('debug', 'Debug', 'Failing tests and a bug report: find the root causes and fix them.'),
     ('review', 'Review', 'Review a pull request the way a senior engineer would.'),
+    ('assisted', 'AI-assisted', 'Fix, extend and scale unfamiliar code with an AI pair, marked on how you drive it.'),
 ]
 ORDER = ['lru-ttl-cache', 'rate-limiter', 'kv-transactions', 'order-pricing', 'retry-backoff', 'log-stats',
-         'review-webhook', 'review-cache']
+         'review-webhook', 'review-cache', 'ai-pair-rooms', 'ai-pair-chunker']
 PASS_RUBRIC = 0.75
 MAX_FILE = 60_000
+MAX_CHAT = 80  # messages per attempt
 
 
 class ExerciseError(ValueError):
@@ -80,7 +85,7 @@ def public(ex):
     return {k: ex.get(k) for k in ('id', 'title', 'category', 'minutes', 'level', 'brief', 'files', 'readonly',
                                    'tests', 'rubric', 'hints', 'language')} | {
         'starter': {n: ex['contents'][n] for n in shown}, 'has_checks': bool(ex.get('checks')),
-        'issue_count': len(ex.get('issues', []))}
+        'issue_count': len(ex.get('issues', [])), 'pair': ex['category'] == 'assisted'}
 
 
 def items():
@@ -168,6 +173,13 @@ class SubmitBody(BaseModel):
     rubric: list[bool] = Field(default_factory=list, max_length=20)
     review: str = Field(default='', max_length=12000)
     elapsed_sec: int = Field(default=0, ge=0, le=86400)
+    walkthrough: str = Field(default='', max_length=6000)
+
+
+class PairBody(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    files: dict[str, str] = Field(default_factory=dict)
+    logged: bool = False  # a prompt sent to the candidate's own tool, recorded for the process review
 
 
 class FoundBody(BaseModel):
@@ -194,6 +206,27 @@ def _files(ex, files):
     return files
 
 
+def chat_of(records, aid):
+    return sorted((r for r in records if r.get('kind') == 'assist' and r.get('attempt_id') == aid),
+                  key=lambda r: (r['at'], r['role'] != 'user'))
+
+
+def timeline(ex, attempt, chat):
+    """What happened, in order, for the process review. Seconds from the start."""
+    t0 = attempt['started_at']
+    events = [{'t': round(r['at'] - t0), 'kind': 'test run', 'passed': r['passed'], 'total': r['total']}
+              for r in attempt.get('runs') or []]
+    events += [{'t': round(t - t0), 'kind': 'code edited'} for t in attempt.get('edits') or []]
+    events += [{'t': round(m['at'] - t0), 'kind': 'prompt (own tool)' if m.get('logged') else 'prompt' if m['role'] == 'user'
+                else 'ai reply', 'text': m['text'][:1500 if m['role'] == 'user' else 600]} for m in chat]
+    events.sort(key=lambda e: e['t'])
+    diff = ''.join(line for n in ex.get('files', []) for line in difflib.unified_diff(
+        ex['contents'][n].splitlines(True), attempt['files'].get(n, '').splitlines(True), f'a/{n}', f'b/{n}'))
+    return {'events': events[-150:], 'final_diff': diff[:8000], 'tests': attempt.get('tests'),
+            'hidden_checks': attempt.get('checks'), 'walkthrough': attempt.get('walkthrough', ''),
+            'solution_opened_first': attempt.get('revealed_before_submit', False)}
+
+
 def reveal(ex):
     return {'solution': ex['solution'], 'discussion': ex['discussion'], 'issues': ex.get('issues', [])}
 
@@ -204,7 +237,9 @@ def get_exercise(key: str, store=Depends(store_for)):
     records = store.list_track_records(TRACK)
     past = sorted((r for r in records if r.get('kind') == 'attempt' and r.get('exercise_id') == key
                    and r.get('status') == 'submitted'), key=lambda r: -r['submitted_at'])
-    return {'exercise': public(ex), 'attempt': open_attempt(records, key),
+    current = open_attempt(records, key)
+    return {'exercise': public(ex), 'attempt': current, 'llm': llm.enabled(store.get_settings()),
+            'chat': [{k: m.get(k) for k in ('role', 'text', 'at', 'logged')} for m in chat_of(records, current['id'])] if current else [],
             'history': [{k: r.get(k) for k in ('id', 'submitted_at', 'clean', 'elapsed_sec', 'tests', 'checks', 'found')}
                         for r in past[:10]]}
 
@@ -228,11 +263,38 @@ def save_attempt(aid: str, body: SaveBody, store=Depends(store_for)):
     if doc['status'] != 'open':
         raise HTTPException(409, 'This attempt is already submitted')
     ex = exercise(doc['exercise_id'])
-    runs = list(doc.get('runs') or [])
+    now, files = time.time(), {**doc['files'], **_files(ex, body.files)}
+    runs, edits = list(doc.get('runs') or []), list(doc.get('edits') or [])
+    if files != doc['files']:
+        edits = (edits + [now])[-200:]
     if body.run:
-        runs = (runs + [{'at': time.time(), 'passed': body.run.passed, 'total': body.run.total}])[-50:]
-    return put(store, TRACK, aid, {**doc, 'files': {**doc['files'], **_files(ex, body.files)}, 'runs': runs,
-                                   'updated_at': time.time()}, body.revision)
+        runs = (runs + [{'at': now, 'passed': body.run.passed, 'total': body.run.total}])[-50:]
+    return put(store, TRACK, aid, {**doc, 'files': files, 'runs': runs, 'edits': edits, 'updated_at': now},
+               body.revision)
+
+
+@router.post('/attempts/{aid}/assist')
+async def assist(aid: str, body: PairBody, store=Depends(store_for)):
+    """The AI pair. The prompt is saved before any model call; logged prompts never reach the model."""
+    doc = attempt_of(store, aid)
+    ex = exercise(doc['exercise_id'])
+    if ex['category'] != 'assisted' or doc['status'] != 'open':
+        raise HTTPException(409, 'The AI pair is for open AI-assisted rounds')
+    chat = chat_of(store.list_track_records(TRACK), aid)
+    if len(chat) >= MAX_CHAT:
+        raise HTTPException(409, 'This round has reached its message limit')
+    now = time.time()
+    put(store, TRACK, 'assist_' + secrets.token_hex(10),
+        {'kind': 'assist', 'attempt_id': aid, 'role': 'user', 'text': body.message, 'at': now, 'logged': body.logged})
+    if body.logged:
+        return {'reply': None, 'logged': True, 'message': None}
+    shown = {**{n: ex['contents'][n] for n in ex.get('readonly', [])}, **doc['files'], **_files(ex, body.files)}
+    reply, message = await coach.pair_reply(ex['brief'], shown, chat, body.message, store.get_settings())
+    if reply:
+        put(store, TRACK, 'assist_' + secrets.token_hex(10),
+            {'kind': 'assist', 'attempt_id': aid, 'role': 'assistant', 'text': reply, 'at': time.time(),
+             'prompt_version': coach.PROMPT_VERSION})
+    return {'reply': reply, 'logged': False, 'message': message}
 
 
 @router.post('/attempts/{aid}/checks')
@@ -261,12 +323,20 @@ async def submit(aid: str, body: SubmitBody, store=Depends(store_for)):
     if ex['category'] != 'review' and len(body.rubric) != len(ex['rubric']):
         raise HTTPException(422, 'Rate every rubric point')
     now = time.time()
-    saved = {**doc, 'files': {**doc['files'], **_files(ex, body.files)}, 'status': 'submitted', 'submitted_at': now,
+    files = {**doc['files'], **_files(ex, body.files)}
+    edits = list(doc.get('edits') or []) + ([now] if files != doc['files'] else [])
+    saved = {**doc, 'files': files, 'edits': edits[-200:], 'status': 'submitted', 'submitted_at': now,
              'elapsed_sec': body.elapsed_sec or int(now - doc['started_at']),
              'tests': body.tests.model_dump() if body.tests else None,
              'checks': body.checks.model_dump() if body.checks else None,
-             'rubric': body.rubric, 'review': body.review, 'found': None, 'grade': None}
+             'rubric': body.rubric, 'review': body.review, 'found': None, 'grade': None,
+             'walkthrough': body.walkthrough}
     message = None
+    if ex['category'] == 'assisted':
+        chat = chat_of(store.list_track_records(TRACK), aid)
+        saved['process'] = ai_round.signals(saved, [m for m in chat if m['role'] == 'user'])
+        saved['process_review'], message = await coach.grade_process(ex['brief'], timeline(ex, saved, chat),
+                                                                     saved['process'], store.get_settings())
     if ex['category'] == 'review' and body.review.strip():
         issues = [i['title'] + ': ' + i['detail'] for i in ex['issues']]
         grade, message = await coach.grade_review(ex['brief'], issues, body.review, store.get_settings())
