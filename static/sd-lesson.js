@@ -195,7 +195,7 @@
     if (p.kind === 'known') return `<p class="sd-muted sd-known-intro">You showed you know ${p.secs.length === 1 ? 'this part' : 'these parts'} in the warm-up or earlier practice. Open any of them if you want it anyway.</p>${p.secs.map(sectionHtml).join('')}`;
     if (p.kind === 'callback') return callbackHtml();
     if (p.kind === 'finale') return finaleHtml();
-    if (p.kind === 'check') return `<section class="sd-sec"><span class="sd-eyebrow">LESSON CHECK</span><h3 tabindex="-1" id="sd-sec-check">Answer from memory</h3><p class="sd-muted">The check is below. When you have finished it, the last page turns everything you missed into a few targeted questions.</p></section>`;
+    if (p.kind === 'check') return `<section class="sd-sec"><span class="sd-eyebrow">LESSON CHECK</span><h3 tabindex="-1" id="sd-sec-check">Answer from memory</h3><p class="sd-muted">The check is in the card just below this one. When you have finished it, the last page turns everything you missed into a few targeted questions.</p></section>`;
     return gapsHtml();
   }
   function html() {
@@ -205,7 +205,7 @@
     const P = pages(), i = pageIndex(P), p = P[i], next = P[i + 1];
     const dots = `<div class="sd-pager-top"><span class="sd-eyebrow">PART ${i + 1} OF ${P.length} · ${esc(p.label).toUpperCase()}</span><div class="sd-pager-dots">${P.map((x, j) => `<button type="button" data-lp="page" data-page="${j}" class="${j === i ? 'is-on' : j < i ? 'is-past' : ''} is-${x.kind === 'sec' ? x.s.mode : x.kind}" aria-label="Go to ${esc(x.label)}" title="${esc(x.label)}"></button>`).join('')}</div></div>`;
     const pager = `<nav class="sd-pager" aria-label="Lesson pages">${i ? btn('← Back', 'page', `data-page="${i - 1}"`) : '<span></span>'}${next ? btn(`Next: ${next.label} →`, 'page', `data-page="${i + 1}"`, true) : `<span class="sd-muted">End of the lesson.</span>`}</nav>`;
-    return `${S.error ? `<div class="sd-error" role="alert">${esc(S.error)}</div>` : ''}${i === 0 ? planBanner() : ''}${dots}<div class="sd-page">${pageHtml(p)}</div>${pager}`;
+    return `${S.error ? `<div class="sd-error" role="alert">${esc(S.error)}</div>` : ''}${i === 0 ? planBanner() : ''}${dots}<div class="sd-page${p.kind === 'check' ? ' is-check' : ''}">${pageHtml(p)}</div>${pager}`;
   }
   function railHtml() {
     if (!S.session?.planned) return '<span class="sd-eyebrow">IN THIS LESSON</span><p class="sd-muted">Warm-up first.</p>';

@@ -474,6 +474,7 @@ details.sd-goals summary { cursor:pointer; font-size:11px; letter-spacing:.08em;
 .sd-pager-dots button.is-on { background:var(--accent); }
 .sd-pager-dots button:hover { background:var(--accent-strong); }
 .sd-page { min-height:240px; }
+.sd-page.is-check { min-height:0; }
 .sd-page > .sd-sec:first-child { border-top:0; padding-top:8px; }
 .sd-known-intro { margin:10px 0 0; }
 .sd-pager { display:flex; justify-content:space-between; align-items:center; gap:12px; border-top:1px solid var(--line); padding:18px 0 6px; margin:18px 0 26px; }
