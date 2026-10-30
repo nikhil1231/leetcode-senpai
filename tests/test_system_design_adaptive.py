@@ -286,3 +286,22 @@ def test_progress_is_saved_per_pass_and_restored_with_the_session(client):
     reset = call(client, 'POST', '/course/lessons/cache-aside/plan/reset')
     assert reset['progress'] is None
     call(client, 'PUT', '/course/lessons/cache-aside/progress', 413, plan_at=None, state={'x': 'y' * 500_000})
+
+
+def test_sort_mistakes_get_one_tutor_note_per_misplaced_item(client, monkeypatch):
+    monkeypatch.setattr(session_api.llm, 'enabled', lambda settings=None: True)
+    block = next(b for b in LESSONS['service-quality']['blocks'] if b['type'] == 'sort')
+    picks = [(it['text'], block['buckets'][it['bucket'] if i else (it['bucket'] + 1) % len(block['buckets'])])
+             for i, it in enumerate(block['items'])]
+    answer = '; '.join(f'{t} → {b}' for t, b in picks)
+    assert [w['item'] for w in tutor.misplaced(block, answer)] == [0]
+    seen = {}
+    async def fake_ask(schema, system, payload, settings=None, what=''):
+        seen['schema'], seen['misplaced'] = schema, payload['misplaced']
+        return {'reply': '', 'items': [{'item': 0, 'note': 'Serial.'}, {'item': 3, 'note': 'Not wrong.'}],
+                'model': 'm', 'prompt_version': 5}, None
+    monkeypatch.setattr(tutor, 'ask', fake_ask)
+    section = next(s for s in adaptive.sections(LESSONS['service-quality'])['sections'] if block['key'] in s['blocks'])
+    r = call(client, 'POST', '/course/lessons/service-quality/tutor', section=section['id'], block=block['key'], answer=answer)
+    assert seen['schema'] is tutor.SortReply and seen['misplaced'][0]['item'] == 0
+    assert r['items'] == [{'item': 0, 'note': 'Serial.'}] and r['reply'] == ''

@@ -82,6 +82,8 @@
 .sd-seg button.is-on { background:var(--accent-soft); color:var(--accent); }
 .sd-seg button.is-answer { box-shadow:inset 0 -2px 0 #35d39a; color:var(--text); }
 .sd-sort-why { grid-column:1/-1; font-size:12.5px; color:var(--text-2); line-height:1.6; }
+.sd-item-tutor { grid-column:1/-1; font-size:12.5px; line-height:1.6; color:var(--text); border-left:2px solid #7cb7ff88; background:#7cb7ff0b; padding:6px 10px; border-radius:0 6px 6px 0; }
+.sd-item-tutor .sd-say-label { display:inline; margin:0 6px 0 0; color:#7cb7ff; }
 
 /* Order */
 .sd-order { list-style:none; padding:0; margin:12px 0 0; display:grid; gap:7px; counter-reset:ord; }

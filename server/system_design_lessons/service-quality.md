@@ -116,13 +116,13 @@ challenges:
 ```
 
 ```sort
-prompt: Does each change make the end-to-end availability of a checkout request better or worse?
-buckets: [Better, Worse, Neither — it only helps if failures are independent]
+prompt: "Checkout works today. For each change, does the share of checkout requests that succeed go up, go down, or barely move?"
+buckets: [Goes up, Goes down, Barely moves]
 items:
   - {text: 'Adding a synchronous call to a new fraud-scoring service in the checkout path', bucket: 1, why: 'One more serial dependency multiplies in another failure probability.'}
-  - {text: 'Making the fraud call asynchronous, scoring after the order is accepted', bucket: 0, why: 'It leaves the critical path, so its failures no longer fail checkout.'}
-  - {text: 'Running two replicas of the order service in the same rack on the same deploy pipeline', bucket: 2, why: 'They share failure causes (rack power, bad deploys). Redundancy only multiplies away independent failures.'}
-  - {text: 'Giving the recommendations call a 100 ms timeout and a fallback', bucket: 0, why: 'A failing optional dependency now degrades the page instead of failing it.'}
+  - {text: 'Moving an existing synchronous fraud check off the request path: accept the order, then score it in the background', bucket: 0, why: 'It leaves the critical path, so its failures no longer fail checkout.'}
+  - {text: 'Adding a second replica of the order service, in the same rack and shipped by the same deploy pipeline', bucket: 2, why: 'The replicas share their likely failure causes (rack power, a bad deploy), so they mostly fail together. Redundancy only multiplies away independent failures.'}
+  - {text: 'Giving the optional recommendations call a 100 ms timeout and a fallback (show none when it is slow or down)', bucket: 0, why: 'A failing optional dependency now degrades the page instead of failing it.'}
   - {text: 'Retrying every failed downstream call three times with no backoff', bucket: 1, why: 'During a partial outage, retries multiply load and can turn a blip into a full outage.'}
 ```
 

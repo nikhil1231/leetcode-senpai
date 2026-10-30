@@ -13,6 +13,7 @@ import datetime as dt
 import hashlib
 import os
 import random
+import re
 import secrets
 import threading
 import time
@@ -2975,8 +2976,15 @@ def api_health():
 
 
 # ---- static frontend ------------------------------------------------------------
-_VERSIONED_ASSETS = ("style.css", "charts.js", "app.js", "views.js", "practice.js", "system-design.js", "system-design-learning.js", "system-design.css", "sections.js",
-                     "editor.js", "vendor/codemirror.js", "daily-coach.js", "daily-coach.css", "senpai.js", "page-coach.js", "page-coach.css")
+def _index_assets():
+    """Every file index.html loads with ?v=__ASSET_VER__. Each must feed the hash: one left out keeps
+    its URL across deploys and is served stale from browser and edge caches (marked immutable)."""
+    with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as fh:
+        return re.findall(r'(?:src|href)="/([^"?]+)\?v=__ASSET_VER__"', fh.read())
+
+
+# codemirror is loaded on demand with window.ASSET_VER, so it is not in index.html.
+_VERSIONED_ASSETS = tuple(dict.fromkeys(_index_assets() + ["vendor/codemirror.js"]))
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
 

@@ -6,6 +6,7 @@ and the graceful-degradation paths.
 import copy
 import datetime as dt
 import json
+import os
 import time
 import asyncio
 
@@ -1962,6 +1963,14 @@ def test_index_injects_content_derived_asset_version(client):
     assert f"/charts.js?v={ver}" in r.text
     assert f"/app.js?v={ver}" in r.text
     assert f"/views.js?v={ver}" in r.text
+
+
+def test_every_versioned_url_in_index_feeds_the_asset_version():
+    # A file loaded with ?v= but left out of the hash keeps a stale URL (and cached body) across deploys.
+    html = open(os.path.join(main.STATIC_DIR, "index.html"), encoding="utf-8").read()
+    for name in ("sd-blocks.js", "sd-lesson.js", "sd-lessons.css", "dictate.js"):
+        assert f"/{name}?v=__ASSET_VER__" in html and name in main._VERSIONED_ASSETS
+    assert "vendor/codemirror.js" in main._VERSIONED_ASSETS
 
 
 def test_asset_version_changes_when_an_asset_changes(tmp_path, monkeypatch):

@@ -61,7 +61,18 @@
   function wrongHtml(key) {
     if (!(key in S.wrong) || !S.session?.tutor) return '';
     const t = S.explain[key] || {loading: true};
-    return `<div class="sd-tutor-reply" aria-live="polite">${t.loading ? '<p class="sd-muted">The tutor is looking at your answer…</p>' : t.reply ? `<span class="sd-say-label">Why that was wrong</span>${md(t.reply)}` : `<p class="sd-muted">${esc(t.message)}</p>${btn('Try again', 'explain', `data-key="${esc(key)}"`)}`}</div>`;
+    // Per-item notes sit on their rows (itemNotes); only the shared point stays below.
+    if (!t.loading && t.items?.length && !t.reply?.trim()) return '';
+    return `<div class="sd-tutor-reply" aria-live="polite">${t.loading ? '<p class="sd-muted">The tutor is looking at your answer…</p>' : t.reply?.trim() ? `<span class="sd-say-label">${t.items?.length ? 'What your mistakes share' : 'Why that was wrong'}</span>${md(t.reply)}` : `<p class="sd-muted">${esc(t.message)}</p>${btn('Try again', 'explain', `data-key="${esc(key)}"`)}`}</div>`;
+  }
+  function itemNotes() {
+    Object.entries(S.explain).forEach(([key, t]) => {
+      const node = S.nodes[key];
+      if (!node) return;
+      node.querySelectorAll('.sd-item-tutor').forEach(n => n.remove());
+      (t.items || []).forEach(({item, note}) => node.querySelector(`.sd-sort-item[data-i="${item}"]`)
+        ?.insertAdjacentHTML('beforeend', `<div class="sd-item-tutor"><span class="sd-say-label">Tutor</span> ${inline(note)}</div>`));
+    });
   }
   function threadHtml(s) {
     if (!S.session.tutor) return '';
@@ -223,6 +234,7 @@
     S.host.innerHTML = html();
     S.rail.innerHTML = railHtml();
     S.host.querySelectorAll('[data-slot]').forEach(n => { const node = S.nodes[n.dataset.slot]; if (node) n.replaceWith(node); else n.remove(); });
+    itemNotes();
     S.host.querySelectorAll('[data-draft]').forEach(n => {
       n.value = S.drafts[n.dataset.draft] || '';
       n.addEventListener('input', () => { S.drafts[n.dataset.draft] = n.value; scheduleSave(); });
@@ -333,7 +345,7 @@
     try { res = await call(`/course/lessons/${lesson}/tutor`, 'POST', {section: s.id, block: key, answer: S.wrong[key] || '', question: 'I got this activity wrong. Explain what I misunderstood and the reasoning to the right answer.'}); }
     catch (e) { res = {message: e.message}; }
     if (S?.id !== lesson) return;
-    S.explain[key] = res.reply || res.message ? res : {message: 'The tutor had nothing to add. The explanation above covers it.'};
+    S.explain[key] = res.reply || res.items?.length || res.message ? res : {message: 'The tutor had nothing to add. The explanation above covers it.'};
     paint();
   }
   async function makeGaps() {

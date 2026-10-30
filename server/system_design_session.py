@@ -224,7 +224,8 @@ async def ask_tutor(key: str, body: TutorBody, store=Depends(store_for)):
     result, message = await tutor.explain(lesson, section, question, block, body.answer, store.get_settings())
     if result:
         put(store, doc['id'], {**doc, 'reply': result}, doc['revision'])
-    return {'reply': result['reply'] if result else None, 'message': message}
+    return {'reply': result['reply'] if result else None, 'items': result.get('items', []) if result else [],
+            'message': message}
 
 
 class AttemptBody(BaseModel):
