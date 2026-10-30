@@ -135,12 +135,12 @@ prompt: Complete the analysis.
 text: |
   The product page calls 20 backend services in parallel. Each has p99 = 400 ms and p50 = 20 ms. The page's latency is roughly the [[slowest of the 20 calls|average of the 20 calls|fastest call]].
 
-  The chance that at least one call exceeds its p99 is 1 − 0.99²⁰ ≈ [[#18]]%, so the page's p80-ish latency is around 400 ms even though each backend's median is 20 ms.
+  The chance that at least one call exceeds its p99 is 1 − 0.99²⁰ ≈ [[#18:16-22]]%, so the page's p80-ish latency is around 400 ms even though each backend's median is 20 ms.
 
-  Each service is 99.9% available and all 20 are required, so the page succeeds about [[#98]]% of the time. Making 15 of them optional, with fallbacks, raises that to about 0.999⁵ ≈ 99.5%.
+  Each service is 99.9% available and all 20 are required, so the page succeeds about [[#98:97.5-98.5]]% of the time. Making 15 of them optional, with fallbacks, raises that to about 0.999⁵ ≈ 99.5%.
 
   At 3,000 page views/s with a 400 ms page time, Little's Law says about [[#1200]] page requests are in flight at once.
-explain: Fan-out turns rare backend events into common user events, both for latency (the max of N) and for availability (the product of N). Optional dependencies with timeouts and fallbacks fix both.
+explain: Fan-out turns rare backend events into common user events, both for latency (the max of N) and for availability (the product of N). Optional dependencies with timeouts and fallbacks fix both. The N × p shortcut (20 × 1% = 20%, 20 × 0.1% = 2% failing) is close enough for both blanks.
 ```
 
 ```interview

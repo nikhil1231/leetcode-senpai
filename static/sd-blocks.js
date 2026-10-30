@@ -212,17 +212,19 @@
   // ---------- Estimation ----------
   R.calc = b => frame(b, `<div class="sd-prompt">${md(b.prompt)}</div>${b.given ? `<div class="sd-given">${md(b.given)}</div>` : ''}<div class="sd-calc-row"><input class="input sd-calc-input" type="text" inputmode="decimal" placeholder="Your estimate" aria-label="Your estimate"><span class="sd-unit">${esc(b.unit)}</span>${button('Check', 'check', '', true)}${b.hint ? button('Hint', 'hint') : ''}</div><div class="sd-hint" hidden>${b.hint ? md(b.hint) : ''}</div><div class="sd-reveal" hidden></div>`, b.title);
   W.calc = (el, b, ctx) => {
-    const input = el.querySelector('input'), factor = b.tolerance || 1.5;
+    // `range` [lo, hi] overrides the symmetric factor, for answers that must round one way (shard counts).
+    const input = el.querySelector('input'), lo = b.range ? b.range[0] : b.answer / (b.tolerance || 1.5), hi = b.range ? b.range[1] : b.answer * (b.tolerance || 1.5);
+    const factor = Math.max(hi / b.answer, b.answer / lo);
     el.querySelector('[data-b=hint]')?.addEventListener('click', () => { el.querySelector('.sd-hint').hidden = false; });
     const check = () => {
       const v = Number(String(input.value).replace(/[, _]/g, '').replace(/k$/i, 'e3').replace(/m$/i, 'e6').replace(/b$/i, 'e9'));
       if (!isFinite(v) || v <= 0) { input.focus(); return; }
-      const ratio = v / b.answer, ok = ratio <= factor && ratio >= 1 / factor;
+      const ratio = v / b.answer, ok = v >= lo && v <= hi;
       el.dataset.answer = `${input.value} ${b.unit}`; ctx.save(b, { v: input.value });
       const off = ratio >= 1 ? ratio : 1 / ratio, close = !ok && off <= factor * 1.5;
       if (close) el.dataset.answer += ` (close: about ${fmtNum(off)}× from the reference)`;
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
-      r.innerHTML = `<p>${ok ? '<b class="sd-ok">Within range.</b>' : close ? `<b class="sd-close">Close: about ${fmtNum(off)}× off.</b>` : `<b class="sd-bad">Off by about ${fmtNum(off)}×.</b>`} Reference answer: <b>${fmtNum(b.answer)} ${esc(b.unit)}</b>${off < 1.05 ? '' : ` (accepted range ${fmtNum(b.answer / factor)}–${fmtNum(b.answer * factor)})`}.</p><div class="sd-steps">${md(b.steps)}</div>`;
+      r.innerHTML = `<p>${ok ? '<b class="sd-ok">Within range.</b>' : close ? `<b class="sd-close">Close: about ${fmtNum(off)}× off.</b>` : `<b class="sd-bad">Off by about ${fmtNum(off)}×.</b>`} Reference answer: <b>${fmtNum(b.answer)} ${esc(b.unit)}</b>${off < 1.05 ? '' : ` (accepted range ${fmtNum(lo)}–${fmtNum(hi)})`}.</p><div class="sd-steps">${md(b.steps)}</div>`;
       input.disabled = true; el.querySelector('[data-b=check]').disabled = true;
       ctx.done(b, ok);
     };
@@ -269,7 +271,11 @@
     let html = md(marked);
     tokens.forEach((body, i) => {
       let field;
-      if (body.startsWith('#')) field = `<input class="sd-blank sd-blank-num" data-blank="${i}" data-answer="${esc(body.slice(1))}" inputmode="decimal" size="7" aria-label="Blank ${i + 1}">`;
+      // [[#18]] accepts ±10%; [[#18:16-22]] accepts 16 to 22.
+      if (body.startsWith('#')) {
+        const [a, range = ''] = body.slice(1).split(':'), [lo, hi] = range ? range.split('-') : [a * 0.9, a * 1.1];
+        field = `<input class="sd-blank sd-blank-num" data-blank="${i}" data-answer="${esc(a)}" data-lo="${esc(lo)}" data-hi="${esc(hi)}" inputmode="decimal" size="7" aria-label="Blank ${i + 1}">`;
+      }
       else {
         const opts = body.split('|').map(s => s.trim());
         field = `<select class="sd-blank" data-blank="${i}" data-answer="${esc(opts[0])}" aria-label="Blank ${i + 1}"><option value="">…</option>${shuffle(opts, key + i).map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select>`;
@@ -286,7 +292,7 @@
       ctx.save(b, { values: fields.map(f => f.value) });
       fields.forEach((f, i) => {
         const a = f.dataset.answer, v = f.value.trim();
-        const ok = f.tagName === 'INPUT' ? v !== '' && Math.abs(Number(v.replace(/,/g, '')) - Number(a)) <= Math.abs(Number(a)) * 0.1 + 1e-9 : v === a;
+        const n = Number(v.replace(/,/g, '')), ok = f.tagName === 'INPUT' ? v !== '' && n >= Number(f.dataset.lo) - 1e-9 && n <= Number(f.dataset.hi) + 1e-9 : v === a;
         right += ok; f.classList.toggle('is-right', ok); f.classList.toggle('is-wrong', !ok);
         if (!ok) notes.push(`blank ${i + 1}: you put ${v || '(nothing)'}, correct is ${a}`);
         if (!ok) { f.value = a; f.classList.add('is-shown'); }

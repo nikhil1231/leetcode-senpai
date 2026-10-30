@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from . import auth, knowledge, llm, system_design_coach as coach, system_design_variants as variants
 from .store import get_store
 from .system_design_curriculum import CATEGORIES, LESSONS, QUESTIONS
+from .system_design_lessons import calc_bounds, numeric_blank
 from . import system_design_items as ledger_items
 
 router = APIRouter(prefix='/api/system-design', tags=['system-design-papers'])
@@ -30,7 +31,6 @@ QUESTION_FORMAT_MARKS = {'choice': 1, 'numeric': 1, 'multi': 2, 'order': 2}
 WEIGHTS = {'shaky': 4, 'fading': 3, 'unseen': 2, 'learning': 1.5, 'solid': 0.6}
 RANKED_SCOPES = ledger_items.RANKED_SCOPES
 MARKING_STALE = 180
-BLANK_TOLERANCE = 0.1  # numeric blanks are back-of-envelope figures
 BLANK = re.compile(r'\[\[(.+?)\]\]')
 TOPIC_ORDER = {k: i for i, k in enumerate(LESSONS)}
 
@@ -196,9 +196,11 @@ def mark(c, value):
         return {**out, 'marks': marks, 'right': b['choices'][b['answer']], 'explanation': b['reveal']}
     if c['type'] == 'calc':
         v = number(value) if value not in (None, '') else None
-        factor = float(b.get('tolerance') or 1.5)
-        ratio = v / float(b['answer']) if v and v > 0 else 0
-        marks = 0 if not ratio else 2 if 1 / factor <= ratio <= factor else 1 if 1 / factor ** 2 <= ratio <= factor ** 2 else 0
+        a = float(b['answer'])
+        lo, hi = calc_bounds(b)
+        factor = max(hi / a, a / lo)
+        ratio = v / a if v and v > 0 else 0
+        marks = 0 if not ratio else 2 if lo <= v <= hi else 1 if 1 / factor ** 2 <= ratio <= factor ** 2 else 0
         return {**out, 'marks': marks, 'right': f'{float(b["answer"]):,.10g} {b["unit"]}', 'explanation': b['steps']}
     if c['type'] == 'faded':
         answers = [m.strip() for m in BLANK.findall(b['text'])]
@@ -207,9 +209,10 @@ def mark(c, value):
         for i, body in enumerate(answers):
             mine = str(given[i]).strip() if i < len(given) and given[i] is not None else ''
             if body.startswith('#'):
-                target, v = float(body[1:]), number(mine) if mine else None
-                marks += int(v is not None and abs(v - target) <= abs(target) * BLANK_TOLERANCE + 1e-9)
-                right.append(body[1:])
+                shown, lo, hi = numeric_blank(body)
+                v = number(mine) if mine else None
+                marks += int(v is not None and lo - 1e-9 <= v <= hi + 1e-9)
+                right.append(shown)
             else:
                 first = body.split('|')[0].strip()
                 marks += int(mine == first)

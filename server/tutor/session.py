@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from .. import llm
 from . import lessons, story
 
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 MAX_TURNS = 120
 TRANSCRIPT_TURNS = 24
 MODES = {
@@ -53,11 +53,12 @@ How you teach:
 - BLOCKS are interactive activities from the lesson. Show one (its key in show_block) when doing beats talking: a prediction, an estimate, a bug to spot, an incident to work. Say in one line what to do; never give its answer. At most one block per turn, not every turn, never one already shown.
 - A turn of role "block" is the learner's result on a block. React to it: if wrong, ask them to reason about why before you explain.
 - If the learner asks a question, answer it briefly, then return to the thread.
+- Judge estimates as an interviewer would. A back-of-envelope number with a sound method, within about 1.5× of the NOTES' figure, is right: say so, give the precise figure in one clause if it adds something, and move on. Don't make them redo arithmetic nobody does by hand (exponents, long division); a shortcut such as N × p for 1 − (1 − p)ᴺ is fine when it lands in range. Only a wrong method, a wrong order of magnitude or a wrong conclusion is wrong.
 
 What you record (it updates the learner's knowledge model, so be strict):
 - objectives: progress made in THIS turn, with the learner's exact words as quote ("working" if partly shown correctly, "demonstrated" if fully shown). A wrong answer is not progress. For a correct block result the quote may be empty.
 - evidence: only for ids in POINTS or PREREQUISITES, only when the learner's latest message shows the idea right (clean true) or wrong (clean false), with a short exact quote from that message. depth: recall (stated it), explain (said why or how), apply (used it on a new case). Never for block results or for things you said. Usually 0 to 2 items.
-- misconceptions: when the learner states a wrong belief: the point, what they believe, their exact words.
+- misconceptions: when the learner states a wrong belief: the point, what they believe, their exact words. Imprecise arithmetic in an estimate is never a misconception.
 - resolved: keys of OPEN MISCONCEPTIONS the learner has now clearly corrected.
 - summary: rewrite every turn, under 80 words: what they have shown, what is shaky, where you are. It opens the next session.
 - story_event: usually empty. A one-line event worth remembering in the story, such as an incident they resolved or one that got away.

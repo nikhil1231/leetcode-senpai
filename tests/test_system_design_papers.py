@@ -29,13 +29,16 @@ def test_every_paper_item_has_a_contract_a_public_view_and_full_marks_for_the_ri
             assert 'reveal' not in pub and 'answer' not in pub
 
 
+from server.system_design_lessons import numeric_blank
+
+
 def right_answer(c):
     if c['type'] == 'question':
         q = c['q']
         return str(q['correct']) if q.get('format') == 'numeric' else q['correct']
     b = c['b']
     return {'predict': lambda: str(b['answer']), 'calc': lambda: str(b['answer']),
-            'faded': lambda: [m[1:] if m.startswith('#') else m.split('|')[0].strip() for m in papers.BLANK.findall(b['text'])],
+            'faded': lambda: [numeric_blank(m)[0] if m.startswith('#') else m.split('|')[0].strip() for m in papers.BLANK.findall(b['text'])],
             'sort': lambda: {str(i): it['bucket'] for i, it in enumerate(b['items'])},
             'order': lambda: [str(i) for i in range(len(b['items']))],
             'bug': lambda: list(b['bug'])}[c['type']]()
@@ -159,3 +162,13 @@ def test_model_marks_written_answers_and_writes_a_report(client, monkeypatch):
     assert marked['status'] == 'marked' and marked['report']['summary'] == 'Solid.'
     recall = [p for p in marked['items'] if p['type'] == 'recall']
     assert recall and all(marked['results'][str(p['n'])]['marks'] == p['max'] for p in recall)
+
+
+def test_explicit_ranges_mark_one_sided_answers():
+    shards = papers.contract(next(k for k, b in papers.BLOCKS.items() if b.get('range')))
+    assert [papers.mark(shards, v)['marks'] for v in ('13', '14', '16', '17')] == [1, 2, 2, 1]
+    fanout = papers.contract(next(k for k, b in papers.BLOCKS.items() if '#18:16-22' in b.get('text', '')))
+    blanks = right_answer(fanout)
+    assert papers.mark(fanout, blanks)['marks'] == fanout['max']
+    assert papers.mark(fanout, ['20' if x == '18' else x for x in blanks])['marks'] == fanout['max']
+    assert papers.mark(fanout, ['90' if x == '98' else x for x in blanks])['marks'] == fanout['max'] - 1

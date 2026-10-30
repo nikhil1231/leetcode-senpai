@@ -58,6 +58,27 @@ class LessonError(ValueError):
     pass
 
 
+def numeric_blank(body):
+    """A numeric blank `#18` (±10%) or `#18:16-22` (16 to 22) -> (answer text, lo, hi)."""
+    m = re.fullmatch(r'#([0-9.]+)(?::([0-9.]+)-([0-9.]+))?', body.strip())
+    if not m:
+        raise LessonError(f'bad numeric blank {body} (use #18 or #18:16-22)')
+    a = float(m.group(1))
+    lo, hi = (float(m.group(2)), float(m.group(3))) if m.group(2) else (a * 0.9, a * 1.1)
+    if not lo <= a <= hi:
+        raise LessonError(f'numeric blank {body}: range must contain the answer')
+    return m.group(1), lo, hi
+
+
+def calc_bounds(block):
+    """Accepted [lo, hi] for an estimate: an explicit `range`, else the answer ÷/× `tolerance` (1.5)."""
+    a = float(block['answer'])
+    if block.get('range'):
+        return float(block['range'][0]), float(block['range'][1])
+    factor = float(block.get('tolerance') or 1.5)
+    return a / factor, a * factor
+
+
 # Prose values are written plainly (colons, quotes and # are common in them); they are
 # turned into literal block scalars before YAML parsing so authors needn't quote them.
 PROSE = re.compile(r'^(\s*(?:- )?)(prompt|explain|explanation|reveal|intro|caption|steps|hint|given|model|say|weak|strong|why|text|label|note|takeaway|title|q|a|summary|debrief|ask): (.+)$', re.M)
@@ -132,6 +153,16 @@ def _check_block(lesson, kind, data, n):
             raise LessonError(f'{where}: bug line out of range')
     if kind == 'faded' and '[[' not in data['text']:
         raise LessonError(f'{where}: no blanks')
+    if kind == 'faded':
+        for body in re.findall(r'\[\[(#.+?)\]\]', data['text']):
+            try:
+                numeric_blank(body)
+            except LessonError as exc:
+                raise LessonError(f'{where}: {exc}') from exc
+    if kind == 'calc' and 'range' in data:
+        lo, hi = data['range']
+        if not lo <= float(data['answer']) <= hi:
+            raise LessonError(f'{where}: range must contain the answer')
     if kind == 'incident':
         nodes = data['nodes']
         if data['start'] not in nodes:

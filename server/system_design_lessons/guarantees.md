@@ -73,7 +73,7 @@ title: How much downtime is 99.95%?
 prompt: An SLO of **99.95%** availability over a **30-day** month allows how many minutes of total failure?
 answer: 21.6
 unit: minutes
-tolerance: 1.03
+tolerance: 1.1
 steps: |
   30 days × 24 h × 60 min = 43,200 minutes. 0.05% of that is **21.6 minutes**. Each extra nine divides it by ten: 99.9% → 43.2 min, 99.99% → 4.3 min. A single bad deploy that takes ten minutes to roll back spends half the 99.95% budget — which is why deployment safety (canaries, fast rollback) is an availability feature.
 ```

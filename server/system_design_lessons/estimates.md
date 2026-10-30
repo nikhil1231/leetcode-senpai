@@ -105,9 +105,9 @@ title: How many database shards?
 prompt: A chat service must sustain **120,000 message writes/s** at peak. One database node handles **15,000 writes/s**, and you want each node at no more than **60%** of capacity. How many primary shards do you need?
 answer: 14
 unit: shards
-tolerance: 1.08
+range: [14, 16]
 steps: |
-  Budget per node = 15,000 × 0.6 = 9,000 writes/s. Shards = 120,000 ÷ 9,000 ≈ 13.3 → **14** (in practice 16, a power of two that leaves room for growth). Also check storage: if each message is 500 bytes, 120k/s at peak (~40k average) is about 1.7 TB/day — so storage and retention may force more shards than throughput does.
+  Budget per node = 15,000 × 0.6 = 9,000 writes/s. Shards = 120,000 ÷ 9,000 ≈ 13.3, so round up to **14**; 13 would run each node above 60%. Any answer from 14 to 16 is right (in practice 16, a power of two that leaves room for growth). Also check storage: if each message is 500 bytes, 120k/s at peak (~40k average) is about 1.7 TB/day — so storage and retention may force more shards than throughput does.
 ```
 
 ```predict

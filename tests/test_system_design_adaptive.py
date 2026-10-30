@@ -323,3 +323,16 @@ def test_estimate_gap_separates_near_misses_from_wrong_answers():
     assert not estimate_gap(block, '3 shards')['close']
     assert estimate_gap({'type': 'calc', 'answer': 2e6}, '1.5m req/s')['close']
     assert estimate_gap(block, 'no idea') is None and estimate_gap({'type': 'quiz'}, '10') is None
+
+
+def test_numeric_blanks_and_estimate_ranges():
+    from server.system_design_lessons import LessonError, calc_bounds, numeric_blank
+    assert numeric_blank('#18') == ('18', 18 * 0.9, 18 * 1.1)
+    assert numeric_blank('#18:16-22') == ('18', 16, 22)
+    for bad in ('#18:19-22', '#abc', '#18:16'):
+        with pytest.raises(LessonError):
+            numeric_blank(bad)
+    assert calc_bounds({'answer': 14, 'range': [14, 16]}) == (14, 16)
+    assert calc_bounds({'answer': 30}) == (20, 45)
+    from server.system_design_tutor import estimate_gap
+    assert estimate_gap({'type': 'calc', 'answer': 14, 'range': [14, 16]}, '13')['accepted_range'] == [14, 16]
