@@ -50,9 +50,24 @@ Each item notes Nikhil's reaction. Status for all: **not started** unless marked
 
 ### Telegram drip (liked)
 A few questions a day, chosen from what is due or weak, answered by tap, text or voice note,
-graded, and counted. No app to open, no decision to study. Whether this runs through Kimi or a
-separate Senpai bot is open (a separate bot was suggested so learning is not mixed with life
-admin).
+graded, and counted. No app to open, no decision to study.
+
+Status: **built, waiting for a bot token.** Decided: a separate bot (the existing bots each have
+one reader, and learning stays apart from life admin). `server/drip/` runs inside the app as a
+background task, only where `TELEGRAM_BOT_TOKEN` is set. About six cards a day between 08:30
+and 22:30 (`DRIP_PER_DAY`, `DRIP_WINDOW`, local time from the Senpai timezone setting), never
+two open at once, chosen from the knowledge base: open misconceptions, then shaky, fading and
+unconfirmed points, then points seen before, then new ideas from lessons already started. Each
+card comes from a cast member (Sam asks facts, Marcus principles and trade-offs, Jo mechanisms,
+Priya procedures). Reply by text or voice note: the cheap model grades it against the point's
+claim and replies with what was missing and the idea itself (soft evidence; wrong beliefs become
+misconceptions). Without the model, "Show answer" then "I knew it / I did not". Skipped or
+unanswered cards (after 3 hours) count as exposures. Commands: /next, /stats, /pause, /resume,
+/help. Tested with unit tests and end to end against a fake Telegram with real grading.
+
+To switch it on (Nikhil): create a bot with @BotFather, put `TELEGRAM_BOT_TOKEN=…` in
+`~/secrets/leetcode-senpai.env` (the whats Secrets tab works), recreate the container, send the
+bot /start to get your chat id, add `TELEGRAM_CHAT_ID=…`, recreate again.
 
 ### Quizzes while waiting on agents (liked)
 He spends many short waits on Claude sessions every day. Sundial's Threads card is already
@@ -138,7 +153,7 @@ expensive); bulk content work is done by the agent itself, not a paid API.
 
 ## Open decisions (Nikhil's)
 
-- Telegram: through Kimi or a separate bot.
+- Telegram: decided, a separate bot. Creating it (BotFather) is Nikhil's step.
 - How much of Sundial's data the learning side may see (suggested: coarse signals only).
 - Spend on voices and imagery.
 - Where the nightly life-metrics write-up lives.
@@ -151,6 +166,7 @@ expensive); bulk content work is done by the agent itself, not a paid API.
   at runtime) and reports back with `POST /api/knowledge/events` (answers, or `kind: exposure`
   for things merely shown). Services authenticate with a source token
   (`KNOWLEDGE_SOURCE_TOKENS`).
+- 2026-10-31: Built the Telegram drip inside the app (see its Status). Off until a bot token is set.
 
 ## Dropped
 

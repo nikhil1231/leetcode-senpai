@@ -69,6 +69,14 @@ STT_MODEL = os.environ.get("STT_MODEL", "elevenlabs/scribe-v2").strip()
 # (~$0.001 a turn). Never an Anthropic model through OpenRouter (see CLAUDE.md).
 TUTOR_MODEL = os.environ.get("TUTOR_MODEL", "openai/gpt-6-luna").strip()
 
+# The Telegram drip (server/drip). Only the process with a bot token runs it, so set the token
+# in one place (the box). TELEGRAM_CHAT_ID is the one chat it serves; /start tells you yours.
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_API = os.environ.get("TELEGRAM_API", "https://api.telegram.org").rstrip("/")
+DRIP_PER_DAY = int(os.environ.get("DRIP_PER_DAY", "6"))
+DRIP_WINDOW = os.environ.get("DRIP_WINDOW", "08:30-22:30").strip()
+
 
 # ---- Scheduler ------------------------------------------------------------------
 # "fsrs" (modern, fits your review history) or "sm2" (legacy escape hatch).

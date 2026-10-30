@@ -1,0 +1,252 @@
+"""The Telegram drip: scheduling, card choice, and the bot against a fake Telegram and a fixed clock."""
+import datetime as dt
+import json
+import random
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from server import config, llm
+from server.drip import bot as drip, cards
+from server.knowledge_base import catalog as kcat, model as kmodel
+from tests.fake_store import FakeStore
+
+LON = ZoneInfo('Europe/London')
+DAY = 86400
+T0 = dt.datetime(2026, 11, 2, 9, 0, tzinfo=LON).timestamp()
+
+
+# ---- scheduling ------------------------------------------------------------------------
+
+def at(h, m=0, day=2):
+    return dt.datetime(2026, 11, day, h, m, tzinfo=LON)
+
+
+def test_sends_spread_across_the_window_and_wrap_to_tomorrow():
+    rng = random.Random(1)
+    first = cards.next_send(at(7, 0), 6, '08:30-22:30', rng)
+    assert at(8, 30) <= first <= at(9, 30)
+    nxt = cards.next_send(at(12, 0), 6, '08:30-22:30', rng)
+    assert at(13, 45) <= nxt <= at(15, 15)  # 14 h / 6 = 140 min, ±25%
+    late = cards.next_send(at(22, 0), 6, '08:30-22:30', rng)
+    assert late.date() == dt.date(2026, 11, 3) and late.hour in (8, 9)
+    assert cards.next_send(at(23, 0), 6, '08:30-22:30', rng).date() == dt.date(2026, 11, 3)
+    assert cards.next_send(at(12, 0), 100, '08:30-22:30', rng) >= at(12, 0) + dt.timedelta(seconds=cards.MIN_GAP * 0.75)
+
+
+# ---- choosing a card -------------------------------------------------------------------
+
+def ans(point, at, clean=True):
+    return {'point': point, 'at': at, 'kind': 'answer', 'clean': clean, 'depth': 'recall', 'strength': 'hard', 'blame': 'full'}
+
+
+MISS = 'sd.cache-aside.db-load-is-miss-rate'
+
+
+def test_pick_prefers_misconceptions_then_weak_then_seen_then_started_lessons():
+    c = kcat.CATALOG
+    rng = random.Random(0)
+    states, seen = kmodel.replay([])
+    p, reason = cards.pick(c, states, seen, [], T0, rng)
+    assert reason == 'new' and p['lesson'] == next(iter(kcat.lessons('system-design')))
+    states, seen = kmodel.replay([ans(MISS, T0 - 3 * DAY)])
+    p, reason = cards.pick(c, states, seen, [], T0, rng)
+    assert reason == 'fading' and p['id'] == MISS  # the only point you have seen, three days on
+    p, reason = cards.pick(c, states, seen, [], T0 - 3 * DAY + 3600, rng)
+    assert reason == 'new' and p['lesson'] == 'cache-aside'  # cooling down: a new idea from the same lesson
+    states, seen = kmodel.replay([ans(MISS, T0 - 2 * DAY, clean=False)])
+    assert cards.pick(c, states, seen, [], T0, rng) == (c['points'][MISS], 'shaky')
+    other = 'sd.cache-aside.delete-beats-set'
+    p, reason = cards.pick(c, states, seen, [{'point': other, 'status': 'open'}], T0, rng)
+    assert (p['id'], reason) == (other, 'misconception')
+
+
+def test_card_text_speaks_in_the_casts_voice_and_escapes_html():
+    p = {**kcat.CATALOG['points'][MISS], 'prompt': 'Is 1 < 2 & does it matter?'}
+    text = cards.card_text(p, 'fading')
+    assert text.startswith('<b>Marcus</b>') and '1 &lt; 2 &amp; does' in text and 'Before it fades' in text
+
+
+# ---- the bot ---------------------------------------------------------------------------
+
+class FakeTelegram:
+    def __init__(self):
+        self.sent, self.updates, self.files, self.n = [], [], {}, 0
+
+    def call(self, method, **p):
+        if method == 'getUpdates':
+            out, self.updates = [u for u in self.updates if u['update_id'] >= p['offset']], []
+            return out
+        if method == 'sendMessage':
+            self.n += 1
+            self.sent.append(p)
+            return {'message_id': self.n}
+        return True
+
+    def download(self, file_id):
+        return self.files[file_id]
+
+    def last(self):
+        return self.sent[-1]['text']
+
+
+class Clock:
+    def __init__(self, t):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+@pytest.fixture
+def env(monkeypatch):
+    monkeypatch.setattr(config, 'TELEGRAM_BOT_TOKEN', 'token')
+    monkeypatch.setattr(config, 'TELEGRAM_CHAT_ID', '42')
+    monkeypatch.setattr(config, 'OPENROUTER_API_KEY', 'test')
+    store, tg, clock = FakeStore('me'), FakeTelegram(), Clock(T0)
+    store.settings = {'daily_coach_timezone': 'Europe/London'}
+    grades = []
+
+    def fake(provider, model, system, prompt, schema, options=None):
+        assert schema is cards.Grade and not llm.forbidden_model(model)
+        assert json.loads(prompt)['ANSWER']
+        return {'content': json.dumps(grades.pop(0))}
+    monkeypatch.setattr(llm, '_raw_generate', fake)
+    b = drip.Bot(store, tg=tg, clock=clock, rng=random.Random(3))
+    return b, store, tg, clock, grades
+
+
+uid = iter(range(1000, 10**6))
+
+
+def msg(text, chat=42):
+    return {'update_id': next(uid), 'message': {'chat': {'id': chat}, 'text': text}}
+
+
+def press(data, chat=42):
+    return {'update_id': next(uid), 'callback_query': {'id': 'q', 'data': data, 'message': {'chat': {'id': chat}}}}
+
+
+def events(store):
+    return sorted(store.list_knowledge('knowledge_events'), key=lambda e: e['at'])
+
+
+def test_cards_go_out_on_schedule_and_wait_for_an_answer(env):
+    b, store, tg, clock, _ = env
+    b.tick()
+    assert tg.sent == [] and b.state['next_at'] > clock.t
+    clock.t = b.state['next_at'] + 1
+    b.tick()
+    assert len(tg.sent) == 1 and b.state['pending'] == 1 and b.state['sent'] == 1
+    assert tg.sent[0]['reply_markup']['inline_keyboard'][0][0]['callback_data'] == 'reveal:1'
+    clock.t = b.state['next_at'] + 1
+    b.tick()
+    assert len(tg.sent) == 1  # never two questions open at once
+    clock.t += cards.EXPIRE
+    b.tick()
+    assert store.get_knowledge('drip', 'card-1')['status'] == 'expired'
+    assert [e['kind'] for e in events(store)] == ['exposure']
+    assert len(tg.sent) == 2 and b.state['pending'] == 2  # the next one was already due
+
+
+def test_a_typed_answer_is_graded_and_recorded(env):
+    b, store, tg, clock, grades = env
+    c = b.send_card(clock.t)
+    grades.append({'verdict': 'wrong', 'feedback': 'You described latency, not load.', 'misconception': 'thinks caches only cut latency'})
+    tg.updates = [msg('caches just make it faster')]
+    b.step(poll=0)
+    assert 'Not quite' in tg.last() and 'The idea:' in tg.last()
+    e = events(store)[-1]
+    assert (e['source'], e['strength'], e['clean'], e['points']) == ('telegram', 'soft', False, [c['point']])
+    m = store.list_knowledge('knowledge_misconceptions')[0]
+    assert m['source'] == 'telegram' and m['quote'] == 'caches just make it faster'
+    assert store.get_knowledge('drip', 'card-1')['verdict'] == 'wrong' and b.state['pending'] is None
+    assert b.state['offset'] == tg_offset(store)
+    tg.updates = [msg('another answer')]
+    b.step(poll=0)
+    assert 'No question is open' in tg.last()
+
+
+def tg_offset(store):
+    return store.get_knowledge('drip', 'state')['offset']
+
+
+def test_without_the_model_you_see_the_answer_and_grade_yourself(env, monkeypatch):
+    b, store, tg, clock, _ = env
+    monkeypatch.setattr(config, 'OPENROUTER_API_KEY', '')
+    b.send_card(clock.t)
+    tg.updates = [msg('my guess')]
+    b.step(poll=0)
+    assert 'Did you know it?' in tg.last() and tg.sent[-1]['reply_markup']['inline_keyboard'][0][0]['callback_data'] == 'self:1:1'
+    tg.updates = [press('self:1:1')]
+    b.step(poll=0)
+    assert events(store)[-1]['clean'] is True and store.get_knowledge('drip', 'card-1')['self_graded']
+    assert b.state['answered'] == 1
+
+
+def test_skip_and_reveal_buttons(env):
+    b, store, tg, clock, _ = env
+    b.send_card(clock.t)
+    tg.updates = [press('skip:1')]
+    b.step(poll=0)
+    assert store.get_knowledge('drip', 'card-1')['status'] == 'skipped' and events(store)[-1]['kind'] == 'exposure'
+    b.send_card(clock.t)
+    tg.updates = [press('reveal:2'), press('self:2:0')]
+    b.step(poll=0)
+    assert events(store)[-1]['clean'] is False and 'sooner' in tg.last()
+
+
+def test_voice_notes_are_transcribed_then_graded(env, monkeypatch):
+    b, store, tg, clock, grades = env
+    b.send_card(clock.t)
+    tg.files['v1'] = b'OggS...'
+    monkeypatch.setattr(llm, 'transcribe', lambda audio, fmt, lang=None: 'load is requests times the miss rate')
+    grades.append({'verdict': 'right', 'feedback': 'Exactly.', 'misconception': ''})
+    tg.updates = [{'update_id': next(uid), 'message': {'chat': {'id': 42}, 'voice': {'file_id': 'v1'}}}]
+    b.step(poll=0)
+    assert any('Heard:' in s['text'] for s in tg.sent) and 'Right' in tg.last()
+    assert events(store)[-1]['clean'] is True and b.state['right'] == 1
+
+
+def test_commands_and_strangers(env):
+    b, store, tg, clock, _ = env
+    tg.updates = [msg('/pause'), msg('/next', chat=7), msg('hello', chat=7)]
+    b.step(poll=0)
+    assert b.state['paused'] and len(tg.sent) == 1
+    clock.t += DAY
+    b.tick()
+    assert len(tg.sent) == 1
+    tg.updates = [msg('/resume'), msg('/next'), msg('/next'), msg('/stats'), msg('/help')]
+    b.step(poll=0)
+    texts = [s['text'] for s in tg.sent[1:]]
+    assert texts[0].startswith('Back on') and texts[2].startswith('Still waiting') and 'Ripple is at' in texts[3]
+    assert '/next' in texts[4] and b.state['paused'] is False
+
+
+def test_before_a_chat_is_configured_start_reveals_your_chat_id(env, monkeypatch):
+    _, store, tg, clock, _ = env
+    monkeypatch.setattr(config, 'TELEGRAM_CHAT_ID', '')
+    b = drip.Bot(store, tg=tg, clock=clock)
+    tg.updates = [msg('/start', chat=99), msg('hello', chat=99)]
+    b.step(poll=0)
+    assert len(tg.sent) == 1 and 'TELEGRAM_CHAT_ID=99' in tg.last()
+
+
+def test_state_survives_a_restart(env):
+    b, store, tg, clock, _ = env
+    b.send_card(clock.t)
+    again = drip.Bot(store, tg=tg, clock=clock)
+    assert again.state['pending'] == 1 and again.state['n'] == 1
+
+
+def test_a_just_missed_point_is_not_asked_again_straight_away(env):
+    b, store, tg, clock, grades = env
+    first = b.send_card(clock.t)
+    grades.append({'verdict': 'wrong', 'feedback': 'No.', 'misconception': ''})
+    tg.updates = [msg('no idea'), msg('/next')]
+    b.step(poll=0)
+    second = store.get_knowledge('drip', 'card-2')
+    assert second and second['point'] != first['point']
+    tg.updates = [press('reveal:2'), press('self:2:1')]
+    b.step(poll=0)
+    assert b.state['right'] == 1 and b.state['answered'] == 2

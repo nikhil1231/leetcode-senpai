@@ -41,6 +41,7 @@ from .activity import router as activity_router
 from .tracks.api import router as tracks_router
 from .knowledge_base.api import router as knowledge_router
 from .tutor.api import router as tutor_router
+from .drip import bot as drip_bot
 from .senpai import jobscout as senpai_jobscout, service as senpai_service, worker as senpai_worker
 from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
 
@@ -62,12 +63,15 @@ async def lifespan(_app):
         # Quickfire answers saved while offline in an earlier run.
         _practice_store(config.DEV_UID).flush_in_background()
     review_worker = asyncio.create_task(senpai_worker.run())
+    drip = asyncio.create_task(drip_bot.run(get_store)) if drip_bot.configured() else None
     try:
         yield
     finally:
-        review_worker.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await review_worker
+        for task in (review_worker, drip):
+            if task:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
 
 app = FastAPI(title="Leetcode Senpai V2", lifespan=lifespan)

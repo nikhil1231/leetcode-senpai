@@ -532,6 +532,15 @@ Needs the model (`TUTOR_MODEL`, default `openai/gpt-6-luna`); without it the les
 API: `GET /api/tutor`, `GET /api/tutor/lessons/{section}/{lesson}`, `POST /api/tutor/sessions`,
 `POST /api/tutor/sessions/{id}/turns` (retry a failed reply with the same key), `/end`.
 
+### Telegram drip (questions wherever you are)
+
+`server/drip/`: a background task in the app that sends about six questions a day on Telegram,
+picked from the knowledge base and voiced by the story's cast, and grades text or voice replies
+with the tutor model (or lets you self-grade without it). Everything is recorded in the
+knowledge base as source `telegram`. Off unless `TELEGRAM_BOT_TOKEN` is set; serves only
+`TELEGRAM_CHAT_ID` (before that is set, /start replies with your chat id). Tuning:
+`DRIP_PER_DAY` (6), `DRIP_WINDOW` (08:30-22:30, local time). Run it in one process only.
+
 ### Knowledge base (one model of what you know)
 
 `server/knowledge_base/` sits above the item ledger. Its unit is a **knowledge point**: one
@@ -561,7 +570,7 @@ name is recorded as the source. Intent and roadmap: `docs/plans/tutor-and-knowle
 Relevant regression checks:
 
 ```bash
-uv run --locked pytest tests/test_knowledge.py tests/test_knowledge_base.py tests/test_tutor.py tests/test_system_design_items.py tests/test_system_design_papers.py tests/test_system_design_drills.py tests/test_activity.py
+uv run --locked pytest tests/test_knowledge.py tests/test_knowledge_base.py tests/test_tutor.py tests/test_drip.py tests/test_system_design_items.py tests/test_system_design_papers.py tests/test_system_design_drills.py tests/test_activity.py
 uv run --locked pytest tests/test_system_design.py tests/test_system_design_learning.py tests/test_daily_coach.py
 node --test tests/test_sections_frontend.cjs tests/test_system_design_learning_frontend.cjs
 ```
