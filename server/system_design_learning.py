@@ -426,9 +426,15 @@ def next_question(body: NextQuestion, store=Depends(store_for)):
         item = variants.take(store, records, item['id']) or item
     order = [c['id'] for c in item['choices']]
     secrets.SystemRandom().shuffle(order)
-    doc = put(store, key, {'kind': 'quickfire', 'question_id': item['id'], 'lesson_id': item['lesson_id'],
-                           'skill': item['skill'], 'content_version': item['version'], 'created_at': now,
-                           'filters': filters, 'choice_order': order, 'contract': deepcopy(item)})
+    try:
+        doc = put(store, key, {'kind': 'quickfire', 'question_id': item['id'], 'lesson_id': item['lesson_id'],
+                               'skill': item['skill'], 'content_version': item['version'], 'created_at': now,
+                               'filters': filters, 'choice_order': order, 'contract': deepcopy(item)})
+    except HTTPException:
+        # A concurrent request with the same id won the race: return its question.
+        doc = store.get_design_record(key)
+        if not doc or doc.get('kind') != 'quickfire' or doc.get('filters') != filters:
+            raise
     return fire_public(doc)
 
 

@@ -367,7 +367,7 @@
   }
   function loadCallbacks() {
     for (const c of S.session.callbacks) {
-      if (S.fire[c.id]) continue;
+      if (c.id in S.fire) continue;
       S.fire[c.id] = null;
       // The request id is saved with the lesson, so every device fetches the same (idempotent) callback.
       const request = S.fireReq[c.id] = S.fireReq[c.id] || rid();
