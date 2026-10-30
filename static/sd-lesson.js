@@ -26,6 +26,7 @@
     set(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* per-viewer convenience only */ } },
   };
   const fullText = () => store.get('sd-lesson-full') === '1';
+  const reference = () => !!S?.lesson?.reference;
   const words = t => String(t || '').split(/\s+/).filter(Boolean).length;
   const minutes = n => `${Math.max(1, Math.round(n / 220))} min`;
   const inline = t => B().inline(t || '');
@@ -45,7 +46,7 @@
   const isPlain = c => !/^(>|\||#|```|\s*([-*]|\d+\.)\s)/.test(c);
   const keepCallout = c => /^>\s*\[!(story|incident|mistake)\]/.test(c);
   function prose(text, key) {
-    if (fullText() || words(text) < 90) return `<div class="sd-md">${md(text)}</div>`;
+    if (fullText() || reference() || words(text) < 90) return `<div class="sd-md">${md(text)}</div>`;
     const parts = chunks(text); let shownPlain = false;
     const shown = [], rest = [];
     parts.forEach(c => {
@@ -96,6 +97,7 @@
     return `<details class="sd-attempt-done" open><summary>Your attempt${f ? ' · tutor comparison' : ''}</summary><div class="sd-attempt-text">${esc(a.text)}</div>${f ? `${f.got.length ? `<p><b class="sd-ok">You got:</b> ${f.got.map(inline).join(' · ')}</p>` : ''}${f.missed.length ? `<p><b class="sd-bad">Missing:</b> ${f.missed.map(inline).join(' · ')}</p>` : ''}<p>${inline(f.note)}</p>` : `<p class="sd-muted">${a.message ? esc(a.message) + ' ' : ''}Compare it with the walkthrough below.</p>`}</details>`;
   }
   function body(s) {
+    if (reference()) return s.parts.map((p, i) => p.type === 'md' ? prose(p.text, `${s.id}:${i}`) : slot(p.key)).join('');
     const open = S.open[s.id], full = fullText();
     const blocks = s.parts.filter(p => p.type === 'block');
     const allProse = s.parts.filter(p => p.type === 'md').map(p => p.text).join('\n\n');
@@ -109,6 +111,7 @@
       (s.mode !== 'learn' ? `<div class="sd-actions">${btn('Fold it away again', 'close', `data-sec="${s.id}"`)}</div>` : '');
   }
   function sectionHtml(s) {
+    if (reference()) return `<section class="sd-sec" data-sec="${s.id}">${body(s)}</section>`;
     const chip = `<span class="sd-sec-chip is-${s.mode}">${MODE[s.mode][0]} ${MODE[s.mode][1]}</span>`;
     const head = `<header class="sd-sec-head">${chip}<h3 id="sd-sec-${s.id}" tabindex="-1">${s.title ? inline(s.title) : 'The setup'}</h3></header>${s.note ? `<p class="sd-sec-note">${inline(s.note)}</p>` : ''}`;
     const locked = s.attempt && !S.session.attempts[s.id];
@@ -182,7 +185,7 @@
     let known = [];
     const flush = () => { if (known.length) out.push({kind: 'known', secs: known, label: known.length === 1 ? known[0].title || 'The setup' : `Already known (${known.length} parts)`}); known = []; };
     ss.forEach((s, i) => {
-      if (s.mode === 'known' && !S.open[s.id]) known.push(s); else { flush(); out.push({kind: 'sec', s, label: s.title || 'The setup'}); }
+      if (s.mode === 'known' && !S.open[s.id] && !reference()) known.push(s); else { flush(); out.push({kind: 'sec', s, label: s.title || (reference() ? 'The sheet' : 'The setup')}); }
       if (S.session.callbacks.length && (i === mid - 1 || (ss.length < 2 && i === 0))) { flush(); out.push({kind: 'callback', label: 'From earlier lessons'}); }
     });
     flush();
@@ -205,7 +208,7 @@
     const P = pages(), i = pageIndex(P), p = P[i], next = P[i + 1];
     const dots = `<div class="sd-pager-top"><span class="sd-eyebrow">PART ${i + 1} OF ${P.length} · ${esc(p.label).toUpperCase()}</span><div class="sd-pager-dots">${P.map((x, j) => `<button type="button" data-lp="page" data-page="${j}" class="${j === i ? 'is-on' : j < i ? 'is-past' : ''} is-${x.kind === 'sec' ? x.s.mode : x.kind}" aria-label="Go to ${esc(x.label)}" title="${esc(x.label)}"></button>`).join('')}</div></div>`;
     const pager = `<nav class="sd-pager" aria-label="Lesson pages">${i ? btn('← Back', 'page', `data-page="${i - 1}"`) : '<span></span>'}${next ? btn(`Next: ${next.label} →`, 'page', `data-page="${i + 1}"`, true) : `<span class="sd-muted">End of the lesson.</span>`}</nav>`;
-    return `${S.error ? `<div class="sd-error" role="alert">${esc(S.error)}</div>` : ''}${i === 0 ? planBanner() : ''}${dots}<div class="sd-page${p.kind === 'check' ? ' is-check' : ''}">${pageHtml(p)}</div>${pager}`;
+    return `${S.error ? `<div class="sd-error" role="alert">${esc(S.error)}</div>` : ''}${i === 0 && !reference() ? planBanner() : ''}${dots}<div class="sd-page${p.kind === 'check' ? ' is-check' : ''}">${pageHtml(p)}</div>${pager}`;
   }
   function railHtml() {
     if (!S.session?.planned) return '<span class="sd-eyebrow">IN THIS LESSON</span><p class="sd-muted">Warm-up first.</p>';

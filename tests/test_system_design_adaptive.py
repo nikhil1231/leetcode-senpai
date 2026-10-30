@@ -305,3 +305,11 @@ def test_sort_mistakes_get_one_tutor_note_per_misplaced_item(client, monkeypatch
     r = call(client, 'POST', '/course/lessons/service-quality/tutor', section=section['id'], block=block['key'], answer=answer)
     assert seen['schema'] is tutor.SortReply and seen['misplaced'][0]['item'] == 0
     assert r['items'] == [{'item': 0, 'note': 'Serial.'}] and r['reply'] == ''
+
+
+def test_numbers_sheet_is_one_unfolded_page_without_a_warmup():
+    lesson = LESSONS['numbers']
+    assert lesson['reference'] and lesson['prerequisite'] == 'service-quality'
+    assert len(adaptive.sections(lesson)['sections']) == 1
+    assert adaptive.probes(lesson, {}) == []
+    assert len(lesson['quickfire_ids']) >= 40

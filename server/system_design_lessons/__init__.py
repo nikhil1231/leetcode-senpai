@@ -18,7 +18,7 @@ VERSION = 2
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Course order. A lesson listed here must have a file; a file must be listed.
 ORDER = {
-    'foundations': ['request-flow', 'guarantees', 'service-quality', 'estimates'],
+    'foundations': ['request-flow', 'guarantees', 'service-quality', 'numbers', 'estimates'],
     'apis': ['api-contracts', 'stateless-balancing', 'sync-async', 'retry-identity', 'realtime-push'],
     'storage': ['data-models', 'indexes', 'transactions', 'storage-engines', 'object-storage', 'id-generation'],
     'caching': ['cache-aside', 'cache-freshness', 'http-cdn', 'hot-keys'],

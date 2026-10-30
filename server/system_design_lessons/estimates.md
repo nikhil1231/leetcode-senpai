@@ -7,7 +7,6 @@ minutes: 16
 summary: An estimate is useful when it changes a decision — one database or twenty, a cache or not, a CDN or not. Learn a handful of numbers, convert rates and totals carefully with units, keep one significant figure, and always add peak factors, replication and headroom.
 objectives:
   - Convert daily volumes to average and peak QPS, storage growth and bandwidth with units
-  - Recall the latency, throughput and size numbers that anchor estimates
   - Estimate server, shard and backlog counts, including headroom and recovery capacity
   - Present estimates so they drive design decisions rather than decorate the whiteboard
 sources:
@@ -21,33 +20,7 @@ sources:
 
 ## The numbers to carry
 
-> [!numbers] Time
-> 1 day ≈ **86,400 s ≈ 10⁵ s** (use 10⁵ for mental maths: 1M/day ≈ 12/s). 1 month ≈ 2.6M s. 1 year ≈ 3.15 × 10⁷ s.
-
-> [!numbers] Sizes
-> 2¹⁰ ≈ 10³ (KB), 2²⁰ ≈ 10⁶ (MB), 2³⁰ ≈ 10⁹ (GB), 2⁴⁰ ≈ 10¹² (TB). A UUID is 16 bytes; a tweet-sized text record with metadata ~**1 KB**; a compressed photo ~**200 KB–2 MB**; a minute of 1080p video ~**50–100 MB**.
-
-| Operation | Latency |
-|---|---|
-| L1 cache reference | ~1 ns |
-| Main memory reference | ~100 ns |
-| Read 1 MB sequentially from memory | ~10 µs |
-| Random read from NVMe SSD | ~20–100 µs |
-| Read 1 MB sequentially from SSD | ~200 µs–1 ms |
-| Round trip within a datacentre | ~0.5 ms |
-| Disk seek (spinning HDD) | ~5–10 ms |
-| Round trip, US east ↔ west | ~60–70 ms |
-| Round trip, Europe ↔ US east | ~70–90 ms |
-
-| Component | Rough capacity (one node) |
-|---|---|
-| Stateless app server | 1k–10k simple req/s |
-| Redis / Memcached | ~100k+ ops/s |
-| Relational DB primary | ~5k–20k simple writes/s; more reads |
-| Kafka broker | ~100s of MB/s |
-| 10 Gbps NIC | ~1.2 GB/s |
-
-These are orders of magnitude to start a conversation, not benchmarks. Say so.
+The constants this lesson leans on — seconds in a day, powers of two, the latency ladder, what one machine can do — are in the previous lesson, **Numbers to know**. Learn them there; here we use them.
 
 ## The method
 

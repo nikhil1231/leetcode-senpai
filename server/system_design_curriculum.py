@@ -536,7 +536,7 @@ def _apply_rich():
             lesson = dict(id=key, version=rich.VERSION, category=item['category'], skill=item['skill'],
                           title=item['title'], minutes=item['minutes'], principle=item['summary'],
                           objectives=item['objectives'], sources=[tuple(s) for s in item['sources']],
-                          case_id=item.get('case'), blocks=item['blocks'], interactive=item['interactive'],
+                          case_id=item.get('case'), reference=bool(item.get('reference')), blocks=item['blocks'], interactive=item['interactive'],
                           quiz_ids=[q for q in ids if '-check-' in q],
                           quickfire_ids=[q for q in ids if '-fire-' in q])
         else:
