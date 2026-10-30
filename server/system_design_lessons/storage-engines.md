@@ -119,6 +119,7 @@ reveal: |
 ```
 
 ```interview
+ask: How would you design storage for a device-event system ingesting 300,000 events per second, supporting recent per-device queries, automatic expiry and historical analytics?
 say: |
   "The workload is about 300k writes/s of append-mostly events, read by device and recent time window — that's LSM territory: Cassandra or ScyllaDB partitioned by (device_id, day), clustered by timestamp. Writes are sequential memtable appends; reads hit the newest SSTables with Bloom filters skipping the rest. I'd use time-window compaction since data arrives in time order and expires by TTL, and keep disks under about 50% for compaction headroom. Analytics doesn't hit this store — it's exported to Parquet and queried in a columnar warehouse."
 followups:

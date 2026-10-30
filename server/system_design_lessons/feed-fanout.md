@@ -147,6 +147,7 @@ reveal: |
 ```
 
 ```interview
+ask: How would you design a social network’s home feed to support accounts with widely varying follower counts while keeping feed reads fast?
 say: |
   "Hybrid fan-out. Posts are stored once; an outbox event triggers fan-out workers that push post IDs onto capped 800-entry Redis timelines for each active follower, in batches. Accounts above about 500k followers skip fan-out; their recent posts are fetched and merged at read time — most users follow only a handful of them. Feed reads take the timeline IDs plus the celebrity candidates, rank them, and hydrate the top 50 from post and user caches, applying deletes, blocks and privacy checks then. Inactive users' timelines are rebuilt on demand when they return."
 followups:

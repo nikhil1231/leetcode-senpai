@@ -186,6 +186,7 @@ steps: |
 ```
 
 ```interview
+ask: How would you reliably publish order-placement events from a Postgres-backed ordering service to Kafka when failures can occur?
 say: |
   "Placing an order inserts the order and an OrderPlaced row into an outbox table in one Postgres transaction, so the intent to publish can't be lost. Debezium tails the WAL and publishes outbox rows to Kafka, keyed by order ID to keep per-order ordering. Delivery is at-least-once, so every consumer has an inbox table with a unique event ID, written in the same transaction as its effect. We alert on outbox lag and clean up published rows after a week."
 followups:

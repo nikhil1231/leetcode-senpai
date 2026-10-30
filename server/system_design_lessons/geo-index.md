@@ -134,6 +134,7 @@ reveal: |
 ```
 
 ```interview
+ask: How would you design geospatial indexing and proximity search for a ride-hailing platform with static places, delivery zones and 200,000 driver-location updates per second?
 say: |
   "Static places live in Postgres with PostGIS and a GiST index — ST_DWithin plus KNN ordering — and that also handles delivery-zone polygons. Moving drivers are different: 200k updates a second of ephemeral data. Each update goes to an in-memory geo index keyed by H3 cell, sharded by city, with a TTL so stale drivers drop out, and is also appended to Kafka for history. Matching looks up the rider's cell and expanding rings until it has enough candidates, then ranks by ETA. Dense cities get finer cells and more shards."
 followups:

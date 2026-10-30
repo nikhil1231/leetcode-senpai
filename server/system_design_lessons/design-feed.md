@@ -178,6 +178,7 @@ explain: Real products followed roughly this path. Each step answered a measured
 ```
 
 ```interview
+ask: How would you design a social news feed serving 100,000 feed loads per second at peak, supporting posts, ranking, pagination, likes and images reliably?
 say: |
   "Reads dominate — about 100k feed loads a second at peak — so most timelines are precomputed. Posting stores the post and emits an event; fan-out workers push post IDs into each active follower's capped Redis list, except for accounts above ~500k followers, which are merged at read time. A feed read takes ~800 candidate IDs plus celebrity posts, ranks ~500 with a 30 ms budget, hydrates the top 30 from caches while filtering deletes and privacy, and pages through a short-lived ranked snapshot. Likes are idempotent rows plus sharded, eventually consistent counters. Images go client → presigned S3 → CDN. Authors see their own posts immediately via a read-time merge."
 followups:

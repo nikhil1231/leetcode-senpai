@@ -178,6 +178,7 @@ reveal: |
 ```
 
 ```interview
+ask: How would you design storage, uploads and downloads for a photo-sharing service, including access control, failure recovery and storage costs?
 say: |
   "Bytes go to S3 and metadata goes to Postgres. Upload is direct: POST /photos checks quota and creates a pending row with a server-generated key, then returns a presigned POST valid for ten minutes and pinned to that key, size and type. The client uploads straight to S3; the object-created event triggers verification and thumbnails and flips the row to ready, idempotently. A reconciler handles lost events, and a cleanup job removes stale pending rows. Downloads are authorised by the API and served through a CDN with signed URLs. Lifecycle rules abort incomplete multipart uploads and move old originals to infrequent-access storage."
 followups:

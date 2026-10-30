@@ -169,6 +169,7 @@ explain: |
 ```
 
 ```interview
+ask: How would you design the API contract for an order management system serving external clients and internal services?
 say: |
   "Resources are orders and their line items. Create is `POST /orders` with an `Idempotency-Key` header, returning 201 and the order. Reads are GETs; lists are cursor-paginated by `(created_at, id)` with a max page size of 100. Updates are PUTs guarded by `If-Match` on a version, so concurrent edits get a 412 instead of a lost update. Errors use problem-details JSON with a stable code and a request ID. Internally the services talk gRPC with deadlines. Changes are additive within v1; anything breaking goes to v2 with a deprecation window."
 followups:

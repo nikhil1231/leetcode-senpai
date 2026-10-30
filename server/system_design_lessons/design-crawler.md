@@ -159,6 +159,7 @@ steps: |
 ```
 
 ```interview
+ask: How would you design a web crawler that fetches one billion pages per day?
 say: |
   "1B pages a day is about 12k fetches/s and ~12k concurrent connections. URLs are normalised and checked against a Bloom-filter seen-set backed by a store, then enter a Mercator-style frontier — priority front queues feeding per-host back queues, with a heap of next-allowed times enforcing a delay per host from robots.txt and server health. Hosts hash to crawler nodes, so politeness state, DNS and robots caches are local. Fetchers have timeouts and size limits and write raw pages to WARC batches in object storage; parsers extract links and compute SimHash fingerprints for near-duplicate detection. Recrawl intervals follow each page's estimated change rate and importance, traps are bounded by depth and per-host budgets, and the frontier is checkpointed."
 followups:

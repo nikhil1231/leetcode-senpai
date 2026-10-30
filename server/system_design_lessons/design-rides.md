@@ -148,6 +148,7 @@ explain: |
 - **Rider tracking:** the push gateway sends the assigned driver's position only to that trip's rider, not to everyone nearby.
 
 ```interview
+ask: How would you design location tracking, driver matching and trip management for a ride-hailing service at scale while preventing conflicting driver assignments?
 say: |
   "Three workloads. Locations: 200k updates/s into a location service sharded by city, keeping each driver's latest position in an in-memory H3-cell index with a TTL and streaming breadcrumbs to Kafka. Matching: look up the pickup cell and expanding rings, rank available drivers by ETA, and reserve one with a conditional update — free → offered, with a 15-second expiry — so two trips can never get one driver. Acceptance is another conditional transaction that moves the trip to ACCEPTED and the driver to ON_TRIP. Trips are a durable state machine in a transactional database, each transition conditional on the expected state, with side effects like payment via an outbox and idempotent charges."
 followups:

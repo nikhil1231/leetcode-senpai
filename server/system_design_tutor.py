@@ -138,7 +138,7 @@ async def compare_attempt(lesson, section, attempt, settings=None):
 
 async def grade_pitch(block, text, followup=None, settings=None, lesson_title=''):
     if followup is None:
-        target = {'question_asked': 'Give a 30-second interview pitch for this design or concept.',
+        target = {'question_asked': block.get('ask') or 'Give a 30-second interview pitch for this design or concept.',
                   'model_answer': block['say'], 'what_strong_looks_like': block['strong'],
                   'what_weak_looks_like': block['weak']}
     else:
@@ -169,6 +169,36 @@ async def twist(lesson, sections, focus=None, settings=None):
     if focus:
         payload['focus_section'] = {'title': focus['title'], 'text': section_text(focus, 3000)}
     return await ask(Twist, system, payload, settings, 'twist')
+
+
+class GapQuestion(BaseModel):
+    targets: str = Field(max_length=240, description='The specific misconception or omission this question tests.')
+    question: str = Field(max_length=500)
+    points: list[str] = Field(min_length=2, max_length=4)
+    model: str = Field(max_length=900)
+
+
+class GapSet(BaseModel):
+    theme: str = Field(max_length=400)
+    questions: list[GapQuestion] = Field(min_length=1, max_length=3)
+
+
+async def gap_questions(lesson, mistakes, settings=None):
+    """Two or three new questions aimed at what this pass through the lesson got wrong."""
+    system = ('The learner has finished a lesson. Below is everything they got wrong or left out in it: '
+              'wrong activity answers, rubric points missed in written and interview answers, and wrong check '
+              'answers. Look for the common thread: the same idea missed repeatedly, a recurring kind of omission '
+              '(for example never stating numbers, or never covering failure), or one underlying misconception. '
+              'theme: one or two sentences naming that pattern, kindly, in terms of the idea rather than the '
+              'questions. Then write two or three short-answer questions, each testing one specific gap. '
+              'Each must probe the missing idea directly from a new angle: a different scenario, a concrete '
+              'case where that exact point decides the outcome, or a "what goes wrong if…" framing. Never '
+              'repeat or lightly reword a question they already saw, and never make it answerable by restating '
+              'their earlier answer. Prefer the gaps that recur or matter most in interviews. Each is answerable '
+              'in two to four sentences. targets: the gap it tests. points: two to four rubric points. model: a '
+              'strong answer under 120 words.')
+    payload = {'lesson': lesson['title'], 'summary': lesson['principle'], 'mistakes': mistakes[:24]}
+    return await ask(GapSet, system, payload, settings, 'gap questions')
 
 
 async def variant(question, lesson, settings=None):

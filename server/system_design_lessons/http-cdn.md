@@ -197,6 +197,7 @@ explain: The recurring move is **separating the personal from the public** so th
 ```
 
 ```interview
+ask: How would you design HTTP caching and CDN delivery for a web application serving static assets, HTML, public APIs, personalised content and private media?
 say: |
   "Static assets get content-hashed names and `immutable` year-long caching; HTML is `no-cache` with ETags so deploys show up immediately and checks are cheap 304s. Public API responses that are hot get short `s-maxage` with `stale-while-revalidate`, so the CDN absorbs load with request collapsing. Anything personalised is `private` or loaded separately, so it never sits in a shared cache. Edits purge by surrogate key, and private media goes through the edge with short-lived signed URLs. With a ~95% hit ratio the origin sees a twentieth of the traffic."
 followups:

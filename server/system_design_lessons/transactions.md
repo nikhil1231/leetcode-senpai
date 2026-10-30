@@ -162,6 +162,7 @@ fix: |
 > Postgres's serialisable snapshot isolation (SSI) doesn't lock everything: it tracks read–write dependencies and aborts a transaction when a dangerous pattern appears. You pay some overhead and a higher abort rate under contention, and your code **must retry** serialisation failures (SQLSTATE 40001). For complex invariants that's often simpler and safer than hand-placing locks.
 
 ```interview
+ask: How would you maintain correctness in an event ticketing system when users concurrently hold and book seats, with per-event allocation limits?
 say: |
   "For the seat invariant I'd let the database enforce it: a unique index on (event_id, seat_id) for confirmed bookings, and holds via a conditional update — `UPDATE seats SET held_by = ?, hold_expires = now() + interval '5 min' WHERE id = ? AND (held_by IS NULL OR hold_expires < now())` — checking the row count. Transactions stay short, with no external calls inside; notifications go through an outbox. Where an invariant spans rows, like a per-event allocation limit, I'd use SERIALIZABLE with retries or lock a single limit row."
 followups:

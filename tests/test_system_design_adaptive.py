@@ -216,3 +216,53 @@ def test_every_walkthrough_has_a_critique_appended_after_its_existing_blocks():
         blocks = [b for b in lesson['blocks'] if b['type'] != 'md']
         assert blocks[-1]['type'] == 'bug' and blocks[-1]['style'] == 'critique', key
         assert f'{key}:{blocks[-1]["key"]}' in items.BY_ID
+
+
+def test_mistakes_collect_this_pass_from_raw_records():
+    lesson = LESSONS['cache-aside']
+    recall = next(b for b in lesson['blocks'] if b['type'] == 'recall')
+    interview = next(b for b in lesson['blocks'] if b['type'] == 'interview')
+    records = [
+        {'kind': 'tutor', 'lesson_id': 'cache-aside', 'block': 'b1', 'answer': '9,000 reads/s', 'created_at': 200},
+        {'kind': 'tutor', 'lesson_id': 'cache-aside', 'block': 'b1', 'answer': 'again', 'created_at': 201},
+        {'kind': 'recall', 'lesson_id': 'cache-aside', 'block': recall['key'], 'text': 't', 'created_at': 210,
+         'grade': {'points': [{'point': p, 'status': 'covered' if i else 'missing'} for i, p in enumerate(recall['points'])]}},
+        {'kind': 'pitch', 'lesson_id': 'cache-aside', 'block': interview['key'], 'followup': 0, 'text': 'x', 'created_at': 220,
+         'grade': {'verdict': 'adequate', 'missing': ['ordering']}},
+        {'kind': 'pitch', 'lesson_id': 'cache-aside', 'block': interview['key'], 'followup': None, 'text': 'y', 'created_at': 221,
+         'grade': {'verdict': 'strong', 'missing': []}},
+        {'kind': 'tutor', 'lesson_id': 'cache-aside', 'block': 'b3', 'answer': 'old', 'created_at': 50},
+        {'id': 'course_cache-aside', 'kind': 'course_lesson', 'lesson_id': 'cache-aside', 'at': 230,
+         'activities': {'b1': {'first_correct': False, 'at': 205}, 'b5': {'first_correct': False, 'at': 206}}},
+    ]
+    found = adaptive.mistakes(lesson, records, since=100)
+    sources = [m['source'] for m in found]
+    assert sources == ['activity', 'written answer', 'interview answer', 'activity']
+    assert found[0]['learner_answer'] == '9,000 reads/s'
+    assert found[1]['missed_points'] == [recall['points'][0]]
+    assert found[2]['question'] == interview['followups'][0]['q']
+    assert found[3]['learner_answer'] == '' and 'b3' not in str(found)
+
+
+def test_gap_questions_are_generated_from_mistakes_and_graded(client, monkeypatch):
+    empty = call(client, 'POST', '/course/lessons/cache-aside/gaps', request_id=rid())
+    assert empty['empty'] and not empty['questions']
+    call(client, 'POST', '/course/lessons/cache-aside/open')
+    call(client, 'POST', '/course/lessons/cache-aside/activity', block='b1', correct=False)
+    call(client, 'POST', '/course/lessons/cache-aside/gaps', 503, request_id=rid())
+    monkeypatch.setattr(session_api.llm, 'enabled', lambda settings=None: True)
+    seen = {}
+    async def fake(lesson, mistakes, settings=None):
+        seen['mistakes'] = mistakes
+        return {'theme': 'Miss rate drives load.', 'model': 'm', 'prompt_version': 2, 'questions': [
+            {'targets': 'miss rate', 'question': 'New scenario?', 'points': ['a', 'b'], 'model': 'strong'}]}, None
+    monkeypatch.setattr(tutor, 'gap_questions', fake)
+    g = call(client, 'POST', '/course/lessons/cache-aside/gaps', request_id=rid())
+    assert seen['mistakes'][0]['source'] == 'activity' and g['theme'] == 'Miss rate drives load.'
+    assert 'points' not in g['questions'][0]
+    async def grade(block, text, settings=None):
+        return {'points': [{'point': p, 'status': 'covered', 'note': ''} for p in block['points']], 'feedback': 'f'}, None
+    monkeypatch.setattr(session_api.coach, 'grade_recall', grade)
+    answered = call(client, 'POST', f'/course/gaps/{g["id"]}/answer', n=0, text='Misses times requests.')
+    assert answered['questions'][0]['grade']['feedback'] == 'f' and answered['questions'][0]['model'] == 'strong'
+    call(client, 'POST', f'/course/gaps/{g["id"]}/answer', 404, n=3, text='x')

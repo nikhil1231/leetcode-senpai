@@ -180,6 +180,7 @@ paths:
 ```
 
 ```interview
+ask: How would you design a payment system that prevents duplicate charges and keeps financial records accurate when processors time out or notifications arrive late?
 say: |
   "Each payment is a state machine persisted before every external call: CREATED → AUTHORIZING → AUTHORIZED → CAPTURED, plus FAILED, UNKNOWN and REFUNDED. Checkout carries an idempotency key unique per order; calls to the processor carry a deterministic key per payment step, so a timeout is resolved by retrying with the same key, querying, or the webhook — never by charging again. Every state change writes balanced double-entry ledger rows in integer cents in the same transaction, plus an outbox event. Webhooks are signature-verified, deduplicated and applied as conditional transitions. A recovery job sweeps stuck AUTHORIZING and UNKNOWN payments, and nightly reconciliation matches processor settlement files against the ledger."
 followups:

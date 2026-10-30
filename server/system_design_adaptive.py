@@ -150,3 +150,57 @@ def callbacks(lesson_id, order, views, limit=2):
         if len(picked) >= limit:
             break
     return picked
+
+
+def _block_label(block):
+    return ' '.join(str(block.get('title') or block.get('prompt') or block.get('intro') or block['type']).split())[:300]
+
+
+def mistakes(lesson, records, since):
+    """What went wrong in this pass through a lesson, from saved raw records. Pure.
+
+    Wrong activities (with the learner's answer when the tutor saw it), rubric points missed in
+    written answers, gaps in interview answers and curveballs, missed walkthrough-stage points
+    and wrong lesson-check answers. The tutor turns these into targeted gap questions.
+    """
+    key = lesson['id']
+    blocks = {b['key']: b for b in lesson.get('blocks', []) if b['type'] != 'md'}
+    out, explained = [], set()
+    titles = {s['id']: s['title'] for s in sections(lesson)['sections']}
+    mine = [r for r in records if r.get('lesson_id') == key and (r.get('created_at') or r.get('at') or 0) >= since]
+    for r in sorted(mine, key=lambda r: r.get('created_at') or 0):
+        kind = r.get('kind')
+        if kind == 'tutor' and r.get('block') in blocks and r['block'] not in explained:
+            explained.add(r['block'])
+            b = blocks[r['block']]
+            out.append({'source': 'activity', 'kind': b['type'], 'activity': _block_label(b), 'learner_answer': r.get('answer', '')})
+        elif kind == 'recall' and r.get('grade'):
+            missed = [p['point'] for p in r['grade']['points'] if p['status'] != 'covered']
+            if missed:
+                out.append({'source': 'written answer', 'question': blocks.get(r['block'], {}).get('prompt', ''),
+                            'learner_answer': r['text'], 'missed_points': missed})
+        elif kind == 'pitch' and r.get('grade') and r['grade']['verdict'] != 'strong':
+            b = blocks.get(r['block'], {})
+            q = b.get('ask', 'Pitch the design') if r.get('followup') is None else b['followups'][r['followup']]['q']
+            out.append({'source': 'interview answer', 'question': q, 'learner_answer': r['text'],
+                        'missed_points': r['grade']['missing']})
+        elif kind == 'twist' and r.get('grade'):
+            missed = [p['point'] for p in r['grade']['points'] if p['status'] != 'covered']
+            if missed:
+                out.append({'source': 'curveball', 'question': r['twist']['question'], 'learner_answer': r.get('answer', ''),
+                            'missed_points': missed})
+        elif kind == 'stage_attempt' and (r.get('feedback') or {}).get('missed'):
+            out.append({'source': 'design stage attempt', 'question': titles.get(r['section']) or r['section'], 'learner_answer': r['text'],
+                        'missed_points': r['feedback']['missed']})
+        elif kind == 'quiz':
+            for a in (r.get('answers') or {}).values():
+                if a.get('answered_at', 0) >= since and not a.get('correct'):
+                    picked = {c['id']: c['text'] for c in a.get('choices', [])}
+                    mine_ = ', '.join(picked.get(x, x) for x in str(a.get('answer') or '').split(',') if x) or '(revealed)'
+                    out.append({'source': 'lesson check', 'question': a.get('question_title', ''), 'learner_answer': mine_,
+                                'correct_answer': a.get('correct_answer', {}).get('text', '')})
+    state = next((r for r in records if r.get('id') == 'course_' + key), {})
+    for bkey, act in (state.get('activities') or {}).items():
+        if act.get('first_correct') is False and act.get('at', 0) >= since and bkey in blocks and bkey not in explained:
+            out.append({'source': 'activity', 'kind': blocks[bkey]['type'], 'activity': _block_label(blocks[bkey]), 'learner_answer': ''})
+    return out

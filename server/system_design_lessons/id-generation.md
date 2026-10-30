@@ -147,6 +147,7 @@ steps: |
 ```
 
 ```interview
+ask: How would you design unique ID generation at scale for a distributed application with internal database records, public URLs and clients that work offline?
 say: |
   "Internally, primary keys are Snowflake-style 64-bit IDs: a 41-bit millisecond timestamp from a 2024 epoch, 10 bits of worker ID leased from etcd, and a 12-bit sequence. That's compact, time-sortable, and needs no per-insert coordination. The generator waits on sequence exhaustion and refuses to go backwards in time. Public URLs use a separate random base62 code with a unique constraint and retry, so nothing leaks order volume or invites enumeration. Where clients must create IDs offline, they use UUIDv7."
 followups:

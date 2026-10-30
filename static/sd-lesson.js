@@ -147,16 +147,71 @@
     return `<section class="sd-finale"><span class="sd-eyebrow">PUT IT TOGETHER</span><h3 id="sd-sec-finale" tabindex="-1">Use it as you would in an interview</h3>${twistHtml()}${fin.map(slot).join('')}
       ${S.session.redesign ? `<div class="sd-redesign-note"><b>Coming back later:</b> in a few days this design returns as a blank-page redesign from memory, scheduled with the rest of your reviews. ${btn('Try it now', 'redesign')}</div>` : ''}</section>`;
   }
+  function gapsHtml() {
+    const head = '<span class="sd-eyebrow">YOUR GAPS</span><h3 tabindex="-1" id="sd-sec-gaps">Questions aimed at what you missed</h3>';
+    if (!S.session.tutor) return `<section class="sd-gaps">${head}<p class="sd-muted">The tutor is not connected, so there are no custom questions. Everything you missed is in your mistakes book and comes back in reviews.</p></section>`;
+    const g = S.gaps;
+    if (!g || g.loading) return `<section class="sd-gaps">${head}<p class="sd-muted">Looking for the pattern in what you missed in this lesson…</p></section>`;
+    if (g.error) return `<section class="sd-gaps">${head}<p class="sd-muted">${esc(g.error)}</p>${btn('Try again', 'gaps-new')}</section>`;
+    if (g.empty) return `<section class="sd-gaps">${head}<p>Nothing to target: you didn't miss anything in this pass through the lesson.</p></section>`;
+    const status = {covered: ['✓', 'is-right'], partial: ['◐', 'is-partial'], missing: ['○', 'is-missing'], incorrect: ['✗', 'is-wrong']};
+    const all = g.questions.every(q => q.answer);
+    return `<section class="sd-gaps">${head}<div class="sd-callout is-tip"><b class="sd-callout-title">The pattern</b><p>${inline(g.theme)}</p></div>
+      ${g.questions.map(q => `<div class="sd-gap-q"><span class="sd-say-label">Question ${q.n + 1} of ${g.questions.length}</span><div class="sd-prompt">${md(q.question)}</div>${q.answer
+        ? `<div class="sd-twist-answer">${esc(q.answer)}</div>${q.grade ? `<ul class="sd-rubric">${q.grade.points.map(p => `<li class="${status[p.status][1]}"><span>${status[p.status][0]}</span><div><b>${inline(p.point)}</b><p>${inline(p.note)}</p></div></li>`).join('')}</ul><p>${inline(q.grade.feedback)}</p>` : `${q.message ? `<p class="sd-muted">${esc(q.message)}</p>` : ''}<ul>${q.points.map(p => `<li>${inline(p)}</li>`).join('')}</ul>`}<p class="sd-muted">This tested: ${inline(q.targets)}</p><details class="sd-model"><summary>A strong answer</summary>${md(q.model)}</details>`
+        : `<textarea class="textarea" rows="4" maxlength="4000" data-draft="gap:${q.n}" placeholder="Two to four sentences"></textarea><div class="sd-actions">${btn(S.busy['gap:' + q.n] ? 'Grading…' : 'Answer', 'gap-answer', `data-n="${q.n}" ${S.busy['gap:' + q.n] ? 'disabled' : ''}`, true)}</div>`}</div>`).join('')}
+      ${all ? `<div class="sd-actions">${btn('Give me new ones', 'gaps-new')}</div>` : ''}</section>`;
+  }
+  // The lesson as pages: one section each, known sections grouped, then the finale, check and gaps.
+  function pages() {
+    const ss = S.session.sections, out = [], mid = Math.floor(ss.length / 2);
+    let known = [];
+    const flush = () => { if (known.length) out.push({kind: 'known', secs: known, label: known.length === 1 ? known[0].title || 'The setup' : `Already known (${known.length} parts)`}); known = []; };
+    ss.forEach((s, i) => {
+      if (s.mode === 'known' && !S.open[s.id]) known.push(s); else { flush(); out.push({kind: 'sec', s, label: s.title || 'The setup'}); }
+      if (S.session.callbacks.length && (i === mid - 1 || (ss.length < 2 && i === 0))) { flush(); out.push({kind: 'callback', label: 'From earlier lessons'}); }
+    });
+    flush();
+    out.push({kind: 'finale', label: 'Put it together'}, {kind: 'check', label: 'Lesson check'}, {kind: 'gaps', label: 'Your gaps'});
+    return out;
+  }
+  function pageIndex(P) { S.page = Math.max(0, Math.min(P.length - 1, S.page || 0)); return S.page; }
+  function pageHtml(p) {
+    if (p.kind === 'sec') return sectionHtml(p.s);
+    if (p.kind === 'known') return `<p class="sd-muted sd-known-intro">You showed you know ${p.secs.length === 1 ? 'this part' : 'these parts'} in the warm-up or earlier practice. Open any of them if you want it anyway.</p>${p.secs.map(sectionHtml).join('')}`;
+    if (p.kind === 'callback') return callbackHtml();
+    if (p.kind === 'finale') return finaleHtml();
+    if (p.kind === 'check') return `<section class="sd-sec"><span class="sd-eyebrow">LESSON CHECK</span><h3 tabindex="-1" id="sd-sec-check">Answer from memory</h3><p class="sd-muted">The check is below. When you have finished it, the last page turns everything you missed into a few targeted questions.</p></section>`;
+    return gapsHtml();
+  }
   function html() {
     if (S.error && !S.session) return `<div class="sd-error">${esc(S.error)}</div>${btn('Try again', 'reload')}`;
     if (!S.session) return '<p class="sd-muted">Getting your lesson ready…</p>';
     if (!S.session.planned) return warmupHtml();
-    const ss = S.session.sections, mid = Math.floor(ss.length / 2);
-    return `${S.error ? `<div class="sd-error" role="alert">${esc(S.error)}</div>` : ''}${planBanner()}${ss.map((s, i) => sectionHtml(s) + (i === mid - 1 ? callbackHtml() : '')).join('')}${ss.length < 2 ? callbackHtml() : ''}${finaleHtml()}`;
+    const P = pages(), i = pageIndex(P), p = P[i], next = P[i + 1];
+    const dots = `<div class="sd-pager-top"><span class="sd-eyebrow">PART ${i + 1} OF ${P.length} · ${esc(p.label).toUpperCase()}</span><div class="sd-pager-dots">${P.map((x, j) => `<button type="button" data-lp="page" data-page="${j}" class="${j === i ? 'is-on' : j < i ? 'is-past' : ''} is-${x.kind === 'sec' ? x.s.mode : x.kind}" aria-label="Go to ${esc(x.label)}" title="${esc(x.label)}"></button>`).join('')}</div></div>`;
+    const pager = `<nav class="sd-pager" aria-label="Lesson pages">${i ? btn('← Back', 'page', `data-page="${i - 1}"`) : '<span></span>'}${next ? btn(`Next: ${next.label} →`, 'page', `data-page="${i + 1}"`, true) : `<span class="sd-muted">End of the lesson.</span>`}</nav>`;
+    return `${S.error ? `<div class="sd-error" role="alert">${esc(S.error)}</div>` : ''}${i === 0 ? planBanner() : ''}${dots}<div class="sd-page">${pageHtml(p)}</div>${pager}`;
   }
   function railHtml() {
     if (!S.session?.planned) return '<span class="sd-eyebrow">IN THIS LESSON</span><p class="sd-muted">Warm-up first.</p>';
-    return `<span class="sd-eyebrow">YOUR PATH</span>${S.session.sections.map(s => `<a href="#sd-sec-${s.id}" data-jump="sd-sec-${s.id}" class="is-${s.mode}"><i>${MODE[s.mode][0]}</i>${inline(s.title || 'The setup')}</a>`).join('')}<a href="#sd-sec-finale" data-jump="sd-sec-finale"><i>★</i>Put it together</a><a href="#sd-check" data-jump="sd-check"><i>?</i>Lesson check</a>`;
+    const P = pages(), i = pageIndex(P), icon = x => x.kind === 'sec' ? MODE[x.s.mode][0] : {known: '✓', callback: '↺', finale: '★', check: '?', gaps: '◎'}[x.kind];
+    return `<span class="sd-eyebrow">YOUR PATH</span>${P.map((x, j) => `<a href="#" data-lp="page" data-page="${j}" class="${x.kind === 'sec' ? 'is-' + x.s.mode : x.kind === 'known' ? 'is-known' : ''} ${j === i ? 'is-current' : ''}"><i>${icon(x)}</i>${inline(x.label)}</a>`).join('')}`;
+  }
+  // Only the check page shows the lesson check and footer, which live outside the player.
+  function applyPage() {
+    const article = S.host.closest('.sd-rich');
+    if (!article) return;
+    const P = S.session?.planned ? pages() : null, kind = P ? P[pageIndex(P)].kind : null;
+    const check = article.querySelector('#sd-check'), foot = article.querySelector('.sd-lesson-foot');
+    if (check) check.hidden = kind !== 'check';
+    if (foot) foot.hidden = !(kind === 'check' || kind === 'gaps');
+  }
+  function goPage(n) {
+    S.page = n;
+    try { sessionStorage.setItem('sd-page:' + S.id, String(n)); } catch { /* per-tab convenience */ }
+    paint();
+    window.scrollTo({top: S.host.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth'});
   }
 
   // ---------- Paint and wire ----------
@@ -181,7 +236,13 @@
     [S.host, S.rail].forEach(root => root.querySelectorAll('[data-jump]').forEach(n => n.addEventListener('click', e => {
       e.preventDefault(); const t = document.getElementById(n.dataset.jump); t?.scrollIntoView({behavior: 'smooth', block: 'start'}); t?.focus?.({preventScroll: true});
     })));
-    if (S.session?.planned) loadCallbacks();
+    S.rail.querySelectorAll('[data-lp=page]').forEach(n => n.addEventListener('click', e => { e.preventDefault(); goPage(Number(n.dataset.page)); }));
+    applyPage();
+    if (S.session?.planned) {
+      loadCallbacks();
+      const P = pages();
+      if (P[pageIndex(P)].kind === 'gaps' && S.session.tutor && !S.gaps) setTimeout(makeGaps, 0);
+    }
   }
   async function guarded(key, fn) {
     if (S.busy[key]) return;
@@ -191,15 +252,28 @@
   async function act(action, node) {
     const id = S.id, sec = node.dataset?.sec;
     if (action === 'reload') return load();
-    if (action === 'open' || action === 'close') { S.open[sec] = action === 'open'; return paint(); }
+    if (action === 'page') return goPage(Number(node.dataset.page));
+    if (action === 'open' || action === 'close') {
+      S.open[sec] = action === 'open';
+      const P = pages();
+      S.page = Math.max(0, P.findIndex(p => (p.kind === 'sec' && p.s.id === sec) || (p.kind === 'known' && p.secs.some(x => x.id === sec))));
+      return paint();
+    }
+    if (action === 'gaps-new') { S.gaps = null; S.gapRequest = rid(); return makeGaps(); }
+    if (action === 'gap-answer') {
+      const n = Number(node.dataset.n), text = (S.drafts['gap:' + n] || '').trim();
+      if (text.length < 10) { S.host.querySelector(`[data-draft="gap:${n}"]`)?.focus(); return; }
+      return guarded('gap:' + n, async () => { S.gaps = await call(`/course/gaps/${S.gaps.id}/answer`, 'POST', {n, text}); S.drafts['gap:' + n] = ''; });
+    }
     if (action === 'ask-open') { S.askOpen[sec] = true; paint(); return S.host.querySelector(`[data-draft="ask:${sec}"]`)?.focus(); }
     if (action === 'plan' || action === 'fresh') return guarded('plan', async () => {
       await Promise.all(S.pending);
       S.session = await call(`/course/lessons/${id}/plan`, 'POST', {probes: S.session.probes.filter(k => k in S.answered), note: S.drafts.note || '', fresh: action === 'fresh'});
+      S.page = 0;
       window.scrollTo({top: S.host.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth'});
       notes();
     });
-    if (action === 'replan') return guarded('plan', async () => { S.session = await call(`/course/lessons/${id}/plan/reset`, 'POST', {}); S.answered = {}; });
+    if (action === 'replan') return guarded('plan', async () => { S.session = await call(`/course/lessons/${id}/plan/reset`, 'POST', {}); S.answered = {}; S.page = 0; S.gaps = null; });
     if (action === 'attempt' || action === 'attempt-skip') {
       const text = (S.drafts['attempt:' + sec] || '').trim();
       if (action === 'attempt' && text.length < 10) { S.host.querySelector(`[data-draft="attempt:${sec}"]`)?.focus(); return; }
@@ -257,6 +331,18 @@
     S.explain[key] = res.reply || res.message ? res : {message: 'The tutor had nothing to add. The explanation above covers it.'};
     paint();
   }
+  async function makeGaps() {
+    if (S.gaps) return;
+    const lesson = S.id;
+    S.gaps = {loading: true}; paint();
+    await Promise.all(S.pending);
+    S.gapRequest = S.gapRequest || rid();
+    let res;
+    try { res = await call(`/course/lessons/${lesson}/gaps`, 'POST', {request_id: S.gapRequest}); }
+    catch (e) { res = {error: e.message}; S.gapRequest = null; }
+    if (S?.id !== lesson) return;
+    S.gaps = res; paint();
+  }
   function loadCallbacks() {
     for (const c of S.session.callbacks) {
       if (S.fire[c.id]) continue;
@@ -297,6 +383,7 @@
       S = {id: lesson.id, lesson, session: null, host: document.createElement('div'), rail: document.createElement('nav'), nodes: {},
         open: {}, more: {}, threads: {}, askOpen: {}, explain: {}, wrong: {}, answered: {}, drafts: {}, busy: {}, fire: {}, twist: null, pending: [], error: ''};
       S.host.className = 'sd-player'; S.rail.className = 'sd-rail-card sd-outline sd-path-rail';
+      try { S.page = Number(sessionStorage.getItem('sd-page:' + lesson.id)) || 0; } catch { S.page = 0; }
       const tmp = document.createElement('div');
       tmp.innerHTML = lesson.blocks.filter(b => b.type !== 'md').map(B().renderBlock).join('');
       S.handle = B().wire(tmp, lesson, {
@@ -316,6 +403,7 @@
     }
     slotNode?.replaceWith(S.host);
     railNode?.replaceWith(S.rail);
+    applyPage();
   }
   function reset() { S?.handle?.destroy(); S = null; }
   window.DesignLesson = {mount, reset, _test: {chunks, prose: (t, k) => { S = S || {more: {}}; return prose(t, k); }}};

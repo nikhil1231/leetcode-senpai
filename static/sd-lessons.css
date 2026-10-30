@@ -458,3 +458,24 @@ details.sd-goals summary { cursor:pointer; font-size:11px; letter-spacing:.08em;
 .sd-ask-open { background:none; border:0; padding:2px 0; color:var(--muted); font:inherit; font-size:12px; cursor:pointer; }
 .sd-ask-open::before { content:'? '; color:#7cb7ff; }
 .sd-ask-open:hover { color:var(--text); }
+.sd-weak-strong[hidden] { display:none; }
+.sd-interview-ask { border-left:3px solid var(--accent); background:var(--panel2); border-radius:0 8px 8px 0; padding:10px 14px; margin:0 0 12px; font-size:15px; color:var(--text); line-height:1.6; }
+.sd-interview-ask p { margin:0; }
+.sd-twist > p { margin:6px 0 14px; }
+/* Lesson pages */
+.sd-pager-top { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin:0 0 6px; }
+.sd-pager-dots { display:flex; gap:5px; flex-wrap:wrap; }
+.sd-pager-dots button { width:22px; height:6px; border-radius:3px; border:0; padding:0; background:var(--line); cursor:pointer; }
+.sd-pager-dots button.is-past { background:var(--accent-line); }
+.sd-pager-dots button.is-known.is-past, .sd-pager-dots button.is-known { background:#35d39a44; }
+.sd-pager-dots button.is-on { background:var(--accent); }
+.sd-pager-dots button:hover { background:var(--accent-strong); }
+.sd-page { min-height:240px; }
+.sd-page > .sd-sec:first-child { border-top:0; padding-top:8px; }
+.sd-known-intro { margin:10px 0 0; }
+.sd-pager { display:flex; justify-content:space-between; align-items:center; gap:12px; border-top:1px solid var(--line); padding:18px 0 6px; margin:18px 0 26px; }
+.sd-path-rail a.is-current { color:var(--text); border-left-color:var(--accent); background:var(--accent-soft); }
+.sd-gaps { padding-top:8px; }
+.sd-gaps h3 { margin:4px 0 14px; font-size:20px; }
+.sd-gap-q { border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:16px 18px; margin:0 0 16px; }
+.sd-gap-q textarea { width:100%; margin-top:6px; }

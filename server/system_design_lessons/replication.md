@@ -119,6 +119,7 @@ items:
 > A `DROP TABLE`, a bad migration or ransomware replicates to every follower within milliseconds. Backups — and point-in-time recovery from archived logs — let you go back in time. You need both (see the recovery lesson).
 
 ```interview
+ask: How would you design replication, read consistency, failover and disaster recovery for a PostgreSQL database spanning availability zones and regions?
 say: |
   "One Postgres leader with two replicas in other zones. Commits wait for one replica (semi-sync), so a leader crash loses no acknowledged write, for about 2 ms of extra latency. Reads go to replicas, except that each session carries the LSN of its last write and is only served by replicas at or past it. Failover is automated with a consensus-backed manager, like Patroni with etcd: the leader holds a lease, and an expired lease means it must step down, so we can't get split brain. A cross-region async replica handles disaster recovery, and nightly backups plus WAL archiving give point-in-time restore."
 followups:

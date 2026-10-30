@@ -173,6 +173,7 @@ steps:
 | Bad rule deployed | Shadow mode first; rules are versioned and can be rolled back instantly |
 
 ```interview
+ask: How would you design a distributed rate limiter for a high-throughput, multi-region API platform?
 say: |
   "Enforcement runs in the gateways: per request, one atomic Lua sliding-window check per applicable rule against a 40-shard Redis Cluster, about 1 ms, sized at 2M checks/s with 50% headroom. Rules live in gateway memory, pushed by a rules service, and new limits run in shadow mode before enforcing. Responses are 429 with Retry-After and RateLimit headers. If Redis is unreachable after a 5 ms timeout, ordinary endpoints fall back to local token buckets with a per-gateway share of the limit; login and SMS fail closed. Hot enterprise keys use local pre-aggregation, and multi-region limits are split per region."
 followups:

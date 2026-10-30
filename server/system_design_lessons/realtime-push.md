@@ -183,6 +183,7 @@ fix: |
 ```
 
 ```interview
+ask: How would you design real-time message delivery for a chat application that supports online and offline users and remains reliable during failures and deployments?
 say: |
   "Clients hold a WebSocket to a gateway tier, which authenticates with a short-lived token, heartbeats and registers the user's connection. Sending a message goes to a stateless chat service that appends it to the conversation log with a sequence number, acks the sender, and publishes to a per-user channel on a pub/sub backplane. The gateways holding that user's sockets push the frame. Offline users get an APNs/FCM notification. On reconnect, clients send their last acked sequence and we replay the gap from the store, so delivery is at-least-once with client-side dedupe. Clients reconnect with jittered backoff, and we drain gateways gradually during deploys."
 followups:

@@ -162,6 +162,7 @@ explain: |
 ```
 
 ```interview
+ask: How would you design a notification service that supports transactional alerts and bulk campaigns across multiple channels?
 say: |
   "Callers POST with an idempotency key; we persist the notification and an outbox entry, return 202, and route by category into a priority lane for security and transactional traffic and a bulk lane for social and marketing, each with dedicated capacity. Processors apply opt-outs, quiet hours and frequency caps, render per channel and locale, and create one delivery row per channel. Senders claim deliveries with leases, enforce per-provider token buckets and circuit breakers, pass collapse or idempotency keys, delete invalid tokens and suppress bounces. Campaigns expand segments in batches into the bulk lane. Delivery status flows back from provider callbacks."
 followups:

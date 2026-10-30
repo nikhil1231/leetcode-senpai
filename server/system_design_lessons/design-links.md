@@ -214,6 +214,7 @@ explain: Each step answers a measured trigger, not a hypothetical. A strong answ
 ```
 
 ```interview
+ask: How would you design a link shortener for 10 million links and 20,000 redirects per second, ensuring link updates become visible within 60 seconds?
 say: |
   "It's tiny data and read-heavy: 10M links is about 5 GB, but there are 20k redirects/s and a 60-second freshness bound. Postgres stores links keyed by a random 7-character base62 code with a unique constraint; creates take idempotency keys and updates check owner and version. Resolution goes CDN (max-age 30) → stateless resolver → Redis (TTL 20, DEL on write) → Postgres, so worst-case staleness is 50 s even if invalidation fails, and I return 302s rather than 301s. Unknown and disabled codes are cached as negatives too. Clicks are emitted asynchronously. If Redis dies, the replica and CDN carry the load while it recovers."
 followups:

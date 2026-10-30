@@ -150,6 +150,7 @@ reveal: |
 ```
 
 ```interview
+ask: How would you estimate traffic and storage needs for a social platform with 100 million daily active users posting text and media, and relate those estimates to design?
 say: |
   "Let me size it. 100M DAU × 10 reads and 1 write a day is about 1B reads and 100M writes per day: ~12k reads/s and ~1.2k writes/s on average, roughly 3× at peak, so 35k and 3.5k. Writes fit on one primary with headroom; reads want a cache plus replicas. At 1 KB per record that's ~100 GB/day or ~36 TB/year before replication — so we'll partition by time and archive. Media at 10% of writes × 1 MB is about 10 TB/day, so that goes to object storage behind a CDN."
 followups:

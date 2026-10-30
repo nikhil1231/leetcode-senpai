@@ -144,6 +144,7 @@ explain: Fan-out turns rare backend events into common user events, both for lat
 ```
 
 ```interview
+ask: How would you design an e-commerce product page that calls multiple backend services to meet latency, throughput and availability requirements during peak traffic?
 say: |
   "I'd set targets in percentiles — say p99 under 300 ms at peak load — and measure them at the edge, including errors. Since the page fans out to many services, backend tails dominate, so each dependency gets a timeout and a fallback, and I'd consider hedging for the slowest read calls. For capacity I'd run around 60% utilisation at peak, because queueing delay rises steeply beyond that, and use Little's Law to size pools. Availability composes, so anything not essential to the request goes async or optional."
 followups:

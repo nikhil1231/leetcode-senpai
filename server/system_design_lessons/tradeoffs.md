@@ -135,6 +135,7 @@ debrief: |
 ```
 
 ```interview
+ask: How would you justify the key design decisions in your ride-hailing system and explain when and how you would evolve it?
 say: |
   "Let me summarise the trade-offs. I chose one Postgres primary because trips need transactions and 3k writes/s fits with headroom — revisit at 50% capacity by sharding on city. Driver locations live in an in-memory geo index because they're 200k ephemeral updates a second, at the cost of losing them on restart, which is fine since drivers resend every 4 seconds. Matching is synchronous because riders wait for it; receipts and analytics are async. The biggest risk is a city-level hotspot during events, which is why matching is sharded by city and protected by admission control."
 followups:

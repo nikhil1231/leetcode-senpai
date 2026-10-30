@@ -180,6 +180,7 @@ explain: Notice that the state change happens last, after every check — and th
 ```
 
 ```interview
+ask: Walk me through a create-order request in your ordering system, from the client sending it to receiving a response.
 say: |
   "Let me trace one request first. The client resolves DNS and opens TLS to the nearest edge, which rate-limits and forwards over a warm connection to our load balancer. The order service authenticates the token, checks this user owns the cart, validates it and commits the order in one Postgres transaction before responding. The budget's roughly one RTT to the edge plus ~10 ms of server time. I'd give each hop a shrinking deadline and make the create idempotent, so a client retry after a timeout can't create a second order."
 followups:

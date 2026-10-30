@@ -179,6 +179,7 @@ items:
 ```
 
 ```interview
+ask: How would you design an asynchronous job-processing service that accepts submissions, runs background work, and remains reliable through crashes and peak traffic?
 say: |
   "Submission inserts the job with a unique (owner, request_id) and a payload hash, plus an outbox row, in one transaction, then returns 202 — so a crash either leaves nothing promised or a recoverable job. A relay publishes job IDs; workers claim with a conditional update and a 5-minute lease, write output to outputs/{job_id} so redos overwrite, mark succeeded, then ack. Duplicate deliveries see 'already succeeded' and just ack. After five attempts the job fails visibly with an error and goes to the DLQ. 15 workers only match peak, so we run up to 23, autoscaled on oldest-job age, and alert on that age plus outbox lag."
 followups:

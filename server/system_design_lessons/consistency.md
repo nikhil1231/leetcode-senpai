@@ -125,6 +125,7 @@ reveal: |
 ```
 
 ```interview
+ask: How would you choose consistency guarantees for an event ticketing system’s seat holds, confirmations and availability displays, balancing latency and user experience during network partitions?
 say: |
   "Different operations get different guarantees. Seat confirmation is linearizable — a single leader per event partition with a conditional write — so during a partition, the minority side refuses confirmations with a retry message. Seat maps and counts are eventually consistent from replicas and caches, up to about 10 seconds stale. Users always see their own holds, via session routing to the leader. If we used a leaderless store for anything critical, it'd be quorum reads and writes with R + W > N plus lightweight transactions for compare-and-set; everything else runs at ONE for latency."
 followups:

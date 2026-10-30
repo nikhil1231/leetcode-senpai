@@ -193,6 +193,7 @@ debrief: |
 ```
 
 ```interview
+ask: How would you design temporary holds and booking confirmation for a ticketing system handling reserved seating, general admission and major on-sales?
 say: |
   "Holding a seat is one conditional UPDATE: set held, hold ID and expiry WHERE the seat is available or its hold has expired, using the database's now(). Confirm is another conditional UPDATE checking status, hold ID, user and hold_expires_at ≥ now(), with a client booking ID so retries return the same booking. The cleanup job only tidies the seat map — correctness never depends on it. For big on-sales, a waiting room admits users at the rate the database can serve, and for general admission we pre-allocate inventory tokens in Redis so only token holders reach the transaction."
 followups:

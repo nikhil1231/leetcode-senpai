@@ -263,6 +263,7 @@ debrief: |
 ```
 
 ```interview
+ask: How would you design caching and freshness guarantees for a catalogue system where authors update entries and access depends on permissions?
 say: |
   "I'd define freshness per data type: most catalogue reads can be a few seconds stale, the author needs read-your-writes, and permission checks must be authoritative. For the cached data I'd invalidate on write — ideally driven by CDC from the database log so we never miss a write from another path — keep a TTL as a safety net, and protect against the stale-refill race with leases or version-checked fills. Worst-case staleness is the sum of TTLs along the read path plus replica lag, so I'd make sure that sum fits the requirement."
 followups:

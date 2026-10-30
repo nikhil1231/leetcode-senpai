@@ -134,6 +134,7 @@ items:
 ```
 
 ```interview
+ask: How would you distribute keys and replicas across a 20-node distributed cache as it grows, accounting for node failures, unequal server capacities, zone outages and hot keys?
 say: |
   "Cache nodes are chosen with consistent hashing — a ring with about 150 virtual nodes per server — so adding the 21st node moves around 5% of keys instead of 95%, and a failure spreads its load evenly over the survivors. Bigger nodes get proportionally more virtual nodes. For replicated storage we walk clockwise to the next three distinct servers in different zones. If we needed tighter balance under skew, I'd use consistent hashing with bounded loads; hot individual keys are handled separately, by splitting them."
 followups:

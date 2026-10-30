@@ -165,6 +165,7 @@ fix: |
 ```
 
 ```interview
+ask: How would you design a large-scale video upload and streaming platform, covering upload, processing, playback, operating costs and view counting?
 say: |
   "Bytes never touch app servers. Creators upload with resumable presigned multipart uploads to object storage; completion triggers a workflow that splits the video at keyframes and transcodes chunks in parallel into an ABR ladder, writing HLS segments under deterministic keys so retries are idempotent. Low renditions publish first, so it's watchable in minutes. Playback fetches a signed master manifest, and the player picks renditions per segment from CDN edges, with an origin shield collapsing misses. Egress (~280 PB/day) and storage (~800 PB/year) dominate cost, so popular videos get efficient codecs, and the long tail drops to cold storage with fewer renditions. Views are streamed events, deduplicated and bot-filtered, aggregated into counters."
 followups:

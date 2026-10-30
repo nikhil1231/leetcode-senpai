@@ -126,6 +126,7 @@ reveal: |
 ```
 
 ```interview
+ask: How would you design rate limiting for a distributed API gateway serving public APIs, including login and SMS endpoints?
 say: |
   "Two layers. At the edge, per-IP limits stop floods before they reach us. In the gateway, per-API-key limits use a sliding-window counter in Redis — an atomic Lua script, about 0.5 ms — with cost weights for expensive endpoints. Responses are 429 with Retry-After and RateLimit headers. Each gateway instance keeps a local token bucket as a fallback, so if Redis is down we fail open to approximate limits, except login and SMS, which fail closed. Monthly quotas are tracked separately in the billing database."
 followups:

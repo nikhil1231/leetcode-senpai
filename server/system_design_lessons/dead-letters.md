@@ -171,6 +171,7 @@ fix: |
 ```
 
 ```interview
+ask: How would you design failure handling for a message-stream consumer system that encounters malformed messages and dependency outages?
 say: |
   "Consumers classify failures. Transient errors are retried through delayed redelivery — retry topics at 1 and 10 minutes — so the main stream keeps moving. Permanent errors go to a DLQ with the payload, error and attempt count; anything arriving there alerts the owning team. Dependency-wide failures trip a circuit breaker that pauses consumption instead of dead-lettering good messages. After a fix we redrive from the DLQ, throttled, relying on idempotent processing with the original message IDs. We alert on per-partition lag age and DLQ inflow."
 followups:

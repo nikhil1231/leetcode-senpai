@@ -145,6 +145,7 @@ fix: |
 > If a lock only prevents *duplicate work* (two instances doing the same idempotent job), an occasionally broken lock is acceptable. If it protects *correctness* (no double charges, no corrupted files), the lock must come from a consensus system, and the protected resource must enforce fencing — or you redesign so the effect is idempotent and the lock becomes an optimisation.
 
 ```interview
+ask: How would you design coordination for a single active job scheduler across three availability zones, keeping job dispatch correct during instance pauses and failures?
 say: |
   "For the single active scheduler I'd use leader election in etcd: instances campaign for a key with a lease, the winner renews it every few seconds, and a lost lease means it must stop. Because a paused leader might still act, every job it dispatches carries the election revision as a fencing token, and the job store rejects stale tokens. etcd runs as 3 nodes, one per zone, tolerating one failure. Application data stays in Postgres; etcd only holds coordination state."
 followups:

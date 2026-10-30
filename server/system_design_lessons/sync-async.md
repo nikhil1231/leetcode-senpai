@@ -190,6 +190,7 @@ steps: |
 ```
 
 ```interview
+ask: How would you design an enterprise data export service, from accepting an export request to letting customers know it has completed or failed?
 say: |
   "Export is async: POST validates, inserts a job row with the idempotency key in the same transaction plus an outbox row, and returns 202 with /jobs/{id}. A relay publishes to the queue; workers lease jobs, write output under a deterministic key, mark the job succeeded and then ack. States are queued, running, succeeded and failed, with an error message for failures. Clients poll with Retry-After, and enterprise customers can register signed webhooks — at-least-once, so their receivers must dedupe on event ID. We alert on oldest-job age."
 followups:

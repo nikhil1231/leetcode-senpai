@@ -151,6 +151,7 @@ fix: |
 ```
 
 ```interview
+ask: How would you design a search autocomplete system handling 230,000 requests per second, with fast, fresh, personalised suggestions and controls for inappropriate content?
 say: |
   "Serving is a lookup: prefix → precomputed top-10, held in memory and sharded by a hash of the prefix. A daily batch job builds it from normalised, decayed query counts into a versioned table that we switch atomically; a streaming job adds hourly trending candidates merged at serve time. At ~230k requests/s, clients debounce by 100 ms and cache locally, the CDN caches 1–2 character prefixes, and the service answers in a millisecond or two. A serve-time blocklist removes bad suggestions within minutes, and signed-in users get their recent searches merged first."
 followups:

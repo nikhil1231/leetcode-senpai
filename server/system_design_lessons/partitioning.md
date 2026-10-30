@@ -133,6 +133,7 @@ explain: |
 ```
 
 ```interview
+ask: How would you design partitioning for a multi-tenant business platform supporting company dashboards, permissions and transactions as its customer base grows?
 say: |
   "Almost every query is per company, so I'd shard by company_id: dashboards, permissions and transactions stay on one shard. Keys hash to 4,096 logical partitions mapped onto physical nodes, so rebalancing moves partitions rather than rehashing keys. Three enormous customers get dedicated shards through a directory. Cross-company queries are admin-only and go to the warehouse via CDC. If we ever change the key, we'd dual-write, backfill and shift reads gradually."
 followups:

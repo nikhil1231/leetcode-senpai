@@ -476,6 +476,17 @@
     node.innerHTML=`<details class="sd-model-chip"><summary><span class="coach-dot ${catalog.coach_enabled?'is-on':''}"></span><span>${catalog.coach_enabled?esc(current):'Coach off'}</span></summary><div><p><b>Tutor:</b> ${esc(catalog.profiles.tutor.model)}</p><p><b>Assessor:</b> ${esc(catalog.profiles.assessor.model)}</p><p>${catalog.coach_enabled?'AI coaching is connected.':'Lessons, checks, and Quickfire work without AI coaching.'}</p></div></details>`;
   }
   window.Views.renderDesign=renderDesign;
+  // Ctrl/Cmd+Enter submits the answer box that has focus: its form, or the primary button beside it.
+  document.addEventListener('keydown',event=>{
+    if(event.key!=='Enter'||!(event.ctrlKey||event.metaKey)||event.isComposing)return;
+    const box=event.target;
+    if(!root()?.contains(box)||!/^(TEXTAREA|INPUT)$/.test(box.tagName)||box.dataset.field)return;
+    const form=box.closest('form');
+    if(form){event.preventDefault();form.requestSubmit();return;}
+    const scope=box.closest('.sd-pitch-step,.sd-attempt,.sd-twist,.sd-gap-q,.sd-callback-q,.sd-block,.sd-panel,.sd-warmup,.sd-chat-form,section');
+    const target=scope?.querySelector('.button.is-primary:not(:disabled), [data-b="check"]:not(:disabled)');
+    if(target){event.preventDefault();target.click();}
+  });
   window.SystemDesign={onTab,diagram,openView,isBusy:()=>busy||window.DesignLearning.isBusy()||window.DesignPapers.isBusy()||window.DesignDrills.isBusy(),
     repaint:paint,setCatalog(value){catalog=value;},
     async openCase(key){

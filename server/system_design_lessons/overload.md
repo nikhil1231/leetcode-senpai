@@ -123,6 +123,7 @@ explain: |
 ```
 
 ```interview
+ask: How would you keep an e-commerce platform responsive during a traffic surge when downstream services become slow or unavailable?
 say: |
   "Each instance caps in-flight requests and keeps a short bounded queue. Anything that would wait past its propagated deadline gets an immediate 503 with Retry-After. Shedding happens by priority — checkout and login over browsing, browsing over batch — at the edge where possible. Each dependency has its own bulkhead pool, a timeout inside the caller's budget, and a circuit breaker with a fallback. Optional features like recommendations, live stock counts and reviews sit behind degradation flags that trip automatically on latency. Clients retry with jittered backoff and a retry budget, so we don't create a retry storm."
 followups:

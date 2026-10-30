@@ -194,6 +194,7 @@ explain: Sync is pull-based and sequence-driven, so it's correct regardless of w
 ```
 
 ```interview
+ask: How would you design a chat system supporting 150 million concurrent connections, including message delivery, ordering, reconnection, delivery receipts, presence and large groups?
 say: |
   "Clients hold WebSockets to a gateway tier, about 300 gateways at 150M concurrent connections. A send goes to a stateless chat service that assigns the next per-conversation sequence, appends to a Cassandra-style table partitioned by (conversation, time bucket), deduplicates by the client message_id, and acks the sender. It then publishes to member channels on a backplane; gateways holding those devices push frames, and clients ack seqs for delivery receipts. Offline members get APNs/FCM pushes and resume by seq when they reconnect. Receipts are monotonic per-member counters, presence is heartbeats with TTL fanned out only to viewers, and big channels use per-channel subscriptions."
 followups:

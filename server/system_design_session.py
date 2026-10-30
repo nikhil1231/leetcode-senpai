@@ -354,3 +354,63 @@ def redesign_public(doc):
     r = redesign_rubric(doc['lesson_id'])
     return {'id': doc['id'], 'lesson_id': doc['lesson_id'], 'score': doc.get('score'), 'grade': doc.get('grade'),
             'points': r['points'], 'model': r['model'], 'stages': r['stages']}
+
+
+# ---------- Gap questions: new questions aimed at what this pass got wrong ----------
+GAP_WINDOW = 12 * 3600
+
+
+def gaps_public(doc):
+    answers = doc.get('answers', {})
+    qs = []
+    for n, q in enumerate(doc.get('questions', [])):
+        a = answers.get(str(n))
+        item = {'n': n, 'question': q['question'], 'targets': q['targets']}
+        if a:
+            item.update(answer=a['text'], grade=a.get('grade'), points=q['points'], model=q['model'], message=a.get('message'))
+        qs.append(item)
+    return {'id': doc['id'], 'empty': doc.get('empty', False), 'theme': doc.get('theme', ''), 'questions': qs,
+            'mistakes': doc.get('mistake_count', 0)}
+
+
+@router.post('/course/lessons/{key}/gaps')
+async def make_gaps(key: str, body: TwistBody, store=Depends(store_for)):
+    """Generate gap questions from this pass's mistakes. Idempotent per request id."""
+    lesson = lesson_or_404(key)
+    gid = 'gaps_' + body.request_id
+    old = store.get_design_record(gid)
+    if old:
+        return gaps_public(old)
+    state = state_of(store, key)
+    since = (state.get('plan') or {}).get('at') or time.time() - GAP_WINDOW
+    found = adaptive.mistakes(lesson, store.list_design_records(), since)
+    if not found:
+        return gaps_public(put(store, gid, {'kind': 'gaps', 'lesson_id': key, 'created_at': time.time(), 'empty': True}))
+    result, message = await tutor.gap_questions(lesson, found, store.get_settings())
+    if not result:
+        raise HTTPException(503, message)
+    return gaps_public(put(store, gid, {'kind': 'gaps', 'lesson_id': key, 'created_at': time.time(),
+                                        'mistake_count': len(found), 'theme': result['theme'],
+                                        'questions': result['questions'], 'answers': {},
+                                        'model': result['model'], 'prompt_version': result['prompt_version']}))
+
+
+class GapAnswer(BaseModel):
+    n: int = Field(ge=0, le=5)
+    text: str = Field(min_length=1, max_length=4000)
+
+
+@router.post('/course/gaps/{gid}/answer')
+async def answer_gap(gid: str, body: GapAnswer, store=Depends(store_for)):
+    doc = store.get_design_record(gid)
+    if not doc or doc.get('kind') != 'gaps' or body.n >= len(doc.get('questions', [])):
+        raise HTTPException(404, 'Unknown question')
+    if str(body.n) in doc['answers']:
+        return gaps_public(doc)
+    q = doc['questions'][body.n]
+    doc = put(store, gid, {**doc, 'answers': {**doc['answers'], str(body.n): {'text': body.text, 'at': time.time()}}}, doc['revision'])
+    result, message = await coach.grade_recall({'prompt': q['question'], 'points': q['points'], 'model': q['model']},
+                                               body.text, store.get_settings())
+    answer = {**doc['answers'][str(body.n)], 'grade': result, 'message': message}
+    doc = put(store, gid, {**doc, 'answers': {**doc['answers'], str(body.n): answer}}, doc['revision'])
+    return gaps_public(doc)

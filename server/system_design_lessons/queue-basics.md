@@ -157,6 +157,7 @@ fix: |
 ```
 
 ```interview
+ask: How would you design order-event processing for a checkout system handling 300 orders per second, with warehouse, email and loyalty workflows?
 say: |
   "Checkout commits the order and publishes OrderPlaced. Warehouse, email and loyalty each have their own queue subscribed to it, so a slow consumer only grows its own backlog. Each queue has competing workers sized for peak drain with headroom: at 300 orders/s and 0.2 s per email, that's 60 busy workers, so I'd run about 90 and autoscale on oldest-message age. Urgent emails get a separate queue. Bulk tenants are fair-scheduled. Alerts fire on age against each consumer's latency target."
 followups:

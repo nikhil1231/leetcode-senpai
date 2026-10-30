@@ -154,6 +154,7 @@ debrief: |
 ```
 
 ```interview
+ask: How would you design observability for a multi-tenant service platform that handles requests through HTTP APIs and asynchronous message queues?
 say: |
   "Every service emits RED metrics as histograms with low-cardinality labels — service, endpoint, status, region — and uses OpenTelemetry to propagate trace context through HTTP and queue messages. Logs are structured JSON with trace and request IDs. Traces are tail-sampled so every error and slow request is kept. Pages fire only on SLO burn rates for user-facing symptoms, with runbooks and owners. Tenant- and user-level questions go to wide events in a columnar store, not metric labels."
 followups:

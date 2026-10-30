@@ -145,6 +145,7 @@ debrief: |
 > Recovery that's only done during real incidents is slow and error-prone. Run **game days**: restore last night's backup, fail over a region in staging (or production, for the brave), kill a dependency. Measure actual RTO and RPO and fix what breaks. Netflix's Chaos Monkey made "instances die" a daily non-event. The same principle applies to backups and regional failover.
 
 ```interview
+ask: How would you design backup and disaster recovery for an e-commerce platform that stores orders, payments and analytics data in PostgreSQL?
 say: |
   "Targets first: orders and payments get RPO under a minute and RTO under 30 minutes; analytics gets a day. Postgres takes nightly base backups plus continuous WAL archiving to object storage in another region and account, with object lock so backups can't be deleted. A warm standby in the second region gives the 30-minute RTO. Restores are automated weekly into a scratch environment with integrity checks, and the measured duration is tracked. For accidental deletes we restore beside production and copy back surgically, then reconcile caches, search and downstream consumers."
 followups:

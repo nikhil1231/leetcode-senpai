@@ -178,6 +178,7 @@ explain: Payment is out of scope for the baseline, but it's the classic follow-u
 ```
 
 ```interview
+ask: How would you design an event seat-reservation system that prevents double booking, supports purchase retries and high-demand on-sales, and allows seat maps to lag by ten seconds?
 say: |
   "Two paths. Browsing serves a per-event seat map cached and rebuilt from a replica every 2 seconds — inside the 10-second allowance. Holds and confirms go to the primary as single conditional UPDATEs on the seat row, judged by the database clock: a hold succeeds only if the seat is available or its hold has expired; a confirm requires the matching hold_id, owner, status held and an unexpired deadline. Confirms carry a client booking_id, so retries return the same result. Expiry correctness lives in those predicates; the sweeper only tidies the map. Seats are partitioned by event, and on-sales go through a waiting room admitting about 30k users a minute."
 followups:

@@ -227,6 +227,7 @@ debrief: |
 ```
 
 ```interview
+ask: How would you design a Redis-backed caching layer to handle read-hot keys, write-hot counters, cache stampedes and a complete cache outage?
 say: |
   "Two different problems. For a read-hot key, sharding doesn't help because the key lives on one node, so I'd add a short in-process cache in front of Redis, or split the key into N copies on different shards; write-hot counters get sharded sub-counters or batched increments. For stampedes I'd coalesce concurrent misses with single-flight per instance plus a lease or short lock cluster-wide, serve stale while revalidating, and jitter TTLs so keys don't expire together. And I'd treat a cache outage as a real scenario: cap database concurrency, have a degraded mode, and warm gradually."
 followups:

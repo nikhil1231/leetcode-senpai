@@ -283,6 +283,7 @@ fix: |
 ```
 
 ```interview
+ask: How would you design caching for a read-heavy, database-backed API, covering read and write behaviour, capacity planning, freshness and cache failures?
 say: |
   "I'd put a cache-aside layer in front of the database for the read-heavy endpoints. Reads check Redis, fall back to the database on a miss and populate with a TTL; writes commit to the database and then delete the key. The database stays the source of truth, so losing the cache makes us slower, not wrong. I'd size it for the working set — roughly N hot items × entry size × ~1.5 overhead — and target a hit rate that keeps the database under its budget, while making sure the miss path survives a cold start."
 followups:

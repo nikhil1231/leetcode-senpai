@@ -184,6 +184,7 @@ reveal: |
 > Networks deliver at least once (with retries) or at most once (without). "Exactly-once processing" is at-least-once delivery **plus** idempotent effects at every boundary that matters. When someone claims exactly-once, ask: exactly once *what* — delivery, processing, or the external side effect? And deduplicated *where*?
 
 ```interview
+ask: How would you design timeout and retry handling for an e-commerce order-creation API that charges customers through an external payment provider?
 say: |
   "Any timed-out call has an unknown outcome, so creates take an Idempotency-Key header. The server claims the key with a unique constraint in the same transaction as the order, stores a request fingerprint and the response, returns 409 while the original is in progress, and keeps keys for 24 hours. We pass a derived key to the payment provider too. Clients retry only retryable errors, at one layer, with exponential backoff, full jitter and a retry budget, inside the overall deadline."
 followups:

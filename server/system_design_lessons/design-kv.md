@@ -159,6 +159,7 @@ explain: |
 ```
 
 ```interview
+ask: How would you design a distributed key-value store for 100 TB of data, covering scalability, availability, consistency and failure recovery?
 say: |
   "Keys hash onto a ring with ~256 virtual nodes per server; each key's preference list is the next 3 distinct nodes in 3 zones. Any node coordinates: writes go in parallel to all 3 replicas and succeed after W acks; reads ask R replicas, return the newest version, and read-repair stale ones. QUORUM (R=W=2) is the default, with ONE available for latency-sensitive reads. When a replica is down, hinted handoff keeps writes available; Merkle-tree anti-entropy converges cold keys; gossip plus a phi-accrual detector manage membership. Conflicts use version vectors, with LWW only for overwrite-only tables, and compare-and-set goes through Paxos-backed lightweight transactions. Each node is an LSM engine with Bloom filters. 100 TB × RF3 at 4 TB usable per node is about 75–80 nodes."
 followups:

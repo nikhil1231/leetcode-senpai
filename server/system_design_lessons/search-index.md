@@ -168,6 +168,7 @@ steps: |
 ```
 
 ```interview
+ask: How would you design full-text product search for an e-commerce catalogue whose source of truth is Postgres?
 say: |
   "Products stay in Postgres. A Debezium CDC stream feeds an indexing worker that writes to OpenSearch with external versioning, so out-of-order events can't regress a document, and deletes are propagated. Fields use a stemming English analyzer, with synonyms and a keyword sub-field for exact brand matches. Ranking is BM25 with title boosts plus popularity and stock signals, re-ranked for the top 100. The index has 6 primary shards of about 30 GB each, with one replica, and queries scatter-gather top-k. Mapping changes reindex into a new index and swap an alias. Search is about one second behind writes, so after saving we show the product from the database."
 followups:

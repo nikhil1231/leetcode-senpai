@@ -147,6 +147,7 @@ steps: |
 ```
 
 ```interview
+ask: How would you design a highly available API tier serving HTTP/2 clients, covering authentication, traffic distribution, health checks, deployments and availability-zone failures?
 say: |
   "The API tier is stateless: sessions are short-lived signed access tokens verified locally, with refresh tokens checked against Redis so we can revoke. An L7 load balancer does per-request least-outstanding — or power-of-two — balancing, which matters because the clients use HTTP/2. Liveness is process-local; readiness reflects warm-up and overload. Deploys add new instances, drain old ones and exit after in-flight requests finish. We run three zones sized so any two carry peak."
 followups:

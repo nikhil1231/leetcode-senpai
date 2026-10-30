@@ -117,6 +117,7 @@ explain: |
 ```
 
 ```interview
+ask: How would you scale a product catalogue and ordering API currently handling 8,000 requests per second as demand grows?
 say: |
   "Before adding servers I'd find the limiting resource. At 8k rps the API is fine, but the database is at 85% CPU on three queries. The plan in order: fix those queries with a composite index, cache product reads (about 90% hit rate), route the remaining tolerant reads to replicas, and move order emails to a queue. That gives roughly 5× headroom without sharding. The API autoscales on concurrency, capped so its total connection pools stay under the database's limit via PgBouncer. Sharding by tenant is the next step, triggered at about 60% sustained write capacity."
 followups:

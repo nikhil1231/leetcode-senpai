@@ -143,6 +143,7 @@ explain: Equality, then sort or range, then covering columns. A partial index re
 ```
 
 ```interview
+ask: How would you optimise database queries for an order system showing each customer’s latest orders, 20 per page, and an operations dashboard listing pending orders?
 say: |
   "The hot query is a customer's recent orders, newest first, 20 per page. I'd index `(customer_id, created_at DESC)` — equality first, then the sort column — so it's a single seek and the LIMIT stops after 20 rows. If it needs only a couple of columns, I'd INCLUDE them for an index-only scan. For the ops dashboard's 'pending orders' query, a partial index on `created_at WHERE status = 'pending'`. I'd confirm both with EXPLAIN ANALYZE on production-sized data, and keep the index count small because each one costs every insert."
 followups:

@@ -146,6 +146,7 @@ steps: |
 ```
 
 ```interview
+ask: How would you design the data model for an e-commerce ordering system, covering order retrieval, customer history, inventory correctness and future growth?
 say: |
   "The access patterns are: fetch an order with its items by ID, list a customer's recent orders, and an invariant that items reference real products and stock never goes negative. That's relational — orders, order_items and products, with foreign keys, a composite index on (customer_id, created_at) and a conditional stock update. Product attributes vary by category, so they go in a JSONB column. The event history has its own append-only table, partitioned by month. Schema changes follow expand–migrate–contract."
 followups:

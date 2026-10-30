@@ -60,7 +60,7 @@ class LessonError(ValueError):
 
 # Prose values are written plainly (colons, quotes and # are common in them); they are
 # turned into literal block scalars before YAML parsing so authors needn't quote them.
-PROSE = re.compile(r'^(\s*(?:- )?)(prompt|explain|explanation|reveal|intro|caption|steps|hint|given|model|say|weak|strong|why|text|label|note|takeaway|title|q|a|summary|debrief): (.+)$', re.M)
+PROSE = re.compile(r'^(\s*(?:- )?)(prompt|explain|explanation|reveal|intro|caption|steps|hint|given|model|say|weak|strong|why|text|label|note|takeaway|title|q|a|summary|debrief|ask): (.+)$', re.M)
 
 
 def _prose(text):

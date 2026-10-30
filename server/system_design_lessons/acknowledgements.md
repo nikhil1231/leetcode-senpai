@@ -144,6 +144,7 @@ reveal: |
 ```
 
 ```interview
+ask: How would you design reliable message delivery for an event-processing pipeline that updates a database and calls external APIs?
 say: |
   "Delivery is at-least-once everywhere. Producers publish with confirms (acks=all to a topic with RF 3 and min ISR 2), consumers process and then ack. Each consumer is idempotent: it inserts the event ID into a processed table in the same transaction as its effect, and passes idempotency keys to external APIs. Visibility timeouts are about 2× p99 with lease extension for long jobs, and messages that keep failing go to a dead-letter queue after N attempts."
 followups:

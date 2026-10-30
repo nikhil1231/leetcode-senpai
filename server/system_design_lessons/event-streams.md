@@ -133,6 +133,7 @@ Producers and consumers deploy independently, so event formats must evolve compa
 > Idempotent producers stop duplicates caused by producer retries. Transactions make "consume from topic A, produce to topic B, commit offsets" atomic, so a stream processor's output reflects each input once. None of that covers side effects *outside* Kafka — a database write or an email — which still need idempotent handling.
 
 ```interview
+ask: How would you design an event-streaming platform for order lifecycle events and customer-profile updates that serves multiple downstream systems?
 say: |
   "Order events go to a topic keyed by order_id, so each order's lifecycle stays ordered while load spreads across 48 partitions — sized for twice today's 240 MB/s at about 12 MB/s per consumer. Each downstream system is its own consumer group, committing after processing and deduplicating by event ID. We alert on lag in minutes per partition. Retention is 7 days for replay, and the customer-profile topic is compacted so new services can rebuild state. Schemas are Avro in a registry with backward compatibility enforced."
 followups:

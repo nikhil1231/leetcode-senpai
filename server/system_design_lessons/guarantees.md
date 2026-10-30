@@ -174,6 +174,7 @@ debrief: |
 ```
 
 ```interview
+ask: How would you define the requirements and guarantees for a seat-booking system before starting the design?
 say: |
   "Before drawing anything: in scope are holding and confirming seats; payments and seat-map rendering are out. Targets — 2,000 holds/s at peak, p99 under 300 ms, 99.95% of confirmations succeed monthly. The invariant is at most one confirmed booking per seat, and a hold is confirmable only by its owner before expiry, even under concurrent requests and retries. Browsing can be about 10 seconds stale; holds and confirmations must be authoritative. I'll design the write path for the invariant first, then optimise reads."
 followups:
