@@ -185,6 +185,23 @@ model: |
   The coordinator sends the write to all three replicas in parallel. Two acknowledge, which meets W=2, so the client gets success. For the third, which is unreachable, a hint — "this write belongs to replica C" — is stored on another node and replayed when C comes back. Meanwhile quorum reads (R=2) always include at least one replica with the new value, and if a read touches C after it returns but before the hint lands, the coordinator writes the newer version back to it. If hints were lost or expired, periodic anti-entropy compares Merkle trees between replicas and repairs any ranges that differ.
 ```
 
+```bug
+style: critique
+title: A candidate's key-value store
+prompt: The candidate describes a Dynamo-style store with N=3. Which claims would you push back on?
+lang: text
+code: |
+  Keys are placed on a consistent-hash ring with many virtual nodes per server.
+  Each key is replicated to the next three distinct servers on the ring, in different zones.
+  They choose R=1 and W=1 and say this still guarantees reads see the latest write.
+  Conflicting versions are detected with version vectors and returned to the client to merge.
+  Hinted handoff stores writes for a down replica, and anti-entropy with Merkle trees repairs drift.
+  Each node stores data in an LSM tree: a write-ahead log, memtable and sorted files.
+bug: [3]
+explain: |
+  **Line 3:** with N=3, R=1, W=1 gives R + W = 2, not more than N, so a read can hit a replica that missed the latest write. Read-your-latest needs overlapping quorums (for example R=2, W=2). R=1, W=1 is a valid choice for speed, but only with eventual consistency.
+```
+
 ```questions
 - kind: check
   type: numeric

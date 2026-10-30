@@ -16,7 +16,7 @@ sources:
   - ['Google SRE Workbook: Alerting on SLOs', 'https://sre.google/workbook/alerting-on-slos/']
 ---
 
-> [!story] The tail at scale
+> [!incident] The tail at scale
 > Google's "The Tail at Scale" paper describes a service whose individual servers answered in about 10 ms, with a 99th percentile of one second. One slow server in a hundred barely mattered for single requests. But a user request that fans out to 100 servers waits for the slowest one — so **63%** of user requests took over a second. Nothing was broken. That was just arithmetic.
 
 ## Latency is a distribution, not a number

@@ -35,6 +35,7 @@ from .system_design_learning import router as system_design_learning_router
 from .system_design_items import router as system_design_items_router
 from .system_design_papers import router as system_design_papers_router
 from .system_design_drills import router as system_design_drills_router
+from .system_design_session import router as system_design_session_router
 from .activity import router as activity_router
 from .senpai import jobscout as senpai_jobscout, service as senpai_service, worker as senpai_worker
 from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
@@ -71,6 +72,7 @@ app.include_router(system_design_learning_router)
 app.include_router(system_design_items_router)
 app.include_router(system_design_papers_router)
 app.include_router(system_design_drills_router)
+app.include_router(system_design_session_router)
 app.include_router(activity_router)
 app.include_router(senpai_router)
 # The daily review API, under its old path (kept for compatibility) and under Senpai's.

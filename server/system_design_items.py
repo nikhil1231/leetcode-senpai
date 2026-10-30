@@ -21,6 +21,7 @@ from .system_design_learning import active, rows
 router = APIRouter(prefix='/api/system-design', tags=['system-design-ledger'])
 SECTION = 'system-design'
 DRILL_CATEGORY = ('skill-drills', 'Skill drills', 'Short decisions from the original design cases.')
+REDESIGN_PASS = 0.75
 ESTIMATION_CATEGORY = ('estimation', 'Estimation drills', 'Back-of-envelope arithmetic, one template per square.')
 
 
@@ -44,6 +45,11 @@ def block_id(lesson, key):
     return f'{lesson}:{key}'
 
 
+def is_walkthrough(lesson):
+    """Full design walkthroughs: attempt-first in lessons, and redesigned from memory later."""
+    return lesson.get('category') in ('designs', 'casebook') and lesson['id'].startswith('design-')
+
+
 def _catalogue():
     items = []
     for key, lesson in LESSONS.items():
@@ -57,6 +63,9 @@ def _catalogue():
                 q = QUESTIONS[qid]
                 items.append({**base, 'id': qid, 'kind': 'check' if q['kind'] == 'quiz' else 'quickfire',
                               'label': plain(q['prompt'])})
+        if is_walkthrough(lesson):
+            items.append({**base, 'id': 'redesign:' + key, 'kind': 'redesign',
+                          'label': 'Redesign from memory: ' + lesson['title']})
     for key, ex in EXERCISES.items():
         items.append({'section': SECTION, 'category': DRILL_CATEGORY[0], 'topic': 'skill:' + ex['skill'],
                       'id': 'exercise:' + key, 'kind': 'exercise', 'label': plain(ex['title'])})
@@ -110,6 +119,10 @@ def events(records):
                 q = r['questions'][int(n)]
                 out.append({'item': 'drill:' + q['template'], 'at': a['at'], 'marks': 1 if a['correct'] else 0,
                             'max': 1, 'clean': bool(a['correct']), 'source': 'drill'})
+        elif r.get('kind') == 'redesign' and r.get('score') is not None:
+            ok = r['score'] >= REDESIGN_PASS
+            out.append({'item': 'redesign:' + r['lesson_id'], 'at': r['created_at'], 'marks': 1 if ok else 0,
+                        'max': 1, 'clean': ok, 'source': 'redesign'})
         elif r.get('kind') == 'practice' and r.get('answered_at'):
             ok = bool(r.get('correct')) and not r.get('revealed')
             out.append({'item': 'exercise:' + r['exercise_id'], 'at': r['answered_at'], 'marks': 1 if ok else 0,
@@ -172,6 +185,8 @@ def ledger(records, now=None):
     return {'knowledge': s['knowledge'], 'total': s['total'], 'pct': s['pct'], 'counts': s['counts'],
             'due': s['due'], 'mistakes': s['mistakes'], 'history': s['history'], 'daily': s['daily'], 'today': today,
             'heatmap': heatmap(s['items']),
+            'redesign_due': [{'lesson_id': v['topic'], 'title': names[v['topic']]['title'], 'status': v['status']}
+                             for v in s['items'] if v['kind'] == 'redesign' and v['status'] in ('fading', 'shaky')],
             'records': knowledge.records(evs, paper_records(records), sprint_records(records)),
             'grades': [{'grade': g, 'floor': f, 'meaning': m} for g, f, m in knowledge.GRADES]}
 

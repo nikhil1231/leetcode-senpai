@@ -4,10 +4,10 @@ import secrets
 import time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from . import auth, system_design_coach as coach
+from . import auth, system_design_coach as coach, system_design_variants as variants
 from .store import get_store
 from .system_design_curriculum import (CATEGORIES, LESSONS, QUESTIONS, VERSION,
                                         LEGACY_LESSONS, public_lesson, public_question)
@@ -65,6 +65,7 @@ class NextQuestion(BaseModel):
     lesson_id: str = ''
     difficulty: Literal['mixed', 'beginner', 'standard'] = 'mixed'
     mode: Literal['adaptive', 'mistakes', 'learned'] = 'adaptive'
+    question_id: str = ''  # one specific question, e.g. a callback inside a later lesson
     recent: list[str] = Field(default_factory=list, max_length=100)
 
 
@@ -269,10 +270,14 @@ def start_quiz(body: StartQuiz, store=Depends(store_for)):
             raise HTTPException(409, 'Request ID already used')
         return quiz_public(old)
     ids = LESSONS[body.lesson_id]['quiz_ids']
+    records = store.list_design_records()
+    seen = {a['question_id'] for a in rows(records)}
+    # A retake serves fresh variants of questions already answered, when the tutor has written them.
+    contracts = {k: (k in seen and variants.take(store, records, k)) or deepcopy(QUESTIONS[k]) for k in ids}
     doc = put(store, key, {'kind': 'quiz', 'lesson_id': body.lesson_id,
                           'content_version': LESSONS[body.lesson_id].get('version', VERSION),
                           'created_at': time.time(), 'question_ids': ids, 'answers': {},
-                          'contracts': {k: deepcopy(QUESTIONS[k]) for k in ids}})
+                          'contracts': contracts})
     return quiz_public(doc)
 
 
@@ -332,7 +337,8 @@ def grade(contract, body, assisted, now):
 
 
 @router.post('/course/quizzes/{key}/answer')
-def quiz_answer(key: str, body: Answer, store=Depends(store_for)):
+def quiz_answer(key: str, body: Answer, background: BackgroundTasks, store=Depends(store_for)):
+    background.add_task(variants.ensure, store, body.question_id)
     for _ in range(3):
         doc = read(store, key, 'quiz')
         if body.question_id not in doc['question_ids']:
@@ -378,6 +384,8 @@ def next_question(body: NextQuestion, store=Depends(store_for)):
         raise HTTPException(422, 'Unknown category')
     if body.lesson_id and body.lesson_id not in LESSONS:
         raise HTTPException(422, 'Unknown topic')
+    if body.question_id and not active(body.question_id):
+        raise HTTPException(422, 'Unknown question')
     records = store.list_design_records()
     answers = rows(records)
     review = schedules(answers)
@@ -389,6 +397,8 @@ def next_question(body: NextQuestion, store=Depends(store_for)):
                   and (body.difficulty == 'mixed' or q['difficulty'] == body.difficulty)
                   and (body.mode != 'learned' or q['lesson_id'] in learned)
                   and (body.mode != 'mistakes' or (q['id'] in latest and needs_repair(latest[q['id']])))]
+    if body.question_id:
+        candidates = [QUESTIONS[body.question_id]]
     if not candidates:
         return {'empty': True, 'message': 'No matching questions yet. Try mixed practice or read a lesson first.'}
     # Avoid immediate repeats when alternatives exist, including in a narrow topic.
@@ -412,6 +422,8 @@ def next_question(body: NextQuestion, store=Depends(store_for)):
         return (3, schedule['due_at'] if schedule else now)
     best = min(map(priority, pool))
     item = secrets.choice([q for q in pool if priority(q) == best])
+    if item['id'] in latest:
+        item = variants.take(store, records, item['id']) or item
     order = [c['id'] for c in item['choices']]
     secrets.SystemRandom().shuffle(order)
     doc = put(store, key, {'kind': 'quickfire', 'question_id': item['id'], 'lesson_id': item['lesson_id'],
@@ -426,8 +438,9 @@ def get_fire(key: str, store=Depends(store_for)):
 
 
 @router.post('/quickfire/{key}/answer')
-def fire_answer(key: str, body: Answer, store=Depends(store_for)):
+def fire_answer(key: str, body: Answer, background: BackgroundTasks, store=Depends(store_for)):
     doc = read(store, key, 'quickfire')
+    background.add_task(variants.ensure, store, doc['question_id'])
     if body.question_id != doc['question_id']:
         raise HTTPException(422, 'Question does not match this attempt')
     if doc.get('result'):

@@ -63,6 +63,7 @@
     const fix = d.mistakes.fix.length, due = d.due, next = slot.dataset.next, title = slot.dataset.nextTitle;
     let action;
     if (fix >= 3) action = [`Clear ${Math.min(fix, 99)} mistakes →`, 'paper', 'data-scope="mistakes"', 'Mistakes are the cheapest marks to win back. A short paper of them, marked at the end.'];
+    else if (d.redesign_due?.length) action = [`Redesign from memory: ${d.redesign_due[0].title} →`, 'view', `data-view="redesign/${esc(d.redesign_due[0].lesson_id)}"`, 'A design you studied is fading. Rebuilding it from a blank page is the strongest review there is.'];
     else if (due >= 5) action = [`Top up ${due} fading items →`, 'paper', 'data-scope="review"', 'These are slipping. Reviewing them now, before they are gone, grows their memory the most.'];
     else if (next) action = [`Continue: ${title} →`, 'view', `data-view="lesson/${esc(next)}"`, 'Nothing urgent to review. Learn the next lesson in the course.'];
     else action = ['Sit a mixed paper →', 'paper', 'data-scope="mixed"', 'The course is done and nothing is due. Keep it sharp with a timed paper.'];

@@ -199,6 +199,23 @@ model: |
   If each gateway counted on its own, a client spread across 200 gateways could make 200 times its limit. Instead each check runs one atomic Lua script on the Redis shard that owns that API key: it updates a sliding-window counter and returns allow or deny plus the remaining budget for the RateLimit headers. Because the script is atomic, concurrent requests can't race past the limit. If the shard is unreachable, gateways give up after a few milliseconds and use a local token bucket with their share of the limit, so the API stays up with approximate limits — except endpoints like login or SMS, which fail closed because letting abuse through there is worse.
 ```
 
+```bug
+style: critique
+title: A candidate's rate limiter
+prompt: The candidate designs a limiter for 200 gateways and 2M checks/s with a 2 ms budget. Which claims would you push back on?
+lang: text
+code: |
+  Each gateway keeps its own counter per user and allows 100 requests/minute.
+  Counters live in a sharded Redis cluster, keyed by user and window, updated with an atomic script.
+  The limit check runs in the gateway, before the request reaches backend services.
+  Rules are pushed to gateways from a config service and cached locally.
+  If Redis is unreachable, every request is rejected so the limit is never exceeded.
+  Rejected requests get 429 with Retry-After.
+bug: [1, 5]
+explain: |
+  **Line 1:** 200 independent local counters let a user make up to 200 × 100 requests/minute, not 100. Local counters need a shared store or an explicit split of the budget. **Line 5:** failing closed turns a limiter outage into a full API outage. Most limiters fail open (or fall back to local approximate limits) for ordinary traffic, keeping fail-closed only for abuse-critical paths.
+```
+
 ```questions
 - kind: check
   type: numeric

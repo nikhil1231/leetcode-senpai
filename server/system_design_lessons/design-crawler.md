@@ -185,6 +185,23 @@ model: |
   Discovered URLs are scored and dropped into priority front queues, so important and stale pages get selected first. A router then distributes them into per-host back queues, one host per queue. A heap orders hosts by their next allowed fetch time — set from robots.txt crawl delays, defaults, and how quickly the server is responding. A fetcher pops the host whose time has come, fetches one URL from its queue, and pushes the host back with a new time. Because hosts are hashed to crawler nodes, each host's queue and timing live on exactly one machine, so no two fetchers can ever hammer the same site.
 ```
 
+```bug
+style: critique
+title: A candidate's web crawler
+prompt: The candidate designs a crawler fetching a billion pages a month. Which claims would you push back on?
+lang: text
+code: |
+  The frontier is a single global priority queue; fetchers pop the highest-priority URL next.
+  Seen URLs are tracked in a Bloom filter, with occasional false positives meaning a few pages are skipped.
+  robots.txt is fetched and cached per host, and obeyed.
+  Near-duplicate pages are detected with SimHash so mirrors aren't stored many times.
+  URLs are normalised before the seen check (lowercase host, remove fragments, sort query parameters).
+  Each fetcher retries a failing host immediately until it responds.
+bug: [1, 6]
+explain: |
+  **Line 1:** a single priority queue lets many fetchers hit the same high-priority host at once. Politeness needs per-host queues with a minimum delay, with priority chosen across hosts. **Line 6:** immediate retries hammer a struggling host and trap fetchers. Back off per host, cap attempts, and move on.
+```
+
 ```questions
 - kind: check
   type: numeric

@@ -95,12 +95,11 @@
     const state=catalog.course.lessons.find(l=>l.id===lesson.id);
     const cat=catalog.course.categories.find(c=>c.id===lesson.category);
     const number=catalog.course.lessons.findIndex(l=>l.id===lesson.id)+1;
-    const heads=B().outline(lesson);
     const done=Object.values(lessonState?.activities||{}).filter(a=>a.done).length;
     return `<div class="sd-breadcrumb">${btn('← Curriculum','navigate','data-view="curriculum"')}<span>/ ${esc(cat.title)}</span></div>`+
       `<div class="sd-page-intro sd-rich-intro"><span class="sd-eyebrow">LESSON ${number} · ${lesson.minutes} MIN · ${lesson.interactive} ACTIVITIES</span><h2 id="sd-heading" tabindex="-1">${esc(lesson.title)}</h2><p>${rich(lesson.principle)}</p></div>`+
-      `<div class="sd-rich-layout"><article class="sd-rich"><div class="sd-goals"><b>By the end you can</b><ul>${lesson.objectives.map(o=>`<li>${rich(o)}</li>`).join('')}</ul></div><div id="sd-lesson-blocks"></div>${checkHtml(state)}<footer class="sd-lesson-foot"><details><summary>Further reading</summary><ul>${lesson.sources.map(([title,url])=>`<li><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></li>`).join('')}</ul></details><div class="sd-actions">${btn(state.read?'Read ✓':'Mark as read','read',state.read?'disabled':'',!state.read)}${btn('Practise this topic','topic-fire',`data-id="${lesson.id}"`)}${lesson.case_id?btn('Try the related design case','case',`data-case="${lesson.case_id}"`):''}${lesson.next_id?btn('Next lesson →','lesson',`data-id="${lesson.next_id}"`):''}</div></footer></article>`+
-      `<aside class="sd-rich-rail"><div class="sd-rail-card"><span class="sd-eyebrow">PROGRESS</span><div class="sd-rail-progress"><b id="sd-activity-count">${done}</b>/<span>${lesson.interactive}</span> activities</div><div class="sd-course-bar"><span id="sd-activity-bar" style="width:${lesson.interactive?100*done/lesson.interactive:0}%"></span></div><p class="sd-muted">Check: ${state.latest_score===null?'not taken':`${state.latest_score}/${state.latest_total}`}${state.passed?' · passed':''}</p></div>${heads.length?`<nav class="sd-rail-card sd-outline"><span class="sd-eyebrow">IN THIS LESSON</span>${heads.map(h=>`<a href="#sd-h-${B().slug(h)}" data-jump="sd-h-${B().slug(h)}">${rich(h)}</a>`).join('')}<a href="#sd-check" data-jump="sd-check">Lesson check</a></nav>`:''}<div class="sd-rail-card sd-rail-actions">${btn(state.read?'Read ✓':'Mark as read','read',state.read?'disabled':'',!state.read)}${btn('Practise topic','topic-fire',`data-id="${lesson.id}"`)}</div></aside></div>`;
+      `<div class="sd-rich-layout"><article class="sd-rich"><details class="sd-goals"><summary>By the end you can</summary><ul>${lesson.objectives.map(o=>`<li>${rich(o)}</li>`).join('')}</ul></details><div id="sd-lesson-blocks"></div>${checkHtml(state)}<footer class="sd-lesson-foot"><details><summary>Further reading</summary><ul>${lesson.sources.map(([title,url])=>`<li><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></li>`).join('')}</ul></details><div class="sd-actions">${btn(state.read?'Read ✓':'Mark as read','read',state.read?'disabled':'',!state.read)}${btn('Practise this topic','topic-fire',`data-id="${lesson.id}"`)}${lesson.case_id?btn('Try the related design case','case',`data-case="${lesson.case_id}"`):''}${lesson.next_id?btn('Next lesson →','lesson',`data-id="${lesson.next_id}"`):''}</div></footer></article>`+
+      `<aside class="sd-rich-rail"><div class="sd-rail-card"><span class="sd-eyebrow">PROGRESS</span><div class="sd-rail-progress"><b id="sd-activity-count">${done}</b>/<span>${lesson.interactive}</span> activities</div><div class="sd-course-bar"><span id="sd-activity-bar" style="width:${lesson.interactive?100*done/lesson.interactive:0}%"></span></div><p class="sd-muted">Check: ${state.latest_score===null?'not taken':`${state.latest_score}/${state.latest_total}`}${state.passed?' · passed':''}</p></div><nav id="sd-lesson-rail"></nav><div class="sd-rail-card sd-rail-actions">${btn(state.read?'Read ✓':'Mark as read','read',state.read?'disabled':'',!state.read)}${btn('Practise topic','topic-fire',`data-id="${lesson.id}"`)}</div></aside></div>`;
   }
   function lessonHtml() {
     if(!lesson)return '<div class="sd-panel">Open a lesson from the curriculum.</div>';
@@ -239,6 +238,14 @@
   function mountBlocks(root) {
     const slot=root.querySelector('#sd-lesson-blocks');
     if(!slot||!lesson?.blocks||!B())return;
+    if(window.DesignLesson) {
+      const id=lesson.id;
+      window.DesignLesson.mount(slot,root.querySelector('#sd-lesson-rail'),lesson,{saved:lessonState?.activities||{},
+        recall:(block,text)=>call('/course/lessons/'+id+'/recall','POST',{block:block.key,text}),
+        pitch:(block,text,followup)=>call('/course/lessons/'+id+'/pitch','POST',{block:block.key,text,followup}),
+        done:(key,correct)=>recordActivity(id,key,correct)});
+      return;
+    }
     if(blockCache?.id!==lesson.id) {
       blockCache?.handle?.destroy();
       const node=document.createElement('div');node.className='sd-blocks-live';
@@ -257,6 +264,14 @@
       blockCache={id,node,handle};
     }
     slot.replaceWith(blockCache.node);
+  }
+  function recordActivity(id,key,correct) {
+    return call('/course/lessons/'+id+'/activity','POST',{block:key,correct}).then(s=>{
+      if(lesson?.id!==id)return;lessonState=s;
+      const n=Object.values(s.activities||{}).filter(a=>a.done).length;
+      const count=$('#sd-activity-count');if(count)count.textContent=n;
+      const bar=$('#sd-activity-bar');if(bar)bar.style.width=(100*n/(lesson.interactive||1))+'%';
+    }).catch(e=>{error=e.message;const el=$('#sd-learning-error');if(el){el.textContent=error;el.hidden=false;}});
   }
   function wire(root) {
     mountBlocks(root);

@@ -56,7 +56,7 @@
   }
   function route() {
     const match = location.hash.match(/^#\/system-design(?:\/([^/]+)(?:\/([a-z0-9-]+))?)?$/);
-    if (match) select('system-design', match[1]==='lesson'&&match[2] ? 'lesson/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
+    if (match) select('system-design', (match[1]==='lesson'||match[1]==='redesign')&&match[2] ? match[1]+'/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
     else if (design) select('leetcode', 'home', false);
   }
   trigger.addEventListener('click', () => {

@@ -3,6 +3,8 @@
 Each `<id>.md` file holds YAML frontmatter, a body and a closing ```questions block.
 Fenced blocks whose language is a block type become structured blocks; all other
 Markdown (including ordinary code fences) stays prose and is rendered client-side.
+Block keys are positional (b0, b1, …) and practice history is keyed by them, so new blocks
+in a published lesson are appended after the existing ones, never inserted.
 Question IDs are `<lesson>-check-<n>-v2` / `<lesson>-fire-<n>-v2`; once published
 their semantics are immutable, like v1. Anything malformed fails loudly at import.
 """

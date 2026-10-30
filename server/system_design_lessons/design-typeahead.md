@@ -177,6 +177,23 @@ model: |
   A batch pipeline reads search logs, normalises queries, drops spam and blocked terms, and computes decayed popularity scores. For every prefix of every popular query it keeps the 10 best completions, writing a versioned prefix → top-10 table that serving switches to atomically. At request time the client debounces keystrokes, the CDN answers very short prefixes, and the suggest service reads the prefix's list from an in-memory shard, merges hourly trending candidates and the user's recent searches, and returns in a few milliseconds. To remove something urgently, it's added to a blocklist that every server checks on every response, and edge caches are purged — the next build drops it permanently.
 ```
 
+```bug
+style: critique
+title: A candidate's autocomplete
+prompt: The candidate designs search suggestions at 50k prefix requests/s and p99 under 50 ms. Which claims would you push back on?
+lang: text
+code: |
+  Each keystroke runs SELECT query FROM searches WHERE query LIKE 'prefix%' ORDER BY count DESC LIMIT 10.
+  The top 10 completions for each prefix are precomputed into a trie or prefix table offline.
+  Suggestion servers hold that table in memory, replicated, and serve from it.
+  Popularity counts are rebuilt from search logs on a schedule, not updated per keystroke.
+  Clients debounce keystrokes and cache results per prefix.
+  Offensive or blocked suggestions are filtered by a list applied when serving.
+bug: [1]
+explain: |
+  **Line 1:** a LIKE scan with ORDER BY over all searches on every keystroke can't meet 50 ms at 50k requests/s. That's why lines 2–4 precompute top-k per prefix offline and serve it from memory. The candidate described both approaches, and the first one contradicts the rest of the design.
+```
+
 ```questions
 - kind: check
   prompt: Why is top-k per prefix precomputed rather than computed at request time?

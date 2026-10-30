@@ -204,6 +204,23 @@ model: |
   The post service writes the post to the sharded posts store and, through an outbox, emits PostCreated. Fan-out workers look up the author's followers in batches, skip inactive ones, and push the post ID onto each follower's capped timeline list in the in-memory store. When a follower opens the app, the feed service reads their ~800 timeline IDs, adds recent posts from the handful of celebrity accounts they follow, scores the candidates within a short latency budget, and hydrates the top 30 — post bodies, authors, counts — from caches, dropping anything deleted, private or blocked. The response carries a cursor into a short-lived ranked snapshot, and images are fetched from the CDN.
 ```
 
+```bug
+style: critique
+title: A candidate's news feed
+prompt: The candidate presents a feed design for 300M daily users. Which claims would you push back on?
+lang: text
+code: |
+  Every post is fanned out on write to all followers' timeline lists, including accounts with 50M followers.
+  Timelines store post IDs only; posts, authors and counts are hydrated at read time.
+  Hydration drops deleted, private and blocked items on every read.
+  Like counts are a column on the posts row, incremented in the like request.
+  The ranked feed is paged by a cursor over a short-lived snapshot of ranked IDs.
+  Authors see their own new post immediately by merging their recent posts at read time.
+bug: [1, 4]
+explain: |
+  **Line 1:** pushing to every follower of a 50M-follower account means 50M writes per post, and seconds-to-minutes of fan-out lag. Use hybrid fan-out: skip accounts above a threshold and merge their posts at read time. **Line 4:** a viral post's single counter row becomes a hot spot under row locks and replication. Use idempotent like rows plus sharded or asynchronously aggregated counters.
+```
+
 ```questions
 - kind: check
   prompt: Why do feed systems store post IDs, not full posts, in timelines?

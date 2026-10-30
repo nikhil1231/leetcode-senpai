@@ -17,7 +17,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from . import auth, knowledge, llm, system_design_coach as coach
+from . import auth, knowledge, llm, system_design_coach as coach, system_design_variants as variants
 from .store import get_store
 from .system_design_curriculum import CATEGORIES, LESSONS, QUESTIONS
 from . import system_design_items as ledger_items
@@ -399,6 +399,8 @@ def start_paper(body: Start, store=Depends(store_for)):
     items = []
     for n, item in enumerate(picked):
         c = contract(item['id'])
+        if c['type'] == 'question' and views.get(item['id'], {}).get('answers'):
+            c['q'] = variants.take(store, records, item['id']) or c['q']
         items.append({'n': n, 'item': item['id'], 'max': c['max'], 'contract': c, 'public': public(c, n, body.request_id)})
     full = sum(it['max'] for it in items)
     scope_key = ':'.join(p for p in (body.scope, body.value, body.length) if p)

@@ -17,7 +17,7 @@ sources:
 case: links
 ---
 
-> [!story] "I deleted it, why is it still there?"
+> [!incident] "I deleted it, why is it still there?"
 > Facebook's memcache paper describes the problem plainly: a web server reads a value from the database, a concurrent update changes it and deletes the cached copy, and then the first server — slower — writes its now-stale value into the cache. The delete happened. The data is still wrong, and it stays wrong until something else touches that key. At their scale this happened constantly, so they invented **leases**. You will meet the same race the first time a user deletes a post and refreshes.
 
 ## Start with the promise, not the TTL

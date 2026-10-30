@@ -240,6 +240,23 @@ model: |
   The guarantee comes from bounded TTLs, not from invalidation. Redirects are 302s with explicit short Cache-Control, so browsers don't keep them. Each layer has a TTL — Redis 20 seconds, CDN 30 seconds — so even a value refilled from stale data right before the disable can survive at most 50 seconds, inside the 60-second promise. On every update we also delete the Redis key and can purge the CDN, so in practice disables apply within a second or two, but a lost delete or a stale-refill race only degrades to the TTL bound. Redis is filled from the primary, or the replica lag is added to the budget.
 ```
 
+```bug
+style: critique
+title: A candidate's link service
+prompt: The candidate summarises their design for the link service (20k resolutions/s, disables visible within 60 s). Which claims would you push back on?
+lang: text
+code: |
+  Short codes are 7 random base62 characters, inserted with a unique constraint and retried on collision.
+  Resolve reads Redis first, falls back to the links table, and caches the result for 5 minutes.
+  Disabling a link updates the row and deletes the Redis key, so the 60-second promise holds.
+  Redirects return 301 with Cache-Control: max-age=86400 so browsers and the CDN absorb repeat visits.
+  Only the owner can update a link; the update API checks owner_id against the caller.
+  At 20k resolutions/s one well-indexed primary plus replicas and a cache is enough; no sharding yet.
+bug: [2, 3, 4]
+explain: |
+  **Line 2:** a 5-minute TTL means a stale refill (a slow reader filling the old value after the delete) can live for 5 minutes, breaking the 60-second bound. The TTL must sit inside the freshness budget. **Line 3:** a delete alone doesn't prove the bound, because of that refill race and any downstream copies. **Line 4:** a 301 with a day-long max-age lets browsers and the CDN keep redirecting to a disabled link for 24 hours. Use 302 (or a short max-age within the budget) and purge the CDN on change.
+```
+
 ```questions
 - kind: check
   prompt: Why should the redirect use 302 (or 307) rather than 301?

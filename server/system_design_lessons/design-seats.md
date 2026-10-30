@@ -204,6 +204,23 @@ model: |
   The seat map is informational: if it's a few seconds behind, the worst case is that someone clicks a seat that was just taken and gets a "sorry, taken" response. Holding and confirming change who owns a seat, so they go to the primary and run as atomic conditional updates that check the seat's current status (or expired hold) at that instant, using the database clock. Whatever the user saw in the cached map, the database lets exactly one request win. Staleness can cost a retry, never a double booking — which is why we can cache the read path aggressively.
 ```
 
+```bug
+style: critique
+title: A candidate's reservation design
+prompt: The candidate explains holds and confirmation for a stadium on-sale. Which claims would you push back on?
+lang: text
+code: |
+  Browsing reads availability from a cache that may be up to 10 seconds stale.
+  A hold runs UPDATE seats SET state='held', holder=?, expires_at=now()+10min WHERE id=? AND state='available'.
+  A cron job releases expired holds every minute, which is what makes an expired hold unconfirmable.
+  Confirmation checks the cached availability, then writes state='sold'.
+  A retried confirmation with the same idempotency key returns the original result.
+  Seats are partitioned by event, so a hot on-sale is isolated from other events.
+bug: [3, 4]
+explain: |
+  **Line 3:** correctness must not depend on the cron's timing. Between expiry and the next sweep, an expired hold would still look valid. Confirmation itself must check `expires_at > now()`. **Line 4:** confirming against a cached view is exactly the stale read that double-books. Confirm with a conditional write on the authoritative row: `WHERE state='held' AND holder=? AND expires_at > now()`.
+```
+
 ```questions
 - kind: check
   prompt: Which data source may decide whether a hold succeeds?

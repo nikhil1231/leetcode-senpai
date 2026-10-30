@@ -194,8 +194,10 @@
   function pageIntro(kicker, title, description) {
     return `<div class="sd-page-intro"><span class="sd-eyebrow">${kicker}</span><h2 tabindex="-1" id="sd-heading">${title}</h2><p>${description}</p></div>`;
   }
-  function caseCards() {
-    return `<div class="sd-case-grid">${catalog.cases.map((c,i) => {
+  function caseCards(limit) {
+    const tried = new Set(catalog.sessions.map(s=>s.case_id));
+    const cases = limit ? [...catalog.cases].sort((x,y)=>tried.has(x.id)-tried.has(y.id)).slice(0,limit) : catalog.cases;
+    return `<div class="sd-case-grid">${cases.map((c,i) => {
       const [n,metric,tags] = caseDetails[c.id] || [String(i+1).padStart(2,'0'), c.metric||'', c.tags||''];
       return `<article class="sd-case-card"><div class="sd-case-top"><span class="sd-case-number">${n}</span><span>${esc(c.family)}</span></div>
         <div class="sd-case-symbol" aria-hidden="true">${caseGlyph(c.id)}</div><h3>${esc(caseNames[c.id])}</h3><p>${esc(c.summary)}</p>
@@ -219,14 +221,11 @@
     if (screen === 'progress') return progressHtml();
     if (screen === 'papers') return window.DesignPapers.render(catalog);
     if (screen === 'drills') return window.DesignDrills.render();
+    if (screen === 'redesign') return window.DesignRedesign.render();
     if (screen === 'mistakes') return pageIntro('MISTAKES BOOK','Every miss, in one place.','Wrong, revealed and guessed answers land here. An item clears when you answer it correctly on a later day, so a same-day fix waits for confirmation.') + window.DesignLedger.slot('mistakes');
-    const r = catalog.recommendation;
-    const title = r.kind === 'case' ? caseNames[r.id] : (catalog.exercises.find(q=>q.id===r.id)?.title || 'A focused design decision');
-    return pageIntro('LEARN, PRACTISE, THEN DESIGN','Build your system design foundations.','Follow the curriculum, test one concept, or work through a complete design at your own pace.') + todaySlot() + window.DesignLedger.slot('knowledge') + window.DesignLearning.overview(catalog) +
-      `<div class="sd-overview-grid"><section class="sd-next"><div class="sd-eyebrow"><span class="sd-live-dot"></span>YOUR NEXT SESSION</div><h3>${esc(title)}</h3><p>${esc(r.reason)}</p><div class="sd-next-bottom"><span>${catalog.profile.minutes} min · ${catalog.profile.level==='mid'?'Mid-level':esc(catalog.profile.level)} depth</span>${button(r.kind==='case'?'Explore the brief →':'Start drill →','recommended','',true)}</div></section>
-      <section class="sd-how"><span class="sd-eyebrow">THE PRACTICE LOOP</span><ol><li><span>01</span><div><strong>Make a decision</strong><p>Start with the guarantees. Keep it simple.</p></div></li><li><span>02</span><div><strong>Pressure-test it</strong><p>Trace failures and explain the trade-offs.</p></div></li><li><span>03</span><div><strong>Repair one weak spot</strong><p>Practise it, then check it again later.</p></div></li></ol></section></div>
-      <div class="sd-section-title"><div><h3>Choose a design challenge</h3><p>Three systems. Three different kinds of reasoning.</p></div>${button('All cases →','view','data-view="cases"')}</div>${caseCards()}${savedHtml(3)}
-      <div class="sd-bottom-links"><button type="button" data-sd="view" data-view="skills"><span class="sd-mini-icon">↯</span><span><strong>Have five minutes?</strong><small>Practise one focused decision.</small></span><span>→</span></button><button type="button" data-sd="view" data-view="lessons"><span class="sd-mini-icon">≡</span><span><strong>Need a concept to click?</strong><small>Read a short, worked lesson.</small></span><span>→</span></button></div>` + window.DesignLedger.slot('activity');
+    return pageIntro('SYSTEM DESIGN','Build your system design foundations.','One thing to do next is below. Lessons start with a short warm-up and skip what you already know.') + todaySlot() + window.DesignLedger.slot('knowledge') +
+      `<div class="sd-section-title"><div><h3>Design a whole system</h3><p>${catalog.cases.length} briefs, each a different kind of reasoning. Write your design, then get it reviewed.</p></div>${button('All cases →','view','data-view="cases"')}</div>${caseCards(3)}${savedHtml(3)}
+      <div class="sd-bottom-links"><button type="button" data-sd="view" data-view="curriculum"><span class="sd-mini-icon">≡</span><span><strong>The course</strong><small>${catalog.course.totals.completed} of ${catalog.course.totals.lessons} lessons done. Each adapts to what you already know.</small></span><span>→</span></button><button type="button" data-sd="view" data-view="skills"><span class="sd-mini-icon">↯</span><span><strong>Have five minutes?</strong><small>Practise one focused decision.</small></span><span>→</span></button></div>` + window.DesignLedger.slot('activity');
   }
   function todaySlot() {
     const next = catalog.course.lessons.find(l => l.id === catalog.course.next_lesson);
@@ -280,11 +279,12 @@
     window.DesignLearning.wire(root());
     if (screen==='papers') window.DesignPapers.wire(root()); else window.DesignPapers.stop();
     if (screen==='drills') window.DesignDrills.wire(root()); else window.DesignDrills.stop();
+    if (screen==='redesign') window.DesignRedesign.wire(root()); else window.DesignRedesign.stop();
     window.DesignLedger.mount(root());
     renderModelChip();
     if (document.body.classList.contains('section-design')) {
       window.AppSections?.setView(screen);
-      history.replaceState(null, '', '#/system-design' + (screen==='home'?'':'/'+(screen==='lesson'?window.DesignLearning.route():screen)));
+      history.replaceState(null, '', '#/system-design' + (screen==='home'?'':'/'+(screen==='lesson'?window.DesignLearning.route():screen==='redesign'?window.DesignRedesign.route():screen)));
     }
     if (screen==='workspace') {
       root().querySelectorAll('[role="tab"]').forEach(n=>n.addEventListener('keydown',event=>{
@@ -440,6 +440,10 @@
         await window.DesignLearning.openLesson(view.slice(7));
         if(navigation!==viewEpoch)return;
         screen='lesson';
+      } else if(view.startsWith('redesign/')) {
+        await window.DesignRedesign.open(view.slice(9));
+        if(navigation!==viewEpoch)return;
+        screen='redesign';
       } else {
         screen=VIEWS.includes(view)?view:'home';
         if(screen==='papers')await window.DesignPapers.open();

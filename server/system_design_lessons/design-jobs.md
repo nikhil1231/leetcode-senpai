@@ -205,6 +205,23 @@ model: |
   Because the worker acks only after committing success, the crash leaves the message unacked and the queue delivers it again later. The job row still says running, but its lease has a deadline, so once it expires the new worker's conditional claim succeeds. It reconverts and writes to outputs/{job_id}.pdf — the same key — so the earlier partial or complete output is simply overwritten, with no orphaned duplicate. It marks the job succeeded and acks. If the original message is delivered yet again, the claim matches no rows because the job is already succeeded, so the worker just acks it.
 ```
 
+```bug
+style: critique
+title: A candidate's document-processing design
+prompt: The candidate describes how a submitted document becomes a finished conversion. Which claims would you push back on?
+lang: text
+code: |
+  POST /jobs takes a client request_id; a repeat with the same id and payload returns the original job.
+  The API writes the job row, then publishes to the queue; if the publish fails it logs a warning and returns 202.
+  Workers acknowledge the message as soon as they receive it, so the broker doesn't redeliver long jobs.
+  Output is written to object storage under a key derived from the job id, so a retry overwrites rather than duplicates.
+  After five failed attempts a job moves to a failed state the user can see, with the error.
+  Status reads check that the caller owns the job.
+bug: [2, 3]
+explain: |
+  **Line 2:** returning 202 after a failed publish loses accepted work: the job row exists but nothing will ever process it. Use an outbox or a sweeper that finds pending jobs. **Line 3:** acknowledging on receipt means a worker crash mid-job loses it. Acknowledge after the output and status are durable, and extend visibility or heartbeat for long jobs.
+```
+
 ```questions
 - kind: check
   prompt: What must be true before the Jobs API returns 202?

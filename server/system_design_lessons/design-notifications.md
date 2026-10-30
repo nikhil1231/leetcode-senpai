@@ -188,6 +188,23 @@ model: |
   Categories map to lanes. The reset email is "security", so it goes to a priority queue with its own consumers and a reserved slice of each provider's rate limit, while the campaign is expanded in batches by a scheduler into a bulk queue and drained at whatever rate is left. Because they never share a FIFO or a provider budget, 50M marketing messages can't sit in front of the reset email. I'd alert on the priority lane's oldest-message age — anything over a few seconds is an incident — and let bulk lag by minutes or hours without concern.
 ```
 
+```bug
+style: critique
+title: A candidate's notification platform
+prompt: The candidate describes a shared notification service for push, email and SMS. Which claims would you push back on?
+lang: text
+code: |
+  All notifications go through one queue, processed first in, first out.
+  Each request carries an idempotency key, so a caller's retry does not send twice.
+  User preferences and quiet hours are checked before sending.
+  Provider calls are retried with backoff, and permanently failing tokens are removed.
+  A 50-million-user marketing campaign is enqueued at once so it finishes as fast as possible.
+  Delivery status from providers is recorded for each message.
+bug: [1, 5]
+explain: |
+  **Lines 1 and 5:** in one FIFO queue, a 50M-message campaign enqueued at once delays every password reset and 2FA code behind it. Separate queues (or priorities) by class, and rate-limit campaigns so they drain without starving transactional traffic or tripping provider limits.
+```
+
 ```questions
 - kind: check
   type: numeric

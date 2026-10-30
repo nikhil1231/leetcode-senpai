@@ -17,7 +17,7 @@ sources:
 case: seats
 ---
 
-> [!story] The bitcoin exchange that printed money
+> [!incident] The bitcoin exchange that printed money
 > In 2014 a cryptocurrency exchange, Flexcoin, shut down after attackers drained its hot wallet. They sent many simultaneous withdrawal requests: each request read the balance, checked it was sufficient, and wrote the new balance, and all of them passed the check before any write landed. Every individual request was "correct". Together they withdrew far more than the account held. It's the textbook lost update, in production, with real money.
 
 ## What transactions give you

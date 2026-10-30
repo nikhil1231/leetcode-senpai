@@ -174,6 +174,23 @@ model: |
   Matchers read the in-memory geo index to find nearby candidates, but that index is only a hint and may be a few seconds out of date. To claim a driver, a matcher runs a conditional update on the driver's authoritative record — set offered to this trip WHERE state is free. The database serialises concurrent attempts, so only one succeeds and the others move on to their next candidate. The offer has an expiry time that the predicates check against the server clock, so a driver who doesn't respond is freed automatically. When the driver accepts, one transaction moves the driver to ON_TRIP and the trip to ACCEPTED, but only if that offer is still current and unexpired.
 ```
 
+```bug
+style: critique
+title: A candidate's ride-hailing design
+prompt: The candidate describes matching riders to drivers. Which claims would you push back on?
+lang: text
+code: |
+  Drivers send location every 4 seconds to a location service that keeps the latest position in memory, indexed by geohash cell.
+  Every location update is also written synchronously to the trips database.
+  Matching queries nearby cells for available drivers and offers the trip to the best one.
+  Two concurrent requests may offer the same driver; whichever accept arrives first wins, and the other rider is re-matched.
+  A driver is assigned with a conditional write: set trip only if the driver's current trip is empty.
+  Busy downtown cells are split more finely so each cell holds a manageable number of drivers.
+bug: [2, 4]
+explain: |
+  **Line 2:** location pings are a firehose of ephemeral data (hundreds of thousands per second); writing each one to the transactional database overloads it for no benefit. Keep the latest location in memory and sample to a log for analytics. **Line 4:** "first accept wins" with no atomic guard is how a driver ends up double-assigned. The conditional write in line 5 is what must decide, and offers should reserve the driver briefly so two riders are never offered the same one.
+```
+
 ```questions
 - kind: check
   type: numeric

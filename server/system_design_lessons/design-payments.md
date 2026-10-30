@@ -206,6 +206,23 @@ model: |
   Before calling out, the service writes the payment as AUTHORIZING with a stable key, say p-9. The processor call includes Idempotency-Key p-9. If it times out, the payment becomes UNKNOWN and the user sees "processing". A recovery job then retries with the same key: if the first attempt succeeded, the processor returns that original charge; if it never arrived, it runs now, once. The processor's webhook for p-9 may arrive too; it's verified, deduplicated by event ID, and applied only if the state transition is still valid. Anything that still disagrees shows up in the nightly reconciliation against the processor's settlement report.
 ```
 
+```bug
+style: critique
+title: A candidate's payment system
+prompt: The candidate explains charging a card through an external processor. Which claims would you push back on?
+lang: text
+code: |
+  Each payment has an idempotency key, passed through to the processor, so retries don't double-charge.
+  If the processor call times out, the payment is marked failed and the user is asked to try again.
+  Payments move through an explicit state machine; webhooks may arrive late or twice and are applied idempotently.
+  Balances are updated by editing a balance column directly when money moves.
+  A daily reconciliation job compares our records with the processor's settlement files.
+  Card numbers never touch our servers; the client tokenises them with the processor.
+bug: [2, 4]
+explain: |
+  **Line 2:** a timeout is an *unknown* outcome; the charge may have succeeded. Marking it failed and inviting a retry with a new attempt risks double-charging. Mark it pending, query the processor with the same idempotency key, and resolve by webhook or reconciliation. **Line 4:** mutating a balance column loses the audit trail and is hard to reconcile. Use an append-only double-entry ledger, with balances derived from it.
+```
+
 ```questions
 - kind: check
   prompt: A processor call times out. What's the correct immediate handling?

@@ -16,7 +16,7 @@ sources:
   - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 5', 'https://dataintensive.net/']
 ---
 
-> [!story] 43 seconds, 24 hours
+> [!incident] 43 seconds, 24 hours
 > In October 2018, a 43-second network partition between GitHub's US East Coast data centre and its East Coast network hub triggered automated failover of MySQL primaries to the West Coast. When connectivity returned, both coasts held writes the other didn't have, and cross-country latency made the new topology unworkable. Reconciling the data without losing user writes took about 24 hours of degraded service. A short blip became a long outage because replication, failover and consistency had to be untangled by hand.
 
 ## Leader–follower replication

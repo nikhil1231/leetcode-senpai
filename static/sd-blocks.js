@@ -88,11 +88,11 @@
 
   // ---------- Shared pieces ----------
   const KICKER = { predict: 'Predict first', timeline: 'Step through it', sim: 'Experiment', sort: 'Sort it out', order: 'Put it in order',
-    calc: 'Estimate', bug: 'Spot the bug', faded: 'Fill the gaps', recall: 'Explain it yourself', incident: 'On-call drill', arch: 'Architecture', interview: 'In the interview' };
+    calc: 'Estimate', bug: 'Spot the bug', critique: 'Critique a design', faded: 'Fill the gaps', recall: 'Explain it yourself', incident: 'On-call drill', arch: 'Architecture', interview: 'In the interview' };
   const button = (text, act, extra = '', primary = false) => `<button type="button" class="button ${primary ? 'is-primary' : ''}" data-b="${act}" ${extra}>${esc(text)}</button>`;
   const doneTag = '<span class="sd-block-done" hidden>✓ Done</span>';
   function frame(b, inner, title) {
-    return `<section class="sd-block sd-block-${b.type}" data-block="${b.key}"><header class="sd-block-head"><span class="sd-kicker">${KICKER[b.type]}</span>${title ? `<h4>${inline(title)}</h4>` : ''}${doneTag}</header>${inner}</section>`;
+    return `<section class="sd-block sd-block-${b.type}${b.style ? ' is-' + esc(b.style) : ''}" data-block="${b.key}"><header class="sd-block-head"><span class="sd-kicker">${KICKER[b.style] || KICKER[b.type]}</span>${title ? `<h4>${inline(title)}</h4>` : ''}${doneTag}</header>${inner}</section>`;
   }
   const verdictOf = ok => ok ? '<b class="sd-ok">Correct.</b> ' : '<b class="sd-bad">Not quite.</b> ';
   const fmtNum = n => Math.abs(n) >= 100 ? Math.round(n).toLocaleString() : String(Math.round(n * 100) / 100);
@@ -104,6 +104,7 @@
   W.predict = (el, b, ctx) => {
     el.querySelectorAll('[data-b=pick]').forEach(n => n.addEventListener('click', () => {
       const i = Number(n.dataset.i), ok = i === b.answer;
+      el.dataset.answer = b.choices[i];
       el.querySelectorAll('[data-b=pick]').forEach(o => { o.disabled = true; o.classList.toggle('is-right', Number(o.dataset.i) === b.answer); o.classList.toggle('is-wrong', o === n && !ok); });
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
       r.innerHTML = (ok ? '<b class="sd-ok">You called it.</b>' : '<b class="sd-bad">Most people miss this one.</b>') + md(b.reveal);
@@ -130,6 +131,7 @@
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       if (Object.keys(picks).length < b.items.length) { const r = el.querySelector('.sd-reveal'); r.hidden = false; r.innerHTML = '<p class="sd-muted">Place every item first.</p>'; return; }
       el.dataset.checked = '1'; let right = 0;
+      el.dataset.answer = b.items.map((it, i) => `${it.text} → ${b.buckets[picks[i]]}`).join('; ');
       el.querySelectorAll('.sd-sort-item').forEach(row => {
         const it = b.items[row.dataset.i], ok = picks[row.dataset.i] === it.bucket; right += ok;
         row.classList.add(ok ? 'is-right' : 'is-wrong');
@@ -175,6 +177,7 @@
     };
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       tries++; const rows = [...list.querySelectorAll('li')]; let ok = true;
+      el.dataset.answer = rows.map(li => b.items[li.dataset.i]).join(' → ');
       rows.forEach((li, pos) => { const good = Number(li.dataset.i) === pos; ok = ok && good; li.classList.toggle('is-right', good); li.classList.toggle('is-wrong', !good); });
       if (ok) return finish(true);
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
@@ -195,6 +198,7 @@
       const v = Number(String(input.value).replace(/[, _]/g, '').replace(/k$/i, 'e3').replace(/m$/i, 'e6').replace(/b$/i, 'e9'));
       if (!isFinite(v) || v <= 0) { input.focus(); return; }
       const ratio = v / b.answer, ok = ratio <= factor && ratio >= 1 / factor;
+      el.dataset.answer = `${input.value} ${b.unit}`;
       const off = ratio >= 1 ? ratio : 1 / ratio;
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
       r.innerHTML = `<p>${ok ? '<b class="sd-ok">Within range.</b>' : `<b class="sd-bad">Off by about ${fmtNum(off)}×.</b>`} Reference answer: <b>${fmtNum(b.answer)} ${esc(b.unit)}</b>${off < 1.05 ? '' : ` (accepted range ${fmtNum(b.answer / factor)}–${fmtNum(b.answer * factor)})`}.</p><div class="sd-steps">${md(b.steps)}</div>`;
@@ -208,14 +212,21 @@
   // ---------- Spot the bug ----------
   R.bug = b => {
     const lines = b.code.replace(/\n$/, '').split('\n');
-    return frame(b, `<div class="sd-prompt">${md(b.prompt)}</div><pre class="sd-code sd-bug-code" data-lang="${esc(b.lang || '')}">${lines.map((l, i) => `<button type="button" class="sd-bug-line" data-line="${i + 1}"><span class="sd-ln">${i + 1}</span><code>${highlight(l, b.lang || 'text') || ' '}</code></button>`).join('')}</pre><div class="sd-actions">${button('Check', 'check', '', true)}<span class="sd-muted">Click every line that is wrong (${b.bug.length === 1 ? 'one line' : b.bug.length + ' lines'}).</span></div><div class="sd-reveal" hidden></div>`, b.title);
+    const critique = b.style === 'critique';
+    const body = critique
+      ? `<ol class="sd-critique">${lines.map((l, i) => `<li><button type="button" class="sd-bug-line" data-line="${i + 1}"><span class="sd-ln">${i + 1}</span><span>${inline(l)}</span></button></li>`).join('')}</ol>`
+      : `<pre class="sd-code sd-bug-code" data-lang="${esc(b.lang || '')}">${lines.map((l, i) => `<button type="button" class="sd-bug-line" data-line="${i + 1}"><span class="sd-ln">${i + 1}</span><code>${highlight(l, b.lang || 'text') || ' '}</code></button>`).join('')}</pre>`;
+    const ask = critique ? `Click every claim that is wrong or would fail the requirements (${b.bug.length === 1 ? 'one' : b.bug.length}).` : `Click every line that is wrong (${b.bug.length === 1 ? 'one line' : b.bug.length + ' lines'}).`;
+    return frame(b, `<div class="sd-prompt">${md(b.prompt)}</div>${body}<div class="sd-actions">${button('Check', 'check', '', true)}<span class="sd-muted">${ask}</span></div><div class="sd-reveal" hidden></div>`, b.title);
   };
   W.bug = (el, b, ctx) => {
+    const lines = b.code.replace(/\n$/, '').split('\n');
     el.querySelectorAll('.sd-bug-line').forEach(n => n.addEventListener('click', () => { if (!el.dataset.locked) n.classList.toggle('is-picked'); }));
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       const picked = [...el.querySelectorAll('.sd-bug-line.is-picked')].map(n => Number(n.dataset.line));
       if (!picked.length) return;
       el.dataset.locked = '1';
+      el.dataset.answer = 'Picked ' + picked.map(p => `line ${p}: ${lines[p - 1]}`).join('; ');
       const ok = picked.length === b.bug.length && picked.every(p => b.bug.includes(p));
       el.querySelectorAll('.sd-bug-line').forEach(n => { const ln = Number(n.dataset.line); n.classList.toggle('is-bug', b.bug.includes(ln)); n.classList.toggle('is-wrong', !b.bug.includes(ln) && n.classList.contains('is-picked')); n.disabled = true; });
       el.querySelector('[data-b=check]').disabled = true;
@@ -246,6 +257,7 @@
     let tries = 0;
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       tries++; let right = 0; const fields = [...el.querySelectorAll('.sd-blank')];
+      if (tries === 1) el.dataset.answer = fields.map((f, i) => `blank ${i + 1}: ${f.value || '(empty)'}`).join('; ');
       fields.forEach(f => {
         const a = f.dataset.answer, v = f.value.trim();
         const ok = f.tagName === 'INPUT' ? Math.abs(Number(v.replace(/,/g, '')) - Number(a)) <= Math.abs(Number(a)) * 0.05 + 1e-9 : v === a;
@@ -353,10 +365,37 @@
     const svg = `<div class="sd-arch-wrap"><svg class="sd-arch" style="max-width:${(cols * W_ + 40) * 1.1}px" viewBox="0 0 ${cols * W_ + 40} ${rows * H_ + 20}" role="img" aria-label="${esc(b.title || 'Architecture diagram')}"><defs><marker id="sd-arrow-${b.key}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>${edges}${boxes}${labels.join('')}</svg></div>`;
     const paths = b.paths ? `<div class="sd-arch-paths">${b.paths.map((p, i) => button('▶ ' + p.label, 'path', `data-i="${i}"`)).join('')}</div><div class="sd-arch-caption" aria-live="polite"></div>` : '';
     const quiz = b.missing ? `<div class="sd-prompt">${md(b.prompt || 'Which component belongs in the missing box?')}</div><div class="sd-predict-choices">${b.choices.map((c, i) => `<button type="button" class="sd-option" data-b="pick" data-i="${i}"><span class="sd-option-key">${String.fromCharCode(65 + i)}</span><span>${inline(c)}</span></button>`).join('')}</div><div class="sd-reveal" hidden></div>` : '';
-    return frame(b, `${b.caption ? `<div class="sd-prompt">${md(b.caption)}</div>` : ''}${svg}${paths}${quiz}`, b.title);
+    const build = !b.missing && b.edges.length >= 3 ? `<div class="sd-arch-build">${button('Wire it yourself first', 'build')}<span class="sd-arch-build-status sd-muted" aria-live="polite"></span>${button('Show all connections', 'giveup', 'hidden')}</div>` : '';
+    return frame(b, `${b.caption ? `<div class="sd-prompt">${md(b.caption)}</div>` : ''}${build}${svg}${paths}${quiz}`, b.title);
   };
   W.arch = (el, b, ctx) => {
     let timer = null;
+    // Build mode: connections are hidden; click two components to find each one.
+    const want = new Set(b.edges.map(([a, c]) => a + '>' + c));
+    const found = new Set(); let first = null, misses = 0;
+    const status = () => { const s = el.querySelector('.sd-arch-build-status'); if (s) s.textContent = `${found.size} of ${want.size} connections found${misses ? ` · ${misses} wrong guess${misses === 1 ? '' : 'es'}` : ''}. Click one component, then another it talks to.`; };
+    const finishBuild = gaveUp => {
+      el.classList.remove('is-building'); el.querySelectorAll('.sd-arch-node').forEach(n => n.classList.remove('is-picked'));
+      el.querySelector('[data-b=giveup]').hidden = true;
+      const s = el.querySelector('.sd-arch-build-status');
+      s.textContent = gaveUp ? `You found ${found.size} of ${want.size}. The rest are now shown.` : `All ${want.size} connections found${misses ? ` with ${misses} wrong guess${misses === 1 ? '' : 'es'}` : ' with no wrong guesses'}.`;
+      el.dataset.answer = `Found ${found.size}/${want.size} connections, ${misses} wrong guesses`;
+      ctx.done(b, !gaveUp && misses <= 1);
+    };
+    el.querySelector('[data-b=build]')?.addEventListener('click', e => {
+      el.classList.add('is-building'); e.target.hidden = true; el.querySelector('[data-b=giveup]').hidden = false; status();
+    });
+    el.querySelector('[data-b=giveup]')?.addEventListener('click', () => finishBuild(true));
+    el.querySelectorAll('.sd-arch-node').forEach(n => n.addEventListener('click', () => {
+      if (!el.classList.contains('is-building')) return;
+      if (!first || first === n) { first = first === n ? null : n; n.classList.toggle('is-picked', !!first); return; }
+      const a = first.dataset.node, c = n.dataset.node;
+      first.classList.remove('is-picked'); first = null;
+      const key = want.has(a + '>' + c) ? a + '>' + c : want.has(c + '>' + a) ? c + '>' + a : null;
+      if (!key) { misses++; n.classList.add('is-miss'); setTimeout(() => n.classList.remove('is-miss'), 600); status(); return; }
+      found.add(key); el.querySelectorAll(`[data-edge="${CSS.escape(key)}"]`).forEach(x => x.classList.add('is-found'));
+      status(); if (found.size === want.size) finishBuild(false);
+    }));
     el.querySelectorAll('[data-b=path]').forEach(n => n.addEventListener('click', () => {
       clearInterval(timer);
       const path = b.paths[Number(n.dataset.i)], cap = el.querySelector('.sd-arch-caption');
@@ -386,9 +425,55 @@
   };
 
   // ---------- Interview card ----------
-  R.interview = b => frame(b, `<div class="sd-say"><span class="sd-say-label">Say it in 30 seconds</span>${md(b.say)}</div><div class="sd-followups"><b>Follow-ups interviewers ask</b>${b.followups.map(f => `<details><summary>${inline(f.q)}</summary>${md(f.a)}</details>`).join('')}</div><div class="sd-weak-strong"><div class="is-weak"><span>Weak answer</span>${md(b.weak)}</div><div class="is-strong"><span>Strong answer</span><div class="sd-strong-body" hidden>${md(b.strong)}</div><button type="button" class="button" data-b="strong">Think of your version, then reveal</button></div></div>`, b.title);
+  // Active: you pitch, then answer each follow-up in turn, before any model answer is shown.
+  R.interview = b => frame(b, `<div class="sd-pitch-step" data-step="pitch"><div class="sd-prompt"><b>Your turn: pitch it in 30 seconds.</b> Type what you would say out loud to the interviewer. Then compare.</div><textarea class="textarea sd-pitch-text" rows="5" maxlength="4000" placeholder="I'd start with…"></textarea><div class="sd-actions">${button('Grade my pitch', 'pitch', '', true)}${button('Skip: show the model', 'skip')}</div><div class="sd-pitch-out" hidden></div></div><div class="sd-followups-live"></div><div class="sd-weak-strong" hidden><div class="is-weak"><span>Weak answer</span>${md(b.weak)}</div><div class="is-strong"><span>Strong answer</span>${md(b.strong)}</div></div>`, b.title);
   W.interview = (el, b, ctx) => {
-    el.querySelector('[data-b=strong]').addEventListener('click', e => { el.querySelector('.sd-strong-body').hidden = false; e.target.remove(); ctx.done(b, null); });
+    const VERDICT = { strong: ['sd-ok', 'Strong'], adequate: ['sd-mid', 'Adequate'], weak: ['sd-bad', 'Weak'] };
+    let pitchOk = null;
+    const gradeHtml = (res, model, label) => {
+      const g = res?.grade;
+      const head = g ? `<p><b class="${VERDICT[g.verdict][0]}">${VERDICT[g.verdict][1]}.</b> ${inline(g.feedback)}</p>${g.covered.length ? `<p class="sd-muted">You covered: ${g.covered.map(inline).join(' · ')}</p>` : ''}${g.missing.length ? `<p class="sd-muted">Missing: ${g.missing.map(inline).join(' · ')}</p>` : ''}` : res?.message ? `<p class="sd-muted">${esc(res.message)}</p>` : '';
+      return `${head}<details class="sd-model" ${g ? '' : 'open'}><summary>${label}</summary>${md(model)}</details>`;
+    };
+    const selfCheck = (out, then) => {
+      out.insertAdjacentHTML('beforeend', `<div class="sd-actions sd-self">${button('I covered it', 'yes')}${button('I missed parts', 'no')}</div>`);
+      out.querySelectorAll('.sd-self button').forEach(x => x.addEventListener('click', () => { out.querySelector('.sd-self').remove(); then(x.dataset.b === 'yes'); }));
+    };
+    const send = async (text, followup) => {
+      if (!ctx.pitch) return null;
+      try { return await ctx.pitch(b, text, followup); } catch (e) { return { message: 'Saved locally only: ' + e.message }; }
+    };
+    const finish = () => { el.querySelector('.sd-weak-strong').hidden = false; ctx.done(b, pitchOk); };
+    const followup = i => {
+      const live = el.querySelector('.sd-followups-live');
+      if (i >= b.followups.length) return finish();
+      const f = b.followups[i];
+      live.insertAdjacentHTML('beforeend', `<div class="sd-pitch-step" data-fu="${i}"><div class="sd-prompt"><span class="sd-say-label">Interviewer · follow-up ${i + 1} of ${b.followups.length}</span>${md(f.q)}</div><textarea class="textarea sd-pitch-text" rows="3" maxlength="4000" placeholder="Your answer"></textarea><div class="sd-actions">${button('Answer', 'answer', '', true)}${button('Skip', 'skip')}</div><div class="sd-pitch-out" hidden></div></div>`);
+      const step = live.querySelector(`[data-fu="${i}"]`), area = step.querySelector('textarea'), out = step.querySelector('.sd-pitch-out');
+      area.focus({ preventScroll: true });
+      const go = async skipped => {
+        const text = area.value.trim(); if (!skipped && text.length < 5) { area.focus(); return; }
+        step.querySelectorAll('button').forEach(x => { x.disabled = true; }); area.disabled = true;
+        const res = skipped ? null : (out.hidden = false, out.innerHTML = '<p class="sd-muted">Grading…</p>', await send(text, i));
+        out.hidden = false; out.innerHTML = gradeHtml(res, f.a, 'Model answer');
+        if (!skipped && !res?.grade) selfCheck(out, () => followup(i + 1)); else followup(i + 1);
+      };
+      step.querySelector('[data-b=answer]').addEventListener('click', () => go(false));
+      step.querySelector('[data-b=skip]').addEventListener('click', () => go(true));
+    };
+    const pitchStep = el.querySelector('[data-step=pitch]'), area = pitchStep.querySelector('textarea'), out = pitchStep.querySelector('.sd-pitch-out');
+    const go = async skipped => {
+      const text = area.value.trim(); if (!skipped && text.length < 15) { area.focus(); return; }
+      pitchStep.querySelectorAll('button').forEach(x => { x.disabled = true; }); area.disabled = true;
+      out.hidden = false; out.innerHTML = skipped ? '' : '<p class="sd-muted">Grading…</p>';
+      const res = skipped ? null : await send(text, null);
+      el.dataset.answer = text;
+      out.innerHTML = gradeHtml(res, b.say, 'Model pitch');
+      if (res?.grade) pitchOk = res.grade.verdict !== 'weak';
+      if (!skipped && !res?.grade) selfCheck(out, ok => { pitchOk = ok; followup(0); }); else followup(0);
+    };
+    pitchStep.querySelector('[data-b=pitch]').addEventListener('click', () => go(false));
+    pitchStep.querySelector('[data-b=skip]').addEventListener('click', () => go(true));
   };
 
   // ---------- Timeline with crash injection ----------
@@ -496,25 +581,29 @@
   }
   // ctx: {saved:{key:{done}}, done(key, correct), recall(block,text)}
   function wire(root, lesson, ctx) {
-    const instances = [];
+    const instances = [], nodes = {};
+    root.querySelectorAll('[data-block]').forEach(n => { nodes[n.dataset.block] = n; });
     const local = {
       track: inst => inst && instances.push(inst),
       recall: ctx.recall,
+      pitch: ctx.pitch,
       done(b, correct, silent) {
-        const node = root.querySelector(`[data-block="${b.key}"]`);
-        if (node.dataset.done) return;
+        // Look the node up from wiring time: a lesson player may move blocks between containers.
+        const node = nodes[b.key];
+        if (!node || node.dataset.done) return;
         node.dataset.done = '1'; node.querySelector('.sd-block-done').hidden = false;
         if (!silent) ctx.done(b.key, correct);
       },
     };
     (lesson.blocks || []).forEach(b => {
       if (b.type === 'md' || !W[b.type]) return;
-      const node = root.querySelector(`[data-block="${b.key}"]`);
+      const node = nodes[b.key];
       if (!node) return;
       if (ctx.saved?.[b.key]?.done) { node.dataset.done = '1'; node.querySelector('.sd-block-done').hidden = false; }
       try { W[b.type](node, b, local); } catch (e) { node.insertAdjacentHTML('beforeend', `<p class="sd-error">This activity failed to load: ${esc(e.message)}</p>`); }
     });
     return { destroy() { instances.forEach(i => i.destroy?.()); } };
   }
-  window.SDBlocks = { md, inline, esc, render, wire, outline, slug, highlight };
+  const renderBlock = b => b.type === 'md' ? `<div class="sd-md">${md(b.text)}</div>` : (R[b.type] ? R[b.type](b) : '');
+  window.SDBlocks = { md, inline, esc, render, renderBlock, wire, outline, slug, highlight };
 })();

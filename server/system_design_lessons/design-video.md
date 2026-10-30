@@ -191,6 +191,23 @@ model: |
   When the last upload part lands in object storage, the orchestrator starts a workflow: validate the file, split it at keyframes into chunks, then fan out transcoding tasks — every chunk times every rendition — across the worker fleet. Each task writes to a deterministic key, so a crashed worker's task is simply retried. Results are segmented into short HLS/DASH segments with a master manifest listing the renditions, and the lowest renditions are published first. A viewer's player requests the signed manifest, then fetches segments from a nearby CDN edge — or via the origin shield on a miss — choosing the next segment's quality from its measured throughput and buffer.
 ```
 
+```bug
+style: critique
+title: A candidate's video platform
+prompt: The candidate describes upload and playback for a YouTube-style service. Which claims would you push back on?
+lang: text
+code: |
+  Clients upload directly to object storage with presigned, resumable multipart uploads.
+  The API server streams each upload through itself so it can validate the bytes.
+  Transcoding splits the video into segments processed in parallel, each retry-safe.
+  Playback uses HLS/DASH with several renditions so the player adapts to bandwidth.
+  Popular videos are served from a CDN; the long tail can come from origin storage.
+  The view count is a single row incremented on every play.
+bug: [2, 6]
+explain: |
+  **Line 2:** streaming multi-gigabyte uploads through API servers saturates their network and memory. Line 1's direct presigned upload is the right path; validate after upload with a processing job. **Line 6:** one row incremented per play is a hot spot for popular videos. Count plays as events and aggregate asynchronously into sharded counters, accepting a few seconds of lag.
+```
+
 ```questions
 - kind: check
   prompt: Why are videos split into short segments in multiple renditions?

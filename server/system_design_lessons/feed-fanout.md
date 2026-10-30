@@ -16,7 +16,7 @@ sources:
   - ['Instagram engineering: Making Instagram.com faster (feed)', 'https://instagram-engineering.com/']
 ---
 
-> [!story] One tweet, 30 million writes
+> [!incident] One tweet, 30 million writes
 > Twitter's early timeline system pushed every tweet into the cached home timeline of every follower. For most users that's a few hundred writes. For an account with tens of millions of followers, a single tweet meant tens of millions of cache writes, and fan-out lag for the biggest accounts could stretch to minutes — some followers saw a celebrity's tweet long after others had replied to it. Twitter moved to a hybrid: push for ordinary accounts, and merge the few very-high-follower accounts in at read time.
 
 ## Two ways to build a feed

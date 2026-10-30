@@ -16,7 +16,7 @@ sources:
   - ['PostgreSQL: Continuous archiving and point-in-time recovery', 'https://www.postgresql.org/docs/current/continuous-archiving.html']
 ---
 
-> [!story] Five backup methods, none working
+> [!incident] Five backup methods, none working
 > In January 2017, a GitLab engineer fighting a replication problem ran a delete on the wrong database server and removed about 300 GB of production data. The team then discovered that, of five backup and replication mechanisms, none produced a usable recent copy: database dumps had silently failed for months (a version mismatch, with failure emails rejected), snapshots weren't enabled for the database servers, and the replica was the thing being repaired. They recovered from a staging snapshot taken six hours earlier, and lost six hours of user data. GitLab published the whole incident live, and it's still the best lesson in why **untested backups don't exist**.
 
 ## Two numbers define recovery

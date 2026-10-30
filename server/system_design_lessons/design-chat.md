@@ -220,6 +220,23 @@ model: |
   The chat service only tells the sender "sent" after appending the message to durable storage with the next sequence number for that conversation. The sequence comes from one place per conversation — the partition leader or a conditional counter — so every participant sees the same order regardless of device clocks. The client attaches its own message ID, so a resend after a lost ack finds the stored message instead of creating a duplicate. Live delivery is just a fast path: each client acks the highest sequence it has, and after any disconnect it asks for everything after that number, ignoring duplicates.
 ```
 
+```bug
+style: critique
+title: A candidate's chat design
+prompt: The candidate describes message delivery in a WhatsApp-style app. Which claims would you push back on?
+lang: text
+code: |
+  Clients hold a WebSocket to a gateway; a session registry maps user to gateway.
+  A message is acknowledged to the sender as soon as the recipient's gateway receives it.
+  Messages carry a per-conversation sequence number assigned by the conversation's owner.
+  Clients send a client-generated message id, so a resend after reconnect is de-duplicated.
+  Message order inside a conversation uses the sender's device timestamp.
+  Offline recipients get a push notification, and fetch history from storage on reconnect.
+bug: [2, 5]
+explain: |
+  **Line 2:** acknowledging before the message is durably stored means a gateway crash loses a message the sender saw as sent. Persist first, then acknowledge, then deliver. **Line 5:** device clocks disagree and drift, so timestamp ordering misorders messages across senders. Use the server-assigned per-conversation sequence number from line 3.
+```
+
 ```questions
 - kind: check
   prompt: What should define the order of messages in a conversation?
