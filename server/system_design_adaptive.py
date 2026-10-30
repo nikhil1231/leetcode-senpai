@@ -13,7 +13,8 @@ from .system_design_items import block_id, gradeable, is_walkthrough
 
 HEADING = re.compile(r'^##\s+(.+?)\s*$', re.M)
 FINALE = ('interview', 'recall')
-PROBE_KINDS = ('predict', 'calc', 'order', 'sort', 'faded', 'bug')
+# Fill-the-gaps leans on the lesson's own numbers, so it is never a warm-up question.
+PROBE_KINDS = ('predict', 'calc', 'order', 'sort', 'bug')
 MAX_PROBES = 5
 HELD = ('solid', 'learning')
 MODES = ('known', 'skim', 'learn')

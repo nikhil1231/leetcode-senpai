@@ -30,6 +30,7 @@ QUESTION_FORMAT_MARKS = {'choice': 1, 'numeric': 1, 'multi': 2, 'order': 2}
 WEIGHTS = {'shaky': 4, 'fading': 3, 'unseen': 2, 'learning': 1.5, 'solid': 0.6}
 RANKED_SCOPES = ledger_items.RANKED_SCOPES
 MARKING_STALE = 180
+BLANK_TOLERANCE = 0.1  # numeric blanks are back-of-envelope figures
 BLANK = re.compile(r'\[\[(.+?)\]\]')
 TOPIC_ORDER = {k: i for i, k in enumerate(LESSONS)}
 
@@ -207,7 +208,7 @@ def mark(c, value):
             mine = str(given[i]).strip() if i < len(given) and given[i] is not None else ''
             if body.startswith('#'):
                 target, v = float(body[1:]), number(mine) if mine else None
-                marks += int(v is not None and abs(v - target) <= abs(target) * 0.05 + 1e-9)
+                marks += int(v is not None and abs(v - target) <= abs(target) * BLANK_TOLERANCE + 1e-9)
                 right.append(body[1:])
             else:
                 first = body.split('|')[0].strip()

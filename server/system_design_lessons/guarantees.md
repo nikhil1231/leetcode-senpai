@@ -58,7 +58,7 @@ Good SLIs are **ratios of good events to valid events** measured as close to the
 title: Rewrite a vague requirement
 prompt: Turn "the API should be fast and reliable" into something checkable.
 text: |
-  **Latency SLI:** the proportion of valid `GET /seats` requests served within [[#200]] ms, measured at the [[load balancer|developer laptop|database]].
+  **Latency SLI:** the proportion of valid `GET /seats` requests served within 200 ms, measured at the [[load balancer|developer laptop|database]].
 
   **Latency SLO:** at least 99% of requests within that threshold over a rolling [[30-day|1-minute|lifetime]] window, at up to 20,000 requests/s.
 

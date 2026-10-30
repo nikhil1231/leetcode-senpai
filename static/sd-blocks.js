@@ -173,6 +173,7 @@
       el.dataset.locked = '1'; el.querySelectorAll('[data-b=check],[data-b=show],.sd-order button').forEach(n => { n.disabled = true; });
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
       r.innerHTML = (shown ? '<p><b>Correct order shown.</b></p>' : verdictOf(ok)) + (b.explain ? md(b.explain) : '');
+      if (shown) el.dataset.answer = 'Did not know the order (asked to see the answer)';
       ctx.done(b, ok && tries === 1);
     };
     el.querySelector('[data-b=check]').addEventListener('click', () => {
@@ -180,8 +181,11 @@
       el.dataset.answer = rows.map(li => b.items[li.dataset.i]).join(' → ');
       rows.forEach((li, pos) => { const good = Number(li.dataset.i) === pos; ok = ok && good; li.classList.toggle('is-right', good); li.classList.toggle('is-wrong', !good); });
       if (ok) return finish(true);
-      const r = el.querySelector('.sd-reveal'); r.hidden = false;
-      r.innerHTML = `<p><b class="sd-bad">${rows.filter((li, p) => Number(li.dataset.i) === p).length} of ${rows.length} in the right place.</b> Rearrange and check again, or show the answer.</p>`;
+      // One check: show the correct order next to what you had, then move on.
+      const placed = rows.filter((li, p) => Number(li.dataset.i) === p).length;
+      [...rows].sort((a, c) => a.dataset.i - c.dataset.i).forEach(li => list.appendChild(li));
+      finish(false);
+      el.querySelector('.sd-reveal').insertAdjacentHTML('afterbegin', `<p class="sd-muted">You had ${placed} of ${rows.length} in the right place. The correct order is shown; red items were out of place.</p>`);
     });
     el.querySelector('[data-b=show]').addEventListener('click', () => {
       [...list.querySelectorAll('li')].sort((a, c) => a.dataset.i - c.dataset.i).forEach(li => { list.appendChild(li); li.classList.remove('is-wrong'); li.classList.add('is-right'); });
@@ -253,23 +257,23 @@
     return html;
   }
   R.faded = b => frame(b, `<div class="sd-prompt">${md(b.prompt)}</div><div class="sd-faded">${blanks(b.text, b.key)}</div><div class="sd-actions">${button('Check', 'check', '', true)}</div><div class="sd-reveal" hidden></div>`, b.title);
+  // One check: wrong blanks are corrected in place and the explanation shown, so you can move on.
   W.faded = (el, b, ctx) => {
-    let tries = 0;
     el.querySelector('[data-b=check]').addEventListener('click', () => {
-      tries++; let right = 0; const fields = [...el.querySelectorAll('.sd-blank')];
-      if (tries === 1) el.dataset.answer = fields.map((f, i) => `blank ${i + 1}: ${f.value || '(empty)'}`).join('; ');
-      fields.forEach(f => {
+      let right = 0; const fields = [...el.querySelectorAll('.sd-blank')], notes = [];
+      fields.forEach((f, i) => {
         const a = f.dataset.answer, v = f.value.trim();
-        const ok = f.tagName === 'INPUT' ? Math.abs(Number(v.replace(/,/g, '')) - Number(a)) <= Math.abs(Number(a)) * 0.05 + 1e-9 : v === a;
+        const ok = f.tagName === 'INPUT' ? v !== '' && Math.abs(Number(v.replace(/,/g, '')) - Number(a)) <= Math.abs(Number(a)) * 0.1 + 1e-9 : v === a;
         right += ok; f.classList.toggle('is-right', ok); f.classList.toggle('is-wrong', !ok);
+        if (!ok) notes.push(`blank ${i + 1}: you put ${v || '(nothing)'}, correct is ${a}`);
+        if (!ok) { f.value = a; f.classList.add('is-shown'); }
+        f.disabled = true;
       });
+      el.dataset.answer = notes.join('; ');
+      el.querySelector('[data-b=check]').disabled = true;
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
-      if (right === fields.length || tries >= 2) {
-        fields.forEach(f => { if (f.classList.contains('is-wrong')) { f.value = f.dataset.answer; f.classList.add('is-shown'); } f.disabled = true; });
-        el.querySelector('[data-b=check]').disabled = true;
-        r.innerHTML = `<p>${right === fields.length ? '<b class="sd-ok">All blanks correct.</b>' : `<b class="sd-bad">${right} of ${fields.length} correct.</b> The answers are now filled in.`}</p>${b.explain ? md(b.explain) : ''}`;
-        ctx.done(b, right === fields.length && tries === 1);
-      } else r.innerHTML = `<p><b class="sd-bad">${right} of ${fields.length} correct.</b> Fix the highlighted blanks and check again.</p>`;
+      r.innerHTML = `<p>${right === fields.length ? '<b class="sd-ok">All blanks correct.</b>' : `<b class="sd-bad">${right} of ${fields.length} correct.</b> The right answers are now filled in.`}</p>${b.explain ? md(b.explain) : ''}`;
+      ctx.done(b, right === fields.length);
     });
   };
 

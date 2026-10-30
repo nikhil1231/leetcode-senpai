@@ -60,9 +60,8 @@
   const slot = key => `<div data-slot="${esc(key)}"></div>${wrongHtml(key)}`;
   function wrongHtml(key) {
     if (!(key in S.wrong) || !S.session?.tutor) return '';
-    const t = S.explain[key];
-    if (!t) return `<div class="sd-tutor-nudge">${btn('Explain my mistake', 'explain', `data-key="${esc(key)}"`)}<span class="sd-muted">The tutor looks at your answer and tells you what you misunderstood.</span></div>`;
-    return `<div class="sd-tutor-reply">${t.loading ? '<p class="sd-muted">Thinking about your answer…</p>' : t.reply ? `<span class="sd-say-label">Tutor</span>${md(t.reply)}` : `<p class="sd-muted">${esc(t.message)}</p>`}</div>`;
+    const t = S.explain[key] || {loading: true};
+    return `<div class="sd-tutor-reply" aria-live="polite">${t.loading ? '<p class="sd-muted">The tutor is looking at your answer…</p>' : t.reply ? `<span class="sd-say-label">Why that was wrong</span>${md(t.reply)}` : `<p class="sd-muted">${esc(t.message)}</p>${btn('Try again', 'explain', `data-key="${esc(key)}"`)}`}</div>`;
   }
   function threadHtml(s) {
     if (!S.session.tutor) return '';
@@ -209,13 +208,7 @@
         S.session.attempts[sec] = res;
       });
     }
-    if (action === 'explain') {
-      const key = node.dataset.key, s = S.session.sections.find(x => x.blocks.includes(key)) || {id: 's0'};
-      S.explain[key] = {loading: true}; paint();
-      try { S.explain[key] = await call(`/course/lessons/${id}/tutor`, 'POST', {section: s.id, block: key, answer: S.wrong[key] || ''}); }
-      catch (e) { S.explain[key] = {message: e.message}; }
-      return paint();
-    }
+    if (action === 'explain') return explain(node.dataset.key);
     if (action === 'ask') {
       const sid = node.dataset.ask, q = (S.drafts['ask:' + sid] || '').trim();
       if (!q) return;
@@ -252,6 +245,17 @@
       });
     }
     if (action === 'redesign') return window.SystemDesign.openView('redesign/' + id);
+  }
+  // A wrong answer gets the tutor's diagnosis straight away; the revealed answer is already on screen.
+  async function explain(key) {
+    const lesson = S.id, s = S.session?.sections.find(x => x.blocks.includes(key)) || {id: 's0'};
+    S.explain[key] = {loading: true}; paint();
+    let res;
+    try { res = await call(`/course/lessons/${lesson}/tutor`, 'POST', {section: s.id, block: key, answer: S.wrong[key] || '', question: 'I got this activity wrong. Explain what I misunderstood and the reasoning to the right answer.'}); }
+    catch (e) { res = {message: e.message}; }
+    if (S?.id !== lesson) return;
+    S.explain[key] = res.reply || res.message ? res : {message: 'The tutor had nothing to add. The explanation above covers it.'};
+    paint();
   }
   function loadCallbacks() {
     for (const c of S.session.callbacks) {
@@ -303,7 +307,8 @@
           if (correct === false) S.wrong[key] = node?.dataset.answer || '';
           const p = Promise.resolve(ctx.done(key, correct)).catch(() => {});
           S.pending.push(p);
-          if (!S.session?.planned || correct === false) setTimeout(paint, 0);
+          if (correct === false && S.session?.tutor) setTimeout(() => explain(key), 0);
+          else if (!S.session?.planned) setTimeout(paint, 0);
         },
       });
       tmp.querySelectorAll(':scope > [data-block]').forEach(n => { S.nodes[n.dataset.block] = n; });
