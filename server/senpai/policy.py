@@ -15,9 +15,9 @@ import hashlib
 import json
 
 BUCKETS = ('dsa', 'system_design', 'behavioural', 'stack')
-IN_APP = ('dsa', 'system_design')
+IN_APP = ('dsa', 'system_design', 'behavioural', 'stack')
 BUCKET_LABELS = {'dsa': 'Coding (DSA)', 'system_design': 'System design',
-                 'behavioural': 'Behavioural (outside the app)', 'stack': 'Role stack (outside the app)'}
+                 'behavioural': 'Behavioural (Experience)', 'stack': 'Role stack (Fundamentals, AI, Practical)'}
 CONFIDENCE = {'low': 1 / 3, 'medium': 2 / 3, 'high': 1.0}
 KINDS = ('rebalance', 'focus_add', 'focus_remove', 'overlay_add', 'overlay_remove', 'objective_add',
          'objective_complete', 'objective_remove', 'set_protected', 'weekly_minutes', 'authority')

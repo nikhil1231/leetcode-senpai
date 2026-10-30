@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="/system-design.css?v=__ASSET_VER__" />
   <link rel="stylesheet" href="/sd-lessons.css?v=__ASSET_VER__" />
   <link rel="stylesheet" href="/sd-progress.css?v=__ASSET_VER__" />
+  <link rel="stylesheet" href="/tracks.css?v=__ASSET_VER__" />
   <link rel="stylesheet" href="/daily-coach.css?v=__ASSET_VER__" />
   <link rel="stylesheet" href="/page-coach.css?v=__ASSET_VER__" />
 </head>
@@ -65,7 +66,11 @@
         <div class="section-menu-heading" id="section-menu-title">Your learning spaces<span>Choose what to work on</span></div>
         <button type="button" data-section="leetcode" class="section-option"><span class="section-option-icon">&lt;/&gt;</span><span><strong>LeetCode</strong><small>Algorithms, patterns &amp; problem solving</small></span><span class="section-check" aria-hidden="true">✓</span></button>
         <button type="button" data-section="system-design" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="2" width="8" height="6" rx="1.5"/><rect x="2" y="16" width="7" height="6" rx="1.5"/><rect x="15" y="16" width="7" height="6" rx="1.5"/><path d="M12 8v4H5.5v4M12 12h6.5v4"/></svg><span><strong>System Design</strong><small>Architecture, trade-offs &amp; clear reasoning</small></span><span class="section-check" aria-hidden="true">✓</span></button>
-        <div class="section-menu-foot">Two disciplines. One interview toolkit.</div>
+        <button type="button" data-section="fundamentals" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 5h16v11H4z"/><path d="M8 20h8M12 16v4M7 9l2 2-2 2M11 13h5"/></svg><span><strong>Fundamentals</strong><small>Languages, Linux, networking, databases &amp; cloud</small></span><span class="section-check" aria-hidden="true">✓</span></button>
+        <button type="button" data-section="ai" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg><span><strong>AI Engineering</strong><small>LLMs, RAG, evals, agents &amp; serving</small></span><span class="section-check" aria-hidden="true">✓</span></button>
+        <button type="button" data-section="experience" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span><strong>Experience</strong><small>Your stories, behavioural answers &amp; deep dives</small></span><span class="section-check" aria-hidden="true">✓</span></button>
+        <button type="button" data-section="practical" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13 6l-2 12"/></svg><span><strong>Practical Coding</strong><small>Build, extend, debug &amp; review real code</small></span><span class="section-check" aria-hidden="true">✓</span></button>
+        <div class="section-menu-foot">Six disciplines. One interview toolkit.</div>
       </div>
       </div>
 
@@ -98,6 +103,7 @@
         <button type="button" data-design-view="progress"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#i-insights"/></svg>Your progress</button>
         <div class="design-nav-note">Think it through.<br>Build it simply.<br>Explain the trade-offs.</div>
       </nav>
+      <nav id="track-nav" class="design-nav hidden" aria-label="Learning track"></nav>
 
       <div class="sidebar-foot">
         <div id="coach-chip"></div>
@@ -203,6 +209,7 @@
         <section id="tab-senpai" class="tab hidden"></section>
         <section id="tab-practice" class="tab hidden"></section>
         <section id="tab-design" class="tab hidden"></section>
+        <section id="tab-track" class="tab hidden"></section>
         <section id="tab-discover" class="tab hidden"></section>
         <section id="tab-topics" class="tab hidden"></section>
         <section id="tab-insights" class="tab hidden"></section>
@@ -516,6 +523,9 @@
   <script src="/sd-drills.js?v=__ASSET_VER__"></script>
   <script src="/system-design-learning.js?v=__ASSET_VER__"></script>
   <script src="/system-design.js?v=__ASSET_VER__"></script>
+  <script src="/tracks.js?v=__ASSET_VER__"></script>
+  <script src="/experience.js?v=__ASSET_VER__"></script>
+  <script src="/practical.js?v=__ASSET_VER__"></script>
   <script src="/sections.js?v=__ASSET_VER__"></script>
   <script src="/editor.js?v=__ASSET_VER__"></script>
   <script src="/page-coach.js?v=__ASSET_VER__"></script>

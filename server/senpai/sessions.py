@@ -30,7 +30,7 @@ def _block(kind, bucket, capability, activity, minutes, title, why, action, prio
 
 
 def candidates(capabilities, queue, sd_summary, quickfire_topics, focus_ids, objective_buckets, depth,
-               llm_enabled, mode):
+               llm_enabled, mode, tracks=None):
     caps = {c['id']: c for c in capabilities}
     out = []
     focus_ids = set(focus_ids)
@@ -105,6 +105,7 @@ def candidates(capabilities, queue, sd_summary, quickfire_topics, focus_ids, obj
     out.append(_block('sd_case', 'system_design', None, 'design', 40 if depth == 'deep' else 30,
                       'Design case', 'Apply the material end-to-end under realistic constraints.',
                       {'type': 'sd_cases'}, 30 + (25 if mode == 'interview' or depth == 'deep' else 0)))
+    out += _track_blocks(tracks or {}, objective_buckets, depth)
     if mode == 'interview':
         for b in out:
             if b['activity'] == 'implementation':
@@ -118,13 +119,53 @@ def candidates(capabilities, queue, sd_summary, quickfire_topics, focus_ids, obj
     return list(unique.values())
 
 
+TRACK_TITLES = {'fundamentals': 'Fundamentals', 'ai': 'AI Engineering'}
+
+
+def _track_blocks(tracks, objective_buckets, depth):
+    """Blocks from the Experience, Fundamentals, AI Engineering and Practical Coding sections."""
+    out = []
+    go = lambda track, view: {'type': 'track', 'track': track, 'view': view}
+    for track, title in TRACK_TITLES.items():
+        t = tracks.get(track)
+        if not t:
+            continue
+        bonus = 10 if 'stack' in objective_buckets else 0
+        if t['due'] or t['mistakes']:
+            out.append(_block('track_quickfire', 'stack', None, 'retrieval', 6, f'{title} Quickfire',
+                              f"{t['mistakes']} to fix and {t['due']} fading: retrieval before new material.",
+                              go(track, 'quickfire'), 62 + bonus))
+        if t['next_lesson']:
+            n = t['next_lesson']
+            out.append(_block('track_lesson', 'stack', None, 'explanation', n['minutes'], n['title'],
+                              f'Next {title} lesson, with a short check at the end.',
+                              go(track, 'lesson/' + n['id']), 42 + bonus - (5 if track == 'ai' and t['answers'] else 0)))
+    ex = (tracks.get('practical') or {}).get('next')
+    if ex:
+        out.append(_block('practical', 'stack', None, 'implementation', ex['minutes'], ex['title'],
+                          'A practical round: build, extend, debug or review realistic code against tests.',
+                          go('practical', 'exercise/' + ex['id']), 36 + (15 if depth == 'deep' else 0)))
+    e = tracks.get('experience')
+    if e:
+        bonus = 10 if 'behavioural' in objective_buckets else 0
+        out.append(_block('behavioural_answer', 'behavioural', None, 'retrieval', 8, 'Timed behavioural answer',
+                          (f"{e['due'] + e['mistakes']} prompt(s) due or missed. " if e['due'] or e['mistakes'] else '')
+                          + f"Next: “{e['next_prompt']}” Answer out loud, then self-check.",
+                          go('experience', 'drill'), (64 if e['due'] or e['mistakes'] else 48) + bonus))
+        if e['gaps'] and e['stories'] < 12:
+            out.append(_block('story', 'behavioural', None, 'explanation', 15, 'Write a story for your bank',
+                              f"{e['gaps']} competencies have no story yet; draft one from your CV.",
+                              go('experience', 'stories'), 40 + bonus))
+    return out
+
+
 def _skill_for(category):
     from .. import curriculum
     return curriculum.CATEGORY_SKILLS.get(category, 'unknown')
 
 
 def prepare(plan, now, date, capabilities, queue, sd_summary, quickfire_topics, *, budget=60, mode='mixed',
-            depth='balanced', objective=None, llm_enabled=False):
+            depth='balanced', objective=None, llm_enabled=False, tracks=None):
     mode = mode if mode in MODES else 'mixed'
     depth = depth if depth in DEPTHS else 'balanced'
     focus_ids = [f['capability_id'] for f in policy.active_focus(plan)]
@@ -139,7 +180,7 @@ def prepare(plan, now, date, capabilities, queue, sd_summary, quickfire_topics, 
             focus_ids = focus_ids + [objective]
     allowed = ACTIVITY_MODES[mode]
     pool = [b for b in candidates(capabilities, queue, sd_summary, quickfire_topics, focus_ids, objective_buckets,
-                                  depth, llm_enabled, mode) if b['activity'] in allowed]
+                                  depth, llm_enabled, mode, tracks) if b['activity'] in allowed]
     alloc = policy.effective_allocation(plan, now)
     in_app = {b: alloc[b] for b in policy.IN_APP}
     if objective and objective_buckets <= set(policy.IN_APP):

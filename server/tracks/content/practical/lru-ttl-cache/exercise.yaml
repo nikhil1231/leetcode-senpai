@@ -1,0 +1,43 @@
+id: lru-ttl-cache
+title: An LRU cache with expiry
+category: build
+minutes: 35
+level: core
+language: python
+brief: |
+  Implement an in-memory cache with a fixed capacity, least-recently-used eviction and a time-to-live.
+
+  `TTLCache(capacity, ttl, clock=time.monotonic)` must support:
+
+  - `put(key, value)`: insert or replace. A replaced key becomes most recently used and gets a fresh TTL. If the cache is over capacity, evict the least recently used **live** entry.
+  - `get(key, default=None)`: return the value if present and not expired, and mark it most recently used. Expired entries behave as if absent and are removed.
+  - `delete(key)`: remove it, returning `True` if a live entry was removed.
+  - `len(cache)`: the number of **live** entries.
+
+  `get` and `put` should be O(1) on average. The clock is injectable so tests can control time; an entry stored at time `t` is expired once `clock() >= t + ttl`.
+
+  This is a classic first practical round: interviewers watch how you structure it, whether you test edge cases, and how you talk through the complexity.
+files: [ttl_cache.py]
+readonly: [test_ttl_cache.py]
+tests: [test_ttl_cache.py]
+checks: [check_ttl_cache.py]
+rubric:
+  - get and put are O(1) on average (for example an OrderedDict or a dict plus a doubly linked list)
+  - Expired entries are never returned and do not count toward len()
+  - Eviction removes the least recently used entry, and expired entries are dropped before live ones are evicted
+  - The code is readable, with clear names and no duplicated expiry logic
+  - You wrote or extended at least one test of your own
+hints:
+  - collections.OrderedDict has move_to_end() and popitem(last=False).
+  - Store (value, expires_at) per key, and keep one helper that checks and removes an expired entry.
+  - Every entry shares one TTL, so the order in which keys were last put is the order in which they expire. Track that order separately from recency.
+discussion: |
+  **Shape of a strong answer.** Two orderings over the same keys. Recency order (an `OrderedDict`, `move_to_end` on every hit) decides eviction. Expiry order decides what is stale: since every entry shares one TTL, the order in which keys were last `put` is exactly the order in which they expire. Purging from the front of the expiry order on each call is amortised O(1), so `get`, `put`, `delete` and `len` all stay fast, and expired entries are always gone before a live one is evicted.
+
+  A simpler single-`OrderedDict` version that checks expiry lazily on access is a perfectly good first answer, provided you notice that eviction and `len()` then have to scan for expired entries, which is O(n), and say how you would fix it.
+
+  **Things interviewers ask next:**
+  - *Thread safety?* Wrap operations in a lock, or shard by key hash with a lock per shard to reduce contention.
+  - *Per-entry TTLs?* Put order is no longer expiry order, so use a min-heap of `(expires_at, key)` with lazy deletion, or a timing wheel.
+  - *Memory held by expired entries?* Here it is reclaimed on the next call. A cache that sits idle keeps them; a periodic sweep bounds that.
+  - *Cache stampede?* When a hot key expires, many callers miss at once. Request coalescing (one loader per key) or early probabilistic refresh helps.

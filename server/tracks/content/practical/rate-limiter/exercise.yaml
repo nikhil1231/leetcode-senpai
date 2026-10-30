@@ -1,0 +1,39 @@
+id: rate-limiter
+title: A per-key token-bucket rate limiter
+category: build
+minutes: 35
+level: core
+language: python
+brief: |
+  Implement a rate limiter for an API gateway, with one token bucket per key (for example per API key).
+
+  `RateLimiter(rate, burst, clock=time.monotonic)`:
+
+  - Each key's bucket holds at most `burst` tokens and refills continuously at `rate` tokens per second. A new key starts full.
+  - `allow(key, cost=1) -> bool`: if the bucket has at least `cost` tokens, take them and return `True`; otherwise take nothing and return `False`.
+  - `retry_after(key, cost=1) -> float`: seconds until `allow(key, cost)` would succeed (0 if it would succeed now). A cost larger than `burst` can never succeed: raise `ValueError`.
+  - Memory must stay bounded: keys idle long enough to have refilled completely carry no information, so they can be dropped. Implement `prune()` to remove them, and return how many were removed.
+
+  Use the injected clock only. Fractional tokens are fine.
+files: [limiter.py]
+readonly: [test_limiter.py]
+tests: [test_limiter.py]
+checks: [check_limiter.py]
+rubric:
+  - Refill is computed lazily from elapsed time (no background thread or timer per key)
+  - Tokens are capped at burst, and a rejected request consumes nothing
+  - retry_after is computed from the deficit and the rate, and impossible costs are rejected
+  - prune removes only keys that are full, so behaviour is unchanged by pruning
+  - Clear structure, and you can explain how you would make it work across many gateway instances
+hints:
+  - Store (tokens, last_refill_time) per key, and refill on every call before deciding.
+  - tokens = min(burst, tokens + elapsed × rate).
+  - A full bucket and a missing key behave identically, which is why pruning full keys is safe.
+discussion: |
+  **Shape of a strong answer.** A dict of `key -> [tokens, last]`. A `_refill(key)` helper creates missing keys full, and adds `elapsed × rate` capped at `burst`. `allow` refills, compares, and subtracts only on success. `retry_after` is `max(0, (cost − tokens) / rate)`. `prune` drops keys whose refilled level equals `burst`.
+
+  **Follow-ups you should be ready for:**
+  - *Many gateway instances?* A local limiter per instance allows N × the limit. Centralise the bucket in Redis with an atomic Lua script (read, refill, decide, write in one step), or give each instance a share of the rate and accept the imprecision. Discuss the latency added per request.
+  - *Token bucket vs sliding window?* Token buckets allow bursts up to `burst` and are O(1) per key. Sliding-window logs are exact but store every timestamp. Sliding-window counters approximate cheaply.
+  - *What should the HTTP response be?* `429 Too Many Requests` with a `Retry-After` header, and ideally `RateLimit` headers so clients can pace themselves.
+  - *Clock choice?* Monotonic time, so that wall-clock jumps (NTP adjustments) can't refill or drain buckets.

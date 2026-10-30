@@ -1,0 +1,29 @@
+id: review-cache
+title: Review a caching PR
+category: review
+minutes: 25
+level: stretch
+language: python
+brief: |
+  The product API is slow under load, and a teammate's pull request adds a Redis cache in front of the product lookup. It's already approved by one reviewer, and you're the second.
+
+  Write your review comments in the box, one issue per comment: where it is, why it matters, and what to do instead. Prioritise correctness and security over style.
+files: []
+readonly: [PR.md, product_cache.py]
+issues:
+  - title: Cache key leaks data across tenants and locales
+    detail: The key is only the product id, but the response depends on tenant and locale (prices, translations, visibility). One tenant can be served another's data. Include every input that changes the response in the key.
+  - title: Unsafe deserialisation with pickle
+    detail: Anyone who can write to Redis can execute code in the API through pickle.loads. Serialise as JSON.
+  - title: Cache stampede on expiry
+    detail: Every product expires exactly at TTL, so a hot product makes all concurrent requests miss and hit the database at once. Add request coalescing (a per-key lock or single-flight), plus TTL jitter so keys don't expire together.
+  - title: Missing products and errors are cached forever
+    detail: None is pickled with no TTL, and the exception path caches the fallback, so a product created later stays "not found" and a transient DB error is served until someone flushes Redis. Cache negatives briefly with their own TTL, and never cache errors.
+  - title: Invalidation races with the write
+    detail: update_product deletes the key before committing the transaction, so a concurrent reader can refill the cache with the old value, which then lives until TTL. Delete after commit (and consider a short delayed second delete or versioned values).
+  - title: Redis failure takes the API down
+    detail: Any Redis error propagates, so the cache, an optimisation, becomes a hard dependency. Catch cache errors, fall back to the database, and use short timeouts.
+discussion: |
+  **Blocking:** the tenant and locale leak (a data breach), pickle (remote code execution), and caching negatives and errors forever (a correctness outage). **Strongly suggested:** stampede protection with jitter, the invalidation race, and treating Redis as optional with timeouts.
+
+  **Why this is a good interview exercise:** caching bugs are invisible in local testing, where you have one tenant, no concurrency, a Redis that never fails and no expiry during the test. Good reviewers ask "what inputs change this response?", "what happens at expiry under load?", "what happens when the cache is down?" and "what happens between the write and the delete?"

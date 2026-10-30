@@ -15,6 +15,7 @@ Collections:
   users/{uid}/playbooks/{category}     synthesized per-category cheat sheets
   users/{uid}/mocks/{id}               mock-interview sets + scores
   users/{uid}/sprint_rounds/{id}       sprint-rep round state
+  users/{uid}/tracks/{track}/records/{key}  Fundamentals / AI / Experience / Practical records
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
 import threading
@@ -184,6 +185,39 @@ class FirestoreStore:
             transaction.set(ref, saved)
             return saved
         return write(self.db.transaction())
+
+    # ---- learning tracks (Fundamentals, AI Engineering, Experience, Practical) -----
+    # users/{uid}/tracks/{track}/records/{key}: lesson progress, answers, stories, drills
+    # and exercise attempts. Each record carries a revision for compare-and-swap.
+    def _track(self, track):
+        return self._user_ref().collection('tracks').document(track).collection('records')
+
+    def get_track_record(self, track, key):
+        return self._track(track).document(key).get().to_dict()
+
+    def list_track_records(self, track):
+        return list(_cached(('track', track, self.uid), lambda: [d.to_dict() for d in self._track(track).stream()]))
+
+    def put_track_record(self, track, key, doc, expected_revision=None):
+        """Create or compare-and-swap. A stale tab cannot overwrite newer work."""
+        from google.cloud import firestore
+        ref = self._track(track).document(key)
+        @firestore.transactional
+        def write(transaction):
+            old = ref.get(transaction=transaction).to_dict()
+            actual = old.get('revision', 0) if old else None
+            if actual != expected_revision:
+                raise ValueError('This record changed in another request. Reload before saving.')
+            saved = {**doc, 'id': key, 'revision': (actual or 0) + 1}
+            transaction.set(ref, saved)
+            return saved
+        saved = write(self.db.transaction())
+        _invalidate(('track', track, self.uid))
+        return saved
+
+    def delete_track_record(self, track, key):
+        self._track(track).document(key).delete()
+        _invalidate(('track', track, self.uid))
 
     # Kept separate: a small recognition exercise is not an accepted solve or
     # a spaced-repetition review. create() makes submission retries idempotent.

@@ -1,0 +1,35 @@
+id: review-webhook
+title: Review a payments webhook PR
+category: review
+minutes: 25
+level: core
+language: python
+brief: |
+  A teammate opened a pull request adding a webhook endpoint for the payment provider. When a payment succeeds, the provider POSTs an event, and the handler marks the order as paid and records the payment in the ledger.
+
+  Review it as you would at work: write your comments in the review box, one per issue, each naming the line or area, why it matters, and what to do instead. Prioritise. A senior reviewer separates "must fix before merge" from nits.
+
+  The PR description and code are in the files above.
+files: []
+readonly: [PR.md, webhooks.py]
+issues:
+  - title: No signature verification
+    detail: Anyone can POST a fake "payment_succeeded" event and get an order marked paid. Verify the provider's HMAC signature over the raw body with the shared secret, using a constant-time comparison, and reject stale timestamps.
+  - title: Not idempotent
+    detail: Providers deliver events at least once and retry. A duplicate event inserts a second ledger row. Store processed event ids under a unique constraint, or make the ledger insert conditional, in the same transaction as the order update.
+  - title: SQL injection
+    detail: The queries are built with f-strings from payload fields. Use parameterised queries.
+  - title: Trusts the amount and status from the payload
+    detail: The order is marked paid regardless of whether the paid amount and currency match the order. Check them against the order, or fetch the payment from the provider's API.
+  - title: No transaction around the two writes
+    detail: The order update and the ledger insert can half-succeed, leaving a paid order with no ledger entry or the reverse. Do both in one transaction.
+  - title: Logs secrets and personal data
+    detail: The whole payload (customer email, card details, and the signature header) is logged at INFO. Log the event id and type only.
+  - title: Slow work in the request path and wrong error codes
+    detail: Sending the confirmation email synchronously makes the provider time out and retry; failures return 500 and trigger retry storms, and unknown event types return 400. Acknowledge quickly with 2xx after durable recording, do side effects asynchronously, and return 2xx for ignored event types.
+discussion: |
+  **Must fix before merge:** signature verification, idempotency, SQL injection, the amount check, and the transaction. Each one can lose money or let an attacker mark orders paid.
+
+  **Should fix:** logging of personal data and secrets (a compliance issue), and moving the email out of the request path with correct status codes, because webhook senders retry on timeouts and 5xx, which turns a slow email server into duplicate processing.
+
+  **How to write review comments that land:** name the risk concretely ("an attacker can mark any order paid with curl"), propose the fix, link the provider's docs for signatures and retries, and label severity. Approve with comments only when nothing blocking remains.

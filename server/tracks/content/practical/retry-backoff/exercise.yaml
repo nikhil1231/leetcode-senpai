@@ -1,0 +1,37 @@
+id: retry-backoff
+title: Debug a retry helper
+category: debug
+minutes: 30
+level: core
+language: python
+brief: |
+  **Bug report:** "Since we adopted `retry()` from the shared utils, the payments client sometimes gives up after fewer attempts than configured, a validation error was retried five times and charged the customer twice, an outage last week returned `None` to callers instead of raising, and backoff delays reached 30 minutes."
+
+  `retry(fn, attempts=3, base_delay=0.1, max_delay=5.0, retry_on=(ConnectionError, TimeoutError), sleep=time.sleep, rand=random.random)` should:
+
+  - call `fn()` up to `attempts` times in total, returning its result on the first success;
+  - retry only on the exception types in `retry_on`; anything else propagates immediately;
+  - between attempts, sleep with **full jitter**: a random value in `[0, min(max_delay, base_delay × 2^(n−1))]` before retry n (n = 1, 2, …);
+  - after the last failed attempt, re-raise that attempt's exception.
+
+  Run the tests, find the root causes (there are several), and fix them. Keep the fix minimal and explain each bug in a comment or to yourself before you change it.
+files: [retry.py]
+readonly: [test_retry.py]
+tests: [test_retry.py]
+checks: [check_retry.py]
+rubric:
+  - Read the failing tests and formed a hypothesis for each bug before editing
+  - Fixed the attempt count (off by one)
+  - Non-retryable exceptions now propagate immediately
+  - Delays are capped at max_delay and use full jitter
+  - The final exception is re-raised instead of returning None
+hints:
+  - Count how many times fn is called when attempts=3.
+  - What does `except Exception` catch that it shouldn't?
+  - Where is max_delay applied, if anywhere?
+discussion: |
+  **The bugs:** `range(1, attempts)` called `fn` one time too few. `except Exception` retried everything, including validation errors that will never succeed and non-idempotent calls that already took effect. The cap was applied before the exponential growth, so it didn't cap anything. Jitter was added on top of the delay rather than drawn from the range. And the loop fell off the end and returned `None`.
+
+  **What interviewers listen for in a debug round:** reproduce the failure first (run the tests), read the code against the spec line by line, change one thing at a time, and re-run. Narrate hypotheses ("I think this is an off-by-one because three attempts produced two calls").
+
+  **Follow-ups:** Why jitter at all? Without it, many clients that failed together retry together, which is a thundering herd. Why is retrying non-idempotent operations dangerous, and what makes them safe? Idempotency keys. Where should retries live when there are several layers (client, gateway, service)? In one layer, or the attempts multiply. What's a retry budget, or circuit breaker?

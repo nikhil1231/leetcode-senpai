@@ -1,0 +1,40 @@
+id: order-pricing
+title: Extend a pricing function without breaking it
+category: extend
+minutes: 40
+level: core
+language: python
+brief: |
+  `pricing.py` prices shop orders. It works (the existing tests pass), but it uses floats for money and has grown by copy-paste. Product wants two features:
+
+  1. **Multi-buy offers.** `MULTIBUY` maps a SKU to N: for those SKUs, every Nth unit is free ("3 for 2" is N = 3).
+  2. **Promo codes.** `quote(order, promo=None, today=None)` takes an optional code from `PROMOS`:
+     - `{"percent": p, "expires": date}` takes p% off the goods subtotal (after multi-buy), valid up to and including `expires`.
+     - `{"amount": "5.00", "min_spend": "30.00"}` takes a fixed amount off, if the subtotal after multi-buy is at least `min_spend`. The discount never takes the subtotal below zero.
+     - An unknown or expired code, or an unmet minimum spend, raises `InvalidPromo` with a helpful message.
+
+  Rules that must **not** change: UK orders add 20% VAT (now applied after discounts); shipping is £4.99, free when the goods total including VAT is over £50; `price_order(order)` keeps working for existing callers.
+
+  New requirement for money: amounts must be exact. `quote` returns a `Quote` with `subtotal`, `discount`, `vat`, `shipping` and `total`, all `Decimal`s, with VAT rounded half-up to the penny. `price_order` should return `quote(order).total`.
+
+  Refactor as you go. The existing tests are your safety net.
+files: [pricing.py]
+readonly: [test_pricing.py]
+tests: [test_pricing.py]
+checks: [check_pricing.py]
+rubric:
+  - Money is Decimal throughout (prices are converted with Decimal(str(x)) or given as strings); no float arithmetic on money
+  - The pricing steps are separate and readable (line totals, multi-buy, discount, VAT, shipping), not one long function
+  - Promo validation is explicit, and each failure raises InvalidPromo with a clear reason
+  - Existing behaviour is preserved, and price_order delegates to quote
+  - You added tests for the cases that worried you most
+hints:
+  - Decimal("0.1") + Decimal("0.2") == Decimal("0.3"); 0.1 + 0.2 != 0.3.
+  - Use .quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) for pennies.
+  - Free units for a multi-buy line are qty // N.
+discussion: |
+  **What interviewers look for in an "extend" round:** that you run the tests first, make small safe refactors before adding features, keep the old interface working, and ask about ambiguous rules instead of guessing. Here, for example: does VAT apply before or after the discount (after, as stated), and does the free-shipping threshold use the discounted total (yes)?
+
+  **Shape of a strong answer.** Small functions, one per pricing step (`_subtotal`, `_discount`, `_vat`, `_shipping`), a frozen `Quote` dataclass, and money as `Decimal` from the moment it enters. Converting floats with `Decimal(str(price))` avoids importing float error (`Decimal(2.675)` is 2.67499999…).
+
+  **Follow-ups:** Where would these rules live in a real system (a pricing service, rules stored as data, effective dates)? How would you stop two promo codes stacking? How do you round a line-level VAT invoice vs an order-level one, and why does it matter for accounting?

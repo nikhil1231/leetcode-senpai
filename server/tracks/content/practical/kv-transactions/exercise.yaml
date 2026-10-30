@@ -1,0 +1,40 @@
+id: kv-transactions
+title: A key-value store with nested transactions
+category: build
+minutes: 40
+level: stretch
+language: python
+brief: |
+  Implement an in-memory key-value store with nested transactions. This is a popular practical round because the obvious solution (copy the whole store on `begin`) is easy, and the better one takes some design.
+
+  `KVStore()`:
+
+  - `set(key, value)`, `get(key)` (returns `None` if absent), `delete(key)`.
+  - `count(value)`: how many keys currently hold `value`. It must be **O(1)**, not a scan.
+  - `begin()`: open a transaction. Transactions nest.
+  - `rollback()`: undo everything since the matching `begin`, and close that transaction. Raises `RuntimeError` if no transaction is open.
+  - `commit()`: make **all** open transactions permanent and close them all. Raises `RuntimeError` if none is open.
+
+  Aim for `begin` to be O(1) and `rollback` proportional to the number of keys changed in that transaction, not the size of the store.
+files: [kv.py]
+readonly: [test_kv.py]
+tests: [test_kv.py]
+checks: [check_kv.py]
+rubric:
+  - count is O(1), maintained through a value → count index that every write updates
+  - begin is O(1); rollback undoes only what the transaction changed (an undo log), not a full copy
+  - Nested rollback restores exactly the state at the matching begin, including deleted and newly created keys
+  - All writes go through one internal helper, so the index and undo log can't drift apart
+  - Edge cases handled: deleting a missing key, setting the same value twice, errors with no transaction open
+hints:
+  - Keep a stack of undo logs. In each log, record a key's previous value (or "absent") the first time the key changes within that transaction.
+  - Rollback replays one log, restoring previous values through the same write helper so counts stay correct.
+  - Commit with all transactions closed just means dropping every undo log.
+discussion: |
+  **Shape of a strong answer.** `data` dict, a `counts` dict from value to number of keys, and a stack of undo logs (`dict` of key → previous value or a sentinel for "absent"). Every mutation goes through `_write(key, value_or_absent)`, which adjusts counts, records the old value in the top log if the key isn't already recorded there, and updates `data`. `rollback` pops the top log and writes each saved value back (without logging). `commit` clears the stack.
+
+  **Follow-ups:**
+  - *Why record only the first change per transaction?* That's the value to restore; later changes in the same transaction don't matter.
+  - *Copy-on-begin trade-off?* Simple, but O(n) memory and time per `begin`. Undo logs are O(changes).
+  - *Isolation between concurrent clients?* This is single-threaded. Real databases use MVCC (versioned values with transaction ids) or locks. Explain snapshot reads as a natural extension: keep version chains per key.
+  - *Durability?* Append each committed write to a write-ahead log and fsync it, then replay on startup.

@@ -7,11 +7,15 @@ wait for approval. Original evidence stays where it lives (attempts, answers, Jo
 """
 import datetime as dt
 import hashlib
+import logging
 import time
 
 from .. import config, curriculum, learning_sequences, practice, scheduler
 from ..system_design_learning import course_summary
+from ..tracks import senpai as tracks_senpai
 from . import capabilities as caps_mod, demand, interventions, jobscout, policy, sessions, snapshot
+
+log = logging.getLogger(__name__)
 
 PLAN = 'plan'
 STATE = 'state'
@@ -156,9 +160,21 @@ def bundle(store, now=None):
     answers, learning, design = store.list_light_practice(), store.list_learning_state(), store.list_design_records()
     today = local_date(settings, now)
     rows, events = caps_mod.build(problems, attempts, reviews, answers, learning, design, now=now, today=today)
+    tracks = _track_records(store)
+    rows = sorted(rows + tracks_senpai.capability_rows(tracks, now), key=lambda r: r['id'])
     return {'settings': settings, 'problems': problems, 'attempts': attempts, 'reviews': reviews,
             'answers': answers, 'learning': learning, 'design': design, 'rows': rows, 'events': events,
-            'today': today, 'now': now}
+            'tracks': tracks, 'today': today, 'now': now}
+
+
+def _track_records(store):
+    """Experience, Fundamentals, AI and Practical records. A failure here never stops Senpai."""
+    from ..tracks import TRACKS
+    try:
+        return {t: store.list_track_records(t) for t in TRACKS}
+    except Exception as exc:  # e.g. an older store without track records
+        log.warning('Track records unavailable: %s', type(exc).__name__)
+        return {}
 
 
 def caps_mod_rows(store, now):
@@ -256,7 +272,8 @@ def prepare_session(store, now=None, *, budget=None, mode=None, depth=None, obje
     session = sessions.prepare(plan, now, b['today'], b['rows'], queue, course_summary(b['design'], now),
                                quickfire_topics(), budget=int(budget or s.get('senpai_session_minutes') or 60),
                                mode=mode or s.get('senpai_mode', 'mixed'), depth=depth or s.get('senpai_depth', 'balanced'),
-                               objective=objective, llm_enabled=llm.enabled(s))
+                               objective=objective, llm_enabled=llm.enabled(s),
+                               tracks=tracks_senpai.material(b.get('tracks') or {}, now))
     if save:
         store.put_senpai('senpai_sessions', b['today'], session)
     return session
@@ -292,7 +309,8 @@ def session_progress(session, b):
             or (a['type'] == 'sequence' and a['sequence'] in lessons) or (a['type'] == 'quickfire' and a['topic'] in topics)
             or (a['type'] == 'sd_lesson' and a['id'] in read)
             or (a['type'] == 'sd_quickfire' and any(r.get('kind') == 'quickfire' for r in design))
-            or (a['type'] == 'sd_cases' and any(r.get('kind') == 'session' for r in design)))
+            or (a['type'] == 'sd_cases' and any(r.get('kind') == 'session' for r in design))
+            or (a['type'] == 'track' and tracks_senpai.done(a, b.get('tracks') or {}, since)))
     return session
 
 

@@ -32,6 +32,7 @@
     else if (a.type === 'sd_lesson') window.AppSections?.select('system-design', 'lesson/' + a.id);
     else if (a.type === 'sd_quickfire') window.AppSections?.select('system-design', 'quickfire');
     else if (a.type === 'sd_cases') window.AppSections?.select('system-design', 'cases');
+    else if (a.type === 'track') window.AppSections?.select(a.track, a.view);
     else if (a.type === 'teach') { App.goTab('senpai'); setTimeout(() => openTeach(a.capability_id), 50); }
   }
 

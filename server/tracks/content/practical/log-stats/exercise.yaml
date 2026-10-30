@@ -1,0 +1,43 @@
+id: log-stats
+title: Debug an access-log report
+category: debug
+minutes: 35
+level: core
+language: python
+brief: |
+  **Bug report from the on-call channel:** "The daily latency report is wrong. p95 for `/checkout` is lower than its median on some days, the error counts grow every time the report runs in the same process, 404s are counted as server errors, and the 'top endpoints by errors' list changes order between runs with identical input."
+
+  `logstats.py` parses lines like:
+
+  ```text
+  2026-10-30T09:15:02Z GET /checkout 200 183
+  ```
+
+  (timestamp, method, path, status, latency in ms) and reports, per path:
+
+  - `count`, `p50` and `p95` latency using the **nearest-rank** method (the value at rank ⌈p/100 × n⌉ in sorted order, 1-based),
+  - `server_errors`: responses with status **500 to 599** only.
+
+  `top_errors(report, k)` returns the k paths with the most server errors, most first, ties broken alphabetically by path. Malformed lines are skipped and counted in `report["_skipped"]`.
+
+  Find and fix the root causes. Several bugs combine to produce the symptoms.
+files: [logstats.py]
+readonly: [test_logstats.py]
+tests: [test_logstats.py]
+checks: [check_logstats.py]
+rubric:
+  - Reproduced each symptom with a test before fixing it
+  - Fixed the percentile rank calculation, and the latencies are sorted numerically
+  - Removed the shared mutable default that leaked state between calls
+  - Status codes are compared as integers, and the 5xx range is right
+  - top_errors has a deterministic tie-break, and malformed lines are handled
+hints:
+  - What type is latency after split()? How do strings sort?
+  - Look closely at the function signature of build_report.
+  - Nearest rank for p95 of 20 values is the 19th smallest value (index 18).
+discussion: |
+  **The bugs:** latencies were kept as strings, so they sorted lexicographically ("1000" < "183") and percentiles came out nonsense. The percentile index was off by one (`int(p/100 * n)` instead of `ceil(...) - 1`). `build_report(lines, totals={})` used a mutable default dict, so counts accumulated across calls in one process. The status code was compared as a string with `>= "400"`, which counted 404 as a server error. And `top_errors` sorted by count only, leaving ties in arbitrary dict order.
+
+  **What interviewers look for:** reproduce first, then fix each root cause separately with a test that would have caught it. Saying "that one symptom has two causes (string sort and an off-by-one)" is exactly the kind of reasoning they want to hear.
+
+  **Follow-ups:** How would you compute p95 over billions of lines? Streaming quantile sketches (t-digest, HDR histograms), with mergeable per-shard summaries. Why must percentiles never be averaged across hosts? Averages of percentiles are meaningless; merge histograms instead.

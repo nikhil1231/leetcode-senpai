@@ -333,7 +333,7 @@ $$("#tabs li").forEach((li) => {
     render(li.dataset.tab);
   });
 });
-function currentActiveTab() { return document.body.classList.contains('section-design') ? 'design' : $("#tabs li.is-active").dataset.tab; }
+function currentActiveTab() { return document.body.classList.contains('section-design') ? 'design' : document.body.classList.contains('section-track') ? 'track' : $("#tabs li.is-active").dataset.tab; }
 // Programmatic navigation for in-page links (e.g. Today's "Topic map" button).
 function goTab(tab) {
   if (tab === 'design') return window.AppSections?.select('system-design');
@@ -991,7 +991,7 @@ function setTakeaway(t) {
 function setDashboardLocked(locked) {
   document.body.classList.toggle("has-active-session", locked);
   // Minimised, the run steps aside and the app is usable again under it.
-  locked = locked && !runMinimised && !document.body.classList.contains('section-design');
+  locked = locked && !runMinimised && !document.body.classList.contains('section-design') && !document.body.classList.contains('section-track');
   // The cookie warning stays live during a run: knowing now means you can fix it
   // before the AC lands, and its modal opens over the run.
   ["#tabs", "#overview", "#user-chip", "#coach-chip", "main"].forEach((sel) => {

@@ -195,7 +195,8 @@ def _question(lesson, meta, raw, kind, n):
     return q
 
 
-def parse(text, name='lesson'):
+def parse(text, name='lesson', skills=None):
+    """`skills` lets another track validate against its own skill names (default: system design's)."""
     if not text.startswith('---\n'):
         raise LessonError(f'{name}: missing frontmatter')
     _, front, body = text.split('---\n', 2)
@@ -203,7 +204,7 @@ def parse(text, name='lesson'):
     missing = [k for k in FRONT if k not in meta]
     if missing:
         raise LessonError(f'{name}: frontmatter missing {missing}')
-    if meta['skill'] not in SKILLS:
+    if meta['skill'] not in (SKILLS if skills is None else skills):
         raise LessonError(f'{name}: unknown skill {meta["skill"]}')
     blocks, questions, pos = [], None, 0
     for m in FENCE.finditer(body):

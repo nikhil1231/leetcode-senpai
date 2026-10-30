@@ -18,14 +18,14 @@ function harness(hash='') {
     };
     nodes.set(key,n);return n;
   }
-  const options=['leetcode','system-design'].map(k=>{const n=node('option '+k);n.dataset.section=k;return n;});
+  const options=['leetcode','system-design','fundamentals','ai','experience','practical'].map(k=>{const n=node('option '+k);n.dataset.section=k;return n;});
   const views=['home','cases','skills','lessons','progress','curriculum','quickfire'].map(k=>{const n=node('view '+k);n.dataset.designView=k;return n;});
   node('#section-menu').classList.add('hidden');
   const location={hash};
   const history={pushState(a,b,url){routes.push(url);location.hash=url;},replaceState(a,b,url){location.hash=url;}};
   context={location,history,activeSession:{session_id:'keep-running'},setDashboardLocked(){},currentActiveTab(){return 'today';},
     goTab(tab){tabs.push(tab);},document:{body:node('body'),querySelectorAll:()=>[node('#tab-today'),node('#tab-design')],addEventListener(k,fn){listeners[k]=fn;}},
-    window:{H:{$:node},SystemDesign:{onTab(){},openView(...args){opened.push(args);}},addEventListener(k,fn){listeners[k]=fn;}}};
+    window:{H:{$:node},SystemDesign:{onTab(){},openView(...args){opened.push(args);}},Tracks:{open(...args){opened.push(['track',...args]);}},addEventListener(k,fn){listeners[k]=fn;}}};
   vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../static/sections.js'),'utf8'),context);
   return {node,options,views,listeners,opened,tabs,routes,context,sections:context.window.AppSections};
 }
@@ -82,4 +82,20 @@ test('curriculum, quickfire and individual lessons support direct links and back
     h.sections.setView(view.startsWith('lesson/')?'lesson':view);
     assert.equal(h.views.find(v=>v.dataset.designView===(view.startsWith('lesson/')?'lessons':view)).attrs['aria-current'],'page');
   }
+});
+
+test('learning tracks get their own shell, deep links and a way back',()=>{
+  const h=harness('#/experience/drill');
+  assert.deepEqual(h.opened[0].slice(0,3),['track','experience','drill']);
+  assert.equal(h.node('body').classList.contains('section-track'),true);
+  assert.equal(h.node('#tabs').classList.contains('hidden'),true);
+  assert.equal(h.node('#track-nav').classList.contains('hidden'),false);
+  assert.equal(h.node('#design-nav').classList.contains('hidden'),true);
+  h.sections.select('practical','exercise/lru-ttl-cache');
+  assert.equal(h.context.location.hash,'#/practical/exercise/lru-ttl-cache');
+  h.sections.select('system-design');
+  assert.equal(h.node('body').classList.contains('section-track'),false);
+  assert.equal(h.node('#track-nav').classList.contains('hidden'),true);
+  h.sections.select('leetcode');
+  assert.equal(h.node('#tabs').classList.contains('hidden'),false);
 });

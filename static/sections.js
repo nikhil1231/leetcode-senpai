@@ -1,30 +1,41 @@
 // Section navigation is independent of LeetCode's tabs and active coding run.
+// Sections: LeetCode (the classic tabs), System Design, and the learning tracks drawn by tracks.js.
 (function () {
   'use strict';
   const { $ } = window.H;
   const trigger = $('#section-trigger'), menu = $('#section-menu');
   const views = ['home', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire', 'papers', 'mistakes', 'drills'];
-  let design = false, lastLeetcodeTab = 'today';
+  const NAMES = {leetcode: ['Leetcode Senpai', 'Interview prep'], 'system-design': ['System Design', 'Learn and practise'],
+    fundamentals: ['Fundamentals', 'Role stack knowledge'], ai: ['AI Engineering', 'LLMs, RAG, evals and agents'],
+    experience: ['Experience', 'Your stories, under questioning'], practical: ['Practical Coding', 'Build, debug and review']};
+  const TRACKS = ['fundamentals', 'ai', 'experience', 'practical'];
+  let current = 'leetcode', lastLeetcodeTab = 'today';
+  const design = () => current === 'system-design';
   function close(focus = false) {
     menu.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false');
     if (focus) trigger.focus();
   }
-  function shell(on) {
-    if(on && !design) lastLeetcodeTab=currentActiveTab();
-    design = on;
-    document.body.classList.toggle('section-design', on);
-    $('#tabs').classList.toggle('hidden', on);
-    $('#design-nav').classList.toggle('hidden', !on);
-    trigger.querySelector('.brand-name').textContent = on ? 'System Design' : 'Leetcode Senpai';
-    trigger.querySelector('.brand-sub').textContent = on ? 'Learn and practise' : 'Interview prep';
-    trigger.setAttribute('aria-label', 'Switch learning section. Current: ' + (on?'System Design':'LeetCode'));
+  function shell(section) {
+    if (section !== 'leetcode' && current === 'leetcode') lastLeetcodeTab = currentActiveTab();
+    if (current === 'system-design' && section !== 'system-design') window.SystemDesign.onTab('today');
+    current = section;
+    const track = TRACKS.includes(section);
+    document.body.classList.toggle('section-design', section === 'system-design');
+    document.body.classList.toggle('section-track', track);
+    $('#tabs').classList.toggle('hidden', section !== 'leetcode');
+    $('#design-nav').classList.toggle('hidden', section !== 'system-design');
+    $('#track-nav')?.classList.toggle('hidden', !track);
+    const [name, sub] = NAMES[section] || NAMES.leetcode;
+    trigger.querySelector('.brand-name').textContent = name;
+    trigger.querySelector('.brand-sub').textContent = sub;
+    trigger.setAttribute('aria-label', 'Switch learning section. Current: ' + (section === 'leetcode' ? 'LeetCode' : name));
     menu.querySelectorAll('[data-section]').forEach(n => {
-      const selected = (n.dataset.section === 'system-design') === on;
+      const selected = n.dataset.section === section;
       n.classList.toggle('is-selected', selected);
       n.setAttribute('aria-pressed', String(selected));
     });
     setDashboardLocked(!!activeSession);
-    document.title = on ? 'System Design · Senpai' : 'Leetcode Senpai';
+    document.title = section === 'leetcode' ? 'Leetcode Senpai' : name + ' · Senpai';
   }
   function setView(view) {
     $('#design-nav').querySelectorAll('[data-design-view]').forEach(n => {
@@ -36,16 +47,25 @@
     $('#page-title').textContent = titles[view] || 'System Design';
     $('#page-sub').textContent = 'System Design';
   }
+  function openTrack(section, view, update) {
+    const entering = current !== section;
+    shell(section);
+    document.querySelectorAll('.tab').forEach(n => n.classList.add('hidden'));
+    $('#tab-track')?.classList.remove('hidden');
+    if (update) history.pushState(null, '', '#/' + section + (view === 'home' ? '' : '/' + view));
+    window.Tracks?.open(section, view, entering);
+  }
   function select(section, view = 'home', update = true) {
     close(true);
-    if(section==='system-design' && design && window.SystemDesign.isBusy?.())return;
+    if (section === 'system-design' && design() && window.SystemDesign.isBusy?.()) return;
+    if (TRACKS.includes(section)) return openTrack(section, view, update);
     if (section !== 'system-design') {
-      shell(false); window.SystemDesign.onTab('today');
+      shell('leetcode');
       if (update) history.pushState(null, '', '#/leetcode');
       goTab(lastLeetcodeTab); return;
     }
-    const entering = !design;
-    shell(true);
+    const entering = !design();
+    shell('system-design');
     document.querySelectorAll('.tab').forEach(n => n.classList.add('hidden'));
     $('#tab-design').classList.remove('hidden');
     window.SystemDesign.onTab('design');
@@ -56,8 +76,10 @@
   }
   function route() {
     const match = location.hash.match(/^#\/system-design(?:\/([^/]+)(?:\/([a-z0-9-]+))?)?$/);
+    const track = location.hash.match(/^#\/([a-z-]+)(?:\/([a-z0-9/_-]+))?$/);
     if (match) select('system-design', (match[1]==='lesson'||match[1]==='redesign')&&match[2] ? match[1]+'/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
-    else if (design) select('leetcode', 'home', false);
+    else if (track && TRACKS.includes(track[1])) select(track[1], track[2] || 'home', false);
+    else if (current !== 'leetcode') select('leetcode', 'home', false);
   }
   trigger.addEventListener('click', () => {
     const opening = menu.classList.contains('hidden');
@@ -80,6 +102,7 @@
   });
   window.addEventListener('popstate', route);
   window.addEventListener('hashchange', route);
-  window.AppSections = {select, setView, leaveDesign() { if (design) { shell(false); history.replaceState(null, '', '#/leetcode'); } }};
-  shell(false); route();
+  const leave = () => { if (current !== 'leetcode') { shell('leetcode'); history.replaceState(null, '', '#/leetcode'); } };
+  window.AppSections = {select, setView, current: () => current, TRACKS, leaveDesign: leave, leaveSection: leave};
+  shell('leetcode'); route();
 })();

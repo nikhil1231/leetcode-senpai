@@ -33,6 +33,7 @@ class FakeStore:
         self.learning_state = {}
         self.approach_reviews = {}
         self.design_records = {}
+        self.track_records = {}
         self.senpai = {}
 
     def _senpai_coll(self, coll):
@@ -64,6 +65,25 @@ class FakeStore:
             raise ValueError("Senpai's plan changed in another request. Reload and try again.")
         self._senpai_coll(coll)[key] = deepcopy(doc)
         return deepcopy(doc)
+
+    def get_track_record(self, track, key):
+        return deepcopy(self.track_records.get(track, {}).get(key))
+
+    def list_track_records(self, track):
+        return deepcopy(list(self.track_records.get(track, {}).values()))
+
+    def put_track_record(self, track, key, doc, expected_revision=None):
+        bucket = self.track_records.setdefault(track, {})
+        old = bucket.get(key)
+        actual = old.get('revision', 0) if old else None
+        if actual != expected_revision:
+            raise ValueError('This record changed in another request. Reload before saving.')
+        saved = {**deepcopy(doc), 'id': key, 'revision': (actual or 0) + 1}
+        bucket[key] = saved
+        return deepcopy(saved)
+
+    def delete_track_record(self, track, key):
+        self.track_records.get(track, {}).pop(key, None)
 
     def get_design_record(self, key):
         return deepcopy(self.design_records.get(key))
