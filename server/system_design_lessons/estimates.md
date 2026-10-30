@@ -63,9 +63,6 @@ items:
 explain: The last step is the point. "So one primary with read replicas is plenty, but media must go to object storage behind a CDN" is an estimate doing its job.
 ```
 
-> [!mistake] Rate versus total
-> "50M users" is not a rate. Convert *totals per day* to *per second* by dividing by ~10⁵. Never multiply a per-second rate by 86,400 when you meant to convert a total, and keep units on every line: `requests/day`, `requests/s`, `bytes/request`.
-
 ```calc
 title: Daily to per-second
 prompt: A service gets **300 million** API requests per day. Assume peak traffic is **3×** the average. What is the peak request rate, in requests/second?
@@ -76,6 +73,9 @@ hint: Divide by ~86,400 (or 10⁵ for a quick estimate), then multiply by the pe
 steps: |
   300M ÷ 86,400 ≈ **3,500 req/s** average (the quick 10⁵ shortcut gives 3,000). Peak ≈ 3 × 3,500 ≈ **10,400 req/s**. At ~2,000 req/s per app server with 50% headroom you'd want around 10 servers at peak — a decision you can now defend.
 ```
+
+> [!mistake] Rate versus total
+> A daily total (300M requests/day) and a rate (3,500 requests/s) differ by a factor of ~10⁵. Going from total to rate you *divide* by 86,400; multiplying by it instead is off by ten billion. A user count is neither: turn it into actions per day first. Keep units on every line: `requests/day`, `requests/s`, `bytes/request`.
 
 ## Storage and bandwidth
 
