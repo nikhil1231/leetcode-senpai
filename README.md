@@ -520,6 +520,18 @@ deriving events from existing records, so earlier history counts without a migra
 
 Records are additive `paper` and `sprint` kinds in the `system_design` collection.
 
+### Tutor (a conversation that leads you through a lesson)
+
+`server/tutor/` and `static/tutor.js`. Every system design, Fundamentals and AI Engineering
+lesson has a tutor card: pick a mode (Teach me, I explain, Spot the flaws, War room, Interview)
+and the lesson body becomes a chat with the objectives as a checklist. The tutor brings in the
+lesson's own activities (answers are recorded as in the lesson) and writes soft evidence and
+misconceptions to the knowledge base, only when quoting your words. Sessions run at Ripple, a
+fictional company whose size and milestones follow what you hold (`server/tutor/story.yaml`).
+Needs the model (`TUTOR_MODEL`, default `openai/gpt-6-luna`); without it the lesson is unchanged.
+API: `GET /api/tutor`, `GET /api/tutor/lessons/{section}/{lesson}`, `POST /api/tutor/sessions`,
+`POST /api/tutor/sessions/{id}/turns` (retry a failed reply with the same key), `/end`.
+
 ### Knowledge base (one model of what you know)
 
 `server/knowledge_base/` sits above the item ledger. Its unit is a **knowledge point**: one
@@ -549,7 +561,7 @@ name is recorded as the source. Intent and roadmap: `docs/plans/tutor-and-knowle
 Relevant regression checks:
 
 ```bash
-uv run --locked pytest tests/test_knowledge.py tests/test_knowledge_base.py tests/test_system_design_items.py tests/test_system_design_papers.py tests/test_system_design_drills.py tests/test_activity.py
+uv run --locked pytest tests/test_knowledge.py tests/test_knowledge_base.py tests/test_tutor.py tests/test_system_design_items.py tests/test_system_design_papers.py tests/test_system_design_drills.py tests/test_activity.py
 uv run --locked pytest tests/test_system_design.py tests/test_system_design_learning.py tests/test_daily_coach.py
 node --test tests/test_sections_frontend.cjs tests/test_system_design_learning_frontend.cjs
 ```

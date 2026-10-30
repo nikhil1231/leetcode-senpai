@@ -46,6 +46,9 @@ class FakeStore:
     def list_knowledge(self, coll):
         return deepcopy(list(self._knowledge_coll(coll).values()))
 
+    def get_knowledge(self, coll, key):
+        return deepcopy(self._knowledge_coll(coll).get(key))
+
     def create_knowledge(self, coll, key, doc):
         c = self._knowledge_coll(coll)
         if key in c:

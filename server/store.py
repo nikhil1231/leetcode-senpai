@@ -18,6 +18,8 @@ Collections:
   users/{uid}/tracks/{track}/records/{key}  Fundamentals / AI / Experience / Practical records
   users/{uid}/knowledge_events/{key}   knowledge-base answers and exposures from any source (append-only)
   users/{uid}/knowledge_misconceptions/{key}  misconceptions per knowledge point, open or resolved
+  users/{uid}/tutor_sessions/{id}      tutor conversations (raw learner text first, then the reply)
+  users/{uid}/tutor_memory/{key}       small per-lesson and story notes the tutor opens with
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
 import threading
@@ -643,10 +645,11 @@ class FirestoreStore:
         _invalidate((coll, self.uid))
         return result
 
-    # ---- knowledge base (server/knowledge_base) -------------------------------
+    # ---- knowledge base (server/knowledge_base) and the tutor (server/tutor) --------
     # Events are append-only and keyed by the source's idempotency key, so a retried post
-    # records once. Misconceptions are updated in place (open → resolved).
-    KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions')
+    # records once. Misconceptions are updated in place (open → resolved). Tutor sessions
+    # are read one at a time (they grow); tutor memory is a handful of small documents.
+    KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions', 'tutor_sessions', 'tutor_memory')
 
     def _knowledge(self, coll):
         if coll not in self.KNOWLEDGE:
@@ -655,6 +658,10 @@ class FirestoreStore:
 
     def list_knowledge(self, coll):
         return list(_cached((coll, self.uid), lambda: [d.to_dict() for d in self._knowledge(coll).stream()]))
+
+    def get_knowledge(self, coll, key):
+        doc = self._knowledge(coll).document(key).get().to_dict()
+        return {**doc, '_key': key} if doc else None
 
     def create_knowledge(self, coll, key, doc):
         """Create once; a duplicate (retried or concurrent) post returns None."""

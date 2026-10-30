@@ -165,17 +165,8 @@ def record(body: EventsIn, who=Depends(caller)):
             problems.append(f'{e.key}: at is outside the last 30 days')
     if problems:
         raise HTTPException(422, problems)
-    recorded, duplicates, touched = 0, [], []
-    for e in body.events:
-        doc = {'kind': e.kind, 'points': e.points, 'at': min(e.at or now, now), 'source': source,
-               'recorded_at': now, 'note': e.note, 'ref': e.ref}
-        if e.kind == 'answer':
-            doc.update(clean=e.clean, failed=e.failed, depth=e.depth, strength=e.strength)
-        if store.create_knowledge('knowledge_events', f'{source}:{e.key}', doc) is None:
-            duplicates.append(e.key)
-        else:
-            recorded += 1
-        touched += e.points
+    recorded, duplicates = write_events(store, source, [e.model_dump() for e in body.events], now)
+    touched = [p for e in body.events for p in e.points]
     c, _, states, seen, mis = evidence(store, time.time())
     ids = list(dict.fromkeys(cat.canonical(c, p) for p in touched))
     return {'recorded': recorded, 'duplicates': duplicates,
@@ -205,24 +196,51 @@ def misconceptions(status: Literal['open', 'resolved'] | None = None, point: str
 
 @router.post('/misconceptions')
 def add_misconception(body: MisconceptionIn, who=Depends(caller)):
-    pid, now, source = _point(body.point), time.time(), _source(who, body.source)
-    key = f'{source}:{body.key}'
-    doc = {'point': pid, 'text': body.text.strip(), 'quote': body.quote.strip(), 'source': source,
-           'status': 'open', 'created_at': now, 'resolved_at': None, 'note': ''}
     store = get_store(who['uid'])
+    return add_misconception(store, _source(who, body.source), body.key, _point(body.point), body.text, body.quote, time.time())
+
+
+@router.patch('/misconceptions/{key}')
+def update_misconception(key: str, body: MisconceptionUpdate, who=Depends(caller)):
+    saved = set_misconception(get_store(who['uid']), key, body.status, body.note, time.time())
+    if saved is None:
+        raise HTTPException(404, 'Unknown misconception')
+    return saved
+
+
+# ---- writes shared with other modules (the tutor) -----------------------------------------
+# Inputs are already validated: point ids exist and keys match KEY.
+
+def write_events(store, source, events, now):
+    """Store answer/exposure dicts (EventIn fields) once each. -> (recorded, duplicate keys)."""
+    recorded, duplicates = 0, []
+    for e in events:
+        doc = {'kind': e.get('kind', 'answer'), 'points': list(e['points']), 'at': min(e.get('at') or now, now),
+               'source': source, 'recorded_at': now, 'note': e.get('note', ''), 'ref': e.get('ref', '')}
+        if doc['kind'] == 'answer':
+            doc.update(clean=bool(e['clean']), failed=list(e.get('failed') or []), depth=e.get('depth'),
+                       strength=e.get('strength', 'hard'))
+        if store.create_knowledge('knowledge_events', f'{source}:{e["key"]}', doc) is None:
+            duplicates.append(e['key'])
+        else:
+            recorded += 1
+    return recorded, duplicates
+
+
+def add_misconception(store, source, key, point, text, quote, now):
+    key = f'{source}:{key}'
+    doc = {'point': point, 'text': text.strip(), 'quote': (quote or '').strip(), 'source': source,
+           'status': 'open', 'created_at': now, 'resolved_at': None, 'note': ''}
     saved = store.create_knowledge('knowledge_misconceptions', key, doc)
     if saved is None:
         return {'duplicate': True, **next(m for m in store.list_knowledge('knowledge_misconceptions') if m['_key'] == key)}
     return {'duplicate': False, **saved}
 
 
-@router.patch('/misconceptions/{key}')
-def update_misconception(key: str, body: MisconceptionUpdate, who=Depends(caller)):
-    store = get_store(who['uid'])
+def set_misconception(store, key, status, note, now):
     found = next((m for m in store.list_knowledge('knowledge_misconceptions') if m['_key'] == key), None)
     if not found:
-        raise HTTPException(404, 'Unknown misconception')
+        return None
     doc = {k: v for k, v in found.items() if k != '_key'}
-    doc.update(status=body.status, note=body.note or found.get('note', ''),
-               resolved_at=time.time() if body.status == 'resolved' else None)
+    doc.update(status=status, note=note or found.get('note', ''), resolved_at=now if status == 'resolved' else None)
     return store.put_knowledge('knowledge_misconceptions', key, doc)

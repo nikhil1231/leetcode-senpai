@@ -40,6 +40,7 @@ from .system_design_session import router as system_design_session_router
 from .activity import router as activity_router
 from .tracks.api import router as tracks_router
 from .knowledge_base.api import router as knowledge_router
+from .tutor.api import router as tutor_router
 from .senpai import jobscout as senpai_jobscout, service as senpai_service, worker as senpai_worker
 from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
 
@@ -80,6 +81,7 @@ app.include_router(activity_router)
 app.include_router(tracks_router)
 app.include_router(senpai_router)
 app.include_router(knowledge_router)
+app.include_router(tutor_router)
 # The daily review API, under its old path (kept for compatibility) and under Senpai's.
 app.include_router(senpai_daily_router, prefix="/api/coach/daily")
 app.include_router(senpai_daily_router, prefix="/api/senpai/daily")

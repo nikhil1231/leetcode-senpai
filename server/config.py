@@ -65,6 +65,9 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-5.6-luna").strip()
 # more accurate but often took 4-6s; Nova-3 was fastest but misheard Dijkstra, Kadane, deque.
 # OpenRouter takes no keyterm hints for any STT model yet.
 STT_MODEL = os.environ.get("STT_MODEL", "elevenlabs/scribe-v2").strip()
+# The conversational tutor talks every turn, so it runs on a cheap model by default
+# (~$0.001 a turn). Never an Anthropic model through OpenRouter (see CLAUDE.md).
+TUTOR_MODEL = os.environ.get("TUTOR_MODEL", "openai/gpt-6-luna").strip()
 
 
 # ---- Scheduler ------------------------------------------------------------------

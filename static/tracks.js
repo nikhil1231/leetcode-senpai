@@ -205,7 +205,7 @@
     let done = Object.values(lesson.state.activities || {}).filter(a => a.done).length;
     const checks = lesson.checks;
     ctx.root.innerHTML = `<div class="sd-breadcrumb">${btn('← Lessons', 'go', 'data-view="lessons"')}<span>/ ${esc(flat[idx]?.cat || '')}</span></div>
-      <div class="sd-page-intro sd-rich-intro"><span class="sd-eyebrow">LESSON ${idx + 1} OF ${flat.length} · ${lesson.minutes} MIN · ${lesson.interactive} ACTIVITIES</span><h2 tabindex="-1">${esc(lesson.title)}</h2><p>${inline(lesson.summary)}</p></div>
+      <div class="sd-page-intro sd-rich-intro"><span class="sd-eyebrow">LESSON ${idx + 1} OF ${flat.length} · ${lesson.minutes} MIN · ${lesson.interactive} ACTIVITIES</span><h2 tabindex="-1">${esc(lesson.title)}</h2><p>${inline(lesson.summary)}</p></div><div class="tr-tutor-slot"></div>
       <div class="sd-rich-layout"><article class="sd-rich"><div class="sd-goals"><b>By the end you can</b><ul>${lesson.objectives.map(o => `<li>${inline(o)}</li>`).join('')}</ul></div>
         <div class="tr-blocks"></div>
         <section class="sd-panel tr-check"><span class="sd-eyebrow">LESSON CHECK · ${checks.length} QUESTIONS</span><h3>Check what stuck</h3><p class="sd-muted">Answer without scrolling back. These come back in Quickfire as they fade.</p><div class="tr-check-slot">${btn('Start the check', 'check-start', '', true)}</div></section>
@@ -229,6 +229,11 @@
         },
       });
       ctx.onLeave(() => handle.destroy());
+      window.Tutor?.mount(ctx.root.querySelector('.tr-tutor-slot'), {
+        section: ctx.track, lesson, layout: ctx.root.querySelector('.sd-rich-layout'),
+        recall: (block, text) => ctx.call(`/lessons/${lesson.id}/recall`, 'POST', { block: block.key, text }),
+        done: (key, correct) => ctx.call(`/lessons/${lesson.id}/activity`, 'POST', { block: key, correct }).catch(() => {}),
+      });
     } else slot.innerHTML = '<p class="tr-error">The lesson renderer did not load. Reload the page.</p>';
     let n = 0, right = 0;
     const checkSlot = ctx.root.querySelector('.tr-check-slot');

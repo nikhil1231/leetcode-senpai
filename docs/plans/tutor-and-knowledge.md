@@ -91,7 +91,21 @@ needed. What was agreed:
 
 ## The tutor leads; the curriculum stays behind it
 
-Status: **not started.**
+Status: **built (first version).** `server/tutor/` and `static/tutor.js`: a card above every
+system design, Fundamentals and AI Engineering lesson starts a session in one of five modes
+(Teach me, I explain to Jo, Spot the flaws, War room with Priya, Interview with Marcus). The
+session replaces the lesson body with a chat, the objectives checklist and the lesson's own
+activities, which the tutor brings in and whose answers are recorded exactly as in the lesson
+(hard evidence). The tutor's judgements go to the knowledge base as soft evidence and
+misconceptions, but only when they quote the learner's own words; objectives only advance the
+same way, and a session cannot be ended early by the model. A running note opens the next
+session ("Last time: …"). Dictation works in the reply box. Without the model the card says so
+and the lesson is unchanged. Runs on `TUTOR_MODEL` (default `openai/gpt-6-luna`, about $0.001
+a turn, ~2.5 s). Tested with unit and HTTP tests and end to end in a headless browser on an
+in-memory store (desktop and phone widths) with the real model.
+
+Not built yet: the tutor speaking its replies aloud (text-to-speech costs money: Nikhil's call),
+and a view of the whole knowledge model outside the tutor.
 
 Today the lesson script is in charge and the AI only annotates it (planning notes, explaining on
 request, grading). Flip it:
@@ -119,7 +133,13 @@ request, grading). Flip it:
 
 ## The story: Nikhil's fictional company
 
-Status: **not started.**
+Status: **built (first version).** `server/tutor/story.yaml` (authored, not generated) and
+`story.py`: the company is Ripple, a link shortener growing into a global social product; the
+cast is Marcus (CTO), Priya (SRE), Jo (junior) and Sam (PM); each lesson area has a scene.
+Company size follows the share of points held now (Garage → Global), and eight milestones
+unlock when an area is held (for example "Survive a viral day" at 40% of caching). Story events
+the tutor records are fed back into later sessions, so consequences carry. The story only dresses
+the lesson; the knowledge model still decides what is taught.
 
 Nikhil wants an engaging story behind all of this rather than reading facts, which are not
 interesting on their own. He especially likes tying everything to a fictional company he runs.
@@ -158,8 +178,11 @@ quality is checked.
 
 ## Open decisions (Nikhil's)
 
-- Which model for the tutor, and the monthly budget.
-- How much soft evidence should count toward progress and grades.
+- Which model for the tutor, and the monthly budget. Defaulted to `openai/gpt-6-luna` (cheap,
+  replies were good in testing); set `TUTOR_MODEL` to change it. Never an Anthropic model.
+- How much soft evidence should count toward progress and grades (now: fully, but flagged
+  unconfirmed until a hard check agrees).
+- Whether the tutor should speak its replies (text-to-speech, paid).
 
 ## Log
 
@@ -171,6 +194,8 @@ quality is checked.
   stopped at 28 lessons when the balance ran out; the agent then linked the other 46 lessons and
   mapped the 25 practice items itself, and the script now defaults to agent export/import.
   Checked read-only against real history: existing answers flow in with no migration.
+- 2026-10-31: Rule added: never an Anthropic model through OpenRouter (CLAUDE.md, enforced in
+  `llm.py`). Built the tutor and the story (see their Status sections). Deployed.
 
 ## Dropped
 

@@ -1,0 +1,69 @@
+# The story behind the tutor: one company that grows as you learn. Authored content.
+# The knowledge model decides what you practise; this only decides how it is dressed.
+company: Ripple
+pitch: >-
+  Ripple started as a link shortener built by three people in a flat. You are its lead engineer.
+  Every lesson is the next thing that breaks, or the next thing the company needs, as Ripple grows
+  from a few thousand users to a billion.
+you: Ripple's lead engineer, the person everyone turns to when a design decision has to be made and defended.
+cast:
+  - id: marcus
+    name: Marcus
+    role: CTO and co-founder
+    voice: Ambitious and impatient. Asks "will it scale, and what does it cost?" Respects numbers, not slogans.
+  - id: priya
+    name: Priya
+    role: Site reliability engineer
+    voice: Dry and calm under fire. Trusts graphs over opinions. Carries the pager and remembers every outage.
+  - id: jo
+    name: Jo
+    role: Junior engineer
+    voice: Keen and honest about what they don't understand. Learns by asking you to explain things.
+  - id: sam
+    name: Sam
+    role: Product manager
+    voice: Talks in user outcomes and deadlines. Never says "eventual consistency"; says "why did my post vanish?"
+# Company size follows the share of knowledge points you currently hold.
+tiers:
+  - {at: 0, label: Garage, users: 1k users}
+  - {at: 3, label: Launched, users: 50k users}
+  - {at: 8, label: Seed round, users: 500k users}
+  - {at: 15, label: Series A, users: 5M users}
+  - {at: 30, label: Series B, users: 50M users}
+  - {at: 50, label: Scale-up, users: 200M users}
+  - {at: 70, label: Global, users: 1B users}
+# A milestone unlocks when you hold enough of one area.
+milestones:
+  - {id: partner-api, title: Open the partner API, section: system-design, category: apis, at: 40}
+  - {id: viral-day, title: Survive a viral day, section: system-design, category: caching, at: 40}
+  - {id: async-work, title: Move slow work off the request path, section: system-design, category: queues, at: 40}
+  - {id: europe, title: Launch in Europe, section: system-design, category: distributed, at: 40}
+  - {id: pager, title: Hand Priya a calm pager, section: system-design, category: reliability, at: 40}
+  - {id: kubernetes, title: Move Ripple onto Kubernetes, section: fundamentals, category: infrastructure, at: 40}
+  - {id: help-centre-ai, title: Ship the AI help centre, section: ai, category: retrieval, at: 40}
+  - {id: ai-in-production, title: Run AI features in production, section: ai, category: production, at: 40}
+# Where the story is when you study each area.
+chapters:
+  system-design:
+    foundations: Day one. Ripple is three people and a link shortener with a few thousand users. Every promise made now has to be kept at scale.
+    apis: Ripple opens its API to partners. Clients you don't control start retrying, paging and hammering endpoints.
+    storage: The single Postgres box is filling up, and Sam wants a new feature every week. Each one needs a home for its data.
+    caching: A viral link sends traffic up 20 times overnight. The database is sweating, and the cache has quietly become the capacity plan.
+    queues: Ripple adds uploads, notifications and analytics. Work leaves the request path, and the guarantees go with it unless you keep them.
+    distributed: Ripple launches in Europe. One region becomes three, and the network starts lying.
+    reliability: Ripple has a pager now. Priya carries it, and outages arrive in shapes nobody planned for.
+    specialised: Ripple becomes a social product, with search, places nearby and a home feed.
+    designs: Marcus wants every big system written up and defended before anyone builds it.
+    casebook: Ripple keeps growing into chat, video, rides through a partnership, and payments. Each is a new system to design from scratch.
+  fundamentals:
+    languages: Ripple's services run on Java and Python. When they misbehave, the runtime is the first suspect.
+    systems: Production is Linux boxes and networks. Priya wants you able to debug one live, at 3am.
+    data: Postgres holds the money. Its internals decide when it stalls.
+    infrastructure: Ripple moves to Kubernetes on AWS with a real delivery pipeline. The platform is now part of your job.
+  ai:
+    assisted: Ripple's engineers code with AI pairs, and you are hiring people who do too.
+    models: Ripple ships its first feature built on a large language model.
+    retrieval: Support wants answers drawn from the help centre, not made up.
+    evaluation: The AI features need numbers, not vibes, before anyone trusts them.
+    agents: Sam wants an assistant that takes actions for users, not just answers.
+    production: The AI features have real traffic, real costs and real attackers.
