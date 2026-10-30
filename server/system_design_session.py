@@ -227,7 +227,7 @@ async def pitch(key: str, body: PitchBody, store=Depends(store_for)):
     doc = put(store, 'pitch_' + secrets.token_hex(16), {'kind': 'pitch', 'lesson_id': key, 'block': body.block,
                                                        'followup': body.followup, 'text': body.text,
                                                        'created_at': time.time()})
-    result, message = await tutor.grade_pitch(block, body.text, body.followup, store.get_settings())
+    result, message = await tutor.grade_pitch(block, body.text, body.followup, store.get_settings(), lesson['title'])
     if result:
         put(store, doc['id'], {**doc, 'grade': result}, doc['revision'])
     return {'grade': result, 'message': message}

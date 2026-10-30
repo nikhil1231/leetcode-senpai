@@ -432,11 +432,11 @@
   // Active: you pitch, then answer each follow-up in turn, before any model answer is shown.
   R.interview = b => frame(b, `<div class="sd-pitch-step" data-step="pitch"><div class="sd-prompt"><b>Your turn: pitch it in 30 seconds.</b> Type what you would say out loud to the interviewer. Then compare.</div><textarea class="textarea sd-pitch-text" rows="5" maxlength="4000" placeholder="I'd start with…"></textarea><div class="sd-actions">${button('Grade my pitch', 'pitch', '', true)}${button('Skip: show the model', 'skip')}</div><div class="sd-pitch-out" hidden></div></div><div class="sd-followups-live"></div><div class="sd-weak-strong" hidden><div class="is-weak"><span>Weak answer</span>${md(b.weak)}</div><div class="is-strong"><span>Strong answer</span>${md(b.strong)}</div></div>`, b.title);
   W.interview = (el, b, ctx) => {
-    const VERDICT = { strong: ['sd-ok', 'Strong'], adequate: ['sd-mid', 'Adequate'], weak: ['sd-bad', 'Weak'] };
+    const VERDICT = { strong: ['sd-ok', 'Strong answer.'], adequate: ['sd-mid', 'Solid start.'], weak: ['sd-mid', 'Needs more.'] };
     let pitchOk = null;
     const gradeHtml = (res, model, label) => {
       const g = res?.grade;
-      const head = g ? `<p><b class="${VERDICT[g.verdict][0]}">${VERDICT[g.verdict][1]}.</b> ${inline(g.feedback)}</p>${g.covered.length ? `<p class="sd-muted">You covered: ${g.covered.map(inline).join(' · ')}</p>` : ''}${g.missing.length ? `<p class="sd-muted">Missing: ${g.missing.map(inline).join(' · ')}</p>` : ''}` : res?.message ? `<p class="sd-muted">${esc(res.message)}</p>` : '';
+      const head = g ? `<p><b class="${VERDICT[g.verdict][0]}">${VERDICT[g.verdict][1]}</b> ${inline(g.feedback)}</p>${g.covered.length ? `<p class="sd-muted">You covered: ${g.covered.map(inline).join(' · ')}</p>` : ''}${g.missing.length ? `<p class="sd-muted">To strengthen it: ${g.missing.map(inline).join(' · ')}</p>` : ''}` : res?.message ? `<p class="sd-muted">${esc(res.message)}</p>` : '';
       return `${head}<details class="sd-model" ${g ? '' : 'open'}><summary>${label}</summary>${md(model)}</details>`;
     };
     const selfCheck = (out, then) => {
