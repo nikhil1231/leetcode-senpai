@@ -177,8 +177,8 @@ model: |
   prompt: A request fans out to 30 backend calls in parallel. Each call independently exceeds its p99 latency 1% of the time. What percentage of user requests include at least one slow call?
   answer: 26
   unit: '%'
-  tolerance: 0.04
-  explanation: 1 − 0.99³⁰ ≈ 0.26 — about 26%. Fan-out turns a 1-in-100 event into a 1-in-4 one.
+  tolerance: 0.2
+  explanation: 1 − 0.99³⁰ ≈ 0.26 — about 26%. Nobody expects that exponent by hand; in an interview estimate N × p = 30 × 1% ≈ 30%, which slightly overestimates but is fine while N × p is well below 1. Fan-out turns a 1-in-100 event into roughly a 1-in-4 one.
 - kind: check
   prompt: A service processes 2,000 requests/s and each request spends 150 ms in it on average. By Little's Law, how many requests are in flight on average?
   choices:

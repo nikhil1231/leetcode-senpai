@@ -213,8 +213,8 @@ explain: |
   prompt: 6B searches/day, with clients sending about 3 debounced requests per search. What's the average request rate in thousands per second?
   answer: 208
   unit: k requests/s
-  tolerance: 0.03
-  explanation: 18B ÷ 86,400 ≈ 208k/s on average — higher at peak.
+  tolerance: 0.15
+  explanation: 18B ÷ 86,400 ≈ 208k/s on average — higher at peak. The 10⁵ shortcut gives 180k/s, which is close enough.
 - kind: check
   type: multi
   prompt: Which reduce load on the suggest service? Select all that apply.

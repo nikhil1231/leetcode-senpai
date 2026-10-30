@@ -256,8 +256,8 @@ explain: |
   prompt: 500M DAU send 40 messages each per day. What's the average message rate in thousands per second? (86,400 s/day)
   answer: 231
   unit: k messages/s
-  tolerance: 0.03
-  explanation: 20B ÷ 86,400 ≈ 231k/s on average, with peaks several times higher.
+  tolerance: 0.15
+  explanation: 20B ÷ 86,400 ≈ 231k/s on average, with peaks several times higher. The 10⁵ shortcut gives 200k/s, which is close enough.
 - kind: check
   type: multi
   prompt: Which must happen before a message is shown to the sender as "sent"? Select all that apply.

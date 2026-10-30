@@ -183,7 +183,7 @@ model: |
   prompt: A feature handles 50 million writes per day with a peak factor of 4. What's the peak write rate in writes/second? (Use 86,400 s per day.)
   answer: 2315
   unit: writes/s
-  tolerance: 0.1
+  tolerance: 0.15
   explanation: 50M ÷ 86,400 ≈ 579/s average × 4 ≈ 2,315/s peak. The 10⁵ shortcut gives 2,000 — close enough to make the same decision.
 - kind: check
   prompt: Jobs arrive at 200/s and 220/s can be completed. A 20,000-job backlog exists. How long does draining it take?

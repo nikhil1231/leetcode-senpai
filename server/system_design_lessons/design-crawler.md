@@ -209,8 +209,8 @@ explain: |
   prompt: A crawler must fetch 2B pages per day. What's the average fetch rate, in thousands per second?
   answer: 23.1
   unit: k fetches/s
-  tolerance: 0.03
-  explanation: 2,000,000,000 ÷ 86,400 ≈ 23,100 fetches/s.
+  tolerance: 0.15
+  explanation: 2,000,000,000 ÷ 86,400 ≈ 23,100 fetches/s. The 10⁵ shortcut gives 20,000/s, which is close enough.
 - kind: check
   prompt: Why is a single global FIFO frontier unsuitable?
   choices:

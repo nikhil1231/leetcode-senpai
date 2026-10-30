@@ -205,8 +205,8 @@ model: |
   prompt: How many distinct codes does a 6-character base62 alphabet provide, in billions? (62⁶)
   answer: 56.8
   unit: billion
-  tolerance: 0.02
-  explanation: 62⁶ = 56,800,235,584 ≈ 56.8 billion. Each extra character multiplies the space by 62.
+  tolerance: 0.15
+  explanation: 62⁶ = 56,800,235,584 ≈ 56.8 billion. In your head, 62² ≈ 3,800 ≈ 4,000 and 4,000³ = 64 billion, which is close enough. Each extra character multiplies the space by 62.
 - kind: check
   prompt: Why might a company avoid exposing sequential order IDs in URLs?
   choices:
