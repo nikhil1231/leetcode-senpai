@@ -278,7 +278,7 @@
   };
 
   // ---------- Free recall ----------
-  R.recall = b => frame(b, `<div class="sd-prompt">${md(b.prompt)}</div><textarea class="textarea sd-recall-text" rows="5" maxlength="3000" placeholder="Write it as you would say it in an interview. Two to five sentences."></textarea><div class="sd-actions">${button('Check my answer', 'check', '', true)}<span class="sd-muted">Write before you look: retrieval is what makes it stick.</span></div><div class="sd-reveal" hidden></div>`, b.title);
+  R.recall = b => frame(b, `<div class="sd-prompt">${md(b.prompt)}</div><textarea class="textarea sd-recall-text" data-dictate rows="5" maxlength="3000" placeholder="Write it as you would say it in an interview. Two to five sentences."></textarea><div class="sd-actions">${button('Check my answer', 'check', '', true)}<span class="sd-muted">Write before you look: retrieval is what makes it stick.</span></div><div class="sd-reveal" hidden></div>`, b.title);
   W.recall = (el, b, ctx) => {
     const area = el.querySelector('textarea'), r = el.querySelector('.sd-reveal');
     const status = { covered: ['✓', 'is-right'], partial: ['◐', 'is-partial'], missing: ['○', 'is-missing'], incorrect: ['✗', 'is-wrong'] };
@@ -430,7 +430,7 @@
 
   // ---------- Interview card ----------
   // Active: you pitch, then answer each follow-up in turn, before any model answer is shown.
-  R.interview = b => frame(b, `<div class="sd-pitch-step" data-step="pitch">${b.ask ? `<div class="sd-interview-ask"><span class="sd-say-label">The interviewer asks</span>${md(b.ask)}</div>` : ''}<div class="sd-prompt"><b>Your turn: answer in about 30 seconds.</b> Type what you would say out loud, then compare.</div><textarea class="textarea sd-pitch-text" rows="5" maxlength="4000" placeholder="I'd start with…"></textarea><div class="sd-actions">${button('Grade my pitch', 'pitch', '', true)}${button('Skip: show the model', 'skip')}</div><div class="sd-pitch-out" hidden></div></div><div class="sd-followups-live"></div><div class="sd-weak-strong" hidden><div class="is-weak"><span>Weak answer</span>${md(b.weak)}</div><div class="is-strong"><span>Strong answer</span>${md(b.strong)}</div></div>`, b.title);
+  R.interview = b => frame(b, `<div class="sd-pitch-step" data-step="pitch">${b.ask ? `<div class="sd-interview-ask"><span class="sd-say-label">The interviewer asks</span>${md(b.ask)}</div>` : ''}<div class="sd-prompt"><b>Your turn: answer in about 30 seconds.</b> Type what you would say out loud, then compare.</div><textarea class="textarea sd-pitch-text" data-dictate rows="5" maxlength="4000" placeholder="I'd start with…"></textarea><div class="sd-actions">${button('Grade my pitch', 'pitch', '', true)}${button('Skip: show the model', 'skip')}</div><div class="sd-pitch-out" hidden></div></div><div class="sd-followups-live"></div><div class="sd-weak-strong" hidden><div class="is-weak"><span>Weak answer</span>${md(b.weak)}</div><div class="is-strong"><span>Strong answer</span>${md(b.strong)}</div></div>`, b.title);
   W.interview = (el, b, ctx) => {
     const VERDICT = { strong: ['sd-ok', 'Strong answer.'], adequate: ['sd-mid', 'Solid start.'], weak: ['sd-mid', 'Needs more.'] };
     let pitchOk = null;
@@ -452,7 +452,7 @@
       const live = el.querySelector('.sd-followups-live');
       if (i >= b.followups.length) return finish();
       const f = b.followups[i];
-      live.insertAdjacentHTML('beforeend', `<div class="sd-pitch-step" data-fu="${i}"><div class="sd-prompt"><span class="sd-say-label">Interviewer · follow-up ${i + 1} of ${b.followups.length}</span>${md(f.q)}</div><textarea class="textarea sd-pitch-text" rows="3" maxlength="4000" placeholder="Your answer"></textarea><div class="sd-actions">${button('Answer', 'answer', '', true)}${button('Skip', 'skip')}</div><div class="sd-pitch-out" hidden></div></div>`);
+      live.insertAdjacentHTML('beforeend', `<div class="sd-pitch-step" data-fu="${i}"><div class="sd-prompt"><span class="sd-say-label">Interviewer · follow-up ${i + 1} of ${b.followups.length}</span>${md(f.q)}</div><textarea class="textarea sd-pitch-text" data-dictate rows="3" maxlength="4000" placeholder="Your answer"></textarea><div class="sd-actions">${button('Answer', 'answer', '', true)}${button('Skip', 'skip')}</div><div class="sd-pitch-out" hidden></div></div>`);
       const step = live.querySelector(`[data-fu="${i}"]`), area = step.querySelector('textarea'), out = step.querySelector('.sd-pitch-out');
       area.focus({ preventScroll: true });
       const go = async skipped => {

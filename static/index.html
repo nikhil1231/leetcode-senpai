@@ -179,7 +179,7 @@
             <p id="coach-empty" class="coach-empty"></p>
           </div>
           <form id="coach-chat" class="coach-chat hidden" autocomplete="off">
-            <textarea id="coach-input" rows="2" maxlength="4000" placeholder="Message the interviewer"
+            <textarea id="coach-input" data-dictate rows="2" maxlength="4000" placeholder="Message the interviewer"
                       aria-label="Talk to the interviewer"></textarea>
           </form>
           <div class="coach-actions">
@@ -299,7 +299,7 @@
 
       <div class="predict-form">
         <label class="label-sm" for="predict-approach">Approach <span class="help-inline">the key idea, data structure or invariant</span></label>
-        <textarea id="predict-approach" class="textarea" rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sliding window over counts, shrink while a char repeats"></textarea>
+        <textarea id="predict-approach" class="textarea" data-dictate rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sliding window over counts, shrink while a char repeats"></textarea>
 
         <div id="predict-complexities" class="complexity-fields mt-2"></div>
 
@@ -437,7 +437,7 @@
       <div id="recall-statement" class="recall-statement"></div>
       <p class="help">No coding — just recall the approach from memory in under 3 minutes.</p>
       <label class="label-sm">How would you solve it? Key idea + the crucial trick.</label>
-      <textarea id="recall-text" class="textarea" rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Describe the approach…"></textarea>
+      <textarea id="recall-text" class="textarea" data-dictate rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Describe the approach…"></textarea>
       <div id="recall-complexities" class="complexity-fields mt-2"></div>
       <div id="recall-hints" class="hint-panel recall-hints hidden"></div>
       <div id="recall-grade" class="recall-grade hidden"></div>
@@ -529,5 +529,6 @@
   <script src="/sections.js?v=__ASSET_VER__"></script>
   <script src="/editor.js?v=__ASSET_VER__"></script>
   <script src="/page-coach.js?v=__ASSET_VER__"></script>
+  <script src="/dictate.js?v=__ASSET_VER__"></script>
 </body>
 </html>

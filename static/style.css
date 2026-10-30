@@ -1482,11 +1482,12 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
 .overlay-card.recall-wide > .help,
 .overlay-card.recall-wide > .label-sm,
 .overlay-card.recall-wide > #recall-text,
+.overlay-card.recall-wide > .dictate-wrap,
 .overlay-card.recall-wide > .columns,
 .overlay-card.recall-wide > #recall-hints,
 .overlay-card.recall-wide > #recall-grade,
 .overlay-card.recall-wide > #recall-actions { grid-column: 2; }
-.overlay-card.recall-wide > #recall-text { min-height: 190px; }
+.overlay-card.recall-wide #recall-text { min-height: 190px; }
 .recall-hints { margin-top: 14px; }
 .recall-hints.hidden { display: none; }
 .recall-hints .hint-card { padding: 11px 13px; border: 1px solid rgba(245, 181, 68, .3); border-radius: 12px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
@@ -1696,6 +1697,7 @@ pre.code {
   .overlay-card.recall-wide > .help,
   .overlay-card.recall-wide > .label-sm,
   .overlay-card.recall-wide > #recall-text,
+  .overlay-card.recall-wide > .dictate-wrap,
   .overlay-card.recall-wide > .columns,
   .overlay-card.recall-wide > #recall-grade,
   .overlay-card.recall-wide > #recall-actions { grid-column: 1; grid-row: auto; }
@@ -2372,6 +2374,7 @@ body.has-active-session #user-chip {
 .overlay-card.recall-wide > .help,
 .overlay-card.recall-wide > .label-sm,
 .overlay-card.recall-wide > #recall-text,
+.overlay-card.recall-wide > .dictate-wrap,
 .overlay-card.recall-wide > .complexity-fields,
 .overlay-card.recall-wide > #recall-grade,
 .overlay-card.recall-wide > #recall-actions { grid-column: 2; }
@@ -2451,6 +2454,7 @@ body.has-active-session #user-chip {
   .overlay-card.recall-wide > .help,
   .overlay-card.recall-wide > .label-sm,
   .overlay-card.recall-wide > #recall-text,
+  .overlay-card.recall-wide > .dictate-wrap,
   .overlay-card.recall-wide > .complexity-fields,
   .overlay-card.recall-wide > #recall-grade,
   .overlay-card.recall-wide > #recall-actions { grid-column: 1; grid-row: auto; }
@@ -2968,3 +2972,19 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .skill-chip:hover span { background: var(--panel3); color: var(--text); }
 .skill-chip input:focus-visible + span { outline: 2px solid var(--accent-2); outline-offset: 1px; }
 .skill-chip input:checked + span { background: rgba(167, 139, 250, .18); border-color: var(--accent-2); color: var(--text); }
+/* -- dictation mic (dictate.js) -- */
+.dictate-wrap { position: relative; }
+.dictate-wrap > textarea { padding-right: 40px; }
+.dictate-btn {
+  position: absolute; right: 7px; bottom: 7px;
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
+  transition: color .16s var(--ease), background .16s var(--ease);
+}
+.dictate-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.dictate-btn:hover { color: var(--text); background: var(--panel3); }
+.dictate-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dictate-btn.is-listening { color: var(--red); background: rgba(251, 113, 133, .14); animation: dictate-pulse 1.4s ease-in-out infinite; }
+.dictate-wrap:has(textarea:disabled) .dictate-btn { display: none; }
+@keyframes dictate-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, .35); } 50% { box-shadow: 0 0 0 5px rgba(251, 113, 133, 0); } }
+@media (prefers-reduced-motion: reduce) { .dictate-btn.is-listening { animation: none; } }

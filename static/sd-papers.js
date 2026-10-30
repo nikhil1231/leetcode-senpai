@@ -72,7 +72,7 @@
       const picked = (Array.isArray(answers[p.n]) ? answers[p.n] : []).map(Number);
       return `<pre class="sd-code sd-bug-code" data-lang="${esc(p.lang)}">${p.code.split('\n').map((l, i) => `<button type="button" class="sd-bug-line ${picked.includes(i + 1) ? 'is-picked' : ''}" data-n="${p.n}" data-input="bug" data-line="${i + 1}"><span class="sd-ln">${i + 1}</span><code>${B() ? B().highlight(l, p.lang || 'text') || ' ' : esc(l)}</code></button>`).join('')}</pre><p class="sd-muted">Click every wrong line (${p.count === 1 ? 'one line' : p.count + ' lines'}).</p>`;
     }
-    return `<textarea class="textarea" data-n="${p.n}" data-input="text" rows="6" maxlength="3000" placeholder="Write it as you would say it in an interview.">${esc(answers[p.n] ?? '')}</textarea><p class="sd-muted">Marked against ${p.points} points.</p>`;
+    return `<textarea class="textarea" data-dictate data-n="${p.n}" data-input="text" rows="6" maxlength="3000" placeholder="Write it as you would say it in an interview.">${esc(answers[p.n] ?? '')}</textarea><p class="sd-muted">Marked against ${p.points} points.</p>`;
   }
   const answered = n => { const v = answers[n]; return !(v === undefined || v === null || v === '' || (Array.isArray(v) && !v.some(x => x !== '' && x != null)) || (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)); };
   function topicTitle(id) { return catalog.course.lessons.find(l => l.id === id)?.title || ''; }

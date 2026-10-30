@@ -5,7 +5,6 @@
   const T = window.Tracks;
   const { esc, md, inline, btn, when, wireActions } = T;
   const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let pending = null;   // CV claim handed from one view to the next (refs aren't URL-safe)
 
   const chips = (ids, comps) => ids.map(id => `<span class="tr-tag">${esc(comps.find(c => c.id === id)?.title || id)}</span>`).join('');
@@ -133,9 +132,9 @@
     if (!d) return;
     const p = next.prompt;
     const suggested = next.stories;
-    let storyId = suggested[0] || '', timer = null, started = 0, seconds = 0, rec = null;
+    let storyId = suggested[0] || '', timer = null, started = 0, seconds = 0;
     const [lo, hi] = d.target_seconds;
-    ctx.onLeave(() => { clearInterval(timer); try { rec?.stop(); } catch (e) { /* ignore */ } });
+    ctx.onLeave(() => clearInterval(timer));
     const storyOptions = () => d.stories.length
       ? `<div class="tr-story-pick">${[...suggested.map(id => d.stories.find(s => s.id === id)), ...d.stories.filter(s => !suggested.includes(s.id))].filter(Boolean).map(s => `<label class="tr-pick ${suggested.includes(s.id) ? 'is-suggested' : ''}"><input type="radio" name="story" value="${s.id}" ${s.id === storyId ? 'checked' : ''}> <span><b>${esc(s.title)}</b> ${chips(s.competencies || [], d.competencies)}</span></label>`).join('')}<label class="tr-pick"><input type="radio" name="story" value="" ${storyId ? '' : 'checked'}> <span>No story, improvise</span></label></div>`
       : `<p class="sd-muted">You have no stories yet. Improvise this one, then write it up in the story bank.</p>`;
@@ -156,8 +155,8 @@
       ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">ANSWERING</span><h2>“${esc(p.text)}”</h2></div>
         <section class="sd-panel tr-answering"><div class="tr-clock" aria-live="off">0:00</div><div class="tr-clock-bar"><span></span><i style="left:${100 * lo / (d.max_clean_seconds)}%"></i><i style="left:${100 * hi / (d.max_clean_seconds)}%"></i></div>
         <p class="sd-muted">Speak your answer. Optionally capture it below for ${d.llm ? 'coach feedback' : 'your own review'}.</p>
-        <textarea class="textarea tr-transcript" rows="6" maxlength="6000" placeholder="Optional: type or dictate what you said"></textarea>
-        <div class="sd-actions">${btn('Stop', 'stop', '', true)}${SR ? btn('Dictate', 'dictate') : ''}</div></section>`;
+        <textarea class="textarea tr-transcript" data-dictate rows="6" maxlength="6000" placeholder="Optional: type or dictate what you said"></textarea>
+        <div class="sd-actions">${btn('Stop', 'stop', '', true)}</div></section>`;
       const clock = ctx.root.querySelector('.tr-clock'), bar = ctx.root.querySelector('.tr-clock-bar span');
       timer = setInterval(() => {
         seconds = Math.round((Date.now() - started) / 1000);
@@ -166,17 +165,8 @@
         bar.style.width = Math.min(100, 100 * seconds / d.max_clean_seconds) + '%';
       }, 250);
     }
-    function dictate(node) {
-      if (rec) { rec.stop(); rec = null; node.textContent = 'Dictate'; return; }
-      const area = ctx.root.querySelector('.tr-transcript');
-      rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = 'en-GB';
-      rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) area.value += (area.value ? ' ' : '') + e.results[i][0].transcript.trim(); };
-      rec.onend = () => { if (rec) { try { rec.start(); } catch (e) { rec = null; node.textContent = 'Dictate'; } } };
-      rec.start(); node.textContent = 'Stop dictating';
-    }
     function stageCheck() {
       clearInterval(timer); seconds = Math.max(1, Math.round((Date.now() - started) / 1000));
-      if (rec) { const r = rec; rec = null; r.stop(); }
       const text = ctx.root.querySelector('.tr-transcript')?.value || '';
       ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">SELF-CHECK · ${fmt(seconds)} ${seconds > d.max_clean_seconds ? '· TOO LONG' : seconds > hi ? '· A LITTLE LONG' : seconds < lo ? '· SHORT' : '· GOOD LENGTH'}</span><h2>How did that go?</h2><p>Be honest: this decides when the prompt comes back. A clean answer needs at least five ticks, including role, result and fit, in under ${fmt(d.max_clean_seconds)}.</p></div>
         <section class="sd-panel"><ul class="tr-checks">${d.checks.map(c => `<li><label><input type="checkbox" data-check="${c.key}"> ${esc(c.text)}</label></li>`).join('')}</ul>
@@ -196,7 +186,7 @@
         <div class="sd-actions">${btn('Next prompt', 'next', '', true)}${storyId ? btn('Edit the story', 'story', `data-id="${storyId}"`) : btn('Write this story up', 'new-story')}${btn('Overview', 'go', 'data-view="home"')}</div>`;
     }
     wireActions(ctx.root, {
-      start: stageAnswer, stop: stageCheck, save, dictate,
+      start: stageAnswer, stop: stageCheck, save,
       skip: async () => { const r = await ctx.call('/drill/next', 'POST', { exclude: [p.id] }); ctx.go('drill/' + r.prompt.id); },
       next: async () => { const r = await ctx.call('/drill/next', 'POST', { exclude: [p.id] }); ctx.go('drill/' + r.prompt.id); },
       story: n => ctx.go('story/' + n.dataset.id), 'new-story': () => { pending = { competencies: p.competencies.slice(0, 2) }; ctx.go('story/new'); },
@@ -220,7 +210,7 @@
     const q = pack.questions.find(x => x.id === ctx.arg), i = pack.questions.indexOf(q), next = pack.questions[i + 1];
     ctx.root.innerHTML = `<div class="sd-breadcrumb">${btn('← Deep dives', 'go', 'data-view="dives"')}<span>/ ${esc(pack.title)}</span></div>
       <div class="sd-page-intro"><span class="sd-eyebrow">QUESTION ${i + 1} OF ${pack.questions.length}</span><h2>${esc(q.prompt)}</h2></div>
-      <section class="sd-panel"><textarea class="textarea" rows="9" maxlength="4000" placeholder="Answer as you would out loud: mechanism first, then the failure modes and trade-offs."></textarea>
+      <section class="sd-panel"><textarea class="textarea" data-dictate rows="9" maxlength="4000" placeholder="Answer as you would out loud: mechanism first, then the failure modes and trade-offs."></textarea>
       <div class="sd-actions">${btn('Check my answer', 'check', '', true)}<span class="sd-muted">Write before you look.</span></div><div class="tr-dive-result" hidden></div></section>
       <div class="sd-actions">${next ? btn('Next question →', 'dive', `data-id="${next.id}"`) : btn('Back to deep dives', 'go', 'data-view="dives"')}</div>`;
     const area = ctx.root.querySelector('textarea'), out = ctx.root.querySelector('.tr-dive-result');
