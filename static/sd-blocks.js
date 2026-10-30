@@ -104,12 +104,13 @@
   W.predict = (el, b, ctx) => {
     el.querySelectorAll('[data-b=pick]').forEach(n => n.addEventListener('click', () => {
       const i = Number(n.dataset.i), ok = i === b.answer;
-      el.dataset.answer = b.choices[i];
+      el.dataset.answer = b.choices[i]; ctx.save(b, { i });
       el.querySelectorAll('[data-b=pick]').forEach(o => { o.disabled = true; o.classList.toggle('is-right', Number(o.dataset.i) === b.answer); o.classList.toggle('is-wrong', o === n && !ok); });
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
       r.innerHTML = (ok ? '<b class="sd-ok">You called it.</b>' : '<b class="sd-bad">Most people miss this one.</b>') + md(b.reveal);
       ctx.done(b, ok);
     }));
+    return { restore(st) { el.querySelector(`[data-b=pick][data-i="${st.i}"]`)?.click(); } };
   };
 
   // ---------- Sort into buckets ----------
@@ -130,7 +131,7 @@
     }));
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       if (Object.keys(picks).length < b.items.length) { const r = el.querySelector('.sd-reveal'); r.hidden = false; r.innerHTML = '<p class="sd-muted">Place every item first.</p>'; return; }
-      el.dataset.checked = '1'; let right = 0;
+      el.dataset.checked = '1'; let right = 0; ctx.save(b, { picks: { ...picks } });
       el.dataset.answer = b.items.map((it, i) => `${it.text} → ${b.buckets[picks[i]]}`).join('; ');
       el.querySelectorAll('.sd-sort-item').forEach(row => {
         const it = b.items[row.dataset.i], ok = picks[row.dataset.i] === it.bucket; right += ok;
@@ -145,6 +146,14 @@
       r.innerHTML = `<p><b class="${right === b.items.length ? 'sd-ok' : 'sd-bad'}">${right} of ${b.items.length} placed correctly.</b></p>${b.explain ? md(b.explain) : ''}`;
       ctx.done(b, right === b.items.length);
     });
+    return { restore(st) {
+      Object.entries(st.picks || {}).forEach(([i, k]) => {
+        const row = el.querySelector(`.sd-sort-item[data-i="${i}"]`); if (!row) return;
+        const sel = row.querySelector('[data-b=bucketsel]');
+        if (sel) { sel.value = String(k); sel.dispatchEvent(new Event('change')); } else row.querySelector(`[data-b=bucket][data-k="${k}"]`)?.click();
+      });
+      el.querySelector('[data-b=check]').click();
+    } };
   };
 
   // ---------- Ordering ----------
@@ -178,6 +187,7 @@
     };
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       tries++; const rows = [...list.querySelectorAll('li')]; let ok = true;
+      ctx.save(b, { order: rows.map(li => Number(li.dataset.i)) });
       el.dataset.answer = rows.map(li => b.items[li.dataset.i]).join(' → ');
       rows.forEach((li, pos) => { const good = Number(li.dataset.i) === pos; ok = ok && good; li.classList.toggle('is-right', good); li.classList.toggle('is-wrong', !good); });
       if (ok) return finish(true);
@@ -188,9 +198,15 @@
       el.querySelector('.sd-reveal').insertAdjacentHTML('afterbegin', `<p class="sd-muted">You had ${placed} of ${rows.length} in the right place. The correct order is shown; red items were out of place.</p>`);
     });
     el.querySelector('[data-b=show]').addEventListener('click', () => {
+      ctx.save(b, { shown: true });
       [...list.querySelectorAll('li')].sort((a, c) => a.dataset.i - c.dataset.i).forEach(li => { list.appendChild(li); li.classList.remove('is-wrong'); li.classList.add('is-right'); });
       finish(false, true);
     });
+    return { restore(st) {
+      if (st.shown) return el.querySelector('[data-b=show]').click();
+      (st.order || []).forEach(i => { const li = list.querySelector(`li[data-i="${i}"]`); if (li) list.appendChild(li); });
+      el.querySelector('[data-b=check]').click();
+    } };
   };
 
   // ---------- Estimation ----------
@@ -202,7 +218,7 @@
       const v = Number(String(input.value).replace(/[, _]/g, '').replace(/k$/i, 'e3').replace(/m$/i, 'e6').replace(/b$/i, 'e9'));
       if (!isFinite(v) || v <= 0) { input.focus(); return; }
       const ratio = v / b.answer, ok = ratio <= factor && ratio >= 1 / factor;
-      el.dataset.answer = `${input.value} ${b.unit}`;
+      el.dataset.answer = `${input.value} ${b.unit}`; ctx.save(b, { v: input.value });
       const off = ratio >= 1 ? ratio : 1 / ratio;
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
       r.innerHTML = `<p>${ok ? '<b class="sd-ok">Within range.</b>' : `<b class="sd-bad">Off by about ${fmtNum(off)}×.</b>`} Reference answer: <b>${fmtNum(b.answer)} ${esc(b.unit)}</b>${off < 1.05 ? '' : ` (accepted range ${fmtNum(b.answer / factor)}–${fmtNum(b.answer * factor)})`}.</p><div class="sd-steps">${md(b.steps)}</div>`;
@@ -211,6 +227,7 @@
     };
     el.querySelector('[data-b=check]').addEventListener('click', check);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+    return { restore(st) { input.value = st.v ?? ''; check(); } };
   };
 
   // ---------- Spot the bug ----------
@@ -229,7 +246,7 @@
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       const picked = [...el.querySelectorAll('.sd-bug-line.is-picked')].map(n => Number(n.dataset.line));
       if (!picked.length) return;
-      el.dataset.locked = '1';
+      el.dataset.locked = '1'; ctx.save(b, { lines: picked });
       el.dataset.answer = 'Picked ' + picked.map(p => `line ${p}: ${lines[p - 1]}`).join('; ');
       const ok = picked.length === b.bug.length && picked.every(p => b.bug.includes(p));
       el.querySelectorAll('.sd-bug-line').forEach(n => { const ln = Number(n.dataset.line); n.classList.toggle('is-bug', b.bug.includes(ln)); n.classList.toggle('is-wrong', !b.bug.includes(ln) && n.classList.contains('is-picked')); n.disabled = true; });
@@ -237,6 +254,10 @@
       const r = el.querySelector('.sd-reveal'); r.hidden = false; r.innerHTML = verdictOf(ok) + md(b.explain) + (b.fix ? `<p class="sd-muted">A fix:</p><pre class="sd-code" data-lang="${esc(b.lang || '')}"><code>${highlight(b.fix.replace(/\n$/, ''), b.lang || 'text')}</code></pre>` : '');
       ctx.done(b, ok);
     });
+    return { restore(st) {
+      (st.lines || []).forEach(n => el.querySelector(`.sd-bug-line[data-line="${n}"]`)?.classList.add('is-picked'));
+      el.querySelector('[data-b=check]').click();
+    } };
   };
 
   // ---------- Faded worked example ----------
@@ -261,6 +282,7 @@
   W.faded = (el, b, ctx) => {
     el.querySelector('[data-b=check]').addEventListener('click', () => {
       let right = 0; const fields = [...el.querySelectorAll('.sd-blank')], notes = [];
+      ctx.save(b, { values: fields.map(f => f.value) });
       fields.forEach((f, i) => {
         const a = f.dataset.answer, v = f.value.trim();
         const ok = f.tagName === 'INPUT' ? v !== '' && Math.abs(Number(v.replace(/,/g, '')) - Number(a)) <= Math.abs(Number(a)) * 0.1 + 1e-9 : v === a;
@@ -275,6 +297,10 @@
       r.innerHTML = `<p>${right === fields.length ? '<b class="sd-ok">All blanks correct.</b>' : `<b class="sd-bad">${right} of ${fields.length} correct.</b> The right answers are now filled in.`}</p>${b.explain ? md(b.explain) : ''}`;
       ctx.done(b, right === fields.length);
     });
+    return { restore(st) {
+      [...el.querySelectorAll('.sd-blank')].forEach((f, i) => { f.value = st.values?.[i] ?? ''; });
+      el.querySelector('[data-b=check]').click();
+    } };
   };
 
   // ---------- Free recall ----------
@@ -282,13 +308,16 @@
   W.recall = (el, b, ctx) => {
     const area = el.querySelector('textarea'), r = el.querySelector('.sd-reveal');
     const status = { covered: ['✓', 'is-right'], partial: ['◐', 'is-partial'], missing: ['○', 'is-missing'], incorrect: ['✗', 'is-wrong'] };
-    el.querySelector('[data-b=check]').addEventListener('click', async () => {
+    let given = null;
+    const submit = async () => {
       const btn = el.querySelector('[data-b=check]'); if (btn.disabled) return;
-      btn.disabled = true; await window.Dictate?.settle(area); btn.disabled = false;
+      if (!given) { btn.disabled = true; await window.Dictate?.settle(area); btn.disabled = false; }
       const text = area.value.trim(); if (text.length < 15) { area.focus(); return; }
       btn.disabled = true; area.disabled = true; btn.textContent = 'Checking…';
       let res = null;
-      try { res = await ctx.recall(b, text); } catch (e) { res = { message: 'Saved locally only: ' + e.message }; }
+      if (given) res = given.res;
+      else { try { res = await ctx.recall(b, text); } catch (e) { res = { message: 'Saved locally only: ' + e.message }; } }
+      ctx.save(b, { text, res });
       btn.textContent = 'Checked'; r.hidden = false;
       const model = `<details class="sd-model" ${res?.grade ? '' : 'open'}><summary>Model answer</summary>${md(b.model)}</details>`;
       if (res?.grade) {
@@ -299,25 +328,34 @@
         r.innerHTML = `${res?.message ? `<p class="sd-muted">${esc(res.message)}</p>` : ''}${model}<p><b>Tick the points your answer covered:</b></p><ul class="sd-rubric is-self">${b.points.map((p, i) => `<li><label><input type="checkbox" data-point="${i}"> ${inline(p)}</label></li>`).join('')}</ul><div class="sd-actions">${button('Record self-check', 'self', '', true)}</div>`;
         r.querySelector('[data-b=self]').addEventListener('click', e => {
           const n = r.querySelectorAll('[data-point]:checked').length; e.target.disabled = true;
+          ctx.save(b, { text, res, self: [...r.querySelectorAll('[data-point]:checked')].map(c => Number(c.dataset.point)) });
           r.querySelectorAll('[data-point]').forEach(c => { c.disabled = true; });
           e.target.insertAdjacentHTML('afterend', `<span class="sd-muted"> ${n} of ${b.points.length} covered${n < b.points.length ? ' — reread the gaps above before moving on.' : '.'}</span>`);
           ctx.done(b, n / b.points.length >= 0.75);
         });
       }
-    });
+    };
+    el.querySelector('[data-b=check]').addEventListener('click', submit);
+    return { async restore(st) {
+      area.value = st.text || ''; given = st; await submit(); given = null;
+      if (st.self) {
+        st.self.forEach(i => { const c = r.querySelector(`[data-point="${i}"]`); if (c) c.checked = true; });
+        r.querySelector('[data-b=self]')?.click();
+      }
+    } };
   };
 
   // ---------- Incident drill ----------
   R.incident = b => frame(b, `${b.intro ? `<div class="sd-prompt">${md(b.intro)}</div>` : ''}<ol class="sd-incident-log"></ol><div class="sd-incident-now"></div>`, b.title);
   W.incident = (el, b, ctx) => {
     const log = el.querySelector('.sd-incident-log'), now = el.querySelector('.sd-incident-now');
-    let path = [], good = 0, bad = 0;
+    let path = [], good = 0, bad = 0, picks = [];
     const show = key => {
       const node = b.nodes[key];
       if (!node.options?.length) {
         const best = node.verdict === 'good';
         now.innerHTML = `<div class="sd-incident-card is-end ${best ? 'is-good' : 'is-poor'}">${md(node.text)}<p><b>${best ? 'Resolved well.' : node.verdict === 'ok' ? 'Resolved, but not the best path.' : 'This made things worse.'}</b> ${good} strong decision${good === 1 ? '' : 's'}, ${bad} costly one${bad === 1 ? '' : 's'}.</p>${b.debrief ? `<div class="sd-debrief"><b>Debrief</b>${md(b.debrief)}</div>` : ''}<div class="sd-actions">${button('Run the drill again', 'restart')}</div></div>`;
-        now.querySelector('[data-b=restart]').addEventListener('click', () => { path = []; good = bad = 0; log.innerHTML = ''; show(b.start); });
+        now.querySelector('[data-b=restart]').addEventListener('click', () => { path = []; picks = []; good = bad = 0; log.innerHTML = ''; ctx.save(b, { picks }); show(b.start); });
         ctx.done(b, best && bad === 0);
         return;
       }
@@ -325,6 +363,7 @@
       now.innerHTML = `<div class="sd-incident-card">${md(node.text)}<div class="sd-incident-options">${shown.map((i, n) => `<button type="button" class="sd-option" data-i="${i}"><span class="sd-option-key">${n + 1}</span><span>${inline(node.options[i].label)}</span></button>`).join('')}</div></div>`;
       now.querySelectorAll('[data-i]').forEach(n => n.addEventListener('click', () => {
         const o = node.options[Number(n.dataset.i)];
+        picks.push(Number(n.dataset.i)); ctx.save(b, { picks: [...picks] });
         o.quality === 'good' ? good++ : o.quality === 'bad' && bad++;
         path.push(key);
         log.insertAdjacentHTML('beforeend', `<li class="is-${o.quality || 'ok'}"><b>${inline(o.label)}</b>${o.note ? `<p>${inline(o.note)}</p>` : ''}</li>`);
@@ -332,6 +371,7 @@
       }));
     };
     show(b.start);
+    return { restore(st) { (st.picks || []).forEach(i => now.querySelector(`[data-i="${i}"]`)?.click()); } };
   };
 
   // ---------- Architecture diagram ----------
@@ -378,7 +418,7 @@
     let timer = null;
     // Build mode: connections are hidden; click two components to find each one.
     const want = new Set(b.edges.map(([a, c]) => a + '>' + c));
-    const found = new Set(); let first = null, misses = 0;
+    const found = new Set(), pairs = []; let first = null, misses = 0, started = false;
     const status = () => { const s = el.querySelector('.sd-arch-build-status'); if (s) s.textContent = `${found.size} of ${want.size} connections found${misses ? ` · ${misses} wrong guess${misses === 1 ? '' : 'es'}` : ''}. Click one component, then another it talks to.`; };
     const finishBuild = gaveUp => {
       el.classList.remove('is-building'); el.querySelectorAll('.sd-arch-node').forEach(n => n.classList.remove('is-picked'));
@@ -390,13 +430,15 @@
     };
     el.querySelector('[data-b=build]')?.addEventListener('click', e => {
       el.classList.add('is-building'); e.target.hidden = true; el.querySelector('[data-b=giveup]').hidden = false; status();
+      started = true; ctx.save(b, { started, pairs: [...pairs] });
     });
-    el.querySelector('[data-b=giveup]')?.addEventListener('click', () => finishBuild(true));
+    el.querySelector('[data-b=giveup]')?.addEventListener('click', () => { ctx.save(b, { started, pairs: [...pairs], gaveUp: true }); finishBuild(true); });
     el.querySelectorAll('.sd-arch-node').forEach(n => n.addEventListener('click', () => {
       if (!el.classList.contains('is-building')) return;
       if (!first || first === n) { first = first === n ? null : n; n.classList.toggle('is-picked', !!first); return; }
       const a = first.dataset.node, c = n.dataset.node;
       first.classList.remove('is-picked'); first = null;
+      pairs.push([a, c]); ctx.save(b, { started, pairs: [...pairs] });
       const key = want.has(a + '>' + c) ? a + '>' + c : want.has(c + '>' + a) ? c + '>' + a : null;
       if (!key) { misses++; n.classList.add('is-miss'); setTimeout(() => n.classList.remove('is-miss'), 600); status(); return; }
       found.add(key); el.querySelectorAll(`[data-edge="${CSS.escape(key)}"]`).forEach(x => x.classList.add('is-found'));
@@ -420,6 +462,7 @@
     }));
     el.querySelectorAll('[data-b=pick]').forEach(n => n.addEventListener('click', () => {
       const i = Number(n.dataset.i), ok = i === b.answer;
+      el.dataset.answer = b.choices[i]; ctx.save(b, { i });
       el.querySelectorAll('[data-b=pick]').forEach(o => { o.disabled = true; o.classList.toggle('is-right', Number(o.dataset.i) === b.answer); o.classList.toggle('is-wrong', o === n && !ok); });
       const node = el.querySelector('.sd-arch-node.is-missing');
       const real = b.nodes.find(x => x.id === b.missing);
@@ -428,6 +471,14 @@
       const r = el.querySelector('.sd-reveal'); r.hidden = false; r.innerHTML = verdictOf(ok) + md(b.explain || '');
       ctx.done(b, ok);
     }));
+    return { restore(st) {
+      if (st.i !== undefined) return el.querySelector(`[data-b=pick][data-i="${st.i}"]`)?.click();
+      if (!st.started) return;
+      el.querySelector('[data-b=build]')?.click();
+      const node = id => el.querySelector(`.sd-arch-node[data-node="${CSS.escape(id)}"]`);
+      (st.pairs || []).forEach(([a, c]) => { node(a)?.dispatchEvent(new Event('click')); node(c)?.dispatchEvent(new Event('click')); });
+      if (st.gaveUp) el.querySelector('[data-b=giveup]')?.click();
+    } };
   };
 
   // ---------- Interview card ----------
@@ -435,55 +486,73 @@
   R.interview = b => frame(b, `<div class="sd-pitch-step" data-step="pitch">${b.ask ? `<div class="sd-interview-ask"><span class="sd-say-label">The interviewer asks</span>${md(b.ask)}</div>` : ''}<div class="sd-prompt"><b>Your turn: answer in about 30 seconds.</b> Type what you would say out loud, then compare.</div><textarea class="textarea sd-pitch-text" data-dictate rows="5" maxlength="4000" placeholder="I'd start with…"></textarea><div class="sd-actions">${button('Grade my pitch', 'pitch', '', true)}${button('Skip: show the model', 'skip')}</div><div class="sd-pitch-out" hidden></div></div><div class="sd-followups-live"></div><div class="sd-weak-strong" hidden><div class="is-weak"><span>Weak answer</span>${md(b.weak)}</div><div class="is-strong"><span>Strong answer</span>${md(b.strong)}</div></div>`, b.title);
   W.interview = (el, b, ctx) => {
     const VERDICT = { strong: ['sd-ok', 'Strong answer.'], adequate: ['sd-mid', 'Solid start.'], weak: ['sd-mid', 'Needs more.'] };
-    let pitchOk = null;
+    // st records every step so a reload replays it: {pitch: {text, skipped, res, self}, fu: [same per follow-up]}.
+    let pitchOk = null, replay = null;
+    const st = { pitch: null, fu: [] };
     const gradeHtml = (res, model, label) => {
       const g = res?.grade;
       const head = g ? `<p><b class="${VERDICT[g.verdict][0]}">${VERDICT[g.verdict][1]}</b> ${inline(g.feedback)}</p>${g.covered.length ? `<p class="sd-muted">You covered: ${g.covered.map(inline).join(' · ')}</p>` : ''}${g.missing.length ? `<p class="sd-muted">To strengthen it: ${g.missing.map(inline).join(' · ')}</p>` : ''}` : res?.message ? `<p class="sd-muted">${esc(res.message)}</p>` : '';
       return `${head}<details class="sd-model" ${g ? '' : 'open'}><summary>${label}</summary>${md(model)}</details>`;
     };
-    const selfCheck = (out, then) => {
+    const selfCheck = (out, rec, then) => {
+      const done = yes => { rec.self = yes; ctx.save(b, st); return then(yes); };
+      if (replay && rec.self !== undefined && rec.self !== null) return done(rec.self);
       out.insertAdjacentHTML('beforeend', `<div class="sd-actions sd-self">${button('I covered it', 'yes')}${button('I missed parts', 'no')}</div>`);
-      out.querySelectorAll('.sd-self button').forEach(x => x.addEventListener('click', () => { out.querySelector('.sd-self').remove(); then(x.dataset.b === 'yes'); }));
+      out.querySelectorAll('.sd-self button').forEach(x => x.addEventListener('click', () => { out.querySelector('.sd-self').remove(); done(x.dataset.b === 'yes'); }));
+      return null;
     };
-    const send = async (text, followup) => {
+    const send = async (text, followup, saved) => {
+      if (saved) return saved.res;
       if (!ctx.pitch) return null;
       try { return await ctx.pitch(b, text, followup); } catch (e) { return { message: 'Saved locally only: ' + e.message }; }
     };
     const finish = () => { el.querySelector('.sd-weak-strong').hidden = false; ctx.done(b, pitchOk); };
-    const followup = i => {
+    const followup = async i => {
       const live = el.querySelector('.sd-followups-live');
       if (i >= b.followups.length) return finish();
       const f = b.followups[i];
       live.insertAdjacentHTML('beforeend', `<div class="sd-pitch-step" data-fu="${i}"><div class="sd-prompt"><span class="sd-say-label">Interviewer · follow-up ${i + 1} of ${b.followups.length}</span>${md(f.q)}</div><textarea class="textarea sd-pitch-text" data-dictate rows="3" maxlength="4000" placeholder="Your answer"></textarea><div class="sd-actions">${button('Answer', 'answer', '', true)}${button('Skip', 'skip')}</div><div class="sd-pitch-out" hidden></div></div>`);
       const step = live.querySelector(`[data-fu="${i}"]`), area = step.querySelector('textarea'), out = step.querySelector('.sd-pitch-out');
-      area.focus({ preventScroll: true });
-      const go = async skipped => {
+      const go = async (skipped, saved) => {
         if (area.disabled || area.dataset.settling) return;
-        area.dataset.settling = '1'; await window.Dictate?.settle(area); delete area.dataset.settling;
+        if (!saved) { area.dataset.settling = '1'; await window.Dictate?.settle(area); delete area.dataset.settling; }
         const text = area.value.trim(); if (!skipped && text.length < 5) { area.focus(); return; }
         step.querySelectorAll('button').forEach(x => { x.disabled = true; }); area.disabled = true;
-        const res = skipped ? null : (out.hidden = false, out.innerHTML = '<p class="sd-muted">Grading…</p>', await send(text, i));
+        const res = skipped ? null : (out.hidden = false, out.innerHTML = '<p class="sd-muted">Grading…</p>', await send(text, i, saved));
+        const rec = st.fu[i] = { text, skipped, res, self: saved?.self ?? null };
+        ctx.save(b, st);
         out.hidden = false; out.innerHTML = gradeHtml(res, f.a, 'Model answer');
-        if (!skipped && !res?.grade) selfCheck(out, () => followup(i + 1)); else followup(i + 1);
+        if (!skipped && !res?.grade) await selfCheck(out, rec, () => followup(i + 1)); else await followup(i + 1);
       };
       step.querySelector('[data-b=answer]').addEventListener('click', () => go(false));
       step.querySelector('[data-b=skip]').addEventListener('click', () => go(true));
+      const saved = replay?.fu?.[i];
+      if (saved) { area.value = saved.text || ''; return go(saved.skipped, saved); }
+      if (!replay) area.focus({ preventScroll: true });
     };
     const pitchStep = el.querySelector('[data-step=pitch]'), area = pitchStep.querySelector('textarea'), out = pitchStep.querySelector('.sd-pitch-out');
-    const go = async skipped => {
+    const go = async (skipped, saved) => {
       if (area.disabled || area.dataset.settling) return;
-      area.dataset.settling = '1'; await window.Dictate?.settle(area); delete area.dataset.settling;
+      if (!saved) { area.dataset.settling = '1'; await window.Dictate?.settle(area); delete area.dataset.settling; }
       const text = area.value.trim(); if (!skipped && text.length < 15) { area.focus(); return; }
       pitchStep.querySelectorAll('button').forEach(x => { x.disabled = true; }); area.disabled = true;
       out.hidden = false; out.innerHTML = skipped ? '' : '<p class="sd-muted">Grading…</p>';
-      const res = skipped ? null : await send(text, null);
+      const res = skipped ? null : await send(text, null, saved);
+      const rec = st.pitch = { text, skipped, res, self: saved?.self ?? null };
+      ctx.save(b, st);
       el.dataset.answer = text;
       out.innerHTML = gradeHtml(res, b.say, 'Model pitch');
       if (res?.grade) pitchOk = res.grade.verdict !== 'weak';
-      if (!skipped && !res?.grade) selfCheck(out, ok => { pitchOk = ok; followup(0); }); else followup(0);
+      if (!skipped && !res?.grade) await selfCheck(out, rec, ok => { pitchOk = ok; return followup(0); }); else await followup(0);
     };
     pitchStep.querySelector('[data-b=pitch]').addEventListener('click', () => go(false));
     pitchStep.querySelector('[data-b=skip]').addEventListener('click', () => go(true));
+    return { async restore(saved) {
+      if (!saved?.pitch) return;
+      // replay stays set: later steps of the chain read it, and new live steps simply find no saved entry.
+      replay = saved; area.value = saved.pitch.text || '';
+      await go(saved.pitch.skipped, saved.pitch);
+    } };
   };
 
   // ---------- Timeline with crash injection ----------
@@ -502,7 +571,7 @@
     return frame(b, `${b.intro ? `<div class="sd-prompt">${md(b.intro)}</div>` : ''}<div class="sd-tl-wrap"><div class="sd-tl-main">${head}<ol class="sd-tl">${rows}</ol></div>${state}</div>${controls}${tasks}`, b.title);
   };
   W.timeline = (el, b, ctx) => {
-    let at = -1, timer = null, explored = new Set(), found = false;
+    let at = -1, timer = null, explored = new Set(), found = false, foundAt = null;
     const steps = [...el.querySelectorAll('.sd-tl-step')];
     const stateAt = i => { const s = { ...(b.state || {}) }; for (let k = 0; k <= i; k++) Object.assign(s, b.steps[k].set || {}); return s; };
     const paintState = (i, flash) => {
@@ -541,7 +610,7 @@
     const label = { safe: 'Safe', lost: 'Work lost', duplicate: 'Duplicate effect', wrong: 'Wrong data', stuck: 'Stuck' };
     el.querySelectorAll('[data-b=crash]').forEach(n => n.addEventListener('click', () => {
       const after = Number(n.dataset.after), c = b.crashes.find(x => x.after === after);
-      explored.add(after);
+      explored.add(after); ctx.save(b, { crashes: [...explored], find: foundAt });
       el.querySelectorAll('[data-b=crash]').forEach(o => o.classList.toggle('is-on', o === n));
       steps.forEach((s, i) => { s.classList.toggle('is-after-crash', i > after); s.classList.toggle('is-crashed', i === after); });
       paintState(after, false);
@@ -551,13 +620,19 @@
     }));
     steps.forEach((s, i) => s.addEventListener('click', () => {
       if (!b.find || found || !s.classList.contains('is-pickable')) return;
-      const ok = i === b.find.answer; found = true;
+      const ok = i === b.find.answer; found = true; foundAt = i; ctx.save(b, { crashes: [...explored], find: i });
       steps.forEach(x => x.classList.remove('is-pickable'));
       s.classList.add(ok ? 'is-right' : 'is-wrong'); steps[b.find.answer].classList.add('is-right', 'is-culprit');
       reveal(verdictOf(ok) + md(b.find.explain));
       if (!b.crashes || explored.size === b.crashes.length) ctx.done(b, ok);
     }));
     paint();
+    return { restore(st) {
+      if (!(st.crashes?.length || st.find !== null && st.find !== undefined)) return;
+      el.querySelector('[data-b=all]').click();
+      st.crashes?.forEach(after => el.querySelector(`[data-b=crash][data-after="${after}"]`)?.click());
+      if (st.find !== null && st.find !== undefined) steps[st.find]?.click();
+    } };
   };
 
   // ---------- Simulator host ----------
@@ -591,17 +666,21 @@
   }
   // ctx: {saved:{key:{done}}, done(key, correct), recall(block,text)}
   function wire(root, lesson, ctx) {
-    const instances = [], nodes = {};
+    const instances = [], nodes = {}, apis = {}, replaying = new Set();
     root.querySelectorAll('[data-block]').forEach(n => { nodes[n.dataset.block] = n; });
     const local = {
       track: inst => inst && instances.push(inst),
       recall: ctx.recall,
       pitch: ctx.pitch,
+      // Answer state for restoring after a reload; nothing is saved or recorded while a block replays it.
+      save(b, state) { if (!replaying.has(b.key)) ctx.save?.(b.key, JSON.parse(JSON.stringify(state))); },
       done(b, correct, silent) {
         // Look the node up from wiring time: a lesson player may move blocks between containers.
+        // `answered` is this page's answer; `done` alone (a tick from an earlier visit) never blocks a new one.
         const node = nodes[b.key];
-        if (!node || node.dataset.done) return;
-        node.dataset.done = '1'; node.querySelector('.sd-block-done').hidden = false;
+        if (!node || node.dataset.answered) return;
+        node.dataset.answered = '1'; node.dataset.done = '1'; node.querySelector('.sd-block-done').hidden = false;
+        if (replaying.has(b.key)) return;
         if (!silent) ctx.done(b.key, correct);
       },
     };
@@ -610,9 +689,20 @@
       const node = nodes[b.key];
       if (!node) return;
       if (ctx.saved?.[b.key]?.done) { node.dataset.done = '1'; node.querySelector('.sd-block-done').hidden = false; }
-      try { W[b.type](node, b, local); } catch (e) { node.insertAdjacentHTML('beforeend', `<p class="sd-error">This activity failed to load: ${esc(e.message)}</p>`); }
+      try { apis[b.key] = W[b.type](node, b, local); } catch (e) { node.insertAdjacentHTML('beforeend', `<p class="sd-error">This activity failed to load: ${esc(e.message)}</p>`); }
     });
-    return { destroy() { instances.forEach(i => i.destroy?.()); } };
+    return {
+      destroy() { instances.forEach(i => i.destroy?.()); },
+      // Replay saved answers through each block's own UI, without recording anything again.
+      async restore(states) {
+        for (const [key, st] of Object.entries(states || {})) {
+          if (!apis[key]?.restore || !st) continue;
+          replaying.add(key);
+          try { await apis[key].restore(st); } catch (e) { console.warn('Could not restore activity', key, e); }
+          finally { replaying.delete(key); }
+        }
+      },
+    };
   }
   const renderBlock = b => b.type === 'md' ? `<div class="sd-md">${md(b.text)}</div>` : (R[b.type] ? R[b.type](b) : '');
   window.SDBlocks = { md, inline, esc, render, renderBlock, wire, outline, slug, highlight };

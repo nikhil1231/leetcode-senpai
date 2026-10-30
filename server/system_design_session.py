@@ -6,6 +6,7 @@ PLAN_DAYS, so revisiting a lesson later re-tailors it. Tutor notes refine the pl
 model is available; every tutor moment saves the learner's text first and degrades to the
 authored content without the model. Redesign-from-memory is a scheduled ledger item.
 """
+import json
 import secrets
 import time
 
@@ -86,6 +87,8 @@ def session(store, key, now=None):
                     key=lambda r: r['created_at']):
         attempts[r['section']] = {'id': r['id'], 'text': r['text'], 'feedback': r.get('feedback'), 'skipped': r.get('skipped', False)}
     calls = frozen.get('callbacks', []) if is_planned else []
+    saved = next((r for r in records if r.get('id') == 'progress_' + key), None)
+    progress = saved['state'] if saved and saved.get('plan_at') == (frozen.get('at') if is_planned else None) else None
     return {'lesson_id': key, 'planned': is_planned, 'fresh': frozen.get('fresh', False),
             'probes': frozen.get('probes', []) if is_planned else adaptive.probes(lesson, statuses),
             'sections': result['sections'], 'finale': result['finale'], 'known_share': result['known_share'],
@@ -93,7 +96,8 @@ def session(store, key, now=None):
             'notes_pending': is_planned and not notes and llm.enabled(store.get_settings()),
             'callbacks': [{'id': q, 'lesson_id': QUESTIONS[q]['lesson_id'],
                            'lesson_title': LESSONS[QUESTIONS[q]['lesson_id']]['title']} for q in calls if q in QUESTIONS],
-            'attempts': attempts, 'tutor': llm.enabled(store.get_settings()),
+            'attempts': attempts, 'tutor': llm.enabled(store.get_settings()), 'progress': progress,
+            'plan_at': frozen.get('at') if is_planned else None,
             'redesign': f'redesign:{key}' in ledger_items.BY_ID}
 
 
@@ -130,6 +134,7 @@ def make_plan(key: str, body: PlanBody, store=Depends(store_for)):
 def reset_plan(key: str, store=Depends(store_for)):
     lesson_or_404(key)
     save_state(store, key, {'plan': None})
+    save_progress(store, key, None, None)
     return session(store, key)
 
 
@@ -155,6 +160,41 @@ async def plan_notes(key: str, store=Depends(store_for)):
             modes[n['id']] = n['mode']
     save_state(store, key, {'plan': {**state['plan'], 'modes': modes, 'notes': result}})
     return session(store, key)
+
+
+# ---------- Progress: everything on screen in the current pass, for refreshes and other devices ----------
+PROGRESS_LIMIT = 400_000
+
+
+def save_progress(store, key, plan_at, state):
+    """Last write wins: progress is a convenience snapshot; the raw answers live in their own records."""
+    for _ in range(3):
+        old = store.get_design_record('progress_' + key)
+        try:
+            return store.put_design_record('progress_' + key, {'kind': 'lesson_progress', 'lesson_id': key,
+                                                               'plan_at': plan_at, 'state': state,
+                                                               'saved_at': time.time()}, old['revision'] if old else None)
+        except ValueError:
+            continue
+    raise HTTPException(409, 'Progress changed in another tab. Reload to continue.')
+
+
+class ProgressBody(BaseModel):
+    plan_at: float | None = None
+    state: dict
+
+
+@router.put('/course/lessons/{key}/progress')
+def put_progress(key: str, body: ProgressBody, store=Depends(store_for)):
+    lesson_or_404(key)
+    if len(json.dumps(body.state)) > PROGRESS_LIMIT:
+        raise HTTPException(413, 'Lesson progress is too large to save')
+    state = state_of(store, key)
+    current = state['plan'].get('at') if planned(state, time.time()) else None
+    if body.plan_at != current:
+        return {'saved': False, 'reason': 'This lesson was re-planned on another device. Reload to continue.'}
+    save_progress(store, key, body.plan_at, body.state)
+    return {'saved': True}
 
 
 def section_or_404(lesson, sid):

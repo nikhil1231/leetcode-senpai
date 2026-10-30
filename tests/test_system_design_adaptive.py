@@ -266,3 +266,23 @@ def test_gap_questions_are_generated_from_mistakes_and_graded(client, monkeypatc
     answered = call(client, 'POST', f'/course/gaps/{g["id"]}/answer', n=0, text='Misses times requests.')
     assert answered['questions'][0]['grade']['feedback'] == 'f' and answered['questions'][0]['model'] == 'strong'
     call(client, 'POST', f'/course/gaps/{g["id"]}/answer', 404, n=3, text='x')
+
+
+def test_progress_is_saved_per_pass_and_restored_with_the_session(client):
+    s = call(client, 'GET', '/course/lessons/cache-aside/session')
+    assert s['progress'] is None and s['plan_at'] is None
+    warm = {'blocks': {'b1': {'i': 1}}, 'drafts': {'note': 'I know Redis'}}
+    assert call(client, 'PUT', '/course/lessons/cache-aside/progress', plan_at=None, state=warm)['saved']
+    assert call(client, 'GET', '/course/lessons/cache-aside/session')['progress'] == warm
+    planned = call(client, 'POST', '/course/lessons/cache-aside/plan')
+    assert planned['progress'] is None  # warm-up progress belongs to the unplanned pass; the client re-saves it
+    state = {'page': 3, 'blocks': {'b1': {'i': 1}, 'b3': {'order': [0, 1]}}}
+    assert call(client, 'PUT', '/course/lessons/cache-aside/progress', plan_at=planned['plan_at'], state=state)['saved']
+    # Another device loads the same pass.
+    assert call(client, 'GET', '/course/lessons/cache-aside/session')['progress'] == state
+    # A stale device writing for an older pass is refused instead of clobbering.
+    stale = call(client, 'PUT', '/course/lessons/cache-aside/progress', plan_at=None, state={'page': 0})
+    assert not stale['saved'] and 're-planned' in stale['reason']
+    reset = call(client, 'POST', '/course/lessons/cache-aside/plan/reset')
+    assert reset['progress'] is None
+    call(client, 'PUT', '/course/lessons/cache-aside/progress', 413, plan_at=None, state={'x': 'y' * 500_000})

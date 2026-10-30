@@ -209,7 +209,6 @@
   }
   function goPage(n) {
     S.page = n;
-    try { sessionStorage.setItem('sd-page:' + S.id, String(n)); } catch { /* per-tab convenience */ }
     paint();
     window.scrollTo({top: S.host.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth'});
   }
@@ -226,12 +225,13 @@
     S.host.querySelectorAll('[data-slot]').forEach(n => { const node = S.nodes[n.dataset.slot]; if (node) n.replaceWith(node); else n.remove(); });
     S.host.querySelectorAll('[data-draft]').forEach(n => {
       n.value = S.drafts[n.dataset.draft] || '';
-      n.addEventListener('input', () => { S.drafts[n.dataset.draft] = n.value; });
+      n.addEventListener('input', () => { S.drafts[n.dataset.draft] = n.value; scheduleSave(); });
     });
-    S.host.querySelectorAll('details[data-more]').forEach(d => d.addEventListener('toggle', () => { S.more[d.dataset.more] = d.open; }));
+    S.host.querySelectorAll('details[data-more]').forEach(d => d.addEventListener('toggle', () => { S.more[d.dataset.more] = d.open; scheduleSave(); }));
     S.host.querySelectorAll('[data-lp]').forEach(n => n.addEventListener('click', () => act(n.dataset.lp, n)));
     S.host.querySelectorAll('[data-ask]').forEach(f => f.addEventListener('submit', e => { e.preventDefault(); act('ask', f); }));
     S.host.querySelector('[data-lp-full]')?.addEventListener('change', e => { store.set('sd-lesson-full', e.target.checked ? '1' : null); paint(); });
+    scheduleSave();
     S.host.querySelectorAll('[data-cbnum]').forEach(n => n.addEventListener('input', () => { S.fire[n.dataset.cbnum].pick = n.value.trim(); }));
     [S.host, S.rail].forEach(root => root.querySelectorAll('[data-jump]').forEach(n => n.addEventListener('click', e => {
       e.preventDefault(); const t = document.getElementById(n.dataset.jump); t?.scrollIntoView({behavior: 'smooth', block: 'start'}); t?.focus?.({preventScroll: true});
@@ -273,7 +273,12 @@
       window.scrollTo({top: S.host.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth'});
       notes();
     });
-    if (action === 'replan') return guarded('plan', async () => { S.session = await call(`/course/lessons/${id}/plan/reset`, 'POST', {}); S.answered = {}; S.page = 0; S.gaps = null; });
+    if (action === 'replan') return guarded('plan', async () => {
+      S.session = await call(`/course/lessons/${id}/plan/reset`, 'POST', {});
+      Object.assign(S, {open: {}, more: {}, threads: {}, askOpen: {}, explain: {}, wrong: {}, answered: {}, drafts: {}, fire: {}, twist: null,
+        gaps: null, gapRequest: null, page: 0, blocks: {}, typed: {}, fireReq: {}});
+      build({});
+    });
     if (action === 'attempt' || action === 'attempt-skip') {
       const text = (S.drafts['attempt:' + sec] || '').trim();
       if (action === 'attempt' && text.length < 10) { S.host.querySelector(`[data-draft="attempt:${sec}"]`)?.focus(); return; }
@@ -347,10 +352,9 @@
     for (const c of S.session.callbacks) {
       if (S.fire[c.id]) continue;
       S.fire[c.id] = null;
-      const key = `sd-callback:${S.id}:${c.id}`;
-      let request = null;
-      try { request = sessionStorage.getItem(key); } catch { /* best effort */ }
-      if (!request) { request = rid(); try { sessionStorage.setItem(key, request); } catch { /* best effort */ } }
+      // The request id is saved with the lesson, so every device fetches the same (idempotent) callback.
+      const request = S.fireReq[c.id] = S.fireReq[c.id] || rid();
+      scheduleSave();
       const lesson = S.id;
       call('/quickfire/next', 'POST', {request_id: request, question_id: c.id})
         .then(d => { if (S?.id === lesson) { S.fire[c.id] = d; paint(); } })
@@ -365,6 +369,47 @@
     catch { /* the computed plan stands */ }
     finally { if (S?.id === lesson) { S.notesLoading = false; paint(); } }
   }
+  // ---------- Progress: saved to the server shortly after every change, restored on any device ----------
+  const SAVED = ['page', 'open', 'more', 'askOpen', 'drafts', 'answered', 'wrong', 'blocks', 'typed', 'fireReq', 'gapRequest'];
+  function snapshot() {
+    const out = {};
+    SAVED.forEach(k => { out[k] = S[k]; });
+    out.explain = Object.fromEntries(Object.entries(S.explain).filter(([, v]) => !v.loading));
+    out.threads = Object.fromEntries(Object.entries(S.threads).map(([k, v]) => [k, v.filter(m => !m.loading)]));
+    if (S.twist?.id) out.twist = S.twist;
+    if (S.gaps?.id) out.gaps = S.gaps;
+    return out;
+  }
+  function scheduleSave() {
+    if (!S?.session || S.restoring) return;
+    clearTimeout(S.saveTimer);
+    S.saveTimer = setTimeout(saveNow, 700);
+  }
+  async function saveNow() {
+    if (!S?.session || S.restoring) return;
+    clearTimeout(S.saveTimer);
+    const lesson = S.id, body = {plan_at: S.session.plan_at ?? null, state: snapshot()};
+    const json = JSON.stringify(body);
+    if (json === S.lastSaved) return;
+    try {
+      const res = await call(`/course/lessons/${lesson}/progress`, 'PUT', body);
+      if (S?.id !== lesson) return;
+      if (res.saved) S.lastSaved = json; else if (!S.error) { S.error = res.reason; paint(); }
+    } catch { /* the next change retries */ }
+  }
+  async function restore(p) {
+    if (!p) return;
+    S.restoring = true;
+    try {
+      SAVED.forEach(k => { if (p[k] !== undefined && p[k] !== null) S[k] = p[k]; });
+      S.explain = p.explain || {}; S.threads = p.threads || {};
+      S.twist = p.twist || null; S.gaps = p.gaps || null;
+      await S.handle.restore(S.blocks);
+      restoreTyped();
+    } finally { S.restoring = false; }
+    // Explanations that were still loading when the last save happened are asked for again.
+    if (S.session.tutor) Object.keys(S.wrong).filter(k => !S.explain[k]).forEach(k => explain(k));
+  }
   async function load() {
     const lesson = S.id;
     S.error = ''; paint();
@@ -372,7 +417,10 @@
       let s = await call(`/course/lessons/${lesson}/session`);
       if (!s.planned && (s.walkthrough || !s.probes.length)) s = await call(`/course/lessons/${lesson}/plan`, 'POST', {probes: []});
       if (S?.id !== lesson) return;
-      S.session = s; paint(); notes();
+      S.session = s;
+      await restore(s.progress);
+      S.lastSaved = JSON.stringify({plan_at: s.plan_at ?? null, state: snapshot()});
+      paint(); notes();
     } catch (e) { if (S?.id === lesson) { S.error = e.message; paint(); } }
   }
 
@@ -381,13 +429,28 @@
     if (S?.id !== lesson.id) {
       S?.handle?.destroy();
       S = {id: lesson.id, lesson, session: null, host: document.createElement('div'), rail: document.createElement('nav'), nodes: {},
-        open: {}, more: {}, threads: {}, askOpen: {}, explain: {}, wrong: {}, answered: {}, drafts: {}, busy: {}, fire: {}, twist: null, pending: [], error: ''};
+        open: {}, more: {}, threads: {}, askOpen: {}, explain: {}, wrong: {}, answered: {}, drafts: {}, busy: {}, fire: {}, twist: null, pending: [], error: '',
+        page: 0, blocks: {}, typed: {}, fireReq: {}, gapRequest: null};
       S.host.className = 'sd-player'; S.rail.className = 'sd-rail-card sd-outline sd-path-rail';
-      try { S.page = Number(sessionStorage.getItem('sd-page:' + lesson.id)) || 0; } catch { S.page = 0; }
-      const tmp = document.createElement('div');
-      tmp.innerHTML = lesson.blocks.filter(b => b.type !== 'md').map(B().renderBlock).join('');
-      S.handle = B().wire(tmp, lesson, {
-        saved: ctx.saved, recall: ctx.recall, pitch: ctx.pitch,
+      S.ctx = ctx;
+      build(ctx.saved);
+      load();
+    }
+    slotNode?.replaceWith(S.host);
+    railNode?.replaceWith(S.rail);
+    applyPage();
+  }
+  // Fresh, wired activity nodes; a fresh pass after "Redo the warm-up" starts them unanswered.
+  function build(saved) {
+    const lesson = S.lesson, ctx = S.ctx;
+    S.handle?.destroy();
+    Object.values(S.nodes).forEach(n => n.remove());
+    S.nodes = {};
+    const tmp = document.createElement('div');
+    tmp.innerHTML = lesson.blocks.filter(b => b.type !== 'md').map(B().renderBlock).join('');
+    S.handle = B().wire(tmp, lesson, {
+        saved, recall: ctx.recall, pitch: ctx.pitch,
+        save(key, state) { S.blocks[key] = state; scheduleSave(); },
         done(key, correct) {
           const node = S.nodes[key];
           S.answered[key] = correct;
@@ -398,13 +461,28 @@
           else if (!S.session?.planned) setTimeout(paint, 0);
         },
       });
-      tmp.querySelectorAll(':scope > [data-block]').forEach(n => { S.nodes[n.dataset.block] = n; });
-      load();
-    }
-    slotNode?.replaceWith(S.host);
-    railNode?.replaceWith(S.rail);
-    applyPage();
+    tmp.querySelectorAll(':scope > [data-block]').forEach(n => {
+      S.nodes[n.dataset.block] = n;
+      // Unsubmitted text inside an activity (a half-written answer) is saved too.
+      n.addEventListener('input', e => {
+        const box = e.target;
+        if (!/^(TEXTAREA|INPUT)$/.test(box.tagName) || box.type === 'checkbox') return;
+        const boxes = [...n.querySelectorAll('textarea, input:not([type=checkbox])')];
+        (S.typed[n.dataset.block] = S.typed[n.dataset.block] || {})[boxes.indexOf(box)] = box.value;
+        scheduleSave();
+      });
+    });
   }
-  function reset() { S?.handle?.destroy(); S = null; }
+  function restoreTyped() {
+    Object.entries(S.typed).forEach(([key, boxes]) => {
+      const node = S.nodes[key]; if (!node) return;
+      const all = [...node.querySelectorAll('textarea, input:not([type=checkbox])')];
+      Object.entries(boxes).forEach(([i, v]) => { const box = all[i]; if (box && !box.disabled && !box.value) box.value = v; });
+    });
+  }
+  function reset() { if (S) saveNow(); S?.handle?.destroy(); S = null; }
+  // Leaving the tab or closing it saves straight away instead of waiting for the debounce.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S) saveNow(); });
+  window.addEventListener('pagehide', () => { if (S) saveNow(); });
   window.DesignLesson = {mount, reset, _test: {chunks, prose: (t, k) => { S = S || {more: {}}; return prose(t, k); }}};
 })();
