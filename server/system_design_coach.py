@@ -11,7 +11,7 @@ from . import llm
 from .system_design_content import SKILLS, CASES, VERSION
 
 log = logging.getLogger(__name__)
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 Skill = Literal['requirements', 'reads', 'capacity', 'retries', 'concurrency', 'operations']
 
 
@@ -158,7 +158,7 @@ async def grade_recall(block, text, settings=None, subject='system design'):
         'Credit equivalent wording and correct alternatives; do not require exact terms. '
         'Notes are one sentence and specific. Feedback names the single most important gap '
         'or misconception, in under 90 words, and does not restate the model answer verbatim.'
-    )
+    ) + llm.SPOKEN_ANSWER
     payload = {'question': block['prompt'], 'rubric_points': block['points'],
                'model_answer': block['model'], 'learner_answer': text}
     try:
@@ -190,7 +190,7 @@ async def examiner_report(items, settings=None):
         'For blank answers, say what to recall. The summary (under 100 words) names the pattern '
         'across the paper and what an interviewer would notice. Focus lists up to three concrete '
         'things to study next. Only write notes for the supplied item numbers.'
-    )
+    ) + llm.SPOKEN_ANSWER
     try:
         raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', profile['model'], system,
                                       json.dumps({'items': lost}, ensure_ascii=False), ExaminerReport, options=profile)

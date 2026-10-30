@@ -243,7 +243,7 @@ async def test_valid_assessment_retains_provenance(monkeypatch):
     output, error = await coach.generate('assessor', snapshot)
     assert error is None
     assert output['requested_model'] == 'example/reviewer'
-    assert output['prompt_version'] == 1 and output['content_version'] == 1
+    assert output['prompt_version'] == coach.PROMPT_VERSION and output['content_version'] == 1
     assert output['usage']['prompt_tokens'] == 150
 
 

@@ -34,6 +34,17 @@ MISTAKE_TAGS = [
 ]
 COMPLEXITIES = ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)", "O(n^3)", "O(2^n)", "O(n!)"]
 ShortText = Annotated[str, Field(max_length=80)]
+# Answers are often dictated, and no speech model through OpenRouter takes vocabulary hints,
+# so every grader of free text reads transcription slips as the term the context means.
+SPOKEN_ANSWER = (
+    " The learner's text may be dictated and machine-transcribed, so technical terms can arrive "
+    "as sound-alikes, split words or spelled-out notation: 'deck' for deque, 'tree' or 'try' for "
+    "trie when storing prefixes, 'Dextra' for Dijkstra, 'Cattane' for Kadane, 'Karnes' for Kahn's, "
+    "'hash nap' for hash map, 'O of n log n' for O(n log n), 'mem oh ization' for memoization. When "
+    "the surrounding words make the intended term clear, read it as that term and never mark down "
+    "spelling, wording or notation. Only when a slip is genuinely ambiguous between a right and a "
+    "wrong idea, judge it from the rest of the answer. Do not mention transcription in feedback."
+)
 
 
 # ---- response schemas -----------------------------------------------------------
@@ -747,6 +758,10 @@ TASKS: dict[str, Task] = {
         ),
     ),
 }
+# Tasks that read the learner's own words, which the mic may have dictated.
+for _name in ("grade_recall", "recall_hint", "clarify_recall", "grade_plan", "grade_prediction",
+              "critique_plan", "grade_followup", "live_hint", "optimize_hint"):
+    TASKS[_name].system += SPOKEN_ANSWER
 
 
 def _trunc(code, limit=2000):

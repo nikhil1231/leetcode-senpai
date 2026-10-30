@@ -1953,7 +1953,7 @@ def api_history(limit: int = 50, uid: str = Depends(auth.require_user)):
 # ---- sprint reps ----------------------------------------------------------------
 SPRINT_REP_SECONDS = 60
 SPRINT_GRADING_PROMPT = "sprint_prediction_grading"
-SPRINT_GRADING_PROMPT_VERSION = 1
+SPRINT_GRADING_PROMPT_VERSION = 2
 
 
 async def _warm_sprint_canonicals_bg(uid, slugs):
