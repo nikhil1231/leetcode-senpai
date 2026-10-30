@@ -1,0 +1,297 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: cache-aside
+source_hash: 2295061019fed748
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.cache-aside.db-load-is-miss-rate
+  subtopic: Introduction
+  kind: principle
+  claim: Backend load equals requests multiplied by miss rate, so going from a 90% to a 99% hit rate cuts database load tenfold, while 50% to 60% barely matters.
+  prompt: How do you calculate the load a cache leaves on the database, and why does a hit rate near the top matter so much?
+  objectives:
+  - 2
+- id: sd.cache-aside.cache-is-capacity-plan
+  subtopic: Introduction
+  kind: principle
+  claim: 'A cache is part of the capacity model, not a bolt-on optimisation: a mass miss (such as a key-format change) sends the full read load to a database sized only for the miss traffic.'
+  prompt: Why can a key-format change in a deploy cause an outage when the cache and database are both healthy?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.cache-aside.db-load-is-miss-rate
+- id: sd.cache-aside.skew-and-locality
+  subtopic: Why caches work at all
+  kind: principle
+  claim: Caches work because access is skewed (a few keys get most reads, roughly Zipf) and has locality in time; if every request reads a different, rarely repeated key, a cache adds cost for nothing.
+  prompt: What workload properties make a cache effective, and when is it pointless?
+  objectives:
+  - 2
+  same_as: sd.numbers.hot-set-and-read-ratio
+- id: sd.cache-aside.latency-tiers
+  subtopic: Why caches work at all
+  kind: fact
+  claim: In-process memory is about 100 ns, a Redis GET in the same zone 0.2-1 ms, an indexed DB lookup 1-5 ms, and a join or cold-disk query 10-100+ ms.
+  prompt: Roughly what latency do an in-process read, a Redis GET and an indexed database lookup have?
+  objectives:
+  - 2
+- id: sd.cache-aside.throughput-headroom
+  subtopic: Why caches work at all
+  kind: fact
+  claim: One Redis node serves around 100k simple ops/s, versus roughly 5-20k simple queries/s for a relational primary, so a cache mostly buys throughput headroom.
+  prompt: Roughly how many simple operations per second can a Redis node and a relational primary each serve?
+  objectives:
+  - 2
+- id: sd.cache-aside.cache-aside-read-path
+  subtopic: The cache-aside read path
+  kind: mechanism
+  claim: In cache-aside the application checks the cache, on a miss queries the database, then populates the cache with a TTL and returns the value; the cache itself knows nothing about the database.
+  prompt: What are the steps of a cache-aside read miss?
+  objectives:
+  - 0
+- id: sd.cache-aside.cache-aside-strengths-costs
+  subtopic: The cache-aside read path
+  kind: tradeoff
+  claim: Cache-aside is resilient (cache loss makes reads slower, not wrong), caches only requested data and keeps the database authoritative; the costs are cold-start misses, application-owned logic and possible staleness.
+  prompt: What are the main strengths and costs of cache-aside?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+- id: sd.cache-aside.delete-beats-set
+  subtopic: 'Writes: why delete beats set'
+  kind: mechanism
+  claim: Concurrent writers' cache SETs can land in a different order than their database commits, leaving an older value cached; DELs are order-insensitive, and the next read rebuilds from the database.
+  prompt: Why do cache-aside writes usually delete the key rather than set the new value?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+- id: sd.cache-aside.delete-avoids-wasted-work
+  subtopic: 'Writes: why delete beats set'
+  kind: principle
+  claim: Deleting avoids recomputing values for keys that may never be read again and keeps the read path as the single producer of cache entries.
+  prompt: Besides race conditions, what other benefits does delete-on-write have?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-aside.delete-beats-set
+- id: sd.cache-aside.database-before-cache
+  subtopic: 'Writes: why delete beats set'
+  kind: principle
+  claim: On a write, commit to the database first and then invalidate the cache; writing the cache first can leave a value that never existed in the source of truth if the database write fails.
+  prompt: In what order should a cache-aside write touch the database and the cache, and why?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+- id: sd.cache-aside.write-through-vs-around
+  subtopic: The write-strategy family
+  kind: tradeoff
+  claim: Write-through writes cache and DB synchronously, so reads after writes are fresh, but every write pays both latencies and unread data is cached; write-around writes only to the DB, avoiding pollution from write-once data at the cost of a first-read miss.
+  prompt: What do write-through and write-around each cost and gain?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+- id: sd.cache-aside.write-behind-loses-writes
+  subtopic: The write-strategy family
+  kind: tradeoff
+  claim: Write-behind acknowledges writes once in the cache and flushes to the DB asynchronously, giving fast, batchable writes but losing acknowledged writes if the cache node dies before flushing.
+  prompt: What is the failure mode of write-behind, and what does it buy?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-aside.write-through-vs-around
+- id: sd.cache-aside.read-through
+  subtopic: The write-strategy family
+  kind: fact
+  claim: Read-through has the cache library load from the database on a miss, centralising loading logic but making the library a dependency; it has the same staleness issues as cache-aside.
+  prompt: How does read-through differ from cache-aside?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+- id: sd.cache-aside.match-strategy-to-workload
+  subtopic: The write-strategy family
+  kind: procedure
+  claim: 'Choose a write strategy by asking what is lost versus merely slow if the cache vanishes: cache-aside for read-heavy data, write-through when reads must see fresh writes, write-behind only where bounded loss is acceptable, write-around for rarely read data.'
+  prompt: How do you choose between the write strategies for a workload?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-aside.write-through-vs-around
+  - sd.cache-aside.write-behind-loses-writes
+  - sd.cache-aside.cache-aside-strengths-costs
+- id: sd.cache-aside.size-from-working-set
+  subtopic: Hit rate, working set and sizing
+  kind: procedure
+  claim: Size a cache as working-set keys × entry size × about 1.5-2× overhead, then compute database load as requests × miss rate and sanity-check against per-node throughput.
+  prompt: How do you size a cache from a working set?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.db-load-is-miss-rate
+  - sd.numbers.cache-capacity
+- id: sd.cache-aside.required-hit-rate
+  subtopic: Hit rate, working set and sizing
+  kind: procedure
+  claim: The minimum hit rate is 1 minus (database budget ÷ total reads); 40,000 reads/s against a 2,000/s budget needs 95%.
+  prompt: How do you work out the minimum hit rate for a database budget?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.db-load-is-miss-rate
+- id: sd.cache-aside.hit-rate-workload-dependent
+  subtopic: Hit rate, working set and sizing
+  kind: principle
+  claim: 'Hit rate depends on workload and cache together: skewed traffic makes a small cache effective, flat traffic weakens even a large one, and short TTLs cut hit rate.'
+  prompt: What affects hit rate besides cache size?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.skew-and-locality
+- id: sd.cache-aside.cold-start-protection
+  subtopic: Keys, values and the misses you didn't plan for
+  kind: procedure
+  claim: At a 0% hit rate (cold start or outage) the database takes the full load, so protect the miss path by warming the cache, ramping traffic, coalescing concurrent misses and shedding load.
+  prompt: How do you survive a cold start or cache outage?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.cache-aside.db-load-is-miss-rate
+  - sd.cache-aside.cache-is-capacity-plan
+- id: sd.cache-aside.eviction-policies
+  subtopic: 'Eviction: what leaves when memory is full'
+  kind: tradeoff
+  claim: LRU suits recency-driven access, LFU suits stable popularity and resists one-off scans, random is cheap and fine for uniform access, and W-TinyLFU combines a recency window with frequency admission.
+  prompt: When would you choose LRU, LFU or W-TinyLFU?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-aside.skew-and-locality
+- id: sd.cache-aside.redis-default-noeviction
+  subtopic: 'Eviction: what leaves when memory is full'
+  kind: fact
+  claim: Redis's default maxmemory-policy is noeviction, so when memory is full writes fail; a cache must set a policy such as allkeys-lru or allkeys-lfu explicitly.
+  prompt: What is Redis's default eviction policy and what happens when memory fills?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-aside.eviction-policies
+- id: sd.cache-aside.redis-approximate-lru
+  subtopic: 'Eviction: what leaves when memory is full'
+  kind: mechanism
+  claim: Redis approximates LRU by sampling a few keys (default 5) and evicting the oldest of the sample, avoiding bookkeeping overhead.
+  prompt: How does Redis implement LRU eviction?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-aside.eviction-policies
+- id: sd.cache-aside.scan-pollution
+  subtopic: 'Eviction: what leaves when memory is full'
+  kind: mechanism
+  claim: A one-pass scan under LRU makes cold keys look recently used and evicts the hot working set; fix by bypassing the cache for batch jobs or using LFU/W-TinyLFU.
+  prompt: Why does a nightly full-table read through an LRU cache hurt morning latency, and how do you fix it?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-aside.eviction-policies
+- id: sd.cache-aside.cache-penetration
+  subtopic: Keys, values and the misses you didn't plan for
+  kind: mechanism
+  claim: Requests for non-existent keys always miss and hit the database; mitigate by negative-caching NOT_FOUND with a short TTL or using a Bloom filter of existing IDs.
+  prompt: How do you defend against repeated requests for keys that do not exist?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+  - sd.storage-engines.bloom-filter-semantics
+- id: sd.cache-aside.key-design-and-personal-data
+  subtopic: Keys, values and the misses you didn't plan for
+  kind: principle
+  claim: Cache keys must include everything that changes the value (version, locale, currency), and personalised data must never be cached under a shared key; the cache is not an access-control layer.
+  prompt: What must a cache key include, and what about per-user data?
+  objectives:
+  - 0
+  - 3
+- id: sd.cache-aside.large-values
+  subtopic: Keys, values and the misses you didn't plan for
+  kind: fact
+  claim: Large values cost serialisation CPU and network on every hit and a hot large key can saturate one node's NIC; cache only needed fields, compress or split.
+  prompt: What problems do very large cached values cause?
+  objectives:
+  - 3
+- id: sd.cache-aside.l1-invalidation-problem
+  subtopic: Keys, values and the misses you didn't plan for
+  kind: tradeoff
+  claim: An in-process L1 cache in front of Redis removes a network hop but each instance has its own copy, so a Redis DEL doesn't reach them; use very short L1 TTLs, pub/sub invalidation or staleness-tolerant data.
+  prompt: What new problem does an in-process L1 cache in front of Redis introduce?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.cache-aside.delete-beats-set
+- id: sd.cache-aside.when-not-to-cache
+  subtopic: Why caches work at all
+  kind: tradeoff
+  claim: Do not add a cache when reuse is low, reads must be strictly fresh, the source is already fast with headroom, or writes dominate.
+  prompt: When is a cache not worth adding?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.skew-and-locality
+  - sd.cache-aside.db-load-is-miss-rate
+items:
+  cache-aside-check-1-v2:
+  - sd.cache-aside.db-load-is-miss-rate
+  - sd.cache-aside.cache-is-capacity-plan
+  cache-aside-check-2-v2:
+  - sd.cache-aside.delete-beats-set
+  - sd.cache-aside.delete-avoids-wasted-work
+  cache-aside-check-3-v2:
+  - sd.cache-aside.cache-aside-read-path
+  cache-aside-check-4-v2:
+  - sd.cache-aside.scan-pollution
+  - sd.cache-aside.eviction-policies
+  cache-aside-fire-1-v2:
+  - sd.cache-aside.required-hit-rate
+  cache-aside-fire-2-v2:
+  - sd.cache-aside.write-behind-loses-writes
+  cache-aside-fire-3-v2:
+  - sd.cache-aside.cache-penetration
+  cache-aside-fire-4-v2:
+  - sd.cache-aside.l1-invalidation-problem
+  cache-aside-fire-5-v2:
+  - sd.cache-aside.when-not-to-cache
+  - sd.cache-aside.skew-and-locality
+  cache-aside:b1:
+  - sd.cache-aside.db-load-is-miss-rate
+  cache-aside:b10:
+  - sd.cache-aside.required-hit-rate
+  - sd.cache-aside.cold-start-protection
+  cache-aside:b11:
+  - sd.cache-aside.size-from-working-set
+  - sd.cache-aside.throughput-headroom
+  cache-aside:b13:
+  - sd.cache-aside.scan-pollution
+  cache-aside:b15:
+  - sd.cache-aside.key-design-and-personal-data
+  - sd.cache-aside.database-before-cache
+  cache-aside:b17:
+  - sd.cache-aside.write-behind-loses-writes
+  - sd.cache-aside.cache-aside-strengths-costs
+  cache-aside:b5:
+  - sd.cache-aside.delete-beats-set
+  cache-aside:b7:
+  - sd.cache-aside.match-strategy-to-workload
+  - sd.cache-aside.write-through-vs-around
+  - sd.cache-aside.write-behind-loses-writes

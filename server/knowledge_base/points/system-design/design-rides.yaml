@@ -1,0 +1,224 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-rides
+source_hash: 02ff52e21778751c
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-rides.three-data-classes
+  subtopic: 1. Requirements
+  kind: principle
+  claim: 'Ride-hailing data splits into ephemeral (driver positions: in memory with a TTL), durable and strongly consistent (trips and driver availability: transactional storage), and durable but eventually consistent (breadcrumbs, demand heatmaps: log and cheap store).'
+  prompt: What three classes of data does a ride-hailing system have, and how is each stored?
+  objectives:
+  - 0
+- id: sd.design-rides.core-invariants
+  subtopic: 1. Requirements
+  kind: fact
+  claim: The hard invariants are that a driver is never assigned two active trips and a trip never has two drivers; trip state must be durable and survive server failures.
+  prompt: Which invariants must a ride-hailing system never violate?
+  objectives:
+  - 0
+  - 2
+- id: sd.design-rides.location-update-rate
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: 'Update rate = drivers ÷ ping interval: 800k drivers every 4 s is 200k updates/s, which at ~100 bytes is only about 20 MB/s.'
+  prompt: How do you estimate location ingestion load, and what does 800k drivers pinging every 4 s give?
+  objectives:
+  - 0
+  same_as: sd.geo-index.update-rate-estimate
+- id: sd.design-rides.update-rate-is-the-challenge
+  subtopic: 2. Estimates
+  kind: principle
+  claim: The update rate, not bandwidth, is the challenge for a disk-backed spatial index; latest positions fit in memory (800k × ~200 B ≈ 160 MB per copy).
+  prompt: Why is the location firehose hard even though its bandwidth is small, and why does memory suit it?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.design-rides.location-update-rate
+- id: sd.design-rides.locations-not-in-trips-db
+  subtopic: 3. Architecture
+  kind: tradeoff
+  claim: 'Do not write locations to the transactional trips database: hundreds of thousands of writes per second of data useless after seconds overloads it for no benefit; keep the latest in memory and history in a log.'
+  prompt: Why not store driver locations in the trips database?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.geo-index.moving-objects-ephemeral
+- id: sd.design-rides.in-memory-geo-index
+  subtopic: 3. Architecture
+  kind: mechanism
+  claim: A location service upserts each driver's latest position into an in-memory index keyed by H3 cell with a TTL, and also appends to a stream for breadcrumbs and analytics.
+  prompt: How is driver location ingested and indexed?
+  objectives:
+  - 1
+  same_as: sd.geo-index.location-service-architecture
+- id: sd.design-rides.match-by-expanding-rings
+  subtopic: 3. Architecture
+  kind: mechanism
+  claim: Matching looks up drivers in the pickup's cell and expanding rings, filters to available ones and ranks by ETA.
+  prompt: How does matching find candidate drivers for a pickup?
+  objectives:
+  - 2
+  same_as: sd.geo-index.expanding-ring-search
+- id: sd.design-rides.shard-by-city
+  subtopic: 6. Hotspots and scale
+  kind: principle
+  claim: Shard locations and matching by city or region because supply, demand and matching are local; huge cities split further by cell ranges, containing hotspots.
+  prompt: Why and how do you shard a ride-hailing service?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.geo-index.cell-id-shard-key
+- id: sd.design-rides.geo-index-is-hint
+  subtopic: '4. Deep dive: never double-assign'
+  kind: principle
+  claim: The geo index may be seconds stale, so it only proposes candidates; the decision is made at the authoritative driver record.
+  prompt: What role does the geo index play in assignment, given it can be stale?
+  objectives:
+  - 2
+  requires:
+  - sd.design-rides.in-memory-geo-index
+- id: sd.design-rides.conditional-reservation
+  subtopic: '4. Deep dive: never double-assign'
+  kind: mechanism
+  claim: Reserve a driver with a conditional update (SET offered WHERE state='free'); the database serialises concurrent attempts so exactly one succeeds and the others try the next candidate.
+  prompt: How do you ensure only one of two concurrent matchers gets a driver?
+  objectives:
+  - 2
+  requires:
+  - sd.concurrent-holds.check-inside-write
+- id: sd.design-rides.offer-expiry-lease
+  subtopic: '4. Deep dive: never double-assign'
+  kind: mechanism
+  claim: Offers carry an expiry (e.g. 15 s) checked in the predicates against the server clock, so unresponsive drivers are released without a cleanup job.
+  prompt: How are drivers who ignore an offer released?
+  objectives:
+  - 2
+  requires:
+  - sd.design-rides.conditional-reservation
+  - sd.concurrent-holds.single-authoritative-clock
+- id: sd.design-rides.atomic-accept
+  subtopic: '4. Deep dive: never double-assign'
+  kind: mechanism
+  claim: Acceptance is one transaction moving the trip REQUESTED to ACCEPTED and the driver OFFERED to ON_TRIP, conditional on the offer being for this driver, unexpired.
+  prompt: What happens atomically when a driver accepts an offer?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.design-rides.conditional-reservation
+  - sd.transactions.atomicity-all-or-nothing
+- id: sd.design-rides.late-accept-fails
+  subtopic: '4. Deep dive: never double-assign'
+  kind: principle
+  claim: A late accept after the offer expired fails its condition, judged by one authoritative clock, and the driver is told the offer has gone; network speed loses the race deterministically.
+  prompt: What happens when a driver's accept arrives after the offer expired and the trip was re-offered?
+  objectives:
+  - 2
+  requires:
+  - sd.design-rides.offer-expiry-lease
+- id: sd.design-rides.trip-state-order
+  subtopic: 5. The trip state machine
+  kind: fact
+  claim: A normal trip goes REQUESTED, ACCEPTED, ARRIVED, IN_PROGRESS, COMPLETED; cancellations branch from REQUESTED, ACCEPTED or ARRIVED.
+  prompt: What are the states of a normal trip, in order?
+  objectives:
+  - 3
+- id: sd.design-rides.conditional-transitions
+  subtopic: 5. The trip state machine
+  kind: mechanism
+  claim: Each transition is a conditional update from the expected state (and driver), checking the row count, so duplicate or stale events cannot move a trip backwards or onto another driver's trip.
+  prompt: How do you stop duplicate or stale events corrupting trip state?
+  objectives:
+  - 3
+  requires:
+  - sd.design-rides.trip-state-order
+- id: sd.design-rides.outbox-idempotent-effects
+  subtopic: 5. The trip state machine
+  kind: mechanism
+  claim: Side effects such as payment, receipts and earnings are published through an outbox in the same transaction as the state change and performed asynchronously and idempotently (charge keyed by trip ID).
+  prompt: How should payment and other side effects of completing a trip be triggered?
+  objectives:
+  - 3
+  requires:
+  - sd.outbox.outbox-same-transaction
+- id: sd.design-rides.event-hotspot-handling
+  subtopic: 6. Hotspots and scale
+  kind: tradeoff
+  claim: For demand spikes (concerts), use surge pricing from per-hexagon supply and demand, batch matching every second or two to optimise globally, finer cells and dedicated shards, and admission control if needed.
+  prompt: How do you handle a stadium emptying with a sudden demand spike?
+  objectives:
+  - 3
+  requires:
+  - sd.geo-index.density-skew-handling
+- id: sd.design-rides.targeted-rider-tracking
+  subtopic: 6. Hotspots and scale
+  kind: mechanism
+  claim: The push gateway sends the assigned driver's position only to that trip's rider, not to everyone nearby.
+  prompt: Who receives a driver's live position updates?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.realtime-push.pubsub-backplane-routing
+items:
+  design-rides-check-1-v2:
+  - sd.design-rides.location-update-rate
+  design-rides-check-2-v2:
+  - sd.design-rides.in-memory-geo-index
+  - sd.design-rides.locations-not-in-trips-db
+  design-rides-check-3-v2:
+  - sd.design-rides.conditional-reservation
+  - sd.design-rides.offer-expiry-lease
+  - sd.design-rides.atomic-accept
+  design-rides-check-4-v2:
+  - sd.design-rides.trip-state-order
+  design-rides-fire-1-v2:
+  - sd.design-rides.conditional-transitions
+  - sd.design-rides.outbox-idempotent-effects
+  design-rides-fire-2-v2:
+  - sd.design-rides.shard-by-city
+  design-rides-fire-3-v2:
+  - sd.design-rides.late-accept-fails
+  design-rides-fire-4-v2:
+  - sd.design-rides.event-hotspot-handling
+  design-rides-fire-5-v2:
+  - sd.design-rides.outbox-idempotent-effects
+  design-rides:b1:
+  - sd.design-rides.three-data-classes
+  design-rides:b10:
+  - sd.design-rides.trip-state-order
+  - sd.design-rides.conditional-transitions
+  design-rides:b11:
+  - sd.design-rides.conditional-transitions
+  - sd.design-rides.outbox-idempotent-effects
+  design-rides:b14:
+  - sd.design-rides.conditional-reservation
+  - sd.design-rides.geo-index-is-hint
+  - sd.design-rides.atomic-accept
+  design-rides:b15:
+  - sd.design-rides.locations-not-in-trips-db
+  - sd.design-rides.conditional-reservation
+  design-rides:b3:
+  - sd.design-rides.location-update-rate
+  - sd.design-rides.update-rate-is-the-challenge
+  design-rides:b7:
+  - sd.design-rides.conditional-reservation
+  - sd.design-rides.geo-index-is-hint
+  design-rides:b8:
+  - sd.design-rides.late-accept-fails
+  - sd.design-rides.offer-expiry-lease
+  redesign:design-rides:
+  - sd.design-rides.three-data-classes
+  - sd.design-rides.conditional-reservation
+  - sd.design-rides.conditional-transitions

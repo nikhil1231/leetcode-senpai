@@ -1,0 +1,205 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: postgres-internals
+source_hash: 9f645efd769e3d38
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.postgres-internals.mvcc-row-versions-xmin-xmax
+  subtopic: MVCC
+  kind: mechanism
+  claim: Each Postgres row version (tuple) records xmin, the transaction that created it, and xmax, the one that deleted or replaced it. An UPDATE marks the old version dead by setting xmax and writes a new version rather than overwriting in place.
+  prompt: How does Postgres record row versions, and what does an UPDATE do to the existing row?
+  objectives:
+  - 0
+- id: fundamentals.postgres-internals.snapshot-readers-writers-no-block
+  subtopic: MVCC
+  kind: principle
+  claim: A query reads from a snapshot and sees only versions committed before it started, so readers never block writers and writers never block readers. Writers still block other writers on the same row.
+  prompt: Why do readers and writers not block each other in Postgres, and what does still block?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.postgres-internals.mvcc-row-versions-xmin-xmax
+- id: fundamentals.postgres-internals.dead-tuples-vacuum-bloat
+  subtopic: MVCC
+  kind: mechanism
+  claim: MVCC leaves dead tuples behind. VACUUM (usually autovacuum) marks their space reusable, and until it runs, tables and indexes bloat.
+  prompt: What is the cost of MVCC row versions, and what cleans it up?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - fundamentals.postgres-internals.mvcc-row-versions-xmin-xmax
+- id: fundamentals.postgres-internals.old-snapshots-block-vacuum
+  subtopic: MVCC
+  kind: principle
+  claim: Anything holding an old snapshot open, such as a long transaction, an idle-in-transaction session or an old replication slot, stops vacuum removing versions that snapshot could still see, across the whole database.
+  prompt: What stops vacuum from removing dead tuples database-wide?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - fundamentals.postgres-internals.dead-tuples-vacuum-bloat
+  - fundamentals.postgres-internals.snapshot-readers-writers-no-block
+- id: fundamentals.postgres-internals.isolation-level-snapshots
+  subtopic: Isolation levels in Postgres
+  kind: fact
+  claim: Read committed (the default) takes a new snapshot per statement. Repeatable read and serializable use one snapshot per transaction.
+  prompt: How do read committed and repeatable read differ in what snapshot they use?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.postgres-internals.snapshot-readers-writers-no-block
+- id: fundamentals.postgres-internals.read-committed-anomalies
+  subtopic: Isolation levels in Postgres
+  kind: fact
+  claim: Read committed still allows non-repeatable reads, lost updates from read-modify-write in app code, and write skew.
+  prompt: Which anomalies are possible under read committed in Postgres?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.postgres-internals.isolation-level-snapshots
+- id: fundamentals.postgres-internals.repeatable-read-behaviour
+  subtopic: Isolation levels in Postgres
+  kind: fact
+  claim: Repeatable read still allows write skew. Concurrent updates to the same row fail with a serialization error that the application must retry.
+  prompt: What does repeatable read still permit, and what happens on concurrent updates to one row?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.postgres-internals.isolation-level-snapshots
+- id: fundamentals.postgres-internals.serializable-ssi-retries
+  subtopic: Isolation levels in Postgres
+  kind: tradeoff
+  claim: Serializable adds conflict detection (SSI) and permits no anomalies, but transactions can fail with serialization errors and must be retried. It is the only level that prevents write skew.
+  prompt: What does serializable give you in Postgres, and what does it cost?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.postgres-internals.repeatable-read-behaviour
+- id: fundamentals.postgres-internals.no-dirty-reads
+  subtopic: Isolation levels in Postgres
+  kind: fact
+  claim: Postgres never allows dirty reads, even if read uncommitted is requested.
+  prompt: Can Postgres ever return dirty reads?
+  objectives:
+  - 1
+- id: fundamentals.postgres-internals.lost-update-mechanism
+  subtopic: Isolation levels in Postgres
+  kind: mechanism
+  claim: A lost update happens when two requests read the same value, such as balance 100, each compute a new value in app code and write an absolute result, so one overwrites the other.
+  prompt: How does a lost update occur under read committed?
+  objectives:
+  - 1
+- id: fundamentals.postgres-internals.lost-update-fixes
+  subtopic: Isolation levels in Postgres
+  kind: procedure
+  claim: 'Prevent lost updates, simplest first, by: a single relative guarded UPDATE (SET balance = balance - 30 WHERE balance >= 30), SELECT ... FOR UPDATE, optimistic concurrency with a version check, or repeatable read/serializable with retries.'
+  prompt: What are the ways to prevent a lost update, simplest first?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.postgres-internals.lost-update-mechanism
+- id: fundamentals.postgres-internals.write-skew-mechanism
+  subtopic: Isolation levels in Postgres
+  kind: mechanism
+  claim: Write skew occurs when two transactions each read a condition and then update different rows, so row locks do not conflict. Only serializable catches it, unless you lock the rows read or add a constraint.
+  prompt: What is write skew, and why don't row locks stop it?
+  objectives:
+  - 1
+- id: fundamentals.postgres-internals.skip-locked-queue
+  subtopic: Locks that cause outages
+  kind: fact
+  claim: SELECT ... FOR UPDATE SKIP LOCKED lets each worker take rows nobody else holds, turning a table into a work queue.
+  prompt: What is FOR UPDATE SKIP LOCKED used for?
+  objectives:
+  - 2
+- id: fundamentals.postgres-internals.ddl-lock-queue-outage
+  subtopic: Locks that cause outages
+  kind: mechanism
+  claim: Many ALTERs need an ACCESS EXCLUSIVE lock. If the ALTER waits behind a long query, all new queries queue behind the ALTER, so a short migration becomes a full outage.
+  prompt: Why can a quick ALTER TABLE cause a full outage when a long query is running?
+  objectives:
+  - 2
+- id: fundamentals.postgres-internals.safe-migration-practices
+  subtopic: Locks that cause outages
+  kind: procedure
+  claim: Set lock_timeout on migrations, use CREATE INDEX CONCURRENTLY, and split long operations into low-lock steps such as adding a constraint NOT VALID then VALIDATE CONSTRAINT.
+  prompt: How do you make schema migrations safe against lock-queue outages?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.postgres-internals.ddl-lock-queue-outage
+- id: fundamentals.postgres-internals.diagnose-lock-outage
+  subtopic: Locks that cause outages
+  kind: procedure
+  claim: During a lock pile-up, inspect pg_stat_activity and pg_locks to find the holder and waiters, then cancel the queued DDL to free traffic. Scaling hardware does not help.
+  prompt: What do you do first when a migration blocks all queries on a table?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.postgres-internals.ddl-lock-queue-outage
+- id: fundamentals.postgres-internals.deadlocks-consistent-order
+  subtopic: Locks that cause outages
+  kind: principle
+  claim: Postgres detects deadlocks and aborts one transaction. Prevent them by taking locks in a consistent order.
+  prompt: How are deadlocks handled and prevented in Postgres?
+  objectives:
+  - 2
+- id: fundamentals.postgres-internals.xid-wraparound
+  subtopic: Vacuum, wraparound and connections
+  kind: mechanism
+  claim: Transaction IDs are 32-bit, so vacuum must freeze old rows. If autovacuum cannot keep up, for example because a long transaction pins snapshots, Postgres eventually refuses writes. Monitor age(datfrozenxid).
+  prompt: What is transaction ID wraparound and how do you monitor it?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.postgres-internals.dead-tuples-vacuum-bloat
+- id: fundamentals.postgres-internals.connections-pgbouncer
+  subtopic: Vacuum, wraparound and connections
+  kind: tradeoff
+  claim: Each connection is a process costing memory, so hundreds of idle ones hurt. PgBouncer in transaction pooling mode helps, but session state (SET, advisory locks, prepared statements) does not survive unless protocol-level prepared statements are supported.
+  prompt: Why use PgBouncer in transaction pooling mode, and what can break?
+  objectives:
+  - 3
+- id: fundamentals.postgres-internals.replica-lag-conflicts
+  subtopic: Vacuum, wraparound and connections
+  kind: tradeoff
+  claim: Replica reads can be stale, and long replica queries can be cancelled by replication conflicts, or with hot_standby_feedback on they can bloat the primary.
+  prompt: What are the risks of reading from streaming replicas?
+  objectives:
+  - 3
+items:
+  postgres-internals-check-1-v2:
+  - fundamentals.postgres-internals.snapshot-readers-writers-no-block
+  - fundamentals.postgres-internals.mvcc-row-versions-xmin-xmax
+  postgres-internals-check-2-v2:
+  - fundamentals.postgres-internals.lost-update-fixes
+  - fundamentals.postgres-internals.lost-update-mechanism
+  postgres-internals-check-3-v2:
+  - fundamentals.postgres-internals.ddl-lock-queue-outage
+  - fundamentals.postgres-internals.safe-migration-practices
+  postgres-internals-fire-1-v2:
+  - fundamentals.postgres-internals.serializable-ssi-retries
+  - fundamentals.postgres-internals.write-skew-mechanism
+  postgres-internals-fire-2-v2:
+  - fundamentals.postgres-internals.skip-locked-queue
+  postgres-internals-fire-3-v2:
+  - fundamentals.postgres-internals.old-snapshots-block-vacuum
+  - fundamentals.postgres-internals.dead-tuples-vacuum-bloat
+  postgres-internals-fire-4-v2:
+  - fundamentals.postgres-internals.connections-pgbouncer
+  postgres-internals:b1:
+  - fundamentals.postgres-internals.lost-update-mechanism
+  - fundamentals.postgres-internals.lost-update-fixes
+  - fundamentals.postgres-internals.read-committed-anomalies
+  postgres-internals:b3:
+  - fundamentals.postgres-internals.diagnose-lock-outage
+  - fundamentals.postgres-internals.ddl-lock-queue-outage
+  - fundamentals.postgres-internals.safe-migration-practices

@@ -1,0 +1,210 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: observability
+source_hash: a491ef12edd29765
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.observability.metrics-for-is-it-wrong
+  subtopic: Three (and a half) kinds of telemetry
+  kind: principle
+  claim: Metrics are aggregated numeric time series that answer 'is something wrong, how bad, how widespread and since when'; they are cheap per data point, but cost grows with label cardinality.
+  prompt: Which telemetry signal best answers whether an error rate has risen, and what drives its cost?
+  objectives:
+  - 0
+  - 2
+- id: sd.observability.logs-for-specific-events
+  subtopic: Three (and a half) kinds of telemetry
+  kind: principle
+  claim: Structured logs record discrete events and answer what exactly happened in one request or process, such as why order 88123 failed; cost grows with volume, and indexing everything is expensive.
+  prompt: Which signal do you use to find out why one specific order failed, and what drives its cost?
+  objectives:
+  - 0
+- id: sd.observability.traces-for-where-time-went
+  subtopic: Three (and a half) kinds of telemetry
+  kind: principle
+  claim: A trace shows a request's path across services as a tree of timed spans, so it shows where time went and which dependency failed; traces are usually sampled.
+  prompt: Which signal shows which downstream call made a request slow?
+  objectives:
+  - 0
+- id: sd.observability.wide-events-slicing
+  subtopic: Three (and a half) kinds of telemetry
+  kind: tradeoff
+  claim: Wide events are one rich structured event per request with many fields (user, tenant, version, region), allowing arbitrary high-cardinality slicing to find which slice is affected; columnar stores make this feasible.
+  prompt: What telemetry lets you slice by high-cardinality fields like tenant or user to find the affected group?
+  objectives:
+  - 0
+  - 2
+- id: sd.observability.partial-outage-hidden-in-aggregates
+  subtopic: Introduction
+  kind: principle
+  claim: Partial outages, such as one bank's customers failing, hide in global averages and host metrics; you need to slice errors by customer-defining dimensions and alert on what customers experience.
+  prompt: Why can a failure confined to one bank's customers leave every global dashboard green, and what fixes it?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.observability.wide-events-slicing
+- id: sd.observability.four-golden-signals
+  subtopic: 'What to measure: the golden signals'
+  kind: fact
+  claim: The four golden signals are latency (successful and failed requests separated), traffic, errors (including wrong content) and saturation (how full the constrained resource is).
+  prompt: What are the four golden signals?
+  objectives:
+  - 0
+- id: sd.observability.red-and-use-methods
+  subtopic: 'What to measure: the golden signals'
+  kind: fact
+  claim: RED (rate, errors, duration) suits services, while USE (utilisation, saturation, errors) suits resources.
+  prompt: 'Which method covers services and which covers resources: RED or USE?'
+  objectives:
+  - 0
+  requires:
+  - sd.scaling.use-method
+  - sd.scaling.red-method
+- id: sd.observability.histograms-for-latency
+  subtopic: 'What to measure: the golden signals'
+  kind: mechanism
+  claim: Record latency as histograms, because percentiles cannot be averaged across instances; merge the buckets and compute the fleet percentile from the combined distribution.
+  prompt: Why can't you average per-instance p99s, and what do you record instead?
+  objectives:
+  - 0
+  requires:
+  - sd.service-quality.percentiles-defined
+- id: sd.observability.trace-context-propagation
+  subtopic: Following one request
+  kind: mechanism
+  claim: Generate a trace ID at the edge and propagate it (W3C traceparent header) through every hop, queue message and async job so one request can be followed across services.
+  prompt: How do you follow one request across an API, a queue and an async worker?
+  objectives:
+  - 1
+  requires:
+  - sd.observability.traces-for-where-time-went
+- id: sd.observability.structured-logs-with-ids
+  subtopic: Following one request
+  kind: procedure
+  claim: Write structured logs that include trace ID, request ID, user or tenant and key fields, so you can pivot between a trace and its logs.
+  prompt: What should structured logs contain to allow pivoting between traces and logs?
+  objectives:
+  - 1
+  requires:
+  - sd.observability.logs-for-specific-events
+  - sd.observability.trace-context-propagation
+- id: sd.observability.head-vs-tail-sampling
+  subtopic: Following one request
+  kind: tradeoff
+  claim: Head sampling decides at request start and is cheap but samples rare errors at the same low rate as everything else; tail sampling decides after completion, keeping all errors and slow requests plus a baseline, at the cost of buffering spans.
+  prompt: Compare head and tail sampling for catching rare failures.
+  objectives:
+  - 1
+  requires:
+  - sd.observability.traces-for-where-time-went
+- id: sd.observability.rare-failure-sampling-maths
+  subtopic: Following one request
+  kind: fact
+  claim: With 1% head sampling, a rare failure is traced only 1% of the time, so 0.05% of requests failing yields almost no example traces.
+  prompt: With 1% head sampling, why do engineers find almost no traces of a bug hitting 0.05% of requests?
+  objectives:
+  - 1
+  requires:
+  - sd.observability.head-vs-tail-sampling
+- id: sd.observability.cardinality-multiplies-series
+  subtopic: 'Cardinality: the hidden cost'
+  kind: mechanism
+  claim: Each unique combination of label values is a separate time series, so series count is the product of label cardinalities (e.g. 50 endpoints × 6 statuses × 4 regions = 1,200).
+  prompt: How do you work out how many time series a metric with several labels creates?
+  objectives:
+  - 2
+- id: sd.observability.avoid-unbounded-labels
+  subtopic: 'Cardinality: the hidden cost'
+  kind: principle
+  claim: Never use unbounded values such as user ID, request ID, full URL or error text as metric labels; keep labels low-cardinality and put high-cardinality detail in traces, logs or wide events.
+  prompt: Why not put user_id on a metric, and where does per-user detail belong?
+  objectives:
+  - 2
+  requires:
+  - sd.observability.cardinality-multiplies-series
+- id: sd.observability.alert-on-symptoms
+  subtopic: Alerts that deserve to wake someone
+  kind: principle
+  claim: Page on urgent, user-impacting, actionable, novel symptoms (e.g. SLO burn rate), not causes like CPU above 80% or any error log line; cause-based signals such as disk filling are tickets unless they predict imminent impact.
+  prompt: What should trigger a page, and why not CPU or any logged error?
+  objectives:
+  - 3
+- id: sd.observability.burn-rate-multiwindow
+  subtopic: Alerts that deserve to wake someone
+  kind: mechanism
+  claim: SLO burn-rate alerts use multiple windows (e.g. 1 hour and 5 minutes both above 14.4× budget burn) so they catch fast and slow burns while resisting brief blips.
+  prompt: How do multi-window burn-rate alerts work?
+  objectives:
+  - 3
+  same_as: sd.service-quality.burn-rate-alerting
+- id: sd.observability.page-context-and-ownership
+  subtopic: Alerts that deserve to wake someone
+  kind: procedure
+  claim: A good page names the affected symptom and severity, links the dashboard and recent deploys, includes a runbook with first steps, and routes to an owner; delete alerts nobody acts on to avoid alert fatigue.
+  prompt: What should a good page include, and what do you do with alerts nobody acts on?
+  objectives:
+  - 3
+  requires:
+  - sd.observability.alert-on-symptoms
+- id: sd.observability.latency-incident-debug-flow
+  subtopic: Alerts that deserve to wake someone
+  kind: procedure
+  claim: Debug a latency incident by going from symptom alert to slow traces to localise the span, then metrics to confirm, then correlate with recent deploys; mitigate first (roll back) and investigate after, then add canary SLO checks.
+  prompt: Outline how to debug a checkout latency alert across many microservices.
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.observability.metrics-for-is-it-wrong
+  - sd.observability.traces-for-where-time-went
+  - sd.observability.logs-for-specific-events
+items:
+  observability-check-1-v2:
+  - sd.observability.traces-for-where-time-went
+  observability-check-2-v2:
+  - sd.observability.cardinality-multiplies-series
+  observability-check-3-v2:
+  - sd.observability.four-golden-signals
+  observability-check-4-v2:
+  - sd.observability.alert-on-symptoms
+  - sd.observability.burn-rate-multiwindow
+  observability-fire-1-v2:
+  - sd.observability.head-vs-tail-sampling
+  - sd.observability.rare-failure-sampling-maths
+  observability-fire-2-v2:
+  - sd.observability.histograms-for-latency
+  observability-fire-3-v2:
+  - sd.observability.trace-context-propagation
+  observability-fire-4-v2:
+  - sd.observability.partial-outage-hidden-in-aggregates
+  - sd.observability.wide-events-slicing
+  observability-fire-5-v2:
+  - sd.observability.page-context-and-ownership
+  observability:b1:
+  - sd.observability.metrics-for-is-it-wrong
+  - sd.observability.logs-for-specific-events
+  - sd.observability.traces-for-where-time-went
+  observability:b10:
+  - sd.observability.latency-incident-debug-flow
+  - sd.observability.trace-context-propagation
+  - sd.observability.structured-logs-with-ids
+  observability:b3:
+  - sd.observability.rare-failure-sampling-maths
+  - sd.observability.head-vs-tail-sampling
+  observability:b5:
+  - sd.observability.cardinality-multiplies-series
+  - sd.observability.avoid-unbounded-labels
+  observability:b7:
+  - sd.observability.alert-on-symptoms
+  - sd.observability.burn-rate-multiwindow
+  - sd.observability.page-context-and-ownership
+  observability:b8:
+  - sd.observability.latency-incident-debug-flow
+  - sd.observability.alert-on-symptoms

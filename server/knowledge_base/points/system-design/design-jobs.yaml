@@ -1,0 +1,239 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-jobs
+source_hash: 847a46b7e47a57fa
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-jobs.accepted-means-not-lost
+  subtopic: 1. What "accepted" must mean
+  kind: principle
+  claim: A successful submission (202) promises the job will not be silently lost, so the job and a recoverable way to dispatch it must be durably committed before the API responds.
+  prompt: What must be durably committed before an async job API returns 202?
+  objectives:
+  - 0
+  same_as: sd.sync-async.durable-before-202
+- id: sd.design-jobs.dual-write-gap
+  subtopic: 1. What "accepted" must mean
+  kind: mechanism
+  claim: 'Inserting the job row and then publishing to the queue as separate steps leaves a gap: a crash between them leaves a job row that nothing will process.'
+  prompt: What goes wrong if the process crashes after committing the job row but before publishing to the queue?
+  objectives:
+  - 0
+  same_as: sd.sync-async.dual-write-recovery
+- id: sd.design-jobs.outbox-or-polling-dispatch
+  subtopic: 3. Architecture
+  kind: mechanism
+  claim: Recoverable dispatch is achieved by writing an outbox row in the same transaction as the job (relayed to the queue), or by workers claiming directly from the jobs table; a reconciler for jobs stuck in queued is a safety net.
+  prompt: How can dispatch be made recoverable so a committed job is never stranded?
+  objectives:
+  - 0
+  requires:
+  - sd.outbox.outbox-same-transaction
+- id: sd.design-jobs.unique-owner-request-id
+  subtopic: 2. API and data model
+  kind: mechanism
+  claim: 'A UNIQUE (owner_id, request_id) constraint with INSERT ... ON CONFLICT DO NOTHING makes submission idempotent and race-safe: the same user and request ID map to the same job.'
+  prompt: How does the data model make submission idempotent per user and request ID?
+  objectives:
+  - 1
+  requires:
+  - sd.retry-identity.concurrent-duplicates-claim
+- id: sd.design-jobs.payload-hash-mismatch-422
+  subtopic: 2. API and data model
+  kind: principle
+  claim: Store a fingerprint (request_hash) of the payload with the request ID; if a repeat has a matching hash return the existing job, but if it differs reject with 422 as a client bug.
+  prompt: What should happen when a request ID is reused with a different payload, and how is it detected?
+  objectives:
+  - 1
+  same_as: sd.retry-identity.key-fingerprint-mismatch
+- id: sd.design-jobs.submit-transaction-then-202
+  subtopic: 2. API and data model
+  kind: procedure
+  claim: The submit handler inserts the job and outbox row in one transaction and returns 202 only after commit, so a crash before then means the client got no promise and can safely retry with the same request ID.
+  prompt: In what order does the submit handler commit and respond, and why is a retry safe after a crash?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.design-jobs.outbox-or-polling-dispatch
+  - sd.design-jobs.accepted-means-not-lost
+- id: sd.design-jobs.claim-with-lease
+  subtopic: 3. Architecture
+  kind: mechanism
+  claim: A worker claims a job with a conditional UPDATE (status queued or running, lease null or expired) that sets a lease such as 5 minutes and increments attempts, so crashed workers' jobs become claimable again once the lease expires.
+  prompt: How does a worker claim a job so that crashed or concurrent workers are handled?
+  objectives:
+  - 2
+  requires:
+  - sd.sync-async.lease-on-running
+  - sd.concurrent-holds.check-inside-write
+- id: sd.design-jobs.deterministic-output-key
+  subtopic: 4. Every crash point
+  kind: principle
+  claim: Write output to a deterministic key derived from the job ID (e.g. outputs/{job_id}.pdf) so a redo overwrites rather than creating duplicate or orphaned artifacts.
+  prompt: How should a worker name its output so retries are safe?
+  objectives:
+  - 2
+  requires:
+  - sd.retry-identity.natural-idempotent-designs
+- id: sd.design-jobs.ack-after-commit
+  subtopic: 4. Every crash point
+  kind: principle
+  claim: Ack the message only after the success status is committed; acking on receipt means a crash mid-job loses the job.
+  prompt: When should a worker acknowledge a queue message, and why?
+  objectives:
+  - 2
+  same_as: sd.acknowledgements.ack-after-commit
+- id: sd.design-jobs.crash-after-output-before-success
+  subtopic: 4. Every crash point
+  kind: mechanism
+  claim: If a worker crashes after writing output but before marking succeeded, the message is redelivered, the lease expires, a new worker reclaims the job and overwrites the same output key, then marks success.
+  prompt: What happens if a worker crashes after writing output but before marking the job succeeded?
+  objectives:
+  - 2
+  requires:
+  - sd.design-jobs.deterministic-output-key
+  - sd.design-jobs.claim-with-lease
+- id: sd.design-jobs.duplicate-delivery-after-success
+  subtopic: 4. Every crash point
+  kind: mechanism
+  claim: If a message is redelivered after the job succeeded, the claim's status condition matches zero rows, so the worker just acks with no duplicate work.
+  prompt: How does a worker handle a duplicate delivery for an already succeeded job?
+  objectives:
+  - 2
+  requires:
+  - sd.design-jobs.claim-with-lease
+- id: sd.design-jobs.crash-after-claim
+  subtopic: 4. Every crash point
+  kind: mechanism
+  claim: If a worker crashes after claiming but before output, the message is redelivered after its visibility timeout and the job reruns from scratch once the lease expires.
+  prompt: What happens if a worker crashes after claiming a job but before producing output?
+  objectives:
+  - 2
+  requires:
+  - sd.design-jobs.claim-with-lease
+- id: sd.design-jobs.transient-vs-permanent-errors
+  subtopic: 5. Failure visibility
+  kind: tradeoff
+  claim: Transient errors are retried with backoff via redelivery; permanent errors (corrupt or unsupported input) set status=failed with a user-visible error and send the message to the DLQ.
+  prompt: How should transient and permanent job errors be handled differently?
+  objectives:
+  - 2
+  requires:
+  - sd.dead-letters.three-failure-classes
+- id: sd.design-jobs.bounded-attempts-terminal-failure
+  subtopic: 5. Failure visibility
+  kind: principle
+  claim: After N attempts a job must fail terminally with a visible error and go to the DLQ, never staying running forever.
+  prompt: What happens to a job that keeps failing after N attempts?
+  objectives:
+  - 2
+  same_as: sd.dead-letters.bounded-attempts
+- id: sd.design-jobs.status-checks-owner
+  subtopic: 5. Failure visibility
+  kind: principle
+  claim: 'GET /jobs/{id} must check owner_id: knowing a job ID does not grant access.'
+  prompt: Why must status reads check the job's owner?
+  objectives: []
+  requires:
+  - sd.request-flow.authz-in-owning-service
+- id: sd.design-jobs.workers-for-steady-peak
+  subtopic: 6. Capacity
+  kind: fact
+  claim: At 30 jobs/s peak and 2 jobs/s per worker, 15 workers only match arrivals, leaving no headroom to drain any backlog.
+  prompt: How many workers just match 30 jobs/s arrivals at 2 jobs/s each, and what is the problem with that?
+  objectives:
+  - 3
+  requires:
+  - sd.sync-async.littles-law-workers
+- id: sd.design-jobs.size-for-drain
+  subtopic: 6. Capacity
+  kind: procedure
+  claim: 'Size for drain: required rate = peak arrival + backlog/drain time. A 10-minute outage at 30/s builds 18,000 jobs; draining in 20 minutes needs 45 jobs/s, so 23 workers.'
+  prompt: How do you size workers to drain a 10-minute backlog at 30 jobs/s within 20 minutes at 2 jobs/s per worker?
+  objectives:
+  - 3
+  requires:
+  - sd.design-jobs.workers-for-steady-peak
+  - sd.estimates.backlog-recovery-headroom
+- id: sd.design-jobs.monitor-oldest-job-age
+  subtopic: 6. Capacity
+  kind: principle
+  claim: Age of the oldest queued job is the best signal of user-felt delay; also alert on outbox rows unpublished for over a minute, and autoscale on queue age.
+  prompt: Which metric best shows users are waiting too long?
+  objectives:
+  - 3
+  same_as: sd.queue-basics.age-over-depth
+- id: sd.design-jobs.failure-rate-signals
+  subtopic: 5. Failure visibility
+  kind: fact
+  claim: Rate of jobs moving to failed and DLQ inflow indicate broken inputs or workers; depth 0, low utilisation and a tiny oldest-job age indicate a healthy, over-provisioned system.
+  prompt: Which signals show work is failing versus the pipeline being healthy but idle?
+  objectives:
+  - 3
+- id: sd.design-jobs.queue-optional-skip-locked
+  subtopic: 3. Architecture
+  kind: tradeoff
+  claim: At modest rates like 30 jobs/s, workers can claim directly from the jobs table with SELECT ... FOR UPDATE SKIP LOCKED, removing the outbox and dual write; a queue helps with fan-out, priorities and very high rates.
+  prompt: When can you skip the queue, and what does a queue add?
+  objectives:
+  - 0
+items:
+  design-jobs-check-1-v2:
+  - sd.design-jobs.accepted-means-not-lost
+  - sd.design-jobs.outbox-or-polling-dispatch
+  design-jobs-check-2-v2:
+  - sd.design-jobs.workers-for-steady-peak
+  design-jobs-check-3-v2:
+  - sd.design-jobs.ack-after-commit
+  - sd.design-jobs.deterministic-output-key
+  - sd.design-jobs.claim-with-lease
+  design-jobs-check-4-v2:
+  - sd.design-jobs.payload-hash-mismatch-422
+  design-jobs-fire-1-v2:
+  - sd.design-jobs.bounded-attempts-terminal-failure
+  - sd.design-jobs.transient-vs-permanent-errors
+  design-jobs-fire-2-v2:
+  - sd.design-jobs.monitor-oldest-job-age
+  design-jobs-fire-3-v2:
+  - sd.design-jobs.queue-optional-skip-locked
+  design-jobs-fire-4-v2:
+  - sd.design-jobs.size-for-drain
+  design-jobs-fire-5-v2:
+  - sd.design-jobs.claim-with-lease
+  - sd.design-jobs.ack-after-commit
+  - sd.design-jobs.deterministic-output-key
+  design-jobs:b1:
+  - sd.design-jobs.dual-write-gap
+  - sd.design-jobs.outbox-or-polling-dispatch
+  design-jobs:b10:
+  - sd.design-jobs.size-for-drain
+  - sd.design-jobs.workers-for-steady-peak
+  design-jobs:b11:
+  - sd.design-jobs.monitor-oldest-job-age
+  - sd.design-jobs.failure-rate-signals
+  design-jobs:b13:
+  - sd.design-jobs.crash-after-output-before-success
+  - sd.design-jobs.duplicate-delivery-after-success
+  - sd.design-jobs.deterministic-output-key
+  design-jobs:b14:
+  - sd.design-jobs.dual-write-gap
+  - sd.design-jobs.ack-after-commit
+  design-jobs:b3:
+  - sd.design-jobs.submit-transaction-then-202
+  - sd.design-jobs.unique-owner-request-id
+  - sd.design-jobs.payload-hash-mismatch-422
+  design-jobs:b8:
+  - sd.design-jobs.ack-after-commit
+  - sd.design-jobs.deterministic-output-key
+  - sd.design-jobs.claim-with-lease
+  redesign:design-jobs:
+  - sd.design-jobs.accepted-means-not-lost
+  - sd.design-jobs.claim-with-lease
+  - sd.design-jobs.size-for-drain

@@ -1,0 +1,208 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: queue-basics
+source_hash: cd7e9f14673f104e
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.queue-basics.work-queue-competing-consumers
+  subtopic: Three shapes of "queue"
+  kind: mechanism
+  claim: In a work queue (competing consumers) each message goes to one of N workers and is removed once acknowledged, so it suits task distribution such as resizing images or sending emails.
+  prompt: How does a work queue deliver messages, and what is it used for?
+  objectives:
+  - 0
+- id: sd.queue-basics.pubsub-fanout-own-copy
+  subtopic: Three shapes of "queue"
+  kind: mechanism
+  claim: Pub/sub fan-out gives each subscriber its own copy of every message, so several independent systems can react to one event at their own pace.
+  prompt: What does pub/sub fan-out give each subscriber, and when do you use it?
+  objectives:
+  - 0
+- id: sd.queue-basics.retained-log-replay
+  subtopic: Three shapes of "queue"
+  kind: mechanism
+  claim: A retained log (Kafka, Kinesis) keeps an append-only record for days; each consumer group tracks its own offset and can replay, which suits reprocessing, back-testing, CDC and audit.
+  prompt: Which queue shape supports replaying past events for a new consumer, and why?
+  objectives:
+  - 0
+- id: sd.queue-basics.burst-absorption-isolation
+  subtopic: What a queue buys you
+  kind: principle
+  claim: 'A queue absorbs bursts and isolates producers from consumers: a slow or failing consumer does not slow the producer, and the producer works while consumers are down.'
+  prompt: How does a queue protect a producer from a slow downstream consumer?
+  objectives:
+  - 1
+  requires:
+  - sd.queue-basics.work-queue-competing-consumers
+- id: sd.queue-basics.queue-costs
+  subtopic: What a queue buys you
+  kind: tradeoff
+  claim: A queue costs added latency (work waits in line), another system to run, at-least-once delivery to handle, and 'accepted' no longer meaning 'done'.
+  prompt: What are the costs of introducing a queue?
+  objectives:
+  - 1
+  requires:
+  - sd.queue-basics.work-queue-competing-consumers
+- id: sd.queue-basics.queue-wrong-choice
+  subtopic: What a queue buys you
+  kind: tradeoff
+  claim: A queue is the wrong choice when the caller needs the result now and the work is fast, when exactly-once matters but consumers can't be idempotent, or when the consumer is permanently undersized.
+  prompt: When is a queue the wrong choice?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.queue-basics.queue-costs
+- id: sd.queue-basics.backlog-drain-rate
+  subtopic: Bursts, backlogs and drain time
+  kind: procedure
+  claim: Backlog grows at arrival minus completion rate, and drains at completion minus arrival rate; drain time is backlog divided by that spare capacity (e.g. 90,000 at 800/s vs 500/s arrivals takes 300 s).
+  prompt: How do you calculate how long a backlog takes to drain?
+  objectives:
+  - 1
+  same_as: sd.estimates.backlog-drain-rate
+- id: sd.queue-basics.sustained-overload-unbounded
+  subtopic: Bursts, backlogs and drain time
+  kind: principle
+  claim: A queue only helps if spare capacity exists later; under sustained overload the backlog grows without bound, so you must add capacity, shed load or bound the queue.
+  prompt: What happens when arrivals permanently exceed consumer capacity, and what are the remedies?
+  objectives:
+  - 1
+  requires:
+  - sd.queue-basics.backlog-drain-rate
+  same_as: sd.sync-async.async-no-extra-capacity
+- id: sd.queue-basics.headroom-speeds-drain
+  subtopic: Bursts, backlogs and drain time
+  kind: principle
+  claim: Drain time depends on spare capacity, so 2x headroom drains a backlog far faster than 1.1x; the oldest message waits roughly the whole drain time.
+  prompt: Why does consumer headroom matter for drain time?
+  objectives:
+  - 1
+  requires:
+  - sd.queue-basics.backlog-drain-rate
+- id: sd.queue-basics.size-consumers-littles-law
+  subtopic: Bursts, backlogs and drain time
+  kind: procedure
+  claim: 'Estimate busy workers as arrival rate times processing time (Little''s Law): 300/s at 0.2 s needs 60 workers, then add headroom such as 1.5x.'
+  prompt: How do you estimate the workers needed to keep up with a queue?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.service-quality.littles-law
+  same_as: sd.sync-async.littles-law-workers
+- id: sd.queue-basics.bound-queue-reject
+  subtopic: Bursts, backlogs and drain time
+  kind: tradeoff
+  claim: Bounding the queue turns overload into explicit rejections instead of unbounded waiting.
+  prompt: What does adding a queue limit change under overload?
+  objectives:
+  - 1
+  requires:
+  - sd.queue-basics.sustained-overload-unbounded
+- id: sd.queue-basics.scale-out-consumers
+  subtopic: 'Consumers: scaling, prefetch, priorities and fairness'
+  kind: fact
+  claim: Scale by adding consumers; for a log, parallelism is capped at the partition count.
+  prompt: What limits consumer scale-out on a retained log?
+  objectives:
+  - 2
+  requires:
+  - sd.queue-basics.work-queue-competing-consumers
+- id: sd.queue-basics.prefetch-tradeoff
+  subtopic: 'Consumers: scaling, prefetch, priorities and fairness'
+  kind: tradeoff
+  claim: Prefetch too low wastes round trips; too high lets one slow consumer hoard unacknowledged messages while others sit idle.
+  prompt: What goes wrong if prefetch is set too high or too low?
+  objectives:
+  - 2
+  requires:
+  - sd.queue-basics.work-queue-competing-consumers
+- id: sd.queue-basics.priority-separate-queues
+  subtopic: 'Consumers: scaling, prefetch, priorities and fairness'
+  kind: principle
+  claim: Handle urgent work with separate queues and dedicated or weighted consumers rather than fragile per-message priorities.
+  prompt: How should you stop urgent work waiting behind bulk work?
+  objectives:
+  - 2
+  requires:
+  - sd.queue-basics.work-queue-competing-consumers
+- id: sd.queue-basics.tenant-fairness
+  subtopic: 'Consumers: scaling, prefetch, priorities and fairness'
+  kind: mechanism
+  claim: One tenant can starve others in a shared FIFO; per-tenant queues serviced round-robin, fair scheduling or quotas and rate limits keep waits bounded, whereas more workers or LIFO do not fix unfairness.
+  prompt: How do you stop one tenant's flood starving others in a shared queue?
+  objectives:
+  - 2
+  requires:
+  - sd.queue-basics.work-queue-competing-consumers
+- id: sd.queue-basics.age-over-depth
+  subtopic: Monitor the age, not just the depth
+  kind: principle
+  claim: Depth is ambiguous (10,000 messages could be 2 seconds or 2 hours of work); the age of the oldest message, or time lag, is what users feel and what to alert on.
+  prompt: Why is oldest-message age a better alert than queue depth?
+  objectives:
+  - 3
+  requires:
+  - sd.queue-basics.backlog-drain-rate
+- id: sd.queue-basics.autoscale-not-cpu
+  subtopic: Monitor the age, not just the depth
+  kind: principle
+  claim: Autoscale on queue age or backlog divided by throughput, not consumer CPU, because consumers blocked on a slow dependency show low CPU while the backlog grows.
+  prompt: Why is CPU a poor autoscaling signal for queue consumers?
+  objectives:
+  - 3
+  requires:
+  - sd.queue-basics.age-over-depth
+  same_as: sd.estimates.backlog-recovery-headroom
+- id: sd.queue-basics.monitor-error-dlq
+  subtopic: Monitor the age, not just the depth
+  kind: fact
+  claim: Also monitor throughput in and out, error and dead-letter rates and redelivery counts; broker-up alone does not show jobs completing.
+  prompt: Besides age, what should you monitor on a queue consumer?
+  objectives:
+  - 3
+  requires:
+  - sd.queue-basics.age-over-depth
+items:
+  queue-basics-check-1-v2:
+  - sd.queue-basics.pubsub-fanout-own-copy
+  queue-basics-check-2-v2:
+  - sd.queue-basics.backlog-drain-rate
+  queue-basics-check-3-v2:
+  - sd.queue-basics.age-over-depth
+  - sd.queue-basics.autoscale-not-cpu
+  - sd.queue-basics.monitor-error-dlq
+  queue-basics-check-4-v2:
+  - sd.queue-basics.tenant-fairness
+  queue-basics-fire-1-v2:
+  - sd.queue-basics.sustained-overload-unbounded
+  queue-basics-fire-2-v2:
+  - sd.queue-basics.prefetch-tradeoff
+  queue-basics-fire-3-v2:
+  - sd.queue-basics.priority-separate-queues
+  queue-basics-fire-4-v2:
+  - sd.queue-basics.retained-log-replay
+  queue-basics-fire-5-v2:
+  - sd.queue-basics.size-consumers-littles-law
+  queue-basics:b1:
+  - sd.queue-basics.work-queue-competing-consumers
+  - sd.queue-basics.pubsub-fanout-own-copy
+  - sd.queue-basics.retained-log-replay
+  queue-basics:b10:
+  - sd.queue-basics.autoscale-not-cpu
+  - sd.queue-basics.age-over-depth
+  queue-basics:b12:
+  - sd.queue-basics.burst-absorption-isolation
+  - sd.queue-basics.sustained-overload-unbounded
+  - sd.queue-basics.size-consumers-littles-law
+  queue-basics:b6:
+  - sd.queue-basics.backlog-drain-rate
+  - sd.queue-basics.headroom-speeds-drain
+  queue-basics:b8:
+  - sd.queue-basics.tenant-fairness

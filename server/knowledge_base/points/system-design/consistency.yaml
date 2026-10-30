@@ -1,0 +1,204 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: consistency
+source_hash: e4eef02c5df1579c
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.consistency.consistency-per-operation
+  subtopic: Introduction
+  kind: principle
+  claim: 'Consistency level should be chosen per operation, not per datastore: the same store with R = 1, W = 1 is harmless for like counts but lets a single-use coupon be redeemed several times under replica lag.'
+  prompt: Why can identical storage settings suit a like counter but not a single-use coupon check?
+  objectives:
+  - 3
+- id: sd.consistency.linearizable-definition
+  subtopic: The spectrum
+  kind: fact
+  claim: Linearizable means every operation appears to take effect atomically at one instant between its start and end, so all clients see one order consistent with real time; a read that starts after a write completes must not return the old value.
+  prompt: What does linearizability forbid about a read that begins after a write has completed?
+  objectives:
+  - 0
+- id: sd.consistency.sequential-consistency
+  subtopic: The spectrum
+  kind: fact
+  claim: Sequential consistency gives all clients the same order of operations, but that order need not match real time across clients; two clients disagreeing on the order of two writes is forbidden.
+  prompt: How does sequential consistency differ from linearizability?
+  objectives:
+  - 0
+- id: sd.consistency.causal-consistency
+  subtopic: The spectrum
+  kind: mechanism
+  claim: Causal consistency makes causally related operations (a reply after the post it answers) visible in that order to everyone, while concurrent operations may appear in different orders. It can be built with per-conversation sequence numbers, version vectors or delivery ordering, far cheaper than full linearizability.
+  prompt: Which guarantee stops a reply appearing before the message it answers, and how is it implemented cheaply?
+  objectives:
+  - 0
+- id: sd.consistency.session-guarantees
+  subtopic: The spectrum
+  kind: fact
+  claim: Read-your-writes means a client sees its own writes, and monotonic reads means it never goes back in time; together they stop an edit disappearing on refresh.
+  prompt: Which session guarantees stop your own edit vanishing on refresh?
+  objectives:
+  - 0
+  requires:
+  - sd.replication.read-your-writes-anomaly
+  - sd.replication.non-monotonic-reads-anomaly
+- id: sd.consistency.eventual-consistency
+  subtopic: The spectrum
+  kind: fact
+  claim: Eventual consistency promises only that replicas converge if writes stop, and promises nothing in the meantime, so reads may be stale or go backwards.
+  prompt: What does eventual consistency guarantee, and what does it not?
+  objectives:
+  - 0
+- id: sd.consistency.cap-stated-properly
+  subtopic: CAP, stated properly
+  kind: principle
+  claim: During a network partition, a cut-off replica must for each operation either refuse or wait (consistency) or answer anyway risking stale reads or conflicting writes (availability). CAP does not mean picking two of three in normal operation.
+  prompt: What choice does CAP actually force, and when?
+  objectives:
+  - 1
+  requires:
+  - sd.consistency.linearizable-definition
+- id: sd.consistency.partition-tolerance-not-optional
+  subtopic: CAP, stated properly
+  kind: principle
+  claim: Partition tolerance is not optional because networks partition, so the real choice is consistency versus availability during a partition.
+  prompt: Why is the 'pick two of three' reading of CAP wrong?
+  objectives:
+  - 1
+  requires:
+  - sd.consistency.cap-stated-properly
+- id: sd.consistency.cap-label-per-operation
+  subtopic: CAP, stated properly
+  kind: principle
+  claim: 'Labelling a whole product CP or AP hides that operations differ: for example a ticketing site refuses seat confirmation on the minority side but still serves the seat map from replicas.'
+  prompt: Why is calling a whole database CP or AP unhelpful?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.consistency.cap-stated-properly
+  - sd.consistency.consistency-per-operation
+- id: sd.consistency.pacelc
+  subtopic: CAP, stated properly
+  kind: principle
+  claim: PACELC adds that when there is no partition (Else), you still trade latency against consistency, because strong consistency needs coordination round trips to a leader or quorum on every request.
+  prompt: What does PACELC add to CAP?
+  objectives:
+  - 1
+  requires:
+  - sd.consistency.cap-stated-properly
+- id: sd.consistency.partition-choice-examples
+  subtopic: CAP, stated properly
+  kind: tradeoff
+  claim: Prefer consistency under partition for invariants such as last seat, single-use coupon and balance-limited withdrawals; prefer availability for follower counts, shopping-cart adds and home feeds, where staleness is cheap.
+  prompt: Which kinds of operation should refuse during a partition, and which should answer?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.consistency.cap-label-per-operation
+- id: sd.consistency.quorum-overlap-rule
+  subtopic: Quorums in leaderless systems
+  kind: mechanism
+  claim: With N replicas, W write acks and R read replicas, R + W > N means every read set overlaps every write set, so a read reaches at least one replica with the latest acknowledged write (assuming no concurrent writes or sloppy quorum).
+  prompt: What condition makes read and write quorums overlap, and what does it guarantee?
+  objectives:
+  - 2
+  requires:
+  - sd.replication.leaderless-fit
+- id: sd.consistency.quorum-settings-tradeoffs
+  subtopic: Quorums in leaderless systems
+  kind: tradeoff
+  claim: With N = 3, W = 2 and R = 2 is the balanced choice; W = 3, R = 1 gives fast reads but fragile writes; W = 1, R = 1 is fast but only eventually consistent.
+  prompt: What are the trade-offs of N=3 with W=2/R=2, W=3/R=1 and W=1/R=1?
+  objectives:
+  - 2
+  requires:
+  - sd.consistency.quorum-overlap-rule
+- id: sd.consistency.quorum-availability-arithmetic
+  subtopic: Quorums in leaderless systems
+  kind: procedure
+  claim: Operations tolerate N - W unreachable replicas for writes and N - R for reads; with N = 5, W = 3, R = 3, two replicas can be down, and with N = 3, W = 2, R = 2 losing two replicas makes reads and writes fail.
+  prompt: How many replicas can be down with N=5, W=3, R=3 while reads and writes still succeed?
+  objectives:
+  - 2
+  requires:
+  - sd.consistency.quorum-overlap-rule
+- id: sd.consistency.convergence-mechanisms
+  subtopic: Quorums in leaderless systems
+  kind: mechanism
+  claim: Read repair fixes stale replicas noticed during reads, anti-entropy compares replicas in the background using Merkle trees, and hinted handoff has another node hold writes for a down replica; these improve convergence but do not change overlap arithmetic.
+  prompt: What do read repair, anti-entropy and hinted handoff each do?
+  objectives:
+  - 2
+  requires:
+  - sd.consistency.eventual-consistency
+- id: sd.consistency.quorum-not-linearizable
+  subtopic: Quorums in leaderless systems
+  kind: principle
+  claim: 'R + W > N does not guarantee linearizability: concurrent writes, clock-based last-write-wins, sloppy quorums and partial write failures can cause anomalies, so operations needing it (such as compare-and-set) should use a leader or consensus, e.g. Cassandra lightweight transactions.'
+  prompt: Why can R + W > N still give non-linearizable results, and what is the fix?
+  objectives:
+  - 2
+  requires:
+  - sd.consistency.quorum-overlap-rule
+  - sd.consistency.linearizable-definition
+- id: sd.consistency.consistency-level-by-data-type
+  subtopic: Choosing per operation
+  kind: tradeoff
+  claim: Use linearizable for invariants (uniqueness, balances, inventory, leader election, locks), causal or session guarantees for user experience, and eventual for derived or display data (counts, feeds, search, recommendations).
+  prompt: Which consistency level suits invariants, user-visible edits and display data respectively?
+  objectives:
+  - 3
+  requires:
+  - sd.consistency.linearizable-definition
+  - sd.consistency.causal-consistency
+  - sd.consistency.session-guarantees
+- id: sd.consistency.explain-failure-to-users
+  subtopic: Choosing per operation
+  kind: principle
+  claim: When an operation chooses consistency, tell users what failure looks like, such as 'We couldn't confirm your seat, please retry', rather than allowing a silent double booking.
+  prompt: How should a system that refuses an operation during a partition present that to users?
+  objectives:
+  - 3
+  requires:
+  - sd.consistency.partition-choice-examples
+items:
+  consistency-check-1-v2:
+  - sd.consistency.linearizable-definition
+  consistency-check-2-v2:
+  - sd.consistency.quorum-overlap-rule
+  consistency-check-3-v2:
+  - sd.consistency.consistency-level-by-data-type
+  consistency-check-4-v2:
+  - sd.consistency.pacelc
+  consistency-fire-1-v2:
+  - sd.consistency.causal-consistency
+  consistency-fire-2-v2:
+  - sd.consistency.quorum-availability-arithmetic
+  - sd.consistency.quorum-overlap-rule
+  consistency-fire-3-v2:
+  - sd.consistency.cap-label-per-operation
+  consistency-fire-4-v2:
+  - sd.consistency.quorum-not-linearizable
+  consistency-fire-5-v2:
+  - sd.consistency.convergence-mechanisms
+  consistency:b1:
+  - sd.consistency.linearizable-definition
+  - sd.consistency.eventual-consistency
+  consistency:b11:
+  - sd.consistency.cap-stated-properly
+  - sd.consistency.partition-tolerance-not-optional
+  - sd.consistency.cap-label-per-operation
+  consistency:b3:
+  - sd.consistency.partition-choice-examples
+  consistency:b7:
+  - sd.consistency.quorum-availability-arithmetic
+  consistency:b9:
+  - sd.consistency.causal-consistency

@@ -1,0 +1,263 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: request-flow
+source_hash: d78ef393b5c5076d
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.request-flow.request-hop-sequence
+  subtopic: The whole trip
+  kind: procedure
+  claim: A request passes DNS, a TCP/TLS connection to the nearest edge, the edge (rate limits, WAF, cache), the load balancer, the owning service (auth, rules), then cache and database. The state change is committed last, after every check.
+  prompt: In order, which hops does an authenticated write request pass through, and where is the state change committed?
+  objectives:
+  - 0
+- id: sd.request-flow.edge-warm-origin-connection
+  subtopic: The whole trip
+  kind: mechanism
+  claim: The edge forwards uncacheable requests such as POST over a warm, pooled connection to the origin, so no new handshakes are needed on the long leg.
+  prompt: How does an edge help an uncacheable POST reach a distant origin faster?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.request-flow.request-hop-sequence
+- id: sd.request-flow.lb-health-and-request-id
+  subtopic: The whole trip
+  kind: fact
+  claim: An L7 load balancer picks a healthy instance using health checks and can add a request ID header such as X-Request-ID for tracing.
+  prompt: What does an L7 load balancer do with each request?
+  objectives:
+  - 0
+  requires:
+  - sd.request-flow.request-hop-sequence
+- id: sd.request-flow.stateless-service-any-instance
+  subtopic: The whole trip
+  kind: principle
+  claim: A stateless service lets repeat requests land on any instance, so no sticky routing is needed.
+  prompt: Why can consecutive requests hit different service instances without problems?
+  objectives:
+  - 0
+  requires:
+  - sd.request-flow.lb-health-and-request-id
+- id: sd.request-flow.cold-request-cost-calc
+  subtopic: Where the time goes
+  kind: procedure
+  claim: A cold request costs DNS + 1 RTT for TCP + 1 RTT for TLS 1.3 + 1 RTT for request/response + server time. With a 200 ms RTT, 50 ms DNS and 20 ms server time, that is 670 ms.
+  prompt: How do you estimate the time for the first request on a brand-new connection?
+  objectives:
+  - 1
+- id: sd.request-flow.warm-connection-savings
+  subtopic: Where the time goes
+  kind: principle
+  claim: Reusing a keep-alive connection removes DNS and handshakes, leaving one RTT plus server time (220 ms versus 670 ms in the Sydney example).
+  prompt: What does a warm, reused connection save compared with a cold one?
+  objectives:
+  - 1
+  requires:
+  - sd.request-flow.cold-request-cost-calc
+- id: sd.request-flow.handshake-rtt-counts
+  subtopic: Where the time goes
+  kind: fact
+  claim: TCP needs 1 RTT, TLS 1.3 needs 1 RTT, TLS 1.2 needs 2 RTTs and resumption can reduce it to 0. HTTP/3 (QUIC) combines transport and TLS into 1 RTT.
+  prompt: How many round trips do TCP, TLS 1.3, TLS 1.2 and HTTP/3 handshakes take?
+  objectives:
+  - 1
+- id: sd.request-flow.typical-latency-figures
+  subtopic: Where the time goes
+  kind: fact
+  claim: Uncached DNS takes 20-100 ms, a same-datacentre service hop 0.2-1 ms, and a simple database transaction 1-10 ms.
+  prompt: Roughly how long do uncached DNS, a same-datacentre hop and a simple DB transaction take?
+  objectives:
+  - 1
+- id: sd.request-flow.rtt-physical-limit
+  subtopic: Where the time goes
+  kind: principle
+  claim: Light in fibre covers about 200 km per ms, so London-New York is about 70-80 ms RTT and London-Sydney 250-280 ms. You cannot remove this; you cut round trips or move the endpoint closer.
+  prompt: Since distance latency cannot be engineered away, what can you do about it?
+  objectives:
+  - 1
+- id: sd.request-flow.edge-tls-termination-benefit
+  subtopic: Where the time goes
+  kind: tradeoff
+  claim: Terminating TLS at a nearby edge makes the handshake round trips short and reuses a warm connection over the long leg, so a 670 ms cold call drops to about 280 ms.
+  prompt: Why does terminating TLS at a nearby edge cut cold-request latency?
+  objectives:
+  - 1
+  requires:
+  - sd.request-flow.cold-request-cost-calc
+  - sd.request-flow.edge-warm-origin-connection
+  - sd.request-flow.rtt-physical-limit
+- id: sd.request-flow.server-latency-hides-setup
+  subtopic: Where the time goes
+  kind: principle
+  claim: Server-side timing starts when the request arrives, so it hides DNS, TCP, TLS and radio wake-up costs. Measure from the client with real-user monitoring, keep connections alive and pre-connect.
+  prompt: Why can server logs show 30 ms while users see over a second on first action?
+  objectives:
+  - 1
+  requires:
+  - sd.request-flow.cold-request-cost-calc
+- id: sd.request-flow.authn-at-gateway
+  subtopic: Who checks what, where
+  kind: principle
+  claim: Authentication (verifying a JWT signature and expiry) can be centralised at the gateway, which passes identity inward as a trusted header.
+  prompt: Where can authentication be centralised, and how is identity passed on?
+  objectives:
+  - 2
+  requires:
+  - sd.request-flow.request-hop-sequence
+- id: sd.request-flow.authz-in-owning-service
+  subtopic: Who checks what, where
+  kind: principle
+  claim: Object-level authorisation belongs in the service that owns the resource, checked on every request, because only it has the data to know who owns order 9001.
+  prompt: Where should object-level authorisation be enforced, and why?
+  objectives:
+  - 2
+  requires:
+  - sd.request-flow.authn-at-gateway
+- id: sd.request-flow.ui-hiding-not-access-control
+  subtopic: Who checks what, where
+  kind: principle
+  claim: 'Hiding a button is not access control: if the API returns any order to any authenticated user, that is broken object-level authorisation (IDOR), since attackers call the API directly.'
+  prompt: Why is hiding a UI control not enough to protect other users' orders?
+  objectives:
+  - 2
+  requires:
+  - sd.request-flow.authz-in-owning-service
+- id: sd.request-flow.edge-generic-checks
+  subtopic: Who checks what, where
+  kind: principle
+  claim: 'The edge or gateway handles cheap, data-independent checks: TLS termination, coarse rate limiting, WAF rules and rejecting oversized or abusive requests.'
+  prompt: Which kinds of checks belong at the edge or gateway?
+  objectives:
+  - 2
+  requires:
+  - sd.request-flow.request-hop-sequence
+- id: sd.request-flow.validate-and-constrain-at-db
+  subtopic: Who checks what, where
+  kind: principle
+  claim: Validate input before any state change, and enforce key invariants again at the database with constraints (unique, foreign key), which hold regardless of code path or race.
+  prompt: Why enforce invariants such as one booking per seat as database constraints as well as in code?
+  objectives:
+  - 2
+  requires:
+  - sd.request-flow.request-hop-sequence
+- id: sd.request-flow.business-rules-in-service
+  subtopic: Who checks what, where
+  kind: principle
+  claim: Business rules, such as a coupon needing a cart over £50, live in the service that owns them.
+  prompt: Where do business rules like coupon eligibility belong?
+  objectives:
+  - 2
+  requires:
+  - sd.request-flow.request-hop-sequence
+- id: sd.request-flow.shrinking-timeouts
+  subtopic: Timeouts must shrink down the chain
+  kind: principle
+  claim: Each caller should wait less than the caller above it and pass its remaining time down. Otherwise lower layers work for nobody and a retry starts a second copy.
+  prompt: How should timeouts relate between a caller and its dependencies?
+  objectives:
+  - 3
+- id: sd.request-flow.timeout-double-charge
+  subtopic: Timeouts must shrink down the chain
+  kind: mechanism
+  claim: If the client timeout (5 s) is shorter than downstream ones (30 s) and the retry has no idempotency key, the retry starts a second independent charge while the first still runs.
+  prompt: How do growing timeouts plus a retry cause a double charge?
+  objectives:
+  - 3
+  requires:
+  - sd.request-flow.shrinking-timeouts
+- id: sd.request-flow.deadline-propagation
+  subtopic: Timeouts must shrink down the chain
+  kind: procedure
+  claim: Pass an absolute deadline with the request; each service uses remaining = deadline - now - safety margin for downstream calls and stops work after it passes. gRPC does this natively.
+  prompt: How does deadline propagation work?
+  objectives:
+  - 3
+  requires:
+  - sd.request-flow.shrinking-timeouts
+- id: sd.request-flow.optional-call-small-budget
+  subtopic: Timeouts must shrink down the chain
+  kind: tradeoff
+  claim: Optional downstream calls get a small slice of the budget (e.g. 200 ms of 2 s) with a fallback, so slowness degrades rather than fails the page.
+  prompt: What timeout policy suits an optional dependency under a 2 s SLO?
+  objectives:
+  - 3
+  requires:
+  - sd.request-flow.deadline-propagation
+- id: sd.request-flow.retry-multiplication
+  subtopic: Timeouts must shrink down the chain
+  kind: principle
+  claim: 'Retries at several layers multiply: three layers with 4 attempts each give up to 64 calls on the innermost dependency. Retry at one layer, with backoff, only for idempotent operations.'
+  prompt: Why is retrying at every layer dangerous, and what is the rule?
+  objectives:
+  - 3
+- id: sd.request-flow.timeout-unknown-outcome
+  subtopic: Timeouts must shrink down the chain
+  kind: principle
+  claim: 'A client timeout means the outcome is unknown: the work may have completed, be in progress or have failed, and the server may keep working unless cancellation propagates.'
+  prompt: What does a client timeout tell you about the state of the request?
+  objectives:
+  - 3
+  requires:
+  - sd.request-flow.shrinking-timeouts
+- id: sd.request-flow.idempotency-key-retries
+  subtopic: Timeouts must shrink down the chain
+  kind: mechanism
+  claim: A client-generated idempotency key reused on retry, which the server deduplicates on, makes the retry return the original result instead of creating a duplicate.
+  prompt: How do you make a retried create-order request safe?
+  objectives:
+  - 3
+  requires:
+  - sd.request-flow.timeout-unknown-outcome
+items:
+  request-flow-check-1-v2:
+  - sd.request-flow.authz-in-owning-service
+  - sd.request-flow.authn-at-gateway
+  request-flow-check-2-v2:
+  - sd.request-flow.cold-request-cost-calc
+  - sd.request-flow.warm-connection-savings
+  request-flow-check-3-v2:
+  - sd.request-flow.shrinking-timeouts
+  request-flow-check-4-v2:
+  - sd.request-flow.idempotency-key-retries
+  - sd.request-flow.deadline-propagation
+  - sd.request-flow.retry-multiplication
+  request-flow-fire-1-v2:
+  - sd.request-flow.edge-tls-termination-benefit
+  - sd.request-flow.edge-warm-origin-connection
+  request-flow-fire-2-v2:
+  - sd.request-flow.optional-call-small-budget
+  request-flow-fire-3-v2:
+  - sd.request-flow.server-latency-hides-setup
+  request-flow-fire-4-v2:
+  - sd.request-flow.retry-multiplication
+  request-flow-fire-5-v2:
+  - sd.request-flow.edge-generic-checks
+  - sd.request-flow.validate-and-constrain-at-db
+  request-flow:b11:
+  - sd.request-flow.request-hop-sequence
+  request-flow:b13:
+  - sd.request-flow.timeout-unknown-outcome
+  - sd.request-flow.idempotency-key-retries
+  - sd.request-flow.deadline-propagation
+  request-flow:b3:
+  - sd.request-flow.cold-request-cost-calc
+  - sd.request-flow.edge-tls-termination-benefit
+  request-flow:b4:
+  - sd.request-flow.server-latency-hides-setup
+  request-flow:b6:
+  - sd.request-flow.edge-generic-checks
+  - sd.request-flow.authz-in-owning-service
+  - sd.request-flow.validate-and-constrain-at-db
+  request-flow:b8:
+  - sd.request-flow.timeout-double-charge
+  - sd.request-flow.shrinking-timeouts
+  request-flow:b9:
+  - sd.request-flow.retry-multiplication
+  - sd.request-flow.optional-call-small-budget
+  - sd.request-flow.shrinking-timeouts

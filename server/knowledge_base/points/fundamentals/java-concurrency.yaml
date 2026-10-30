@@ -1,0 +1,212 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: java-concurrency
+source_hash: b5223e5bf13e0b1b
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.java-concurrency.three-concurrency-problems
+  subtopic: Three separate problems
+  kind: principle
+  claim: Concurrency bugs split into visibility (does another thread see a write), atomicity (is a compound action indivisible) and ordering (compiler and CPU reordering), and each has its own fix.
+  prompt: What three separate kinds of problem cause concurrency bugs in Java?
+  objectives:
+  - 0
+- id: fundamentals.java-concurrency.visibility-without-happens-before
+  subtopic: Three separate problems
+  kind: mechanism
+  claim: Without a happens-before edge, a thread may never see another thread's write, because the JIT may hoist a non-volatile read out of a loop. Declaring the flag volatile fixes it.
+  prompt: Why can a loop on a non-volatile stop flag run forever in production under the JIT?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - fundamentals.java-concurrency.three-concurrency-problems
+- id: fundamentals.java-concurrency.volatile-not-atomic
+  subtopic: Three separate problems
+  kind: principle
+  claim: volatile gives visibility and ordering for single reads and writes but does not make compound actions such as count++ atomic, since two threads can read the same value and both write value+1.
+  prompt: Why does volatile not make count++ thread-safe?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-concurrency.three-concurrency-problems
+- id: fundamentals.java-concurrency.atomicity-tools
+  subtopic: Three separate problems
+  kind: fact
+  claim: Atomicity of compound actions comes from locks, AtomicLong/LongAdder, or ConcurrentHashMap.compute.
+  prompt: Which tools make a read-modify-write action atomic in Java?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-concurrency.three-concurrency-problems
+- id: fundamentals.java-concurrency.happens-before-definition
+  subtopic: Happens-before
+  kind: principle
+  claim: If action X happens-before Y, then Y sees X's effects, and the edges are transitive, so writing fields and then a volatile flag safely publishes those fields to a reader who reads the flag.
+  prompt: What does happens-before guarantee, and why does a volatile flag publish earlier writes?
+  objectives:
+  - 1
+- id: fundamentals.java-concurrency.happens-before-edges
+  subtopic: Happens-before
+  kind: fact
+  claim: 'Common happens-before edges are: program order, monitor unlock to later lock, volatile write to later read, Thread.start and join, concurrent collection put to take, and task actions to future.get(). Sleeping or timing creates none.'
+  prompt: Which common actions create happens-before edges, and does Thread.sleep?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-concurrency.happens-before-definition
+- id: fundamentals.java-concurrency.double-checked-locking-volatile
+  subtopic: Happens-before
+  kind: mechanism
+  claim: Double-checked locking needs the instance field to be volatile, otherwise the reference can be assigned before construction is visible and another thread sees a partly initialised object. The holder idiom is a simpler lazy, thread-safe alternative.
+  prompt: Why must the instance field in double-checked locking be volatile, and what is a simpler alternative?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-concurrency.happens-before-edges
+- id: fundamentals.java-concurrency.hashmap-not-thread-safe
+  subtopic: Happens-before
+  kind: principle
+  claim: A plain HashMap mutated by many threads can lose entries or corrupt its buckets; use ConcurrentHashMap.
+  prompt: What goes wrong with a shared plain HashMap written by many threads?
+  objectives:
+  - 0
+- id: fundamentals.java-concurrency.synchronized-vs-reentrantlock
+  subtopic: Locks, atomics and concurrent collections
+  kind: tradeoff
+  claim: synchronized is the simple reentrant default released automatically; ReentrantLock adds tryLock with timeout, interruptible waits, fairness and multiple Conditions but must be unlocked in finally.
+  prompt: When would you choose ReentrantLock over synchronized?
+  objectives:
+  - 0
+- id: fundamentals.java-concurrency.readwrite-stamped-lock
+  subtopic: Locks, atomics and concurrent collections
+  kind: fact
+  claim: ReadWriteLock and StampedLock suit many readers and rare writers; StampedLock offers optimistic reads but is not reentrant.
+  prompt: What is StampedLock good for and what is its caveat?
+  objectives: []
+- id: fundamentals.java-concurrency.longadder-vs-atomiclong
+  subtopic: Locks, atomics and concurrent collections
+  kind: tradeoff
+  claim: AtomicLong uses compare-and-set; under heavy contention LongAdder spreads updates across cells and is much faster for counters that are read rarely.
+  prompt: When is LongAdder better than AtomicLong?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-concurrency.atomicity-tools
+- id: fundamentals.java-concurrency.concurrenthashmap-behaviour
+  subtopic: Locks, atomics and concurrent collections
+  kind: fact
+  claim: ConcurrentHashMap locks per bin, computeIfAbsent is atomic per key, and size() is only an estimate under concurrent updates.
+  prompt: What does ConcurrentHashMap guarantee for computeIfAbsent and size()?
+  objectives: []
+- id: fundamentals.java-concurrency.lock-ordering-deadlock
+  subtopic: Locks, atomics and concurrent collections
+  kind: procedure
+  claim: Deadlock needs four conditions and breaking any one prevents it; in practice acquire locks in a global order (e.g. lower account id first) or use tryLock with timeout and back-off.
+  prompt: How do you prevent deadlock when two accounts each have a lock?
+  objectives: []
+- id: fundamentals.java-concurrency.lock-for-multi-variable-invariants
+  subtopic: Locks, atomics and concurrent collections
+  kind: principle
+  claim: When an invariant spans several variables or steps, a single atomic cannot cover it and you need a lock.
+  prompt: When do you need a lock rather than volatile or an atomic?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-concurrency.atomicity-tools
+- id: fundamentals.java-concurrency.pool-growth-rule
+  subtopic: Executors and back-pressure
+  kind: mechanism
+  claim: A ThreadPoolExecutor only grows past its core size when the queue refuses a task, so with an unbounded queue the max size is never used and the backlog grows until memory runs out.
+  prompt: When does a ThreadPoolExecutor create threads beyond its core size, and what follows from an unbounded queue?
+  objectives:
+  - 2
+- id: fundamentals.java-concurrency.pool-sizing-formula
+  subtopic: Executors and back-pressure
+  kind: procedure
+  claim: CPU-bound pools want about one thread per core; blocking I/O pools want cores × (1 + wait time / compute time).
+  prompt: How do you size a thread pool for CPU-bound work and for blocking I/O work?
+  objectives:
+  - 2
+- id: fundamentals.java-concurrency.bounded-queue-rejection-policy
+  subtopic: Executors and back-pressure
+  kind: tradeoff
+  claim: Bound the queue and choose a rejection policy; CallerRunsPolicy slows the producer, giving natural back-pressure.
+  prompt: How do you get back-pressure from a thread pool?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-concurrency.pool-growth-rule
+- id: fundamentals.java-concurrency.completablefuture-common-pool
+  subtopic: CompletableFuture and virtual threads
+  kind: principle
+  claim: Async CompletableFuture stages without an explicit executor run on the common ForkJoinPool, which is sized for CPU work, so blocking calls there starve other users; pass your own executor.
+  prompt: Where does supplyAsync run without an executor, and why is blocking there a problem?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-concurrency.pool-sizing-formula
+- id: fundamentals.java-concurrency.completablefuture-exceptions
+  subtopic: CompletableFuture and virtual threads
+  kind: mechanism
+  claim: Exceptions travel down a CompletableFuture chain until handled by exceptionally or handle; if nothing handles them the failure is silent.
+  prompt: What happens to an exception in a CompletableFuture chain that nothing handles?
+  objectives: []
+- id: fundamentals.java-concurrency.virtual-threads-model
+  subtopic: CompletableFuture and virtual threads
+  kind: mechanism
+  claim: Virtual threads (Java 21) are mounted on a few carrier threads and unmount when blocked on I/O, so simple blocking code can serve a million concurrent requests, but CPU-bound work is not faster.
+  prompt: What do virtual threads change, and what do they not improve?
+  objectives:
+  - 3
+- id: fundamentals.java-concurrency.virtual-thread-pinning
+  subtopic: CompletableFuture and virtual threads
+  kind: mechanism
+  claim: Blocking inside synchronized (before JDK 24) or in native code pins a virtual thread to its carrier, which cannot run other virtual threads meanwhile; use ReentrantLock around blocking calls on JDK 21 to 23.
+  prompt: What pins a virtual thread to its carrier thread?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-concurrency.virtual-threads-model
+- id: fundamentals.java-concurrency.virtual-threads-no-pooling
+  subtopic: CompletableFuture and virtual threads
+  kind: principle
+  claim: Do not pool virtual threads; create one per task and limit concurrency with a semaphore.
+  prompt: How should you manage and limit virtual threads?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-concurrency.virtual-threads-model
+items:
+  java-concurrency-check-1-v2:
+  - fundamentals.java-concurrency.volatile-not-atomic
+  - fundamentals.java-concurrency.atomicity-tools
+  java-concurrency-check-2-v2:
+  - fundamentals.java-concurrency.happens-before-edges
+  - fundamentals.java-concurrency.happens-before-definition
+  java-concurrency-check-3-v2:
+  - fundamentals.java-concurrency.pool-growth-rule
+  java-concurrency-fire-1-v2:
+  - fundamentals.java-concurrency.longadder-vs-atomiclong
+  java-concurrency-fire-2-v2:
+  - fundamentals.java-concurrency.lock-ordering-deadlock
+  java-concurrency-fire-3-v2:
+  - fundamentals.java-concurrency.virtual-thread-pinning
+  java-concurrency-fire-4-v2:
+  - fundamentals.java-concurrency.completablefuture-common-pool
+  java-concurrency:b1:
+  - fundamentals.java-concurrency.double-checked-locking-volatile
+  - fundamentals.java-concurrency.hashmap-not-thread-safe
+  java-concurrency:b3:
+  - fundamentals.java-concurrency.pool-growth-rule
+  - fundamentals.java-concurrency.bounded-queue-rejection-policy
+  java-concurrency:b5:
+  - fundamentals.java-concurrency.volatile-not-atomic
+  - fundamentals.java-concurrency.lock-for-multi-variable-invariants
+  - fundamentals.java-concurrency.atomicity-tools

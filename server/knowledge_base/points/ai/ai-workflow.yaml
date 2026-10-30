@@ -1,0 +1,197 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: ai-workflow
+source_hash: 73e4deebf7f4bab3
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.ai-workflow.delegation-test-checkability-cost
+  subtopic: What to delegate
+  kind: principle
+  claim: Decide what to delegate to an agent by how easy the work is to check and how costly it is to get wrong.
+  prompt: What two questions decide whether a task is suitable to hand to a coding agent?
+  objectives:
+  - 0
+- id: ai.ai-workflow.delegate-checkable-mechanical-work
+  subtopic: What to delegate
+  kind: tradeoff
+  claim: Delegate well-specified, low-risk work that is easy to verify, such as tests for existing code, mechanical migrations, scaffolding and first-draft scripts, and review the diff.
+  prompt: Which kinds of task are good candidates for full delegation to an agent?
+  objectives:
+  - 0
+  requires:
+  - ai.ai-workflow.delegation-test-checkability-cost
+- id: ai.ai-workflow.keep-subtle-high-stakes-yours
+  subtopic: What to delegate
+  kind: tradeoff
+  claim: Do subtle, high-stakes logic (concurrency, money) yourself and use the AI to review your fix or write stress tests.
+  prompt: How should you use AI on subtle, high-stakes code such as a concurrency bug in a payments ledger?
+  objectives:
+  - 0
+  requires:
+  - ai.ai-workflow.delegation-test-checkability-cost
+- id: ai.ai-workflow.keep-decisions-and-accountability
+  subtopic: What to delegate
+  kind: principle
+  claim: Design decisions and judgement calls you are accountable for, such as architecture choices or customer communication about an incident, stay with you; AI can list options but the call is yours.
+  prompt: Why should choices like queue versus cron job stay with you rather than the agent?
+  objectives:
+  - 0
+  requires:
+  - ai.ai-workflow.delegation-test-checkability-cost
+- id: ai.ai-workflow.context-quality-drives-output
+  subtopic: Context is the job
+  kind: principle
+  claim: An agent only knows what is in its context window, so most bad output comes from missing or noisy context rather than a weak model.
+  prompt: What is the most common cause of bad agent output?
+  objectives:
+  - 1
+- id: ai.ai-workflow.project-instructions-file
+  subtopic: Context is the job
+  kind: fact
+  claim: A project instructions file (CLAUDE.md, AGENTS.md, rules file) holds build and test commands, conventions and things never to touch; short and specific beats long and generic.
+  prompt: What belongs in a project instructions file for an agent?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-workflow.context-quality-drives-output
+- id: ai.ai-workflow.point-dont-search
+  subtopic: Context is the job
+  kind: procedure
+  claim: Name the relevant files and functions and paste the failing test output or stack trace, rather than leaving the agent to search.
+  prompt: How should you point an agent at the code a task involves?
+  objectives:
+  - 1
+  same_as: ai.ai-debugging.give-context-deliberately
+- id: ai.ai-workflow.failing-test-as-spec
+  subtopic: Context is the job
+  kind: principle
+  claim: A failing test is the most precise prompt because it is both the spec and the check of done.
+  prompt: Why is a failing test the best input for getting an agent to fix a bug?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-coding-round.reproduce-with-test
+- id: ai.ai-workflow.plan-before-edit
+  subtopic: Context is the job
+  kind: procedure
+  claim: For anything beyond a few lines, ask for a plan first and correct it before the agent edits, because plans are cheap to review and diffs are not.
+  prompt: Why ask an agent for a plan before it edits code?
+  objectives:
+  - 1
+- id: ai.ai-workflow.fresh-context-per-task
+  subtopic: Context is the job
+  kind: mechanism
+  claim: Long sessions accumulate stale context, so start fresh or summarise for new tasks; sub-agents can do side research and return only a summary.
+  prompt: Why start a new session for a new task, and how can sub-agents help?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-workflow.context-quality-drives-output
+- id: ai.ai-workflow.small-committed-diffs
+  subtopic: Guardrails
+  kind: principle
+  claim: Keep diffs small and commit often so each change is easy to review and revert.
+  prompt: Why keep agent changes small and commit often?
+  objectives:
+  - 1
+  - 2
+- id: ai.ai-workflow.least-privilege-permissions
+  subtopic: Guardrails
+  kind: principle
+  claim: Run agents read-only by default, require approval for commands that change things, keep production credentials out of their environment, and use sandboxes or containers for autonomous runs; limits live in configuration, not the prompt.
+  prompt: How do you stop a coding agent running destructive commands?
+  objectives:
+  - 2
+- id: ai.ai-workflow.prompt-injection-lethal-trifecta
+  subtopic: Guardrails
+  kind: principle
+  claim: An agent reading untrusted content (issues, web pages, dependency code) can be prompt-injected, so never give one agent private data, untrusted content and a way to send data out together.
+  prompt: Which three capabilities should not be combined in one agent, and why?
+  objectives:
+  - 2
+- id: ai.ai-workflow.review-as-author-of-record
+  subtopic: Guardrails
+  kind: principle
+  claim: 'Review agent output like a colleague''s PR: you are the author of record, and if you cannot explain a line it does not ship; run the tests yourself rather than trusting its report.'
+  prompt: What standard should you apply when reviewing agent-written code?
+  objectives:
+  - 2
+- id: ai.ai-workflow.measure-impact
+  subtopic: Guardrails
+  kind: principle
+  claim: Measure whether AI saved time and whether defect rates changed; 'it feels faster' is a weak answer.
+  prompt: What evidence should back a claim that AI improves your work?
+  objectives:
+  - 2
+  - 3
+- id: ai.ai-workflow.strong-answer-anatomy
+  subtopic: Answering the question
+  kind: procedure
+  claim: A strong answer names tools and a concrete workflow, what is delegated and kept and why, how context is given, the guardrails, a real example with an outcome, and a failure mode with what changed afterwards.
+  prompt: What should a strong answer to 'How do you use AI?' contain?
+  objectives:
+  - 3
+  requires:
+  - ai.ai-workflow.delegation-test-checkability-cost
+- id: ai.ai-workflow.weak-answer-patterns
+  subtopic: Answering the question
+  kind: principle
+  claim: Weak answers are vague enthusiasm with no example, process or failure mode, or blanket distrust such as 'I don't use it'.
+  prompt: What makes an answer to 'How do you use AI?' weak?
+  objectives:
+  - 3
+- id: ai.ai-workflow.use-real-example-with-numbers
+  subtopic: Answering the question
+  kind: principle
+  claim: Use your own real shipped example and know its numbers rather than borrowing one.
+  prompt: What kind of example should you give when asked how you use AI?
+  objectives:
+  - 3
+- id: ai.ai-workflow.failure-story-and-fix
+  subtopic: Answering the question
+  kind: procedure
+  claim: When asked about AI causing problems, give one real brief failure (e.g. an agent loosening a test assertion to pass) and the change it prompted, such as a rule that tests are never edited to pass.
+  prompt: How should you answer 'Has an AI tool ever caused you a problem?'
+  objectives:
+  - 3
+  requires:
+  - ai.ai-debugging.editing-the-test
+- id: ai.ai-workflow.avoid-skill-atrophy
+  subtopic: Answering the question
+  kind: tradeoff
+  claim: Counter skill atrophy by deliberately keeping hard work (design, subtle debugging, review) yours and practising without AI; the tool speeds typing but judgement must stay sharp.
+  prompt: How do you answer the worry that AI will erode your skills?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - ai.ai-workflow.keep-subtle-high-stakes-yours
+items:
+  ai-workflow-check-1-v2:
+  - ai.ai-workflow.failing-test-as-spec
+  - ai.ai-workflow.point-dont-search
+  ai-workflow-check-2-v2:
+  - ai.ai-workflow.keep-subtle-high-stakes-yours
+  ai-workflow-check-3-v2:
+  - ai.ai-workflow.least-privilege-permissions
+  ai-workflow-fire-1-v2:
+  - ai.ai-workflow.plan-before-edit
+  ai-workflow-fire-2-v2:
+  - ai.ai-workflow.project-instructions-file
+  ai-workflow-fire-3-v2:
+  - ai.ai-workflow.weak-answer-patterns
+  - ai.ai-workflow.strong-answer-anatomy
+  ai-workflow:b1:
+  - ai.ai-workflow.delegate-checkable-mechanical-work
+  - ai.ai-workflow.keep-decisions-and-accountability
+  - ai.ai-workflow.keep-subtle-high-stakes-yours
+  ai-workflow:b3:
+  - ai.ai-workflow.review-as-author-of-record
+  - ai.ai-workflow.plan-before-edit
+  - ai.ai-workflow.failing-test-as-spec

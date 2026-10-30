@@ -1,0 +1,243 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: recovery
+source_hash: 823a8e2048e07b22
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.recovery.untested-backups-dont-exist
+  subtopic: Introduction
+  kind: principle
+  claim: Backups fail silently, so an untested backup cannot be relied on. GitLab had five backup and replication mechanisms and none produced a usable recent copy when a wrong delete removed about 300 GB.
+  prompt: Why can a team with several backup mechanisms still lose data in an incident?
+  objectives:
+  - 1
+  - 3
+- id: sd.recovery.rpo-definition
+  subtopic: Two numbers define recovery
+  kind: fact
+  claim: RPO (recovery point objective) is the maximum acceptable data loss, measured as time before the failure, for example at most 5 minutes of orders.
+  prompt: What does RPO measure?
+  objectives:
+  - 0
+- id: sd.recovery.rto-definition
+  subtopic: Two numbers define recovery
+  kind: fact
+  claim: RTO (recovery time objective) is the maximum acceptable time to restore service, for example checkout back within 30 minutes.
+  prompt: What does RTO measure?
+  objectives:
+  - 0
+- id: sd.recovery.targets-from-business-impact
+  subtopic: Two numbers define recovery
+  kind: principle
+  claim: 'RPO and RTO come from business impact (cost of downtime, and of lost data in refunds, legal exposure and trust), and differ per data class: payments may need RPO near 0 while analytics clickstreams tolerate a day.'
+  prompt: How should RPO and RTO targets be chosen, and should they be the same for all data?
+  objectives:
+  - 0
+  requires:
+  - sd.recovery.rpo-definition
+  - sd.recovery.rto-definition
+- id: sd.recovery.snapshot-interval-sets-rpo
+  subtopic: Two numbers define recovery
+  kind: mechanism
+  claim: With snapshots alone, worst-case RPO equals the snapshot interval, and RTO is the full restore time.
+  prompt: With only periodic snapshots, what sets the worst-case RPO?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.recovery.rpo-definition
+  - sd.recovery.rto-definition
+- id: sd.recovery.wal-archiving-rpo
+  subtopic: Two numbers define recovery
+  kind: mechanism
+  claim: Continuous log archiving lets you restore the latest snapshot and replay logs, so RPO falls to the unshipped log (for example 5 minutes with 5-minute shipping) regardless of snapshot interval. A longer snapshot interval still lengthens RTO through log replay.
+  prompt: 'Daily snapshots plus log segments shipped every 5 minutes: what is worst-case RPO, and what does the snapshot interval still affect?'
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.recovery.snapshot-interval-sets-rpo
+  - sd.storage-engines.wal-durable-commit
+- id: sd.recovery.restore-time-grows-with-size
+  subtopic: Two numbers define recovery
+  kind: principle
+  claim: Restore time grows with data size and restore throughput, so very large databases need faster paths such as warm standbys, storage-snapshot restores or restoring critical data first.
+  prompt: Why can a 5 TB database miss a 60-minute RTO, and what helps?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.recovery.rto-definition
+- id: sd.recovery.pitr-mechanism
+  subtopic: Backups that actually work
+  kind: mechanism
+  claim: Point-in-time recovery combines periodic base backups with a continuous write-ahead log archive, so you can restore to any moment, such as one second before a bad DELETE.
+  prompt: How does point-in-time recovery work?
+  objectives:
+  - 1
+  requires:
+  - sd.recovery.wal-archiving-rpo
+- id: sd.recovery.replicas-are-not-backups
+  subtopic: Backups that actually work
+  kind: principle
+  claim: Replicas, RAID and multi-region replication copy deletes and bad changes (or only guard against hardware failure), so they do not protect against accidental deletion. Snapshots, PITR and delayed replicas do, because they keep history independent of the live copy.
+  prompt: Which mechanisms protect against an accidental DROP TABLE, and why do replicas not?
+  objectives:
+  - 1
+  same_as: sd.replication.replicas-not-backups
+- id: sd.recovery.three-two-one-rule
+  subtopic: Backups that actually work
+  kind: fact
+  claim: 'The 3-2-1 rule: at least 3 copies, on 2 different kinds of storage, with 1 off-site.'
+  prompt: What does the 3-2-1 backup rule require?
+  objectives:
+  - 1
+- id: sd.recovery.immutable-backups
+  subtopic: Backups that actually work
+  kind: principle
+  claim: Keep at least one backup immutable or air-gapped (object lock, separate account) so ransomware or a compromised admin cannot delete or encrypt it along with production.
+  prompt: Why should one backup copy be immutable or in a separate account?
+  objectives:
+  - 1
+  requires:
+  - sd.recovery.three-two-one-rule
+- id: sd.recovery.monitor-backups
+  subtopic: Backups that actually work
+  kind: procedure
+  claim: 'Monitor backups like production: alert on failed jobs, suspiciously small backup files and a lagging WAL archive.'
+  prompt: What should you alert on for backups?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.recovery.untested-backups-dont-exist
+- id: sd.recovery.restore-drills-measure-rto
+  subtopic: Backups that actually work
+  kind: procedure
+  claim: Automate regular restores into a scratch environment with integrity checks and row counts, and record the duration. That measured time is the real RTO, which untested estimates usually understate.
+  prompt: How do you find out your true RTO?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.recovery.untested-backups-dont-exist
+  - sd.recovery.rto-definition
+- id: sd.recovery.dr-strategy-ladder
+  subtopic: Disaster recovery strategies
+  kind: tradeoff
+  claim: 'DR strategies trade cost for speed: backup and restore (hours to a day RTO, lowest cost), pilot light (core data replicated, compute minimal; tens of minutes to hours), warm standby (scaled-down full stack; minutes), active-active (near-zero RTO and RPO, highest cost and complexity).'
+  prompt: Compare the four DR strategies by RTO and cost.
+  objectives:
+  - 2
+  requires:
+  - sd.recovery.rto-definition
+  - sd.recovery.rpo-definition
+- id: sd.recovery.dr-strategy-selection
+  subtopic: Disaster recovery strategies
+  kind: tradeoff
+  claim: 'Choose the cheapest tier that meets the RTO and RPO: a warehouse tolerating a day suits backup and restore, a 1-hour RTO suits pilot light, a 10-minute RTO suits warm standby, and invisible regional outages need active-active.'
+  prompt: Which DR tier fits a payments API with a 10-minute RTO, and how do you choose in general?
+  objectives:
+  - 2
+  requires:
+  - sd.recovery.dr-strategy-ladder
+- id: sd.recovery.active-active-data-cost
+  subtopic: Disaster recovery strategies
+  kind: tradeoff
+  claim: Active-active gives near-zero RTO and RPO because every region already serves traffic, but it needs multi-region write and conflict-handling design.
+  prompt: What is the hidden cost of active-active DR?
+  objectives:
+  - 2
+  requires:
+  - sd.recovery.dr-strategy-ladder
+  - sd.replication.multi-leader-conflicts
+- id: sd.recovery.recovery-procedure-order
+  subtopic: The restore is a procedure, not a command
+  kind: procedure
+  claim: 'Recover from a bad deletion by: stop the damage, choose the recovery point just before the incident, restore to a separate instance with log replay, verify the data, copy back or cut over, then reconcile dependent systems.'
+  prompt: In what order do you recover from an accidental bulk deletion?
+  objectives:
+  - 3
+  requires:
+  - sd.recovery.pitr-mechanism
+- id: sd.recovery.restore-beside-production
+  subtopic: The restore is a procedure, not a command
+  kind: principle
+  claim: Restore beside production and copy back only the lost rows, rather than restoring over production, which discards all legitimate writes since the recovery point.
+  prompt: Why restore to a new instance rather than over production?
+  objectives:
+  - 3
+  requires:
+  - sd.recovery.recovery-procedure-order
+- id: sd.recovery.reconcile-other-systems
+  subtopic: The restore is a procedure, not a command
+  kind: mechanism
+  claim: 'A restored database is older than its neighbours: caches, search indexes, object storage and downstream consumers saw later changes. Invalidate derived data and replay events idempotently.'
+  prompt: What must be done about other systems after restoring one database?
+  objectives:
+  - 3
+  requires:
+  - sd.recovery.recovery-procedure-order
+- id: sd.recovery.destructive-migration-safeguards
+  subtopic: The restore is a procedure, not a command
+  kind: procedure
+  claim: Make destructive migrations safer by dry-running and checking affected row counts, adding guards that abort if more rows than expected change, running in stoppable batches, and confirming a restorable backup or PITR window first.
+  prompt: What safeguards make destructive data migrations safer?
+  objectives:
+  - 3
+- id: sd.recovery.game-days
+  subtopic: The restore is a procedure, not a command
+  kind: principle
+  claim: Run game days (restore backups, fail over a region, kill dependencies) to measure actual RTO and RPO and fix what breaks, since recovery practised only in real incidents is slow and error-prone.
+  prompt: Why run game days for recovery?
+  objectives:
+  - 3
+  requires:
+  - sd.recovery.restore-drills-measure-rto
+items:
+  recovery-check-1-v2:
+  - sd.recovery.rpo-definition
+  - sd.recovery.rto-definition
+  recovery-check-2-v2:
+  - sd.recovery.replicas-are-not-backups
+  - sd.recovery.pitr-mechanism
+  recovery-check-3-v2:
+  - sd.recovery.recovery-procedure-order
+  - sd.recovery.restore-beside-production
+  recovery-check-4-v2:
+  - sd.recovery.untested-backups-dont-exist
+  - sd.recovery.restore-drills-measure-rto
+  recovery-fire-1-v2:
+  - sd.recovery.wal-archiving-rpo
+  recovery-fire-2-v2:
+  - sd.recovery.dr-strategy-ladder
+  - sd.recovery.active-active-data-cost
+  recovery-fire-3-v2:
+  - sd.recovery.immutable-backups
+  recovery-fire-4-v2:
+  - sd.recovery.reconcile-other-systems
+  recovery-fire-5-v2:
+  - sd.recovery.destructive-migration-safeguards
+  recovery:b12:
+  - sd.recovery.rpo-definition
+  - sd.recovery.snapshot-interval-sets-rpo
+  - sd.recovery.wal-archiving-rpo
+  recovery:b3:
+  - sd.recovery.replicas-are-not-backups
+  recovery:b4:
+  - sd.recovery.wal-archiving-rpo
+  recovery:b6:
+  - sd.recovery.dr-strategy-selection
+  recovery:b8:
+  - sd.recovery.recovery-procedure-order
+  - sd.recovery.reconcile-other-systems
+  recovery:b9:
+  - sd.recovery.restore-beside-production
+  - sd.recovery.reconcile-other-systems
+  - sd.recovery.recovery-procedure-order

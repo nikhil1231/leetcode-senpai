@@ -1,0 +1,191 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: embeddings
+source_hash: 9c498867342d59dd
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.embeddings.embedding-model-vectors
+  subtopic: Embeddings
+  kind: mechanism
+  claim: An embedding model turns text into a fixed-length vector (often 384 to 3,072 dimensions), trained so that texts with similar meaning sit close together even when they share no words.
+  prompt: What does an embedding model produce, and what does training make true of similar texts?
+  objectives:
+  - 0
+- id: ai.embeddings.cosine-similarity
+  subtopic: Embeddings
+  kind: fact
+  claim: Cosine similarity measures the angle between two vectors and is the usual similarity measure for embeddings; use the metric the model was trained for.
+  prompt: Which similarity measure is usually used to compare embeddings, and which metric should you choose?
+  objectives:
+  - 0
+  requires:
+  - ai.embeddings.embedding-model-vectors
+- id: ai.embeddings.normalisation-dot-product
+  subtopic: Embeddings
+  kind: principle
+  claim: If vectors are normalised to unit length, cosine similarity equals the dot product, which is cheaper to compute.
+  prompt: What does normalising vectors to unit length let you do in place of cosine similarity?
+  objectives:
+  - 0
+  requires:
+  - ai.embeddings.cosine-similarity
+- id: ai.embeddings.same-model-query-document
+  subtopic: Embeddings
+  kind: principle
+  claim: Embed queries and documents with the same model, and note that some models expect different prefixes or instructions for queries and documents.
+  prompt: What must you keep consistent between query and document embeddings?
+  objectives:
+  - 0
+  requires:
+  - ai.embeddings.embedding-model-vectors
+- id: ai.embeddings.re-embed-on-model-change
+  subtopic: Embeddings
+  kind: principle
+  claim: Vectors from different models aren't comparable, so changing the embedding model means re-embedding everything; store the model name and version with every vector.
+  prompt: What must you do with existing vectors when you change embedding model, and what should you store with each vector?
+  objectives:
+  - 0
+  requires:
+  - ai.embeddings.embedding-model-vectors
+- id: ai.embeddings.topic-over-detail
+  subtopic: Embeddings
+  kind: principle
+  claim: Embeddings capture the topic of a passage much better than its precise details.
+  prompt: What do embeddings capture well, and what poorly?
+  objectives:
+  - 3
+  requires:
+  - ai.embeddings.embedding-model-vectors
+- id: ai.embeddings.exact-search-cost
+  subtopic: Searching at scale
+  kind: fact
+  claim: Exact nearest-neighbour search compares the query with every vector, costing O(N × d); fine for 100k vectors but too slow for 100 million at low latency.
+  prompt: Why does exact nearest-neighbour search fail to scale?
+  objectives:
+  - 1
+  requires:
+  - ai.embeddings.cosine-similarity
+- id: ai.embeddings.ann-tradeoff
+  subtopic: Searching at scale
+  kind: tradeoff
+  claim: Approximate nearest neighbour indexes trade a little recall for big speed-ups over exact search.
+  prompt: What do ANN indexes trade away, and for what gain?
+  objectives:
+  - 1
+  requires:
+  - ai.embeddings.exact-search-cost
+- id: ai.embeddings.hnsw-mechanism
+  subtopic: Searching at scale
+  kind: mechanism
+  claim: 'HNSW is a layered proximity graph: search starts in the sparse top layer and greedily descends toward the query. It is fast and high-recall but memory-hungry, with costly builds and deletes.'
+  prompt: How does HNSW search work, and what are its costs?
+  objectives:
+  - 1
+  requires:
+  - ai.embeddings.ann-tradeoff
+- id: ai.embeddings.hnsw-ef-search
+  subtopic: Searching at scale
+  kind: tradeoff
+  claim: In HNSW, M is the number of links per node and ef_search is the candidate list size; raising ef_search improves recall but slows queries.
+  prompt: What does raising HNSW's ef_search do, and what does M control?
+  objectives:
+  - 1
+  requires:
+  - ai.embeddings.hnsw-mechanism
+- id: ai.embeddings.ivf-pq
+  subtopic: Searching at scale
+  kind: mechanism
+  claim: IVF clusters the vectors and searches only the nearest few clusters (nprobe), using less memory than HNSW with recall depending on nprobe; it is often combined with product quantisation to compress vectors.
+  prompt: How does IVF work, and what does product quantisation add?
+  objectives:
+  - 1
+  requires:
+  - ai.embeddings.ann-tradeoff
+- id: ai.embeddings.vector-storage-choice
+  subtopic: Searching at scale
+  kind: tradeoff
+  claim: At moderate scale, keeping vectors beside the rows they describe (pgvector, OpenSearch, Elasticsearch) makes filtering, transactions and deletes far simpler than a dedicated vector database.
+  prompt: Why keep vectors alongside your data at moderate scale?
+  objectives:
+  - 1
+- id: ai.embeddings.vector-memory-estimate
+  subtopic: Searching at scale
+  kind: procedure
+  claim: A float32 vector takes 4 bytes per dimension, so 1,536 dimensions is about 6 KB; 6 GB of RAM holds about a million such vectors before index overhead.
+  prompt: How do you estimate how many float32 vectors fit in a given amount of RAM?
+  objectives:
+  - 1
+  requires:
+  - ai.embeddings.embedding-model-vectors
+- id: ai.embeddings.bm25-vs-vector-strengths
+  subtopic: Hybrid search and re-ranking
+  kind: tradeoff
+  claim: BM25 is good at exact terms, rare words and identifiers; vectors are good at paraphrases and synonyms, so use both.
+  prompt: Which query types suit BM25, and which suit vector search?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - ai.embeddings.topic-over-detail
+- id: ai.embeddings.exact-identifier-failure
+  subtopic: Hybrid search and re-ranking
+  kind: mechanism
+  claim: Embeddings place near-identical identifiers (error codes, SKUs, names) close together as 'some error code', so pure vector search doesn't reliably match exact identifiers; hybrid search with BM25 is the fix.
+  prompt: Why does pure vector search fail on an exact error code, and what fixes it?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - ai.embeddings.topic-over-detail
+- id: ai.embeddings.reciprocal-rank-fusion
+  subtopic: Hybrid search and re-ranking
+  kind: procedure
+  claim: Reciprocal rank fusion scores each document as the sum of 1/(k + rank) across result lists, avoiding comparison of incompatible scores.
+  prompt: How does reciprocal rank fusion merge result lists?
+  objectives:
+  - 2
+  requires:
+  - ai.embeddings.bm25-vs-vector-strengths
+- id: ai.embeddings.filters-inside-search
+  subtopic: Hybrid search and re-ranking
+  kind: principle
+  claim: Metadata filters must run inside or before the ANN search; post-filtering can leave too few results or leak documents the user can't see. Tenant and ACL filters are a security boundary, not a ranking signal.
+  prompt: Why shouldn't tenant filters be applied after ANN search?
+  objectives:
+  - 2
+  requires:
+  - ai.embeddings.ann-tradeoff
+- id: ai.embeddings.cross-encoder-rerank
+  subtopic: Hybrid search and re-ranking
+  kind: tradeoff
+  claim: A cross-encoder reads query and candidate together and scores more accurately than a bi-encoder but is too slow for everything, so retrieve 50 to 100 candidates cheaply, re-rank, and keep the top 5 to 10.
+  prompt: Why use a cross-encoder only to re-rank a small candidate set?
+  objectives:
+  - 2
+items:
+  embeddings-check-1-v2:
+  - ai.embeddings.normalisation-dot-product
+  embeddings-check-2-v2:
+  - ai.embeddings.re-embed-on-model-change
+  embeddings-check-3-v2:
+  - ai.embeddings.hnsw-ef-search
+  embeddings-fire-1-v2:
+  - ai.embeddings.cross-encoder-rerank
+  embeddings-fire-2-v2:
+  - ai.embeddings.filters-inside-search
+  embeddings-fire-3-v2:
+  - ai.embeddings.reciprocal-rank-fusion
+  embeddings-fire-4-v2:
+  - ai.embeddings.vector-memory-estimate
+  embeddings:b1:
+  - ai.embeddings.exact-identifier-failure
+  - ai.embeddings.bm25-vs-vector-strengths
+  embeddings:b3:
+  - ai.embeddings.bm25-vs-vector-strengths
+  - ai.embeddings.exact-identifier-failure

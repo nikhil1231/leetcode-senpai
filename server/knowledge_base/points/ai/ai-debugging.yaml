@@ -1,0 +1,219 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: ai-debugging
+source_hash: 150fb04187da63c4
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.ai-debugging.debug-loop-five-steps
+  subtopic: The loop, with the AI in the middle
+  kind: procedure
+  claim: The debugging loop is reproduce, localise, hypothesise, fix small, verify, with the AI assisting but you steering each step.
+  prompt: What are the five steps of the AI-assisted debugging loop, in order?
+  objectives:
+  - 0
+- id: ai.ai-debugging.reproduce-first
+  subtopic: The loop, with the AI in the middle
+  kind: procedure
+  claim: 'Start by reproducing the bug: run the failing test or report steps, or write the smallest input that shows it, and predict the output before running.'
+  prompt: What should you do first when handed a bug report, before involving the AI?
+  objectives:
+  - 0
+  same_as: ai.ai-coding-round.reproduce-with-test
+- id: ai.ai-debugging.verify-ai-summaries
+  subtopic: The loop, with the AI in the middle
+  kind: principle
+  claim: An AI explanation of unfamiliar code is useful for reading faster, but check it against the code before acting on it, because a confident wrong summary sends you to the wrong file.
+  prompt: The AI summarises an unfamiliar module for you. What should you do before relying on the summary, and why?
+  objectives:
+  - 0
+- id: ai.ai-debugging.hypothesise-out-loud
+  subtopic: The loop, with the AI in the middle
+  kind: procedure
+  claim: State a specific hypothesis aloud before prompting, such as 'three attempts produced two calls, so the range is off by one'.
+  prompt: What should you do between localising the bug and asking the AI for a fix?
+  objectives:
+  - 0
+  requires:
+  - ai.ai-debugging.reproduce-first
+- id: ai.ai-debugging.fix-small-decided
+  subtopic: The loop, with the AI in the middle
+  kind: principle
+  claim: Ask the AI for one change you have already decided on, or type it yourself if it is a single line.
+  prompt: What kind of change should you ask the AI to make during the fix step?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - ai.ai-debugging.hypothesise-out-loud
+- id: ai.ai-debugging.verify-full-checks
+  subtopic: The loop, with the AI in the middle
+  kind: procedure
+  claim: Verify with your new test, the full suite, and the edge cases the visible tests miss, then re-read the bug report to confirm every complaint is fixed.
+  prompt: What does the verify step cover beyond the failing test?
+  objectives:
+  - 0
+  requires:
+  - ai.ai-coding-round.green-tests-not-proof
+- id: ai.ai-debugging.good-prompt-anatomy
+  subtopic: Prompts that keep you in control
+  kind: principle
+  claim: A good prompt names the file and function, states expected behaviour (ideally as a test), gives the constraint, and asks for a small, reviewable change.
+  prompt: What should a good debugging prompt contain?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-coding-round.small-specific-prompts
+- id: ai.ai-debugging.weak-prompts
+  subtopic: Prompts that keep you in control
+  kind: principle
+  claim: Vague prompts like 'fix it', pasting the whole problem, or 'rewrite the whole file' give large unreviewable diffs, hide the original bug and hand over the design.
+  prompt: Why are prompts like 'fix it' or 'rewrite the whole file' poor in an interview?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-debugging.good-prompt-anatomy
+- id: ai.ai-debugging.good-ai-uses
+  subtopic: Prompts that keep you in control
+  kind: tradeoff
+  claim: Good uses of the AI are explaining code step by step (then checked) and writing a test that pins a boundary; the design and the diagnosis stay yours.
+  prompt: Which kinds of request make good use of the AI while you stay in control?
+  objectives:
+  - 1
+- id: ai.ai-debugging.give-context-deliberately
+  subtopic: Prompts that keep you in control
+  kind: procedure
+  claim: 'Give context deliberately: failing test output, the relevant function and the violated spec line; with an agent, point it at specific files and ask for a plan before edits larger than a few lines.'
+  prompt: How should you supply context to an AI agent when debugging?
+  objectives:
+  - 1
+- id: ai.ai-debugging.symptom-fix
+  subtopic: How AI patches go wrong
+  kind: fact
+  claim: A symptom fix handles the failing test's case but not the cause, so a sibling case still fails.
+  prompt: What is a symptom fix in an AI patch?
+  objectives:
+  - 2
+- id: ai.ai-debugging.one-side-boundary
+  subtopic: How AI patches go wrong
+  kind: fact
+  claim: The AI may flip only one of two boundary comparisons (< vs <=) because the test covers only that side.
+  prompt: What is the 'one side of a boundary' patch failure?
+  objectives:
+  - 2
+- id: ai.ai-debugging.swallowed-error
+  subtopic: How AI patches go wrong
+  kind: fact
+  claim: Wrapping the failure in try/except and returning a default makes the bug silent rather than fixed; let it raise.
+  prompt: Why is wrapping a failing call in try/except and returning a default a bad fix?
+  objectives:
+  - 2
+- id: ai.ai-debugging.special-casing-test
+  subtopic: How AI patches go wrong
+  kind: fact
+  claim: Special-casing the test means adding literals or hard-coded values that match the fixture, such as 'if total == 100', instead of fixing the logic.
+  prompt: What is it called when a patch hard-codes the exact value from the failing test?
+  objectives:
+  - 2
+- id: ai.ai-debugging.editing-the-test
+  subtopic: How AI patches go wrong
+  kind: fact
+  claim: The AI may change the assertion rather than the code, making the test pass without fixing the bug.
+  prompt: What patch failure involves the test rather than the code being changed?
+  objectives:
+  - 2
+- id: ai.ai-debugging.scope-creep
+  subtopic: How AI patches go wrong
+  kind: fact
+  claim: Scope creep is reformatting, renaming or refactoring uninvolved code, which hides the real change in the diff.
+  prompt: What is scope creep in an AI diff and why does it matter?
+  objectives:
+  - 2
+- id: ai.ai-debugging.invented-api
+  subtopic: How AI patches go wrong
+  kind: fact
+  claim: An invented API is a call to a method or option that does not exist in this codebase or library version.
+  prompt: What is an invented API in an AI patch?
+  objectives:
+  - 2
+- id: ai.ai-debugging.unjustified-optimisation
+  subtopic: How AI patches go wrong
+  kind: fact
+  claim: An unjustified optimisation is faster but comes with no argument that it is still correct.
+  prompt: What is wrong with an AI optimisation that has no correctness argument?
+  objectives:
+  - 2
+- id: ai.ai-debugging.ai-cannot-verify
+  subtopic: How AI patches go wrong
+  kind: principle
+  claim: The AI's claim to have run tests is not verification; a chat-only assistant cannot execute code, so only checks you ran count, and you should report only those.
+  prompt: A chat-only AI says 'I ran the tests and they pass'. How should you treat that?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - ai.ai-coding-round.verification-signal
+- id: ai.ai-debugging.stop-after-two-prompts
+  subtopic: When to stop prompting
+  kind: principle
+  claim: 'If two prompts have not got you closer, stop: either your hypothesis is wrong (return to reproducing) or the change is small enough to type yourself.'
+  prompt: What should you do when two prompts haven't helped?
+  objectives:
+  - 3
+  requires:
+  - ai.ai-debugging.hypothesise-out-loud
+- id: ai.ai-debugging.typing-by-hand-is-fine
+  subtopic: When to stop prompting
+  kind: tradeoff
+  claim: Typing a one-line fix by hand while explaining it is a strong signal, while long prompt-and-retry loops are a common way to lose a round.
+  prompt: Is typing a small fix yourself a failure to use the AI in an interview?
+  objectives:
+  - 3
+  requires:
+  - ai.ai-debugging.fix-small-decided
+- id: ai.ai-debugging.interview-walkthrough
+  subtopic: Introduction
+  kind: procedure
+  claim: 'A strong walkthrough: read the report and code, reproduce with a test, state a hypothesis, give the AI bounded tasks with context, review the diff line by line against the spec, then verify fully.'
+  prompt: How would you outline your approach to a bug-fix round where you may use the AI freely?
+  objectives:
+  - 0
+  - 1
+  - 2
+  same_as: ai.ai-coding-round.strong-workflow-order
+items:
+  ai-debugging-check-1-v2:
+  - ai.ai-debugging.good-prompt-anatomy
+  - ai.ai-debugging.weak-prompts
+  ai-debugging-check-2-v2:
+  - ai.ai-debugging.swallowed-error
+  ai-debugging-check-3-v2:
+  - ai.ai-debugging.verify-ai-summaries
+  ai-debugging-fire-1-v2:
+  - ai.ai-debugging.special-casing-test
+  ai-debugging-fire-2-v2:
+  - ai.ai-debugging.stop-after-two-prompts
+  - ai.ai-debugging.typing-by-hand-is-fine
+  ai-debugging-fire-3-v2:
+  - ai.ai-debugging.ai-cannot-verify
+  ai-debugging-fire-4-v2:
+  - ai.ai-debugging.reproduce-first
+  ai-debugging:b1:
+  - ai.ai-debugging.weak-prompts
+  - ai.ai-debugging.good-prompt-anatomy
+  - ai.ai-debugging.good-ai-uses
+  ai-debugging:b3:
+  - ai.ai-debugging.swallowed-error
+  - ai.ai-debugging.special-casing-test
+  - ai.ai-debugging.symptom-fix
+  ai-debugging:b4:
+  - ai.ai-debugging.ai-cannot-verify
+  ai-debugging:b6:
+  - ai.ai-debugging.interview-walkthrough
+  - ai.ai-debugging.verify-full-checks
+  - ai.ai-debugging.hypothesise-out-loud

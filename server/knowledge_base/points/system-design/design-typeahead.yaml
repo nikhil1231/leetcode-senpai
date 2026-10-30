@@ -1,0 +1,211 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-typeahead
+source_hash: cb867d84117ad9c6
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-typeahead.precompute-top-k-per-prefix
+  subtopic: Introduction
+  kind: principle
+  claim: Top-k completions must be precomputed offline, because aggregating counts over all queries matching a prefix on every keystroke is far too slow for a 50 ms budget at 200k requests/s; serving becomes a single lookup.
+  prompt: Why are top-k completions per prefix computed ahead of time rather than at request time?
+  objectives:
+  - 0
+- id: sd.design-typeahead.typeahead-requirements
+  subtopic: 1. Requirements
+  kind: fact
+  claim: 'Typical targets: top 10 completions ranked by popularity with a recency boost, 200k requests/s at peak, p99 under 50 ms, trends within about an hour, and removals within minutes.'
+  prompt: What are the typical latency, throughput, freshness and removal targets for a typeahead system?
+  objectives:
+  - 0
+  - 3
+- id: sd.design-typeahead.request-rate-from-typing
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: Request rate = searches per day × debounced requests per search ÷ 86,400; 5B searches at about 4 requests each is 20B/day, roughly 230k requests/s on average.
+  prompt: How do you estimate typeahead request rate from daily searches and typing behaviour?
+  objectives:
+  - 0
+  requires:
+  - sd.estimates.daily-to-per-second
+- id: sd.design-typeahead.prefix-table-memory-size
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: 300M distinct prefixes × 10 suggestion IDs of 8 bytes is about 24 GB, plus query strings, which fits in memory across a few replicated shards.
+  prompt: Roughly how much memory does a table of 300M prefixes with 10 eight-byte IDs each need?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.design-typeahead.precompute-top-k-per-prefix
+- id: sd.design-typeahead.short-prefixes-edge-cache
+  subtopic: 2. Estimates
+  kind: principle
+  claim: One- and two-character prefixes are requested constantly and are identical for all users, so they suit edge and browser caching (with a short TTL).
+  prompt: Which prefixes are best cached at the edge and browser, and why?
+  objectives:
+  - 2
+- id: sd.design-typeahead.trie-top-k-tradeoff
+  subtopic: 3. Data structure
+  kind: tradeoff
+  claim: Storing top-k at every trie node gives O(prefix length) lookups with no subtree traversal, at the cost of extra memory and rebuild work.
+  prompt: What does storing top-k at each trie node buy, and what does it cost?
+  objectives:
+  - 1
+  requires:
+  - sd.design-typeahead.precompute-top-k-per-prefix
+- id: sd.design-typeahead.trie-vs-prefix-table
+  subtopic: 3. Data structure
+  kind: tradeoff
+  claim: A trie shares paths to save space and supports walking, while a flat prefix → top-10 table in a key-value store is simpler to shard and replicate, so many large systems use the table.
+  prompt: When would you choose a flat prefix table over a trie?
+  objectives:
+  - 1
+  requires:
+  - sd.design-typeahead.trie-top-k-tradeoff
+- id: sd.design-typeahead.offline-build-pipeline
+  subtopic: 3. Data structure
+  kind: procedure
+  claim: 'Pipeline order: collect logs, normalise and drop spam/blocked terms, aggregate counts with time decay, keep top-k per prefix, then write a versioned table and switch serving atomically.'
+  prompt: What are the stages of the offline pipeline that builds the suggestion table?
+  objectives:
+  - 1
+  requires:
+  - sd.design-typeahead.precompute-top-k-per-prefix
+- id: sd.design-typeahead.versioned-atomic-deploy
+  subtopic: 3. Data structure
+  kind: principle
+  claim: Deploy a new table as a validated new version and switch serving atomically, keeping the old version for instant rollback, rather than overwriting live data.
+  prompt: How should a rebuilt suggestion table be deployed safely?
+  objectives:
+  - 1
+  requires:
+  - sd.design-typeahead.offline-build-pipeline
+- id: sd.design-typeahead.batch-plus-streaming-freshness
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: A daily batch table gives the baseline, while a streaming job over a recent window (about an hour, with decay) produces trending deltas merged at serve time without rebuilding the table.
+  prompt: How can trends surface within an hour when the baseline is rebuilt daily?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.design-typeahead.offline-build-pipeline
+- id: sd.design-typeahead.batch-staleness-worst-case
+  subtopic: 5. Deep dives
+  kind: procedure
+  claim: 'Worst-case staleness of a batch table is rebuild interval plus build time: 24 h + 3 h = 27 h.'
+  prompt: A table rebuilds every 24 hours and takes 3 hours to build and load; what is the worst-case data age?
+  objectives:
+  - 1
+  requires:
+  - sd.design-typeahead.offline-build-pipeline
+- id: sd.design-typeahead.hash-prefix-sharding
+  subtopic: 5. Deep dives
+  kind: tradeoff
+  claim: Sharding by first letter creates hot shards (s, t versus x); sharding by a hash of the prefix balances storage and load, while edge and client caches absorb the hottest short prefixes.
+  prompt: Why shard by hash of prefix rather than first letter?
+  objectives:
+  - 2
+  requires:
+  - sd.partitioning.hash-partitioning-tradeoffs
+- id: sd.design-typeahead.client-debounce-and-cache
+  subtopic: 4. Serving
+  kind: mechanism
+  claim: The client waits about 100 ms after typing stops before sending and reuses cached results for prefixes already fetched, removing most intermediate requests.
+  prompt: How does the client reduce suggestion request load?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.design-typeahead.request-rate-from-typing
+- id: sd.design-typeahead.serving-path-layers
+  subtopic: 4. Serving
+  kind: procedure
+  claim: A keystroke goes client (debounce, local cache), then CDN for short prefixes, then the suggest service reading top-k from an in-memory shard, merging trends and personal history, and finally blocklist filtering.
+  prompt: What is the order of layers a keystroke passes through when serving suggestions?
+  objectives:
+  - 2
+  requires:
+  - sd.design-typeahead.client-debounce-and-cache
+  - sd.design-typeahead.short-prefixes-edge-cache
+- id: sd.design-typeahead.serve-time-blocklist
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: Urgent removals use a blocklist filter applied at serve time and pushed to all servers within minutes, plus edge cache purges; the next build drops the item permanently.
+  prompt: How do you remove an offensive suggestion within minutes?
+  objectives:
+  - 3
+- id: sd.design-typeahead.personal-history-merge
+  subtopic: 4. Serving
+  kind: mechanism
+  claim: For signed-in users, the service merges their recent matching searches from a small per-user store into each response, placing them first.
+  prompt: How is light personalisation added to suggestions?
+  objectives:
+  - 3
+- id: sd.design-typeahead.no-live-log-query
+  subtopic: 5. Deep dives
+  kind: principle
+  claim: Running LIKE with GROUP BY over the search log per keystroke, and returning results without a blocklist filter, breaks both the latency target and the removal requirement.
+  prompt: What is wrong with a handler that queries the search log with LIKE and GROUP BY on each request?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.design-typeahead.precompute-top-k-per-prefix
+items:
+  design-typeahead-check-1-v2:
+  - sd.design-typeahead.precompute-top-k-per-prefix
+  design-typeahead-check-2-v2:
+  - sd.design-typeahead.request-rate-from-typing
+  design-typeahead-check-3-v2:
+  - sd.design-typeahead.client-debounce-and-cache
+  - sd.design-typeahead.short-prefixes-edge-cache
+  design-typeahead-check-4-v2:
+  - sd.design-typeahead.serve-time-blocklist
+  design-typeahead-fire-1-v2:
+  - sd.design-typeahead.batch-plus-streaming-freshness
+  design-typeahead-fire-2-v2:
+  - sd.design-typeahead.hash-prefix-sharding
+  design-typeahead-fire-3-v2:
+  - sd.design-typeahead.trie-top-k-tradeoff
+  design-typeahead-fire-4-v2:
+  - sd.design-typeahead.versioned-atomic-deploy
+  design-typeahead-fire-5-v2:
+  - sd.design-typeahead.serving-path-layers
+  design-typeahead:b1:
+  - sd.design-typeahead.precompute-top-k-per-prefix
+  design-typeahead:b10:
+  - sd.design-typeahead.batch-staleness-worst-case
+  - sd.design-typeahead.batch-plus-streaming-freshness
+  design-typeahead:b11:
+  - sd.design-typeahead.no-live-log-query
+  - sd.design-typeahead.serve-time-blocklist
+  design-typeahead:b13:
+  - sd.design-typeahead.offline-build-pipeline
+  - sd.design-typeahead.serve-time-blocklist
+  - sd.design-typeahead.serving-path-layers
+  design-typeahead:b14:
+  - sd.design-typeahead.no-live-log-query
+  - sd.design-typeahead.precompute-top-k-per-prefix
+  design-typeahead:b3:
+  - sd.design-typeahead.request-rate-from-typing
+  - sd.design-typeahead.prefix-table-memory-size
+  - sd.design-typeahead.short-prefixes-edge-cache
+  design-typeahead:b5:
+  - sd.design-typeahead.offline-build-pipeline
+  - sd.design-typeahead.versioned-atomic-deploy
+  design-typeahead:b8:
+  - sd.design-typeahead.serving-path-layers
+  - sd.design-typeahead.client-debounce-and-cache
+  - sd.design-typeahead.personal-history-merge
+  redesign:design-typeahead:
+  - sd.design-typeahead.precompute-top-k-per-prefix
+  - sd.design-typeahead.serving-path-layers
+  - sd.design-typeahead.serve-time-blocklist

@@ -1,0 +1,201 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: replication
+source_hash: d1dac4a058e01026
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.replication.async-ack-loss-window
+  subtopic: Leader–follower replication
+  kind: mechanism
+  claim: With asynchronous replication the leader acknowledges after its local commit, so if it crashes before shipping the write, the promoted follower lacks a write the client was told succeeded; the loss window is the replication lag.
+  prompt: How can asynchronous replication lose a write the client was told was committed?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.storage-engines.wal-feeds-replication
+- id: sd.replication.semi-sync-one-replica
+  subtopic: Leader–follower replication
+  kind: tradeoff
+  claim: Semi-synchronous replication acks once at least one replica has the write, so an up-to-date promoted replica loses no acknowledged write, at the cost of one extra round trip per commit to the nearest replica.
+  prompt: What does waiting for one replica before acknowledging buy, and what does it cost?
+  objectives:
+  - 0
+  requires:
+  - sd.replication.async-ack-loss-window
+- id: sd.replication.full-sync-availability-cost
+  subtopic: Leader–follower replication
+  kind: tradeoff
+  claim: Waiting for all replicas ties every write to the slowest one and stalls writes if any required replica is unreachable; waiting for one replica or a majority bounds latency and tolerates a replica failure.
+  prompt: Why is fully synchronous replication to every replica usually avoided?
+  objectives:
+  - 0
+  requires:
+  - sd.replication.semi-sync-one-replica
+- id: sd.replication.typical-production-replication-mix
+  subtopic: Leader–follower replication
+  kind: principle
+  claim: A common production choice is to wait for one replica in another zone (or a majority) and replicate asynchronously to farther-away replicas.
+  prompt: What replication arrangement do most production systems use across zones and regions?
+  objectives:
+  - 0
+  requires:
+  - sd.replication.semi-sync-one-replica
+  - sd.replication.full-sync-availability-cost
+- id: sd.replication.read-your-writes-anomaly
+  subtopic: Lag and the anomalies it causes
+  kind: fact
+  claim: A read-your-writes violation is when a user updates data, refreshes and sees the old version because the read hit a lagging replica.
+  prompt: What is a read-your-writes violation?
+  objectives:
+  - 1
+  requires:
+  - sd.replication.async-ack-loss-window
+- id: sd.replication.non-monotonic-reads-anomaly
+  subtopic: Lag and the anomalies it causes
+  kind: fact
+  claim: Non-monotonic reads happen when successive reads hit replicas with different lag, so data seen once disappears on a later read.
+  prompt: What anomaly makes a comment appear, then vanish on refresh, then reappear?
+  objectives:
+  - 1
+  requires:
+  - sd.replication.async-ack-loss-window
+- id: sd.replication.read-your-writes-routing
+  subtopic: Lag and the anomalies it causes
+  kind: procedure
+  claim: Fix read-your-writes by reading a user's own recent or self-edited data from the leader, or by tracking the LSN of their last write and reading only from replicas that have applied it.
+  prompt: How can you give users read-your-writes consistency with async replicas?
+  objectives:
+  - 1
+  requires:
+  - sd.replication.read-your-writes-anomaly
+- id: sd.replication.sticky-replica-monotonic
+  subtopic: Lag and the anomalies it causes
+  kind: mechanism
+  claim: Pinning a session to one replica (or routing by log position) gives monotonic reads, so reads never go backwards in time.
+  prompt: How do you prevent reads going backwards in time within a session?
+  objectives:
+  - 1
+  requires:
+  - sd.replication.non-monotonic-reads-anomaly
+- id: sd.replication.lsn-routing-vs-time-window
+  subtopic: Lag and the anomalies it causes
+  kind: tradeoff
+  claim: LSN-based routing is correct and cheap because only reads that would be stale go to the leader; time windows are simpler but break silently when lag exceeds the window, and always reading from the leader wastes replicas.
+  prompt: Why prefer LSN-based routing over a fixed time window for read-your-writes?
+  objectives:
+  - 1
+  requires:
+  - sd.replication.read-your-writes-routing
+- id: sd.replication.failure-detection-timeouts
+  subtopic: Failover
+  kind: tradeoff
+  claim: Failover detection relies on timeouts that cannot tell a dead leader from a slow or partitioned one; too short triggers failover on a GC pause, too long prolongs downtime.
+  prompt: Why is failure detection for automatic failover hard?
+  objectives:
+  - 2
+- id: sd.replication.promotion-may-lack-writes
+  subtopic: Failover
+  kind: principle
+  claim: Promote the most up-to-date replica, but with async replication even it may lack the latest acknowledged writes, and the returning old leader holds writes that must be discarded or reconciled.
+  prompt: Why can the best replica still be a bad choice for promotion with async replication?
+  objectives:
+  - 2
+  requires:
+  - sd.replication.async-ack-loss-window
+  - sd.replication.failure-detection-timeouts
+- id: sd.replication.split-brain-definition
+  subtopic: Failover
+  kind: fact
+  claim: Split brain is two nodes both acting as leader and accepting writes, so data diverges; it typically follows a partition plus failover when the old leader is alive but cut off.
+  prompt: What is split brain and when does it arise?
+  objectives:
+  - 2
+  requires:
+  - sd.replication.failure-detection-timeouts
+  - sd.replication.promotion-may-lack-writes
+- id: sd.replication.fencing-mechanisms
+  subtopic: Failover
+  kind: mechanism
+  claim: Fencing stops a deposed leader through leases that expire unless renewed via a majority, fencing tokens (monotonic epochs) that storage checks to reject older epochs, or forced isolation (STONITH).
+  prompt: How do you stop an old leader accepting writes after failover?
+  objectives:
+  - 2
+  requires:
+  - sd.replication.split-brain-definition
+- id: sd.replication.multi-leader-conflicts
+  subtopic: Multi-leader and leaderless
+  kind: tradeoff
+  claim: Multi-leader gives local low-latency writes and regional autonomy but creates conflicts; last-write-wins silently drops an edit, so use CRDTs, application merges or a home region per record.
+  prompt: What is the main problem with multi-leader replication and how is it handled?
+  objectives:
+  - 3
+  requires:
+  - sd.replication.async-ack-loss-window
+- id: sd.replication.leaderless-fit
+  subtopic: Multi-leader and leaderless
+  kind: tradeoff
+  claim: Leaderless (Dynamo-style) replication uses quorum reads and writes across replicas and suits always-writable workloads like shopping carts that tolerate occasional merges.
+  prompt: When does leaderless quorum replication fit?
+  objectives:
+  - 3
+  requires:
+  - sd.replication.multi-leader-conflicts
+- id: sd.replication.choose-replication-style
+  subtopic: Multi-leader and leaderless
+  kind: tradeoff
+  claim: Single-region strongly consistent ledgers fit leader–follower; offline-capable or multi-continent local-write apps fit multi-leader.
+  prompt: Which replication style suits a single-region ledger versus an offline-sync app?
+  objectives:
+  - 3
+  requires:
+  - sd.replication.multi-leader-conflicts
+  - sd.replication.leaderless-fit
+- id: sd.replication.replicas-not-backups
+  subtopic: Introduction
+  kind: principle
+  claim: 'Replicas protect against machine loss, not mistakes: DROP TABLE, bad migrations or ransomware replicate to all followers within milliseconds, so backups and point-in-time recovery are also needed.'
+  prompt: Why are replicas not a substitute for backups?
+  objectives:
+  - 3
+items:
+  replication-check-1-v2:
+  - sd.replication.async-ack-loss-window
+  replication-check-2-v2:
+  - sd.replication.read-your-writes-routing
+  replication-check-3-v2:
+  - sd.replication.split-brain-definition
+  replication-check-4-v2:
+  - sd.replication.replicas-not-backups
+  replication-fire-1-v2:
+  - sd.replication.semi-sync-one-replica
+  replication-fire-2-v2:
+  - sd.replication.multi-leader-conflicts
+  replication-fire-3-v2:
+  - sd.replication.fencing-mechanisms
+  replication-fire-4-v2:
+  - sd.replication.failure-detection-timeouts
+  - sd.replication.promotion-may-lack-writes
+  - sd.replication.split-brain-definition
+  replication-fire-5-v2:
+  - sd.replication.non-monotonic-reads-anomaly
+  - sd.replication.sticky-replica-monotonic
+  replication:b11:
+  - sd.replication.async-ack-loss-window
+  - sd.replication.semi-sync-one-replica
+  - sd.replication.fencing-mechanisms
+  replication:b5:
+  - sd.replication.async-ack-loss-window
+  - sd.replication.promotion-may-lack-writes
+  replication:b6:
+  - sd.replication.fencing-mechanisms
+  - sd.replication.split-brain-definition
+  replication:b8:
+  - sd.replication.choose-replication-style
+  - sd.replication.leaderless-fit
+  - sd.replication.multi-leader-conflicts

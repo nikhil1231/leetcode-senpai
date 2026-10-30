@@ -1,0 +1,209 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: overload
+source_hash: 6fb1de2337b5671c
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.overload.metastable-failure
+  subtopic: Introduction
+  kind: mechanism
+  claim: A metastable failure is an overloaded state that sustains itself (through retries, timeouts and cold caches) after the brief trigger has gone, and it only clears when load is deliberately reduced below capacity.
+  prompt: What is a metastable failure and how do you escape one?
+  objectives:
+  - 0
+  - 1
+- id: sd.overload.naive-overload-behaviour
+  subtopic: What overload looks like without defences
+  kind: mechanism
+  claim: Past capacity a naive server grows unbounded queues, works on requests nobody awaits, provokes retries, and exhausts memory, threads or connections so that it fails everything, including cheap requests.
+  prompt: What does a server with no defences do once load exceeds capacity?
+  objectives:
+  - 0
+- id: sd.overload.goodput-collapse
+  subtopic: What overload looks like without defences
+  kind: principle
+  claim: Under overload, goodput (throughput of useful work) collapses rather than plateauing, so the fix is to decide in advance what to reject and to reject it early and cheaply.
+  prompt: What happens to goodput when a naive server is overloaded, and what is the remedy?
+  objectives:
+  - 0
+  requires:
+  - sd.overload.naive-overload-behaviour
+- id: sd.overload.unbounded-queue-harm
+  subtopic: What overload looks like without defences
+  kind: mechanism
+  claim: 'An unbounded queue makes sustained overload worse: waits grow past client timeouts, so the server spends its capacity on requests nobody is waiting for while staying 100% busy.'
+  prompt: Why does an unbounded queue worsen sustained overload?
+  objectives:
+  - 0
+  requires:
+  - sd.service-quality.queueing-knee
+- id: sd.overload.bound-concurrency-and-queues
+  subtopic: Admission control and load shedding
+  kind: procedure
+  claim: Bound in-flight requests per instance and bound queues; a request that would wait longer than its deadline should get an immediate 503 or 429 with Retry-After rather than being queued.
+  prompt: How should a server treat a request that would wait longer than its deadline?
+  objectives:
+  - 1
+  requires:
+  - sd.overload.unbounded-queue-harm
+- id: sd.overload.shed-by-priority
+  subtopic: Admission control and load shedding
+  kind: principle
+  claim: 'Shed lower-value traffic first: recommendations before payment captures, anonymous browsing before logged-in checkout, batch before interactive.'
+  prompt: In what order should traffic be shed under overload?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.overload.goodput-collapse
+- id: sd.overload.shed-early
+  subtopic: Admission control and load shedding
+  kind: principle
+  claim: Shed load as early as possible, at the load balancer or edge before expensive work starts, so a rejection costs a fraction of a millisecond.
+  prompt: Where is the cheapest place to shed load?
+  objectives:
+  - 1
+  requires:
+  - sd.overload.goodput-collapse
+- id: sd.overload.propagate-deadlines
+  subtopic: Admission control and load shedding
+  kind: principle
+  claim: Drop requests whose caller's deadline has already passed (using propagated deadline headers), since finishing them is pure waste.
+  prompt: Why drop requests whose deadline has passed?
+  objectives:
+  - 1
+  requires:
+  - sd.request-flow.deadline-propagation
+- id: sd.overload.lifo-under-overload
+  subtopic: Admission control and load shedding
+  kind: tradeoff
+  claim: Serving some queues LIFO under overload helps because the newest requests are most likely to have clients still waiting, whereas FIFO serves the oldest, which have probably timed out.
+  prompt: Why might a queue be served LIFO instead of FIFO during overload?
+  objectives:
+  - 1
+  requires:
+  - sd.overload.unbounded-queue-harm
+- id: sd.overload.backpressure-definition
+  subtopic: Backpressure
+  kind: mechanism
+  claim: Backpressure propagates 'slow down' upstream (bounded blocking channels, TCP flow control, 429 with Retry-After, paused Kafka fetches) so the slowest component sets the pace instead of buffers growing until a crash.
+  prompt: What is backpressure and what goal does it serve?
+  objectives:
+  - 1
+- id: sd.overload.slow-dependency-thread-exhaustion
+  subtopic: Timeouts, circuit breakers and bulkheads
+  kind: mechanism
+  claim: When a dependency fails slowly, caller threads waiting on it get stuck and, if the pool is shared, the caller runs out of threads for everything else, including checkout.
+  prompt: What happens to a service with a single shared thread pool when one dependency hangs?
+  objectives:
+  - 2
+- id: sd.overload.timeouts-everywhere
+  subtopic: Timeouts, circuit breakers and bulkheads
+  kind: principle
+  claim: Every remote call needs a timeout that sits inside the caller's own deadline.
+  prompt: What timeout rule applies to remote calls?
+  objectives:
+  - 2
+  same_as: sd.request-flow.shrinking-timeouts
+- id: sd.overload.circuit-breaker-states
+  subtopic: Timeouts, circuit breakers and bulkheads
+  kind: mechanism
+  claim: A circuit breaker is closed while calls flow and failures are counted; past a failure threshold it opens and fails fast or uses a fallback; after a cool-off it goes half-open, and trial successes close it while failures reopen it.
+  prompt: What are a circuit breaker's states and transitions?
+  objectives:
+  - 2
+  requires:
+  - sd.overload.slow-dependency-thread-exhaustion
+- id: sd.overload.circuit-breaker-benefits
+  subtopic: Timeouts, circuit breakers and bulkheads
+  kind: principle
+  claim: A breaker lets the caller keep its threads and latency instead of paying the timeout on every request, and relieves the failing dependency of traffic and retries so it can recover.
+  prompt: Why does a circuit breaker help both the caller and the failing dependency?
+  objectives:
+  - 2
+  requires:
+  - sd.overload.circuit-breaker-states
+- id: sd.overload.bulkheads
+  subtopic: Timeouts, circuit breakers and bulkheads
+  kind: mechanism
+  claim: A bulkhead is a separate resource pool (threads, connections or concurrency limit) per dependency or workload, so a slow dependency exhausts only its own pool and not resources shared with others.
+  prompt: What is a bulkhead and what does it prevent?
+  objectives:
+  - 2
+  requires:
+  - sd.overload.slow-dependency-thread-exhaustion
+- id: sd.overload.optional-dependency-budget
+  subtopic: Timeouts, circuit breakers and bulkheads
+  kind: tradeoff
+  claim: Optional dependencies such as recommendations should get a short timeout, no retries, a circuit breaker and a fallback, never a long timeout with many retries.
+  prompt: How should calls to an optional dependency be configured?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.request-flow.optional-call-small-budget
+  - sd.overload.circuit-breaker-states
+- id: sd.overload.retry-discipline
+  subtopic: Timeouts, circuit breakers and bulkheads
+  kind: principle
+  claim: Retries multiply load on a struggling system, so clients should use jittered backoff and a retry budget rather than immediate repeated retries.
+  prompt: How should clients retry to avoid a retry storm?
+  objectives:
+  - 0
+  - 2
+  same_as: sd.service-quality.retries-amplify-outages
+- id: sd.overload.degradation-tiers
+  subtopic: Graceful degradation
+  kind: procedure
+  claim: 'Decide ahead which features are optional: keep checkout, payment and login serving, degrade product pages and search (cached or simplified), and turn off recommendations and analytics first.'
+  prompt: Which store features should be kept, degraded or turned off first under overload?
+  objectives:
+  - 3
+- id: sd.overload.degradation-flags
+  subtopic: Graceful degradation
+  kind: principle
+  claim: Implement degradation as feature flags that flip in seconds, ideally automatically on load or latency thresholds, and exercise them in game days; shedding 10% of optional work early beats failing 100% of requests late.
+  prompt: How should degradation paths be built and verified?
+  objectives:
+  - 3
+  requires:
+  - sd.overload.degradation-tiers
+items:
+  overload-check-1-v2:
+  - sd.overload.unbounded-queue-harm
+  overload-check-2-v2:
+  - sd.overload.circuit-breaker-states
+  overload-check-3-v2:
+  - sd.overload.bound-concurrency-and-queues
+  - sd.overload.shed-by-priority
+  - sd.overload.retry-discipline
+  overload-check-4-v2:
+  - sd.overload.bulkheads
+  overload-fire-1-v2:
+  - sd.overload.metastable-failure
+  overload-fire-2-v2:
+  - sd.overload.optional-dependency-budget
+  overload-fire-3-v2:
+  - sd.overload.shed-early
+  overload-fire-4-v2:
+  - sd.overload.lifo-under-overload
+  overload-fire-5-v2:
+  - sd.overload.degradation-tiers
+  overload:b10:
+  - sd.overload.circuit-breaker-states
+  - sd.overload.circuit-breaker-benefits
+  overload:b4:
+  - sd.overload.slow-dependency-thread-exhaustion
+  - sd.overload.bulkheads
+  overload:b6:
+  - sd.overload.degradation-tiers
+  overload:b8:
+  - sd.overload.bound-concurrency-and-queues
+  - sd.overload.optional-dependency-budget
+  - sd.overload.bulkheads

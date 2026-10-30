@@ -1,0 +1,198 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: python-runtime
+source_hash: c3d7401a0c5509da
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.python-runtime.gil-one-thread-bytecode
+  subtopic: The GIL
+  kind: mechanism
+  claim: CPython's Global Interpreter Lock lets only one thread execute Python bytecode at a time. A thread releases it when blocking on I/O, sleeping, or calling C code that releases it (NumPy, hashlib, compression), and the interpreter also switches threads every few milliseconds.
+  prompt: What does CPython's GIL restrict, and when is it released?
+  objectives:
+  - 0
+- id: fundamentals.python-runtime.threads-for-io-bound
+  subtopic: The GIL
+  kind: tradeoff
+  claim: Threads suit I/O-bound work such as HTTP calls and database queries, because waiting releases the GIL so other threads can run.
+  prompt: Why do threads work well for I/O-bound workloads despite the GIL?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.python-runtime.gil-one-thread-bytecode
+- id: fundamentals.python-runtime.processes-for-cpu-bound
+  subtopic: The GIL
+  kind: tradeoff
+  claim: Pure-Python CPU-bound work gets no speed-up from threads. Use multiprocessing or ProcessPoolExecutor (separate interpreters, each with its own GIL, arguments pickled), or move the hot loop into C or NumPy.
+  prompt: How do you use multiple cores for CPU-bound pure-Python work in standard CPython?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.python-runtime.gil-one-thread-bytecode
+- id: fundamentals.python-runtime.native-code-threads-ok
+  subtopic: The GIL
+  kind: principle
+  claim: When the heavy work runs in C that releases the GIL (for example a big pandas groupby), threads are fine. Measure before adding processes, which pay to pickle the data.
+  prompt: Why might threads suffice for a heavy pandas operation, and what do processes cost?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.python-runtime.gil-one-thread-bytecode
+- id: fundamentals.python-runtime.free-threaded-cpython
+  subtopic: The GIL
+  kind: fact
+  claim: Free-threaded CPython (3.13+, a separate python3.13t build) removes the GIL at some single-thread cost. It is emerging, not the default.
+  prompt: What is free-threaded CPython and how should you treat it?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.python-runtime.gil-one-thread-bytecode
+- id: fundamentals.python-runtime.gil-not-thread-safe
+  subtopic: The GIL
+  kind: principle
+  claim: 'The GIL does not make code thread-safe: x += 1 on a shared int is several bytecodes, and a thread switch can land between them.'
+  prompt: Why is x += 1 on a shared int unsafe across threads despite the GIL?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.python-runtime.gil-one-thread-bytecode
+  - fundamentals.java-concurrency.three-concurrency-problems
+- id: fundamentals.python-runtime.event-loop-cooperative
+  subtopic: asyncio
+  kind: mechanism
+  claim: asyncio runs coroutines on a single-threaded event loop, switching only at an await that would block. This is cheap (thousands of connections, no thread stacks) but cooperative, so it suits many idle or waiting connections.
+  prompt: How does asyncio schedule work, and why is it cheap?
+  objectives:
+  - 0
+  - 1
+- id: fundamentals.python-runtime.blocking-call-freezes-loop
+  subtopic: asyncio
+  kind: principle
+  claim: Any code that blocks without awaiting (requests.get, time.sleep, a synchronous DB driver, heavy JSON parsing, CPU loops) freezes every request on that event loop.
+  prompt: What happens to other requests when one coroutine makes a blocking call?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.python-runtime.event-loop-cooperative
+- id: fundamentals.python-runtime.offload-blocking-work
+  subtopic: asyncio
+  kind: procedure
+  claim: Fix blocking calls by using async libraries (httpx.AsyncClient, asyncpg), or offload with await asyncio.to_thread(fn), or run_in_executor with a process pool for CPU work. In FastAPI, a plain def endpoint runs in a thread pool.
+  prompt: How do you stop a blocking call from freezing an asyncio service?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.python-runtime.blocking-call-freezes-loop
+- id: fundamentals.python-runtime.gather-failure-behaviour
+  subtopic: asyncio
+  kind: mechanism
+  claim: asyncio.gather runs awaitables concurrently. Without return_exceptions=True the first failure propagates, but the other tasks keep running.
+  prompt: What happens to the other tasks when one gather task fails by default?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.python-runtime.event-loop-cooperative
+- id: fundamentals.python-runtime.taskgroup-structured-concurrency
+  subtopic: asyncio
+  kind: mechanism
+  claim: 'asyncio.TaskGroup (3.11+) gives structured concurrency: if one task fails, the others are cancelled.'
+  prompt: Which asyncio construct cancels sibling tasks when one fails?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.python-runtime.gather-failure-behaviour
+- id: fundamentals.python-runtime.keep-task-reference
+  subtopic: asyncio
+  kind: principle
+  claim: Keep a strong reference to tasks from create_task, because the loop holds only a weak reference and an unreferenced task can be garbage-collected mid-flight.
+  prompt: Why must you store the result of asyncio.create_task?
+  objectives:
+  - 1
+- id: fundamentals.python-runtime.semaphore-limit-concurrency
+  subtopic: asyncio
+  kind: procedure
+  claim: Limit concurrency with an asyncio.Semaphore, since an unbounded gather over 10,000 URLs opens 10,000 sockets.
+  prompt: How do you stop gather over thousands of URLs opening thousands of sockets?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.python-runtime.gather-failure-behaviour
+- id: fundamentals.python-runtime.refcount-and-cycle-collector
+  subtopic: Memory
+  kind: mechanism
+  claim: CPython frees most objects immediately when their reference count hits zero. Reference cycles never reach zero, so a generational cycle collector finds them periodically.
+  prompt: How does CPython reclaim ordinary objects versus reference cycles?
+  objectives:
+  - 2
+- id: fundamentals.python-runtime.common-leak-sources
+  subtopic: Memory
+  kind: fact
+  claim: Long-running services still leak through ever-growing module-level caches or dicts, lru_cache on methods (it holds self), closures capturing large objects, and listeners never removed.
+  prompt: Name things that leak in a Python service despite garbage collection.
+  objectives:
+  - 2
+  requires:
+  - fundamentals.python-runtime.refcount-and-cycle-collector
+- id: fundamentals.python-runtime.tracemalloc-find-allocations
+  subtopic: Memory
+  kind: fact
+  claim: tracemalloc shows where memory was allocated; comparing snapshots over time finds growing allocation sites.
+  prompt: Which tool finds where a growing Python service allocated its memory?
+  objectives:
+  - 2
+- id: fundamentals.python-runtime.mutable-default-args
+  subtopic: Language traps interviewers like
+  kind: mechanism
+  claim: Default arguments are created once at definition time, so def f(x, acc=[]) shares one list across calls. Use acc=None and create the list inside.
+  prompt: Why does a mutable default argument persist between calls, and what is the fix?
+  objectives:
+  - 3
+- id: fundamentals.python-runtime.late-binding-closures
+  subtopic: Language traps interviewers like
+  kind: mechanism
+  claim: 'In [lambda: i for i in range(3)] every lambda returns 2, because i is looked up when called. Bind it with lambda i=i: i.'
+  prompt: Why do all lambdas in a loop-built list return the last value, and how do you fix it?
+  objectives:
+  - 3
+- id: fundamentals.python-runtime.is-vs-equals
+  subtopic: Language traps interviewers like
+  kind: principle
+  claim: is compares identity, not value. Small ints and some strings are cached, so is can pass in tests and fail in production; use == for value.
+  prompt: Why is using is to compare values risky in Python?
+  objectives:
+  - 3
+- id: fundamentals.python-runtime.shallow-copy-nested
+  subtopic: Language traps interviewers like
+  kind: fact
+  claim: list(a) or a.copy() copies only the outer list, so nested lists remain shared.
+  prompt: What does a.copy() share with the original list?
+  objectives:
+  - 3
+items:
+  python-runtime-check-1-v2:
+  - fundamentals.python-runtime.processes-for-cpu-bound
+  python-runtime-check-2-v2:
+  - fundamentals.python-runtime.blocking-call-freezes-loop
+  python-runtime-check-3-v2:
+  - fundamentals.python-runtime.mutable-default-args
+  python-runtime-fire-1-v2:
+  - fundamentals.python-runtime.taskgroup-structured-concurrency
+  python-runtime-fire-2-v2:
+  - fundamentals.python-runtime.refcount-and-cycle-collector
+  python-runtime-fire-3-v2:
+  - fundamentals.python-runtime.keep-task-reference
+  python-runtime-fire-4-v2:
+  - fundamentals.python-runtime.tracemalloc-find-allocations
+  python-runtime:b1:
+  - fundamentals.python-runtime.threads-for-io-bound
+  - fundamentals.python-runtime.processes-for-cpu-bound
+  - fundamentals.python-runtime.native-code-threads-ok
+  python-runtime:b3:
+  - fundamentals.python-runtime.blocking-call-freezes-loop
+  - fundamentals.python-runtime.offload-blocking-work

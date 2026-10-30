@@ -1,0 +1,227 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: consistent-hashing
+source_hash: 3675b08ddb0dc8ed
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.consistent-hashing.modulo-remaps-most-keys
+  subtopic: Why modulo fails
+  kind: mechanism
+  claim: With hash(key) % N, going from N to N+1 servers keeps only about 1/(N+1) of keys in place, so roughly N/(N+1) of keys move (about 91% from 10 to 11 servers).
+  prompt: Roughly what fraction of keys move when hash(key) % N goes from N to N+1 servers?
+  objectives:
+  - 0
+  same_as: sd.partitioning.hash-mod-n-remaps
+- id: sd.consistent-hashing.resize-cache-stampede
+  subtopic: Introduction
+  kind: principle
+  claim: Mass remapping on resize turns cache hits into misses at once, so the backing database receives far more load than it was sized for and can collapse.
+  prompt: Why can adding one cache server under modulo hashing take down the database behind it?
+  objectives:
+  - 0
+  requires:
+  - sd.consistent-hashing.modulo-remaps-most-keys
+  - sd.cache-aside.db-load-is-miss-rate
+- id: sd.consistent-hashing.ring-clockwise-ownership
+  subtopic: The ring
+  kind: mechanism
+  claim: Servers and keys are hashed onto the same circular hash space (for example 0 to 2^32-1), and a key belongs to the first server found clockwise from it.
+  prompt: How does a consistent-hashing ring decide which server owns a key?
+  objectives:
+  - 0
+- id: sd.consistent-hashing.ring-add-moves-one-over-n
+  subtopic: The ring
+  kind: fact
+  claim: Adding a server to the ring takes over only the keys between it and its counter-clockwise neighbour, about 1/N of all keys, so the rest keep their owners.
+  prompt: Which keys move when a server joins a ring, and about what fraction is that?
+  objectives:
+  - 0
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+- id: sd.consistent-hashing.ring-remove-to-clockwise-neighbour
+  subtopic: The ring
+  kind: mechanism
+  claim: Removing a server hands its keys to its clockwise neighbour (next points) and nothing else moves.
+  prompt: What happens to keys when a server is removed from the ring?
+  objectives:
+  - 0
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+- id: sd.consistent-hashing.estimate-keys-moved
+  subtopic: The ring
+  kind: procedure
+  claim: To estimate movement when adding an equal server to a balanced ring of N servers, take total keys divided by N+1 (100M keys, 20 to 21 servers moves about 4.8M, versus about 95M under modulo).
+  prompt: How do you estimate how many keys move when you add one equal server to a balanced ring?
+  objectives:
+  - 0
+  requires:
+  - sd.consistent-hashing.ring-add-moves-one-over-n
+  - sd.consistent-hashing.modulo-remaps-most-keys
+- id: sd.consistent-hashing.single-point-imbalance
+  subtopic: Virtual nodes
+  kind: principle
+  claim: With one point per server, arc sizes vary widely, so some servers own about twice their fair share and a failure dumps all its load on one neighbour.
+  prompt: Why is a ring with one point per server poorly balanced?
+  objectives:
+  - 1
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+  - sd.consistent-hashing.ring-remove-to-clockwise-neighbour
+- id: sd.consistent-hashing.vnodes-balance-ownership
+  subtopic: Virtual nodes
+  kind: mechanism
+  claim: Placing each server at many points (around 100-200 virtual nodes) makes every server's total arc close to 1/N.
+  prompt: How do virtual nodes even out load, and roughly how many are used per server?
+  objectives:
+  - 1
+  requires:
+  - sd.consistent-hashing.single-point-imbalance
+- id: sd.consistent-hashing.vnodes-spread-changes
+  subtopic: Virtual nodes
+  kind: mechanism
+  claim: With virtual nodes a joining server takes small slices from every existing server, and a failed server's load spreads across all survivors rather than one neighbour.
+  prompt: How do virtual nodes change who absorbs the load when a server joins or fails?
+  objectives:
+  - 1
+  requires:
+  - sd.consistent-hashing.vnodes-balance-ownership
+  - sd.consistent-hashing.ring-add-moves-one-over-n
+- id: sd.consistent-hashing.vnodes-weighting
+  subtopic: Virtual nodes
+  kind: tradeoff
+  claim: Give servers virtual nodes in proportion to capacity, so a server with twice the capacity gets twice as many virtual nodes.
+  prompt: How do you make a ring give a larger server more keys?
+  objectives:
+  - 1
+  requires:
+  - sd.consistent-hashing.vnodes-balance-ownership
+- id: sd.consistent-hashing.ring-lookup-binary-search
+  subtopic: The ring
+  kind: procedure
+  claim: Keep virtual-node positions in a sorted array and binary-search for the first position >= hash(key), in O(log V); if none is larger, wrap to the first position.
+  prompt: How is a key looked up on a ring implemented, and what is its cost?
+  objectives:
+  - 0
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+  - sd.consistent-hashing.vnodes-balance-ownership
+- id: sd.consistent-hashing.replicas-distinct-servers-zones
+  subtopic: Virtual nodes
+  kind: procedure
+  claim: For N replicas, walk clockwise and collect the next N distinct physical servers, skipping virtual nodes of servers already chosen and preferably servers in zones already chosen, because consecutive points often belong to the same machine.
+  prompt: How should replicas be chosen when walking the ring with virtual nodes?
+  objectives:
+  - 2
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+  - sd.consistent-hashing.vnodes-balance-ownership
+- id: sd.consistent-hashing.hot-key-not-solved
+  subtopic: Virtual nodes
+  kind: principle
+  claim: Consistent hashing balances key counts but maps each key to one server, so a single hot key still overloads its server; it needs splitting, replication or caching.
+  prompt: Does consistent hashing fix a single very hot key, and why or why not?
+  objectives:
+  - 1
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+- id: sd.consistent-hashing.rendezvous-hashing
+  subtopic: Variants worth knowing
+  kind: mechanism
+  claim: Rendezvous (HRW) hashing scores every server with hash(key, server) and picks the highest; it has no ring, balances well, moves only keys whose winner changes, gives easy top-k replicas, but costs O(N) per lookup.
+  prompt: How does rendezvous hashing choose a server for a key, and what does it cost?
+  objectives:
+  - 3
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+- id: sd.consistent-hashing.jump-consistent-hash
+  subtopic: Variants worth knowing
+  kind: tradeoff
+  claim: Jump consistent hash maps a key to bucket 0..N-1 with a tiny function, no memory and even spread, but buckets can only be added or removed at the end.
+  prompt: What is the main limitation of jump consistent hashing?
+  objectives:
+  - 3
+  requires:
+  - sd.consistent-hashing.modulo-remaps-most-keys
+- id: sd.consistent-hashing.maglev-hashing
+  subtopic: Variants worth knowing
+  kind: fact
+  claim: Maglev hashing uses a precomputed lookup table for O(1) lookup with near-even load and minimal disruption, as in Google's Maglev load balancer.
+  prompt: What gives Maglev hashing O(1) lookups?
+  objectives:
+  - 3
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+- id: sd.consistent-hashing.bounded-load-hashing
+  subtopic: Variants worth knowing
+  kind: tradeoff
+  claim: Consistent hashing with bounded loads passes a key on to the next server when a server exceeds (1+ε) times the average load, capping hot servers at the cost of slightly more movement.
+  prompt: What does bounded-load consistent hashing do and what does it cost?
+  objectives:
+  - 3
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+  - sd.consistent-hashing.hot-key-not-solved
+- id: sd.consistent-hashing.consistent-hashing-use-cases
+  subtopic: Variants worth knowing
+  kind: fact
+  claim: Consistent hashing suits cache server selection (memcached ketama), Dynamo-style data placement (Cassandra, Riak) and load-balancer affinity under backend churn; it does not enforce cross-shard invariants.
+  prompt: Where is consistent hashing the right tool, and where is it not?
+  objectives:
+  - 3
+  requires:
+  - sd.consistent-hashing.ring-clockwise-ownership
+- id: sd.consistent-hashing.affinity-survives-backend-failure
+  subtopic: The ring
+  kind: principle
+  claim: When a backend dies under consistent hashing, only its users move (spread over survivors with virtual nodes) and everyone else keeps their backend and warm cache.
+  prompt: With consistent-hash affinity, what happens to users when one backend dies?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.consistent-hashing.ring-remove-to-clockwise-neighbour
+  - sd.consistent-hashing.vnodes-spread-changes
+items:
+  consistent-hashing-check-1-v2:
+  - sd.consistent-hashing.modulo-remaps-most-keys
+  consistent-hashing-check-2-v2:
+  - sd.consistent-hashing.ring-remove-to-clockwise-neighbour
+  consistent-hashing-check-3-v2:
+  - sd.consistent-hashing.vnodes-balance-ownership
+  - sd.consistent-hashing.vnodes-spread-changes
+  - sd.consistent-hashing.vnodes-weighting
+  consistent-hashing-check-4-v2:
+  - sd.consistent-hashing.replicas-distinct-servers-zones
+  consistent-hashing-fire-1-v2:
+  - sd.consistent-hashing.estimate-keys-moved
+  consistent-hashing-fire-2-v2:
+  - sd.consistent-hashing.rendezvous-hashing
+  consistent-hashing-fire-3-v2:
+  - sd.consistent-hashing.hot-key-not-solved
+  consistent-hashing-fire-4-v2:
+  - sd.consistent-hashing.bounded-load-hashing
+  consistent-hashing-fire-5-v2:
+  - sd.consistent-hashing.consistent-hashing-use-cases
+  consistent-hashing:b10:
+  - sd.consistent-hashing.ring-add-moves-one-over-n
+  - sd.consistent-hashing.vnodes-balance-ownership
+  - sd.consistent-hashing.ring-clockwise-ownership
+  consistent-hashing:b2:
+  - sd.consistent-hashing.estimate-keys-moved
+  - sd.consistent-hashing.modulo-remaps-most-keys
+  consistent-hashing:b4:
+  - sd.consistent-hashing.ring-lookup-binary-search
+  - sd.consistent-hashing.replicas-distinct-servers-zones
+  consistent-hashing:b5:
+  - sd.consistent-hashing.replicas-distinct-servers-zones
+  consistent-hashing:b7:
+  - sd.consistent-hashing.affinity-survives-backend-failure
+  - sd.consistent-hashing.vnodes-spread-changes
+  consistent-hashing:b8:
+  - sd.consistent-hashing.consistent-hashing-use-cases
+  - sd.consistent-hashing.hot-key-not-solved

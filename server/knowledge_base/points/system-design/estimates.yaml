@@ -1,0 +1,243 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: estimates
+source_hash: 257114e9ddaaed7c
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.estimates.estimation-step-order
+  subtopic: The method
+  kind: procedure
+  claim: 'A capacity estimate runs: state assumptions, convert daily totals to per-second rates, apply peak factor and growth, compute storage with retention, replication and indexes, compute bandwidth and servers with headroom, then say which design decision the numbers change.'
+  prompt: In what order do you work through a capacity estimate for a new feature?
+  objectives:
+  - 0
+  - 1
+  - 2
+  requires:
+  - sd.numbers.seconds-per-day
+  - sd.numbers.peak-factor
+  - sd.numbers.replication-index-overhead
+- id: sd.estimates.estimate-drives-decision
+  subtopic: The method
+  kind: principle
+  claim: An estimate is only useful if it ends in a design decision, such as one primary with replicas, or media in object storage behind a CDN; pages of arithmetic with no conclusion are decoration.
+  prompt: What makes an estimate worth presenting in an interview?
+  objectives:
+  - 2
+- id: sd.estimates.daily-to-per-second
+  subtopic: The method
+  kind: procedure
+  claim: To turn a daily total into an average rate, divide by about 86,400 (or 10^5 for a quick estimate), then multiply by a peak factor such as 2-10x for the peak rate.
+  prompt: How do you convert requests per day into peak requests per second?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.seconds-per-day
+  - sd.numbers.peak-factor
+- id: sd.estimates.divide-not-multiply-units
+  subtopic: The method
+  kind: principle
+  claim: Going from a daily total to a per-second rate you divide by 86,400; multiplying instead is out by about ten billion. Keep units on every line and turn user counts into actions per day first.
+  prompt: What is the classic unit error when converting daily totals to rates, and how do you avoid it?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.numbers.seconds-per-day
+- id: sd.estimates.estimate-accuracy-order-magnitude
+  subtopic: The method
+  kind: principle
+  claim: Estimates need to be right within an order of magnitude, with one significant figure and explicit assumptions, because their job is to choose between designs, such as one node or twenty.
+  prompt: How accurate does a back-of-envelope estimate need to be, and why?
+  objectives:
+  - 2
+- id: sd.estimates.estimate-add-ons
+  subtopic: The method
+  kind: principle
+  claim: On top of the average, add a peak factor (2-10x), growth over the planning horizon, replication and indexes for storage, and utilisation headroom to survive failures and drain backlogs.
+  prompt: What do you add on top of average load in an estimate?
+  objectives:
+  - 1
+  requires:
+  - sd.numbers.peak-factor
+  - sd.numbers.replication-index-overhead
+  - sd.numbers.utilisation-headroom
+- id: sd.estimates.find-dominant-term
+  subtopic: The method
+  kind: principle
+  claim: 'Find the dominant term early: usually media bytes for storage and bandwidth, and the read path for request rate, and design for it.'
+  prompt: Which numbers usually dominate an estimate, and what do you do about it?
+  objectives:
+  - 2
+- id: sd.estimates.small-scale-no-sharding
+  subtopic: The method
+  kind: tradeoff
+  claim: If peak writes (say 2,000/s) are far below one primary's capacity (10,000/s), do not shard; use one primary with replicas and time-based partitioning, and name a trigger for sharding later, such as sustained over 50% of write capacity or over 2 TB hot data.
+  prompt: Peak writes are 2,000/s and one Postgres primary handles 10,000/s. Would you shard, and what would you say?
+  objectives:
+  - 2
+  requires:
+  - sd.numbers.database-capacity
+- id: sd.estimates.storage-formula
+  subtopic: Storage and bandwidth
+  kind: procedure
+  claim: Storage = records per day × bytes per record × days retained × replication factor, plus 20-100% for indexes and overhead; peak QPS does not belong in it.
+  prompt: Which factors make up a storage estimate?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.replication-index-overhead
+- id: sd.estimates.bandwidth-formula
+  subtopic: Storage and bandwidth
+  kind: procedure
+  claim: Bandwidth = requests per second × bytes per response; separate ingress from egress, and small metadata from media, which dominates bytes.
+  prompt: How do you estimate bandwidth, and what should you separate?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.bits-bytes-bandwidth
+- id: sd.estimates.media-to-object-storage
+  subtopic: Storage and bandwidth
+  kind: tradeoff
+  claim: Large media (e.g. 1.8 PB of photos over five years) belongs in object storage with lifecycle rules and a CDN, not in a relational database; a small share of large objects can outweigh everything else.
+  prompt: Where should petabytes of photos or video be stored, and why?
+  objectives:
+  - 0
+  - 2
+- id: sd.estimates.photo-storage-calc
+  subtopic: Storage and bandwidth
+  kind: fact
+  claim: 2 million photos/day at 500 KB is 1 TB/day, about 365 TB/year and about 1.8 PB over five years before replication; 3x replication gives about 5.5 PB, and erasure coding (~1.4x) about 2.5 PB.
+  prompt: How much raw storage do 2M daily photos of 500 KB need over five years?
+  objectives:
+  - 0
+  requires:
+  - sd.estimates.storage-formula
+  - sd.numbers.typical-data-sizes
+- id: sd.estimates.video-upload-volume
+  subtopic: Storage and bandwidth
+  kind: fact
+  claim: 500 hours of video uploaded per minute at about 1 GB per hour is about 720 TB/day for one rendition, and transcoding into several renditions multiplies it.
+  prompt: How much new storage per day does 500 hours of video per minute create at 1 GB per hour?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.typical-data-sizes
+- id: sd.estimates.transatlantic-rtt
+  subtopic: The numbers to carry
+  kind: fact
+  claim: A Europe to US east coast round trip takes about 70-90 ms, since light in fibre covers about 200 km per ms.
+  prompt: Roughly how long is a Europe to US east coast round trip?
+  objectives: []
+  same_as: sd.request-flow.rtt-physical-limit
+- id: sd.estimates.server-count-formula
+  subtopic: Servers, shards and backlogs
+  kind: procedure
+  claim: Servers = peak load ÷ (per-server capacity × target utilisation), then add capacity to survive losing an instance or zone; with three zones, any two must carry the full load, so scale by 1.5x.
+  prompt: How do you compute server count including zone-failure tolerance?
+  objectives:
+  - 1
+  requires:
+  - sd.numbers.utilisation-headroom
+  - sd.numbers.app-server-capacity
+- id: sd.estimates.server-count-example
+  subtopic: Servers, shards and backlogs
+  kind: fact
+  claim: At 2,000 req/s per server, 30,000 req/s peak and 60% utilisation you need 25 servers; surviving the loss of one of three zones raises this to about 38.
+  prompt: With 2,000 req/s per server, 30,000 req/s peak, 60% target utilisation and three zones, how many servers?
+  objectives:
+  - 1
+  requires:
+  - sd.estimates.server-count-formula
+- id: sd.estimates.shard-binding-constraint
+  subtopic: Servers, shards and backlogs
+  kind: principle
+  claim: Size against every limit (write throughput, storage per node, working-set memory, connections) and take the largest requirement, since different limits bind for different components.
+  prompt: How do you decide the number of shards or cache nodes?
+  objectives:
+  - 1
+- id: sd.estimates.shard-count-calc
+  subtopic: Servers, shards and backlogs
+  kind: procedure
+  claim: Shards = peak writes ÷ (node capacity × utilisation target); 120,000 writes/s with 15,000/s nodes at 60% gives 9,000 per node, so 14 shards, in practice 16 for growth.
+  prompt: '120,000 writes/s peak, nodes handle 15,000/s, 60% target: how many shards?'
+  objectives:
+  - 1
+  requires:
+  - sd.numbers.database-capacity
+  - sd.numbers.utilisation-headroom
+- id: sd.estimates.cache-memory-binds
+  subtopic: Servers, shards and backlogs
+  kind: fact
+  claim: A 400 GB hot working set on 64 GB cache nodes needs about 8 nodes even if throughput needs only 2, because memory is the binding constraint.
+  prompt: 'A 400 GB working set, 64 GB usable per node, throughput needing 2 nodes: how many cache nodes?'
+  objectives:
+  - 1
+  requires:
+  - sd.estimates.shard-binding-constraint
+  - sd.numbers.cache-capacity
+- id: sd.estimates.backlog-drain-rate
+  subtopic: Servers, shards and backlogs
+  kind: mechanism
+  claim: A backlog grows at arrivals minus completions and drains at completions minus arrivals; to clear backlog B in time T you need a completion rate of λ + B/T, and small headroom means long recoveries.
+  prompt: What completion rate drains a backlog B in time T while arrivals continue at λ?
+  objectives:
+  - 1
+- id: sd.estimates.backlog-recovery-headroom
+  subtopic: Servers, shards and backlogs
+  kind: tradeoff
+  claim: A fleet sized exactly for arrivals runs at 100% utilisation and never drains a backlog after an outage; keep recovery headroom (e.g. 45 workers rather than 30-40) or autoscale on queue age.
+  prompt: Why not size a worker fleet exactly for steady-state load, and what should you scale on?
+  objectives:
+  - 1
+  requires:
+  - sd.estimates.backlog-drain-rate
+  - sd.service-quality.utilisation-headroom
+items:
+  estimates-check-1-v2:
+  - sd.estimates.daily-to-per-second
+  estimates-check-2-v2:
+  - sd.estimates.backlog-drain-rate
+  estimates-check-3-v2:
+  - sd.estimates.storage-formula
+  estimates-check-4-v2:
+  - sd.estimates.small-scale-no-sharding
+  - sd.estimates.estimate-drives-decision
+  estimates-fire-1-v2:
+  - sd.estimates.video-upload-volume
+  estimates-fire-2-v2:
+  - sd.estimates.transatlantic-rtt
+  estimates-fire-3-v2:
+  - sd.estimates.server-count-example
+  - sd.estimates.server-count-formula
+  estimates-fire-4-v2:
+  - sd.estimates.divide-not-multiply-units
+  - sd.estimates.estimate-add-ons
+  - sd.estimates.estimate-drives-decision
+  estimates-fire-5-v2:
+  - sd.estimates.cache-memory-binds
+  - sd.estimates.shard-binding-constraint
+  estimates:b1:
+  - sd.estimates.estimation-step-order
+  - sd.estimates.estimate-drives-decision
+  estimates:b10:
+  - sd.estimates.small-scale-no-sharding
+  estimates:b12:
+  - sd.estimates.storage-formula
+  - sd.estimates.estimate-add-ons
+  estimates:b2:
+  - sd.estimates.daily-to-per-second
+  estimates:b4:
+  - sd.estimates.photo-storage-calc
+  - sd.estimates.media-to-object-storage
+  estimates:b8:
+  - sd.estimates.backlog-recovery-headroom
+  - sd.estimates.backlog-drain-rate
+  estimates:b9:
+  - sd.estimates.shard-count-calc
+  - sd.estimates.shard-binding-constraint

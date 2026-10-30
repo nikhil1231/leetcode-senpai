@@ -1,0 +1,238 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: guarantees
+source_hash: ad16ef52e8e9f80c
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.guarantees.four-kinds-of-statement
+  subtopic: Four kinds of statement
+  kind: principle
+  claim: A requirements pass separates functional requirements (what users can do), non-functional targets (how well, measured), invariants (what must always be true) and non-goals (what is deliberately out of scope).
+  prompt: What four kinds of statement should you separate when turning a design prompt into requirements?
+  objectives:
+  - 0
+- id: sd.guarantees.invariants-forgotten-hard
+  subtopic: Four kinds of statement
+  kind: principle
+  claim: 'Invariants are the statements candidates most often forget, and they make designs hard: ''users can book seats'' is easy, but ''no seat is sold twice even when 10,000 people click the last seat at once'' is the real problem.'
+  prompt: Which kind of requirement do candidates most often forget, and why does it make a design hard?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.guarantees.four-kinds-of-statement
+- id: sd.guarantees.invariant-vs-nonfunctional-target
+  subtopic: Four kinds of statement
+  kind: principle
+  claim: A non-functional target is a measurable quality (latency percentile, throughput, success rate) that can be missed by a small amount; an invariant must hold for every operation, including concurrent and retried ones.
+  prompt: How does an invariant differ from a non-functional target such as a latency goal?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.guarantees.four-kinds-of-statement
+- id: sd.guarantees.slo-vs-invariant-mechanisms
+  subtopic: Four kinds of statement
+  kind: mechanism
+  claim: SLOs are met with capacity, redundancy and operations, and missing one spends error budget; invariants need correctness mechanisms (constraints, conditional writes, idempotency keys, transactions), and breaking one corrupts data or money.
+  prompt: Why can't you meet an invariant by adding servers the way you meet an SLO?
+  objectives:
+  - 0
+  - 1
+  - 2
+  requires:
+  - sd.guarantees.invariant-vs-nonfunctional-target
+- id: sd.guarantees.sli-definition
+  subtopic: From adjectives to SLOs
+  kind: fact
+  claim: An SLI is what you measure, such as the proportion of valid requests that succeed within 300 ms, measured at the load balancer; the SLO is the target for it over a window, such as 99.9% over a rolling 30 days.
+  prompt: What is the difference between an SLI and an SLO?
+  objectives:
+  - 1
+- id: sd.guarantees.sla-looser-than-slo
+  subtopic: From adjectives to SLOs
+  kind: tradeoff
+  claim: An SLA is a contract with consequences and is usually looser than the internal SLO, so degradation is noticed and fixed before any penalty is owed.
+  prompt: Why is an internal SLO usually tighter than the external SLA?
+  objectives:
+  - 1
+  requires:
+  - sd.guarantees.sli-definition
+- id: sd.guarantees.good-sli-ratio
+  subtopic: From adjectives to SLOs
+  kind: principle
+  claim: A good SLI is a ratio of good events to valid events, measured on real user requests as close to the user as practical; health-check endpoints miss partial failures, bad data and dependency errors.
+  prompt: What makes a good SLI, and why is 'the health check returns 200' a weak one?
+  objectives:
+  - 1
+  requires:
+  - sd.guarantees.sli-definition
+- id: sd.guarantees.testable-target-components
+  subtopic: From adjectives to SLOs
+  kind: principle
+  claim: A testable target needs a statistic (a percentile, not an average), a threshold, a workload (e.g. 2,000 requests/s), a measurement point and a window; adjectives like 'fast' or 'scalable' have none of these.
+  prompt: What must a latency requirement include to be testable?
+  objectives:
+  - 1
+  requires:
+  - sd.guarantees.sli-definition
+- id: sd.guarantees.error-budget
+  subtopic: From adjectives to SLOs
+  kind: mechanism
+  claim: The error budget is the failure an SLO allows, e.g. 99.9% over 30 days permits 43.2 minutes; burning it early is the signal to slow risky releases and focus on reliability.
+  prompt: What is an error budget and what should you do if it is burned early?
+  objectives:
+  - 1
+  requires:
+  - sd.guarantees.sli-definition
+- id: sd.guarantees.downtime-arithmetic
+  subtopic: From adjectives to SLOs
+  kind: procedure
+  claim: 'Allowed downtime is the window in minutes times the failure fraction: over 30 days (43,200 min) 99.9% allows 43.2 min, 99.95% allows 21.6 min and 99.99% about 4.3 min, so each extra nine divides it by ten.'
+  prompt: How much downtime does 99.95% availability allow over 30 days?
+  objectives:
+  - 1
+  requires:
+  - sd.guarantees.error-budget
+- id: sd.guarantees.deployment-safety-availability
+  subtopic: From adjectives to SLOs
+  kind: principle
+  claim: Deployment safety (canaries, fast rollback) is an availability feature, since a ten-minute bad deploy spends half the 99.95% monthly budget.
+  prompt: Why is deployment safety an availability concern?
+  objectives:
+  - 1
+  requires:
+  - sd.guarantees.error-budget
+  - sd.guarantees.downtime-arithmetic
+- id: sd.guarantees.invariant-testable-phrasing
+  subtopic: 'Invariants: write them like a test'
+  kind: principle
+  claim: Phrase an invariant so a test could try to break it with concurrency and crashes, e.g. 'at most one CONFIRMED booking per (event_id, seat_id)'.
+  prompt: How should an invariant be phrased to be useful?
+  objectives:
+  - 2
+  requires:
+  - sd.guarantees.invariant-vs-nonfunctional-target
+- id: sd.guarantees.invariant-enforcement-mechanisms
+  subtopic: 'Invariants: write them like a test'
+  kind: mechanism
+  claim: 'Invariants are enforced at the source of truth by making the check and write atomic: unique constraints, conditional updates (UPDATE ... SET balance = balance - x WHERE balance >= x), check constraints, and idempotency keys with uniqueness for at-most-one charge.'
+  prompt: How would you enforce 'balance never goes negative' under concurrent withdrawals?
+  objectives:
+  - 2
+  requires:
+  - sd.guarantees.invariant-testable-phrasing
+- id: sd.guarantees.read-check-write-race
+  subtopic: 'Invariants: write them like a test'
+  kind: principle
+  claim: Reading a value, checking it in application code and then writing is racy under concurrency; the check must be part of the same atomic write.
+  prompt: Why is check-in-application-code-then-write unsafe for invariants?
+  objectives:
+  - 2
+  requires:
+  - sd.guarantees.invariant-enforcement-mechanisms
+- id: sd.guarantees.per-operation-guarantees
+  subtopic: 'Invariants: write them like a test'
+  kind: tradeoff
+  claim: 'Decide per operation which needs strong guarantees and which can be relaxed: browsing seats can be about 10 seconds stale and heavily cached, while confirming must be authoritative, so coordination is concentrated only where an invariant is at stake.'
+  prompt: Why specify strong versus relaxed guarantees per operation in a booking system?
+  objectives:
+  - 2
+  requires:
+  - sd.guarantees.invariant-vs-nonfunctional-target
+- id: sd.guarantees.non-goals-purpose
+  subtopic: Non-goals protect the design
+  kind: principle
+  claim: Non-goals make trade-offs visible and keep the baseline focused; if the interviewer later raises an out-of-scope topic such as payments, it becomes an extension discussed without muddling the core design.
+  prompt: Why state non-goals explicitly?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.guarantees.four-kinds-of-statement
+- id: sd.guarantees.clarify-design-changing-questions
+  subtopic: The clarifying conversation
+  kind: procedure
+  claim: In about five minutes, ask questions that change the design (scope, scale, and the key guarantees such as freshness or durability), state assumptions for the rest, and write everything visibly.
+  prompt: What kinds of questions should the opening clarifying conversation focus on?
+  objectives:
+  - 3
+  requires:
+  - sd.guarantees.four-kinds-of-statement
+- id: sd.guarantees.clarify-avoid-technology-trivia
+  subtopic: The clarifying conversation
+  kind: principle
+  claim: Opening with technology choices ('NoSQL with consistent hashing', 'should I use Redis?') or trivia (language, team size, IDE) wastes time because the design should be derived from requirements.
+  prompt: Why is jumping to technology choices a poor opening?
+  objectives:
+  - 3
+  requires:
+  - sd.guarantees.clarify-design-changing-questions
+- id: sd.guarantees.propose-numbers-assumptions
+  subtopic: The clarifying conversation
+  kind: procedure
+  claim: If the interviewer gives no numbers, propose reasonable ones (e.g. 100M new links a month, 100:1 reads to writes), state them as assumptions, and say how the design would change at 10x more or less.
+  prompt: What do you do when the interviewer will not give scale numbers?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.guarantees.clarify-design-changing-questions
+- id: sd.guarantees.freshness-requirement-caching
+  subtopic: The clarifying conversation
+  kind: fact
+  claim: For a URL shortener, how quickly a changed or disabled destination must show in redirects decides how aggressively the redirect path can be cached; acknowledged links must also not vanish (durability).
+  prompt: Which guarantee question decides how far a URL shortener's redirect path can be cached?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.guarantees.clarify-design-changing-questions
+items:
+  guarantees-check-1-v2:
+  - sd.guarantees.invariant-vs-nonfunctional-target
+  guarantees-check-2-v2:
+  - sd.guarantees.error-budget
+  - sd.guarantees.downtime-arithmetic
+  guarantees-check-3-v2:
+  - sd.guarantees.testable-target-components
+  guarantees-check-4-v2:
+  - sd.guarantees.per-operation-guarantees
+  guarantees-fire-1-v2:
+  - sd.guarantees.propose-numbers-assumptions
+  guarantees-fire-2-v2:
+  - sd.guarantees.sla-looser-than-slo
+  guarantees-fire-3-v2:
+  - sd.guarantees.clarify-design-changing-questions
+  - sd.guarantees.freshness-requirement-caching
+  guarantees-fire-4-v2:
+  - sd.guarantees.invariant-enforcement-mechanisms
+  - sd.guarantees.read-check-write-race
+  guarantees-fire-5-v2:
+  - sd.guarantees.good-sli-ratio
+  guarantees:b1:
+  - sd.guarantees.four-kinds-of-statement
+  - sd.guarantees.invariant-vs-nonfunctional-target
+  guarantees:b10:
+  - sd.guarantees.clarify-design-changing-questions
+  - sd.guarantees.clarify-avoid-technology-trivia
+  - sd.guarantees.freshness-requirement-caching
+  guarantees:b12:
+  - sd.guarantees.slo-vs-invariant-mechanisms
+  - sd.guarantees.error-budget
+  guarantees:b3:
+  - sd.guarantees.sli-definition
+  - sd.guarantees.error-budget
+  guarantees:b4:
+  - sd.guarantees.downtime-arithmetic
+  - sd.guarantees.deployment-safety-availability
+  guarantees:b6:
+  - sd.guarantees.per-operation-guarantees
+  - sd.guarantees.invariants-forgotten-hard
+  guarantees:b8:
+  - sd.guarantees.testable-target-components

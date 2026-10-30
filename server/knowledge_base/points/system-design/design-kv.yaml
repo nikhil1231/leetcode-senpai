@@ -1,0 +1,256 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-kv
+source_hash: baa3e025af4e6feb
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-kv.storage-node-count-formula
+  subtopic: 2. Sizing
+  kind: procedure
+  claim: Storage nodes = data × replication factor ÷ usable disk per node, where usable is the disk fill limit (e.g. 50% of 8 TB = 4 TB). 100 TB at RF3 gives 300 TB, so 75 nodes.
+  prompt: How do you compute the number of nodes needed for storage from data size, replication factor and disk?
+  objectives:
+  - 0
+  requires:
+  - sd.estimates.storage-formula
+- id: sd.design-kv.throughput-check-sizing
+  subtopic: 2. Sizing
+  kind: procedure
+  claim: 'Also size for throughput: each request touches 2-3 replicas, so 1M ops/s is about 2.5M replica ops/s, roughly 63 nodes at ~40k ops/s per node. Take the larger of the storage and throughput figures, then spread across zones.'
+  prompt: After sizing for storage, what second check do you make, and how do you combine the results?
+  objectives:
+  - 0
+  requires:
+  - sd.estimates.shard-binding-constraint
+- id: sd.design-kv.disk-headroom-fill-limit
+  subtopic: 2. Sizing
+  kind: principle
+  claim: Fill node disks to only about 50% to leave headroom for compaction and rebalancing.
+  prompt: Why not fill each node's disk completely when sizing a store?
+  objectives:
+  - 0
+  requires:
+  - sd.storage-engines.compaction-headroom-stalls
+- id: sd.design-kv.consistent-hashing-vnodes
+  subtopic: 3. Placement and replication
+  kind: mechanism
+  claim: Keys hash onto a ring with many virtual nodes per server, so adding a node moves only about 1/N of the keys, taken in small slices from many neighbours.
+  prompt: How does consistent hashing with virtual nodes limit data movement when a node is added?
+  objectives:
+  - 1
+  - 3
+  same_as: sd.consistent-hashing.vnodes-balance-ownership
+- id: sd.design-kv.preference-list
+  subtopic: 3. Placement and replication
+  kind: mechanism
+  claim: A key's preference list is the next N distinct physical nodes clockwise from its ring position, placed in different zones so replicas survive node and zone failures.
+  prompt: What is a key's preference list and why must its nodes be distinct and in different zones?
+  objectives:
+  - 1
+  same_as: sd.consistent-hashing.replicas-distinct-servers-zones
+- id: sd.design-kv.any-node-coordinator
+  subtopic: 3. Placement and replication
+  kind: fact
+  claim: 'Any node can coordinate a request: clients either send to a random node that forwards it, or use a ring-aware client that goes straight to a replica.'
+  prompt: Which node coordinates a request in a Dynamo-style store, and how does the client reach it?
+  objectives:
+  - 1
+- id: sd.design-kv.quorum-write-path
+  subtopic: 4. Write and read paths
+  kind: procedure
+  claim: The coordinator finds the preference list, sends the write with a version to all N replicas in parallel, replicas append to commit log and memtable then ack, and after W acks the coordinator replies and stores hints for unreachable replicas.
+  prompt: Walk through a quorum write from client to reply.
+  objectives:
+  - 1
+  requires:
+  - sd.design-kv.preference-list
+  - sd.consistency.quorum-overlap-rule
+- id: sd.design-kv.parallel-writes-latency
+  subtopic: 4. Write and read paths
+  kind: principle
+  claim: Writing to all replicas in parallel and waiting for W acks makes latency that of the W-th fastest replica, not the sum of round trips, and one slow replica does not block the rest.
+  prompt: Why should a coordinator write to replicas in parallel rather than sequentially?
+  objectives:
+  - 1
+  requires:
+  - sd.design-kv.quorum-write-path
+- id: sd.design-kv.read-path-read-repair
+  subtopic: 4. Write and read paths
+  kind: mechanism
+  claim: A quorum read asks R replicas (one for data, others for digests), returns the newest version, and asynchronously writes it back to stale replicas (read repair).
+  prompt: How does a quorum read return the newest value and fix stale replicas?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.design-kv.quorum-write-path
+- id: sd.design-kv.quorum-overlap-rule
+  subtopic: 4. Write and read paths
+  kind: principle
+  claim: If R + W > N, read and write sets overlap so a read sees the latest acknowledged write; with N=3, R=W=2 overlaps but R=W=1 does not and is only eventually consistent.
+  prompt: What condition on R, W and N makes reads see the latest write, and does R=W=1 with N=3 meet it?
+  objectives:
+  - 1
+  same_as: sd.consistency.quorum-overlap-rule
+- id: sd.design-kv.quorum-not-linearizable
+  subtopic: 4. Write and read paths
+  kind: principle
+  claim: 'R+W>N does not make a store linearizable: concurrent writes, sloppy quorums with hinted handoff and LWW conflicts can still produce anomalies.'
+  prompt: Does R+W>N give linearizability, and why not?
+  objectives:
+  - 1
+  same_as: sd.consistency.quorum-not-linearizable
+- id: sd.design-kv.tunable-consistency-defaults
+  subtopic: 4. Write and read paths
+  kind: tradeoff
+  claim: QUORUM (R=W=2 at N=3) is a sensible default; R=1 (ONE) gives faster reads at the cost of possibly stale data.
+  prompt: What consistency levels would you offer, and what does the fast option cost?
+  objectives:
+  - 1
+  same_as: sd.consistency.quorum-settings-tradeoffs
+- id: sd.design-kv.write-bug-checks
+  subtopic: 4. Write and read paths
+  kind: principle
+  claim: A correct write path picks distinct hosts and zones, writes in parallel, and returns success only after W acks, storing hints for unreachable replicas; acking after one ack makes QUORUM writes not quorums.
+  prompt: What mistakes in a coordinator's write path break the store's guarantees?
+  objectives:
+  - 1
+  requires:
+  - sd.design-kv.quorum-write-path
+- id: sd.design-kv.hinted-handoff
+  subtopic: 5. Surviving failures
+  kind: mechanism
+  claim: 'Hinted handoff: when a replica is down, another node stores the writes as hints and delivers them when it returns, keeping writes available.'
+  prompt: How do writes stay available when one replica is down for minutes?
+  objectives:
+  - 2
+  requires:
+  - sd.design-kv.quorum-write-path
+- id: sd.design-kv.merkle-anti-entropy
+  subtopic: 5. Surviving failures
+  kind: mechanism
+  claim: Anti-entropy compares Merkle tree hashes of key ranges in the background and syncs only the differing subtrees, repairing cold keys never read and cases where hints expired.
+  prompt: How do replicas converge for keys that are never read and whose hints are lost?
+  objectives:
+  - 2
+  requires:
+  - sd.consistency.convergence-mechanisms
+- id: sd.design-kv.layered-repair
+  subtopic: 5. Surviving failures
+  kind: principle
+  claim: 'Repair is layered: hints are immediate, read repair acts on reads, anti-entropy runs in the background, so losing one mechanism (such as a hint holder dying) does not lose convergence.'
+  prompt: Why does a store use hints, read repair and anti-entropy together?
+  objectives:
+  - 2
+  requires:
+  - sd.design-kv.hinted-handoff
+  - sd.design-kv.read-path-read-repair
+  - sd.design-kv.merkle-anti-entropy
+- id: sd.design-kv.gossip-failure-detector
+  subtopic: 5. Surviving failures
+  kind: mechanism
+  claim: Without a central master, gossip spreads membership and heartbeat state, and an accrual (phi) failure detector turns heartbeat gaps into suspicion levels that adapt to network conditions.
+  prompt: How do nodes learn about joins and failures without a central master?
+  objectives:
+  - 3
+- id: sd.design-kv.lww-risk
+  subtopic: 6. Conflicts and versions
+  kind: tradeoff
+  claim: Last-write-wins is simple but silently drops concurrent writes and lets clock skew pick the winner, so use it only for idempotent overwrites like caches and sessions.
+  prompt: What is the risk of last-write-wins and where is it acceptable?
+  objectives:
+  - 3
+- id: sd.design-kv.vector-clocks-siblings
+  subtopic: 6. Conflicts and versions
+  kind: mechanism
+  claim: Vector clocks or version vectors detect true concurrency and return all siblings to the client, which merges them and writes back with the merged context.
+  prompt: How do version vectors handle concurrent writes?
+  objectives:
+  - 3
+  requires:
+  - sd.design-kv.lww-risk
+- id: sd.design-kv.crdts
+  subtopic: 6. Conflicts and versions
+  kind: fact
+  claim: CRDTs are data types (counters, sets, maps) that merge automatically and deterministically, avoiding client-side conflict resolution.
+  prompt: What are CRDTs and why are they useful for conflicts?
+  objectives:
+  - 3
+  requires:
+  - sd.design-kv.vector-clocks-siblings
+- id: sd.design-kv.consensus-for-cas
+  subtopic: 6. Conflicts and versions
+  kind: principle
+  claim: Compare-and-set, such as creating a username only if absent, needs consensus (e.g. Paxos-based lightweight transactions) because quorums alone cannot order competing writes.
+  prompt: Which operations need consensus rather than plain quorums?
+  objectives:
+  - 3
+  requires:
+  - sd.consensus.raft-commit-on-majority
+- id: sd.design-kv.lsm-engine
+  subtopic: 7. The node's storage engine
+  kind: mechanism
+  claim: 'Each node uses an LSM tree: writes go to a commit log and memtable, flush to SSTables and compact in the background, giving fast sequential writes.'
+  prompt: How does a node's LSM storage engine handle writes?
+  objectives:
+  - 3
+  same_as: sd.storage-engines.lsm-write-path
+- id: sd.design-kv.bloom-filters-sstables
+  subtopic: 7. The node's storage engine
+  kind: fact
+  claim: Per-SSTable Bloom filters make reads of absent keys cheap by skipping files that cannot contain the key.
+  prompt: What do Bloom filters do in an LSM read path?
+  objectives:
+  - 3
+  same_as: sd.storage-engines.bloom-lsm-per-sstable
+items:
+  design-kv-check-1-v2:
+  - sd.design-kv.storage-node-count-formula
+  design-kv-check-2-v2:
+  - sd.design-kv.preference-list
+  design-kv-check-3-v2:
+  - sd.design-kv.layered-repair
+  - sd.design-kv.hinted-handoff
+  - sd.design-kv.merkle-anti-entropy
+  design-kv-check-4-v2:
+  - sd.design-kv.parallel-writes-latency
+  design-kv-fire-1-v2:
+  - sd.design-kv.lww-risk
+  design-kv-fire-2-v2:
+  - sd.design-kv.merkle-anti-entropy
+  design-kv-fire-3-v2:
+  - sd.design-kv.gossip-failure-detector
+  design-kv-fire-4-v2:
+  - sd.design-kv.consensus-for-cas
+  design-kv-fire-5-v2:
+  - sd.design-kv.quorum-write-path
+  design-kv:b1:
+  - sd.design-kv.storage-node-count-formula
+  - sd.design-kv.throughput-check-sizing
+  - sd.design-kv.disk-headroom-fill-limit
+  design-kv:b11:
+  - sd.design-kv.lww-risk
+  design-kv:b13:
+  - sd.design-kv.write-bug-checks
+  - sd.design-kv.parallel-writes-latency
+  - sd.design-kv.preference-list
+  design-kv:b15:
+  - sd.design-kv.hinted-handoff
+  - sd.design-kv.layered-repair
+  - sd.design-kv.merkle-anti-entropy
+  design-kv:b16:
+  - sd.design-kv.quorum-overlap-rule
+  design-kv:b8:
+  - sd.design-kv.layered-repair
+  - sd.design-kv.hinted-handoff
+  - sd.design-kv.read-path-read-repair
+  redesign:design-kv:
+  - sd.design-kv.consistent-hashing-vnodes
+  - sd.design-kv.quorum-write-path
+  - sd.design-kv.layered-repair

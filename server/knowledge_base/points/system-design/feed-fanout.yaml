@@ -1,0 +1,159 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: feed-fanout
+source_hash: b9a45ff7580195ca
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.feed-fanout.push-write-cost-scales-followers
+  subtopic: Two ways to build a feed
+  kind: principle
+  claim: 'In fan-out on write, the cost of one post is O(followers): a timeline insert for every follower. Total insert load is posts per second multiplied by average followers, e.g. 6,000 × 300 = 1.8M inserts/s.'
+  prompt: What does the cost of publishing one post scale with in fan-out on write, and how do you estimate total insert load?
+  objectives:
+  - 0
+- id: sd.feed-fanout.push-vs-pull-tradeoff
+  subtopic: Two ways to build a feed
+  kind: tradeoff
+  claim: Push gives one-lookup, low-latency reads but costs write amplification, per-user storage and fan-out lag. Pull gives a single write per post and always-fresh data but makes each read O(accounts followed) fetches plus a merge.
+  prompt: Compare fan-out on write and fan-out on read by write cost, read cost, latency and freshness.
+  objectives:
+  - 0
+  requires:
+  - sd.feed-fanout.push-write-cost-scales-followers
+- id: sd.feed-fanout.pull-expensive-reads-dominate
+  subtopic: Two ways to build a feed
+  kind: principle
+  claim: Pull is expensive for typical social apps because every feed load queries all followed accounts and merges them, and reads usually outnumber writes by 100:1 or more.
+  prompt: Why is fan-out on read costly for a typical social app?
+  objectives:
+  - 0
+  requires:
+  - sd.feed-fanout.push-vs-pull-tradeoff
+- id: sd.feed-fanout.celebrity-problem
+  subtopic: Two ways to build a feed
+  kind: mechanism
+  claim: A post from an account with tens of millions of followers causes tens of millions of timeline inserts in one burst, and fan-out lag of minutes, so some followers see it long after others. Averages hide this tail of follower counts.
+  prompt: What is the celebrity problem in fan-out on write?
+  objectives:
+  - 1
+  requires:
+  - sd.feed-fanout.push-write-cost-scales-followers
+- id: sd.feed-fanout.hybrid-threshold-design
+  subtopic: Two ways to build a feed
+  kind: mechanism
+  claim: A hybrid pushes posts from ordinary accounts and skips fan-out for accounts above a follower threshold (e.g. about 500k-1M). At read time the feed merges the pushed timeline with recent posts from the few celebrities the reader follows.
+  prompt: How does a hybrid feed handle accounts with very many followers?
+  objectives:
+  - 1
+  requires:
+  - sd.feed-fanout.celebrity-problem
+  - sd.feed-fanout.pull-expensive-reads-dominate
+- id: sd.feed-fanout.threshold-tuning-tradeoff
+  subtopic: Two ways to build a feed
+  kind: tradeoff
+  claim: The hybrid's follower threshold trades write cost against read cost. Lowering it reduces write amplification but raises queries per feed read and read latency; tune it to where total cost balances.
+  prompt: What happens to write and read costs when you lower the hybrid's celebrity threshold?
+  objectives:
+  - 1
+  requires:
+  - sd.feed-fanout.hybrid-threshold-design
+- id: sd.feed-fanout.store-ids-hydrate
+  subtopic: Storing and serving timelines
+  kind: mechanism
+  claim: Timelines store post IDs, not post bodies, and reading hydrates them by batch-fetching bodies, author info and counts from caches. This avoids multiplying storage by follower count.
+  prompt: What should a timeline store, and how is it turned into a displayed feed?
+  objectives:
+  - 2
+- id: sd.feed-fanout.cap-and-trim-timelines
+  subtopic: Storing and serving timelines
+  kind: principle
+  claim: Timelines are capped lists (e.g. the latest 800 IDs per user in a sharded in-memory store) and trimmed on insert; older pages can fall back to pull.
+  prompt: How is timeline size bounded, and how are older pages served?
+  objectives:
+  - 2
+  requires:
+  - sd.feed-fanout.store-ids-hydrate
+- id: sd.feed-fanout.skip-inactive-users
+  subtopic: Storing and serving timelines
+  kind: principle
+  claim: Don't fan out to users inactive for about 30 days; build their timeline on demand by pull when they return, since precomputing it is wasted work.
+  prompt: How should fan-out treat users who haven't opened the app in a month?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.feed-fanout.push-write-cost-scales-followers
+- id: sd.feed-fanout.ranking-candidates
+  subtopic: Storing and serving timelines
+  kind: mechanism
+  claim: Ranked feeds generate candidates (pushed timeline, pulled celebrity posts, recommendations) and score them with a ranking model at read time.
+  prompt: How does a ranked feed combine pushed and pulled content?
+  objectives:
+  - 2
+  requires:
+  - sd.feed-fanout.hybrid-threshold-design
+- id: sd.feed-fanout.batched-pipelined-fanout
+  subtopic: Storing and serving timelines
+  kind: procedure
+  claim: A fan-out worker should page through followers in batches and pipeline the Redis writes, rather than loading all followers at once and making two round trips per follower.
+  prompt: How should a fan-out worker process a large follower list efficiently?
+  objectives:
+  - 2
+  requires:
+  - sd.feed-fanout.push-write-cost-scales-followers
+- id: sd.feed-fanout.deletes-edits-via-ids
+  subtopic: Deletes, edits and privacy
+  kind: mechanism
+  claim: With ID-only timelines, edits appear automatically at hydration and deletes take effect immediately because hydration drops missing or hidden posts; ID cleanup runs asynchronously. Copying full bodies would force rewriting millions of timelines.
+  prompt: Why do deletes and edits cost little when timelines store only IDs?
+  objectives:
+  - 3
+  requires:
+  - sd.feed-fanout.store-ids-hydrate
+- id: sd.feed-fanout.enforce-privacy-at-read
+  subtopic: Deletes, edits and privacy
+  kind: principle
+  claim: Enforce privacy changes, blocks and unfollows at read time during hydration, never trusting the precomputed timeline to be authorised, and clean up stale IDs asynchronously.
+  prompt: How should a feed stay correct when an account goes private or a user blocks another?
+  objectives:
+  - 3
+  requires:
+  - sd.feed-fanout.store-ids-hydrate
+items:
+  feed-fanout-check-1-v2:
+  - sd.feed-fanout.push-write-cost-scales-followers
+  feed-fanout-check-2-v2:
+  - sd.feed-fanout.push-write-cost-scales-followers
+  feed-fanout-check-3-v2:
+  - sd.feed-fanout.hybrid-threshold-design
+  - sd.feed-fanout.store-ids-hydrate
+  - sd.feed-fanout.skip-inactive-users
+  feed-fanout-check-4-v2:
+  - sd.feed-fanout.pull-expensive-reads-dominate
+  feed-fanout-fire-1-v2:
+  - sd.feed-fanout.deletes-edits-via-ids
+  feed-fanout-fire-2-v2:
+  - sd.feed-fanout.hybrid-threshold-design
+  feed-fanout-fire-3-v2:
+  - sd.feed-fanout.skip-inactive-users
+  feed-fanout-fire-4-v2:
+  - sd.feed-fanout.enforce-privacy-at-read
+  feed-fanout-fire-5-v2:
+  - sd.feed-fanout.threshold-tuning-tradeoff
+  feed-fanout:b2:
+  - sd.feed-fanout.push-write-cost-scales-followers
+  feed-fanout:b6:
+  - sd.feed-fanout.batched-pipelined-fanout
+  - sd.feed-fanout.store-ids-hydrate
+  - sd.feed-fanout.skip-inactive-users
+  feed-fanout:b7:
+  - sd.feed-fanout.deletes-edits-via-ids
+  feed-fanout:b9:
+  - sd.feed-fanout.celebrity-problem
+  - sd.feed-fanout.hybrid-threshold-design

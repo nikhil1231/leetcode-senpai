@@ -1,0 +1,200 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: storage-engines
+source_hash: c370fd6345dcee78
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.storage-engines.wal-durable-commit
+  subtopic: The log comes first
+  kind: mechanism
+  claim: A write-ahead log makes a commit durable once its record is fsynced to an append-only log; data pages or files are updated later and the log is replayed after a crash.
+  prompt: Why does writing to a write-ahead log make commits both durable and fast?
+  objectives:
+  - 0
+  requires:
+  - sd.transactions.durability-after-commit
+- id: sd.storage-engines.sequential-append-group-commit
+  subtopic: The log comes first
+  kind: principle
+  claim: Sequential appends beat scattered random writes even on SSDs, and group commit batches many commits into one flush, allowing thousands of durable commits per second.
+  prompt: How can a database sustain thousands of durable commits per second?
+  objectives:
+  - 0
+  requires:
+  - sd.storage-engines.wal-durable-commit
+  - sd.numbers.storage-latency
+- id: sd.storage-engines.wal-feeds-replication
+  subtopic: The log comes first
+  kind: fact
+  claim: The write-ahead log also feeds replication and change-data-capture.
+  prompt: Besides crash recovery, what else is the write-ahead log used for?
+  objectives:
+  - 0
+  requires:
+  - sd.storage-engines.wal-durable-commit
+- id: sd.storage-engines.btree-in-place-pages
+  subtopic: 'B-trees: update in place'
+  kind: mechanism
+  claim: B-tree engines (Postgres, InnoDB, SQL Server) store rows and indexes in fixed-size pages and modify pages in place, logging each change to the WAL first.
+  prompt: How does a B-tree engine apply updates?
+  objectives:
+  - 1
+  requires:
+  - sd.indexes.btree-sorted-pages
+  - sd.storage-engines.wal-durable-commit
+- id: sd.storage-engines.btree-read-path
+  subtopic: 'B-trees: update in place'
+  kind: fact
+  claim: A B-tree read follows one root-to-leaf path of about 3-4 mostly cached pages, giving predictable latency and efficient range scans.
+  prompt: What does a B-tree read cost?
+  objectives:
+  - 1
+  requires:
+  - sd.storage-engines.btree-in-place-pages
+  - sd.indexes.btree-cached-top-levels
+- id: sd.storage-engines.btree-write-amplification
+  subtopic: 'B-trees: update in place'
+  kind: tradeoff
+  claim: A small B-tree change rewrites a whole page plus the WAL record and every affected index, giving write amplification and random I/O; space is lost to partly empty pages and dead MVCC versions.
+  prompt: Where do B-tree write and space amplification come from?
+  objectives:
+  - 1
+  requires:
+  - sd.storage-engines.btree-in-place-pages
+  - sd.indexes.write-amplification
+- id: sd.storage-engines.lsm-write-path
+  subtopic: 'LSM trees: append, then merge'
+  kind: mechanism
+  claim: An LSM write goes to the WAL and an in-memory sorted memtable; a full memtable is flushed as an immutable sorted SSTable.
+  prompt: What happens to a write in an LSM engine?
+  objectives:
+  - 2
+  requires:
+  - sd.storage-engines.wal-durable-commit
+- id: sd.storage-engines.lsm-compaction-tombstones
+  subtopic: 'LSM trees: append, then merge'
+  kind: mechanism
+  claim: Background compaction merges SSTables, discarding overwritten values and tombstones; a delete is a write of a marker that hides older versions until compaction removes the data.
+  prompt: What are tombstones and when is deleted data actually removed in an LSM store?
+  objectives:
+  - 2
+  requires:
+  - sd.storage-engines.lsm-write-path
+- id: sd.storage-engines.lsm-read-path
+  subtopic: 'LSM trees: append, then merge'
+  kind: mechanism
+  claim: An LSM read checks the memtable, then SSTables from newest to oldest until the key is found, using Bloom filters to skip files.
+  prompt: How does an LSM engine read a key?
+  objectives:
+  - 2
+  requires:
+  - sd.storage-engines.lsm-write-path
+- id: sd.storage-engines.lsm-workload-fit
+  subtopic: 'LSM trees: append, then merge'
+  kind: tradeoff
+  claim: LSM engines suit write-heavy, append-mostly data with reads on recent ranges (IoT, messaging); B-trees suit read-heavy OLTP with secondary indexes, transactions and predictable latency.
+  prompt: Which workloads suit LSM versus B-tree engines?
+  objectives:
+  - 1
+  requires:
+  - sd.storage-engines.lsm-write-path
+  - sd.storage-engines.btree-in-place-pages
+- id: sd.storage-engines.compaction-strategy-tradeoff
+  subtopic: The amplification trade-off
+  kind: tradeoff
+  claim: Leveled compaction gives low space (~10% extra) and low read amplification but high write amplification; size-tiered has lower write amplification but higher read and space amplification (up to 2x).
+  prompt: How do leveled and size-tiered compaction compare?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.storage-engines.lsm-compaction-tombstones
+- id: sd.storage-engines.compaction-headroom-stalls
+  subtopic: The amplification trade-off
+  kind: principle
+  claim: Compaction competes with foreground traffic; if writes outpace it, files pile up, reads slow and the engine throttles writes (write stalls), so plan headroom such as disks under ~50% full for size-tiered.
+  prompt: What happens if compaction cannot keep up with writes, and how do you plan for it?
+  objectives:
+  - 2
+  requires:
+  - sd.storage-engines.lsm-compaction-tombstones
+- id: sd.storage-engines.bloom-filter-semantics
+  subtopic: 'Bloom filters: "definitely not" in a few bits'
+  kind: mechanism
+  claim: 'A Bloom filter is a bit array with k hashes: any zero bit means definitely absent, all ones means probably present; false positives occur, false negatives never.'
+  prompt: What does a Bloom filter answer mean?
+  objectives:
+  - 2
+- id: sd.storage-engines.bloom-lsm-per-sstable
+  subtopic: 'Bloom filters: "definitely not" in a few bits'
+  kind: principle
+  claim: LSM engines keep a Bloom filter per SSTable, so lookups for absent keys usually read no data files.
+  prompt: Why do Bloom filters matter to LSM reads?
+  objectives:
+  - 2
+  requires:
+  - sd.storage-engines.bloom-filter-semantics
+  - sd.storage-engines.lsm-read-path
+- id: sd.storage-engines.bloom-sizing
+  subtopic: 'Bloom filters: "definitely not" in a few bits'
+  kind: procedure
+  claim: About 9.6 bits per key gives a 1% false-positive rate regardless of key length; memory = keys x bits per key (2 billion keys is about 2.4 GB).
+  prompt: How much memory does a Bloom filter need for a 1% false-positive rate?
+  objectives:
+  - 2
+  requires:
+  - sd.storage-engines.bloom-filter-semantics
+- id: sd.storage-engines.row-vs-column-layout
+  subtopic: Rows or columns?
+  kind: tradeoff
+  claim: Row stores keep a row's columns together, suiting point lookups and small transactional writes; column stores keep each column separately, suiting analytics but making single-row writes expensive, so data arrives in batches.
+  prompt: When choose row-oriented versus column-oriented storage?
+  objectives:
+  - 3
+- id: sd.storage-engines.column-store-read-savings
+  subtopic: Rows or columns?
+  kind: mechanism
+  claim: A column store reads only the columns a query needs and compresses similar values heavily (dictionary, run-length, delta), often reading 10-100x less data than a row store.
+  prompt: Why does a column store read far less data for an aggregate query?
+  objectives:
+  - 3
+  requires:
+  - sd.storage-engines.row-vs-column-layout
+items:
+  storage-engines-check-1-v2:
+  - sd.storage-engines.wal-durable-commit
+  - sd.storage-engines.sequential-append-group-commit
+  storage-engines-check-2-v2:
+  - sd.storage-engines.lsm-compaction-tombstones
+  - sd.storage-engines.lsm-write-path
+  storage-engines-check-3-v2:
+  - sd.storage-engines.bloom-filter-semantics
+  storage-engines-check-4-v2:
+  - sd.storage-engines.bloom-sizing
+  storage-engines-fire-1-v2:
+  - sd.storage-engines.row-vs-column-layout
+  storage-engines-fire-2-v2:
+  - sd.storage-engines.compaction-headroom-stalls
+  storage-engines-fire-3-v2:
+  - sd.storage-engines.lsm-compaction-tombstones
+  storage-engines-fire-4-v2:
+  - sd.storage-engines.compaction-strategy-tradeoff
+  storage-engines-fire-5-v2:
+  - sd.storage-engines.lsm-workload-fit
+  - sd.storage-engines.btree-read-path
+  storage-engines:b10:
+  - sd.storage-engines.lsm-write-path
+  - sd.storage-engines.lsm-read-path
+  - sd.storage-engines.bloom-lsm-per-sstable
+  storage-engines:b3:
+  - sd.storage-engines.lsm-workload-fit
+  storage-engines:b6:
+  - sd.storage-engines.bloom-sizing
+  storage-engines:b8:
+  - sd.storage-engines.column-store-read-savings
+  - sd.storage-engines.row-vs-column-layout

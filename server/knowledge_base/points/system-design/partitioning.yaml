@@ -1,0 +1,227 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: partitioning
+source_hash: 0bff68934db7429c
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.partitioning.shard-key-matches-access
+  subtopic: Introduction
+  kind: principle
+  claim: The shard key should match the unit of access and atomicity. If queries and transactions are per company but data is sharded by user_id, dashboards fan out to every shard and company-wide changes become distributed transactions.
+  prompt: Why can sharding by user_id hurt a B2B app whose queries are all per company?
+  objectives:
+  - 1
+  requires:
+  - sd.data-models.partition-and-sort-keys
+  - sd.data-models.model-from-access-patterns
+- id: sd.partitioning.range-partitioning-tradeoffs
+  subtopic: Three ways to split data
+  kind: tradeoff
+  claim: Range partitioning gives cheap range scans and easy splitting of hot ranges, but sequential keys such as timestamps or auto-increment IDs send every new write to the last shard.
+  prompt: What is range partitioning good and bad at?
+  objectives:
+  - 0
+  requires:
+  - sd.data-models.partition-and-sort-keys
+- id: sd.partitioning.sequential-key-write-hotspot
+  subtopic: Three ways to split data
+  kind: mechanism
+  claim: 'With a monotonically increasing key such as a timestamp or auto-increment ID, ''now'' always lives in one range, so all writes hit one shard while older shards sit idle. Fixes: hash by entity with time as the sort key, or use a compound key with a hashed bucket first.'
+  prompt: What happens to write load when a table is range-partitioned on an increasing key, and how do you fix it?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.partitioning.range-partitioning-tradeoffs
+- id: sd.partitioning.hash-partitioning-tradeoffs
+  subtopic: Three ways to split data
+  kind: tradeoff
+  claim: Hash partitioning spreads load evenly but scatters range queries across all shards, and changing the shard count remaps keys unless you use consistent hashing or fixed partitions.
+  prompt: What are the strengths and weaknesses of hash partitioning?
+  objectives:
+  - 0
+  requires:
+  - sd.event-streams.key-hash-partitioning
+- id: sd.partitioning.directory-partitioning-tradeoffs
+  subtopic: Three ways to split data
+  kind: tradeoff
+  claim: Directory (lookup) partitioning lets you move individual tenants and place big tenants on dedicated shards, but the directory becomes a critical dependency that must be fast and highly available.
+  prompt: What does directory-based partitioning allow, and what does it cost?
+  objectives:
+  - 0
+- id: sd.partitioning.hash-mod-n-remaps
+  subtopic: Three ways to split data
+  kind: mechanism
+  claim: With hash(key) % N, changing N remaps most keys (going from 4 to 5 shards moves about 80% of the data), so adding a shard is very expensive.
+  prompt: Why does hash(key) % N make adding a shard expensive?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.partitioning.hash-partitioning-tradeoffs
+- id: sd.partitioning.fixed-logical-partitions
+  subtopic: Three ways to split data
+  kind: mechanism
+  claim: Hashing keys into many small fixed partitions (say 1,024 or 4,096) and mapping partitions to nodes means rebalancing moves whole partitions without changing any key's partition.
+  prompt: Why hash keys into thousands of fixed logical partitions rather than directly onto N nodes?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.partitioning.hash-mod-n-remaps
+- id: sd.partitioning.good-shard-key-properties
+  subtopic: Choosing a shard key
+  kind: principle
+  claim: A good shard key appears in the most frequent queries, groups data updated together, has high cardinality with even load, and is stable over a row's life.
+  prompt: What properties make a good shard key?
+  objectives:
+  - 1
+  requires:
+  - sd.partitioning.shard-key-matches-access
+- id: sd.partitioning.bad-key-low-cardinality-skew
+  subtopic: Choosing a shard key
+  kind: principle
+  claim: 'Low-cardinality, skewed or mutable attributes such as country or order status make poor shard keys: few values cap the shard count, one value runs hot, and rows move when the value changes.'
+  prompt: Why are country or order status poor shard keys?
+  objectives:
+  - 1
+  requires:
+  - sd.partitioning.good-shard-key-properties
+- id: sd.partitioning.tenant-id-for-saas
+  subtopic: Choosing a shard key
+  kind: tradeoff
+  claim: In multi-tenant SaaS where queries are scoped to one company, company_id keeps queries and transactions on one shard, but very large tenants may need dedicated shards.
+  prompt: Why shard a multi-tenant SaaS by company_id, and what must you watch for?
+  objectives:
+  - 1
+  requires:
+  - sd.partitioning.shard-key-matches-access
+- id: sd.partitioning.shard-count-sizing
+  subtopic: Choosing a shard key
+  kind: procedure
+  claim: Size shard count against every limit (storage per node and write throughput per node) and take the largest result. For example, 18 TB at 1.5 TB per shard needs 12 shards, while 90,000 writes/s at 10,000 per shard needs only 9, so storage decides.
+  prompt: How do you work out the number of shards needed?
+  objectives:
+  - 1
+  same_as: sd.estimates.shard-binding-constraint
+- id: sd.partitioning.scatter-gather-cost
+  subtopic: When a query crosses shards
+  kind: tradeoff
+  claim: Scatter-gather latency is set by the slowest shard and cost grows with shard count, so it suits rare admin queries but not the main read path.
+  prompt: What is the main drawback of scatter-gather across many shards?
+  objectives:
+  - 2
+  requires:
+  - sd.service-quality.fanout-waits-for-slowest
+- id: sd.partitioning.local-secondary-index
+  subtopic: When a query crosses shards
+  kind: mechanism
+  claim: 'A local (document-partitioned) secondary index lives with each shard''s data: writes are cheap, but queries by the indexed attribute must scatter to all shards.'
+  prompt: What are the trade-offs of a local secondary index?
+  objectives:
+  - 2
+  requires:
+  - sd.partitioning.scatter-gather-cost
+- id: sd.partitioning.global-secondary-index
+  subtopic: When a query crosses shards
+  kind: tradeoff
+  claim: A global (term-partitioned) index is partitioned by the indexed value, so queries hit one index partition, but each write updates a remote index partition, usually asynchronously, so the index can lag.
+  prompt: What is the trade-off of a global secondary index?
+  objectives:
+  - 2
+  requires:
+  - sd.partitioning.local-secondary-index
+- id: sd.partitioning.cross-shard-transactions-analytics
+  subtopic: When a query crosses shards
+  kind: principle
+  claim: Cross-shard transactions need two-phase commit or a saga, so design common transactions to be single-shard. Run analytics in a warehouse fed by streaming, not on the sharded OLTP store.
+  prompt: How should you handle cross-shard transactions and analytics on a sharded store?
+  objectives:
+  - 2
+  requires:
+  - sd.partitioning.shard-key-matches-access
+- id: sd.partitioning.hot-key-salting
+  subtopic: Hot partitions
+  kind: mechanism
+  claim: Salting appends a suffix (e.g. product:42#0..7) to spread a hot key across partitions, at the cost of reading all suffixes and losing per-key ordering.
+  prompt: How does salting relieve a hot key, and what does it cost?
+  objectives:
+  - 1
+  requires:
+  - sd.hot-keys.key-splitting-by-suffix
+  same_as: sd.hot-keys.key-splitting-by-suffix
+- id: sd.partitioning.hot-tenant-mitigations
+  subtopic: Hot partitions
+  kind: tradeoff
+  claim: For a tenant that overloads its shard, move it to a dedicated shard routed by a directory, or sub-shard it by a finer key; caching hot reads also helps. Adaptive capacity in managed stores helps only up to a point.
+  prompt: How do you handle one tenant that is too big or hot for its shard?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.partitioning.directory-partitioning-tradeoffs
+  - sd.partitioning.tenant-id-for-saas
+- id: sd.partitioning.rebalancing-approaches
+  subtopic: Rebalancing and resharding
+  kind: tradeoff
+  claim: Fixed partitions (many more than nodes) move whole partitions between nodes but need the count chosen well up front. Dynamic splitting divides a partition when it grows too big (HBase, Bigtable, CockroachDB, DynamoDB).
+  prompt: What are the two main rebalancing approaches besides consistent hashing?
+  objectives:
+  - 3
+  requires:
+  - sd.partitioning.fixed-logical-partitions
+- id: sd.partitioning.online-reshard-procedure
+  subtopic: Rebalancing and resharding
+  kind: procedure
+  claim: 'Changing the shard key is a migration: build the new layout and routing, dual-write, backfill and verify, shift reads gradually while comparing results, stop old writes, then decommission after a rollback window.'
+  prompt: What are the steps of an online change of shard key?
+  objectives:
+  - 3
+  requires:
+  - sd.data-models.expand-migrate-contract-order
+  - sd.partitioning.shard-key-matches-access
+items:
+  partitioning-check-1-v2:
+  - sd.partitioning.sequential-key-write-hotspot
+  partitioning-check-2-v2:
+  - sd.partitioning.good-shard-key-properties
+  partitioning-check-3-v2:
+  - sd.partitioning.shard-count-sizing
+  partitioning-check-4-v2:
+  - sd.partitioning.scatter-gather-cost
+  partitioning-fire-1-v2:
+  - sd.partitioning.hash-mod-n-remaps
+  partitioning-fire-2-v2:
+  - sd.partitioning.global-secondary-index
+  - sd.partitioning.local-secondary-index
+  partitioning-fire-3-v2:
+  - sd.partitioning.hot-tenant-mitigations
+  - sd.partitioning.directory-partitioning-tradeoffs
+  partitioning-fire-4-v2:
+  - sd.partitioning.online-reshard-procedure
+  partitioning-fire-5-v2:
+  - sd.partitioning.fixed-logical-partitions
+  partitioning:b1:
+  - sd.partitioning.sequential-key-write-hotspot
+  - sd.partitioning.range-partitioning-tradeoffs
+  partitioning:b10:
+  - sd.partitioning.good-shard-key-properties
+  - sd.partitioning.bad-key-low-cardinality-skew
+  - sd.partitioning.tenant-id-for-saas
+  partitioning:b3:
+  - sd.partitioning.bad-key-low-cardinality-skew
+  - sd.partitioning.tenant-id-for-saas
+  - sd.partitioning.good-shard-key-properties
+  partitioning:b5:
+  - sd.partitioning.shard-count-sizing
+  partitioning:b7:
+  - sd.partitioning.online-reshard-procedure
+  partitioning:b8:
+  - sd.partitioning.hash-mod-n-remaps
+  - sd.partitioning.scatter-gather-cost
+  - sd.partitioning.global-secondary-index

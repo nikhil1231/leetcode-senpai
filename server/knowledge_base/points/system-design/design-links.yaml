@@ -1,0 +1,266 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-links
+source_hash: b75845ed7b4251c5
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-links.freshness-bound-constrains-reads
+  subtopic: 1. Requirements (5 minutes)
+  kind: principle
+  claim: 'A requirement that changes take effect within 60 seconds everywhere is what most constrains the read path: every cache layer (CDN, application cache, browser) must fit inside it or be explicitly invalidated.'
+  prompt: Which requirement most constrains the design of a link shortener's read path, and why?
+  objectives:
+  - 0
+  - 2
+  same_as: sd.guarantees.freshness-requirement-caching
+- id: sd.design-links.requirements-scope-and-invariants
+  subtopic: 1. Requirements (5 minutes)
+  kind: procedure
+  claim: Turn the prompt into scope (create, resolve, update, disable, list), scale (10M links, 20k resolutions/s, 20 writes/s), a freshness bound, durability of acknowledged creates, and an ownership invariant (owners change only their own links; disabled or unknown codes never redirect).
+  prompt: What should you pin down in the first five minutes of a link shortener interview?
+  objectives:
+  - 0
+  requires:
+  - sd.guarantees.four-kinds-of-statement
+- id: sd.design-links.storage-estimate-small
+  subtopic: 2. Estimates (5 minutes)
+  kind: fact
+  claim: 10M links at about 500 bytes each is about 5 GB, so one database node with a replica suffices and no sharding is needed.
+  prompt: Roughly how much storage do 10M links of ~500 bytes need, and what does that imply?
+  objectives:
+  - 1
+  requires:
+  - sd.estimates.storage-formula
+- id: sd.design-links.cache-hit-db-load
+  subtopic: 2. Estimates (5 minutes)
+  kind: fact
+  claim: At 20,000 reads/s a 95% cache hit rate leaves about 1,000 reads/s for the database; a single Postgres primary could serve 20k/s of primary-key lookups but with no headroom.
+  prompt: With 20k reads/s and a 95% cache hit rate, how many reads reach the database?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-aside.db-load-is-miss-rate
+- id: sd.design-links.base62-code-space
+  subtopic: 2. Estimates (5 minutes)
+  kind: fact
+  claim: Seven base62 characters give 62^7, about 3.5 trillion codes, so random codes rarely collide with 10M links.
+  prompt: How many codes do 7 base62 characters give?
+  objectives:
+  - 1
+  requires:
+  - sd.id-generation.base62-capacity
+- id: sd.design-links.estimates-shape-design
+  subtopic: 2. Estimates (5 minutes)
+  kind: principle
+  claim: The estimates show a small-data, read-heavy, latency-sensitive system, so effort belongs on the read path and freshness rather than on sharding. Bandwidth (~10 MB/s) is negligible.
+  prompt: What do the estimates say about where design effort should go?
+  objectives:
+  - 1
+  requires:
+  - sd.estimates.estimate-drives-decision
+- id: sd.design-links.redirect-302-not-301
+  subtopic: 3. API
+  kind: principle
+  claim: Redirect with 302 or 307 plus a short Cache-Control max-age, not 301, because browsers may cache a 301 indefinitely and break the freshness bound.
+  prompt: Why use 302/307 rather than 301 for redirects?
+  objectives:
+  - 2
+- id: sd.design-links.owner-authorisation-and-concurrency
+  subtopic: 3. API
+  kind: mechanism
+  claim: Updates check owner_id on every request (object-level authorisation) and use a version with If-Match for optimistic concurrency; creates carry an Idempotency-Key so retries return the original link.
+  prompt: How does the API enforce ownership, safe concurrent updates and retry-safe creates?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.request-flow.authz-in-owning-service
+  - sd.api-contracts.lost-update-optimistic-etag
+- id: sd.design-links.random-code-with-unique-constraint
+  subtopic: 4. Data model and code generation
+  kind: tradeoff
+  claim: Random 7-character base62 codes inserted under a primary-key constraint with retry on conflict are unguessable and need no coordination. Sequential IDs are enumerable; truncated hashes of the URL collide across owners.
+  prompt: Which code generation approach suits the service, and what is wrong with sequential IDs and truncated URL hashes?
+  objectives:
+  - 1
+  same_as: sd.id-generation.random-codes-unique-constraint
+- id: sd.design-links.custom-alias-same-constraint
+  subtopic: 4. Data model and code generation
+  kind: mechanism
+  claim: Custom aliases use the same table and unique constraint, returning 409 Conflict if taken, with a blocklist for reserved or offensive words.
+  prompt: How are custom aliases handled?
+  objectives:
+  - 1
+  requires:
+  - sd.design-links.random-code-with-unique-constraint
+- id: sd.design-links.links-schema-design
+  subtopic: 4. Data model and code generation
+  kind: fact
+  claim: The links table is keyed by code, with owner_id, destination, enabled, a version bumped on every change, and timestamps, plus an index on (owner_id, created_at DESC, code) for listing a user's links.
+  prompt: What are the key columns and index of the links table?
+  objectives:
+  - 1
+- id: sd.design-links.read-path-layers
+  subtopic: 5. The read path
+  kind: mechanism
+  claim: Resolution goes CDN (max-age 30 s) to stateless resolver to Redis (TTL 20 s, DEL on write) to Postgres primary-key lookup, caching results including not-found.
+  prompt: Describe the layers a redirect request passes through.
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+  - sd.http-cdn.s-maxage-shared-ttl
+- id: sd.design-links.negative-caching
+  subtopic: 5. The read path
+  kind: mechanism
+  claim: Cache not-found results for a short TTL and rate-limit 404s, so bots requesting random codes cannot send every request to the database.
+  prompt: Why cache not-found results?
+  objectives:
+  - 2
+  - 3
+  same_as: sd.cache-aside.cache-penetration
+- id: sd.design-links.async-click-events
+  subtopic: 5. The read path
+  kind: principle
+  claim: Emit click events asynchronously and never block a redirect on analytics, otherwise analytics latency and outages become redirect latency and outages.
+  prompt: How should click analytics be recorded in the redirect path?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.sync-async.async-triggers
+- id: sd.design-links.worst-case-staleness-sum
+  subtopic: '6. Deep dive: proving the 60-second bound'
+  kind: procedure
+  claim: 'Worst-case staleness without invalidation is the sum of the TTLs along the path, because a downstream cache can fetch an almost-expired copy and keep it for its full TTL: Redis 20 s + CDN 30 s = 50 s, inside 60 s.'
+  prompt: How do you compute worst-case staleness across cache layers?
+  objectives:
+  - 2
+  same_as: sd.cache-freshness.stacked-ttls-add-up
+- id: sd.design-links.ttl-is-guarantee
+  subtopic: '6. Deep dive: proving the 60-second bound'
+  kind: principle
+  claim: The TTLs are the freshness guarantee and invalidation (Redis DEL, CDN purge) is only an optimisation making the usual case near-instant, so a lost delete degrades to the TTL bound.
+  prompt: Is the 60-second guarantee provided by invalidation or by TTLs?
+  objectives:
+  - 2
+  - 3
+  same_as: sd.cache-freshness.ttl-backstop
+- id: sd.design-links.refill-race-and-replica-lag
+  subtopic: '6. Deep dive: proving the 60-second bound'
+  kind: mechanism
+  claim: A slow reader can refill Redis with the old value after the owner's DELETE; the TTL caps this. Filling from a lagging replica would add the replica lag to the staleness bound.
+  prompt: How can a stale value reappear after a disable, and what bounds it?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.cache-freshness.stale-refill-race-mechanism
+  - sd.cache-freshness.replica-fill-race
+- id: sd.design-links.immediate-disable-changes
+  subtopic: '6. Deep dive: proving the 60-second bound'
+  kind: tradeoff
+  claim: If disables must be immediate, purge the CDN and delete the Redis key on disable, prevent refill races with versioned fills or leases, add a delayed second delete, and optionally skip edge caching for disabled links; the TTL then serves only as a safety net.
+  prompt: What changes if disables must take effect immediately?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.design-links.refill-race-and-replica-lag
+- id: sd.design-links.redis-down-failure
+  subtopic: 7. Failure modes
+  kind: mechanism
+  claim: If Redis fails, all resolves fall through to Postgres at up to 20k/s; the CDN, per-instance in-memory caches and a primary plus replica sized for the miss path carry the load briefly.
+  prompt: What protects Postgres if Redis goes down at peak?
+  objectives:
+  - 3
+  requires:
+  - sd.hot-keys.cache-failure-load-multiplier
+- id: sd.design-links.primary-down-and-crash
+  subtopic: 7. Failure modes
+  kind: mechanism
+  claim: If the primary is down, creates and updates fail but resolves continue from cache and replica, with automated failover. A crash after commit but before the response is handled by an idempotency key returning the original link.
+  prompt: What happens when the primary fails, or the app crashes after committing a create?
+  objectives:
+  - 3
+- id: sd.design-links.abuse-and-enumeration
+  subtopic: 7. Failure modes
+  kind: tradeoff
+  claim: Defend against phishing with a malicious-URL check on create, an abuse-report disable path and per-account rate limits; random codes plus rate-limited 404s defend against enumeration.
+  prompt: How do you mitigate abuse of the shortener and code enumeration?
+  objectives:
+  - 3
+- id: sd.design-links.evolution-triggers
+  subtopic: 8. Evolution
+  kind: procedure
+  claim: 'Evolve only on measured triggers: in-memory cache with 5 s TTL when Redis hot keys saturate; click stream to Kafka and a columnar store when analytics are needed; partition by code hash at hundreds of millions of links; multi-region read replicas and resolvers for global latency.'
+  prompt: What triggers each evolution step beyond the baseline design?
+  objectives:
+  - 3
+- id: sd.design-links.interview-flow-order
+  subtopic: Introduction
+  kind: procedure
+  claim: 'Present in order: requirements (scope, scale, freshness, ownership), estimates, API and data model, architecture traced for hit, miss and disable, then deep dives on freshness and failures, then evolution triggers.'
+  prompt: In what order should you present this design in an interview?
+  objectives:
+  - 0
+  - 3
+items:
+  design-links-check-1-v2:
+  - sd.design-links.redirect-302-not-301
+  design-links-check-2-v2:
+  - sd.design-links.worst-case-staleness-sum
+  design-links-check-3-v2:
+  - sd.design-links.random-code-with-unique-constraint
+  - sd.design-links.abuse-and-enumeration
+  - sd.design-links.owner-authorisation-and-concurrency
+  design-links-check-4-v2:
+  - sd.design-links.storage-estimate-small
+  design-links-fire-1-v2:
+  - sd.design-links.async-click-events
+  design-links-fire-2-v2:
+  - sd.design-links.negative-caching
+  design-links-fire-3-v2:
+  - sd.design-links.redis-down-failure
+  design-links-fire-4-v2:
+  - sd.design-links.immediate-disable-changes
+  design-links-fire-5-v2:
+  - sd.design-links.interview-flow-order
+  design-links:b1:
+  - sd.design-links.freshness-bound-constrains-reads
+  design-links:b10:
+  - sd.design-links.refill-race-and-replica-lag
+  - sd.design-links.ttl-is-guarantee
+  design-links:b12:
+  - sd.design-links.redirect-302-not-301
+  - sd.design-links.async-click-events
+  - sd.design-links.ttl-is-guarantee
+  design-links:b14:
+  - sd.design-links.evolution-triggers
+  design-links:b16:
+  - sd.design-links.ttl-is-guarantee
+  - sd.design-links.worst-case-staleness-sum
+  - sd.design-links.refill-race-and-replica-lag
+  design-links:b17:
+  - sd.design-links.ttl-is-guarantee
+  - sd.design-links.redirect-302-not-301
+  - sd.design-links.refill-race-and-replica-lag
+  design-links:b3:
+  - sd.design-links.storage-estimate-small
+  - sd.design-links.cache-hit-db-load
+  - sd.design-links.base62-code-space
+  design-links:b5:
+  - sd.design-links.random-code-with-unique-constraint
+  - sd.design-links.custom-alias-same-constraint
+  design-links:b9:
+  - sd.design-links.worst-case-staleness-sum
+  redesign:design-links:
+  - sd.design-links.read-path-layers
+  - sd.design-links.requirements-scope-and-invariants
+  - sd.design-links.links-schema-design

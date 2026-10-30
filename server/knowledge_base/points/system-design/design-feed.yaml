@@ -1,0 +1,229 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-feed
+source_hash: 0015d15090c39a29
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-feed.reads-dominate-cost
+  subtopic: 1. Requirements
+  kind: principle
+  claim: 'Feed reads dominate cost: each load logically merges and ranks posts from hundreds of followed accounts and outnumbers posts by orders of magnitude, so timelines are precomputed (fan-out on write) with an exception for celebrities.'
+  prompt: What dominates the cost of a social feed system, and what does that imply for the design?
+  objectives:
+  - 0
+  requires:
+  - sd.feed-fanout.pull-expensive-reads-dominate
+- id: sd.design-feed.media-bandwidth-cdn
+  subtopic: 2. Estimates
+  kind: principle
+  claim: Media bytes dominate bandwidth and storage (about 27 TB of new images a day if 30% of posts carry 2 images of 300 KB), so images go to object storage behind a CDN, not the posts database.
+  prompt: Where should feed images be stored and served from, and why?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.estimates.find-dominant-term
+- id: sd.design-feed.feed-read-qps
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: 300M DAU × 10 feed loads a day is 3B loads a day, about 35k loads/s on average and around 100k/s at peak.
+  prompt: Estimate average and peak feed loads per second for 300M DAU at 10 loads each per day.
+  objectives:
+  - 0
+  requires:
+  - sd.estimates.daily-to-per-second
+- id: sd.design-feed.fanout-write-rate
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: Peak posting of about 5k posts/s times a median of 200 followers gives about 1M timeline inserts/s, feasible in a sharded in-memory store when celebrities are excluded.
+  prompt: How many timeline inserts per second result from 5k posts/s with 200 median followers?
+  objectives:
+  - 0
+  requires:
+  - sd.feed-fanout.push-write-cost-scales-followers
+- id: sd.design-feed.timeline-storage-size
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: Storing 800 post IDs of 8 bytes for each of 300M users takes about 1.9 TB in memory before replication, an ordinary sharded Redis/Memcached-class cluster.
+  prompt: Roughly how much memory do capped timelines of 800 8-byte IDs need for 300M users?
+  objectives:
+  - 0
+  requires:
+  - sd.feed-fanout.cap-and-trim-timelines
+- id: sd.design-feed.timelines-store-ids
+  subtopic: 3. API and data
+  kind: tradeoff
+  claim: Timelines store only post IDs, which keeps storage and fan-out cheap and lets edits, deletes and privacy changes take effect at hydration without rewriting millions of timelines.
+  prompt: Why do timelines hold post IDs rather than full posts?
+  objectives:
+  - 1
+  same_as: sd.feed-fanout.store-ids-hydrate
+- id: sd.design-feed.data-sharding-keys
+  subtopic: 3. API and data
+  kind: fact
+  claim: Posts are sharded by time-sortable Snowflake-style post_id, profile timelines by author_id clustered by post_id DESC, follows and the reverse followers index by their first column, and timelines are capped lists of 800 IDs in a sharded in-memory store.
+  prompt: How would you shard and key the posts, follows and timelines data?
+  objectives:
+  - 1
+  requires:
+  - sd.id-generation.snowflake-profile
+  - sd.partitioning.shard-key-matches-access
+- id: sd.design-feed.publish-path-outbox
+  subtopic: 4. Architecture
+  kind: mechanism
+  claim: Publishing stores the post, emits PostCreated through an outbox, and asynchronous fan-out workers push the post ID onto active followers' capped timelines in batches.
+  prompt: What happens on the write path when a user publishes a post?
+  objectives:
+  - 1
+  requires:
+  - sd.outbox.outbox-same-transaction
+- id: sd.design-feed.hybrid-fanout-threshold
+  subtopic: 5. Deep dives
+  kind: tradeoff
+  claim: 'Use hybrid fan-out: push to followers'' timelines for authors under a threshold (about 500k followers) and merge celebrities'' posts at read time, avoiding write storms such as 50M inserts per post at a small cost in read work.'
+  prompt: Why and how is fan-out made hybrid for celebrity accounts?
+  objectives:
+  - 1
+  - 3
+  same_as: sd.feed-fanout.hybrid-threshold-design
+- id: sd.design-feed.read-path-steps
+  subtopic: 4. Architecture
+  kind: mechanism
+  claim: A feed read gets about 800 timeline IDs plus celebrity posts, ranks about 500 candidates within a 30 ms budget, hydrates the top 30 in batch from caches, filters deleted, blocked or private items, and returns a cursor.
+  prompt: What are the steps of a feed read, in order?
+  objectives:
+  - 1
+  requires:
+  - sd.design-feed.hybrid-fanout-threshold
+  - sd.design-feed.timelines-store-ids
+- id: sd.design-feed.ranker-budget-fallback
+  subtopic: 6. Failure modes
+  kind: principle
+  claim: Ranking is optional enrichment with a time budget (about 30 ms); if it is exceeded, fall back to recency ordering rather than waiting, retrying or failing.
+  prompt: What should the feed service do when the ranker is slow?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.overload.optional-dependency-budget
+- id: sd.design-feed.hydration-filters-deletes
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: Hydration filters deleted, private and blocked items on every read, and background cleanup removes stale IDs from timelines.
+  prompt: How are deletes and privacy changes applied to timelines holding IDs?
+  objectives:
+  - 2
+  same_as: sd.feed-fanout.enforce-privacy-at-read
+- id: sd.design-feed.snapshot-pagination
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: Ranked feeds cannot page by created_at or offset because scores change and new items arrive; rank once into a short-lived (about 10 minutes) snapshot of IDs and page by index cursor, rebuilding on refresh.
+  prompt: How do you paginate a ranked feed without duplicates or skips?
+  objectives:
+  - 2
+  requires:
+  - sd.api-contracts.cursors-not-snapshots
+- id: sd.design-feed.hot-counter-fix
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: For viral posts, keep likes as idempotent rows (primary key on post_id, user_id) and count via sharded or stream-aggregated counters that lag by seconds, instead of one hot row.
+  prompt: How do you handle like counts on a post getting 100k likes a minute?
+  objectives:
+  - 2
+  requires:
+  - sd.hot-keys.sharded-counters
+- id: sd.design-feed.like-hot-path-pitfalls
+  subtopic: 5. Deep dives
+  kind: principle
+  claim: 'A naive like endpoint has three flaws: a retry inserts a duplicate like, every like contends on one counter row, and deleting the cache entry on each like causes a refill storm on the hottest post.'
+  prompt: What is wrong with inserting a like, incrementing a row counter and deleting the post cache entry in each request?
+  objectives:
+  - 2
+  requires:
+  - sd.design-feed.hot-counter-fix
+- id: sd.design-feed.read-your-writes-author
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: Because fan-out is asynchronous, merge the author's own recent posts into their feed at read time (or insert client-side), giving read-your-writes for the author only.
+  prompt: How does an author see their new post immediately despite async fan-out?
+  objectives:
+  - 2
+  requires:
+  - sd.replication.read-your-writes-anomaly
+- id: sd.design-feed.timeline-shard-rebuild
+  subtopic: 6. Failure modes
+  kind: procedure
+  claim: If a timeline cache shard is lost, rebuild each user's timeline on demand by pulling recent posts from followed accounts, ranking and repopulating the cache, with a slower first load.
+  prompt: How do users get feeds after a timeline cache shard is lost?
+  objectives:
+  - 3
+  requires:
+  - sd.feed-fanout.push-vs-pull-tradeoff
+- id: sd.design-feed.fanout-backlog-staleness
+  subtopic: 6. Failure modes
+  kind: principle
+  claim: A fan-out backlog only makes feeds slightly stale, so monitor fan-out lag; authors still see their own posts via the read-time merge.
+  prompt: What is the user impact of a fan-out backlog and how is it handled?
+  objectives:
+  - 3
+  requires:
+  - sd.design-feed.publish-path-outbox
+- id: sd.design-feed.feed-evolution-path
+  subtopic: 6. Failure modes
+  kind: procedure
+  claim: 'Feed systems evolve in steps, each answering measured pain: pull-based feed, precomputed timelines, hybrid fan-out for celebrities, ML ranking with a latency budget, then regional replicas and caches.'
+  prompt: What is the typical evolution of a feed architecture?
+  objectives:
+  - 3
+  requires:
+  - sd.tradeoffs.show-evolution-path
+items:
+  design-feed-check-1-v2:
+  - sd.design-feed.timelines-store-ids
+  design-feed-check-2-v2:
+  - sd.design-feed.fanout-write-rate
+  design-feed-check-3-v2:
+  - sd.design-feed.read-path-steps
+  - sd.design-feed.hybrid-fanout-threshold
+  - sd.design-feed.ranker-budget-fallback
+  design-feed-check-4-v2:
+  - sd.design-feed.snapshot-pagination
+  design-feed-fire-1-v2:
+  - sd.design-feed.hot-counter-fix
+  design-feed-fire-2-v2:
+  - sd.design-feed.read-your-writes-author
+  design-feed-fire-3-v2:
+  - sd.design-feed.timeline-shard-rebuild
+  design-feed-fire-4-v2:
+  - sd.design-feed.ranker-budget-fallback
+  design-feed-fire-5-v2:
+  - sd.design-feed.read-path-steps
+  design-feed:b1:
+  - sd.design-feed.reads-dominate-cost
+  design-feed:b11:
+  - sd.design-feed.feed-evolution-path
+  design-feed:b13:
+  - sd.design-feed.publish-path-outbox
+  - sd.design-feed.read-path-steps
+  - sd.design-feed.hydration-filters-deletes
+  design-feed:b14:
+  - sd.design-feed.hybrid-fanout-threshold
+  - sd.design-feed.like-hot-path-pitfalls
+  - sd.design-feed.hot-counter-fix
+  design-feed:b3:
+  - sd.design-feed.feed-read-qps
+  - sd.design-feed.fanout-write-rate
+  - sd.design-feed.timeline-storage-size
+  design-feed:b9:
+  - sd.design-feed.like-hot-path-pitfalls
+  - sd.design-feed.hot-counter-fix
+  redesign:design-feed:
+  - sd.design-feed.reads-dominate-cost
+  - sd.design-feed.hybrid-fanout-threshold
+  - sd.design-feed.read-path-steps

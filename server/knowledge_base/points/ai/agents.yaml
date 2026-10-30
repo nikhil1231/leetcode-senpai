@@ -1,0 +1,182 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: agents
+source_hash: 92694fd82328be89
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.agents.simplest-structure-first
+  subtopic: Workflows before agents
+  kind: principle
+  claim: 'Use the simplest structure that works: a single call for one input and one output, a fixed workflow or router when the steps are known in advance, and an agent only when they cannot be scripted.'
+  prompt: How should you choose between a single call, a fixed workflow and an autonomous agent?
+  objectives:
+  - 0
+- id: ai.agents.agent-when-steps-unknowable
+  subtopic: Workflows before agents
+  kind: tradeoff
+  claim: An autonomous agent loop is right when the steps cannot be known in advance and each depends on intermediate results, such as fixing a failing test in unfamiliar code or open-ended research.
+  prompt: When does an autonomous agent loop beat a fixed workflow?
+  objectives:
+  - 0
+  requires:
+  - ai.agents.simplest-structure-first
+- id: ai.agents.workflow-benefits-over-agent
+  subtopic: Workflows before agents
+  kind: tradeoff
+  claim: A fixed workflow is cheaper, faster, easier to test and fails more predictably than an agent, so agents must earn their cost.
+  prompt: What advantages does a fixed workflow have over an agent when the steps are scriptable?
+  objectives:
+  - 0
+  requires:
+  - ai.agents.simplest-structure-first
+- id: ai.agents.tool-loop-structure
+  subtopic: The loop
+  kind: mechanism
+  claim: A tool loop calls the model with messages and tools, returns if the reply is final, otherwise runs each tool call, appends the results to the messages, and repeats up to a step limit.
+  prompt: How does a basic agent tool loop work?
+  objectives:
+  - 1
+  same_as: ai.prompting.tool-calling-loop
+- id: ai.agents.loop-budgets
+  subtopic: The loop
+  kind: principle
+  claim: Enforce hard budgets in the loop on steps, tokens, wall-clock time and money per task, and return a graceful partial answer when they run out; otherwise a confused agent loops forever and runs up a bill.
+  prompt: What limits should an agent loop enforce, and why?
+  objectives:
+  - 1
+  requires:
+  - ai.agents.tool-loop-structure
+- id: ai.agents.tool-errors-as-observations
+  subtopic: The loop
+  kind: principle
+  claim: Return useful tool errors (e.g. 'file not found; did you mean src/app.py?') as tool results so the model can recover, rather than crashing the loop or silently returning empty results.
+  prompt: How should a loop handle a failed tool call?
+  objectives:
+  - 1
+  requires:
+  - ai.agents.tool-loop-structure
+- id: ai.agents.idempotent-scoped-tools
+  subtopic: The loop
+  kind: principle
+  claim: Make tools idempotent and narrowly scoped, because the model will retry calls and retries must be safe.
+  prompt: Why should agent tools be idempotent?
+  objectives:
+  - 1
+- id: ai.agents.stopping-conditions
+  subtopic: The loop
+  kind: principle
+  claim: Define what done means, and give the model a way to say it cannot do the task or to ask a human.
+  prompt: What stopping conditions should an agent have besides budgets?
+  objectives:
+  - 1
+- id: ai.agents.trace-every-step
+  subtopic: The loop
+  kind: principle
+  claim: Log every step as a trace (prompt, tool call, arguments, result, tokens, latency), since debugging an agent without traces is guesswork.
+  prompt: What should you log to make an agent debuggable?
+  objectives:
+  - 1
+- id: ai.agents.validate-tool-calls
+  subtopic: The loop
+  kind: principle
+  claim: Tool calls should be validated, permission-checked and time-limited before running, not executed blindly.
+  prompt: What checks should wrap each tool execution in the loop?
+  objectives:
+  - 1
+  - 3
+  same_as: ai.prompting.app-executes-tools
+- id: ai.agents.context-growth-problem
+  subtopic: Context over long tasks
+  kind: fact
+  claim: Every step adds to the context, which costs tokens and dilutes the model's attention.
+  prompt: Why is context a problem in long agent tasks?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-basics.long-context-costs-and-position
+- id: ai.agents.context-management-techniques
+  subtopic: Context over long tasks
+  kind: mechanism
+  claim: Manage context by truncating or summarising old tool results, keeping a structured scratchpad or plan file, and storing large outputs outside the context with a short reference.
+  prompt: Name techniques for keeping an agent's context small over a long task.
+  objectives:
+  - 2
+  requires:
+  - ai.agents.context-growth-problem
+- id: ai.agents.sub-agents-fresh-context
+  subtopic: Context over long tasks
+  kind: mechanism
+  claim: Delegating a sub-task to a sub-agent with a fresh context keeps the main context small, because the sub-agent returns only a concise summary.
+  prompt: Why delegate sub-tasks to sub-agents with fresh contexts?
+  objectives:
+  - 2
+  requires:
+  - ai.agents.context-growth-problem
+- id: ai.agents.mcp-interface-only
+  subtopic: Context over long tasks
+  kind: fact
+  claim: Model Context Protocol (MCP) standardises how applications expose tools and resources to models; it is an interface standard, not a security model.
+  prompt: What does MCP standardise, and what does it not provide?
+  objectives:
+  - 2
+  - 3
+- id: ai.agents.least-privilege
+  subtopic: Permissions and safety
+  kind: principle
+  claim: 'Apply least privilege: read-only tools by default, scoped credentials, sandboxes for running code, and allow lists for network and file access.'
+  prompt: What does least privilege look like for an agent?
+  objectives:
+  - 3
+  same_as: ai.ai-workflow.least-privilege-permissions
+- id: ai.agents.human-approval-irreversible
+  subtopic: Permissions and safety
+  kind: principle
+  claim: Require human approval for irreversible or high-impact actions such as sending email, payments, deleting data and deploying; enforce this in code, not by prompt instructions.
+  prompt: Which agent actions need human approval, and how is it enforced?
+  objectives:
+  - 3
+- id: ai.agents.prompt-injection-untrusted-content
+  subtopic: Permissions and safety
+  kind: principle
+  claim: Content an agent reads (web pages, emails, documents) can contain injected instructions, so content read by a tool must never grant itself new permissions.
+  prompt: Why is content read by an agent a threat channel?
+  objectives:
+  - 3
+- id: ai.agents.lethal-trifecta
+  subtopic: Permissions and safety
+  kind: fact
+  claim: The lethal trifecta is private data access, exposure to untrusted content, and the ability to send data out, all in one agent; removing any one breaks the exfiltration attack.
+  prompt: What are the three parts of the lethal trifecta for agents?
+  objectives:
+  - 3
+  same_as: ai.ai-workflow.prompt-injection-lethal-trifecta
+items:
+  agents-check-1-v2:
+  - ai.agents.agent-when-steps-unknowable
+  agents-check-2-v2:
+  - ai.agents.human-approval-irreversible
+  - ai.agents.least-privilege
+  agents-check-3-v2:
+  - ai.agents.tool-errors-as-observations
+  agents-fire-1-v2:
+  - ai.agents.lethal-trifecta
+  agents-fire-2-v2:
+  - ai.agents.sub-agents-fresh-context
+  agents-fire-3-v2:
+  - ai.agents.mcp-interface-only
+  agents-fire-4-v2:
+  - ai.agents.loop-budgets
+  agents:b1:
+  - ai.agents.simplest-structure-first
+  - ai.agents.workflow-benefits-over-agent
+  - ai.agents.agent-when-steps-unknowable
+  agents:b3:
+  - ai.agents.lethal-trifecta
+  - ai.agents.loop-budgets
+  - ai.agents.validate-tool-calls

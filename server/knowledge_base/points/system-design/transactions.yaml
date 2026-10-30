@@ -1,0 +1,260 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: transactions
+source_hash: c95c453f353eb780
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.transactions.atomicity-all-or-nothing
+  subtopic: What transactions give you
+  kind: fact
+  claim: Atomicity means all of a transaction's changes commit or none do, so a transfer's debit and credit cannot half-happen.
+  prompt: What does atomicity guarantee about a transaction's changes?
+  objectives:
+  - 0
+- id: sd.transactions.durability-after-commit
+  subtopic: What transactions give you
+  kind: fact
+  claim: Durability means that once COMMIT returns the change survives a crash, because it is in the write-ahead log on disk (and on replicas only if synchronous replication is configured).
+  prompt: What does durability promise once COMMIT has returned, and what extra is needed for replicas?
+  objectives:
+  - 0
+  requires:
+  - sd.transactions.atomicity-all-or-nothing
+- id: sd.transactions.isolation-level-dependent
+  subtopic: What transactions give you
+  kind: principle
+  claim: Isolation only hides concurrent transactions' partial work to the degree the chosen isolation level promises, so the level determines which anomalies can occur.
+  prompt: Why is isolation the subtle part of ACID?
+  objectives:
+  - 1
+- id: sd.transactions.consistency-is-invariants
+  subtopic: What transactions give you
+  kind: principle
+  claim: 'The ''C'' in ACID is really your invariants: constraints the database enforces plus rules your transactions maintain.'
+  prompt: What does consistency in ACID actually depend on?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.guarantees.four-kinds-of-statement
+- id: sd.transactions.external-effects-not-rolled-back
+  subtopic: What transactions give you
+  kind: principle
+  claim: A rollback does not undo external side effects such as sent emails or payment API calls; these need idempotency, the outbox pattern or sagas.
+  prompt: If a transaction calls a payment API then rolls back, what happens to the charge, and how should external effects be handled?
+  objectives:
+  - 0
+  requires:
+  - sd.transactions.atomicity-all-or-nothing
+- id: sd.transactions.default-isolation-levels
+  subtopic: The anomalies
+  kind: fact
+  claim: Postgres and Oracle default to Read Committed, while MySQL InnoDB defaults to Repeatable Read with different semantics from Postgres's, so check rather than assume.
+  prompt: What are the default isolation levels of Postgres, Oracle and MySQL InnoDB?
+  objectives:
+  - 1
+  requires:
+  - sd.transactions.isolation-level-dependent
+- id: sd.transactions.read-committed-prevents-dirty-reads
+  subtopic: The anomalies
+  kind: fact
+  claim: Dirty reads (seeing uncommitted data) are prevented at Read Committed and above, but non-repeatable reads and phantoms are still possible at Read Committed.
+  prompt: Which read anomalies remain possible at Read Committed?
+  objectives:
+  - 1
+  requires:
+  - sd.transactions.isolation-level-dependent
+- id: sd.transactions.repeatable-read-snapshot-prevents-reads
+  subtopic: The anomalies
+  kind: fact
+  claim: In Postgres, Repeatable Read uses an MVCC snapshot that prevents non-repeatable reads and phantoms.
+  prompt: Which anomalies does Postgres Repeatable Read prevent via its snapshot?
+  objectives:
+  - 1
+  requires:
+  - sd.transactions.read-committed-prevents-dirty-reads
+- id: sd.transactions.lost-update-definition
+  subtopic: Lost update
+  kind: mechanism
+  claim: A lost update happens when two transactions read the same value, each decides and writes from it, and one write overwrites the other; wrapping this in BEGIN/COMMIT at Read Committed does not stop it.
+  prompt: How can a read-check-write inside a transaction still lose an update at Read Committed?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.transactions.read-committed-prevents-dirty-reads
+- id: sd.transactions.lost-update-by-isolation-level
+  subtopic: The anomalies
+  kind: fact
+  claim: Postgres Repeatable Read aborts one of two lost-updating transactions with a serialisation error, whereas MySQL's Repeatable Read does not prevent lost updates.
+  prompt: How do Postgres and MySQL Repeatable Read differ on lost updates?
+  objectives:
+  - 1
+  requires:
+  - sd.transactions.lost-update-definition
+  - sd.transactions.repeatable-read-snapshot-prevents-reads
+- id: sd.transactions.atomic-conditional-update
+  subtopic: Lost update
+  kind: procedure
+  claim: An atomic conditional update (UPDATE ... SET balance = balance - 80 WHERE id = 7 AND balance >= 80) checks and writes in one statement; zero rows updated means the check failed.
+  prompt: How can a single statement prevent overdrawing a balance, and how do you detect failure?
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.lost-update-definition
+- id: sd.transactions.pessimistic-row-lock
+  subtopic: Lost update
+  kind: mechanism
+  claim: SELECT ... FOR UPDATE locks the row so a concurrent transaction waits until the first finishes, making the read-check-write safe.
+  prompt: How does SELECT ... FOR UPDATE prevent a lost update?
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.lost-update-definition
+- id: sd.transactions.optimistic-version-check
+  subtopic: Lost update
+  kind: procedure
+  claim: Optimistic concurrency reads the row and its version, computes in the app, then updates WHERE version = old; if 0 rows change, someone else wrote first, so re-read and retry.
+  prompt: How does an optimistic version check detect and handle a conflicting write?
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.lost-update-definition
+  same_as: sd.guarantees.read-check-write-race
+- id: sd.transactions.check-constraint-safety-net
+  subtopic: Lost update
+  kind: principle
+  claim: 'A CHECK constraint such as balance >= 0 is a last line of defence: the database refuses an invalid state even if application logic races.'
+  prompt: What role does a CHECK constraint play against concurrency races?
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.consistency-is-invariants
+- id: sd.transactions.write-skew-definition
+  subtopic: 'Write skew: the anomaly snapshots don''t stop'
+  kind: mechanism
+  claim: Write skew occurs when two transactions read overlapping data, write different rows, and together break an invariant; snapshot isolation misses it because there is no write-write conflict.
+  prompt: What is write skew and why does snapshot isolation not catch it?
+  objectives:
+  - 1
+  requires:
+  - sd.transactions.repeatable-read-snapshot-prevents-reads
+  - sd.transactions.lost-update-definition
+- id: sd.transactions.write-skew-fixes
+  subtopic: 'Write skew: the anomaly snapshots don''t stop'
+  kind: tradeoff
+  claim: Write skew can be fixed with SERIALIZABLE isolation plus retries, locking all rows the decision depends on, or materialising the conflict on a single row both transactions must update.
+  prompt: Name three ways to prevent write skew on a multi-row invariant.
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.write-skew-definition
+- id: sd.transactions.serializable-ssi-retry
+  subtopic: 'Write skew: the anomaly snapshots don''t stop'
+  kind: mechanism
+  claim: Postgres SSI tracks read-write dependencies and aborts one transaction on a dangerous pattern (SQLSTATE 40001), so the application must retry; cost is some overhead and more aborts under contention.
+  prompt: How does Postgres Serializable prevent write skew and what must the application do?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.transactions.write-skew-definition
+- id: sd.transactions.unique-constraint-for-uniqueness
+  subtopic: 'Write skew: the anomaly snapshots don''t stop'
+  kind: principle
+  claim: Uniqueness under concurrency must be enforced by the database with a unique index (or INSERT ... ON CONFLICT); check-then-insert in application code and browser checks are only hints.
+  prompt: How do you reliably guarantee unique usernames under concurrent registration?
+  objectives:
+  - 2
+- id: sd.transactions.exclusion-constraint-overlap
+  subtopic: 'Write skew: the anomaly snapshots don''t stop'
+  kind: fact
+  claim: In Postgres an exclusion constraint (room_id WITH =, tstzrange(start, end) WITH &&) rejects overlapping ranges for all concurrent writers, turning write skew into a constraint violation.
+  prompt: What Postgres feature prevents overlapping bookings for the same room at database level?
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.write-skew-definition
+- id: sd.transactions.match-mechanism-to-invariant
+  subtopic: 'Write skew: the anomaly snapshots don''t stop'
+  kind: tradeoff
+  claim: 'Pick the narrowest mechanism: unique constraint for uniqueness, conditional update for counters, row lock for short decisions others must wait on, serializable with retry for invariants spanning many rows.'
+  prompt: Which mechanism suits single-row counter limits versus invariants spanning many rows?
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.atomic-conditional-update
+  - sd.transactions.pessimistic-row-lock
+  - sd.transactions.serializable-ssi-retry
+- id: sd.transactions.deadlock-consistent-lock-order
+  subtopic: Deadlocks and long transactions
+  kind: mechanism
+  claim: Transactions locking the same rows in opposite orders deadlock; the database aborts one, so code must retry, and locking in a consistent order (e.g. by primary key) prevents most deadlocks.
+  prompt: What causes deadlocks and how do you prevent most of them?
+  objectives:
+  - 3
+  requires:
+  - sd.transactions.pessimistic-row-lock
+- id: sd.transactions.long-transactions-harm
+  subtopic: Deadlocks and long transactions
+  kind: principle
+  claim: Long transactions hold locks that block writers, keep old MVCC row versions alive (bloat, blocking Postgres vacuum) and raise conflicts; keep them short with no user think time or network calls.
+  prompt: Why should transactions be kept short in an MVCC database?
+  objectives:
+  - 3
+  requires:
+  - sd.transactions.pessimistic-row-lock
+- id: sd.transactions.no-external-calls-in-transaction
+  subtopic: Deadlocks and long transactions
+  kind: principle
+  claim: 'Do not call external services inside a transaction: it holds locks across slow network calls and the effect cannot be undone on rollback; commit first and notify via an outbox written in the same transaction.'
+  prompt: Why is an external API call inside a transaction a bug, and what is the alternative?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.transactions.external-effects-not-rolled-back
+  - sd.transactions.long-transactions-harm
+items:
+  transactions-check-1-v2:
+  - sd.transactions.lost-update-definition
+  - sd.transactions.atomic-conditional-update
+  transactions-check-2-v2:
+  - sd.transactions.serializable-ssi-retry
+  - sd.transactions.write-skew-fixes
+  transactions-check-3-v2:
+  - sd.transactions.unique-constraint-for-uniqueness
+  transactions-check-4-v2:
+  - sd.transactions.optimistic-version-check
+  transactions-fire-1-v2:
+  - sd.transactions.external-effects-not-rolled-back
+  transactions-fire-2-v2:
+  - sd.transactions.deadlock-consistent-lock-order
+  transactions-fire-3-v2:
+  - sd.transactions.serializable-ssi-retry
+  transactions-fire-4-v2:
+  - sd.transactions.exclusion-constraint-overlap
+  - sd.transactions.write-skew-definition
+  transactions-fire-5-v2:
+  - sd.transactions.long-transactions-harm
+  transactions:b1:
+  - sd.transactions.lost-update-definition
+  transactions:b11:
+  - sd.transactions.lost-update-definition
+  - sd.transactions.atomic-conditional-update
+  - sd.transactions.pessimistic-row-lock
+  transactions:b3:
+  - sd.transactions.write-skew-definition
+  - sd.transactions.write-skew-fixes
+  transactions:b6:
+  - sd.transactions.match-mechanism-to-invariant
+  - sd.transactions.unique-constraint-for-uniqueness
+  transactions:b8:
+  - sd.transactions.lost-update-definition
+  - sd.transactions.no-external-calls-in-transaction
+  - sd.transactions.deadlock-consistent-lock-order

@@ -1,0 +1,237 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: event-streams
+source_hash: 4de702e55dd95f75
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.event-streams.partition-log-structure
+  subtopic: The model
+  kind: mechanism
+  claim: A topic is split into partitions, each an append-only ordered log replicated across brokers; each event has an offset within its partition, and consumers track their position per partition.
+  prompt: How is a Kafka topic structured, and how do consumers track their position?
+  objectives:
+  - 0
+  same_as: sd.queue-basics.retained-log-replay
+- id: sd.event-streams.key-hash-partitioning
+  subtopic: The model
+  kind: mechanism
+  claim: Producers choose a partition with hash(key) % partitions, so events with the same key always land in the same partition; with no key, events are spread for balance and ordering is lost.
+  prompt: How does a producer choose a partition, and what follows for events with the same key?
+  objectives:
+  - 0
+  requires:
+  - sd.event-streams.partition-log-structure
+- id: sd.event-streams.consumer-group-assignment
+  subtopic: The model
+  kind: mechanism
+  claim: Within a consumer group each partition is assigned to exactly one consumer, while different groups read independently with their own offsets.
+  prompt: How are partitions assigned to consumers in a group, and how do separate groups relate?
+  objectives:
+  - 0
+  requires:
+  - sd.event-streams.partition-log-structure
+- id: sd.event-streams.ordering-guarantee-per-partition
+  subtopic: The model
+  kind: principle
+  claim: Kafka guarantees order only within a partition, never across partitions, so events needing order must share a key.
+  prompt: What ordering does a partitioned log guarantee?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.event-streams.partition-log-structure
+  - sd.event-streams.key-hash-partitioning
+- id: sd.event-streams.partitions-cap-parallelism
+  subtopic: The model
+  kind: principle
+  claim: 'Partition count caps parallelism in a group: consumers beyond the number of partitions sit idle (e.g. 20 consumers on 8 partitions leaves 12 idle).'
+  prompt: A group has 20 consumers on a topic of 8 partitions. How many do useful work and why?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.event-streams.consumer-group-assignment
+  same_as: sd.queue-basics.scale-out-consumers
+- id: sd.event-streams.key-from-ordering-need
+  subtopic: Choosing a partition key
+  kind: procedure
+  claim: Choose the key from what must stay ordered (order_id for order lifecycle, account_id for balances, device_id per device), and use no key where ordering is not needed, such as click analytics.
+  prompt: How do you pick a partition key for a stream?
+  objectives:
+  - 1
+  requires:
+  - sd.event-streams.key-hash-partitioning
+  - sd.event-streams.ordering-guarantee-per-partition
+- id: sd.event-streams.hot-key-skew
+  subtopic: Choosing a partition key
+  kind: principle
+  claim: A dominant key (e.g. a tenant with 40% of traffic) sends its whole load to one partition and one consumer, so adding consumers does not relieve it and Kafka does not split it automatically.
+  prompt: Why does a key carrying 40% of traffic stay a bottleneck however many consumers you add?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.event-streams.key-hash-partitioning
+  - sd.event-streams.consumer-group-assignment
+- id: sd.event-streams.skew-mitigations
+  subtopic: Choosing a partition key
+  kind: tradeoff
+  claim: To handle skew, use a more granular key (tenant_id + order_id if only per-order ordering matters), split the hot key with a suffix at the cost of its ordering, or give the giant tenant its own topic.
+  prompt: What options exist for a hot partition key, and what does splitting cost?
+  objectives:
+  - 1
+  requires:
+  - sd.event-streams.hot-key-skew
+  - sd.event-streams.key-from-ordering-need
+- id: sd.event-streams.partition-count-calculation
+  subtopic: Sizing partition counts
+  kind: procedure
+  claim: Size partitions as future peak throughput divided by per-consumer throughput (240 MB/s doubling to 480 at 12 MB/s gives 40), since consumers usually set the limit; round up for even division and skew headroom.
+  prompt: How do you size the partition count from throughput?
+  objectives:
+  - 1
+  requires:
+  - sd.event-streams.partitions-cap-parallelism
+- id: sd.event-streams.partition-cost
+  subtopic: Sizing partition counts
+  kind: tradeoff
+  claim: More partitions give more parallelism but cost open files, replication traffic, and longer leader elections and rebalances.
+  prompt: What costs come with having more partitions?
+  objectives:
+  - 1
+  requires:
+  - sd.event-streams.partition-log-structure
+- id: sd.event-streams.adding-partitions-remaps-keys
+  subtopic: Sizing partition counts
+  kind: principle
+  claim: Increasing partitions changes hash(key) % n for many keys and does not move existing data, so an account can have old and new events in different partitions processed in parallel; plan for peak up front or migrate carefully.
+  prompt: What happens to per-key ordering when you increase the partition count of a keyed topic?
+  objectives:
+  - 1
+  requires:
+  - sd.event-streams.key-hash-partitioning
+  - sd.event-streams.ordering-guarantee-per-partition
+- id: sd.event-streams.consumer-lag
+  subtopic: Consumer groups in motion
+  kind: fact
+  claim: Lag is the gap between the latest offset and the group's committed offset per partition; it is the core health metric, best alerted on in time terms.
+  prompt: What is consumer lag and how should you alert on it?
+  objectives:
+  - 2
+  requires:
+  - sd.event-streams.partition-log-structure
+- id: sd.event-streams.rebalancing
+  subtopic: Consumer groups in motion
+  kind: mechanism
+  claim: Partitions are reassigned when consumers join, leave or miss heartbeats; older protocols stop the whole group, while cooperative rebalancing and static membership reduce disruption.
+  prompt: When do rebalances happen and how can their disruption be reduced?
+  objectives:
+  - 2
+  requires:
+  - sd.event-streams.consumer-group-assignment
+- id: sd.event-streams.max-poll-interval-kick
+  subtopic: Consumer groups in motion
+  kind: mechanism
+  claim: If processing a poll's batch exceeds max.poll.interval.ms (default 5 minutes), the consumer is presumed dead and kicked out, causing repeated rebalances; keep batches small relative to processing time.
+  prompt: Why can huge slow batches cause endless rebalances?
+  objectives:
+  - 2
+  requires:
+  - sd.event-streams.rebalancing
+- id: sd.event-streams.commit-after-processing
+  subtopic: Consumer groups in motion
+  kind: principle
+  claim: Commit offsets after processing for at-least-once delivery, expect redelivery of the uncommitted tail after a rebalance, and make processing idempotent; timer-based auto-commit can skip unprocessed events.
+  prompt: When should offsets be committed, and what is wrong with timer auto-commit?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.event-streams.rebalancing
+  - sd.event-streams.partition-log-structure
+  same_as: sd.acknowledgements.at-least-once-ack-after
+- id: sd.event-streams.retention-replay
+  subtopic: Retention, replay and compaction
+  kind: fact
+  claim: Time or size retention (e.g. 7 days) keeps events after consumption, so new consumers can start from the beginning and broken consumers can rewind and reprocess.
+  prompt: What does retention enable beyond storage limits?
+  objectives:
+  - 2
+  requires:
+  - sd.event-streams.partition-log-structure
+- id: sd.event-streams.log-compaction
+  subtopic: Retention, replay and compaction
+  kind: mechanism
+  claim: Log compaction keeps at least the latest event per key indefinitely and removes older values (a null value is a tombstone), so replaying the topic rebuilds current state per key.
+  prompt: What does log compaction keep, and what is it used for?
+  objectives:
+  - 2
+  requires:
+  - sd.event-streams.retention-replay
+  - sd.event-streams.key-hash-partitioning
+- id: sd.event-streams.schema-registry-compatibility
+  subtopic: Schemas and evolution
+  kind: principle
+  claim: Because producers and consumers deploy independently, use Avro, Protobuf or JSON Schema with a schema registry that enforces compatibility rules, and treat events as a public API.
+  prompt: How do you keep independently deployed producers and consumers compatible?
+  objectives:
+  - 3
+- id: sd.event-streams.safe-schema-changes
+  subtopic: Schemas and evolution
+  kind: fact
+  claim: Backward compatible changes let new consumers read old events and forward compatible let old consumers read new events; adding optional fields with defaults is usually both, while removing or renaming fields or changing types is not.
+  prompt: Which schema changes are safe, and what do backward and forward compatibility mean?
+  objectives:
+  - 3
+  requires:
+  - sd.event-streams.schema-registry-compatibility
+- id: sd.event-streams.exactly-once-scope
+  subtopic: Schemas and evolution
+  kind: principle
+  claim: Kafka exactly-once covers idempotent producers (retry duplicates) and transactions making consume-process-produce plus offset commit atomic within Kafka; external side effects like database writes or emails still need idempotent handling.
+  prompt: What does Kafka's exactly-once cover, and what does it not?
+  objectives:
+  - 3
+  requires:
+  - sd.event-streams.commit-after-processing
+  same_as: sd.acknowledgements.broker-exactly-once-boundary
+items:
+  event-streams-check-1-v2:
+  - sd.event-streams.ordering-guarantee-per-partition
+  event-streams-check-2-v2:
+  - sd.event-streams.partitions-cap-parallelism
+  event-streams-check-3-v2:
+  - sd.event-streams.partition-count-calculation
+  event-streams-check-4-v2:
+  - sd.event-streams.hot-key-skew
+  - sd.event-streams.skew-mitigations
+  event-streams-fire-1-v2:
+  - sd.event-streams.commit-after-processing
+  event-streams-fire-2-v2:
+  - sd.event-streams.log-compaction
+  event-streams-fire-3-v2:
+  - sd.event-streams.max-poll-interval-kick
+  - sd.event-streams.rebalancing
+  event-streams-fire-4-v2:
+  - sd.event-streams.safe-schema-changes
+  - sd.event-streams.schema-registry-compatibility
+  event-streams-fire-5-v2:
+  - sd.event-streams.exactly-once-scope
+  event-streams:b11:
+  - sd.event-streams.ordering-guarantee-per-partition
+  - sd.event-streams.key-hash-partitioning
+  - sd.event-streams.hot-key-skew
+  event-streams:b3:
+  - sd.event-streams.key-from-ordering-need
+  event-streams:b4:
+  - sd.event-streams.adding-partitions-remaps-keys
+  event-streams:b6:
+  - sd.event-streams.partition-count-calculation
+  event-streams:b8:
+  - sd.event-streams.commit-after-processing
+  - sd.event-streams.max-poll-interval-kick

@@ -1,0 +1,190 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: consensus
+source_hash: fdcebd684f827e64
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.consensus.quorum-overlap-majority
+  subtopic: Why majorities
+  kind: principle
+  claim: A decision needs a majority (⌊N/2⌋ + 1) because any two majorities share at least one node, which would refuse a second conflicting decision, so two different decisions can never both win.
+  prompt: Why must consensus decisions be accepted by a majority rather than any set of nodes?
+  objectives:
+  - 0
+- id: sd.consensus.failures-tolerated-2f-plus-1
+  subtopic: Why majorities
+  kind: fact
+  claim: To tolerate f node failures a cluster needs 2f + 1 nodes, so that the f + 1 survivors still form a majority; for example 3 failures need 7 nodes and 5 nodes tolerate 2.
+  prompt: How many nodes does a consensus cluster need to keep committing while f nodes are down?
+  objectives:
+  - 0
+  requires:
+  - sd.consensus.quorum-overlap-majority
+- id: sd.consensus.avoid-even-cluster-sizes
+  subtopic: Why majorities
+  kind: tradeoff
+  claim: Even cluster sizes add cost without tolerance (4 nodes need a majority of 3 and tolerate one failure, like 3), so clusters run 3 or 5 nodes, rarely 7, since every write waits for a majority.
+  prompt: Why do consensus clusters usually run 3 or 5 nodes rather than 4 or large numbers?
+  objectives:
+  - 0
+  requires:
+  - sd.consensus.failures-tolerated-2f-plus-1
+- id: sd.consensus.zone-placement-majority
+  subtopic: Why majorities
+  kind: principle
+  claim: 'Node placement matters as much as count: spread 7 nodes 3/2/2 across three zones so losing any one zone leaves a majority, whereas 4 in one zone means losing it stops the cluster.'
+  prompt: How should you spread a 7-node consensus cluster across three zones, and why?
+  objectives:
+  - 0
+  requires:
+  - sd.consensus.failures-tolerated-2f-plus-1
+- id: sd.consensus.raft-terms
+  subtopic: Raft in brief
+  kind: mechanism
+  claim: Raft divides time into numbered terms, each with at most one leader; every message carries a term and any node seeing a higher term steps down to follower.
+  prompt: What is a term in Raft and what happens when a node sees a higher one?
+  objectives:
+  - 1
+- id: sd.consensus.raft-election-process
+  subtopic: Raft in brief
+  kind: mechanism
+  claim: A follower hearing no heartbeat within its election timeout increments the term, votes for itself and requests votes; each node votes once per term and only for a candidate whose log is at least as up to date, and a majority wins.
+  prompt: How does a Raft follower become leader, and what limits who can get its vote?
+  objectives:
+  - 1
+  requires:
+  - sd.consensus.raft-terms
+- id: sd.consensus.randomised-election-timeouts
+  subtopic: Raft in brief
+  kind: mechanism
+  claim: Raft randomises election timeouts (e.g. 150–300 ms) so followers rarely become candidates simultaneously, making split votes unlikely.
+  prompt: Why are Raft election timeouts randomised?
+  objectives:
+  - 1
+  requires:
+  - sd.consensus.raft-election-process
+- id: sd.consensus.raft-commit-on-majority
+  subtopic: Raft in brief
+  kind: mechanism
+  claim: The Raft leader appends a command to its log and replicates it; the entry is committed once a majority has stored it, and only then applied and acknowledged to the client. Committed entries survive loss of any minority because any future leader must have them.
+  prompt: When is a Raft entry committed, and why is it never lost?
+  objectives:
+  - 1
+  requires:
+  - sd.consensus.quorum-overlap-majority
+- id: sd.consensus.raft-minority-partition
+  subtopic: Raft in brief
+  kind: mechanism
+  claim: In a partition, only the majority side can elect a leader and commit; a stranded old leader cannot reach a majority and steps down on seeing a higher term, which avoids split brain without synchronised clocks.
+  prompt: What can the minority side of a partitioned Raft cluster do?
+  objectives:
+  - 1
+  requires:
+  - sd.consensus.raft-commit-on-majority
+  - sd.replication.split-brain-definition
+- id: sd.consensus.flp-safety-vs-liveness
+  subtopic: Raft in brief
+  kind: principle
+  claim: FLP shows no deterministic algorithm guarantees consensus in a fully asynchronous network with even one crash, so practical systems are always safe but live only when timeouts work; bad timeouts cause election storms, not corruption.
+  prompt: What does FLP imply for practical consensus systems, and what do bad timeouts cause?
+  objectives:
+  - 1
+- id: sd.consensus.coordination-service-capabilities
+  subtopic: Use a coordination service
+  kind: fact
+  claim: etcd (Raft), ZooKeeper (Zab) and Consul (Raft) provide leader election, configuration and service discovery with watches, leases or ephemeral nodes, and linearizable compare-and-set.
+  prompt: What do coordination services like etcd and ZooKeeper offer?
+  objectives:
+  - 2
+  requires:
+  - sd.consensus.raft-commit-on-majority
+- id: sd.consensus.coordination-service-limits
+  subtopic: Use a coordination service
+  kind: tradeoff
+  claim: Coordination services suit small coordination metadata (kilobytes to megabytes, modest write rates) such as leader election, shard maps and failover; they are the wrong tool for bulk data, sessions or high-rate counters since every write needs a majority round.
+  prompt: What workloads are unsuitable for etcd or ZooKeeper, and why?
+  objectives:
+  - 2
+  requires:
+  - sd.consensus.coordination-service-capabilities
+- id: sd.consensus.lease-expiry-pause
+  subtopic: Distributed locks need fencing
+  kind: mechanism
+  claim: A lease can expire while its holder is paused (GC, VM stall) or partitioned, so a second process acquires the lock while the first still believes it holds it and then writes.
+  prompt: How can a lease-based lock end up with two processes acting as holder?
+  objectives:
+  - 3
+- id: sd.consensus.fencing-tokens
+  subtopic: Distributed locks need fencing
+  kind: mechanism
+  claim: Fencing tokens are monotonically increasing numbers issued with each lock grant; the protected resource rejects writes carrying a token lower than one it has already accepted, since the lock service alone cannot stop a stale holder.
+  prompt: How do fencing tokens stop a stale lock holder from corrupting data?
+  objectives:
+  - 3
+  requires:
+  - sd.consensus.lease-expiry-pause
+- id: sd.consensus.safe-lock-release-renewal
+  subtopic: Distributed locks need fencing
+  kind: procedure
+  claim: Release a lock only with an atomic compare-and-delete on your own value, and renew the lease while working; an unconditional delete can remove another holder's lock, and a fixed TTL shorter than the work is unsafe.
+  prompt: How should a lock holder release and keep its lock safely?
+  objectives:
+  - 3
+  requires:
+  - sd.consensus.lease-expiry-pause
+- id: sd.consensus.locks-efficiency-vs-correctness
+  subtopic: Distributed locks need fencing
+  kind: tradeoff
+  claim: A lock that only avoids duplicate idempotent work can occasionally fail; a lock protecting correctness needs a consensus-backed service plus fencing, or a redesign with idempotent effects (e.g. idempotency keys) so the lock is only an optimisation.
+  prompt: When is a best-effort lock acceptable, and what is needed when correctness depends on it?
+  objectives:
+  - 3
+  requires:
+  - sd.consensus.fencing-tokens
+items:
+  consensus-check-1-v2:
+  - sd.consensus.failures-tolerated-2f-plus-1
+  consensus-check-2-v2:
+  - sd.consensus.randomised-election-timeouts
+  consensus-check-3-v2:
+  - sd.consensus.raft-commit-on-majority
+  consensus-check-4-v2:
+  - sd.consensus.coordination-service-limits
+  - sd.consensus.coordination-service-capabilities
+  consensus-fire-1-v2:
+  - sd.consensus.fencing-tokens
+  - sd.consensus.lease-expiry-pause
+  consensus-fire-2-v2:
+  - sd.consensus.avoid-even-cluster-sizes
+  - sd.consensus.quorum-overlap-majority
+  consensus-fire-3-v2:
+  - sd.consensus.raft-minority-partition
+  consensus-fire-4-v2:
+  - sd.consensus.flp-safety-vs-liveness
+  consensus-fire-5-v2:
+  - sd.consensus.locks-efficiency-vs-correctness
+  - sd.consensus.safe-lock-release-renewal
+  - sd.consensus.fencing-tokens
+  consensus:b1:
+  - sd.consensus.failures-tolerated-2f-plus-1
+  - sd.consensus.zone-placement-majority
+  consensus:b12:
+  - sd.consensus.lease-expiry-pause
+  - sd.consensus.fencing-tokens
+  consensus:b4:
+  - sd.consensus.raft-commit-on-majority
+  consensus:b6:
+  - sd.consensus.coordination-service-limits
+  - sd.consensus.coordination-service-capabilities
+  consensus:b8:
+  - sd.consensus.fencing-tokens
+  - sd.consensus.lease-expiry-pause
+  consensus:b9:
+  - sd.consensus.safe-lock-release-renewal
+  - sd.consensus.locks-efficiency-vs-correctness

@@ -1,0 +1,238 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-chat
+source_hash: 55092aef606a09f1
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-chat.strict-vs-best-effort
+  subtopic: 1. Requirements
+  kind: principle
+  claim: Message content and read receipts need strict guarantees (persisted, sequenced, monotonic); typing indicators, presence and push notifications are best effort and should not be persisted.
+  prompt: Which chat features need strict guarantees and which can be best effort?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.guarantees.per-operation-guarantees
+- id: sd.design-chat.core-nonfunctional-requirements
+  subtopic: 1. Requirements
+  kind: fact
+  claim: 'Targets: 500M DAU, groups up to 1,000 members, under 500 ms p99 delivery to online recipients, no loss once ''sent'', per-conversation order, indefinite history, multi-device.'
+  prompt: What are the key non-functional requirements for the chat system?
+  objectives:
+  - 0
+- id: sd.design-chat.message-rate-estimate
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: 500M DAU x 40 messages/day = 20B/day, about 231k messages/s on average (20B / 86,400), with peaks around 700k/s.
+  prompt: What average and peak message rate does 500M DAU sending 40 messages a day imply?
+  objectives:
+  - 0
+  requires:
+  - sd.estimates.daily-to-per-second
+- id: sd.design-chat.storage-estimate
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: At about 200 bytes per message, 20B messages/day is about 4 TB/day, roughly 1.5 PB/year before replication, so a horizontally scalable partitioned store is needed.
+  prompt: How much new data per day does 20B messages at ~200 bytes produce, and what does that imply?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.estimates.storage-formula
+- id: sd.design-chat.connection-estimate
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: If 30% of 500M DAU are online at peak, that is 150M WebSockets; at about 500k per gateway this needs about 300 gateway servers.
+  prompt: How many gateway servers hold 150M concurrent connections at ~500k each?
+  objectives:
+  - 0
+  requires:
+  - sd.realtime-push.connection-memory-sizing
+- id: sd.design-chat.group-delivery-multiplication
+  subtopic: 2. Estimates
+  kind: fact
+  claim: A message in a 1,000-member group needs up to 1,000 deliveries, so groups multiply delivery load and need different handling from 1:1.
+  prompt: How many deliveries can one message in a 1,000-member group require?
+  objectives:
+  - 0
+  - 2
+- id: sd.design-chat.messages-table-partitioning
+  subtopic: 3. Data model
+  kind: mechanism
+  claim: Partition messages by (conversation_id, time bucket) and cluster by seq descending, so busy long-lived conversations do not grow one unbounded partition and recent buckets are read first.
+  prompt: How should the messages table be partitioned, and why include a time bucket?
+  objectives:
+  - 3
+  requires:
+  - sd.data-models.chat-message-keys
+  - sd.data-models.time-bucket-partitions
+- id: sd.design-chat.member-and-inbox-tables
+  subtopic: 3. Data model
+  kind: fact
+  claim: Per-member last_read_seq and last_delivered_seq live in conversation_members, and a user_conversations table (user_id, last_activity) gives the inbox list newest first.
+  prompt: Which tables hold receipts state and the inbox list?
+  objectives:
+  - 1
+  - 2
+- id: sd.design-chat.server-sequence-ordering
+  subtopic: 5. Deep dives
+  kind: principle
+  claim: Order is defined by a server-assigned per-conversation sequence from a single serialisation point (partition leader, conditional counter or owning instance), never client clocks, which skew.
+  prompt: What defines message order in a conversation, and why not client timestamps?
+  objectives:
+  - 1
+  requires:
+  - sd.realtime-push.persist-first-sequence
+- id: sd.design-chat.idempotent-sends
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: The client generates a message_id; a retry after a lost ack finds the stored message and returns its existing seq, so no duplicate is created.
+  prompt: How does a chat system avoid duplicates when a sender's ack is lost and it resends?
+  objectives:
+  - 1
+  requires:
+  - sd.request-flow.idempotency-key-retries
+- id: sd.design-chat.persist-then-ack-then-deliver
+  subtopic: 4. Architecture
+  kind: procedure
+  claim: 'Send path: client sends with message_id; chat service assigns seq and appends; ack sender ''sent''; publish to member devices via the backplane; recipients ack seq as ''delivered''.'
+  prompt: What is the order of steps on the send path?
+  objectives:
+  - 1
+  requires:
+  - sd.design-chat.server-sequence-ordering
+  - sd.realtime-push.pubsub-backplane-routing
+- id: sd.design-chat.sent-means-durable
+  subtopic: 4. Architecture
+  kind: principle
+  claim: '''Sent'' is shown only after the message is durably stored with a seq; acknowledging earlier (e.g. on gateway receipt) or pushing before storing can lose messages the sender saw as sent.'
+  prompt: What must be true before showing a message as 'sent'?
+  objectives:
+  - 1
+  requires:
+  - sd.design-chat.persist-then-ack-then-deliver
+- id: sd.design-chat.resume-by-sequence
+  subtopic: 5. Deep dives
+  kind: procedure
+  claim: On reconnect a client fetches conversations changed since last sync, requests messages after its last acked seq per conversation, dedupes by seq and acks the highest; this recovers any missed live delivery or push.
+  prompt: How does a client catch up after being offline?
+  objectives:
+  - 1
+  - 3
+  same_as: sd.realtime-push.ack-and-resume
+- id: sd.design-chat.gap-detection
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: 'Sequence numbers make losses detectable: a client seeing 1040 then 1043 fetches 1041-1042 from the server.'
+  prompt: What should a client do on receiving seq 1043 right after 1040?
+  objectives:
+  - 1
+  requires:
+  - sd.design-chat.server-sequence-ordering
+- id: sd.design-chat.monotonic-receipts
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: Receipts are per-member highest delivered/read sequences that only move forward (greatest()); in a group, 'read by all' means every member's last_read_seq >= seq, computed lazily.
+  prompt: How are read and delivery receipts stored so they never regress?
+  objectives:
+  - 2
+  requires:
+  - sd.design-chat.member-and-inbox-tables
+- id: sd.design-chat.presence-design
+  subtopic: 5. Deep dives
+  kind: tradeoff
+  claim: Presence uses ~30 s heartbeats with ~60 s TTL expiry and is fanned out only to users with that contact on screen (subscribe on view, throttled), because it is high-churn, low-value telemetry.
+  prompt: How should presence be implemented and distributed at scale?
+  objectives:
+  - 2
+  requires:
+  - sd.design-chat.strict-vs-best-effort
+- id: sd.design-chat.large-group-fanout
+  subtopic: 5. Deep dives
+  kind: tradeoff
+  claim: For large groups, publish once per channel and have each gateway with members subscribe once and deliver locally, so cross-node traffic scales with gateways, not members; storage stays one copy per message.
+  prompt: How do you fan out to a very large channel efficiently?
+  objectives:
+  - 2
+  requires:
+  - sd.design-chat.group-delivery-multiplication
+  - sd.realtime-push.pubsub-backplane-routing
+- id: sd.design-chat.gateway-and-pubsub-failures
+  subtopic: 6. Failure modes
+  kind: mechanism
+  claim: 'Gateway crash: clients reconnect with jittered backoff elsewhere and resume by seq. Pub/sub loss: clients detect gaps and fetch. Push provider down: sync on app open.'
+  prompt: How does the system recover from gateway crashes, pub/sub loss and push outages?
+  objectives:
+  - 3
+  requires:
+  - sd.design-chat.resume-by-sequence
+  - sd.design-chat.gap-detection
+- id: sd.design-chat.store-unavailable-handling
+  subtopic: 6. Failure modes
+  kind: mechanism
+  claim: If a store partition is unavailable, sends fail and the client keeps the message pending and resends with the same message_id.
+  prompt: What happens to sends when a message store partition is unavailable?
+  objectives:
+  - 3
+  requires:
+  - sd.design-chat.idempotent-sends
+- id: sd.design-chat.e2ee-implications
+  subtopic: 5. Deep dives
+  kind: fact
+  claim: With end-to-end encryption the server stores and routes ciphertext and cannot index or search content; per-device keys require encrypting per recipient device and key management.
+  prompt: What does end-to-end encryption change in a chat design?
+  objectives:
+  - 3
+items:
+  design-chat-check-1-v2:
+  - sd.design-chat.server-sequence-ordering
+  design-chat-check-2-v2:
+  - sd.design-chat.message-rate-estimate
+  design-chat-check-3-v2:
+  - sd.design-chat.sent-means-durable
+  design-chat-check-4-v2:
+  - sd.design-chat.presence-design
+  design-chat-fire-1-v2:
+  - sd.design-chat.idempotent-sends
+  design-chat-fire-2-v2:
+  - sd.design-chat.gap-detection
+  design-chat-fire-3-v2:
+  - sd.design-chat.messages-table-partitioning
+  design-chat-fire-4-v2:
+  - sd.design-chat.large-group-fanout
+  design-chat-fire-5-v2:
+  - sd.design-chat.persist-then-ack-then-deliver
+  design-chat:b1:
+  - sd.design-chat.strict-vs-best-effort
+  - sd.design-chat.monotonic-receipts
+  design-chat:b10:
+  - sd.design-chat.server-sequence-ordering
+  - sd.design-chat.persist-then-ack-then-deliver
+  - sd.design-chat.idempotent-sends
+  design-chat:b12:
+  - sd.design-chat.resume-by-sequence
+  design-chat:b14:
+  - sd.design-chat.sent-means-durable
+  - sd.design-chat.server-sequence-ordering
+  - sd.design-chat.idempotent-sends
+  design-chat:b15:
+  - sd.design-chat.sent-means-durable
+  - sd.design-chat.server-sequence-ordering
+  design-chat:b3:
+  - sd.design-chat.message-rate-estimate
+  - sd.design-chat.storage-estimate
+  - sd.design-chat.connection-estimate
+  design-chat:b9:
+  - sd.design-chat.large-group-fanout
+  - sd.design-chat.group-delivery-multiplication
+  redesign:design-chat:
+  - sd.design-chat.persist-then-ack-then-deliver
+  - sd.design-chat.resume-by-sequence
+  - sd.design-chat.large-group-fanout

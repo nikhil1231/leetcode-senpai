@@ -1,0 +1,70 @@
+# Practice items with no lesson, mapped onto knowledge points. Reviewable by hand.
+section: system-design
+items:
+  drill:bandwidth:
+  - sd.estimates.bandwidth-formula
+  - sd.numbers.bits-bytes-bandwidth
+  drill:cache-memory:
+  - sd.cache-aside.size-from-working-set
+  - sd.estimates.cache-memory-binds
+  drill:db-load:
+  - sd.cache-aside.db-load-is-miss-rate
+  drill:downtime:
+  - sd.guarantees.downtime-arithmetic
+  drill:littles-law:
+  - sd.service-quality.littles-law
+  - sd.service-quality.littles-law-sizing
+  drill:partitions:
+  - sd.event-streams.partition-count-calculation
+  drill:peak-load:
+  - sd.numbers.peak-factor
+  - sd.estimates.estimate-add-ons
+  drill:per-second:
+  - sd.estimates.daily-to-per-second
+  - sd.numbers.daily-to-per-second-table
+  drill:qps-from-dau:
+  - sd.estimates.daily-to-per-second
+  - sd.numbers.seconds-per-day
+  drill:retention:
+  - sd.estimates.storage-formula
+  drill:servers-needed:
+  - sd.estimates.server-count-formula
+  drill:shards:
+  - sd.estimates.shard-count-calc
+  - sd.estimates.shard-binding-constraint
+  drill:storage-per-year:
+  - sd.estimates.storage-formula
+  exercise:capacity-backlog:
+  - sd.estimates.backlog-drain-rate
+  exercise:capacity-transfer:
+  - sd.estimates.backlog-drain-rate
+  - sd.estimates.backlog-recovery-headroom
+  exercise:concurrency-race:
+  - sd.concurrent-holds.check-inside-write
+  - sd.guarantees.read-check-write-race
+  - sd.concurrent-holds.app-mutex-insufficient
+  exercise:concurrency-transfer:
+  - sd.concurrent-holds.confirm-predicate-fields
+  - sd.concurrent-holds.single-authoritative-clock
+  exercise:operations-signal:
+  - sd.queue-basics.age-over-depth
+  exercise:operations-transfer:
+  - sd.sync-async.async-no-extra-capacity
+  - sd.overload.bound-concurrency-and-queues
+  exercise:reads-stale:
+  - sd.guarantees.per-operation-guarantees
+  - sd.cache-freshness.display-vs-decision-validation
+  exercise:reads-transfer:
+  - sd.cache-freshness.stale-refill-race-mechanism
+  - sd.cache-freshness.delete-cannot-stop-future-fill
+  exercise:retry-crash:
+  - sd.acknowledgements.at-least-once-ack-after
+  - sd.acknowledgements.dedupe-table-same-transaction
+  exercise:retry-transfer:
+  - sd.retry-identity.key-fingerprint-mismatch
+  exercise:scope-promise:
+  - sd.sync-async.durable-before-202
+  - sd.storage-engines.wal-durable-commit
+  exercise:scope-transfer:
+  - sd.sync-async.two-part-async-contract
+  - sd.sync-async.durable-before-202

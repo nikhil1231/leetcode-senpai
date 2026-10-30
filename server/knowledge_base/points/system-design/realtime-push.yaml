@@ -1,0 +1,229 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: realtime-push
+source_hash: a3a52dcac2123b11
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.realtime-push.short-polling-tradeoff
+  subtopic: Five ways to get data to a client
+  kind: tradeoff
+  claim: Short polling asks every N seconds, so latency can be up to N seconds and requests are wasted; it suits rare updates where latency does not matter.
+  prompt: When is short polling appropriate, and what does it cost?
+  objectives:
+  - 0
+  requires:
+  - sd.sync-async.completion-mechanisms
+- id: sd.realtime-push.long-polling-fallback
+  subtopic: Five ways to get data to a client
+  kind: fact
+  claim: Long polling holds a request open until data arrives or a timeout; it costs a request per message and is awkward at scale, so it is a fallback.
+  prompt: How does long polling work and when is it used?
+  objectives:
+  - 0
+  requires:
+  - sd.realtime-push.short-polling-tradeoff
+- id: sd.realtime-push.sse-one-way-streaming
+  subtopic: Five ways to get data to a client
+  kind: fact
+  claim: Server-Sent Events stream text events one way (server to client) over a single HTTP response, with automatic reconnect and Last-Event-ID resume built in; they suit feeds, dashboards and LLM token streams.
+  prompt: What are the properties and best uses of Server-Sent Events?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.realtime-push.long-polling-fallback
+- id: sd.realtime-push.websockets-full-duplex
+  subtopic: Five ways to get data to a client
+  kind: tradeoff
+  claim: WebSockets give full-duplex, lowest-latency messaging for chat, games and collaborative editing, but the connections are stateful, proxies and load balancers must support upgrade, and you build heartbeat and resume yourself.
+  prompt: What do WebSockets offer and what do they cost?
+  objectives:
+  - 0
+  requires:
+  - sd.realtime-push.sse-one-way-streaming
+  - sd.stateless-balancing.l4-vs-l7
+- id: sd.realtime-push.mobile-push-best-effort
+  subtopic: Five ways to get data to a client
+  kind: fact
+  claim: Mobile push (APNs/FCM) reaches backgrounded or closed apps but is best effort, with payload and rate limits and no delivery guarantee, so it should wake the app to sync from the durable store.
+  prompt: What can mobile push do that other transports cannot, and what are its limits?
+  objectives:
+  - 0
+  requires:
+  - sd.sync-async.completion-mechanisms
+- id: sd.realtime-push.gateway-tier-role
+  subtopic: 'The architecture: gateways plus a backplane'
+  kind: mechanism
+  claim: Connection gateways terminate WebSockets/SSE, authenticate, heartbeat and hold a map of user to local connections; they are stateful only in their open connections.
+  prompt: What does a connection gateway do and what state does it hold?
+  objectives:
+  - 1
+  requires:
+  - sd.realtime-push.websockets-full-duplex
+  - sd.stateless-balancing.stateless-instance-definition
+- id: sd.realtime-push.pubsub-backplane-routing
+  subtopic: 'The architecture: gateways plus a backplane'
+  kind: mechanism
+  claim: A connection lives on one machine, so a pub/sub backplane (Redis, NATS, Kafka) routes each message to the gateways subscribed for the recipient's user or room channel.
+  prompt: How does a message reach the gateway holding the recipient's connection?
+  objectives:
+  - 1
+  requires:
+  - sd.realtime-push.gateway-tier-role
+- id: sd.realtime-push.local-memory-broadcast-bug
+  subtopic: 'The architecture: gateways plus a backplane'
+  kind: principle
+  claim: Broadcasting from an in-memory room-to-sockets map works on one server but silently drops messages for users on other instances once you scale out.
+  prompt: Why does in-memory room broadcast break when scaled to many instances?
+  objectives:
+  - 1
+  requires:
+  - sd.realtime-push.pubsub-backplane-routing
+  - sd.stateless-balancing.in-memory-state-problems
+- id: sd.realtime-push.store-is-source-of-truth
+  subtopic: Delivery across disconnects
+  kind: principle
+  claim: The durable message store is the source of truth and the connection is only a fast path, so a gateway crash loses nothing.
+  prompt: Why can a gateway crash not lose messages in a well-designed system?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.realtime-push.gateway-tier-role
+  same_as: sd.sync-async.polling-source-of-truth
+- id: sd.realtime-push.persist-first-sequence
+  subtopic: Delivery across disconnects
+  kind: procedure
+  claim: Persist each message first with a monotonically increasing sequence number per conversation or inbox, ack the sender, then publish and deliver.
+  prompt: What order of steps ensures a message is not lost during delivery?
+  objectives:
+  - 2
+  requires:
+  - sd.realtime-push.store-is-source-of-truth
+- id: sd.realtime-push.ack-and-resume
+  subtopic: Delivery across disconnects
+  kind: mechanism
+  claim: The client acks the highest sequence processed; on reconnect it sends its last acked sequence and the server replays everything after it from the store.
+  prompt: How does a client catch up after a reconnect?
+  objectives:
+  - 2
+  requires:
+  - sd.realtime-push.persist-first-sequence
+- id: sd.realtime-push.client-dedupe-at-least-once
+  subtopic: Delivery across disconnects
+  kind: principle
+  claim: Replays can overlap already-received messages, so the client deduplicates by sequence; at-least-once delivery plus idempotent display gives exactly-once on screen.
+  prompt: How do you get exactly-once display from at-least-once delivery?
+  objectives:
+  - 2
+  requires:
+  - sd.realtime-push.ack-and-resume
+  - sd.retry-identity.exactly-once-composition
+- id: sd.realtime-push.connection-memory-sizing
+  subtopic: 'Capacity: connections are memory and file descriptors'
+  kind: procedure
+  claim: Size gateways by connections times per-connection memory (tens of KB) divided by usable RAM, using about 50% for headroom to absorb a failed peer's clients; e.g. 12M x 40 KB = 480 GB, 15 gateways at 32 GB usable.
+  prompt: How do you estimate gateway count for 12M connections at 40 KB each?
+  objectives:
+  - 3
+  requires:
+  - sd.realtime-push.gateway-tier-role
+  - sd.numbers.powers-of-two-sizes
+  - sd.numbers.utilisation-headroom
+- id: sd.realtime-push.connections-per-machine
+  subtopic: 'Capacity: connections are memory and file descriptors'
+  kind: fact
+  claim: Event-driven servers (epoll/kqueue; Go, Erlang, Node) hold hundreds of thousands to a few million connections per machine; idle sockets cost memory and file descriptors more than CPU.
+  prompt: What limits connections per gateway and roughly how many can one hold?
+  objectives:
+  - 3
+  requires:
+  - sd.realtime-push.gateway-tier-role
+  same_as: sd.numbers.broker-disk-gateway-capacity
+- id: sd.realtime-push.heartbeat-aggregate-rate
+  subtopic: 'Capacity: connections are memory and file descriptors'
+  kind: fact
+  claim: 'Heartbeats add up: 12M connections pinging every 30 s is about 400,000 pings per second fleet-wide.'
+  prompt: How much heartbeat traffic do 12M connections ping every 30 s generate?
+  objectives:
+  - 3
+  requires:
+  - sd.realtime-push.gateway-tier-role
+- id: sd.realtime-push.reconnect-storm-cause
+  subtopic: Reconnection storms and graceful drains
+  kind: mechanism
+  claim: When a gateway dies, synchronised fixed-delay reconnects hit auth and the message store at once with handshakes and catch-up queries; they overload and fail, causing more retries.
+  prompt: Why does mass reconnect after a gateway failure cause cascading outage?
+  objectives:
+  - 3
+  requires:
+  - sd.realtime-push.gateway-tier-role
+  same_as: sd.retry-identity.fixed-retries-storm
+- id: sd.realtime-push.backoff-jitter-drain
+  subtopic: Reconnection storms and graceful drains
+  kind: procedure
+  claim: Prevent storms with client exponential backoff plus jitter, and drain gateways gradually over minutes with close frames or GOAWAY rather than restarting all at once.
+  prompt: What client and deploy practices prevent reconnection storms?
+  objectives:
+  - 3
+  requires:
+  - sd.realtime-push.reconnect-storm-cause
+  - sd.retry-identity.backoff-with-jitter
+  same_as: sd.stateless-balancing.long-lived-connection-draining
+- id: sd.realtime-push.cheap-reconnects-shedding
+  subtopic: Reconnection storms and graceful drains
+  kind: tradeoff
+  claim: Make reconnects cheap with locally validated short-lived tokens and replay from a recent-message cache, and shed load under overload by telling clients to retry after N seconds.
+  prompt: How can reconnects be made cheap and overload handled?
+  objectives:
+  - 3
+  requires:
+  - sd.realtime-push.reconnect-storm-cause
+  - sd.api-contracts.rate-limit-429-retry-after
+items:
+  realtime-push-check-1-v2:
+  - sd.realtime-push.sse-one-way-streaming
+  realtime-push-check-2-v2:
+  - sd.realtime-push.pubsub-backplane-routing
+  - sd.realtime-push.local-memory-broadcast-bug
+  realtime-push-check-3-v2:
+  - sd.realtime-push.persist-first-sequence
+  - sd.realtime-push.ack-and-resume
+  realtime-push-check-4-v2:
+  - sd.realtime-push.connection-memory-sizing
+  realtime-push-fire-1-v2:
+  - sd.realtime-push.store-is-source-of-truth
+  - sd.realtime-push.ack-and-resume
+  realtime-push-fire-2-v2:
+  - sd.realtime-push.backoff-jitter-drain
+  - sd.realtime-push.cheap-reconnects-shedding
+  realtime-push-fire-3-v2:
+  - sd.realtime-push.mobile-push-best-effort
+  realtime-push-fire-4-v2:
+  - sd.realtime-push.client-dedupe-at-least-once
+  - sd.realtime-push.ack-and-resume
+  - sd.realtime-push.persist-first-sequence
+  realtime-push-fire-5-v2:
+  - sd.realtime-push.heartbeat-aggregate-rate
+  realtime-push:b1:
+  - sd.realtime-push.sse-one-way-streaming
+  - sd.realtime-push.websockets-full-duplex
+  - sd.realtime-push.mobile-push-best-effort
+  realtime-push:b10:
+  - sd.realtime-push.local-memory-broadcast-bug
+  - sd.realtime-push.pubsub-backplane-routing
+  - sd.realtime-push.persist-first-sequence
+  realtime-push:b12:
+  - sd.realtime-push.ack-and-resume
+  - sd.realtime-push.client-dedupe-at-least-once
+  - sd.realtime-push.persist-first-sequence
+  realtime-push:b7:
+  - sd.realtime-push.connection-memory-sizing
+  realtime-push:b9:
+  - sd.realtime-push.reconnect-storm-cause
+  - sd.realtime-push.backoff-jitter-drain

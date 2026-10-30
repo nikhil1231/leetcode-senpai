@@ -1,0 +1,197 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: serving
+source_hash: 3226668bba9d9ffe
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.serving.cost-per-request-formula
+  subtopic: Cost arithmetic
+  kind: procedure
+  claim: Cost per request = input tokens × input price + output tokens × output price; scale by traffic to get daily and monthly cost.
+  prompt: How do you calculate the cost of one LLM request and scale it to a bill?
+  objectives:
+  - 0
+- id: ai.serving.caching-and-batch-discounts
+  subtopic: Cost arithmetic
+  kind: fact
+  claim: Cached input is billed at a large discount (around 90% in the example), and batch APIs are typically about half price in exchange for delayed results.
+  prompt: What discounts do prompt caching and batch APIs typically give?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - ai.serving.cost-per-request-formula
+- id: ai.serving.daily-cost-worked-example
+  subtopic: Cost arithmetic
+  kind: procedure
+  claim: 200,000 requests a day at 3,000 input and 300 output tokens, priced at $3/M input and $15/M output, cost $1,800 + $900 = $2,700 a day, about $81k a month.
+  prompt: What does 200,000 daily requests of 3,000 input and 300 output tokens cost at $3/M in and $15/M out?
+  objectives:
+  - 0
+  requires:
+  - ai.serving.cost-per-request-formula
+- id: ai.serving.right-size-model-router
+  subtopic: Latency and cost levers
+  kind: tradeoff
+  claim: Use a small, fast model for classification, extraction and routing, and send only hard cases to the large model via a router (rules or a classifier).
+  prompt: How do you avoid paying for a large model on every request?
+  objectives:
+  - 1
+- id: ai.serving.model-cascade
+  subtopic: Latency and cost levers
+  kind: mechanism
+  claim: A cascade tries the cheap model first and escalates to a stronger one when confidence is low or validation fails, so most traffic is served cheaply.
+  prompt: What is a model cascade?
+  objectives:
+  - 1
+  requires:
+  - ai.serving.right-size-model-router
+- id: ai.serving.shorter-outputs-decode-time
+  subtopic: Latency and cost levers
+  kind: principle
+  claim: Decode time dominates latency, so constraining the output format and length cuts both latency and cost.
+  prompt: Why do shorter outputs reduce latency?
+  objectives:
+  - 1
+  same_as: ai.llm-basics.output-length-latency-lever
+- id: ai.serving.prompt-caching-stable-prefix
+  subtopic: Latency and cost levers
+  kind: principle
+  claim: Put stable content (system prompt, tool definitions, documents) first so the prefix can be reused from the prompt cache at a discount.
+  prompt: How should you order a prompt to benefit from prompt caching?
+  objectives:
+  - 1
+  requires:
+  - ai.llm-basics.prompt-caching
+- id: ai.serving.response-and-semantic-caching
+  subtopic: Latency and cost levers
+  kind: tradeoff
+  claim: Response caching of identical or normalised-identical requests is safe; semantic caching by embedding similarity is riskier because near-identical questions can need different answers.
+  prompt: Why is semantic caching riskier than exact response caching?
+  objectives:
+  - 1
+- id: ai.serving.streaming-perceived-latency
+  subtopic: Latency and cost levers
+  kind: fact
+  claim: Streaming does not reduce total generation time but improves perceived latency by showing tokens as they arrive.
+  prompt: What does streaming improve, and what does it not?
+  objectives:
+  - 1
+  requires:
+  - ai.llm-basics.decode-phase
+- id: ai.serving.parallelise-and-batch-offline
+  subtopic: Latency and cost levers
+  kind: tradeoff
+  claim: Parallelise independent calls to cut latency, and send offline work (nightly enrichment, evals) through batch APIs for the discount.
+  prompt: How should you handle independent calls and offline bulk work?
+  objectives:
+  - 1
+  requires:
+  - ai.serving.caching-and-batch-discounts
+- id: ai.serving.timeouts-sized-to-output
+  subtopic: Reliability
+  kind: principle
+  claim: Size timeouts to the expected output length so that a long streaming response is not cut off.
+  prompt: How should LLM call timeouts be chosen?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-basics.latency-formula
+- id: ai.serving.retry-backoff-jitter
+  subtopic: Reliability
+  kind: procedure
+  claim: On 429 and 5xx responses, retry with exponential backoff and jitter, respect retry-after, and cap attempts, never retrying indefinitely in a user-facing path.
+  prompt: How should a client retry after a 429 or 5xx from an LLM API?
+  objectives:
+  - 2
+- id: ai.serving.fallbacks-graceful-degradation
+  subtopic: Reliability
+  kind: principle
+  claim: Provide fallbacks (secondary model or provider, cached or simpler answer) and degrade gracefully, keeping the LLM out of the critical path of core pages.
+  prompt: What should happen when the LLM provider is overloaded and a page uses it for a non-essential feature?
+  objectives:
+  - 2
+- id: ai.serving.queue-background-work
+  subtopic: Reliability
+  kind: mechanism
+  claim: Queue background work so a slow model never blocks user requests, and to smooth bursts to stay under rate limits.
+  prompt: Why queue background LLM work?
+  objectives:
+  - 2
+- id: ai.serving.track-cost-per-feature
+  subtopic: Reliability
+  kind: principle
+  claim: Track tokens and cost per feature and per customer with budgets and alerts, since runaway loops or abuse show up first on the bill.
+  prompt: What cost monitoring should you have for LLM features?
+  objectives:
+  - 2
+- id: ai.serving.self-hosting-tradeoff
+  subtopic: Self-hosting
+  kind: tradeoff
+  claim: Self-hosting open-weight models can cut cost at high, steady volume, keep data in-house and allow custom fine-tunes, at the price of running GPUs.
+  prompt: When does self-hosting pay off, and what does it cost?
+  objectives:
+  - 3
+- id: ai.serving.kv-cache-limits-concurrency
+  subtopic: Self-hosting
+  kind: mechanism
+  claim: The KV cache holds attention keys and values for all tokens so far in GPU memory, grows with batch size × context length, and often limits concurrency more than the weights; PagedAttention (vLLM) manages it in blocks to avoid fragmentation.
+  prompt: What is the KV cache and why does it matter for concurrency?
+  objectives:
+  - 3
+  requires:
+  - ai.llm-basics.decode-phase
+- id: ai.serving.continuous-batching
+  subtopic: Self-hosting
+  kind: mechanism
+  claim: Continuous batching lets new requests join the running batch between decode steps instead of waiting for the whole batch, greatly improving GPU throughput.
+  prompt: What is continuous batching and what does it improve?
+  objectives:
+  - 3
+  requires:
+  - ai.serving.kv-cache-limits-concurrency
+- id: ai.serving.quantisation-tradeoff
+  subtopic: Self-hosting
+  kind: tradeoff
+  claim: Quantisation stores weights in 8 or 4 bits instead of 16, cutting memory and often raising speed at some quality loss, which should be measured on your own evals.
+  prompt: What does quantising weights to 4 bits trade off?
+  objectives:
+  - 3
+- id: ai.serving.throughput-vs-latency-batch-size
+  subtopic: Self-hosting
+  kind: tradeoff
+  claim: Bigger batches give more tokens per second per GPU but slower responses for each user.
+  prompt: What is the throughput versus latency trade-off in batch size?
+  objectives:
+  - 3
+  requires:
+  - ai.serving.continuous-batching
+items:
+  serving-check-1-v2:
+  - ai.serving.prompt-caching-stable-prefix
+  - ai.serving.caching-and-batch-discounts
+  serving-check-2-v2:
+  - ai.serving.model-cascade
+  serving-check-3-v2:
+  - ai.serving.retry-backoff-jitter
+  serving-fire-1-v2:
+  - ai.serving.continuous-batching
+  serving-fire-2-v2:
+  - ai.serving.kv-cache-limits-concurrency
+  serving-fire-3-v2:
+  - ai.serving.parallelise-and-batch-offline
+  - ai.serving.caching-and-batch-discounts
+  serving-fire-4-v2:
+  - ai.serving.quantisation-tradeoff
+  serving:b1:
+  - ai.serving.daily-cost-worked-example
+  - ai.serving.cost-per-request-formula
+  serving:b3:
+  - ai.serving.fallbacks-graceful-degradation
+  - ai.serving.retry-backoff-jitter

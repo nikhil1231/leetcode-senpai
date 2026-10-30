@@ -1,0 +1,234 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: retry-identity
+source_hash: 5322c0659e6c3406
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.retry-identity.timeout-three-outcomes
+  subtopic: Timeouts are ambiguous
+  kind: principle
+  claim: 'A timed-out call has three possible outcomes: the request never arrived, it arrived and failed, or it succeeded but the response was lost. The client cannot tell them apart, so the outcome is unknown.'
+  prompt: What can a client conclude when a POST times out, and why?
+  objectives:
+  - 0
+  same_as: sd.request-flow.timeout-unknown-outcome
+- id: sd.retry-identity.lost-response-duplicate
+  subtopic: Timeouts are ambiguous
+  kind: mechanism
+  claim: A retry without an identity for the operation looks like a new request, so if the first attempt committed and only the response was lost, the retry creates a duplicate.
+  prompt: Why does retrying a POST after a lost response create a duplicate when there is no idempotency key?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.retry-identity.timeout-three-outcomes
+- id: sd.retry-identity.safe-retry-needs-idempotency-or-dedup
+  subtopic: Timeouts are ambiguous
+  kind: principle
+  claim: Because outcomes are ambiguous, retries are only safe if the operation is naturally idempotent or the server deduplicates requests.
+  prompt: What must be true for retrying after an ambiguous timeout to be safe?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.retry-identity.timeout-three-outcomes
+  - sd.retry-identity.lost-response-duplicate
+- id: sd.retry-identity.which-errors-retry
+  subtopic: A retry policy
+  kind: procedure
+  claim: Retry transient failures such as 503, 429 (honouring Retry-After) and timeouts on idempotent calls. Do not retry 400, 403 or 409 unchanged, since the same request fails the same way.
+  prompt: Which errors should a client retry automatically and which not?
+  objectives:
+  - 1
+  requires:
+  - sd.api-contracts.status-codes-4xx-client-errors
+  - sd.api-contracts.idempotent-methods-set
+- id: sd.retry-identity.unsafe-timeout-needs-key
+  subtopic: A retry policy
+  kind: principle
+  claim: A timeout or connection reset on a non-idempotent call such as POST /payments may be retried only if the server deduplicates on an idempotency key.
+  prompt: When is it safe to retry a timed-out POST /payments?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.retry-identity.safe-retry-needs-idempotency-or-dedup
+  - sd.api-contracts.post-needs-idempotency-key
+- id: sd.retry-identity.backoff-with-jitter
+  subtopic: A retry policy
+  kind: mechanism
+  claim: Exponential backoff with jitter sleeps random(0, min(cap, base × 2^attempt)). Jitter stops clients that failed together retrying in synchronised waves.
+  prompt: What is the backoff formula and why add jitter?
+  objectives:
+  - 1
+  requires:
+  - sd.service-quality.retries-amplify-outages
+- id: sd.retry-identity.bounded-attempts-deadline
+  subtopic: A retry policy
+  kind: principle
+  claim: Use a small maximum attempt count that fits inside the caller's overall deadline.
+  prompt: How should the number of retry attempts be bounded?
+  objectives:
+  - 1
+  requires:
+  - sd.request-flow.deadline-propagation
+- id: sd.retry-identity.retry-one-layer
+  subtopic: A retry policy
+  kind: principle
+  claim: 'Retry at one layer only, because retries multiply across layers: three layers of three attempts can produce 27 calls (or 64 if each makes 4 attempts).'
+  prompt: Why should retries happen at only one layer of a stack?
+  objectives:
+  - 1
+  same_as: sd.request-flow.retry-multiplication
+- id: sd.retry-identity.retry-budget
+  subtopic: A retry policy
+  kind: tradeoff
+  claim: A retry budget (e.g. retries add at most 10% extra load) protects a struggling dependency, but in a long outage most callers fail fast. That suits callers with fallbacks or a shared dependency to protect.
+  prompt: What does a retry budget do and what does it cost?
+  objectives:
+  - 1
+  requires:
+  - sd.retry-identity.retry-one-layer
+  - sd.retry-identity.backoff-with-jitter
+- id: sd.retry-identity.fixed-retries-storm
+  subtopic: A retry policy
+  kind: mechanism
+  claim: Fixed-delay retries keep offered load far above capacity, and an overloaded dependency serves less than its capacity, so recovery crawls. Exponential backoff without jitter still produces synchronised waves.
+  prompt: Why do fixed-delay or unjittered retries slow a dependency's recovery?
+  objectives:
+  - 1
+  requires:
+  - sd.retry-identity.backoff-with-jitter
+  - sd.service-quality.retries-amplify-outages
+- id: sd.retry-identity.key-per-logical-operation
+  subtopic: Idempotency keys, done properly
+  kind: mechanism
+  claim: The client generates a unique key (e.g. a UUID) per logical operation and sends it on the first attempt and every retry. The server stores the key with the result and returns the stored result on a repeat.
+  prompt: How does an idempotency key make a retry safe?
+  objectives:
+  - 2
+  requires:
+  - sd.retry-identity.lost-response-duplicate
+  same_as: sd.request-flow.idempotency-key-retries
+- id: sd.retry-identity.key-scope
+  subtopic: Idempotency keys, done properly
+  kind: principle
+  claim: Scope idempotency keys per client or account so one customer's key cannot collide with another's.
+  prompt: Why scope idempotency keys per account?
+  objectives:
+  - 2
+  requires:
+  - sd.retry-identity.key-per-logical-operation
+- id: sd.retry-identity.key-fingerprint-mismatch
+  subtopic: Idempotency keys, done properly
+  kind: mechanism
+  claim: Store a hash of the request (method, path, body) with the key. The same key with a different payload is a client bug, so reject it with a 4xx (422) rather than returning the old result.
+  prompt: What should the server do when a key is reused with a different body, and what must it store to detect it?
+  objectives:
+  - 2
+  requires:
+  - sd.retry-identity.key-per-logical-operation
+- id: sd.retry-identity.key-atomic-with-effect
+  subtopic: Idempotency keys, done properly
+  kind: principle
+  claim: Commit the key, its status and the response in the same transaction as the effect. Separate transactions let a crash between them leave an effect with no key, so a retry repeats it.
+  prompt: Why must the idempotency key be committed atomically with the business effect?
+  objectives:
+  - 2
+  requires:
+  - sd.retry-identity.key-per-logical-operation
+- id: sd.retry-identity.concurrent-duplicates-claim
+  subtopic: Idempotency keys, done properly
+  kind: mechanism
+  claim: Claim the key with an INSERT protected by a unique constraint on (account_id, key). The loser sees in-progress and gets 409 or waits; it must not run the operation. A check-then-insert lets both run.
+  prompt: How should concurrent requests with the same idempotency key be handled?
+  objectives:
+  - 2
+  requires:
+  - sd.retry-identity.key-per-logical-operation
+  - sd.guarantees.read-check-write-race
+- id: sd.retry-identity.key-retention
+  subtopic: Idempotency keys, done properly
+  kind: fact
+  claim: Keep keys longer than clients retry (Stripe keeps them 24 hours) and document what happens after expiry, when a retry is treated as a new request.
+  prompt: How long should idempotency keys be retained, and what should be documented?
+  objectives:
+  - 2
+  requires:
+  - sd.retry-identity.key-per-logical-operation
+- id: sd.retry-identity.natural-idempotent-designs
+  subtopic: Natural idempotency is cheaper
+  kind: principle
+  claim: 'Prefer idempotent design: set rather than add (status=''paid'', not balance=balance+40), PUT to a client-chosen ID, upserts with a unique constraint (ON CONFLICT DO NOTHING), and conditional writes (WHERE version = 7).'
+  prompt: Name ways to make an operation naturally idempotent without a key table.
+  objectives:
+  - 3
+  requires:
+  - sd.api-contracts.idempotent-methods-set
+- id: sd.retry-identity.external-side-effect-downstream-key
+  subtopic: Natural idempotency is cheaper
+  kind: mechanism
+  claim: If a crash happens after an external provider acts but before your commit, your table has no record, so pass a deterministic idempotency key derived from yours to the provider so it returns the original result.
+  prompt: How do you prevent a double charge when you crash after the provider charges but before your commit?
+  objectives:
+  - 3
+  requires:
+  - sd.retry-identity.key-per-logical-operation
+  - sd.retry-identity.key-atomic-with-effect
+- id: sd.retry-identity.exactly-once-composition
+  subtopic: Natural idempotency is cheaper
+  kind: principle
+  claim: Networks give at-least-once or at-most-once delivery. Exactly-once processing is at-least-once delivery plus idempotent effects at every boundary that matters, so ask exactly once of what, and deduplicated where.
+  prompt: What does exactly-once processing really consist of?
+  objectives:
+  - 3
+  requires:
+  - sd.retry-identity.safe-retry-needs-idempotency-or-dedup
+  - sd.retry-identity.key-per-logical-operation
+items:
+  retry-identity-check-1-v2:
+  - sd.retry-identity.timeout-three-outcomes
+  retry-identity-check-2-v2:
+  - sd.retry-identity.which-errors-retry
+  - sd.retry-identity.backoff-with-jitter
+  - sd.retry-identity.retry-budget
+  retry-identity-check-3-v2:
+  - sd.retry-identity.concurrent-duplicates-claim
+  retry-identity-check-4-v2:
+  - sd.retry-identity.natural-idempotent-designs
+  retry-identity-fire-1-v2:
+  - sd.retry-identity.key-fingerprint-mismatch
+  retry-identity-fire-2-v2:
+  - sd.retry-identity.retry-one-layer
+  retry-identity-fire-3-v2:
+  - sd.retry-identity.backoff-with-jitter
+  retry-identity-fire-4-v2:
+  - sd.retry-identity.external-side-effect-downstream-key
+  retry-identity-fire-5-v2:
+  - sd.retry-identity.exactly-once-composition
+  - sd.retry-identity.external-side-effect-downstream-key
+  retry-identity:b1:
+  - sd.retry-identity.lost-response-duplicate
+  - sd.retry-identity.timeout-three-outcomes
+  retry-identity:b10:
+  - sd.retry-identity.external-side-effect-downstream-key
+  retry-identity:b13:
+  - sd.retry-identity.concurrent-duplicates-claim
+  - sd.retry-identity.key-atomic-with-effect
+  - sd.retry-identity.key-fingerprint-mismatch
+  retry-identity:b3:
+  - sd.retry-identity.which-errors-retry
+  - sd.retry-identity.unsafe-timeout-needs-key
+  retry-identity:b7:
+  - sd.retry-identity.key-atomic-with-effect
+  - sd.retry-identity.concurrent-duplicates-claim
+  - sd.retry-identity.key-fingerprint-mismatch
+  retry-identity:b8:
+  - sd.retry-identity.concurrent-duplicates-claim
+  - sd.retry-identity.key-retention
+  - sd.retry-identity.external-side-effect-downstream-key

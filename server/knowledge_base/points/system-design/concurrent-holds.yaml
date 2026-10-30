@@ -1,0 +1,237 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: concurrent-holds
+source_hash: 4368ae2da2464955
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.concurrent-holds.check-inside-write
+  subtopic: 'Claim: the condition and the change are one statement'
+  kind: principle
+  claim: A claim must put the availability condition inside the write (UPDATE ... WHERE status = 'available'), not read first and then write. A read-then-write leaves a race where two requests both see 'available' and both write.
+  prompt: Why does a SELECT followed by an unconditional UPDATE double-book a seat, and where must the check go instead?
+  objectives:
+  - 0
+  requires:
+  - sd.guarantees.read-check-write-race
+- id: sd.concurrent-holds.claim-row-count-result
+  subtopic: 'Claim: the condition and the change are one statement'
+  kind: mechanism
+  claim: 'The database serialises updates to a row, so exactly one conditional UPDATE matches. The caller reads the affected row count (or RETURNING): 1 row means it holds the seat, 0 rows means someone else does.'
+  prompt: How does a caller know whether a conditional claim UPDATE succeeded?
+  objectives:
+  - 0
+  requires:
+  - sd.concurrent-holds.check-inside-write
+- id: sd.concurrent-holds.claim-treats-expired-as-free
+  subtopic: 'Claim: the condition and the change are one statement'
+  kind: mechanism
+  claim: The claim predicate should accept both available seats and seats whose hold has expired (status = 'held' AND hold_expires_at < now()), so expired holds are claimable without any cleanup.
+  prompt: What extra case should a seat-claim predicate accept besides 'available'?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.concurrent-holds.check-inside-write
+- id: sd.concurrent-holds.app-mutex-insufficient
+  subtopic: 'Claim: the condition and the change are one statement'
+  kind: principle
+  claim: An in-process mutex cannot coordinate requests across many servers, so it cannot make a claim safe on its own. The atomic check must happen at the shared authority, the database.
+  prompt: Why can't an application-level mutex protect seat claims across 40 servers?
+  objectives:
+  - 0
+  - 2
+- id: sd.concurrent-holds.confirm-predicate-fields
+  subtopic: 'Confirm: check everything, once'
+  kind: procedure
+  claim: A confirm UPDATE must check status = 'held', the specific hold_id, the holding user, and hold_expires_at >= now(), all in one WHERE clause, then verify one row changed.
+  prompt: Which conditions must a seat confirmation check, and in what kind of statement?
+  objectives:
+  - 0
+  requires:
+  - sd.concurrent-holds.check-inside-write
+- id: sd.concurrent-holds.hold-id-not-just-user
+  subtopic: 'Confirm: check everything, once'
+  kind: principle
+  claim: Confirmation should match the specific hold_id, not only the user, so that a stale or earlier hold cannot be used to confirm a seat that has since been re-held.
+  prompt: Why check hold_id on confirm rather than just the user?
+  objectives:
+  - 0
+  requires:
+  - sd.concurrent-holds.confirm-predicate-fields
+- id: sd.concurrent-holds.retry-safe-confirm
+  subtopic: 'Confirm: check everything, once'
+  kind: mechanism
+  claim: 'Make confirmation retry-safe with a client-supplied booking ID. If the update matches 0 rows, read the seat: if it is already booked with this booking ID, return success; otherwise explain expired or taken.'
+  prompt: How does a confirm endpoint handle a retry after a lost response?
+  objectives:
+  - 0
+  requires:
+  - sd.concurrent-holds.confirm-predicate-fields
+  - sd.request-flow.idempotency-key-retries
+- id: sd.concurrent-holds.zero-rows-diagnose
+  subtopic: 'Confirm: check everything, once'
+  kind: procedure
+  claim: 'When a conditional confirm updates 0 rows, read the current row to decide the answer: already booked by this booking ID is success, expired or held by someone else is a clear failure.'
+  prompt: What should you do after a confirm UPDATE affects 0 rows?
+  objectives:
+  - 0
+  requires:
+  - sd.concurrent-holds.claim-row-count-result
+- id: sd.concurrent-holds.single-authoritative-clock
+  subtopic: Expiry without trusting the cleanup job
+  kind: principle
+  claim: Expiry must be judged by one authoritative clock, the database's now(), evaluated inside the conditional write. Never use the client's clock or compare clocks across app servers.
+  prompt: Whose clock should decide whether a hold has expired, and where is it evaluated?
+  objectives:
+  - 1
+- id: sd.concurrent-holds.expiry-not-dependent-on-cleanup
+  subtopic: Expiry without trusting the cleanup job
+  kind: principle
+  claim: 'Correctness must not depend on the cleanup job: confirm checks the deadline and claim treats expired holds as free, so expired holds are unconfirmable and claimable even if the job is down. The job only keeps seat maps tidy.'
+  prompt: If the hold-cleanup job is down for an hour, what must still be true about expired holds?
+  objectives:
+  - 1
+  requires:
+  - sd.concurrent-holds.claim-treats-expired-as-free
+- id: sd.concurrent-holds.conditional-update-single-row
+  subtopic: Choosing a mechanism
+  kind: tradeoff
+  claim: For a single row or counter, a conditional UPDATE is the simplest correct choice, for example UPDATE ... SET stock = stock - 1 WHERE sku = ? AND stock > 0.
+  prompt: Which mechanism suits claiming one seat or decrementing one SKU's stock?
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.atomic-conditional-update
+- id: sd.concurrent-holds.row-lock-multi-seat
+  subtopic: Choosing a mechanism
+  kind: tradeoff
+  claim: Holding several seats all-or-nothing suits row locks (SELECT ... FOR UPDATE) in one transaction, locking rows in a consistent order such as seat ID to avoid deadlocks, checking all, then updating.
+  prompt: How do you hold four adjacent seats atomically without deadlocking?
+  objectives:
+  - 2
+  requires:
+  - sd.transactions.pessimistic-row-lock
+- id: sd.concurrent-holds.distributed-lock-for-processes
+  subtopic: Choosing a mechanism
+  kind: tradeoff
+  claim: Distributed locks (a lease from etcd or ZooKeeper) are for coordinating processes, such as one instance of a nightly job, not for protecting seat rows. A separate lock per seat adds a second system that can disagree with the data and needs fencing.
+  prompt: When is a distributed lock appropriate, and why not for per-seat holds?
+  objectives:
+  - 2
+  requires:
+  - sd.consensus.coordination-service-capabilities
+- id: sd.concurrent-holds.correctness-not-capacity
+  subtopic: When everyone wants the same thing
+  kind: principle
+  claim: Conditional updates are correct under any contention but do not provide capacity. Huge request rates on a few hot rows serialise on locks, fill connection pools and hurt unrelated traffic.
+  prompt: Why isn't a correct conditional update enough in a flash sale?
+  objectives:
+  - 3
+  requires:
+  - sd.concurrent-holds.conditional-update-single-row
+- id: sd.concurrent-holds.waiting-room-admission
+  subtopic: When everyone wants the same thing
+  kind: mechanism
+  claim: A virtual waiting room admits users at a rate the backend can sustain, shows an honest queue position, and randomises order within the opening window so bots gain nothing from being early. It should stop admitting once inventory is held or sold.
+  prompt: What does a virtual waiting room do, and how does it stay fair?
+  objectives:
+  - 3
+  requires:
+  - sd.concurrent-holds.correctness-not-capacity
+- id: sd.concurrent-holds.scaling-wrong-first-move
+  subtopic: When everyone wants the same thing
+  kind: tradeoff
+  claim: Scaling API servers or raising database connection limits during a hot-row stampede makes it worse, because more concurrent updates contend on the same rows. Removing the conditional check oversells.
+  prompt: Why do scaling the API or raising connection limits fail to fix a flash-sale database overload?
+  objectives:
+  - 3
+  requires:
+  - sd.concurrent-holds.correctness-not-capacity
+- id: sd.concurrent-holds.preallocated-tokens
+  subtopic: When everyone wants the same thing
+  kind: mechanism
+  claim: Pre-allocate inventory as tokens in a fast store (a Redis list or DECR counter) so only requests that obtain a token reach the database. For 10,000 units the database sees about 10,000 transactions, and tokens are reconciled with the durable store afterwards.
+  prompt: How do pre-allocated tokens protect the database in a 10,000-unit drop?
+  objectives:
+  - 3
+  requires:
+  - sd.concurrent-holds.correctness-not-capacity
+- id: sd.concurrent-holds.shard-hot-inventory
+  subtopic: When everyone wants the same thing
+  kind: mechanism
+  claim: Shard hot stock across N rows (stock_shard_0..N-1), decrementing a random shard and falling back to others when one is empty, to spread lock contention.
+  prompt: How can you reduce contention on a single hot SKU's stock row?
+  objectives:
+  - 3
+  requires:
+  - sd.hot-keys.sharded-counters
+- id: sd.concurrent-holds.short-holds-auto-release
+  subtopic: When everyone wants the same thing
+  kind: principle
+  claim: Use short hold windows (2-10 minutes) and release abandoned holds automatically, returning tokens or stock, so scarce inventory keeps moving to real buyers.
+  prompt: Why keep holds short and release them automatically in a sale?
+  objectives:
+  - 1
+  - 3
+- id: sd.concurrent-holds.queue-wait-calculation
+  subtopic: When everyone wants the same thing
+  kind: procedure
+  claim: 'Last-user wait is queue size divided by throughput: 900,000 users at 3,000 purchases per minute is 300 minutes, 5 hours. Inventory usually runs out first, so communicate likely availability and stop admitting when it is gone.'
+  prompt: How do you estimate the last person's wait in a waiting room, and what should you do with the result?
+  objectives:
+  - 3
+  requires:
+  - sd.concurrent-holds.waiting-room-admission
+items:
+  concurrent-holds-check-1-v2:
+  - sd.concurrent-holds.check-inside-write
+  - sd.concurrent-holds.claim-row-count-result
+  concurrent-holds-check-2-v2:
+  - sd.concurrent-holds.confirm-predicate-fields
+  - sd.concurrent-holds.single-authoritative-clock
+  concurrent-holds-check-3-v2:
+  - sd.concurrent-holds.expiry-not-dependent-on-cleanup
+  - sd.concurrent-holds.claim-treats-expired-as-free
+  concurrent-holds-check-4-v2:
+  - sd.concurrent-holds.queue-wait-calculation
+  concurrent-holds-fire-1-v2:
+  - sd.concurrent-holds.retry-safe-confirm
+  concurrent-holds-fire-2-v2:
+  - sd.concurrent-holds.waiting-room-admission
+  - sd.concurrent-holds.correctness-not-capacity
+  concurrent-holds-fire-3-v2:
+  - sd.concurrent-holds.preallocated-tokens
+  concurrent-holds-fire-4-v2:
+  - sd.concurrent-holds.row-lock-multi-seat
+  concurrent-holds-fire-5-v2:
+  - sd.concurrent-holds.waiting-room-admission
+  concurrent-holds:b1:
+  - sd.concurrent-holds.check-inside-write
+  - sd.concurrent-holds.app-mutex-insufficient
+  concurrent-holds:b10:
+  - sd.concurrent-holds.scaling-wrong-first-move
+  - sd.concurrent-holds.waiting-room-admission
+  - sd.concurrent-holds.preallocated-tokens
+  concurrent-holds:b12:
+  - sd.concurrent-holds.confirm-predicate-fields
+  - sd.concurrent-holds.hold-id-not-just-user
+  - sd.concurrent-holds.retry-safe-confirm
+  concurrent-holds:b3:
+  - sd.concurrent-holds.single-authoritative-clock
+  - sd.concurrent-holds.check-inside-write
+  - sd.concurrent-holds.retry-safe-confirm
+  concurrent-holds:b5:
+  - sd.concurrent-holds.expiry-not-dependent-on-cleanup
+  - sd.concurrent-holds.claim-treats-expired-as-free
+  concurrent-holds:b7:
+  - sd.concurrent-holds.row-lock-multi-seat
+  - sd.concurrent-holds.conditional-update-single-row
+  - sd.concurrent-holds.distributed-lock-for-processes
+  concurrent-holds:b9:
+  - sd.concurrent-holds.queue-wait-calculation

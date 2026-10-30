@@ -1,0 +1,226 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: service-quality
+source_hash: e36739ab3aee57cf
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.service-quality.percentiles-defined
+  subtopic: Latency is a distribution, not a number
+  kind: fact
+  claim: 'p50 is the median: half of requests are faster. p99 means 1 in 100 requests is slower than that value.'
+  prompt: What do p50 and p99 latency each tell you?
+  objectives:
+  - 0
+- id: sd.service-quality.mean-hides-tail
+  subtopic: Latency is a distribution, not a number
+  kind: principle
+  claim: 'The mean is pulled up by outliers yet hides how bad they are: a 60 ms mean can coexist with a 2 s p99. Report percentiles per endpoint and per dependency instead.'
+  prompt: Why is mean latency a poor way to report service latency?
+  objectives:
+  - 0
+  requires:
+  - sd.service-quality.percentiles-defined
+- id: sd.service-quality.percentile-measurement-questions
+  subtopic: Latency is a distribution, not a number
+  kind: procedure
+  claim: When quoting a latency figure, ask which percentile, measured where, over which window, and whether failed and timed-out requests count.
+  prompt: What should you pin down when someone quotes a latency figure?
+  objectives:
+  - 0
+  requires:
+  - sd.service-quality.percentiles-defined
+- id: sd.service-quality.fanout-waits-for-slowest
+  subtopic: Latency is a distribution, not a number
+  kind: mechanism
+  claim: A request fanning out in parallel finishes only when its slowest call returns, so its latency is the maximum of the N call latencies.
+  prompt: What determines the latency of a request that fans out to many parallel calls?
+  objectives:
+  - 0
+- id: sd.service-quality.fanout-tail-probability
+  subtopic: Latency is a distribution, not a number
+  kind: mechanism
+  claim: 'With fan-out N, the chance a request hits at least one call slower than the backend p99 is 1 − 0.99^N: about 26% at N = 30, 40% at 50, 63% at 100. Backend p99 becomes the typical user experience.'
+  prompt: With a fan-out of N calls, each slow 1% of the time, what share of requests include a slow call?
+  objectives:
+  - 0
+  requires:
+  - sd.service-quality.fanout-waits-for-slowest
+  - sd.service-quality.percentiles-defined
+- id: sd.service-quality.tail-mitigations
+  subtopic: Latency is a distribution, not a number
+  kind: tradeoff
+  claim: Tail mitigations include timeouts with fallbacks, fewer calls per page, and removing sources of slowness (GC pauses, cold caches, noisy neighbours). Hedged requests resend after about the p95 and use the first answer, for a few percent of extra load, and need idempotent reads.
+  prompt: How do hedged requests cut tail latency, and what do they cost?
+  objectives:
+  - 0
+  requires:
+  - sd.service-quality.fanout-tail-probability
+- id: sd.service-quality.throughput-bottleneck
+  subtopic: Throughput and Little's Law
+  kind: principle
+  claim: Throughput is completed work per unit time and is capped by the most constrained resource, not by the number of servers.
+  prompt: What caps a system's throughput?
+  objectives:
+  - 1
+- id: sd.service-quality.littles-law
+  subtopic: Throughput and Little's Law
+  kind: fact
+  claim: 'Little''s Law: L = λ × W, where L is the average number of requests in the system, λ the arrival rate (equal to throughput when stable) and W the average time in the system.'
+  prompt: State Little's Law and define its terms.
+  objectives:
+  - 1
+- id: sd.service-quality.littles-law-sizing
+  subtopic: Throughput and Little's Law
+  kind: procedure
+  claim: 'Use Little''s Law to size thread pools, connection pools and dependency concurrency: 4,000 requests/s holding a connection for 25 ms needs about 100 connections on average, plus headroom for bursts.'
+  prompt: How many connections are in use on average at 4,000 requests/s with each held for 25 ms?
+  objectives:
+  - 1
+  requires:
+  - sd.service-quality.littles-law
+- id: sd.service-quality.latency-exhausts-pools
+  subtopic: Throughput and Little's Law
+  kind: mechanism
+  claim: 'At constant traffic, higher latency means higher concurrency (L = λW), so a slow dependency can exhaust fixed-size pools: query time going from 25 ms to 100 ms quadruples connections in use.'
+  prompt: Why does a slowdown in a database exhaust connection pools even when traffic is unchanged?
+  objectives:
+  - 1
+  requires:
+  - sd.service-quality.littles-law
+- id: sd.service-quality.queueing-knee
+  subtopic: Utilisation and the knee
+  kind: mechanism
+  claim: 'Waiting time scales roughly with ρ/(1−ρ): 1× at 50% utilisation, 4× at 80%, 9× at 90%, 19× at 95%. Latency therefore climbs steeply near full utilisation, not linearly.'
+  prompt: How does queueing delay grow with utilisation ρ, and what are the values at 50%, 90% and 95%?
+  objectives:
+  - 2
+- id: sd.service-quality.variability-causes-waiting
+  subtopic: Utilisation and the knee
+  kind: principle
+  claim: 'Queueing comes from variability plus utilisation: perfectly regular traffic barely queues even at high load, while bursty arrivals and varied job sizes cause queues well before 100%. Smaller, more uniform work units reduce it.'
+  prompt: Why do real systems queue long before reaching 100% utilisation?
+  objectives:
+  - 2
+  requires:
+  - sd.service-quality.queueing-knee
+- id: sd.service-quality.utilisation-headroom
+  subtopic: Utilisation and the knee
+  kind: tradeoff
+  claim: 'Run at about 50–70% utilisation at peak: it leaves room for bursts, failover and losing an instance, at the cost of spare capacity. Running at 95% saves money but latency explodes.'
+  prompt: What peak utilisation is sensible, and why not run at 95%?
+  objectives:
+  - 2
+  requires:
+  - sd.service-quality.queueing-knee
+- id: sd.service-quality.saturation-signals
+  subtopic: Utilisation and the knee
+  kind: principle
+  claim: Watch saturation signals such as queue length and pool waits, not CPU alone; low CPU does not prove spare capacity.
+  prompt: Which signals should you watch for saturation besides CPU?
+  objectives:
+  - 2
+  requires:
+  - sd.service-quality.queueing-knee
+- id: sd.service-quality.availability-definition
+  subtopic: Availability
+  kind: fact
+  claim: Availability is the fraction of eligible requests that get the promised result (or of time the service is usable) over a window. Request-based measurement is usually closer to user experience than uptime pings.
+  prompt: How should availability be measured, and why?
+  objectives:
+  - 3
+- id: sd.service-quality.downtime-table
+  subtopic: Availability
+  kind: fact
+  claim: 'Allowed downtime: 99.9% is about 8.8 hours a year (43 minutes per 30 days); 99.99% is about 53 minutes a year (4.3 minutes per 30 days); 99% is 3.65 days a year.'
+  prompt: How much downtime per year do 99.9% and 99.99% availability allow?
+  objectives:
+  - 3
+  requires:
+  - sd.service-quality.availability-definition
+  same_as: sd.guarantees.downtime-arithmetic
+- id: sd.service-quality.serial-availability-multiplies
+  subtopic: Availability
+  kind: mechanism
+  claim: 'Required serial dependencies multiply availability: five services at 99.9% give at best 0.999^5 ≈ 99.5%, and 20 give about 98%. Making dependencies optional or async removes them from the product.'
+  prompt: What is the best-case availability of a request needing five serial services at 99.9% each?
+  objectives:
+  - 3
+  requires:
+  - sd.service-quality.availability-definition
+- id: sd.service-quality.redundancy-independence
+  subtopic: Availability
+  kind: principle
+  claim: 'Redundancy multiplies failure probabilities only if failures are independent: two 99% replicas give 99.99% only when they share no deploys, hardware, zone or dependencies. Spread across failure domains.'
+  prompt: When do two 99% replicas give roughly 99.99% availability?
+  objectives:
+  - 3
+  requires:
+  - sd.service-quality.availability-definition
+- id: sd.service-quality.retries-amplify-outages
+  subtopic: Availability
+  kind: tradeoff
+  claim: Retrying failed calls with no backoff multiplies load during a partial outage and can turn a blip into a full one. Timeouts with fallbacks on optional calls degrade the page instead of failing it.
+  prompt: Why can blind immediate retries lower availability?
+  objectives:
+  - 3
+- id: sd.service-quality.error-budget-burn-rate
+  subtopic: Availability
+  kind: fact
+  claim: A 99.9% SLO over 30 days gives a 43-minute error budget. Burn rate 1 spends it exactly over the window; 14.4× spends 2% per hour and empties it in 50 hours.
+  prompt: What does a burn rate of 14.4 mean for a 99.9% 30-day SLO?
+  objectives:
+  - 3
+  requires:
+  - sd.guarantees.error-budget
+- id: sd.service-quality.burn-rate-alerting
+  subtopic: Availability
+  kind: procedure
+  claim: Page on fast burns (e.g. 14.4× over 1 h and 5 m) and ticket slow burns (e.g. 1× over 3 days). This ties alerts to SLO impact and avoids alert fatigue from paging on every error.
+  prompt: How should burn-rate alerts be set up, and why not alert on every error?
+  objectives:
+  - 3
+  requires:
+  - sd.service-quality.error-budget-burn-rate
+items:
+  service-quality-check-1-v2:
+  - sd.service-quality.fanout-tail-probability
+  service-quality-check-2-v2:
+  - sd.service-quality.littles-law
+  service-quality-check-3-v2:
+  - sd.service-quality.queueing-knee
+  - sd.service-quality.variability-causes-waiting
+  - sd.service-quality.utilisation-headroom
+  service-quality-check-4-v2:
+  - sd.service-quality.serial-availability-multiplies
+  service-quality-fire-1-v2:
+  - sd.service-quality.tail-mitigations
+  service-quality-fire-2-v2:
+  - sd.service-quality.latency-exhausts-pools
+  service-quality-fire-3-v2:
+  - sd.service-quality.redundancy-independence
+  service-quality-fire-4-v2:
+  - sd.service-quality.burn-rate-alerting
+  service-quality-fire-5-v2:
+  - sd.service-quality.error-budget-burn-rate
+  service-quality:b11:
+  - sd.service-quality.fanout-tail-probability
+  - sd.service-quality.serial-availability-multiplies
+  - sd.service-quality.littles-law-sizing
+  service-quality:b13:
+  - sd.service-quality.fanout-waits-for-slowest
+  - sd.service-quality.fanout-tail-probability
+  - sd.service-quality.tail-mitigations
+  service-quality:b2:
+  - sd.service-quality.fanout-tail-probability
+  - sd.service-quality.mean-hides-tail
+  service-quality:b4:
+  - sd.service-quality.littles-law-sizing
+  service-quality:b9:
+  - sd.service-quality.serial-availability-multiplies
+  - sd.service-quality.redundancy-independence
+  - sd.service-quality.retries-amplify-outages

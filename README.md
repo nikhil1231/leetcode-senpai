@@ -520,10 +520,36 @@ deriving events from existing records, so earlier history counts without a migra
 
 Records are additive `paper` and `sprint` kinds in the `system_design` collection.
 
+### Knowledge base (one model of what you know)
+
+`server/knowledge_base/` sits above the item ledger. Its unit is a **knowledge point**: one
+idea (fact, principle, mechanism, trade-off or procedure) with a claim, a recall prompt, its
+subtopic, its prerequisites and the items that test it. Points for every system design,
+Fundamentals and AI Engineering lesson live in `server/knowledge_base/points/` as reviewable
+YAML, drafted with `scripts/generate_knowledge_points.py`: by default it exports prompts for
+the agent running it and imports its answers (`--export DIR`, `--import DIR`); `--openrouter`
+answers with the paid API instead.
+Ids never change; retired points and aliases keep their history.
+
+Every existing answer flows in through the item → point map with no migration. Other sources
+post evidence to `/api/knowledge`, and every reader gets the same view:
+
+- `GET /api/knowledge`: totals and the section → category → lesson → subtopic tree.
+- `GET /api/knowledge/points`, `/points/{id}`, `/catalog`: per-point state (status, recall,
+  depth reached, confirmed or only model-judged, exposures, misconceptions) and history.
+- `GET /api/knowledge/next?mode=review|learn|any`: what to practise next, with the reason.
+- `POST /api/knowledge/events`: answers (`clean`, `depth`, `strength` hard or soft, optional
+  `failed`) and exposures (`kind: exposure`), idempotent per source key.
+- `GET|POST /api/knowledge/misconceptions`, `PATCH /misconceptions/{key}`: open and resolve.
+
+Services on the box authenticate with `KNOWLEDGE_SOURCE_TOKENS=name:token,…`; the token's
+name is recorded as the source. Intent and roadmap: `docs/plans/tutor-and-knowledge.md` and
+`docs/plans/ambient-learning.md`.
+
 Relevant regression checks:
 
 ```bash
-uv run --locked pytest tests/test_knowledge.py tests/test_system_design_items.py tests/test_system_design_papers.py tests/test_system_design_drills.py tests/test_activity.py
+uv run --locked pytest tests/test_knowledge.py tests/test_knowledge_base.py tests/test_system_design_items.py tests/test_system_design_papers.py tests/test_system_design_drills.py tests/test_activity.py
 uv run --locked pytest tests/test_system_design.py tests/test_system_design_learning.py tests/test_daily_coach.py
 node --test tests/test_sections_frontend.cjs tests/test_system_design_learning_frontend.cjs
 ```

@@ -1,0 +1,280 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: cache-freshness
+source_hash: c5bedde91177b1af
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.cache-freshness.freshness-promise-per-data-type
+  subtopic: Start with the promise, not the TTL
+  kind: principle
+  claim: 'A TTL is a mechanism, not a requirement: state a freshness promise per data type (bounded staleness, read-your-writes or authoritative) rather than one TTL for everything.'
+  prompt: Why is 'cache for 5 minutes' not a proper freshness requirement, and what should you define instead?
+  objectives:
+  - 0
+  same_as: sd.guarantees.per-operation-guarantees
+- id: sd.cache-freshness.bounded-staleness-promise
+  subtopic: Start with the promise, not the TTL
+  kind: fact
+  claim: Bounded staleness lets readers see a value up to T seconds old; it suits like counts, product descriptions and recommendations, and is served by a TTL plus invalidation.
+  prompt: Which freshness promise suits a viral post's like count, and what mechanism provides it?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-freshness.freshness-promise-per-data-type
+- id: sd.cache-freshness.read-your-writes-promise
+  subtopic: Start with the promise, not the TTL
+  kind: fact
+  claim: Read-your-writes means the person who made a change sees it immediately while others may lag, for example a profile edit or a post just published.
+  prompt: What does the read-your-writes promise guarantee, and to whom?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-freshness.freshness-promise-per-data-type
+- id: sd.cache-freshness.authoritative-promise
+  subtopic: Start with the promise, not the TTL
+  kind: principle
+  claim: 'Permissions and revocation, checkout prices, inventory and balances need authoritative reads: don''t serve them from a cache, or validate against the source at the decision point.'
+  prompt: How should a revocation check or checkout price be read, and why?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-freshness.freshness-promise-per-data-type
+- id: sd.cache-freshness.display-vs-decision-validation
+  subtopic: Start with the promise, not the TTL
+  kind: tradeoff
+  claim: A cached display value (such as a search-result price) can lag provided the money- or access-moving step re-validates against the source of truth.
+  prompt: How can a cached price on a search page be acceptable while checkout stays correct?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-freshness.authoritative-promise
+- id: sd.cache-freshness.ttl-bounds-one-copy
+  subtopic: What a TTL does — and doesn't — bound
+  kind: principle
+  claim: A TTL bounds how long one copy in one cache lives after being written, not how stale the data is, because the value may already have been old when cached.
+  prompt: What does a TTL actually bound, and what does it not?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+- id: sd.cache-freshness.stacked-ttls-add-up
+  subtopic: What a TTL does — and doesn't — bound
+  kind: mechanism
+  claim: 'Stacked caches add up: a downstream layer can copy from an upstream one at the last moment of its life and keep it for its own full TTL, so worst-case staleness is roughly the sum of TTLs on the read path.'
+  prompt: With Redis at 60 s and a CDN at 300 s and no invalidation, what is the worst-case staleness, and why?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-freshness.ttl-bounds-one-copy
+  - sd.cache-aside.l1-invalidation-problem
+- id: sd.cache-freshness.worst-case-staleness-calculation
+  subtopic: What a TTL does — and doesn't — bound
+  kind: procedure
+  claim: Worst-case staleness = replica lag at fill time + the TTL of every cache layer on the path; for example 2 s lag + 30 s Redis + 5 s L1 = 37 s.
+  prompt: How do you compute worst-case staleness across cache layers fed by a lagging replica?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-freshness.stacked-ttls-add-up
+- id: sd.cache-freshness.average-staleness-ttl-half
+  subtopic: What a TTL does — and doesn't — bound
+  kind: fact
+  claim: Without invalidation a TTL is the only thing that corrects a stale value, so average staleness for frequently changing data is about TTL/2.
+  prompt: Without invalidation, roughly what is average staleness for a frequently changing key?
+  objectives:
+  - 3
+  requires:
+  - sd.cache-freshness.ttl-bounds-one-copy
+- id: sd.cache-freshness.ttl-hit-rate-vs-staleness
+  subtopic: What a TTL does — and doesn't — bound
+  kind: tradeoff
+  claim: Shorter TTLs cut staleness but raise the miss rate; when data changes nearly as often as it is read, no TTL gives both low staleness and a high hit rate, so you need invalidation on write with the TTL as a safety net.
+  prompt: When does tuning the TTL stop being enough, and what do you add?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.cache-freshness.average-staleness-ttl-half
+  - sd.cache-aside.hit-rate-workload-dependent
+- id: sd.cache-freshness.stale-refill-race-mechanism
+  subtopic: The stale refill race
+  kind: mechanism
+  claim: A reader misses and reads the old value from the database; a writer commits and deletes the key (nothing there yet); the slow reader then sets the old value, which stays for a whole TTL even though the delete happened.
+  prompt: Describe how a cache ends up stale even though every write deletes the key.
+  objectives:
+  - 1
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+  - sd.cache-aside.delete-beats-set
+- id: sd.cache-freshness.delete-cannot-stop-future-fill
+  subtopic: The stale refill race
+  kind: principle
+  claim: Delete-on-write cannot protect against a fill that has not happened yet, so it does not prevent the stale refill race; the window is small but on hot keys it occurs regularly.
+  prompt: Why isn't delete-on-write enough to prevent stale refills?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-freshness.stale-refill-race-mechanism
+- id: sd.cache-freshness.leases-mechanism
+  subtopic: The stale refill race
+  kind: mechanism
+  claim: A lease is a token the cache issues on a miss permitting the fill; a delete revokes outstanding leases, so a SET carrying a revoked lease is rejected.
+  prompt: How do leases stop a slow reader from poisoning the cache?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-freshness.stale-refill-race-mechanism
+- id: sd.cache-freshness.lease-stampede-benefit
+  subtopic: The stale refill race
+  kind: fact
+  claim: 'Leases also protect against stampedes: the cache gives the lease to one of many simultaneous missing readers and tells the others to wait briefly and retry.'
+  prompt: What second benefit do leases give when many readers miss the same key?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-freshness.leases-mechanism
+- id: sd.cache-freshness.versioned-writes-source-version
+  subtopic: The stale refill race
+  kind: mechanism
+  claim: Versioned fills only accept a value newer than the cached version, and the version must come from the source of truth (row version, update counter, commit log position), never application wall clocks.
+  prompt: Where must the version in a version-checked cache fill come from, and why not the server clock?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-freshness.stale-refill-race-mechanism
+- id: sd.cache-freshness.delayed-double-delete
+  subtopic: The stale refill race
+  kind: tradeoff
+  claim: Delayed double delete (delete again after a few hundred ms to a couple of seconds) is cheap and catches most late refills, but is only probabilistic.
+  prompt: What does delayed double delete do and what is its limitation?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-freshness.stale-refill-race-mechanism
+- id: sd.cache-freshness.ttl-backstop
+  subtopic: The stale refill race
+  kind: principle
+  claim: Always keep a TTL as a backstop so any missed or raced invalidation heals itself within a bounded time.
+  prompt: Why keep a TTL even when you invalidate on write?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.cache-freshness.ttl-bounds-one-copy
+- id: sd.cache-freshness.commit-delete-not-atomic
+  subtopic: When invalidation silently goes missing
+  kind: mechanism
+  claim: Application-side invalidation has the database commit and the cache delete as two separate operations; a crash or network error between them, or another writer such as a backfill script, leaves the cache stale with no error logged.
+  prompt: How can application-side invalidation silently fail to happen?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.database-before-cache
+- id: sd.cache-freshness.cdc-invalidation
+  subtopic: When invalidation silently goes missing
+  kind: mechanism
+  claim: CDC-driven invalidation streams every committed change from the database log (e.g. Debezium on binlog or WAL) to a consumer that deletes the affected keys and records its log position, so deletes are late after a crash rather than lost.
+  prompt: How does CDC-driven invalidation close the gap left by application-side deletes?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-freshness.commit-delete-not-atomic
+  - sd.storage-engines.wal-feeds-replication
+- id: sd.cache-freshness.idempotent-deletes-at-least-once
+  subtopic: When invalidation silently goes missing
+  kind: principle
+  claim: 'Cache deletes are idempotent, so at-least-once delivery from the change log is safe: replaying an event after a crash only repeats a harmless delete.'
+  prompt: Why is replaying CDC events after a consumer crash safe for invalidation?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-freshness.cdc-invalidation
+- id: sd.cache-freshness.cdc-costs
+  subtopic: When invalidation silently goes missing
+  kind: tradeoff
+  claim: CDC invalidation costs another system to run and monitor, adds invalidation lag equal to pipeline lag (now part of the freshness bound), and requires mapping table rows to cache keys.
+  prompt: What are the costs of CDC-driven invalidation?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.cache-freshness.cdc-invalidation
+- id: sd.cache-freshness.replica-fill-race
+  subtopic: When invalidation silently goes missing
+  kind: mechanism
+  claim: 'Filling from a read replica adds a second race: a reader can miss after invalidation, read a replica that hasn''t applied the write, and cache the old value; mitigate by filling from the primary for recently written keys, delaying the second delete beyond replica lag, or filling only from a replica that has reached the commit position.'
+  prompt: How do read replicas reintroduce stale fills and how can you mitigate it?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.cache-freshness.stale-refill-race-mechanism
+- id: sd.cache-freshness.cdn-purge-on-delete
+  subtopic: When invalidation silently goes missing
+  kind: procedure
+  claim: When debugging stale data, find which layer serves the stale copy before acting, fix the specific race, and invalidate every copy on the read path including the CDN; avoid global flushes, which cause stampedes.
+  prompt: What is the sound approach to diagnosing and fixing deleted content that reappears?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.cache-freshness.stacked-ttls-add-up
+- id: sd.cache-freshness.read-your-writes-techniques
+  subtopic: Read-your-writes for the author
+  kind: tradeoff
+  claim: 'Cheap read-your-writes for the author: write-through their own view, bypass the cache for recent writers via a short-lived marker and read the primary, or return version tokens and go to the source if the cached version is older.'
+  prompt: Name ways to give an author read-your-writes without bypassing the cache for everyone.
+  objectives:
+  - 0
+  requires:
+  - sd.cache-freshness.read-your-writes-promise
+items:
+  cache-freshness-check-1-v2:
+  - sd.cache-freshness.stacked-ttls-add-up
+  cache-freshness-check-2-v2:
+  - sd.cache-freshness.commit-delete-not-atomic
+  - sd.cache-freshness.replica-fill-race
+  - sd.cache-freshness.stale-refill-race-mechanism
+  cache-freshness-check-3-v2:
+  - sd.cache-freshness.leases-mechanism
+  - sd.cache-freshness.delete-cannot-stop-future-fill
+  cache-freshness-check-4-v2:
+  - sd.cache-freshness.worst-case-staleness-calculation
+  cache-freshness-fire-1-v2:
+  - sd.cache-freshness.delayed-double-delete
+  cache-freshness-fire-2-v2:
+  - sd.cache-freshness.cdc-invalidation
+  - sd.cache-freshness.commit-delete-not-atomic
+  - sd.cache-freshness.idempotent-deletes-at-least-once
+  cache-freshness-fire-3-v2:
+  - sd.cache-freshness.authoritative-promise
+  cache-freshness-fire-4-v2:
+  - sd.cache-freshness.read-your-writes-techniques
+  cache-freshness-fire-5-v2:
+  - sd.cache-freshness.versioned-writes-source-version
+  cache-freshness:b1:
+  - sd.cache-freshness.freshness-promise-per-data-type
+  - sd.cache-freshness.display-vs-decision-validation
+  - sd.cache-freshness.authoritative-promise
+  cache-freshness:b11:
+  - sd.cache-freshness.versioned-writes-source-version
+  cache-freshness:b17:
+  - sd.cache-freshness.worst-case-staleness-calculation
+  - sd.cache-freshness.stacked-ttls-add-up
+  cache-freshness:b19:
+  - sd.cache-freshness.cdn-purge-on-delete
+  - sd.cache-freshness.replica-fill-race
+  cache-freshness:b21:
+  - sd.cache-freshness.stale-refill-race-mechanism
+  - sd.cache-freshness.leases-mechanism
+  - sd.cache-freshness.versioned-writes-source-version
+  cache-freshness:b3:
+  - sd.cache-freshness.stacked-ttls-add-up
+  cache-freshness:b7:
+  - sd.cache-freshness.stale-refill-race-mechanism
+  - sd.cache-freshness.delete-cannot-stop-future-fill

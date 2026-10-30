@@ -1,0 +1,210 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: acknowledgements
+source_hash: 58435f773e711952
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.acknowledgements.at-most-once-ack-first
+  subtopic: Three guarantees
+  kind: mechanism
+  claim: 'Acknowledging or committing the offset before processing gives at-most-once: a crash loses the message, but nothing is processed twice.'
+  prompt: What delivery guarantee results from acknowledging a message before processing it, and what is the failure cost?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.queue-basics.work-queue-competing-consumers
+- id: sd.acknowledgements.at-least-once-ack-after
+  subtopic: Three guarantees
+  kind: mechanism
+  claim: 'Acknowledging after processing gives at-least-once: a crash before the ack redelivers the message, so work may happen twice.'
+  prompt: What happens if a consumer crashes after doing the work but before acknowledging?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.queue-basics.work-queue-competing-consumers
+- id: sd.acknowledgements.effectively-once-definition
+  subtopic: Three guarantees
+  kind: principle
+  claim: Effectively-once processing is at-least-once delivery plus idempotent processing, so duplicates have no extra effect.
+  prompt: How is effectively-once processing achieved in practice?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.acknowledgements.at-least-once-ack-after
+  same_as: sd.retry-identity.exactly-once-composition
+- id: sd.acknowledgements.broker-exactly-once-boundary
+  subtopic: Three guarantees
+  kind: fact
+  claim: Brokers can give exactly-once only within their own boundary (e.g. Kafka transactions for read-process-write between topics); external side effects need your own deduplication.
+  prompt: Why can't a broker alone guarantee exactly-once for external effects such as sending email?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.acknowledgements.effectively-once-definition
+- id: sd.acknowledgements.when-at-most-once-ok
+  subtopic: Three guarantees
+  kind: tradeoff
+  claim: At-most-once suits lossy, sampled or quickly superseded data (telemetry, cursor positions); anything that must eventually happen (payments, orders, provisioning) needs ack after processing.
+  prompt: Which kinds of data can tolerate at-most-once processing, and which cannot?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.acknowledgements.at-most-once-ack-first
+  - sd.acknowledgements.at-least-once-ack-after
+- id: sd.acknowledgements.crash-before-send-safe
+  subtopic: Three guarantees
+  kind: mechanism
+  claim: With ack after the effect, a crash before the effect is safe (redelivery does the job), while a crash after the effect but before the ack causes a duplicate unless the effect is idempotent.
+  prompt: With ack placed last, which crash point causes duplicates and why?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.acknowledgements.at-least-once-ack-after
+- id: sd.acknowledgements.visibility-timeout-mechanism
+  subtopic: Visibility timeouts and leases
+  kind: mechanism
+  claim: SQS hides a delivered message for the visibility timeout rather than deleting it; if the consumer doesn't delete it in time, it reappears for another consumer.
+  prompt: What does a visibility timeout do in SQS?
+  objectives:
+  - 2
+  requires:
+  - sd.acknowledgements.at-least-once-ack-after
+- id: sd.acknowledgements.timeout-exceeds-p99
+  subtopic: Visibility timeouts and leases
+  kind: principle
+  claim: Set the visibility timeout comfortably above p99 processing time (e.g. about 2x), not the average; too short causes duplicate processing, too long delays recovery after a crash.
+  prompt: What should the visibility timeout be relative to processing time, and what is the trade-off?
+  objectives:
+  - 2
+  requires:
+  - sd.acknowledgements.visibility-timeout-mechanism
+  - sd.service-quality.percentiles-defined
+- id: sd.acknowledgements.extend-lease-long-work
+  subtopic: Visibility timeouts and leases
+  kind: procedure
+  claim: For long or variable work, extend the lease periodically with a heartbeat (ChangeMessageVisibility in SQS, or RabbitMQ's unacked model with consumer timeouts).
+  prompt: How do you stop long-running work from being redelivered mid-processing?
+  objectives:
+  - 2
+  requires:
+  - sd.acknowledgements.visibility-timeout-mechanism
+- id: sd.acknowledgements.assume-duplicates-anyway
+  subtopic: Visibility timeouts and leases
+  kind: principle
+  claim: 'Even with perfect timeouts, assume duplicates: network blips, consumer restarts and broker failovers all cause redelivery.'
+  prompt: Why must consumers be idempotent even when timeouts are tuned well?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.acknowledgements.at-least-once-ack-after
+- id: sd.acknowledgements.dedupe-table-same-transaction
+  subtopic: Idempotent consumers
+  kind: mechanism
+  claim: Record the processed message ID with a unique constraint in the same transaction as the database effect; if the insert conflicts, skip. Separate transactions risk marking an event processed without its effect.
+  prompt: How should a dedupe table be used with the database effect, and why?
+  objectives:
+  - 3
+  requires:
+  - sd.acknowledgements.effectively-once-definition
+  - sd.transactions.unique-constraint-for-uniqueness
+- id: sd.acknowledgements.idempotent-effects-keys
+  subtopic: Idempotent consumers
+  kind: fact
+  claim: Idempotent effects include upserts, state-setting updates (status = shipped), conditional updates on a version, and downstream idempotency keys for external APIs.
+  prompt: Name ways to make an effect safe to repeat.
+  objectives:
+  - 3
+  requires:
+  - sd.acknowledgements.effectively-once-definition
+  same_as: sd.retry-identity.natural-idempotent-designs
+- id: sd.acknowledgements.natural-keys-dedupe
+  subtopic: Idempotent consumers
+  kind: principle
+  claim: Deduplicating on a natural business key (order 551) rather than a message ID also catches a re-published duplicate with a new message ID.
+  prompt: Why dedupe on a business key rather than message ID?
+  objectives:
+  - 3
+  requires:
+  - sd.acknowledgements.dedupe-table-same-transaction
+- id: sd.acknowledgements.ack-after-commit
+  subtopic: Idempotent consumers
+  kind: procedure
+  claim: 'Ack only after the transaction commits: a crash before commit means a clean retry, and a crash after commit but before ack is caught by the dedupe insert.'
+  prompt: Where does the ack go relative to the database commit, and why?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.acknowledgements.dedupe-table-same-transaction
+  - sd.acknowledgements.at-least-once-ack-after
+- id: sd.acknowledgements.publisher-confirm-meaning
+  subtopic: Publisher confirms and durability
+  kind: fact
+  claim: A publisher confirm (RabbitMQ) or Kafka acks=all means the broker accepted and persisted the message to its configured replicas, not that any consumer processed it.
+  prompt: What does a publisher confirm guarantee and what does it not?
+  objectives:
+  - 3
+  requires:
+  - sd.queue-basics.retained-log-replay
+- id: sd.acknowledgements.kafka-durability-settings
+  subtopic: Publisher confirms and durability
+  kind: fact
+  claim: Kafka durability needs replication factor 3, min.insync.replicas=2, producer acks=all and idempotent producer retries; RabbitMQ needs durable or quorum queues and persistent messages.
+  prompt: Which settings make published Kafka messages durable?
+  objectives:
+  - 3
+  requires:
+  - sd.acknowledgements.publisher-confirm-meaning
+items:
+  acknowledgements-check-1-v2:
+  - sd.acknowledgements.at-most-once-ack-first
+  acknowledgements-check-2-v2:
+  - sd.acknowledgements.effectively-once-definition
+  - sd.acknowledgements.idempotent-effects-keys
+  - sd.acknowledgements.ack-after-commit
+  acknowledgements-check-3-v2:
+  - sd.acknowledgements.visibility-timeout-mechanism
+  - sd.acknowledgements.timeout-exceeds-p99
+  acknowledgements-check-4-v2:
+  - sd.acknowledgements.publisher-confirm-meaning
+  acknowledgements-fire-1-v2:
+  - sd.acknowledgements.when-at-most-once-ok
+  acknowledgements-fire-2-v2:
+  - sd.acknowledgements.timeout-exceeds-p99
+  acknowledgements-fire-3-v2:
+  - sd.acknowledgements.dedupe-table-same-transaction
+  acknowledgements-fire-4-v2:
+  - sd.acknowledgements.at-most-once-ack-first
+  acknowledgements-fire-5-v2:
+  - sd.acknowledgements.kafka-durability-settings
+  acknowledgements:b11:
+  - sd.acknowledgements.at-least-once-ack-after
+  - sd.acknowledgements.crash-before-send-safe
+  - sd.acknowledgements.effectively-once-definition
+  acknowledgements:b2:
+  - sd.acknowledgements.when-at-most-once-ok
+  acknowledgements:b4:
+  - sd.acknowledgements.extend-lease-long-work
+  - sd.acknowledgements.timeout-exceeds-p99
+  acknowledgements:b5:
+  - sd.acknowledgements.at-most-once-ack-first
+  - sd.acknowledgements.timeout-exceeds-p99
+  - sd.acknowledgements.idempotent-effects-keys
+  acknowledgements:b7:
+  - sd.acknowledgements.dedupe-table-same-transaction
+  - sd.acknowledgements.ack-after-commit
+  - sd.acknowledgements.idempotent-effects-keys
+  acknowledgements:b9:
+  - sd.acknowledgements.publisher-confirm-meaning

@@ -1,0 +1,194 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: outbox
+source_hash: 9dd409438525c13c
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.outbox.commit-then-publish-loses-events
+  subtopic: Two writes, no shared transaction
+  kind: mechanism
+  claim: If a service commits to the database and then publishes, a crash between the two leaves the order saved but the event never sent. Nothing errors and nothing retries, so downstream systems never learn of it.
+  prompt: What happens if a service crashes after committing an order but before publishing its event?
+  objectives:
+  - 0
+  requires:
+  - sd.transactions.atomicity-all-or-nothing
+- id: sd.outbox.publish-then-commit-phantom-events
+  subtopic: Two writes, no shared transaction
+  kind: mechanism
+  claim: Publishing before committing means a crash or failed commit can leave an event for a change that never happened, and consumers act on that phantom event.
+  prompt: Why does reversing the order to 'publish, then commit' also fail?
+  objectives:
+  - 0
+  requires:
+  - sd.transactions.external-effects-not-rolled-back
+- id: sd.outbox.no-shared-transaction-db-broker
+  subtopic: Two writes, no shared transaction
+  kind: principle
+  claim: A database and a broker cannot share one transaction; atomicity exists only inside a single system, and two-phase commit across them is rarely available and brittle.
+  prompt: Why can't you make a database write and a broker publish atomic together?
+  objectives:
+  - 0
+  requires:
+  - sd.transactions.atomicity-all-or-nothing
+- id: sd.outbox.publish-inside-transaction-fails
+  subtopic: Two writes, no shared transaction
+  kind: mechanism
+  claim: Publishing to the broker inside the database transaction before COMMIT does not help, because the broker cannot roll back the message if the commit later fails.
+  prompt: Why is publishing to Kafka just before COMMIT, inside the transaction, not a fix?
+  objectives:
+  - 0
+  requires:
+  - sd.outbox.no-shared-transaction-db-broker
+  same_as: sd.transactions.no-external-calls-in-transaction
+- id: sd.outbox.outbox-same-transaction
+  subtopic: The transactional outbox
+  kind: mechanism
+  claim: The transactional outbox writes the event to an outbox table in the same database transaction as the business change, so both commit or neither does; a separate relay then publishes pending rows and marks them sent.
+  prompt: How does the transactional outbox make the change and the publish intent atomic?
+  objectives:
+  - 1
+  requires:
+  - sd.outbox.no-shared-transaction-db-broker
+  - sd.transactions.atomicity-all-or-nothing
+- id: sd.outbox.partition-key-aggregate-ordering
+  subtopic: The transactional outbox
+  kind: principle
+  claim: Publishing in outbox order with the aggregate ID as the Kafka partition key keeps events for one entity ordered within a partition.
+  prompt: How do you keep events for a single order in order in Kafka?
+  objectives:
+  - 1
+  requires:
+  - sd.outbox.outbox-same-transaction
+- id: sd.outbox.relay-at-least-once
+  subtopic: The transactional outbox
+  kind: mechanism
+  claim: If the relay crashes after publishing but before marking the row published, it republishes on restart, so delivery is at-least-once, not exactly-once.
+  prompt: What delivery guarantee does an outbox relay give, and why?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.outbox.outbox-same-transaction
+  - sd.acknowledgements.at-least-once-ack-after
+- id: sd.outbox.skip-locked-ordering-risk
+  subtopic: Relay options
+  kind: tradeoff
+  claim: Multiple polling relays using FOR UPDATE SKIP LOCKED raise throughput but can publish events for the same aggregate out of order. Preserve order by assigning aggregates to instances (e.g. hash of aggregate_id) or running a single active relay.
+  prompt: What ordering risk comes from running several polling relays with SKIP LOCKED, and how do you avoid it?
+  objectives:
+  - 1
+  requires:
+  - sd.outbox.outbox-same-transaction
+  - sd.outbox.partition-key-aggregate-ordering
+- id: sd.outbox.polling-vs-cdc-relay
+  subtopic: Relay options
+  kind: tradeoff
+  claim: Polling is simple and works on any database but adds query load and latency. CDC log tailing (e.g. Debezium) gives low latency and commit order but needs log access and another system to run.
+  prompt: What are the trade-offs between a polling relay and a CDC relay?
+  objectives:
+  - 1
+  requires:
+  - sd.outbox.outbox-same-transaction
+  - sd.storage-engines.wal-feeds-replication
+- id: sd.outbox.relay-throughput-estimate
+  subtopic: Relay options
+  kind: procedure
+  claim: Relay throughput is batch size divided by poll interval (500 rows per 200 ms = 2,500 rows/s); divide peak commit rate by that to get instance count, or enlarge batches, shorten the interval or use CDC.
+  prompt: How do you estimate how many polling relay instances are needed for a given peak write rate?
+  objectives:
+  - 1
+  requires:
+  - sd.outbox.outbox-same-transaction
+- id: sd.outbox.inbox-dedupe-table
+  subtopic: The inbox on the consumer side
+  kind: mechanism
+  claim: The inbox pattern records each consumed event ID under a unique constraint in the same transaction as the consumer's effect; a conflict means the event was already handled and is skipped.
+  prompt: How does an inbox table make a consumer safe against duplicate events?
+  objectives:
+  - 2
+  requires:
+  - sd.outbox.relay-at-least-once
+  same_as: sd.acknowledgements.dedupe-table-same-transaction
+- id: sd.outbox.inbox-before-effect-same-transaction
+  subtopic: The inbox on the consumer side
+  kind: principle
+  claim: Recording the inbox entry after the effect, or outside the transaction, allows double processing on a crash or redelivery. Insert it first and in the same transaction as the effect.
+  prompt: Why is it a bug to apply the effect first and write the inbox row afterwards outside a transaction?
+  objectives:
+  - 2
+  requires:
+  - sd.outbox.inbox-dedupe-table
+- id: sd.outbox.no-direct-publish-alongside-outbox
+  subtopic: The transactional outbox
+  kind: principle
+  claim: Publishing directly as well as through the outbox adds duplicates with different identities and is still lossy, so only the relay should publish.
+  prompt: Why shouldn't a service also publish directly to Kafka when it uses an outbox?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.outbox.outbox-same-transaction
+- id: sd.outbox.outbox-cleanup-and-lag
+  subtopic: The inbox on the consumer side
+  kind: procedure
+  claim: Delete published outbox rows after a retention period (e.g. 7 days) to keep polling fast, and monitor outbox lag (age of the oldest unpublished row) plus relay errors.
+  prompt: What should you maintain and monitor for an outbox in production?
+  objectives:
+  - 2
+  requires:
+  - sd.outbox.outbox-same-transaction
+- id: sd.outbox.outbox-alternatives
+  subtopic: Alternatives, briefly
+  kind: tradeoff
+  claim: CDC on business tables has fewer parts but exposes your internal schema as the event contract. Listening to yourself loses read-your-own-write. Event sourcing removes the dual write but needs a very different programming model.
+  prompt: What are the costs of CDC on business tables, listening to yourself, and event sourcing as alternatives to the outbox?
+  objectives:
+  - 3
+  requires:
+  - sd.outbox.outbox-same-transaction
+items:
+  outbox-check-1-v2:
+  - sd.outbox.commit-then-publish-loses-events
+  outbox-check-2-v2:
+  - sd.outbox.outbox-same-transaction
+  - sd.outbox.relay-at-least-once
+  - sd.outbox.inbox-dedupe-table
+  outbox-check-3-v2:
+  - sd.outbox.relay-at-least-once
+  - sd.outbox.partition-key-aggregate-ordering
+  - sd.outbox.inbox-dedupe-table
+  outbox-check-4-v2:
+  - sd.outbox.publish-inside-transaction-fails
+  - sd.outbox.no-shared-transaction-db-broker
+  outbox-fire-1-v2:
+  - sd.outbox.inbox-dedupe-table
+  outbox-fire-2-v2:
+  - sd.outbox.relay-throughput-estimate
+  outbox-fire-3-v2:
+  - sd.outbox.polling-vs-cdc-relay
+  outbox-fire-4-v2:
+  - sd.outbox.skip-locked-ordering-risk
+  outbox-fire-5-v2:
+  - sd.outbox.outbox-cleanup-and-lag
+  outbox:b10:
+  - sd.outbox.no-direct-publish-alongside-outbox
+  - sd.outbox.inbox-before-effect-same-transaction
+  outbox:b12:
+  - sd.outbox.relay-throughput-estimate
+  outbox:b14:
+  - sd.outbox.outbox-same-transaction
+  - sd.outbox.commit-then-publish-loses-events
+  - sd.outbox.relay-at-least-once
+  outbox:b3:
+  - sd.outbox.publish-inside-transaction-fails
+  - sd.outbox.publish-then-commit-phantom-events
+  outbox:b6:
+  - sd.outbox.relay-at-least-once
+  - sd.outbox.skip-locked-ordering-risk
+  - sd.outbox.outbox-cleanup-and-lag

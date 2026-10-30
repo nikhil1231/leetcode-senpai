@@ -1,0 +1,204 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: rag
+source_hash: 1ef88e783ac5022f
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.rag.rag-pipeline-stages
+  subtopic: The pipeline
+  kind: mechanism
+  claim: RAG has an offline, incremental ingestion path (parse, chunk, embed, index with metadata) and an online query path (rewrite, hybrid retrieve, re-rank, generate with citations), with each stage measured separately.
+  prompt: What are the main stages of a RAG system, offline and at query time?
+  objectives:
+  - 0
+  - 1
+- id: ai.rag.parsing-quality
+  subtopic: Ingestion
+  kind: principle
+  claim: 'Parsing quietly loses quality: PDFs with tables, multi-column layouts, headers and footers, or scans need layout-aware parsing or OCR, otherwise bad text produces confident wrong answers.'
+  prompt: Why does document parsing matter so much in RAG ingestion?
+  objectives:
+  - 0
+  requires:
+  - ai.rag.rag-pipeline-stages
+- id: ai.rag.chunk-size-range
+  subtopic: Ingestion
+  kind: tradeoff
+  claim: 'Chunks of roughly 200 to 800 tokens, split at natural boundaries with slight overlap, balance context and relevance: too small loses referents, too large dilutes relevance and wastes context window.'
+  prompt: How big should chunks be, and what goes wrong at either extreme?
+  objectives:
+  - 0
+  requires:
+  - ai.rag.rag-pipeline-stages
+- id: ai.rag.contextual-retrieval
+  subtopic: Ingestion
+  kind: mechanism
+  claim: Prepending context such as the document title, section path or a generated one-line summary to each chunk makes it make sense on its own, improving retrieval; this is contextual retrieval.
+  prompt: Why prepend the document title or section path to each chunk before embedding?
+  objectives:
+  - 0
+  requires:
+  - ai.rag.chunk-size-range
+- id: ai.rag.ingestion-metadata
+  subtopic: Ingestion
+  kind: fact
+  claim: 'Store metadata with each chunk: source, URL, date, product, version and access control lists, for filtering, freshness and citations.'
+  prompt: What metadata should be stored with each chunk, and why?
+  objectives:
+  - 0
+  requires:
+  - ai.rag.rag-pipeline-stages
+- id: ai.rag.incremental-freshness
+  subtopic: Ingestion
+  kind: principle
+  claim: Re-ingest on change (webhooks, change data capture) rather than nightly full rebuilds, and delete chunks of removed documents, because stale chunks give confidently outdated answers.
+  prompt: How should a RAG index be kept fresh?
+  objectives:
+  - 0
+- id: ai.rag.query-rewriting
+  subtopic: Query time
+  kind: mechanism
+  claim: Conversational follow-ups are rewritten into standalone queries using conversation history ("what about for Pro?" becomes "refund policy for Pro plan"), and multi-part questions may be split.
+  prompt: How do you handle a follow-up question like "and what about the Pro plan?" in retrieval?
+  objectives:
+  - 1
+- id: ai.rag.hybrid-search
+  subtopic: Query time
+  kind: mechanism
+  claim: Retrieval combines BM25 keyword search with vector search, so both exact terms and semantic matches are found.
+  prompt: What does hybrid search combine, and why?
+  objectives:
+  - 1
+  same_as: ai.embeddings.bm25-vs-vector-strengths
+- id: ai.rag.acl-filter-in-search
+  subtopic: Query time
+  kind: principle
+  claim: Enforce user permissions as hard filters inside the retrieval query, so unauthorised chunks are never retrieved; asking the model not to reveal them or checking afterwards is not safe.
+  prompt: Where should per-user document permissions be enforced in RAG?
+  objectives:
+  - 1
+  requires:
+  - ai.embeddings.filters-inside-search
+- id: ai.rag.cross-encoder-rerank
+  subtopic: Query time
+  kind: procedure
+  claim: Re-rank the top 50 to 100 retrieved candidates with a cross-encoder and pass only the top 3 to 8 to the model.
+  prompt: How is re-ranking used after initial retrieval, and with what numbers?
+  objectives:
+  - 1
+  requires:
+  - ai.embeddings.cross-encoder-rerank
+- id: ai.rag.grounded-prompt
+  subtopic: Query time
+  kind: procedure
+  claim: The generation prompt tells the model to answer only from the provided passages, cite them (e.g. [2]), and say when the passages do not contain the answer.
+  prompt: What should a grounded generation prompt instruct the model to do?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-basics.grounding-reduces-hallucination
+- id: ai.rag.citation-post-check
+  subtopic: Query time
+  kind: mechanism
+  claim: An optional post-check verifies that cited passages exist and support the claims, and refuses answers with no citations.
+  prompt: What can you check after generation to catch ungrounded answers?
+  objectives:
+  - 2
+  requires:
+  - ai.rag.grounded-prompt
+- id: ai.rag.inspect-retrieval-first
+  subtopic: Evaluating RAG
+  kind: principle
+  claim: Most RAG failures are retrieval failures, so inspect the retrieved passages before tuning the prompt; if the right passage was retrieved but the answer is wrong, generation failed.
+  prompt: When a RAG answer is wrong, what do you check first and how does it locate the failing stage?
+  objectives:
+  - 3
+  requires:
+  - ai.rag.rag-pipeline-stages
+- id: ai.rag.stale-chunk-diagnosis
+  subtopic: Evaluating RAG
+  kind: tradeoff
+  claim: A confidently outdated answer from a superseded document is an ingestion and freshness bug; fix it by deleting superseded chunks and adding a recency signal, not just by prompting for recent sources.
+  prompt: A bot cites an old policy page that was replaced. What is the root-cause fix?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - ai.rag.incremental-freshness
+- id: ai.rag.retrieval-metrics
+  subtopic: Evaluating RAG
+  kind: fact
+  claim: Retrieval is measured with recall@k (did the right passage appear in the top k) and MRR (how high it ranked).
+  prompt: Which metrics measure whether retrieval found the right passage?
+  objectives:
+  - 3
+- id: ai.rag.generation-metrics
+  subtopic: Evaluating RAG
+  kind: fact
+  claim: 'Generation is measured with faithfulness (groundedness: every claim supported by retrieved passages), answer relevance and correct refusals when the answer is absent.'
+  prompt: Which metrics measure the generation half of RAG?
+  objectives:
+  - 3
+- id: ai.rag.labelled-eval-set
+  subtopic: Evaluating RAG
+  kind: procedure
+  claim: Build a labelled set of 50 to 200 real questions with expected answers and source passages before tuning chunking or prompts, and add every incident to it.
+  prompt: What should you build before tuning a RAG system, and how large?
+  objectives:
+  - 3
+  requires:
+  - ai.rag.retrieval-metrics
+- id: ai.rag.finetune-vs-rag
+  subtopic: When not to use RAG
+  kind: tradeoff
+  claim: Fine-tuning teaches format, style, tone and narrow skills but is poor at adding changing facts and cannot cite sources; use RAG for knowledge and fine-tuning for behaviour.
+  prompt: When is fine-tuning a better fit than RAG?
+  objectives:
+  - 3
+  requires:
+  - ai.llm-basics.fine-tuning-limits
+- id: ai.rag.long-context-small-corpus
+  subtopic: When not to use RAG
+  kind: tradeoff
+  claim: If the whole corpus is small and stable (a handful of documents), put it all in the prompt with prompt caching instead of building a retrieval pipeline.
+  prompt: What is the simplest strong approach for a small, rarely changing corpus?
+  objectives:
+  - 3
+  requires:
+  - ai.llm-basics.prompt-caching
+- id: ai.rag.structured-data-sql
+  subtopic: When not to use RAG
+  kind: principle
+  claim: Aggregate questions over structured data, such as how many orders shipped last week, are answered with SQL (text-to-SQL or a tool call), not semantic search over documents.
+  prompt: How should you answer "How many orders shipped last week?"
+  objectives:
+  - 3
+items:
+  rag-check-1-v2:
+  - ai.rag.inspect-retrieval-first
+  rag-check-2-v2:
+  - ai.rag.contextual-retrieval
+  rag-check-3-v2:
+  - ai.rag.long-context-small-corpus
+  rag-fire-1-v2:
+  - ai.rag.retrieval-metrics
+  rag-fire-2-v2:
+  - ai.rag.finetune-vs-rag
+  rag-fire-3-v2:
+  - ai.rag.query-rewriting
+  rag-fire-4-v2:
+  - ai.rag.acl-filter-in-search
+  rag:b3:
+  - ai.rag.stale-chunk-diagnosis
+  - ai.rag.inspect-retrieval-first
+  - ai.rag.incremental-freshness
+  rag:b5:
+  - ai.rag.inspect-retrieval-first
+  - ai.rag.labelled-eval-set
+  - ai.rag.grounded-prompt

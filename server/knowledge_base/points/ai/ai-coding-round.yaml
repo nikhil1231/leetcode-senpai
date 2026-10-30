@@ -1,0 +1,237 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: ai-coding-round
+source_hash: 8ed2deb2d35998e5
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.ai-coding-round.three-round-formats
+  subtopic: What the round looks like
+  kind: fact
+  claim: 'AI-assisted rounds come in three common formats: structured in a browser (CoderPad or HackerRank with an AI chat panel), open-ended with your own editor and assistant, and take-home plus a review call.'
+  prompt: What are the three common formats of an AI-assisted coding round?
+  objectives:
+  - 0
+- id: ai.ai-coding-round.ask-recruiter-setup
+  subtopic: What the round looks like
+  kind: procedure
+  claim: Ask the recruiter which format you will get, which models are available, and whether the AI can edit files or only chat.
+  prompt: What should you ask your recruiter before an AI-assisted round?
+  objectives:
+  - 0
+  - 2
+- id: ai.ai-coding-round.interview-ai-less-helpful
+  subtopic: What the round looks like
+  kind: fact
+  claim: 'Interview AI assistants are often less helpful than in practice: they may answer only what you ask and not point out bugs, so you must test every complaint yourself.'
+  prompt: How might an interview AI assistant behave differently from the one you practise with?
+  objectives:
+  - 0
+- id: ai.ai-coding-round.visible-work-open-ended
+  subtopic: What the round looks like
+  kind: fact
+  claim: In the open-ended format your prompts, accepted diffs and commands are all visible to the interviewer, and some platforms record them for review.
+  prompt: What can interviewers see when you use your own tools in an open-ended round?
+  objectives:
+  - 0
+- id: ai.ai-coding-round.take-home-defend
+  subtopic: What the round looks like
+  kind: fact
+  claim: In the take-home format you build something with AI allowed, then must defend every line in a follow-up call.
+  prompt: What is expected after an AI-allowed take-home?
+  objectives:
+  - 0
+- id: ai.ai-coding-round.three-phase-shape
+  subtopic: What the round looks like
+  kind: fact
+  claim: 'The usual problem is one extended task on an unfamiliar multi-file codebase in three phases: fix a bug, add a feature, then scale or optimise.'
+  prompt: What are the three phases of a typical AI-assisted coding round?
+  objectives:
+  - 0
+- id: ai.ai-coding-round.bug-phase-nature
+  subtopic: What the round looks like
+  kind: fact
+  claim: 'The bug phase is usually not algorithmic: typical causes are an off-by-one, a wrong comparison, a type mix-up or a bad ordering assumption.'
+  prompt: What kind of bug usually appears in the first phase?
+  objectives:
+  - 0
+  requires:
+  - ai.ai-coding-round.three-phase-shape
+- id: ai.ai-coding-round.scale-phase-incomplete-ok
+  subtopic: What the round looks like
+  kind: principle
+  claim: Not finishing the scale phase is common and acceptable if you can explain what you would do, such as a different algorithm or data structure.
+  prompt: Is it acceptable not to finish the scale phase?
+  objectives:
+  - 0
+  requires:
+  - ai.ai-coding-round.three-phase-shape
+- id: ai.ai-coding-round.classic-round-remains
+  subtopic: What the round looks like
+  kind: fact
+  claim: Most loops still include a classic coding round without AI, so you must still solve problems unaided.
+  prompt: Why can't you rely on AI skills alone for the interview loop?
+  objectives:
+  - 0
+- id: ai.ai-coding-round.four-scored-areas
+  subtopic: The four things they score
+  kind: fact
+  claim: Interviewers score approach, control, verification and communication; the AI's output itself is not scored.
+  prompt: What four things do AI-assisted rounds score?
+  objectives:
+  - 1
+- id: ai.ai-coding-round.approach-signal
+  subtopic: The four things they score
+  kind: principle
+  claim: Strong approach means understanding the problem and code before acting, breaking work into steps and choosing data structures deliberately.
+  prompt: What does strong approach look like in an AI-assisted round?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-coding-round.four-scored-areas
+- id: ai.ai-coding-round.control-signal
+  subtopic: The four things they score
+  kind: principle
+  claim: Strong control means you make the design decisions and the AI types; you redirect it when it drifts and reject suggestions that don't fit.
+  prompt: What does strong control over the AI look like?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-coding-round.four-scored-areas
+- id: ai.ai-coding-round.verification-signal
+  subtopic: The four things they score
+  kind: principle
+  claim: Strong verification means reading what the AI wrote, running it, testing boundaries and catching its mistakes; several guides call it the strongest signal.
+  prompt: Which of the four scored areas is often called the strongest signal, and what does it involve?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-coding-round.four-scored-areas
+- id: ai.ai-coding-round.communication-signal
+  subtopic: The four things they score
+  kind: principle
+  claim: Strong communication keeps the interviewer informed of what you will ask the AI and why, what came back and whether you trust it, and lets you explain any generated code.
+  prompt: What does strong communication look like in this round?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-coding-round.four-scored-areas
+- id: ai.ai-coding-round.green-tests-not-proof
+  subtopic: The four things they score
+  kind: principle
+  claim: 'Passing visible tests is not proof of correctness: read the diff against the spec, run the full suite and test the boundary or mirror case the tests don''t cover.'
+  prompt: The AI's patch makes the failing test pass; why are you not done?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - ai.ai-coding-round.verification-signal
+- id: ai.ai-coding-round.narrate-before-prompting
+  subtopic: The four things they score
+  kind: principle
+  claim: 'Narrate before you prompt: saying what you will ask and why shows the plan is yours and lets the interviewer follow your reasoning.'
+  prompt: Why should you narrate before prompting the AI?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - ai.ai-coding-round.communication-signal
+- id: ai.ai-coding-round.markdown-down-behaviours
+  subtopic: The four things they score
+  kind: fact
+  claim: 'Behaviours that get candidates marked down even when code works: pasting the whole problem into the AI, accepting diffs unread, going silent, asking for full rewrites on each failure, and being unable to explain AI-written code.'
+  prompt: Which behaviours get candidates marked down even if their code works?
+  objectives:
+  - 3
+- id: ai.ai-coding-round.no-full-rewrites
+  subtopic: The four things they score
+  kind: principle
+  claim: 'Don''t ask for a complete rewrite whenever a test fails: rewrites add new defects and hide the original one, so fix one thing at a time.'
+  prompt: Why avoid asking the AI for a full rewrite each time a test fails?
+  objectives:
+  - 3
+- id: ai.ai-coding-round.read-before-ai
+  subtopic: The first five minutes
+  kind: procedure
+  claim: Start by reading the bug report and relevant code and running the tests, forming a hypothesis aloud before opening the AI.
+  prompt: What should you do first when the round starts?
+  objectives:
+  - 2
+- id: ai.ai-coding-round.reproduce-with-test
+  subtopic: The first five minutes
+  kind: procedure
+  claim: Write a small failing test that reproduces the bug before asking for a fix; it pins down the behaviour and gives you a way to check the AI.
+  prompt: Why write a failing test before asking the AI for a fix?
+  objectives:
+  - 2
+  requires:
+  - ai.ai-coding-round.read-before-ai
+- id: ai.ai-coding-round.small-specific-prompts
+  subtopic: The first five minutes
+  kind: principle
+  claim: Give the AI a small, specific task you have designed, naming the file and function, rather than a vague 'fix the bug'; the diff is then easier to review.
+  prompt: How should you phrase a request to the AI for a fix?
+  objectives:
+  - 2
+  requires:
+  - ai.ai-coding-round.control-signal
+- id: ai.ai-coding-round.strong-workflow-order
+  subtopic: The first five minutes
+  kind: procedure
+  claim: 'Workflow per change: read and hypothesise, reproduce with a test, decide the fix yourself, ask the AI for that specific change, read the diff aloud, then run the new test and full suite and check an edge case.'
+  prompt: What is the strong workflow order for one change?
+  objectives:
+  - 2
+  requires:
+  - ai.ai-coding-round.read-before-ai
+  - ai.ai-coding-round.reproduce-with-test
+  - ai.ai-coding-round.small-specific-prompts
+- id: ai.ai-coding-round.hour-time-budget
+  subtopic: Budgeting the hour
+  kind: procedure
+  claim: 'For a 60-minute round: about 5 minutes orientation, 10 to 15 on the bug, 20 to 25 on the feature, and the remainder on scale.'
+  prompt: How should you split a 60-minute three-phase round?
+  objectives:
+  - 2
+- id: ai.ai-coding-round.stuck-on-bug-move-on
+  subtopic: Budgeting the hour
+  kind: principle
+  claim: The most common failure is spending 30 minutes on the bug; if stuck, say what you have ruled out, ask for a hint and move on.
+  prompt: What do you do if you're stuck on the phase 1 bug?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - ai.ai-coding-round.hour-time-budget
+items:
+  ai-coding-round-check-1-v2:
+  - ai.ai-coding-round.four-scored-areas
+  ai-coding-round-check-2-v2:
+  - ai.ai-coding-round.green-tests-not-proof
+  ai-coding-round-check-3-v2:
+  - ai.ai-coding-round.stuck-on-bug-move-on
+  - ai.ai-coding-round.hour-time-budget
+  ai-coding-round-fire-1-v2:
+  - ai.ai-coding-round.three-phase-shape
+  ai-coding-round-fire-2-v2:
+  - ai.ai-coding-round.narrate-before-prompting
+  ai-coding-round-fire-3-v2:
+  - ai.ai-coding-round.interview-ai-less-helpful
+  ai-coding-round-fire-4-v2:
+  - ai.ai-coding-round.markdown-down-behaviours
+  - ai.ai-coding-round.communication-signal
+  ai-coding-round:b1:
+  - ai.ai-coding-round.markdown-down-behaviours
+  - ai.ai-coding-round.control-signal
+  - ai.ai-coding-round.no-full-rewrites
+  ai-coding-round:b3:
+  - ai.ai-coding-round.read-before-ai
+  - ai.ai-coding-round.reproduce-with-test
+  - ai.ai-coding-round.small-specific-prompts
+  ai-coding-round:b5:
+  - ai.ai-coding-round.strong-workflow-order

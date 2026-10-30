@@ -1,0 +1,219 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: sync-async
+source_hash: 3604215e7b027c4e
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.sync-async.sync-when-user-needs-answer
+  subtopic: What goes in the request path?
+  kind: principle
+  claim: Keep work synchronous when the user needs the answer to continue, it is fast and bounded, and its dependencies are reliable enough to share your availability. Checking an invariant such as stock at checkout, or logging in, belongs in the request.
+  prompt: When should work stay in the synchronous request path?
+  objectives:
+  - 0
+- id: sd.sync-async.async-triggers
+  subtopic: What goes in the request path?
+  kind: principle
+  claim: Move work out of the request when it takes longer than a reasonable request, calls flaky or slow dependencies, fans out to many recipients, or arrives in bursts a queue could smooth.
+  prompt: What conditions justify moving work out of the request path?
+  objectives:
+  - 0
+  requires:
+  - sd.sync-async.sync-when-user-needs-answer
+- id: sd.sync-async.flaky-dependency-not-fail-action
+  subtopic: What goes in the request path?
+  kind: principle
+  claim: Side effects on unreliable third parties, such as a confirmation email after checkout, should be asynchronous so the provider's outage does not fail the user's action.
+  prompt: Why should a confirmation email be sent asynchronously after checkout?
+  objectives:
+  - 0
+  requires:
+  - sd.sync-async.async-triggers
+  - sd.service-quality.serial-availability-multiplies
+- id: sd.sync-async.two-part-async-contract
+  subtopic: Durable acceptance and the job resource
+  kind: mechanism
+  claim: 'The async contract has two parts: accept (validate, durably write a job record and the intent to process it, then return 202 with a job ID and a Location to poll) and observe (the job moves through explicit, client-visible states, including failure).'
+  prompt: What are the two parts of an asynchronous API contract?
+  objectives:
+  - 1
+  requires:
+  - sd.api-contracts.status-codes-2xx-creation
+- id: sd.sync-async.durable-before-202
+  subtopic: Durable acceptance and the job resource
+  kind: principle
+  claim: A 202 Accepted promises the request is valid, durably recorded and will reach an observable outcome, not that it is complete. The job and its intent to run must be committed before responding, never just pushed to an in-memory queue.
+  prompt: What must the system have done before returning 202, and what does 202 promise?
+  objectives:
+  - 1
+  requires:
+  - sd.sync-async.two-part-async-contract
+- id: sd.sync-async.job-lifecycle-states
+  subtopic: Durable acceptance and the job resource
+  kind: fact
+  claim: A typical job lifecycle is queued, running, optionally retrying, then a terminal succeeded or failed with a result or error visible to the client. Terminal failure must exist, or jobs sit in 'processing' forever.
+  prompt: What states should a job lifecycle include?
+  objectives:
+  - 1
+  requires:
+  - sd.sync-async.two-part-async-contract
+- id: sd.sync-async.lease-on-running
+  subtopic: Durable acceptance and the job resource
+  kind: mechanism
+  claim: A running job holds a lease that expires if the worker dies, so another worker can reclaim it. Outputs written under deterministic names make the redo safe.
+  prompt: How does a job recover when its worker crashes mid-run?
+  objectives:
+  - 1
+  requires:
+  - sd.sync-async.job-lifecycle-states
+- id: sd.sync-async.dual-write-recovery
+  subtopic: Durable acceptance and the job resource
+  kind: mechanism
+  claim: 'If the process dies after committing the job but before publishing to the queue, the job is stuck unless there is a recovery path: a transactional outbox, workers polling the jobs table, or a reconciler republishing stale queued jobs.'
+  prompt: How do you avoid jobs stuck in queued when a crash falls between the database commit and the queue publish?
+  objectives:
+  - 1
+  requires:
+  - sd.sync-async.durable-before-202
+- id: sd.sync-async.idempotency-key-submission
+  subtopic: Durable acceptance and the job resource
+  kind: mechanism
+  claim: If the client never receives the 202 and retries, an idempotency key tied to the job makes the retry return the same job instead of creating a duplicate.
+  prompt: How do you stop a retried submission creating a duplicate job?
+  objectives:
+  - 1
+  requires:
+  - sd.sync-async.two-part-async-contract
+  - sd.api-contracts.post-needs-idempotency-key
+- id: sd.sync-async.crash-before-commit-safe
+  subtopic: Durable acceptance and the job resource
+  kind: fact
+  claim: A crash before the job insert commits is safe, because nothing was promised. The client sees an error and retries, and the idempotency key prevents a double job.
+  prompt: Why is a crash before the job row commits harmless?
+  objectives:
+  - 1
+  requires:
+  - sd.sync-async.idempotency-key-submission
+  - sd.sync-async.durable-before-202
+- id: sd.sync-async.completion-mechanisms
+  subtopic: How the client finds out
+  kind: tradeoff
+  claim: Polling suits simple clients but wastes requests (use backoff and Retry-After). Webhooks suit server-to-server integrations but need retries, signing and dedupe. Push (WebSocket, SSE, mobile push) suits interactive UIs but needs connection management.
+  prompt: Compare polling, webhooks and push for telling a client a job has finished.
+  objectives:
+  - 2
+  requires:
+  - sd.sync-async.two-part-async-contract
+- id: sd.sync-async.polling-source-of-truth
+  subtopic: How the client finds out
+  kind: principle
+  claim: Offer a pollable job resource as the source of truth, and treat webhooks or push as an optimisation on top, with a way to replay missed events.
+  prompt: Which completion mechanism should be the source of truth, and why?
+  objectives:
+  - 2
+  requires:
+  - sd.sync-async.completion-mechanisms
+- id: sd.sync-async.webhook-signature-verification
+  subtopic: How the client finds out
+  kind: mechanism
+  claim: A webhook receiver must verify an HMAC signature over the raw body and check the timestamp to stop replays, because anyone can POST to a public URL.
+  prompt: How should a webhook receiver establish that an event is genuine?
+  objectives:
+  - 2
+  requires:
+  - sd.sync-async.completion-mechanisms
+- id: sd.sync-async.webhook-idempotent-receiver
+  subtopic: How the client finds out
+  kind: mechanism
+  claim: Webhooks are delivered at least once and may arrive out of order, so receivers must dedupe on event ID with a unique constraint and set state (status = paid) rather than increment (+=).
+  prompt: Why must webhook receivers be idempotent, and how?
+  objectives:
+  - 2
+  requires:
+  - sd.sync-async.completion-mechanisms
+- id: sd.sync-async.webhook-ack-fast
+  subtopic: How the client finds out
+  kind: principle
+  claim: A webhook receiver should store the event and return 200 quickly, doing slow work such as emails asynchronously. Slow handling makes the sender time out and retry.
+  prompt: Why should a webhook handler acknowledge quickly and defer slow work?
+  objectives:
+  - 2
+  requires:
+  - sd.sync-async.completion-mechanisms
+  - sd.sync-async.async-triggers
+- id: sd.sync-async.async-no-extra-capacity
+  subtopic: Async doesn't make work faster
+  kind: principle
+  claim: A queue changes when work happens, not how much capacity exists. If arrivals exceed worker throughput the backlog grows and user-perceived latency rises, as queueing time dominates.
+  prompt: Why can making an endpoint async increase the time users wait for results?
+  objectives:
+  - 3
+  requires:
+  - sd.sync-async.async-triggers
+  - sd.service-quality.queueing-knee
+- id: sd.sync-async.littles-law-workers
+  subtopic: Async doesn't make work faster
+  kind: procedure
+  claim: Workers busy on average equal arrival rate times service time (Little's Law), so 12/s at 20 s needs 240 workers. Provision extra, often 30-50%, or autoscale for bursts and failures.
+  prompt: How do you estimate the number of workers needed to keep up with a queue?
+  objectives:
+  - 3
+  requires:
+  - sd.service-quality.littles-law
+- id: sd.sync-async.async-operational-needs
+  subtopic: Async doesn't make work faster
+  kind: principle
+  claim: Async systems need drain-rate capacity planning, monitoring of oldest job age rather than just queue health, honest progress or ETA for users, and admission control when the backlog exceeds what can be honoured.
+  prompt: What must an async system add to avoid 'accepted' turning into 'done tomorrow'?
+  objectives:
+  - 3
+  requires:
+  - sd.sync-async.async-no-extra-capacity
+  - sd.estimates.backlog-drain-rate
+items:
+  sync-async-check-1-v2:
+  - sd.sync-async.durable-before-202
+  sync-async-check-2-v2:
+  - sd.sync-async.async-triggers
+  - sd.sync-async.async-no-extra-capacity
+  - sd.sync-async.flaky-dependency-not-fail-action
+  sync-async-check-3-v2:
+  - sd.sync-async.two-part-async-contract
+  - sd.sync-async.durable-before-202
+  - sd.sync-async.idempotency-key-submission
+  sync-async-check-4-v2:
+  - sd.sync-async.webhook-idempotent-receiver
+  sync-async-fire-1-v2:
+  - sd.sync-async.async-no-extra-capacity
+  - sd.sync-async.async-operational-needs
+  sync-async-fire-2-v2:
+  - sd.sync-async.webhook-signature-verification
+  sync-async-fire-3-v2:
+  - sd.sync-async.littles-law-workers
+  sync-async-fire-4-v2:
+  - sd.sync-async.lease-on-running
+  sync-async-fire-5-v2:
+  - sd.sync-async.dual-write-recovery
+  sync-async:b1:
+  - sd.sync-async.sync-when-user-needs-answer
+  - sd.sync-async.async-triggers
+  - sd.sync-async.flaky-dependency-not-fail-action
+  sync-async:b10:
+  - sd.sync-async.littles-law-workers
+  sync-async:b12:
+  - sd.sync-async.durable-before-202
+  - sd.sync-async.idempotency-key-submission
+  sync-async:b4:
+  - sd.sync-async.job-lifecycle-states
+  - sd.sync-async.lease-on-running
+  sync-async:b7:
+  - sd.sync-async.webhook-signature-verification
+  - sd.sync-async.webhook-idempotent-receiver
+  - sd.sync-async.webhook-ack-fast
+  sync-async:b9:
+  - sd.sync-async.async-no-extra-capacity

@@ -1,0 +1,253 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: api-contracts
+source_hash: a2a7728f19f2f984
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.api-contracts.safe-methods-no-state-change
+  subtopic: Resources, methods and what they promise
+  kind: principle
+  claim: Safe methods such as GET do not change server state, so caches, crawlers, link previews and prefetchers may call them freely; anything that changes state must not be a GET.
+  prompt: Why must a state-changing action such as sending an email never be exposed as a GET endpoint?
+  objectives:
+  - 0
+- id: sd.api-contracts.idempotent-methods-set
+  subtopic: Resources, methods and what they promise
+  kind: fact
+  claim: 'GET, PUT and DELETE are idempotent: repeating them leaves the same state, so clients and proxies can retry them after a timeout. POST is not, and PATCH is not necessarily.'
+  prompt: Which HTTP methods are idempotent by definition, and what does that allow?
+  objectives:
+  - 0
+- id: sd.api-contracts.post-needs-idempotency-key
+  subtopic: Resources, methods and what they promise
+  kind: mechanism
+  claim: POST is not idempotent unless you add an idempotency key, which the server deduplicates on so a retried create does not run twice.
+  prompt: How can a POST create be made safe to retry?
+  objectives:
+  - 0
+  requires:
+  - sd.api-contracts.idempotent-methods-set
+  same_as: sd.request-flow.idempotency-key-retries
+- id: sd.api-contracts.patch-not-idempotent
+  subtopic: Resources, methods and what they promise
+  kind: principle
+  claim: 'PATCH idempotency depends on the operation: a relative change such as quantity_delta +1 applied twice adds two. Send the target state, use If-Match, or use an idempotency key to make retries safe.'
+  prompt: Why can retrying a PATCH with a relative increment go wrong, and how do you avoid it?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.api-contracts.idempotent-methods-set
+- id: sd.api-contracts.put-replaces-delete-idempotent
+  subtopic: Resources, methods and what they promise
+  kind: fact
+  claim: PUT replaces the whole resource, and DELETE removes it. Repeating either leaves the same final state, although a second DELETE may return 404.
+  prompt: What do PUT and DELETE do, and why are they idempotent?
+  objectives:
+  - 0
+  requires:
+  - sd.api-contracts.idempotent-methods-set
+- id: sd.api-contracts.status-codes-2xx-creation
+  subtopic: Status codes and errors
+  kind: fact
+  claim: Use 201 Created with a Location header when a resource now exists, and 202 Accepted when work is queued but not finished, returning a job resource to poll.
+  prompt: Which status codes fit a create that finished and a request that merely queued a job?
+  objectives:
+  - 0
+- id: sd.api-contracts.status-codes-4xx-client-errors
+  subtopic: Status codes and errors
+  kind: fact
+  claim: 400 or 422 mean the request itself is invalid, 401 means unauthenticated, 403 means authenticated but not allowed (404 may hide existence), 404 means not found, 409 means conflict with current state, 412 means a failed precondition, and 429 means rate limited.
+  prompt: What do 401, 403, 409 and 412 each signal?
+  objectives:
+  - 0
+- id: sd.api-contracts.rate-limit-429-retry-after
+  subtopic: Status codes and errors
+  kind: principle
+  claim: Signal rate limiting with 429 Too Many Requests plus a Retry-After header, which tells well-behaved clients when to return and avoids retry storms.
+  prompt: How should an API respond to a client exceeding its rate limit?
+  objectives:
+  - 0
+  requires:
+  - sd.api-contracts.status-codes-4xx-client-errors
+- id: sd.api-contracts.no-200-with-error-body
+  subtopic: Status codes and errors
+  kind: principle
+  claim: Returning 200 with an error in the body defeats clients, proxies and monitoring that branch on status codes; use an accurate 4xx or 5xx.
+  prompt: Why is returning 200 with an error body a contract bug?
+  objectives:
+  - 0
+  requires:
+  - sd.api-contracts.status-codes-4xx-client-errors
+- id: sd.api-contracts.problem-details-error-shape
+  subtopic: Status codes and errors
+  kind: procedure
+  claim: 'Return errors in a consistent machine-readable shape such as RFC 9457 problem details: status, a stable type or code, a human detail, and a request_id matching server logs. Do not expose stack traces.'
+  prompt: What should a well-designed error response contain?
+  objectives:
+  - 0
+  requires:
+  - sd.api-contracts.status-codes-4xx-client-errors
+- id: sd.api-contracts.bound-every-list
+  subtopic: 'Pagination: bound every list'
+  kind: principle
+  claim: Every list endpoint needs an enforced maximum page size, because an unbounded list is an outage waiting for a large customer.
+  prompt: What must every list endpoint enforce, and why?
+  objectives:
+  - 1
+- id: sd.api-contracts.offset-skips-repeats
+  subtopic: 'Pagination: bound every list'
+  kind: mechanism
+  claim: 'Offset pagination addresses rows by position, so inserts or deletes before the offset shift positions between requests: inserts cause repeated items and deletes cause skipped ones.'
+  prompt: Why does offset pagination repeat or skip items when the list changes during paging?
+  objectives:
+  - 1
+- id: sd.api-contracts.offset-deep-scan-cost
+  subtopic: 'Pagination: bound every list'
+  kind: fact
+  claim: A deep offset such as OFFSET 1000000 makes the database walk and discard a million rows, so cost grows with the offset.
+  prompt: Why are deep offsets slow in the database?
+  objectives:
+  - 1
+- id: sd.api-contracts.cursor-pagination-keyset
+  subtopic: 'Pagination: bound every list'
+  kind: mechanism
+  claim: Cursor pagination addresses rows by key (items after (created_at, id)), so it is stable under inserts and an index makes each page a cheap range seek. The cursor is opaque so its encoding can change.
+  prompt: How does cursor pagination avoid the problems of offsets?
+  objectives:
+  - 1
+  requires:
+  - sd.api-contracts.offset-skips-repeats
+- id: sd.api-contracts.cursor-unique-tiebreaker
+  subtopic: 'Pagination: bound every list'
+  kind: principle
+  claim: 'A cursor must identify a unique position: order and index by a unique tie-breaker such as id as well as created_at, or rows sharing a timestamp can be skipped or repeated at page boundaries.'
+  prompt: Why add id to a created_at cursor?
+  objectives:
+  - 1
+  requires:
+  - sd.api-contracts.cursor-pagination-keyset
+- id: sd.api-contracts.fetch-one-extra-row
+  subtopic: 'Pagination: bound every list'
+  kind: procedure
+  claim: Fetch limit+1 rows (for example LIMIT 51 for pages of 50) to learn whether a next page exists without a separate count query.
+  prompt: How can a cursor-paginated query tell whether a next page exists cheaply?
+  objectives:
+  - 1
+  requires:
+  - sd.api-contracts.cursor-pagination-keyset
+- id: sd.api-contracts.cursors-not-snapshots
+  subtopic: 'Pagination: bound every list'
+  kind: tradeoff
+  claim: 'Cursors do not give snapshots: items inserted behind the cursor are missed and updated items may move. For a complete export, page over an immutable key range up to a fixed high-water mark, or run an async job on a snapshot.'
+  prompt: How do you get a complete, consistent export when cursors are not snapshots?
+  objectives:
+  - 1
+  requires:
+  - sd.api-contracts.cursor-pagination-keyset
+- id: sd.api-contracts.lost-update-optimistic-etag
+  subtopic: 'Concurrent updates: don''t lose the other person''s edit'
+  kind: mechanism
+  claim: Return a version as an ETag; updates send If-Match with it; the server applies a conditional update and returns 412 Precondition Failed if the version moved, so the client reloads, merges and retries.
+  prompt: How do ETag and If-Match prevent a lost update?
+  objectives:
+  - 2
+  requires:
+  - sd.api-contracts.status-codes-4xx-client-errors
+- id: sd.api-contracts.conditional-update-atomic
+  subtopic: 'Concurrent updates: don''t lose the other person''s edit'
+  kind: mechanism
+  claim: The version check and write must be one conditional UPDATE (WHERE id=9 AND version=7); a read-then-write in application code reintroduces the race.
+  prompt: Why should the version check be part of the UPDATE statement itself?
+  objectives:
+  - 2
+  requires:
+  - sd.api-contracts.lost-update-optimistic-etag
+  same_as: sd.guarantees.read-check-write-race
+- id: sd.api-contracts.optimistic-when-conflicts-rare
+  subtopic: 'Concurrent updates: don''t lose the other person''s edit'
+  kind: tradeoff
+  claim: Optimistic concurrency is cheap when conflicts are rare, as with human edits, because it takes no locks and only conflicting writers pay by retrying.
+  prompt: When is optimistic concurrency a good fit?
+  objectives:
+  - 2
+  requires:
+  - sd.api-contracts.lost-update-optimistic-etag
+- id: sd.api-contracts.protocol-choice-rest-grpc-graphql
+  subtopic: REST, gRPC or GraphQL?
+  kind: tradeoff
+  claim: REST/JSON suits public APIs and browsers (universal tooling, HTTP caching) but over- or under-fetches; gRPC suits internal polyglot service calls (typed, codegen, streaming, deadlines) but is not browser-native; GraphQL suits client-driven UIs with varied nested data but makes caching and cost control harder and risks N+1 resolvers.
+  prompt: When would you choose REST, gRPC or GraphQL, and what does each cost?
+  objectives:
+  - 3
+- id: sd.api-contracts.edge-graphql-rest-internal-grpc
+  subtopic: REST, gRPC or GraphQL?
+  kind: principle
+  claim: A common split is GraphQL or REST at the edge for apps and gRPC between internal services.
+  prompt: What is a common protocol split between edge and internal traffic?
+  objectives:
+  - 3
+  requires:
+  - sd.api-contracts.protocol-choice-rest-grpc-graphql
+- id: sd.api-contracts.additive-vs-breaking-changes
+  subtopic: Evolving without breaking clients
+  kind: principle
+  claim: New optional fields, endpoints and enum values (if clients ignore unknowns) are safe; removing or renaming fields, changing types or meaning, or tightening validation (such as making an optional field required) is breaking.
+  prompt: Which API changes are additive and safe, and which are breaking?
+  objectives:
+  - 3
+- id: sd.api-contracts.versioning-deprecation-window
+  subtopic: Evolving without breaking clients
+  kind: procedure
+  claim: Put breaking changes in a new version (path such as /v2/orders or a header), support old versions for a published deprecation window, and measure who still calls them.
+  prompt: How do you roll out a breaking API change responsibly?
+  objectives:
+  - 3
+  requires:
+  - sd.api-contracts.additive-vs-breaking-changes
+- id: sd.api-contracts.tolerant-readers
+  subtopic: Evolving without breaking clients
+  kind: principle
+  claim: 'Clients should be tolerant readers: ignore unknown fields and do not depend on field order, so additive changes stay safe.'
+  prompt: What is a tolerant reader and why does it matter?
+  objectives:
+  - 3
+  requires:
+  - sd.api-contracts.additive-vs-breaking-changes
+items:
+  api-contracts-check-1-v2:
+  - sd.api-contracts.idempotent-methods-set
+  api-contracts-check-2-v2:
+  - sd.api-contracts.lost-update-optimistic-etag
+  api-contracts-check-3-v2:
+  - sd.api-contracts.offset-skips-repeats
+  api-contracts-check-4-v2:
+  - sd.api-contracts.additive-vs-breaking-changes
+  api-contracts-fire-1-v2:
+  - sd.api-contracts.safe-methods-no-state-change
+  api-contracts-fire-2-v2:
+  - sd.api-contracts.rate-limit-429-retry-after
+  api-contracts-fire-3-v2:
+  - sd.api-contracts.cursor-unique-tiebreaker
+  api-contracts-fire-4-v2:
+  - sd.api-contracts.protocol-choice-rest-grpc-graphql
+  api-contracts-fire-5-v2:
+  - sd.api-contracts.problem-details-error-shape
+  api-contracts:b1:
+  - sd.api-contracts.status-codes-4xx-client-errors
+  - sd.api-contracts.status-codes-2xx-creation
+  - sd.api-contracts.rate-limit-429-retry-after
+  api-contracts:b11:
+  - sd.api-contracts.offset-skips-repeats
+  - sd.api-contracts.cursor-pagination-keyset
+  api-contracts:b7:
+  - sd.api-contracts.patch-not-idempotent
+  api-contracts:b9:
+  - sd.api-contracts.no-200-with-error-body
+  - sd.api-contracts.safe-methods-no-state-change
+  - sd.api-contracts.bound-every-list

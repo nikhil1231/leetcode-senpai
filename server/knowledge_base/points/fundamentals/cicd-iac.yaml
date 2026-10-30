@@ -1,0 +1,194 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: cicd-iac
+source_hash: 119a713035ded708
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.cicd-iac.fast-ci-feedback
+  subtopic: A good pipeline
+  kind: principle
+  claim: CI on every push or PR should run lint, type-checks, unit tests and the build in under about 10 minutes, because slow CI leads to bigger batches and riskier merges.
+  prompt: What should run on every push or PR, and why should it be kept under about 10 minutes?
+  objectives:
+  - 0
+- id: fundamentals.cicd-iac.build-once-promote-artifact
+  subtopic: A good pipeline
+  kind: principle
+  claim: Build one immutable artifact (such as a container image tagged with the commit SHA) and promote that same artifact through staging to production, so production runs exactly what was tested. Rebuilding per environment can pull different dependencies or base images.
+  prompt: Why build a deployment artifact once and promote it rather than rebuild it for each environment?
+  objectives:
+  - 0
+- id: fundamentals.cicd-iac.integration-tests-flaky-quarantine
+  subtopic: A good pipeline
+  kind: principle
+  claim: Run integration and end-to-end tests against real dependencies such as containers or ephemeral environments, and quarantine and fix flaky tests rather than retrying them forever.
+  prompt: How should a pipeline handle flaky integration tests?
+  objectives:
+  - 0
+- id: fundamentals.cicd-iac.auto-deploy-health-rollback
+  subtopic: A good pipeline
+  kind: procedure
+  claim: Deploy automatically to staging, then to production behind a progressive strategy, with automated health checks and automatic rollback.
+  prompt: How should a pipeline take a build from staging to production safely?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.cicd-iac.build-once-promote-artifact
+- id: fundamentals.cicd-iac.oidc-over-long-lived-keys
+  subtopic: A good pipeline
+  kind: principle
+  claim: CI should get secrets from a secret manager or OIDC federation (for example GitHub Actions assuming an AWS role for short-lived credentials), never long-lived keys pasted into CI variables.
+  prompt: How should a GitHub Actions workflow authenticate to AWS without stored access keys?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.aws-core.roles-short-lived-credentials
+- id: fundamentals.cicd-iac.supply-chain-hygiene
+  subtopic: A good pipeline
+  kind: fact
+  claim: Supply chain hygiene for pipelines means pinning dependencies, scanning images and signing artifacts.
+  prompt: What three practices protect the software supply chain in a pipeline?
+  objectives:
+  - 0
+- id: fundamentals.cicd-iac.rolling-deploy
+  subtopic: Deployment strategies
+  kind: tradeoff
+  claim: Rolling deploys replace instances a few at a time and are cheap, but old and new versions run together so both must be compatible. Rollback is gradual, by rolling forward or back.
+  prompt: What is the cost and compatibility requirement of a rolling deploy?
+  objectives:
+  - 1
+- id: fundamentals.cicd-iac.blue-green-deploy
+  subtopic: Deployment strategies
+  kind: tradeoff
+  claim: Blue-green stands up a full new environment and switches traffic, so rollback is an instant switch back, but it needs double capacity during the switch and the shared database still needs schema compatibility.
+  prompt: What are blue-green's rollback and its costs?
+  objectives:
+  - 1
+- id: fundamentals.cicd-iac.canary-deploy
+  subtopic: Deployment strategies
+  kind: tradeoff
+  claim: A canary sends a small share of traffic (1%, 5%, 25%) to the new version while comparing metrics, exposing the fewest users to a bad release; it needs good metrics and automated analysis, and rollback shifts traffic back.
+  prompt: Which strategy exposes the fewest users to a bad release, and what does it require?
+  objectives:
+  - 1
+- id: fundamentals.cicd-iac.feature-flags-tradeoff
+  subtopic: Deployment strategies
+  kind: tradeoff
+  claim: 'Feature flags ship code dark and enable it per user or percentage, decoupling deploy from release, with rollback by flipping the flag off. The ongoing cost is flag debt: stale flags multiply code paths, so each needs an owner and expiry.'
+  prompt: What do feature flags give you, and what is their main ongoing cost?
+  objectives:
+  - 1
+- id: fundamentals.cicd-iac.backward-compatible-one-step
+  subtopic: Deployment strategies
+  kind: principle
+  claim: Because two versions coexist during any deployment strategy, every change (API fields, message formats, database schema) must be backward-compatible across one version step.
+  prompt: What compatibility rule applies to every change whatever the deployment strategy?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - fundamentals.cicd-iac.rolling-deploy
+- id: fundamentals.cicd-iac.expand-contract-rename-steps
+  subtopic: Expand and contract
+  kind: procedure
+  claim: 'To rename a column with zero downtime: add the new nullable column, deploy code writing both, backfill in batches, deploy code reading the new column, stop writing the old one, then drop it.'
+  prompt: In what order do you rename users.fullname to users.display_name with zero downtime?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.cicd-iac.backward-compatible-one-step
+- id: fundamentals.cicd-iac.rename-in-place-unsafe
+  subtopic: Expand and contract
+  kind: mechanism
+  claim: Renaming a column in place breaks whichever code version does not expect the new name, since the old version keeps running during a rolling deploy. Expand and contract keeps every step working for adjacent versions, so any deploy can be rolled back.
+  prompt: Why is renaming a column and deploying the new code in one step unsafe?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.cicd-iac.backward-compatible-one-step
+- id: fundamentals.cicd-iac.terraform-plan-state
+  subtopic: Terraform
+  kind: mechanism
+  claim: Terraform compares configuration (desired state) with its state file (what it believes it created) and the real infrastructure, then produces a plan of creates, in-place updates or replacements.
+  prompt: What does Terraform compare to produce a plan?
+  objectives:
+  - 3
+- id: fundamentals.cicd-iac.remote-state-locking
+  subtopic: Terraform
+  kind: mechanism
+  claim: Remote state with locking (an S3 backend with a lock, or Terraform Cloud) stops concurrent applies corrupting state or racing. State can contain secrets, so encrypt and restrict it.
+  prompt: What does remote state locking prevent, and how should state be protected?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.cicd-iac.terraform-plan-state
+- id: fundamentals.cicd-iac.plan-in-pr-apply-in-ci
+  subtopic: Terraform
+  kind: procedure
+  claim: Review the plan in the PR and apply from CI. Watch for -/+ replace on stateful resources like databases, and use prevent_destroy and create_before_destroy lifecycle rules where they fit.
+  prompt: How should Terraform plans be reviewed and applied, and what should reviewers watch for?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.cicd-iac.terraform-plan-state
+- id: fundamentals.cicd-iac.forces-replacement-database
+  subtopic: Terraform
+  kind: principle
+  claim: A plan showing -/+ with 'forces replacement' on a database means destroy and recreate, risking data loss and downtime. Use a supported in-place or blue-green/replica upgrade path and guard it with lifecycle prevent_destroy.
+  prompt: What should you do on seeing a production plan that forces replacement of an aws_db_instance?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.cicd-iac.terraform-plan-state
+- id: fundamentals.cicd-iac.modules-state-separation
+  subtopic: Terraform
+  kind: principle
+  claim: Modules package reusable infrastructure, and state should be separated per environment and per blast radius (for example networking, data and apps in different states).
+  prompt: How should Terraform state be split, and what do modules do?
+  objectives:
+  - 3
+- id: fundamentals.cicd-iac.drift-detection
+  subtopic: Terraform
+  kind: mechanism
+  claim: Drift is manual change made outside Terraform, such as in the console; terraform plan shows it, and you decide to import it into code or revert it, and restrict console write access.
+  prompt: What is drift in Terraform and how do you deal with it?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.cicd-iac.terraform-plan-state
+- id: fundamentals.cicd-iac.import-and-state-mv
+  subtopic: Terraform
+  kind: fact
+  claim: terraform import brings existing resources under management, and terraform state mv handles refactors without destroying and recreating resources.
+  prompt: Which Terraform commands adopt existing resources and refactor without recreating them?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.cicd-iac.terraform-plan-state
+items:
+  cicd-iac-check-1-v2:
+  - fundamentals.cicd-iac.build-once-promote-artifact
+  cicd-iac-check-2-v2:
+  - fundamentals.cicd-iac.canary-deploy
+  cicd-iac-check-3-v2:
+  - fundamentals.cicd-iac.rename-in-place-unsafe
+  - fundamentals.cicd-iac.backward-compatible-one-step
+  cicd-iac-fire-1-v2:
+  - fundamentals.cicd-iac.remote-state-locking
+  cicd-iac-fire-2-v2:
+  - fundamentals.cicd-iac.drift-detection
+  cicd-iac-fire-3-v2:
+  - fundamentals.cicd-iac.feature-flags-tradeoff
+  cicd-iac-fire-4-v2:
+  - fundamentals.cicd-iac.oidc-over-long-lived-keys
+  cicd-iac:b1:
+  - fundamentals.cicd-iac.expand-contract-rename-steps
+  cicd-iac:b3:
+  - fundamentals.cicd-iac.forces-replacement-database
+  - fundamentals.cicd-iac.plan-in-pr-apply-in-ci

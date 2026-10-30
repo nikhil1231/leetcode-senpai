@@ -1,0 +1,245 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: data-models
+source_hash: 89d73579bf3cfda6
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.data-models.model-from-access-patterns
+  subtopic: Begin with the access patterns
+  kind: principle
+  claim: Choose a data model by the queries (with frequency and latency targets), write rates, invariants and unbounded growth, not by how a page looks or which product is fashionable.
+  prompt: What should drive the initial choice of a data model?
+  objectives:
+  - 0
+- id: sd.data-models.access-pattern-checklist
+  subtopic: Begin with the access patterns
+  kind: procedure
+  claim: Before choosing a model, list the queries with frequency and latency targets, the writes and their rates, the invariants (e.g. at most one active subscription per user), and what grows without bound.
+  prompt: What four things should you write down before choosing a data model?
+  objectives:
+  - 0
+  requires:
+  - sd.data-models.model-from-access-patterns
+  - sd.guarantees.four-kinds-of-statement
+- id: sd.data-models.relational-strengths
+  subtopic: The main models
+  kind: fact
+  claim: Relational databases make ad hoc queries, constraints such as foreign keys, and multi-row transactions easy; the cost is that scaling writes beyond one node needs sharding.
+  prompt: What does a relational model make easy, and what is its main scaling limit?
+  objectives:
+  - 1
+- id: sd.data-models.document-model-fit
+  subtopic: The main models
+  kind: tradeoff
+  claim: Document stores suit self-contained aggregates with varying fields read together, but struggle with unbounded embedded arrays, cross-document joins and constraints, and hot shared documents.
+  prompt: When does a document database fit, and what are its warning signs?
+  objectives:
+  - 1
+  requires:
+  - sd.data-models.model-from-access-patterns
+- id: sd.data-models.key-value-limits
+  subtopic: The main models
+  kind: tradeoff
+  claim: Key-value stores give O(1) lookup by key at huge scale but support no queries beyond the key, so ad hoc filters need a full scan or another system.
+  prompt: Why is a key-value store a poor fit for a query like orders over £500 last week by region?
+  objectives:
+  - 1
+  requires:
+  - sd.data-models.model-from-access-patterns
+- id: sd.data-models.wide-column-fit
+  subtopic: The main models
+  kind: tradeoff
+  claim: Wide-column stores give massive write throughput and cheap range scans within a partition, but you must design a table per query and avoid hot partitions.
+  prompt: What do wide-column stores make easy, and what must you watch out for?
+  objectives:
+  - 1
+  requires:
+  - sd.data-models.model-from-access-patterns
+- id: sd.data-models.graph-model-fit
+  subtopic: The main models
+  kind: fact
+  claim: Graph databases make variable-depth traversals easy (friends of friends, fraud rings linked by shared devices or cards), but sharding graphs is hard.
+  prompt: Which workloads suit a graph database, and what is its drawback?
+  objectives:
+  - 1
+- id: sd.data-models.time-series-fit
+  subtopic: The main models
+  kind: fact
+  claim: Time-series databases make downsampling and range aggregation over timestamped data easy, but handle updates and high-cardinality tags poorly.
+  prompt: What are time-series databases good and bad at?
+  objectives:
+  - 1
+- id: sd.data-models.postgres-default
+  subtopic: The main models
+  kind: principle
+  claim: Postgres with JSONB, partial indexes and time partitioning covers a wide range of workloads, so make it the first answer and move to a specialised store only when a specific pattern or scale demands it, naming which.
+  prompt: Why is a relational database like Postgres often the right first answer?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.data-models.relational-strengths
+- id: sd.data-models.partition-and-sort-keys
+  subtopic: 'Designing for the query: partition and sort keys'
+  kind: mechanism
+  claim: The partition key decides which node stores a row and must be supplied by queries; the sort (clustering) key orders rows within the partition so range queries like latest 50 are cheap.
+  prompt: What roles do the partition key and sort key play in a wide-column store?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.data-models.wide-column-fit
+- id: sd.data-models.chat-message-keys
+  subtopic: 'Designing for the query: partition and sort keys'
+  kind: procedure
+  claim: For 'latest messages in a conversation', partition by conversation_id and sort by a time-ordered message ID (e.g. ULID or Snowflake), reading descending.
+  prompt: What keys model loading the latest 50 messages of a conversation in Cassandra or DynamoDB?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.data-models.partition-and-sort-keys
+- id: sd.data-models.time-bucket-partitions
+  subtopic: 'Designing for the query: partition and sort keys'
+  kind: mechanism
+  claim: If a partition may grow too large or hot, add a time bucket to the partition key, e.g. (conversation_id, month), and read the most recent bucket first.
+  prompt: How do you stop a very busy conversation creating an oversized partition?
+  objectives:
+  - 0
+  requires:
+  - sd.data-models.partition-and-sort-keys
+- id: sd.data-models.table-per-query
+  subtopic: 'Designing for the query: partition and sort keys'
+  kind: principle
+  claim: In wide-column and key-value stores you have no joins, so you create one table per query pattern and accept duplication, moving cost to writes and consistency.
+  prompt: How do you serve a second query pattern, such as conversations by user, in Cassandra or DynamoDB?
+  objectives:
+  - 0
+  - 1
+  - 2
+  requires:
+  - sd.data-models.wide-column-fit
+  - sd.data-models.key-value-limits
+- id: sd.data-models.normalised-vs-denormalised
+  subtopic: Normalise or denormalise?
+  kind: tradeoff
+  claim: Denormalising makes reads a single lookup but makes writes costlier, since every copy must be updated, and copies can be stale or disagree; normalised data updates trivially but needs joins.
+  prompt: What is the trade-off of copying a frequently read field into many records?
+  objectives:
+  - 2
+  requires:
+  - sd.data-models.relational-strengths
+- id: sd.data-models.when-to-denormalise
+  subtopic: Normalise or denormalise?
+  kind: principle
+  claim: Denormalise when the read path is hot and the copied data changes rarely or may be stale, and decide up front how copies are kept up to date.
+  prompt: When is denormalising justified?
+  objectives:
+  - 2
+  requires:
+  - sd.data-models.normalised-vs-denormalised
+- id: sd.data-models.copy-update-strategies
+  subtopic: Normalise or denormalise?
+  kind: mechanism
+  claim: Copies can be updated synchronously in the same transaction, asynchronously from events or change data capture, or never, as an intentional snapshot such as the price on an invoice line.
+  prompt: What strategies keep denormalised copies consistent?
+  objectives:
+  - 2
+  requires:
+  - sd.data-models.normalised-vs-denormalised
+- id: sd.data-models.rename-fan-out-cost
+  subtopic: Normalise or denormalise?
+  kind: mechanism
+  claim: A user's display-name change with the name copied into every post becomes a large fan-out update, so old posts show stale names; storing only the author ID and resolving via a hot cache is often better.
+  prompt: What is the real cost of copying an author's name into every post, and what is an alternative?
+  objectives:
+  - 2
+  requires:
+  - sd.data-models.normalised-vs-denormalised
+- id: sd.data-models.bound-record-growth
+  subtopic: Avoid unbounded growth inside one record
+  kind: principle
+  claim: Never let one row, document or partition grow without bound; model the many side as its own rows, bucket partitions by time, and paginate.
+  prompt: How should you model data like replies, followers or device events that grow without limit?
+  objectives:
+  - 0
+- id: sd.data-models.embedded-array-problems
+  subtopic: Avoid unbounded growth inside one record
+  kind: mechanism
+  claim: Unbounded embedded arrays cause ever-larger rewrites per update, write contention on one document, loading everything to show a page, and hitting limits like MongoDB's 16 MB document size.
+  prompt: What goes wrong when replies are embedded as an unbounded array in one document?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.data-models.document-model-fit
+- id: sd.data-models.expand-migrate-contract-order
+  subtopic: 'Schemas evolve: expand, migrate, contract'
+  kind: procedure
+  claim: 'Zero-downtime rename: add the new nullable column, dual-write, backfill in batches, switch reads, stop writing the old column, then drop it after a safe period.'
+  prompt: What are the steps of a zero-downtime column rename?
+  objectives:
+  - 3
+- id: sd.data-models.why-not-rename-in-place
+  subtopic: 'Schemas evolve: expand, migrate, contract'
+  kind: principle
+  claim: Old and new code run side by side during rolling deploys, so each schema step must be compatible with both versions; an in-place rename breaks running old code and prevents rollback.
+  prompt: Why can a single-step column rename break a live system?
+  objectives:
+  - 3
+- id: sd.data-models.backfill-in-batches
+  subtopic: 'Schemas evolve: expand, migrate, contract'
+  kind: procedure
+  claim: Backfill in small throttled batches to avoid long locks and replication lag; duration is rows divided by rows per second (e.g. 300M rows at 25,000/s is about 3.3 hours).
+  prompt: How do you estimate backfill time, and why batch it?
+  objectives:
+  - 3
+items:
+  data-models-check-1-v2:
+  - sd.data-models.model-from-access-patterns
+  - sd.data-models.access-pattern-checklist
+  data-models-check-2-v2:
+  - sd.data-models.chat-message-keys
+  - sd.data-models.partition-and-sort-keys
+  data-models-check-3-v2:
+  - sd.data-models.expand-migrate-contract-order
+  data-models-check-4-v2:
+  - sd.data-models.document-model-fit
+  - sd.data-models.embedded-array-problems
+  data-models-fire-1-v2:
+  - sd.data-models.copy-update-strategies
+  - sd.data-models.normalised-vs-denormalised
+  data-models-fire-2-v2:
+  - sd.data-models.graph-model-fit
+  data-models-fire-3-v2:
+  - sd.data-models.backfill-in-batches
+  data-models-fire-4-v2:
+  - sd.data-models.why-not-rename-in-place
+  data-models-fire-5-v2:
+  - sd.data-models.key-value-limits
+  data-models:b1:
+  - sd.data-models.relational-strengths
+  - sd.data-models.document-model-fit
+  - sd.data-models.wide-column-fit
+  data-models:b10:
+  - sd.data-models.backfill-in-batches
+  data-models:b12:
+  - sd.data-models.normalised-vs-denormalised
+  - sd.data-models.copy-update-strategies
+  data-models:b3:
+  - sd.data-models.chat-message-keys
+  - sd.data-models.time-bucket-partitions
+  - sd.data-models.table-per-query
+  data-models:b5:
+  - sd.data-models.rename-fan-out-cost
+  - sd.data-models.when-to-denormalise
+  data-models:b7:
+  - sd.data-models.embedded-array-problems
+  - sd.data-models.bound-record-growth
+  data-models:b9:
+  - sd.data-models.expand-migrate-contract-order

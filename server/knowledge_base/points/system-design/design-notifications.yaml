@@ -1,0 +1,206 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-notifications
+source_hash: d6b3dc47e919ceef
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-notifications.requirements-latency-tiers
+  subtopic: 1. Requirements
+  kind: fact
+  claim: Security and transactional notifications (OTP, password reset, order shipped) must arrive within seconds, while marketing can take hours. At-most-one delivery per notification per channel is required even when callers retry.
+  prompt: What latency and correctness targets differ between notification categories, and what delivery guarantee applies per channel?
+  objectives:
+  - 0
+  - 1
+- id: sd.design-notifications.fifo-head-of-line-blocking
+  subtopic: 1. Requirements
+  kind: principle
+  claim: A single FIFO queue ignores importance, so a 50M-message campaign at 20k messages/s (about 42 minutes) blocks a password reset behind it.
+  prompt: Why is one shared FIFO queue a problem when a 50M campaign and a password reset arrive together, and roughly how long is the delay at 20k/s?
+  objectives:
+  - 0
+  requires:
+  - sd.design-notifications.requirements-latency-tiers
+- id: sd.design-notifications.priority-lanes
+  subtopic: 3. Pipeline
+  kind: mechanism
+  claim: Priority lanes are separate queues with dedicated consumers and reserved provider capacity. Security and transactional traffic uses the priority lane and social and marketing the bulk lane, so bulk load cannot starve urgent messages.
+  prompt: How do you keep urgent notifications fast while bulk campaigns run?
+  objectives:
+  - 0
+  same_as: sd.queue-basics.priority-separate-queues
+- id: sd.design-notifications.queue-lag-monitoring
+  subtopic: 4. Deep dives
+  kind: principle
+  claim: Monitor the oldest-message age per lane and alert when the priority lane exceeds a few seconds, while tolerating bulk lag of minutes or hours.
+  prompt: What metric would you alert on to protect urgent notification latency?
+  objectives:
+  - 0
+  requires:
+  - sd.queue-basics.age-over-depth
+  - sd.design-notifications.priority-lanes
+- id: sd.design-notifications.accept-and-queue-202
+  subtopic: 2. API and data
+  kind: tradeoff
+  claim: The API persists the notification and returns 202 rather than sending synchronously, because providers are slow and fail. Queueing keeps callers fast and enables retries, priorities and rate limiting.
+  prompt: Why should a notify API return 202 instead of sending to providers inline?
+  objectives:
+  - 0
+  requires:
+  - sd.sync-async.durable-before-202
+- id: sd.design-notifications.idempotency-key-api
+  subtopic: 2. API and data
+  kind: mechanism
+  claim: Callers send an Idempotency-Key, unique per caller in the notifications table, so a retry returns the same notification_id instead of creating a second send.
+  prompt: How does the API stop a caller's retry from sending a notification twice?
+  objectives:
+  - 0
+  requires:
+  - sd.retry-identity.concurrent-duplicates-claim
+- id: sd.design-notifications.persist-before-send
+  subtopic: 2. API and data
+  kind: principle
+  claim: Persist the notification (with an outbox entry) before any sending. Recording after sending leaves no record to retry or deduplicate from if a crash happens in between.
+  prompt: Why must the notification be stored before it is sent to providers?
+  objectives:
+  - 0
+  requires:
+  - sd.outbox.outbox-same-transaction
+- id: sd.design-notifications.delivery-state-machine
+  subtopic: 2. API and data
+  kind: mechanism
+  claim: 'Each channel has its own deliveries row with a state machine: pending → sent → delivered, failed or suppressed. It stores the provider message ID and attempt count, and provider callbacks update the status.'
+  prompt: How is per-channel delivery status modelled and tracked?
+  objectives:
+  - 3
+- id: sd.design-notifications.preferences-quiet-hours-caps
+  subtopic: 3. Pipeline
+  kind: procedure
+  claim: Processors check opt-outs per category and channel, apply quiet hours for non-urgent categories and enforce per-user frequency caps, then render the template per channel and locale and create one delivery per channel.
+  prompt: What checks and steps do processors run before sending a notification?
+  objectives:
+  - 1
+- id: sd.design-notifications.quiet-hours-deferral
+  subtopic: 3. Pipeline
+  kind: mechanism
+  claim: Non-urgent notifications in a user's quiet hours (using their stored timezone) are scheduled via a delay queue for the end of the window, not dropped. Security notifications bypass quiet hours.
+  prompt: How should a non-urgent notification arriving during quiet hours be handled?
+  objectives:
+  - 1
+  requires:
+  - sd.design-notifications.preferences-quiet-hours-caps
+- id: sd.design-notifications.lease-claim-senders
+  subtopic: 4. Deep dives
+  kind: mechanism
+  claim: Senders claim a delivery row with a lease (for example 60 s). If a sender crashes, the lease expires and another sender retries, so a crash before sending is safe.
+  prompt: How do senders avoid double-processing a delivery and recover from a crash?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.sync-async.lease-on-running
+- id: sd.design-notifications.downstream-dedupe-keys
+  subtopic: 4. Deep dives
+  kind: mechanism
+  claim: If a sender crashes after the provider accepted a push, the retry is hidden by using the notification ID as the APNs collapse ID plus client-side dedupe. For email and SMS pass an idempotency or reference key where supported; a rare duplicate remains possible otherwise.
+  prompt: How is a visible duplicate avoided when a sender crashes after APNs accepts a push?
+  objectives:
+  - 0
+  - 1
+  same_as: sd.retry-identity.external-side-effect-downstream-key
+- id: sd.design-notifications.provider-token-buckets
+  subtopic: 4. Deep dives
+  kind: mechanism
+  claim: Per-provider token buckets matching documented quotas make you slow down instead of being banned. A 429 means reducing the send rate for the whole provider, not just retrying that message.
+  prompt: How do you respect provider quotas, and what does a 429 mean?
+  objectives:
+  - 2
+  requires:
+  - sd.rate-limiting.token-bucket-burst-rate
+- id: sd.design-notifications.circuit-breakers-failover
+  subtopic: 4. Deep dives
+  kind: mechanism
+  claim: A per-provider circuit breaker stops sending on sustained errors, keeps messages queued and probes for recovery. SMS and email can fail over to a second provider, but push has no alternative to APNs/FCM.
+  prompt: What happens when a provider is down for a prolonged period?
+  objectives:
+  - 2
+  requires:
+  - sd.overload.circuit-breaker-states
+- id: sd.design-notifications.retry-vs-permanent-errors
+  subtopic: 4. Deep dives
+  kind: principle
+  claim: 'Retry transient errors (503, timeouts) with backoff. Do not retry permanent ones: delete the device token on APNs 410 Unregistered and suppress the address on a hard bounce, which also protects sender reputation.'
+  prompt: Which provider errors should be retried and which should not?
+  objectives:
+  - 2
+  requires:
+  - sd.dead-letters.three-failure-classes
+- id: sd.design-notifications.campaign-segment-batches
+  subtopic: 4. Deep dives
+  kind: procedure
+  claim: A campaign is one record plus a segment (user query). A scheduler expands it in batches (e.g. 10k users per task), applies preferences, quiet hours and caps, and feeds the bulk lane at a controlled rate, often in timezone waves.
+  prompt: How is a 50M-user campaign fed into the system?
+  objectives:
+  - 3
+- id: sd.design-notifications.campaign-duration-estimate
+  subtopic: 4. Deep dives
+  kind: procedure
+  claim: 'Estimate campaign time as eligible users divided by allotted send rate: 50M × 60% = 30M pushes at 15,000/s is about 2,000 s, roughly 33 minutes.'
+  prompt: How do you estimate how long a campaign takes to send?
+  objectives:
+  - 3
+  requires:
+  - sd.design-notifications.campaign-segment-batches
+items:
+  design-notifications-check-1-v2:
+  - sd.design-notifications.fifo-head-of-line-blocking
+  design-notifications-check-2-v2:
+  - sd.design-notifications.preferences-quiet-hours-caps
+  design-notifications-check-3-v2:
+  - sd.design-notifications.retry-vs-permanent-errors
+  design-notifications-check-4-v2:
+  - sd.design-notifications.accept-and-queue-202
+  design-notifications-fire-1-v2:
+  - sd.design-notifications.downstream-dedupe-keys
+  - sd.design-notifications.lease-claim-senders
+  design-notifications-fire-2-v2:
+  - sd.design-notifications.provider-token-buckets
+  - sd.design-notifications.circuit-breakers-failover
+  design-notifications-fire-3-v2:
+  - sd.design-notifications.campaign-segment-batches
+  design-notifications-fire-4-v2:
+  - sd.design-notifications.quiet-hours-deferral
+  design-notifications-fire-5-v2:
+  - sd.design-notifications.delivery-state-machine
+  - sd.design-notifications.idempotency-key-api
+  - sd.design-notifications.preferences-quiet-hours-caps
+  design-notifications:b1:
+  - sd.design-notifications.fifo-head-of-line-blocking
+  - sd.design-notifications.priority-lanes
+  design-notifications:b10:
+  - sd.design-notifications.persist-before-send
+  - sd.design-notifications.accept-and-queue-202
+  - sd.design-notifications.idempotency-key-api
+  design-notifications:b12:
+  - sd.design-notifications.priority-lanes
+  - sd.design-notifications.queue-lag-monitoring
+  - sd.design-notifications.campaign-segment-batches
+  design-notifications:b13:
+  - sd.design-notifications.fifo-head-of-line-blocking
+  - sd.design-notifications.campaign-segment-batches
+  - sd.design-notifications.priority-lanes
+  design-notifications:b7:
+  - sd.design-notifications.retry-vs-permanent-errors
+  - sd.design-notifications.provider-token-buckets
+  design-notifications:b9:
+  - sd.design-notifications.campaign-duration-estimate
+  redesign:design-notifications:
+  - sd.design-notifications.priority-lanes
+  - sd.design-notifications.idempotency-key-api
+  - sd.design-notifications.lease-claim-senders

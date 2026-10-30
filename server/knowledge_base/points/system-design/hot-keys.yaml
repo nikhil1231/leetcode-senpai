@@ -1,0 +1,285 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: hot-keys
+source_hash: 9136b1afe964eb34
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.hot-keys.sharding-spreads-keys-not-one-key
+  subtopic: Why one key can sink a node
+  kind: principle
+  claim: 'Sharding spreads keys across nodes, not the traffic for a single key: a hot key lives on one shard, so adding shards leaves that shard''s load unchanged.'
+  prompt: Why does doubling the number of cache shards not relieve a shard saturated by one key taking 30% of reads?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-aside.throughput-headroom
+- id: sd.hot-keys.single-node-throughput-ceilings
+  subtopic: Why one key can sink a node
+  kind: fact
+  claim: One Redis process handles roughly 100k-200k simple ops/s, and a 10 Gbps NIC (~1.2 GB/s) limits 50 KB values to about 25k reads/s regardless of CPU.
+  prompt: Roughly what per-node ceilings apply to a single Redis node for ops/s and for large values over a 10 Gbps NIC?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.bits-bytes-bandwidth
+- id: sd.hot-keys.hot-key-sources
+  subtopic: Why one key can sink a node
+  kind: fact
+  claim: Hot keys come from celebrity or viral content, flash sales, global config read on every request, and counters everyone increments such as likes, views and inventory.
+  prompt: What typically produces hot keys?
+  objectives:
+  - 0
+- id: sd.hot-keys.local-l1-cache-for-hot-reads
+  subtopic: Fixing read-hot keys
+  kind: tradeoff
+  claim: A few-second in-process cache on each API instance cuts cache-tier reads to about one per instance per TTL (e.g. ~200 reads instead of 300,000/s), at the cost of up to TTL seconds of staleness.
+  prompt: What does an in-process L1 cache do for a read-hot key, and what does it cost?
+  objectives:
+  - 0
+  requires:
+  - sd.cache-aside.l1-invalidation-problem
+  - sd.hot-keys.sharding-spreads-keys-not-one-key
+- id: sd.hot-keys.key-splitting-by-suffix
+  subtopic: Fixing read-hot keys
+  kind: mechanism
+  claim: Key splitting stores N copies (product:42#0..#N-1) on different shards; readers pick a random suffix and writers update or invalidate all copies, dividing per-shard load by N.
+  prompt: How does key splitting spread a read-hot key and what must writers do?
+  objectives:
+  - 0
+  requires:
+  - sd.hot-keys.sharding-spreads-keys-not-one-key
+- id: sd.hot-keys.copies-needed-calculation
+  subtopic: Fixing read-hot keys
+  kind: procedure
+  claim: Copies needed = key reads/s ÷ (shard capacity × target utilisation); e.g. 300,000 ÷ (100,000 × 50%) = 6 copies.
+  prompt: How do you work out how many copies a hot key needs given shard capacity and a utilisation target?
+  objectives:
+  - 0
+  requires:
+  - sd.hot-keys.key-splitting-by-suffix
+  - sd.hot-keys.single-node-throughput-ceilings
+- id: sd.hot-keys.other-read-hot-fixes
+  subtopic: Fixing read-hot keys
+  kind: fact
+  claim: Besides L1 caching and key splitting, read-hot keys can be served from cache read replicas, and public content can be absorbed at a CDN edge.
+  prompt: What other options besides local caching and key splitting relieve a read-hot key?
+  objectives:
+  - 0
+  requires:
+  - sd.hot-keys.sharding-spreads-keys-not-one-key
+- id: sd.hot-keys.write-hot-needs-write-spreading
+  subtopic: Fixing write-hot keys
+  kind: principle
+  claim: Read replicas cannot fix a write-hot key because every write must land somewhere; the writes themselves must be spread or reduced.
+  prompt: Why don't read replicas help a counter incremented 50,000 times a second?
+  objectives:
+  - 0
+  requires:
+  - sd.hot-keys.other-read-hot-fixes
+- id: sd.hot-keys.sharded-counters
+  subtopic: Fixing write-hot keys
+  kind: mechanism
+  claim: A sharded counter keeps N sub-counters, increments a random one and sums all N on read, dividing write load by N but multiplying read cost by N, so the sum is cached briefly.
+  prompt: How does a sharded counter work and what does it cost on reads?
+  objectives:
+  - 0
+  requires:
+  - sd.hot-keys.write-hot-needs-write-spreading
+  - sd.hot-keys.key-splitting-by-suffix
+- id: sd.hot-keys.batch-write-behind-increments
+  subtopic: Fixing write-hot keys
+  kind: tradeoff
+  claim: Aggregating increments in memory or a stream for about a second and applying one INCRBY 1834 instead of 1,834 INCRs trades instant exactness for throughput, fine for display counters.
+  prompt: What does batching or write-behind of counter increments trade away, and when is that acceptable?
+  objectives:
+  - 0
+  requires:
+  - sd.hot-keys.write-hot-needs-write-spreading
+- id: sd.hot-keys.separate-user-state-from-aggregate
+  subtopic: Fixing write-hot keys
+  kind: principle
+  claim: Per-user state such as 'has liked' needs exactness while the aggregate count tolerates staleness, so store them separately rather than in one key.
+  prompt: Why store per-user like state separately from the aggregate like count?
+  objectives:
+  - 0
+  requires:
+  - sd.hot-keys.sharded-counters
+- id: sd.hot-keys.stampede-feedback-loop
+  subtopic: The stampede (dogpile)
+  kind: mechanism
+  claim: When a hot key expires, every request before the refill misses and recomputes the same value (10,000 reads/s with 200 ms recompute gives ~2,000 identical queries); slower queries widen the window, a positive feedback loop.
+  prompt: What is a cache stampede and why does it feed on itself?
+  objectives:
+  - 1
+  requires:
+  - sd.cache-aside.cache-aside-read-path
+- id: sd.hot-keys.ttl-jitter
+  subtopic: The stampede (dogpile)
+  kind: mechanism
+  claim: TTL jitter (e.g. base × random(0.8, 1.2)) stops keys loaded together expiring together; it spreads many keys but does nothing for one hot key.
+  prompt: What does TTL jitter fix, and what does it not fix?
+  objectives:
+  - 1
+  requires:
+  - sd.hot-keys.stampede-feedback-loop
+- id: sd.hot-keys.request-coalescing
+  subtopic: The stampede (dogpile)
+  kind: mechanism
+  claim: Request coalescing (single-flight) lets the first miss per process fetch while concurrent misses wait for its result; it is per-instance, so 200 instances can still send 200 queries.
+  prompt: How does request coalescing work and what is its limit?
+  objectives:
+  - 1
+  requires:
+  - sd.hot-keys.stampede-feedback-loop
+- id: sd.hot-keys.coalescing-vs-jitter-distinct
+  subtopic: The stampede (dogpile)
+  kind: principle
+  claim: Coalescing handles many concurrent requests for one key; jitter handles many different keys expiring in lockstep, such as after a warm-up.
+  prompt: Why do coalescing and jitter solve different problems?
+  objectives:
+  - 1
+  requires:
+  - sd.hot-keys.ttl-jitter
+  - sd.hot-keys.request-coalescing
+- id: sd.hot-keys.lease-or-lock-refill
+  subtopic: The stampede (dogpile)
+  kind: tradeoff
+  claim: A cluster-wide lease lets one caller refill while others wait briefly or serve stale; it needs an expiry and a token-checked release, and waiters need a deadline and fallback.
+  prompt: What must a distributed refill lock include to be safe?
+  objectives:
+  - 1
+  requires:
+  - sd.hot-keys.request-coalescing
+  same_as: sd.cache-freshness.lease-stampede-benefit
+- id: sd.hot-keys.lock-without-expiry-danger
+  subtopic: The stampede (dogpile)
+  kind: mechanism
+  claim: A lock taken without expiry is never released if the holder crashes, so every caller for that key is stuck; unbounded waiters spinning without sleep also hammer the cache.
+  prompt: What goes wrong with a refill lock that has no expiry and waiters that spin?
+  objectives:
+  - 1
+  requires:
+  - sd.hot-keys.lease-or-lock-refill
+- id: sd.hot-keys.stale-while-revalidate
+  subtopic: The stampede (dogpile)
+  kind: tradeoff
+  claim: Stale-while-revalidate serves the expired value while one caller refreshes in the background, avoiding the empty moment at the cost of briefly stale data.
+  prompt: How does stale-while-revalidate prevent a stampede and what does it cost?
+  objectives:
+  - 1
+  requires:
+  - sd.hot-keys.stampede-feedback-loop
+- id: sd.hot-keys.xfetch-early-refresh
+  subtopic: The stampede (dogpile)
+  kind: mechanism
+  claim: XFetch probabilistic early refresh makes each reader refresh with probability rising as expiry nears and as the last recompute time (delta) grows, so costly values rebuild before the herd arrives without coordination.
+  prompt: How does probabilistic early refresh work and why does recompute time matter?
+  objectives:
+  - 1
+  requires:
+  - sd.hot-keys.stampede-feedback-loop
+- id: sd.hot-keys.cache-failure-load-multiplier
+  subtopic: When the cache itself fails
+  kind: fact
+  claim: If the database is sized for a 95% hit rate, losing the cache makes miss traffic 20x its budget (96% gives 25x), since load goes from the miss share to 100%.
+  prompt: By what factor does database load rise when the hit rate drops from 95% to zero?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.db-load-is-miss-rate
+- id: sd.hot-keys.bound-db-concurrency-and-shed-load
+  subtopic: When the cache itself fails
+  kind: principle
+  claim: 'During cache failure protect the database: cap concurrent queries so overload gives fast errors, shed load with a degraded mode, and never add callers or retry immediately.'
+  prompt: What first actions protect an overloaded database after a cache outage?
+  objectives:
+  - 2
+  requires:
+  - sd.hot-keys.cache-failure-load-multiplier
+- id: sd.hot-keys.local-stale-fallback
+  subtopic: When the cache itself fails
+  kind: mechanism
+  claim: Keeping a local in-process stale copy of the hottest values gives a fallback when the shared cache is down.
+  prompt: How can in-process copies help when the cache cluster fails?
+  objectives:
+  - 2
+  requires:
+  - sd.hot-keys.cache-failure-load-multiplier
+- id: sd.hot-keys.warm-working-set-gradually
+  subtopic: When the cache itself fails
+  kind: procedure
+  claim: Recover by warming only the working set (e.g. top 50k by recent traffic), rate-limited under the database budget; a full-speed warm-up of the whole dataset becomes a new stampede and evicts hot data.
+  prompt: How should you warm a cache after a replacement or outage?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.cold-start-protection
+  - sd.hot-keys.cache-failure-load-multiplier
+- id: sd.hot-keys.prevent-invisible-cache-failure
+  subtopic: When the cache itself fails
+  kind: principle
+  claim: Prevent repeat incidents by replicating the cache with failover, alerting on replication health and hit rate, and testing failover at realistic size; a bigger instance does not fix this.
+  prompt: What follow-ups stop a cache failover incident recurring?
+  objectives:
+  - 2
+  requires:
+  - sd.hot-keys.cache-failure-load-multiplier
+- id: sd.hot-keys.detecting-hot-keys
+  subtopic: Introduction
+  kind: procedure
+  claim: Detect hot keys by sampling commands (Redis --hotkeys with LFU or proxy sampling), watching per-shard CPU and network imbalance, and logging top keys per minute in the client.
+  prompt: How do you detect hot keys in a cache cluster?
+  objectives:
+  - 0
+  requires:
+  - sd.hot-keys.hot-key-sources
+items:
+  hot-keys-check-1-v2:
+  - sd.hot-keys.sharding-spreads-keys-not-one-key
+  - sd.hot-keys.local-l1-cache-for-hot-reads
+  - sd.hot-keys.key-splitting-by-suffix
+  hot-keys-check-2-v2:
+  - sd.hot-keys.request-coalescing
+  - sd.hot-keys.stale-while-revalidate
+  - sd.hot-keys.lease-or-lock-refill
+  hot-keys-check-3-v2:
+  - sd.hot-keys.copies-needed-calculation
+  hot-keys-check-4-v2:
+  - sd.hot-keys.cache-failure-load-multiplier
+  hot-keys-fire-1-v2:
+  - sd.hot-keys.ttl-jitter
+  - sd.hot-keys.coalescing-vs-jitter-distinct
+  hot-keys-fire-2-v2:
+  - sd.hot-keys.sharded-counters
+  - sd.hot-keys.write-hot-needs-write-spreading
+  hot-keys-fire-3-v2:
+  - sd.hot-keys.xfetch-early-refresh
+  hot-keys-fire-4-v2:
+  - sd.hot-keys.bound-db-concurrency-and-shed-load
+  - sd.hot-keys.local-stale-fallback
+  hot-keys-fire-5-v2:
+  - sd.hot-keys.lock-without-expiry-danger
+  - sd.hot-keys.lease-or-lock-refill
+  hot-keys:b1:
+  - sd.hot-keys.sharding-spreads-keys-not-one-key
+  hot-keys:b11:
+  - sd.hot-keys.bound-db-concurrency-and-shed-load
+  - sd.hot-keys.warm-working-set-gradually
+  - sd.hot-keys.prevent-invisible-cache-failure
+  hot-keys:b13:
+  - sd.hot-keys.coalescing-vs-jitter-distinct
+  - sd.hot-keys.request-coalescing
+  - sd.hot-keys.ttl-jitter
+  hot-keys:b3:
+  - sd.hot-keys.copies-needed-calculation
+  hot-keys:b5:
+  - sd.hot-keys.sharded-counters
+  - sd.hot-keys.separate-user-state-from-aggregate
+  hot-keys:b9:
+  - sd.hot-keys.lock-without-expiry-danger
+  - sd.hot-keys.lease-or-lock-refill

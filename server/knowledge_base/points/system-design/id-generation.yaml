@@ -1,0 +1,267 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: id-generation
+source_hash: e961f94e38562898
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.id-generation.public-ids-leak-information
+  subtopic: Introduction
+  kind: principle
+  claim: Sequential IDs in public URLs leak order volume, user counts and growth rates, and make enumeration attacks trivial when authorisation is weak, so IDs are part of the public surface.
+  prompt: Why might a company avoid exposing sequential order IDs in URLs?
+  objectives:
+  - 3
+- id: sd.id-generation.auto-increment-profile
+  subtopic: The options
+  kind: tradeoff
+  claim: Auto-increment IDs are 8 bytes, time-ordered and append-only in the index, but need one central database and leak volume and growth. They suit internal tables on a single instance.
+  prompt: When is a database auto-increment key a good choice, and what are its drawbacks?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.numbers.typical-data-sizes
+- id: sd.id-generation.uuidv4-profile
+  subtopic: The options
+  kind: fact
+  claim: UUIDv4 is 16 bytes of random data needing no coordination, not time-sortable, with poor index locality, and it leaks nothing. It suits unguessable tokens.
+  prompt: What are the properties of UUIDv4 for coordination, ordering, size, locality and leakage?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.numbers.typical-data-sizes
+- id: sd.id-generation.uuidv7-ulid-profile
+  subtopic: The options
+  kind: tradeoff
+  claim: UUIDv7 and ULID are 16 bytes, a millisecond timestamp plus randomness, generated without coordination, time-sortable and with good index locality, but they reveal creation time. They suit client-generated offline IDs.
+  prompt: What do UUIDv7/ULID give you over UUIDv4, and what do they cost?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.id-generation.uuidv4-profile
+- id: sd.id-generation.snowflake-profile
+  subtopic: The options
+  kind: tradeoff
+  claim: Snowflake IDs are 8 bytes, time-sortable with good locality and no per-ID coordination, but worker IDs must be assigned uniquely, and they leak creation time and worker.
+  prompt: What is the coordination requirement and the leakage of Snowflake IDs?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.typical-data-sizes
+- id: sd.id-generation.range-allocation-profile
+  subtopic: 'Range allocation: cheap central IDs'
+  kind: mechanism
+  claim: Range allocation has each server reserve a block of IDs with one atomic increment on a central sequence, then hand them out from memory. Coordination happens once per block, a crash only wastes the unused part (gaps are fine), and IDs are roughly ordered.
+  prompt: How does range (block) allocation reduce coordination for integer IDs, and what happens on a crash?
+  objectives:
+  - 0
+  requires:
+  - sd.id-generation.auto-increment-profile
+- id: sd.id-generation.ticket-server-redundancy
+  subtopic: 'Range allocation: cheap central IDs'
+  kind: fact
+  claim: Flickr's ticket servers used a pair of MySQL servers issuing odd and even numbers for redundancy.
+  prompt: How did Flickr's ticket servers get redundancy?
+  objectives:
+  - 0
+  requires:
+  - sd.id-generation.auto-increment-profile
+- id: sd.id-generation.btree-sorted-insert-locality
+  subtopic: Why random UUIDs hurt B-tree indexes
+  kind: mechanism
+  claim: A B-tree keeps keys sorted, so monotonic keys always insert at the right-hand edge, keeping a few hot pages in memory and filling them completely.
+  prompt: Why do monotonic keys insert efficiently into a B-tree primary key?
+  objectives:
+  - 0
+  requires:
+  - sd.indexes.btree-sorted-pages
+- id: sd.id-generation.random-keys-scatter-inserts
+  subtopic: Why random UUIDs hurt B-tree indexes
+  kind: mechanism
+  claim: Random UUIDv4 keys land on random leaf pages, so the whole index is the working set, causing cache misses, half-full page splits, bigger indexes and more write I/O.
+  prompt: Why do random UUIDv4 primary keys slow inserts on a very large table?
+  objectives:
+  - 0
+  requires:
+  - sd.id-generation.btree-sorted-insert-locality
+- id: sd.id-generation.time-ordered-ids-restore-locality
+  subtopic: Why random UUIDs hurt B-tree indexes
+  kind: principle
+  claim: Time-prefixed IDs (UUIDv7, ULID, Snowflake) keep decentralised generation while concentrating inserts on recent pages, restoring locality at the same 16 bytes for UUIDv7. Clustered-index engines such as InnoDB feel the difference most.
+  prompt: Why would switching new rows from UUIDv4 to UUIDv7 help insert throughput?
+  objectives:
+  - 0
+  requires:
+  - sd.id-generation.btree-sorted-insert-locality
+  - sd.id-generation.random-keys-scatter-inserts
+- id: sd.id-generation.snowflake-bit-layout
+  subtopic: 'Snowflake: 64 bits, no coordination per ID'
+  kind: fact
+  claim: Classic Snowflake uses 1 sign bit, 41 bits of milliseconds since a custom epoch (about 69 years), 10 worker bits (1,024 workers) and 12 sequence bits (4,096 IDs per ms per worker).
+  prompt: What is the classic Snowflake 64-bit layout?
+  objectives:
+  - 1
+  requires:
+  - sd.id-generation.snowflake-profile
+- id: sd.id-generation.snowflake-uniqueness-conditions
+  subtopic: 'Snowflake: 64 bits, no coordination per ID'
+  kind: principle
+  claim: Snowflake IDs are unique only if worker IDs are unique and each generator never reuses a past millisecond; perfect clock synchronisation is not required.
+  prompt: What conditions keep Snowflake IDs unique?
+  objectives:
+  - 1
+  requires:
+  - sd.id-generation.snowflake-bit-layout
+- id: sd.id-generation.snowflake-bit-budget
+  subtopic: 'Snowflake: 64 bits, no coordination per ID'
+  kind: tradeoff
+  claim: The 63 usable bits are a budget split between lifetime, fleet size and per-worker rate, so gaining in one costs another. A recent custom epoch adds decades, and needing more of all three means more bits, such as a 128-bit UUIDv7.
+  prompt: What trade-off arises when moving bits between timestamp, worker and sequence fields?
+  objectives:
+  - 1
+  requires:
+  - sd.id-generation.snowflake-bit-layout
+- id: sd.id-generation.snowflake-worker-id-assignment
+  subtopic: 'Snowflake: 64 bits, no coordination per ID'
+  kind: procedure
+  claim: Worker IDs must not be random, since collisions are likely by the birthday bound; assign them from a coordinator such as an etcd/ZooKeeper lease, a database row or a pod ordinal.
+  prompt: How should Snowflake worker IDs be assigned, and why not randomly?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.id-generation.snowflake-uniqueness-conditions
+- id: sd.id-generation.snowflake-sequence-exhaustion
+  subtopic: 'Snowflake: 64 bits, no coordination per ID'
+  kind: procedure
+  claim: If the 12-bit sequence is exhausted within a millisecond, the generator must wait for the next millisecond, otherwise the sequence overflows into the worker bits and corrupts IDs.
+  prompt: What must a Snowflake generator do when it issues more than 4,096 IDs in one millisecond?
+  objectives:
+  - 1
+  requires:
+  - sd.id-generation.snowflake-bit-layout
+- id: sd.id-generation.snowflake-clock-regression
+  subtopic: 'Snowflake: 64 bits, no coordination per ID'
+  kind: procedure
+  claim: If the clock goes backwards (e.g. an NTP step), the generator must detect now < last_ms and wait or refuse until the clock passes last_ms, and alert on skew; continuing would reissue IDs from an earlier millisecond.
+  prompt: What should a Snowflake generator do when the clock moves backwards?
+  objectives:
+  - 1
+  requires:
+  - sd.id-generation.snowflake-uniqueness-conditions
+- id: sd.id-generation.snowflake-thread-safety
+  subtopic: 'Snowflake: 64 bits, no coordination per ID'
+  kind: principle
+  claim: A Snowflake generator's last-timestamp and sequence state needs a lock when called from several threads, otherwise duplicates can occur.
+  prompt: What extra protection does a multi-threaded Snowflake generator need?
+  objectives:
+  - 1
+  requires:
+  - sd.id-generation.snowflake-bit-layout
+- id: sd.id-generation.base62-capacity
+  subtopic: Short public codes
+  kind: fact
+  claim: 'Base62 carries about 5.95 bits per character: 6 characters give about 56.8 billion codes, 7 about 3.52 trillion and 8 about 218 trillion, each extra character multiplying the space by 62.'
+  prompt: How many codes do 6 and 7 base62 characters give?
+  objectives:
+  - 2
+- id: sd.id-generation.encode-integer-codes
+  subtopic: Short public codes
+  kind: tradeoff
+  claim: Encoding a unique integer in base62 has no collisions by construction, but sequential codes are enumerable, so scramble them with a reversible permutation if that matters.
+  prompt: What is the benefit and the risk of base62-encoding a sequential integer as a public code?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.id-generation.base62-capacity
+- id: sd.id-generation.random-codes-unique-constraint
+  subtopic: Short public codes
+  kind: principle
+  claim: Random short codes are unguessable but collide often before the space is full (birthday problem), so insert with a unique constraint and retry on conflict rather than trusting randomness.
+  prompt: Why do random short codes still need a unique constraint and retry?
+  objectives:
+  - 2
+  requires:
+  - sd.id-generation.base62-capacity
+  - sd.transactions.unique-constraint-for-uniqueness
+- id: sd.id-generation.birthday-bound-collision-maths
+  subtopic: Short public codes
+  kind: procedure
+  claim: A new random code collides with probability n/N with n existing codes in a space of N, while some collision among all codes becomes likely around √N issued codes. For 7-char base62, 10 million codes gives about 0.00028% per insert, and √N is about 1.9 million.
+  prompt: How do you estimate the collision chance of a new random code, and when does any collision become likely?
+  objectives:
+  - 2
+  requires:
+  - sd.id-generation.random-codes-unique-constraint
+  - sd.id-generation.base62-capacity
+- id: sd.id-generation.pick-scheme-by-use
+  subtopic: Introduction
+  kind: tradeoff
+  claim: 'Choose per use: auto-increment for internal single-database tables, UUIDv4 or a dedicated random token for unguessable secrets, UUIDv7/ULID for offline client-generated sortable IDs, and Snowflake for compact 64-bit time-ordered IDs at high rate across many servers.'
+  prompt: Which ID scheme suits internal admin tables, password-reset tokens, offline client records and high-rate multi-server IDs?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.id-generation.auto-increment-profile
+  - sd.id-generation.uuidv4-profile
+  - sd.id-generation.uuidv7-ulid-profile
+- id: sd.id-generation.uuidv7-vs-v4-advantages
+  subtopic: The options
+  kind: tradeoff
+  claim: UUIDv7 keeps UUIDv4's coordination-free generation and the same 16-byte size, and adds time ordering and B-tree locality, at the cost of exposing creation time.
+  prompt: What advantages does UUIDv7 have over UUIDv4, and what does it cost?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.id-generation.uuidv4-profile
+  - sd.id-generation.uuidv7-ulid-profile
+items:
+  id-generation-check-1-v2:
+  - sd.id-generation.random-keys-scatter-inserts
+  id-generation-check-2-v2:
+  - sd.id-generation.snowflake-uniqueness-conditions
+  - sd.id-generation.snowflake-sequence-exhaustion
+  - sd.id-generation.snowflake-clock-regression
+  id-generation-check-3-v2:
+  - sd.id-generation.base62-capacity
+  id-generation-check-4-v2:
+  - sd.id-generation.public-ids-leak-information
+  id-generation-fire-1-v2:
+  - sd.id-generation.snowflake-bit-budget
+  id-generation-fire-2-v2:
+  - sd.id-generation.range-allocation-profile
+  id-generation-fire-3-v2:
+  - sd.id-generation.random-codes-unique-constraint
+  - sd.id-generation.birthday-bound-collision-maths
+  id-generation-fire-4-v2:
+  - sd.id-generation.snowflake-clock-regression
+  id-generation-fire-5-v2:
+  - sd.id-generation.uuidv7-vs-v4-advantages
+  - sd.id-generation.uuidv7-ulid-profile
+  id-generation:b1:
+  - sd.id-generation.pick-scheme-by-use
+  - sd.id-generation.auto-increment-profile
+  - sd.id-generation.uuidv4-profile
+  id-generation:b10:
+  - sd.id-generation.random-keys-scatter-inserts
+  - sd.id-generation.btree-sorted-insert-locality
+  - sd.id-generation.time-ordered-ids-restore-locality
+  id-generation:b3:
+  - sd.id-generation.time-ordered-ids-restore-locality
+  - sd.id-generation.random-keys-scatter-inserts
+  id-generation:b6:
+  - sd.id-generation.snowflake-worker-id-assignment
+  - sd.id-generation.snowflake-sequence-exhaustion
+  - sd.id-generation.snowflake-clock-regression
+  id-generation:b8:
+  - sd.id-generation.birthday-bound-collision-maths

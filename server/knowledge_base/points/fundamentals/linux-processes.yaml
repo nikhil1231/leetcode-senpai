@@ -1,0 +1,200 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: linux-processes
+source_hash: 1810c9e3a7d463b5
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.linux-processes.fork-exec-creation
+  subtopic: Processes and signals
+  kind: mechanism
+  claim: A process is created by fork(), which copies the parent with copy-on-write memory, and usually becomes a different program through exec().
+  prompt: How does Linux create a new process and run a different program in it?
+  objectives:
+  - 0
+- id: fundamentals.linux-processes.zombie-processes
+  subtopic: Processes and signals
+  kind: mechanism
+  claim: A child that has exited stays a zombie (only an exit status) until its parent calls wait(); if the parent dies first, the orphan is re-parented to PID 1, which should reap it.
+  prompt: What is a zombie process, and what clears it?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.linux-processes.fork-exec-creation
+- id: fundamentals.linux-processes.sigterm-vs-sigkill
+  subtopic: Processes and signals
+  kind: fact
+  claim: SIGTERM (15) is a catchable request to shut down, so a process can drain and exit cleanly; SIGKILL (9) is immediate and uncatchable, sent after the grace period and by the OOM killer.
+  prompt: How do SIGTERM and SIGKILL differ?
+  objectives:
+  - 0
+- id: fundamentals.linux-processes.other-common-signals
+  subtopic: Processes and signals
+  kind: fact
+  claim: SIGINT is Ctrl-C, SIGHUP often means reload config, and SIGCHLD tells a parent that a child changed state.
+  prompt: What do SIGINT, SIGHUP and SIGCHLD signify?
+  objectives:
+  - 0
+- id: fundamentals.linux-processes.pid1-signal-handling
+  subtopic: Processes and signals
+  kind: mechanism
+  claim: The kernel applies no default signal actions to PID 1, so a containerised app without a SIGTERM handler ignores it and is SIGKILLed after the grace period.
+  prompt: Why does an app running as PID 1 in a container ignore SIGTERM?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.linux-processes.sigterm-vs-sigkill
+- id: fundamentals.linux-processes.pid1-shell-init-fix
+  subtopic: Processes and signals
+  kind: procedure
+  claim: A shell as PID 1 (CMD via sh -c) may not forward signals; use exec-form CMD ["node","server.js"] or a tiny init such as tini (docker run --init).
+  prompt: How do you make sure signals reach the app in a container?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.linux-processes.pid1-signal-handling
+- id: fundamentals.linux-processes.graceful-shutdown-k8s
+  subtopic: Processes and signals
+  kind: procedure
+  claim: Kubernetes sends SIGTERM, waits terminationGracePeriodSeconds (30 s default), then SIGKILLs; the app must stop new work, drain in-flight requests and close connections, and a short preStop delay covers asynchronous endpoint removal.
+  prompt: What must happen for a pod to shut down gracefully without dropping requests?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.linux-processes.sigterm-vs-sigkill
+- id: fundamentals.linux-processes.exit-code-137
+  subtopic: Memory
+  kind: fact
+  claim: Exit code 137 is 128 + 9, meaning the process was killed by SIGKILL, often by the OOM killer or after a grace period.
+  prompt: What does container exit code 137 usually mean?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - fundamentals.linux-processes.sigterm-vs-sigkill
+- id: fundamentals.linux-processes.vsz-vs-rss
+  subtopic: Memory
+  kind: fact
+  claim: VSZ/VIRT counts everything mapped, including untouched reservations, and is usually meaningless; RSS/RES is pages actually resident in RAM, counting shared libraries in every process.
+  prompt: How do VSZ and RSS differ?
+  objectives:
+  - 1
+- id: fundamentals.linux-processes.page-cache-available
+  subtopic: Memory
+  kind: principle
+  claim: The page cache uses spare RAM to cache file contents and is reclaimable, so judge memory by the 'available' column in free -h, not 'free'.
+  prompt: Which number in free -h shows real memory headroom, and why is low 'free' not a problem?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.linux-processes.vsz-vs-rss
+- id: fundamentals.linux-processes.oom-killer
+  subtopic: Memory
+  kind: mechanism
+  claim: When memory runs out, the OOM killer chooses a process by oom_score and SIGKILLs it; the event appears in dmesg.
+  prompt: What does the OOM killer do and where do you see it?
+  objectives:
+  - 1
+- id: fundamentals.linux-processes.cgroup-limit-oom
+  subtopic: Memory
+  kind: mechanism
+  claim: 'In containers the cgroup memory limit applies: exceeding it gets the container OOM-killed (OOMKilled, exit 137) even if the node has free memory.'
+  prompt: Why can a container be OOM-killed when the node has free memory?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.linux-processes.oom-killer
+- id: fundamentals.linux-processes.jvm-container-memory
+  subtopic: Memory
+  kind: tradeoff
+  claim: A JVM's heap plus metaspace, thread stacks and direct buffers must fit in the cgroup limit, so set the heap to about 70-75% of it (-XX:MaxRAMPercentage=75) rather than the whole limit.
+  prompt: Why is -Xmx equal to the container memory limit dangerous for a JVM?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.linux-processes.cgroup-limit-oom
+- id: fundamentals.linux-processes.fd-limit-leak
+  subtopic: File descriptors
+  kind: mechanism
+  claim: Files, sockets and pipes are all file descriptors with a per-process limit (ulimit -n, often 1024); 'Too many open files' usually means a leak such as unclosed sockets or per-request HTTP clients.
+  prompt: What usually causes 'Too many open files'?
+  objectives:
+  - 2
+- id: fundamentals.linux-processes.fd-leak-vs-limit
+  subtopic: File descriptors
+  kind: procedure
+  claim: Count descriptors with ls /proc/<pid>/fd | wc -l or lsof -p; a steadily climbing count is a leak to fix, while a high but stable count needs a higher limit.
+  prompt: How do you tell a descriptor leak from a limit that is simply too low?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.linux-processes.fd-limit-leak
+- id: fundamentals.linux-processes.deleted-open-file-space
+  subtopic: File descriptors
+  kind: mechanism
+  claim: A deleted file still held open keeps its disk space, so df shows full while du finds less; lsof | grep deleted finds it, then restart the process or truncate via /proc/<pid>/fd/<n>.
+  prompt: Why might df show a full disk while du accounts for only half?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.linux-processes.fd-limit-leak
+- id: fundamentals.linux-processes.load-average-io
+  subtopic: Reading a slow box
+  kind: mechanism
+  claim: Linux load average counts runnable tasks plus tasks in uninterruptible sleep (usually disk I/O), so high load with idle CPUs points to I/O; check iostat.
+  prompt: Why can load average be high while CPU usage is low?
+  objectives:
+  - 3
+- id: fundamentals.linux-processes.cpu-memory-disk-tools
+  subtopic: Reading a slow box
+  kind: fact
+  claim: Use uptime for load trend, vmstat 1 for run queue and swapping, mpstat -P ALL for per-CPU imbalance, top/pidstat for the process, iostat -xz for disk latency, and free -h for memory.
+  prompt: Which tools check load, run queue, per-CPU balance, per-process CPU, disk and memory?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.linux-processes.load-average-io
+- id: fundamentals.linux-processes.network-kernel-tools
+  subtopic: Reading a slow box
+  kind: fact
+  claim: Use sar -n DEV,TCP,ETCP or ss -s for network throughput, errors and retransmits, and dmesg -T for kernel messages such as OOM kills and disk errors.
+  prompt: Which tools show network errors and kernel messages?
+  objectives:
+  - 3
+- id: fundamentals.linux-processes.strace-perf-tools
+  subtopic: Reading a slow box
+  kind: tradeoff
+  claim: strace -p <pid> shows the syscalls a process is stuck in but slows it down; perf top and flame graphs show where CPU time goes in code.
+  prompt: Which tools show a process's syscalls and where CPU time goes in code, and what is the cost of strace?
+  objectives:
+  - 3
+items:
+  linux-processes-check-1-v2:
+  - fundamentals.linux-processes.exit-code-137
+  linux-processes-check-2-v2:
+  - fundamentals.linux-processes.page-cache-available
+  linux-processes-check-3-v2:
+  - fundamentals.linux-processes.load-average-io
+  linux-processes-fire-1-v2:
+  - fundamentals.linux-processes.pid1-signal-handling
+  - fundamentals.linux-processes.pid1-shell-init-fix
+  linux-processes-fire-2-v2:
+  - fundamentals.linux-processes.deleted-open-file-space
+  linux-processes-fire-3-v2:
+  - fundamentals.linux-processes.strace-perf-tools
+  linux-processes-fire-4-v2:
+  - fundamentals.linux-processes.fd-leak-vs-limit
+  - fundamentals.linux-processes.fd-limit-leak
+  linux-processes:b1:
+  - fundamentals.linux-processes.jvm-container-memory
+  - fundamentals.linux-processes.cgroup-limit-oom
+  - fundamentals.linux-processes.exit-code-137
+  linux-processes:b3:
+  - fundamentals.linux-processes.graceful-shutdown-k8s
+  - fundamentals.linux-processes.pid1-shell-init-fix
+  - fundamentals.linux-processes.sigterm-vs-sigkill

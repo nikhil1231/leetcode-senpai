@@ -1,0 +1,195 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: prompting
+source_hash: 3e7d94f6da3c05be
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.prompting.prompt-five-components
+  subtopic: What a production prompt contains
+  kind: fact
+  claim: 'A production prompt has five parts: role and context, task and constraints, clearly delimited inputs, few-shot examples, and an output contract.'
+  prompt: What are the five components of a production prompt?
+  objectives:
+  - 0
+- id: ai.prompting.say-what-to-do-when-unsure
+  subtopic: What a production prompt contains
+  kind: principle
+  claim: Constraints should say what to do when unsure, for example 'If the answer isn't in the documents, say so', so the model does not guess.
+  prompt: What should a prompt's constraints tell the model to do when it lacks the information?
+  objectives:
+  - 0
+- id: ai.prompting.delimit-inputs-as-data
+  subtopic: What a production prompt contains
+  kind: principle
+  claim: Wrap documents, user messages and retrieved chunks in tags such as <document> and label them as data, not instructions. This reduces the chance that instructions inside them are followed, but does not guarantee injection cannot work.
+  prompt: Why delimit untrusted text in a prompt with tags and label it as data?
+  objectives:
+  - 0
+- id: ai.prompting.untrusted-output-stays-untrusted
+  subtopic: What a production prompt contains
+  kind: principle
+  claim: Delimiting helps against prompt injection but is not a guarantee, so model output derived from untrusted input must still be treated as untrusted.
+  prompt: Does delimiting user text make prompt injection impossible, and how should you treat the resulting output?
+  objectives:
+  - 0
+  requires:
+  - ai.prompting.delimit-inputs-as-data
+- id: ai.prompting.few-shot-examples-copied
+  subtopic: What a production prompt contains
+  kind: tradeoff
+  claim: Two to five few-shot examples covering tricky cases are powerful, but the model copies them closely (length, style), so they must be varied and representative.
+  prompt: What is the risk of few-shot examples that all look alike, and how do you mitigate it?
+  objectives:
+  - 0
+- id: ai.prompting.output-contract-schema
+  subtopic: What a production prompt contains
+  kind: principle
+  claim: The output contract should state the exact format, ideally as a schema, so downstream code can rely on it.
+  prompt: What should the output contract of a prompt specify?
+  objectives:
+  - 0
+  - 1
+- id: ai.prompting.discardable-reasoning
+  subtopic: What a production prompt contains
+  kind: mechanism
+  claim: Reasoning before answering helps on multi-step problems, but it should go somewhere discardable or in a built-in thinking mode, with only the final answer parsed.
+  prompt: How should you handle step-by-step reasoning when you need a parseable answer?
+  objectives:
+  - 0
+  - 1
+- id: ai.prompting.structured-output-ladder
+  subtopic: Structured output
+  kind: fact
+  claim: 'From weakest to strongest: asking for JSON in the prompt, JSON mode or schema-constrained structured outputs, then tool calling with a schema.'
+  prompt: Rank the main ways of getting JSON from a model, from weakest to strongest.
+  objectives:
+  - 1
+- id: ai.prompting.constrained-decoding
+  subtopic: Structured output
+  kind: mechanism
+  claim: JSON mode or structured outputs make the provider constrain decoding to valid JSON or to a specific schema, which is more reliable than politely asking.
+  prompt: How do JSON mode and structured outputs make output more reliable than asking in the prompt?
+  objectives:
+  - 1
+  requires:
+  - ai.prompting.structured-output-ladder
+- id: ai.prompting.validate-in-code
+  subtopic: Structured output
+  kind: principle
+  claim: Always validate model output in code (Pydantic, zod), even when output is constrained.
+  prompt: Should you still validate output when using structured output, and with what?
+  objectives:
+  - 1
+  requires:
+  - ai.prompting.constrained-decoding
+- id: ai.prompting.bounded-repair-then-fallback
+  subtopic: Structured output
+  kind: procedure
+  claim: When validation fails, retry once with the validation error included, then fall back or fail visibly; never retry forever or guess missing fields.
+  prompt: What should you do when model JSON fails schema validation?
+  objectives:
+  - 1
+  requires:
+  - ai.prompting.validate-in-code
+- id: ai.prompting.simple-schemas
+  subtopic: Structured output
+  kind: principle
+  claim: 'Keep schemas simple: enums for categories, explicit null for unknowns, and no deeply nested optional structures.'
+  prompt: What are the schema design rules for reliable structured output?
+  objectives:
+  - 1
+- id: ai.prompting.classifier-low-temperature-default-route
+  subtopic: Structured output
+  kind: principle
+  claim: For classification use low temperature, an enum of allowed categories, and route unknown or low-confidence results to a default queue rather than indexing blindly.
+  prompt: How should a classifier be configured and how should it handle unknown categories?
+  objectives:
+  - 1
+  requires:
+  - ai.llm-basics.temperature-choice
+- id: ai.prompting.tool-calling-loop
+  subtopic: Tool calling
+  kind: mechanism
+  claim: The app sends the message plus tool definitions (name, description, argument schema); the model replies with a tool call; the app validates and executes it, sends back the result, and the model writes the final answer.
+  prompt: Describe one round of tool calling from user message to final answer.
+  objectives:
+  - 2
+- id: ai.prompting.app-executes-tools
+  subtopic: Tool calling
+  kind: principle
+  claim: The model only proposes tool calls; the application executes them, so validation, permissions, limits, logging and side effects are controlled in your code.
+  prompt: Who executes a tool call, and why does that matter?
+  objectives:
+  - 2
+  requires:
+  - ai.prompting.tool-calling-loop
+- id: ai.prompting.tool-descriptions-are-prompts
+  subtopic: Tool calling
+  kind: principle
+  claim: 'Tool descriptions are prompts: say when to use and not use each tool, and give arguments clear names and enums.'
+  prompt: How should you write tool descriptions and arguments?
+  objectives:
+  - 2
+  requires:
+  - ai.prompting.tool-calling-loop
+- id: ai.prompting.few-distinct-tools
+  subtopic: Tool calling
+  kind: tradeoff
+  claim: Keep the tool set small and distinct, because overlapping tools confuse selection; consolidate rather than adding randomness or removing descriptions.
+  prompt: An agent with many overlapping tools picks the wrong one. What is the fix?
+  objectives:
+  - 2
+  requires:
+  - ai.prompting.tool-descriptions-are-prompts
+- id: ai.prompting.version-prompts-with-outputs
+  subtopic: Prompts are code
+  kind: principle
+  claim: Version prompts alongside the model they are tuned for and record the prompt version with every stored output, so you know what produced it and can regenerate or compare.
+  prompt: Why record the prompt version with each stored LLM output?
+  objectives:
+  - 3
+- id: ai.prompting.eval-before-shipping-prompts
+  subtopic: Prompts are code
+  kind: principle
+  claim: Test prompt changes against an eval set before shipping, because a tweak that fixes one case often breaks several others.
+  prompt: Why run an eval set before shipping a prompt change?
+  objectives:
+  - 3
+- id: ai.prompting.pin-model-versions
+  subtopic: Prompts are code
+  kind: principle
+  claim: Pin model versions, because a provider's model update is a code change you did not write.
+  prompt: Why pin the model version?
+  objectives:
+  - 3
+items:
+  prompting-check-1-v2:
+  - ai.prompting.structured-output-ladder
+  - ai.prompting.validate-in-code
+  prompting-check-2-v2:
+  - ai.prompting.app-executes-tools
+  prompting-check-3-v2:
+  - ai.prompting.delimit-inputs-as-data
+  - ai.prompting.untrusted-output-stays-untrusted
+  prompting-fire-1-v2:
+  - ai.prompting.version-prompts-with-outputs
+  prompting-fire-2-v2:
+  - ai.prompting.few-shot-examples-copied
+  prompting-fire-3-v2:
+  - ai.prompting.bounded-repair-then-fallback
+  prompting-fire-4-v2:
+  - ai.prompting.few-distinct-tools
+  - ai.prompting.tool-descriptions-are-prompts
+  prompting:b1:
+  - ai.prompting.classifier-low-temperature-default-route
+  - ai.prompting.output-contract-schema
+  - ai.prompting.delimit-inputs-as-data
+  prompting:b3:
+  - ai.prompting.tool-calling-loop
+  - ai.prompting.app-executes-tools

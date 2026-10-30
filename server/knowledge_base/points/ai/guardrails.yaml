@@ -1,0 +1,179 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: guardrails
+source_hash: 731d88ab99cea046
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.guardrails.direct-vs-indirect-injection
+  subtopic: Prompt injection
+  kind: fact
+  claim: Direct prompt injection is the user typing instructions that override yours; indirect injection hides instructions in content the model processes (web page, email, PDF, code comment, review), where the user may be the victim.
+  prompt: What is the difference between direct and indirect prompt injection?
+  objectives:
+  - 0
+- id: ai.guardrails.models-cannot-separate-instructions
+  subtopic: Prompt injection
+  kind: principle
+  claim: Models cannot reliably tell the developer's instructions from instructions appearing inside data, which is the root cause of prompt injection.
+  prompt: Why are LLM applications fundamentally vulnerable to prompt injection?
+  objectives:
+  - 0
+  requires:
+  - ai.guardrails.direct-vs-indirect-injection
+- id: ai.guardrails.prompt-defences-only-reduce
+  subtopic: Prompt injection
+  kind: principle
+  claim: Delimiting untrusted text, telling the model to ignore embedded commands, and injection classifiers reduce the risk but never eliminate it.
+  prompt: Can prompting and injection classifiers fully stop prompt injection?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - ai.guardrails.models-cannot-separate-instructions
+- id: ai.guardrails.assume-model-fooled-limit-impact
+  subtopic: Prompt injection
+  kind: principle
+  claim: 'The main defence against injection is architectural: assume the model can be fooled and limit what a fooled model can do.'
+  prompt: What is the most robust defence against prompt injection causing harm?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - ai.guardrails.prompt-defences-only-reduce
+- id: ai.guardrails.authorisation-in-code
+  subtopic: Prompt injection
+  kind: principle
+  claim: Do not give the model credentials or authorisation decisions; your code must check that this user may access this record, whatever the model asks for, for example by filtering retrieval to permitted documents.
+  prompt: Where should the decision 'may this user see this document?' be made in a RAG assistant?
+  objectives:
+  - 1
+  requires:
+  - ai.guardrails.assume-model-fooled-limit-impact
+- id: ai.guardrails.least-privilege-tools
+  subtopic: Prompt injection
+  kind: principle
+  claim: Give the model least-privilege tools scoped to the current user's data, so a compromised model can only reach what that user could.
+  prompt: How should tools given to an LLM be scoped?
+  objectives:
+  - 1
+  requires:
+  - ai.guardrails.assume-model-fooled-limit-impact
+- id: ai.guardrails.human-confirmation-consequential
+  subtopic: Prompt injection
+  kind: principle
+  claim: Require human confirmation for consequential actions, since a human gate cannot be bypassed by the model.
+  prompt: What control stops a fooled model from taking a consequential action such as sending an email?
+  objectives:
+  - 1
+  same_as: ai.agents.human-approval-irreversible
+- id: ai.guardrails.block-exfiltration-paths
+  subtopic: Prompt injection
+  kind: mechanism
+  claim: Block exfiltration by not rendering model-generated links or images to arbitrary domains and by restricting outbound HTTP to an allow list; a markdown image URL carries data in its query string when the browser loads it.
+  prompt: Why can rendering model markdown with images leak data, and how do you prevent it?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-workflow.prompt-injection-lethal-trifecta
+- id: ai.guardrails.treat-output-untrusted
+  subtopic: Prompt injection
+  kind: principle
+  claim: 'Treat model output as untrusted input to the rest of the system: escape it in HTML, parameterise it in SQL, and never eval it (OWASP improper output handling).'
+  prompt: How should model output be handled when passed to SQL, HTML or code execution?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - ai.prompting.untrusted-output-stays-untrusted
+- id: ai.guardrails.guardrails-cost-tradeoff
+  subtopic: Guardrails
+  kind: tradeoff
+  claim: Every guardrail adds latency and cost and can add false positives, so place them by risk.
+  prompt: What costs do guardrails carry, and how should they be placed?
+  objectives:
+  - 2
+- id: ai.guardrails.guardrail-stages
+  subtopic: Guardrails
+  kind: fact
+  claim: 'Guardrails layer across stages: input (moderation, injection heuristics, PII redaction, size and rate limits), retrieval (ACL filtering, source allow lists), output (schema, groundedness, moderation, PII leak and banned-claims checks), and action (permission checks, confirmations, spend limits, audit logs).'
+  prompt: Name the four stages at which guardrails can be applied around a model call.
+  objectives:
+  - 2
+- id: ai.guardrails.cheap-inline-expensive-risky
+  subtopic: Guardrails
+  kind: tradeoff
+  claim: Run cheap checks inline and expensive ones, such as an LLM judge, only on risky routes or asynchronously, with a fallback answer when a check fails.
+  prompt: Where should expensive guardrails like an LLM-as-judge be run?
+  objectives:
+  - 2
+  requires:
+  - ai.guardrails.guardrails-cost-tradeoff
+- id: ai.guardrails.control-vs-mitigation
+  subtopic: Guardrails
+  kind: principle
+  claim: Controls enforced in code (ownership checks, confirmation clicks, network allow lists) are reliable; prompt instructions and classifiers are only mitigations because they can be bypassed.
+  prompt: Which kinds of defence are reliable controls and which are only mitigations?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - ai.guardrails.assume-model-fooled-limit-impact
+- id: ai.guardrails.minimise-redact-pii-provider
+  subtopic: Data handling
+  kind: procedure
+  claim: Minimise and redact PII sent to the model, and check the provider's data retention and training-use policies and contract terms (enterprise or zero-retention options).
+  prompt: What should you do and check before sending customer PII to an LLM provider?
+  objectives:
+  - 3
+- id: ai.guardrails.limit-sensitive-logging
+  subtopic: Data handling
+  kind: principle
+  claim: Avoid logging raw prompts containing sensitive data unless necessary, and if you do, control access and retention.
+  prompt: How should you handle logging of prompts that contain sensitive data?
+  objectives:
+  - 3
+- id: ai.guardrails.cross-user-leakage
+  subtopic: Data handling
+  kind: mechanism
+  claim: User data in prompts can leak to other users through shared caches, few-shot examples built from real data, or fine-tuning on user content.
+  prompt: How can one user's prompt data leak to other users?
+  objectives:
+  - 3
+- id: ai.guardrails.output-risks-and-transparency
+  subtopic: Data handling
+  kind: tradeoff
+  claim: Output risks include harmful content, legal or medical claims, defamation and copyrighted text; use moderation, disclaimers and routes to humans for high stakes, and tell users they are talking to AI and how to reach a human.
+  prompt: What output risks need handling, and what safeguards apply?
+  objectives:
+  - 3
+items:
+  guardrails-check-1-v2:
+  - ai.guardrails.direct-vs-indirect-injection
+  guardrails-check-2-v2:
+  - ai.guardrails.assume-model-fooled-limit-impact
+  - ai.guardrails.least-privilege-tools
+  guardrails-check-3-v2:
+  - ai.guardrails.block-exfiltration-paths
+  guardrails-fire-1-v2:
+  - ai.guardrails.authorisation-in-code
+  guardrails-fire-2-v2:
+  - ai.guardrails.treat-output-untrusted
+  guardrails-fire-3-v2:
+  - ai.guardrails.cheap-inline-expensive-risky
+  - ai.guardrails.guardrails-cost-tradeoff
+  guardrails-fire-4-v2:
+  - ai.guardrails.minimise-redact-pii-provider
+  guardrails:b1:
+  - ai.guardrails.block-exfiltration-paths
+  - ai.guardrails.authorisation-in-code
+  - ai.guardrails.least-privilege-tools
+  guardrails:b3:
+  - ai.guardrails.control-vs-mitigation
+  - ai.guardrails.prompt-defences-only-reduce
+  - ai.guardrails.human-confirmation-consequential

@@ -1,0 +1,229 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: evals
+source_hash: 26ee9dd9da75b117
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.evals.eval-three-components
+  subtopic: What an eval is
+  kind: fact
+  claim: An eval is inputs, expected behaviour and a scorer, run automatically; the scorer turns an output into a number or pass/fail.
+  prompt: What three parts make up an eval?
+  objectives:
+  - 0
+  - 1
+- id: ai.evals.eval-input-sources
+  subtopic: What an eval is
+  kind: principle
+  claim: 'Eval inputs should come from real or realistic traffic: common, edge and adversarial cases and every production failure seen.'
+  prompt: Where should eval inputs come from?
+  objectives:
+  - 0
+  requires:
+  - ai.evals.eval-three-components
+- id: ai.evals.start-small-eval-set
+  subtopic: What an eval is
+  kind: principle
+  claim: Start with 50 to 100 good cases rather than thousands of synthetic ones.
+  prompt: How large should a first eval set be, and of what quality?
+  objectives:
+  - 0
+- id: ai.evals.expected-behaviour-forms
+  subtopic: What an eval is
+  kind: fact
+  claim: Expected behaviour can be an exact answer, a reference answer, a set of required facts, or a rubric such as 'cites a source, under 120 words'.
+  prompt: What forms can expected behaviour take in an eval?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - ai.evals.eval-three-components
+- id: ai.evals.read-outputs-error-analysis
+  subtopic: What an eval is
+  kind: procedure
+  claim: Read around 50 real outputs and categorise the failures to decide what to measure; generic metrics chosen up front usually measure the wrong thing.
+  prompt: What should you do before choosing eval metrics for a new LLM feature?
+  objectives:
+  - 0
+- id: ai.evals.deterministic-scorers-first
+  subtopic: Scoring methods
+  kind: principle
+  claim: Use deterministic code checks wherever code can decide, such as schema-valid JSON or SQL result equality; reserve judges for subjective criteria.
+  prompt: When should you use a code check rather than an LLM judge?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.eval-three-components
+- id: ai.evals.judge-for-rubric-criteria
+  subtopic: Scoring methods
+  kind: tradeoff
+  claim: LLM judges with a rubric suit subjective or semantic criteria such as politeness or faithfulness to retrieved passages, while humans are needed to label data and calibrate the judge.
+  prompt: Which kinds of criteria suit an LLM judge, and what is human review needed for?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.deterministic-scorers-first
+- id: ai.evals.judge-prompt-design
+  subtopic: Scoring methods
+  kind: principle
+  claim: A judge works best with a specific rubric, one criterion at a time, and a reason before the verdict; binary pass/fail per criterion is more reliable than a 1 to 10 score.
+  prompt: How should you design an LLM judge's prompt and output for reliability?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.judge-for-rubric-criteria
+- id: ai.evals.judge-position-bias
+  subtopic: Scoring methods
+  kind: mechanism
+  claim: Position bias makes a judge prefer the first of two answers; mitigate by running both orderings and averaging.
+  prompt: What is position bias in an LLM judge and how do you mitigate it?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.judge-for-rubric-criteria
+- id: ai.evals.judge-verbosity-self-preference
+  subtopic: Scoring methods
+  kind: fact
+  claim: Judges also show verbosity bias (preferring longer answers) and self-preference (favouring outputs from their own model family).
+  prompt: Besides position bias, what two biases do LLM judges have?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.judge-for-rubric-criteria
+- id: ai.evals.calibrate-judge-with-humans
+  subtopic: Scoring methods
+  kind: procedure
+  claim: Measure the judge's agreement with human labels on a sample (e.g. 100 outputs) before trusting it.
+  prompt: How do you decide whether to trust an LLM judge?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.judge-for-rubric-criteria
+- id: ai.evals.ci-regression-suite
+  subtopic: Evals in the development loop
+  kind: procedure
+  claim: Run the eval suite in CI on every prompt, model or retrieval change and compare against the baseline.
+  prompt: When should the offline eval suite run, and against what?
+  objectives:
+  - 2
+  requires:
+  - ai.prompting.eval-before-shipping-prompts
+- id: ai.evals.per-category-breakdown
+  subtopic: Evals in the development loop
+  kind: principle
+  claim: Compare results per category, not just in aggregate, because a small average change can hide a large regression in one important category.
+  prompt: Why break eval results down by category?
+  objectives:
+  - 2
+- id: ai.evals.cost-latency-vs-quality
+  subtopic: Evals in the development loop
+  kind: tradeoff
+  claim: Track cost and latency per case alongside quality; a 2% quality gain for 3× the cost or latency may not be worth it.
+  prompt: Why track cost and latency next to quality in evals?
+  objectives:
+  - 3
+- id: ai.evals.online-production-signals
+  subtopic: Evals in the development loop
+  kind: fact
+  claim: Online signals include thumbs up/down, edits, retries, escalations to humans and task completion; A/B test larger changes and sample traffic for judge or human review.
+  prompt: What production signals can you use to evaluate an LLM feature online?
+  objectives:
+  - 2
+- id: ai.evals.failures-become-eval-cases
+  subtopic: Evals in the development loop
+  kind: principle
+  claim: Every production failure should be added to the eval set so it cannot return silently.
+  prompt: What should happen to a production failure after it is fixed?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - ai.evals.eval-input-sources
+- id: ai.evals.cheaper-model-decision
+  subtopic: Evals in the development loop
+  kind: procedure
+  claim: For a small aggregate drop on a cheaper model, break results down by category, read the newly failing cases and weigh cost and latency before deciding.
+  prompt: A cheaper model drops overall pass rate by one point; how do you decide whether to ship?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - ai.evals.per-category-breakdown
+  - ai.evals.cost-latency-vs-quality
+- id: ai.evals.overfitting-held-out-set
+  subtopic: Common pitfalls
+  kind: principle
+  claim: Tuning prompts until a small eval set passes overfits it; keep a held-out set.
+  prompt: How do you guard against overfitting to your eval set?
+  objectives:
+  - 0
+  requires:
+  - ai.evals.start-small-eval-set
+- id: ai.evals.synthetic-only-data-pitfall
+  subtopic: Common pitfalls
+  kind: principle
+  claim: Synthetic-only eval data is cleaner than real user input, so mix in real traffic.
+  prompt: Why is a purely synthetic eval set risky?
+  objectives:
+  - 0
+- id: ai.evals.agent-trajectory-evals
+  subtopic: Common pitfalls
+  kind: principle
+  claim: 'For agents, evaluate trajectories as well as the final answer: right tools, no unnecessary steps, no unsafe actions.'
+  prompt: What should agent evals check beyond the final answer?
+  objectives:
+  - 1
+- id: ai.evals.always-have-baseline
+  subtopic: Common pitfalls
+  kind: principle
+  claim: Always compare against the current production configuration on the same cases; without a baseline a score has no meaning.
+  prompt: What should every eval result be compared against?
+  objectives:
+  - 2
+- id: ai.evals.summariser-eval-approach
+  subtopic: Evals in the development loop
+  kind: procedure
+  claim: 'To evaluate a summarisation feature: build a dataset of real, varied cases, define criteria (accuracy, coverage, format), score with code plus calibrated rubric judges, then run in CI with online signals and feed failures back.'
+  prompt: How would you outline an evaluation of an LLM call-summarisation feature?
+  objectives:
+  - 0
+  - 1
+  - 2
+  - 3
+  requires:
+  - ai.evals.eval-three-components
+  - ai.evals.judge-for-rubric-criteria
+items:
+  evals-check-1-v2:
+  - ai.evals.read-outputs-error-analysis
+  - ai.evals.eval-input-sources
+  evals-check-2-v2:
+  - ai.evals.judge-position-bias
+  evals-check-3-v2:
+  - ai.evals.deterministic-scorers-first
+  evals-fire-1-v2:
+  - ai.evals.per-category-breakdown
+  evals-fire-2-v2:
+  - ai.evals.failures-become-eval-cases
+  evals-fire-3-v2:
+  - ai.evals.judge-prompt-design
+  evals-fire-4-v2:
+  - ai.evals.agent-trajectory-evals
+  evals:b1:
+  - ai.evals.deterministic-scorers-first
+  - ai.evals.judge-for-rubric-criteria
+  - ai.evals.calibrate-judge-with-humans
+  evals:b3:
+  - ai.evals.cheaper-model-decision
+  - ai.evals.per-category-breakdown
+  - ai.evals.cost-latency-vs-quality
+  evals:b5:
+  - ai.evals.summariser-eval-approach
+  - ai.evals.read-outputs-error-analysis
+  - ai.evals.judge-prompt-design

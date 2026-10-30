@@ -1,0 +1,197 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: aws-core
+source_hash: 5c53c902c1b5ef61
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.aws-core.iam-deny-wins-default-deny
+  subtopic: IAM
+  kind: principle
+  claim: 'IAM policy evaluation is default deny: anything not explicitly allowed is denied, and an explicit deny always overrides any allow.'
+  prompt: How does IAM resolve a request when one policy allows an action and another explicitly denies it?
+  objectives:
+  - 0
+- id: fundamentals.aws-core.iam-policy-structure
+  subtopic: IAM
+  kind: fact
+  claim: Policies are JSON documents that allow or deny actions on resources, optionally with conditions, and they authorise every authenticated API call.
+  prompt: What does an IAM policy specify, and what step does it govern for an API call?
+  objectives:
+  - 0
+- id: fundamentals.aws-core.roles-short-lived-credentials
+  subtopic: IAM
+  kind: mechanism
+  claim: Roles are assumed to give short-lived credentials. EC2 instance profiles, ECS task roles, Lambda execution roles and EKS IRSA give workloads credentials without stored secrets.
+  prompt: How should a workload such as an ECS service obtain credentials to access S3?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.aws-core.iam-policy-structure
+- id: fundamentals.aws-core.least-privilege
+  subtopic: IAM
+  kind: principle
+  claim: Least privilege means granting specific actions on specific resource ARNs, not broad grants such as s3:* on *.
+  prompt: What does least privilege mean when writing an IAM policy?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.aws-core.iam-policy-structure
+- id: fundamentals.aws-core.long-lived-keys-risk
+  subtopic: IAM
+  kind: principle
+  claim: Long-lived access keys are risky because leaked keys in Git are a common real breach, and bots scan public repos within minutes. Prefer SSO for users and roles for workloads.
+  prompt: Why are long-lived access keys a risk, and what replaces them?
+  objectives:
+  - 0
+- id: fundamentals.aws-core.public-vs-private-subnet
+  subtopic: 'Networking: the VPC'
+  kind: fact
+  claim: A VPC is split into subnets, each in one AZ. A public subnet routes to an internet gateway and hosts load balancers and bastions; a private subnet has no inbound internet route and hosts app servers and databases.
+  prompt: What distinguishes a public subnet from a private one, and what belongs in each?
+  objectives:
+  - 1
+- id: fundamentals.aws-core.nat-gateway-outbound
+  subtopic: 'Networking: the VPC'
+  kind: mechanism
+  claim: Private-subnet instances reach the internet outbound through a NAT gateway in a public subnet, which allows outbound connections without inbound ones.
+  prompt: How do private-subnet servers call an external API without being reachable from the internet?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.aws-core.public-vs-private-subnet
+- id: fundamentals.aws-core.vpc-endpoints-for-aws-services
+  subtopic: 'Networking: the VPC'
+  kind: mechanism
+  claim: VPC endpoints let private subnets reach AWS services such as S3 and DynamoDB without going through the NAT gateway; gateway endpoints for those two are free.
+  prompt: How can private instances reach S3 without using a NAT gateway?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - fundamentals.aws-core.nat-gateway-outbound
+- id: fundamentals.aws-core.security-groups-vs-nacls
+  subtopic: 'Networking: the VPC'
+  kind: fact
+  claim: Security groups are stateful, per-instance allow lists, so return traffic is allowed automatically. Network ACLs are stateless, per-subnet rules; most designs rely on security groups.
+  prompt: How do security groups differ from network ACLs?
+  objectives:
+  - 1
+- id: fundamentals.aws-core.tier-chained-security-groups
+  subtopic: 'Networking: the VPC'
+  kind: procedure
+  claim: In a three-tier design only the load balancer is internet-facing, and each tier's security group admits traffic only from the tier in front of it (for example 5432 from the app tier's security group).
+  prompt: How do you restrict access between tiers in a three-tier VPC design?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.aws-core.security-groups-vs-nacls
+  - fundamentals.aws-core.public-vs-private-subnet
+- id: fundamentals.aws-core.lambda-vs-containers
+  subtopic: Compute and storage choices
+  kind: tradeoff
+  claim: Lambda suits short, spiky, event-driven or scheduled work. Steady high-throughput services, long-lived connections such as websockets, and long jobs suit containers or EC2.
+  prompt: When is Lambda the better default and when are containers or EC2?
+  objectives:
+  - 2
+- id: fundamentals.aws-core.lambda-15-minute-limit
+  subtopic: Compute and storage choices
+  kind: fact
+  claim: Lambda caps a single invocation at 15 minutes; longer jobs belong on containers, EC2, Batch or Step Functions.
+  prompt: What is Lambda's maximum execution time per invocation?
+  objectives:
+  - 2
+- id: fundamentals.aws-core.s3-characteristics
+  subtopic: Compute and storage choices
+  kind: fact
+  claim: S3 is object storage with eleven nines of durability and strongly consistent reads after writes. It suits files, backups and data lakes, but is not a filesystem and has no partial updates.
+  prompt: What are S3's key properties and limits?
+  objectives:
+  - 2
+- id: fundamentals.aws-core.rds-multiaz-vs-read-replica
+  subtopic: Compute and storage choices
+  kind: mechanism
+  claim: RDS Multi-AZ keeps a synchronous standby for failover (availability); read replicas are asynchronous and serve reads (scaling).
+  prompt: What is the difference between RDS Multi-AZ and a read replica?
+  objectives:
+  - 2
+  - 3
+- id: fundamentals.aws-core.dynamodb-access-patterns
+  subtopic: Compute and storage choices
+  kind: tradeoff
+  claim: DynamoDB gives single-digit-millisecond reads at any scale if you design around access patterns (partition key, sort key, GSIs); hot partitions and scans are the traps.
+  prompt: What must you do to get good DynamoDB performance, and what are its traps?
+  objectives:
+  - 2
+- id: fundamentals.aws-core.ebs-single-az
+  subtopic: Compute and storage choices
+  kind: fact
+  claim: EBS provides block volumes attached to one instance in one AZ.
+  prompt: What is the scope of an EBS volume?
+  objectives:
+  - 2
+- id: fundamentals.aws-core.messaging-glue-services
+  subtopic: Compute and storage choices
+  kind: fact
+  claim: SQS is a queue with at-least-once delivery, visibility timeouts, DLQs and FIFO ordering; SNS is pub/sub fan-out; EventBridge routes events by rules; Kinesis is an ordered stream like Kafka.
+  prompt: What roles do SQS, SNS, EventBridge and Kinesis play?
+  objectives:
+  - 2
+- id: fundamentals.aws-core.survive-az-failure
+  subtopic: Availability and cost
+  kind: principle
+  claim: To survive losing an AZ, use at least two AZs for every tier, a Multi-AZ database, and stateless app servers behind a load balancer. Multi-region is far costlier and needs a real RTO/RPO justification.
+  prompt: How do you design to survive an availability-zone failure, and when is multi-region justified?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.aws-core.rds-multiaz-vs-read-replica
+- id: fundamentals.aws-core.cost-traps-list
+  subtopic: Availability and cost
+  kind: fact
+  claim: 'Common AWS cost traps: NAT gateway data processing, cross-AZ and internet egress, idle over-provisioned instances, unattached EBS volumes and old snapshots, CloudWatch log ingestion, and DynamoDB scans.'
+  prompt: Name common AWS cost traps.
+  objectives:
+  - 3
+- id: fundamentals.aws-core.nat-cost-fix
+  subtopic: Availability and cost
+  kind: procedure
+  claim: A large NAT data-processed charge is typically fixed by adding VPC gateway endpoints for S3 and DynamoDB so that traffic bypasses the NAT.
+  prompt: How do you reduce a surprising NAT gateway data-processing bill?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.aws-core.vpc-endpoints-for-aws-services
+  - fundamentals.aws-core.cost-traps-list
+- id: fundamentals.aws-core.savings-plans-spot
+  subtopic: Availability and cost
+  kind: tradeoff
+  claim: Savings Plans or Reserved Instances suit steady load, while Spot suits interruptible batch work.
+  prompt: Which pricing options suit steady load and which suit interruptible batch work?
+  objectives:
+  - 3
+items:
+  aws-core-check-1-v2:
+  - fundamentals.aws-core.iam-deny-wins-default-deny
+  aws-core-check-2-v2:
+  - fundamentals.aws-core.roles-short-lived-credentials
+  - fundamentals.aws-core.long-lived-keys-risk
+  aws-core-check-3-v2:
+  - fundamentals.aws-core.nat-gateway-outbound
+  aws-core-fire-1-v2:
+  - fundamentals.aws-core.rds-multiaz-vs-read-replica
+  aws-core-fire-2-v2:
+  - fundamentals.aws-core.lambda-15-minute-limit
+  aws-core-fire-3-v2:
+  - fundamentals.aws-core.security-groups-vs-nacls
+  aws-core-fire-4-v2:
+  - fundamentals.aws-core.nat-cost-fix
+  - fundamentals.aws-core.vpc-endpoints-for-aws-services
+  aws-core:b3:
+  - fundamentals.aws-core.lambda-vs-containers
+  - fundamentals.aws-core.lambda-15-minute-limit

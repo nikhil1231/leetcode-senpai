@@ -16,6 +16,8 @@ Collections:
   users/{uid}/mocks/{id}               mock-interview sets + scores
   users/{uid}/sprint_rounds/{id}       sprint-rep round state
   users/{uid}/tracks/{track}/records/{key}  Fundamentals / AI / Experience / Practical records
+  users/{uid}/knowledge_events/{key}   knowledge-base answers and exposures from any source (append-only)
+  users/{uid}/knowledge_misconceptions/{key}  misconceptions per knowledge point, open or resolved
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
 import threading
@@ -640,6 +642,35 @@ class FirestoreStore:
         result = write(self.db.transaction())
         _invalidate((coll, self.uid))
         return result
+
+    # ---- knowledge base (server/knowledge_base) -------------------------------
+    # Events are append-only and keyed by the source's idempotency key, so a retried post
+    # records once. Misconceptions are updated in place (open → resolved).
+    KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions')
+
+    def _knowledge(self, coll):
+        if coll not in self.KNOWLEDGE:
+            raise ValueError(f"unknown knowledge collection {coll}")
+        return self._user_ref().collection(coll)
+
+    def list_knowledge(self, coll):
+        return list(_cached((coll, self.uid), lambda: [d.to_dict() for d in self._knowledge(coll).stream()]))
+
+    def create_knowledge(self, coll, key, doc):
+        """Create once; a duplicate (retried or concurrent) post returns None."""
+        from google.api_core.exceptions import AlreadyExists
+        try:
+            self._knowledge(coll).document(key).create({**doc, '_key': key})
+        except AlreadyExists:
+            return None
+        _invalidate((coll, self.uid))
+        return {**doc, '_key': key}
+
+    def put_knowledge(self, coll, key, doc):
+        doc = {**doc, '_key': key}
+        self._knowledge(coll).document(key).set(doc)
+        _invalidate((coll, self.uid))
+        return doc
 
     # ---- playbooks (per-category cheat sheets) ------------------------------
     def _playbooks(self):

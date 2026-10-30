@@ -1,0 +1,249 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: search-index
+source_hash: bac28ed710a2f996
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.search-index.like-leading-wildcard-scan
+  subtopic: Why LIKE doesn't scale
+  kind: mechanism
+  claim: A B-tree is sorted from a column's first character, so it helps with LIKE 'running%' but not '%running%'. A leading wildcard gives no starting point, so the database must examine every row.
+  prompt: Why can a B-tree index not speed up a LIKE query with a leading wildcard such as '%shoe%'?
+  objectives:
+  - 0
+  same_as: sd.indexes.leading-wildcard
+- id: sd.search-index.like-lacks-search-semantics
+  subtopic: Why LIKE doesn't scale
+  kind: fact
+  claim: LIKE has no notion of word boundaries, plurals, synonyms, typos or which match is better, so it cannot rank results.
+  prompt: Besides the full scan, what text-search features does LIKE lack?
+  objectives:
+  - 0
+- id: sd.search-index.search-load-isolation
+  subtopic: Introduction
+  kind: principle
+  claim: Running search scans on the primary transactional database can pin its CPU and break critical paths such as checkout. A dedicated search index fed from the change stream removes search from that path.
+  prompt: Why should search be moved off the primary transactional database?
+  objectives:
+  - 0
+  - 3
+- id: sd.search-index.inverted-index-structure
+  subtopic: The inverted index
+  kind: mechanism
+  claim: An inverted index maps each term to a postings list of the documents (and positions) containing it. Lists are stored sorted and compressed so they can be intersected or unioned quickly.
+  prompt: What does an inverted index store, and why is it fast to query?
+  objectives:
+  - 0
+- id: sd.search-index.query-path-postings-combine
+  subtopic: The inverted index
+  kind: procedure
+  claim: A text query is analysed into terms, each term's postings list is looked up, the lists are intersected (all terms) or unioned (any term) to find candidates, then candidates are scored and the top-k returned.
+  prompt: What are the steps a search engine takes to answer a text query?
+  objectives:
+  - 0
+  requires:
+  - sd.search-index.inverted-index-structure
+- id: sd.search-index.analyzer-index-query-match
+  subtopic: The inverted index
+  kind: principle
+  claim: The same text analysis must run at index time and query time. A mismatch, such as not stemming the query, silently misses documents and causes many 'search is broken' bugs.
+  prompt: Why must index-time and query-time analysis agree?
+  objectives:
+  - 0
+  requires:
+  - sd.search-index.query-path-postings-combine
+- id: sd.search-index.analysis-pipeline-steps
+  subtopic: The inverted index
+  kind: procedure
+  claim: Text analysis tokenises, normalises (lowercase, strip accents), optionally drops stop words, stems or lemmatises (running, ran to run), and can apply synonyms (sneaker to trainer).
+  prompt: What stages make up a text analysis pipeline?
+  objectives:
+  - 0
+- id: sd.search-index.bm25-signals
+  subtopic: 'Relevance: TF-IDF and BM25'
+  kind: mechanism
+  claim: BM25 combines term frequency (with diminishing returns), inverse document frequency (rare terms count more) and length normalisation (matches in short fields count more). It is the default in Lucene, Elasticsearch and OpenSearch.
+  prompt: Which signals does BM25 combine?
+  objectives:
+  - 1
+  requires:
+  - sd.search-index.inverted-index-structure
+- id: sd.search-index.idf-rare-terms-dominate
+  subtopic: 'Relevance: TF-IDF and BM25'
+  kind: principle
+  claim: IDF weights rare terms more because they discriminate between documents. Very common words like 'the' score near zero and are often removed as stop words.
+  prompt: Why does a rare term contribute more to BM25 than a common word?
+  objectives:
+  - 1
+  requires:
+  - sd.search-index.bm25-signals
+- id: sd.search-index.phrase-matching-positions
+  subtopic: 'Relevance: TF-IDF and BM25'
+  kind: mechanism
+  claim: Phrase matching uses word positions stored in postings to require adjacent words, which matters for names like 'north face' whose individual words are common.
+  prompt: Why do postings store positions, and when does that help?
+  objectives:
+  - 1
+  requires:
+  - sd.search-index.inverted-index-structure
+- id: sd.search-index.ranking-tuning-levers
+  subtopic: 'Relevance: TF-IDF and BM25'
+  kind: tradeoff
+  claim: Beyond BM25, ranking is tuned with field boosts (title over description), freshness, popularity, personalisation, business rules, and learned re-ranking of the top results.
+  prompt: What levers are layered on top of BM25 to tune relevance?
+  objectives:
+  - 1
+  requires:
+  - sd.search-index.bm25-signals
+- id: sd.search-index.document-partitioned-shards
+  subtopic: Scaling a search cluster
+  kind: mechanism
+  claim: Indexes are document-partitioned into shards, each a self-contained index over a subset of documents. Replicas add read throughput and availability.
+  prompt: How is a search index partitioned and replicated across a cluster?
+  objectives:
+  - 2
+  requires:
+  - sd.partitioning.local-secondary-index
+- id: sd.search-index.scatter-gather-top-k
+  subtopic: Scaling a search cluster
+  kind: mechanism
+  claim: A coordinating node sends the query to every shard, since matches can be anywhere. Each shard returns its own top-k, and the coordinator merges them into the global top-k and fetches the documents. Latency is set by the slowest shard.
+  prompt: How does a sharded search cluster answer a top-k query, and what sets its latency?
+  objectives:
+  - 2
+  requires:
+  - sd.search-index.document-partitioned-shards
+  - sd.partitioning.scatter-gather-cost
+- id: sd.search-index.deep-pagination-cost
+  subtopic: Scaling a search cluster
+  kind: principle
+  claim: With offset pagination each shard must return offset + size results, so the coordinator merges shards × (offset + size) candidates. Cap depth (Elasticsearch's default max window is 10,000) and use search_after cursors.
+  prompt: Why is deep offset pagination expensive in a sharded search cluster, and what is the fix?
+  objectives:
+  - 2
+  requires:
+  - sd.search-index.scatter-gather-top-k
+  - sd.api-contracts.offset-deep-scan-cost
+- id: sd.search-index.shard-sizing
+  subtopic: Scaling a search cluster
+  kind: tradeoff
+  claim: Size shards at a few tens of GB. Too many tiny shards waste overhead, while too few large ones limit parallelism and slow recovery.
+  prompt: What is the trade-off in choosing shard size?
+  objectives:
+  - 2
+- id: sd.search-index.index-derived-view-cdc
+  subtopic: Keeping the index in sync
+  kind: principle
+  claim: The search index is a derived view, not the source of truth. Feed it asynchronously from the database via CDC or an outbox, which captures every committed change in order and can be replayed.
+  prompt: How should a search index be fed from the database, and why?
+  objectives:
+  - 3
+- id: sd.search-index.dual-write-risk
+  subtopic: Keeping the index in sync
+  kind: tradeoff
+  claim: Updating the index synchronously in the API request is a dual write. If the index call fails after the DB commit the two diverge, and search latency couples to write latency.
+  prompt: What goes wrong when the API writes to both the database and the search index synchronously?
+  objectives:
+  - 3
+  requires:
+  - sd.search-index.index-derived-view-cdc
+  - sd.outbox.commit-then-publish-loses-events
+- id: sd.search-index.versioned-idempotent-indexing
+  subtopic: Keeping the index in sync
+  kind: mechanism
+  claim: Indexing keyed by document ID with an external version makes writes idempotent and order-safe, so retries or out-of-order deliveries cannot overwrite a newer document with an older one.
+  prompt: How do you stop an out-of-order update overwriting a newer document in the index?
+  objectives:
+  - 3
+  requires:
+  - sd.search-index.index-derived-view-cdc
+- id: sd.search-index.propagate-deletes
+  subtopic: Keeping the index in sync
+  kind: principle
+  claim: Deletions must be propagated to the index (delete or hide by ID). Otherwise delisted products keep appearing, which is a legal and trust problem.
+  prompt: Why must an indexing worker handle delete events?
+  objectives:
+  - 3
+  requires:
+  - sd.search-index.index-derived-view-cdc
+- id: sd.search-index.alias-zero-downtime-reindex
+  subtopic: Keeping the index in sync
+  kind: procedure
+  claim: For mapping or analyzer changes, build a new index in the background, backfill and catch up from the change stream, then switch an alias to it. Rollback is pointing the alias back.
+  prompt: How do you change index mappings with zero downtime?
+  objectives:
+  - 3
+  requires:
+  - sd.search-index.index-derived-view-cdc
+- id: sd.search-index.near-real-time-refresh
+  subtopic: Keeping the index in sync
+  kind: mechanism
+  claim: Engines like Elasticsearch make new documents searchable only after a refresh (default every second), so save-then-search can miss the item. Mitigate by showing the saved item from the database, refreshing on demand (costly), or accepting the lag.
+  prompt: Why might a just-saved item be missing from search, and how can the product cope?
+  objectives:
+  - 3
+- id: sd.search-index.ann-vector-search
+  subtopic: The inverted index
+  kind: tradeoff
+  claim: Vector search uses approximate nearest neighbour indexes (HNSW, IVF with product quantisation), trading a little recall for large speed and memory gains. Hybrid search merges BM25 for exact terms with vectors for meaning, e.g. via reciprocal rank fusion.
+  prompt: What does ANN vector search trade away, and why combine it with BM25?
+  objectives:
+  - 1
+- id: sd.search-index.postgres-fts-vs-engine
+  subtopic: Scaling a search cluster
+  kind: tradeoff
+  claim: Postgres full-text search (tsvector with a GIN index) suits modest scale. Dedicated engines win on relevance tooling, analyzers, faceting, scale-out and isolating search load from the transactional database.
+  prompt: When is Postgres full-text search enough, and why choose a dedicated search engine?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.search-index.inverted-index-structure
+items:
+  search-index-check-1-v2:
+  - sd.search-index.like-leading-wildcard-scan
+  search-index-check-2-v2:
+  - sd.search-index.query-path-postings-combine
+  - sd.search-index.analyzer-index-query-match
+  search-index-check-3-v2:
+  - sd.search-index.bm25-signals
+  search-index-check-4-v2:
+  - sd.search-index.dual-write-risk
+  - sd.search-index.index-derived-view-cdc
+  search-index-fire-1-v2:
+  - sd.search-index.near-real-time-refresh
+  search-index-fire-2-v2:
+  - sd.search-index.deep-pagination-cost
+  search-index-fire-3-v2:
+  - sd.search-index.versioned-idempotent-indexing
+  search-index-fire-4-v2:
+  - sd.search-index.alias-zero-downtime-reindex
+  search-index-fire-5-v2:
+  - sd.search-index.ann-vector-search
+  search-index:b1:
+  - sd.search-index.analyzer-index-query-match
+  - sd.search-index.inverted-index-structure
+  - sd.search-index.analysis-pipeline-steps
+  search-index:b11:
+  - sd.search-index.deep-pagination-cost
+  - sd.search-index.scatter-gather-top-k
+  search-index:b13:
+  - sd.search-index.query-path-postings-combine
+  - sd.search-index.inverted-index-structure
+  - sd.search-index.analysis-pipeline-steps
+  search-index:b3:
+  - sd.search-index.idf-rare-terms-dominate
+  - sd.search-index.phrase-matching-positions
+  search-index:b7:
+  - sd.search-index.index-derived-view-cdc
+  - sd.search-index.dual-write-risk
+  - sd.search-index.alias-zero-downtime-reindex
+  search-index:b9:
+  - sd.search-index.versioned-idempotent-indexing
+  - sd.search-index.propagate-deletes

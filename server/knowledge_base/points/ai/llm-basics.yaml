@@ -1,0 +1,205 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: llm-basics
+source_hash: 8e5440c20d5bbf42
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.llm-basics.token-definition-and-ratio
+  subtopic: Tokens
+  kind: fact
+  claim: Models read and write tokens, sub-word pieces from a fixed vocabulary; English averages about 4 characters or 0.75 words per token, so 3,000 words is about 4,000 tokens.
+  prompt: Roughly how many tokens is 3,000 words of English prose, and what is the rule of thumb?
+  objectives:
+  - 0
+- id: ai.llm-basics.token-heavy-content
+  subtopic: Tokens
+  kind: fact
+  claim: Code, non-English text and unusual strings such as UUIDs or base64 use far more tokens per character than English prose.
+  prompt: Which kinds of content use many more tokens per character than English prose?
+  objectives:
+  - 0
+  requires:
+  - ai.llm-basics.token-definition-and-ratio
+- id: ai.llm-basics.everything-metered-in-tokens
+  subtopic: Tokens
+  kind: principle
+  claim: Context limit, price, rate limits and latency are all metered in tokens.
+  prompt: What quantities are metered in tokens when using an LLM API?
+  objectives:
+  - 0
+  requires:
+  - ai.llm-basics.token-definition-and-ratio
+- id: ai.llm-basics.output-pricing-higher
+  subtopic: Tokens
+  kind: fact
+  claim: Input and output tokens are priced separately, and output tokens usually cost several times more than input tokens.
+  prompt: Which tokens are usually the most expensive per token, and by roughly how much?
+  objectives:
+  - 0
+  requires:
+  - ai.llm-basics.everything-metered-in-tokens
+- id: ai.llm-basics.prefill-phase
+  subtopic: Prefill and decode
+  kind: mechanism
+  claim: Prefill processes the whole prompt in parallel to build the attention cache; it is fast per token and determines time to first token.
+  prompt: What happens during prefill and which latency metric does it determine?
+  objectives:
+  - 1
+- id: ai.llm-basics.decode-phase
+  subtopic: Prefill and decode
+  kind: mechanism
+  claim: Decode generates output one token at a time, each step attending over everything before it, so it is slow per token and sequential.
+  prompt: How are output tokens generated during decode, and why is it slow?
+  objectives:
+  - 1
+- id: ai.llm-basics.latency-formula
+  subtopic: Prefill and decode
+  kind: procedure
+  claim: Latency is roughly TTFT + output_tokens / tokens_per_second; for example 0.5 s TTFT plus 400 tokens at 80 tokens/s is about 5.5 s.
+  prompt: How do you estimate total response latency from TTFT, output length and decode speed?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - ai.llm-basics.prefill-phase
+  - ai.llm-basics.decode-phase
+- id: ai.llm-basics.output-length-latency-lever
+  subtopic: Prefill and decode
+  kind: principle
+  claim: 'Output length is usually the biggest latency lever: a 50-token JSON answer instead of a 600-token essay can be about 10 times faster. Other levers are a terser format, a token cap or a smaller model.'
+  prompt: What is usually the biggest lever for reducing LLM response latency?
+  objectives:
+  - 1
+  requires:
+  - ai.llm-basics.latency-formula
+- id: ai.llm-basics.prompt-caching
+  subtopic: Prefill and decode
+  kind: mechanism
+  claim: Prompt caching reuses the prefill for a repeated prefix such as a long system prompt or few-shot examples, cutting cost and TTFT for the cached part. Stable content should go first.
+  prompt: What does prompt caching reduce, and how should a prompt be ordered to benefit?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - ai.llm-basics.prefill-phase
+- id: ai.llm-basics.context-window-definition
+  subtopic: Context windows
+  kind: fact
+  claim: The context window is the maximum number of tokens, prompt plus output, that the model can attend to in one call.
+  prompt: What does the context window limit?
+  objectives:
+  - 0
+  requires:
+  - ai.llm-basics.token-definition-and-ratio
+- id: ai.llm-basics.stateless-calls-memory
+  subtopic: Context windows
+  kind: mechanism
+  claim: Nothing persists between calls; chat 'memory' comes from the application resending history, summarising it, or retrieving it.
+  prompt: Why does a chatbot appear to remember earlier messages?
+  objectives: []
+  requires:
+  - ai.llm-basics.context-window-definition
+- id: ai.llm-basics.long-context-costs-and-position
+  subtopic: Context windows
+  kind: tradeoff
+  claim: 'Long contexts cost more and add latency, and models use them unevenly: material in the middle is used less reliably than at the start or end. So put instructions and key material where they are noticed, and retrieve rather than dump everything.'
+  prompt: What are the downsides of long contexts and how should you place content?
+  objectives: []
+  requires:
+  - ai.llm-basics.context-window-definition
+- id: ai.llm-basics.temperature-effect
+  subtopic: Sampling
+  kind: mechanism
+  claim: 'Temperature rescales the next-token distribution: near 0 it almost always picks the most likely token, while higher values flatten it and give more varied output.'
+  prompt: What does temperature do to the next-token distribution?
+  objectives:
+  - 2
+- id: ai.llm-basics.temperature-choice
+  subtopic: Sampling
+  kind: tradeoff
+  claim: Use low temperature (near 0) for extraction, classification and code; use higher (about 0.7 to 1) for brainstorming and diverse generation, where low temperature gives near-duplicates.
+  prompt: When should you use low versus higher temperature?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-basics.temperature-effect
+- id: ai.llm-basics.top-p-top-k
+  subtopic: Sampling
+  kind: mechanism
+  claim: Top-p (nucleus) samples only from the smallest set of tokens whose probabilities sum to p; top-k keeps only the k most likely tokens.
+  prompt: How do top-p and top-k restrict sampling?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-basics.temperature-effect
+- id: ai.llm-basics.temperature-zero-not-deterministic
+  subtopic: Sampling
+  kind: principle
+  claim: Even at temperature 0 outputs are not guaranteed identical across calls, because batching and floating-point differences cause small variations; do not rely on bit-exact reproducibility.
+  prompt: Does temperature 0 guarantee identical output for identical input?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-basics.temperature-effect
+- id: ai.llm-basics.hallucination-cause
+  subtopic: Why models hallucinate
+  kind: mechanism
+  claim: Models are trained to produce plausible continuations, not to check facts, so when the answer is poorly represented in weights or context a fluent but wrong continuation is still likely.
+  prompt: Why do LLMs hallucinate?
+  objectives:
+  - 3
+- id: ai.llm-basics.grounding-reduces-hallucination
+  subtopic: Why models hallucinate
+  kind: tradeoff
+  claim: Grounding, putting source material in context and requiring citations to it, is the most direct way to reduce hallucinated facts because it makes answers checkable.
+  prompt: What most directly reduces hallucinated facts about your own documents?
+  objectives:
+  - 3
+  requires:
+  - ai.llm-basics.hallucination-cause
+- id: ai.llm-basics.other-hallucination-mitigations
+  subtopic: Why models hallucinate
+  kind: fact
+  claim: Other mitigations are allowing 'I don't know', narrower tasks, structured outputs validated in code, verification steps (checker model or deterministic checks) and evals that measure hallucination.
+  prompt: Besides grounding, what reduces hallucination?
+  objectives:
+  - 3
+  requires:
+  - ai.llm-basics.hallucination-cause
+- id: ai.llm-basics.fine-tuning-limits
+  subtopic: Why models hallucinate
+  kind: principle
+  claim: Fine-tuning teaches format and style much more than it adds reliable facts, so it is a poor fix for factual hallucination.
+  prompt: Is fine-tuning a reliable way to add facts to a model?
+  objectives:
+  - 3
+  requires:
+  - ai.llm-basics.hallucination-cause
+items:
+  llm-basics-check-1-v2:
+  - ai.llm-basics.output-length-latency-lever
+  - ai.llm-basics.decode-phase
+  llm-basics-check-2-v2:
+  - ai.llm-basics.token-definition-and-ratio
+  llm-basics-check-3-v2:
+  - ai.llm-basics.temperature-zero-not-deterministic
+  - ai.llm-basics.temperature-effect
+  llm-basics-fire-1-v2:
+  - ai.llm-basics.prompt-caching
+  llm-basics-fire-2-v2:
+  - ai.llm-basics.stateless-calls-memory
+  llm-basics-fire-3-v2:
+  - ai.llm-basics.grounding-reduces-hallucination
+  llm-basics-fire-4-v2:
+  - ai.llm-basics.output-pricing-higher
+  llm-basics:b1:
+  - ai.llm-basics.latency-formula
+  - ai.llm-basics.prefill-phase
+  llm-basics:b3:
+  - ai.llm-basics.temperature-choice

@@ -1,0 +1,285 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: http-cdn
+source_hash: d85eff74d5a2bd81
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.http-cdn.two-cache-questions
+  subtopic: Two questions every cache asks
+  kind: principle
+  claim: Every cache asks whether it may store and share a response (no-store, private, public) and how long it can serve it without asking the origin (max-age, s-maxage), then how to check it is still good (ETag, Last-Modified).
+  prompt: What two questions does any HTTP cache need answered for each response?
+  objectives:
+  - 0
+  - 1
+- id: sd.http-cdn.conditional-revalidation-304
+  subtopic: Two questions every cache asks
+  kind: mechanism
+  claim: When a stored response goes stale, the cache sends If-None-Match with the stored ETag; if it still matches, the origin returns 304 Not Modified with no body and the cache reuses its copy and resets its freshness.
+  prompt: How does ETag and If-None-Match revalidation work, and what does the origin return if nothing changed?
+  objectives:
+  - 1
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.revalidation-saves-body
+  subtopic: Two questions every cache asks
+  kind: principle
+  claim: Revalidation still costs a round trip, but a 304 saves transferring the body and often the origin's rendering work.
+  prompt: What does a 304 revalidation save compared with a full fetch, and what does it not save?
+  objectives:
+  - 1
+  requires:
+  - sd.http-cdn.conditional-revalidation-304
+- id: sd.http-cdn.no-cache-vs-no-store
+  subtopic: The directives you actually use
+  kind: fact
+  claim: no-cache allows storage but requires revalidation before every use, while no-store forbids storing the response anywhere.
+  prompt: What is the difference between Cache-Control no-cache and no-store?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.private-vs-public
+  subtopic: The directives you actually use
+  kind: fact
+  claim: private lets only the end user's browser store a response; public lets shared caches store it, even if the request carried Authorization.
+  prompt: Who may store a response marked private, and what does public add?
+  objectives:
+  - 0
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.s-maxage-shared-ttl
+  subtopic: The directives you actually use
+  kind: fact
+  claim: s-maxage overrides max-age for shared caches only, allowing a short browser TTL with a longer, purgeable edge TTL.
+  prompt: What does s-maxage do that max-age does not?
+  objectives:
+  - 0
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.immutable-directive
+  subtopic: The directives you actually use
+  kind: fact
+  claim: immutable says the response will not change during its freshness life, so browsers do not revalidate even on reload; it suits content-hashed assets.
+  prompt: What does the immutable directive tell a browser?
+  objectives:
+  - 0
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.stale-while-revalidate-if-error
+  subtopic: The directives you actually use
+  kind: mechanism
+  claim: stale-while-revalidate serves a stale copy for up to N seconds while refreshing in the background, keeping latency flat; stale-if-error serves stale for up to N seconds when the origin errors, improving availability.
+  prompt: What do stale-while-revalidate and stale-if-error each do?
+  objectives:
+  - 0
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.personalised-never-shared
+  subtopic: The directives you actually use
+  kind: principle
+  claim: Personalised responses must be private or no-store, never public; relying on no-cache alone depends on every intermediary revalidating correctly, and a public header on personal pages leaks data to other users.
+  prompt: Which Cache-Control should a personalised page carry, and why is public or bare no-cache risky?
+  objectives:
+  - 0
+  requires:
+  - sd.http-cdn.private-vs-public
+  - sd.http-cdn.no-cache-vs-no-store
+- id: sd.http-cdn.directive-per-resource-type
+  subtopic: The directives you actually use
+  kind: procedure
+  claim: Hashed assets get public, max-age=31536000, immutable; HTML gets no-cache with an ETag; personal API data gets private with a short max-age; secrets get no-store; hot public APIs get a short s-maxage with stale-while-revalidate.
+  prompt: Which Cache-Control would you choose for hashed assets, HTML, personal data, secrets and a hot public API?
+  objectives:
+  - 0
+  requires:
+  - sd.http-cdn.immutable-directive
+  - sd.http-cdn.no-cache-vs-no-store
+  - sd.http-cdn.s-maxage-shared-ttl
+- id: sd.http-cdn.default-cache-key
+  subtopic: Cache keys and `Vary`
+  kind: fact
+  claim: A cache key is by default roughly method, host, path and query string; Vary adds named request headers (such as Accept-Encoding) to it.
+  prompt: What makes up a default cache key, and what does Vary add?
+  objectives:
+  - 2
+- id: sd.http-cdn.vary-cookie-kills-hit-ratio
+  subtopic: Cache keys and `Vary`
+  kind: tradeoff
+  claim: 'Vary: Cookie gives every user a separate entry so the hit ratio falls to near zero; instead normalise the key to the one cookie value that matters or put the variant in the URL.'
+  prompt: 'Why is Vary: Cookie harmful, and what is the better approach?'
+  objectives:
+  - 2
+  requires:
+  - sd.http-cdn.default-cache-key
+- id: sd.http-cdn.key-normalisation
+  subtopic: Cache keys and `Vary`
+  kind: procedure
+  claim: 'Raise hit ratio by normalising keys: strip tracking parameters (utm_*, fbclid), sort query parameters and lowercase the host, so equivalent URLs share one entry.'
+  prompt: How can you normalise cache keys to improve hit ratio?
+  objectives:
+  - 2
+  requires:
+  - sd.http-cdn.default-cache-key
+- id: sd.http-cdn.hashed-filename-release
+  subtopic: 'Versioned assets: the release pattern'
+  kind: procedure
+  claim: Name assets with a content hash and cache them for a year as immutable, serve the referencing HTML with no-cache and an ETag, so a deploy changes the filenames and browsers fetch only changed files while old URLs keep working.
+  prompt: How do content-hashed filenames allow forever-caching yet immediate releases?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.http-cdn.immutable-directive
+  - sd.http-cdn.no-cache-vs-no-store
+- id: sd.http-cdn.dont-purge-browser-assets
+  subtopic: 'Versioned assets: the release pattern'
+  kind: principle
+  claim: You cannot purge browser caches, so change the URL for assets rather than purging and hoping; browsers keep old copies for their full max-age.
+  prompt: Why is purging a poor way to release new assets?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.http-cdn.hashed-filename-release
+- id: sd.http-cdn.origin-shield-tiering
+  subtopic: How a CDN serves a request
+  kind: mechanism
+  claim: With tiered caching, edge PoPs miss into a shared regional shield rather than the origin, so a purge or new popular file does not cause one origin fetch per PoP.
+  prompt: What does an origin shield do for edge misses?
+  objectives:
+  - 3
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.request-collapsing
+  subtopic: How a CDN serves a request
+  kind: mechanism
+  claim: Request collapsing merges concurrent misses for the same object at a node into one upstream fetch, giving stampede protection, but only for cacheable responses.
+  prompt: What is request collapsing and when does it apply?
+  objectives:
+  - 3
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.purge-by-surrogate-key
+  subtopic: How a CDN serves a request
+  kind: mechanism
+  claim: Tagging responses with Surrogate-Key lets one call purge every response with that tag, typically within seconds, which is more precise than purging by URL or wildcard.
+  prompt: How does purge by tag (surrogate key) work and why is it better than URL purging?
+  objectives:
+  - 3
+  requires:
+  - sd.http-cdn.two-cache-questions
+- id: sd.http-cdn.origin-offload-calculation
+  subtopic: How a CDN serves a request
+  kind: procedure
+  claim: 'Origin traffic equals total traffic times (1 minus hit ratio): a 95% hit ratio means the origin serves 1 in 20 requests, and 20 Gbps becomes 1 Gbps.'
+  prompt: How do you compute origin bandwidth from total traffic and hit ratio?
+  objectives:
+  - 3
+- id: sd.http-cdn.byte-vs-request-hit-ratio
+  subtopic: How a CDN serves a request
+  kind: principle
+  claim: Byte hit ratio can differ greatly from request hit ratio, because a few large unpopular objects can dominate origin bytes even when most small requests hit.
+  prompt: Why can origin load stay high despite a 99% request hit ratio?
+  objectives:
+  - 3
+  requires:
+  - sd.http-cdn.origin-offload-calculation
+- id: sd.http-cdn.micro-caching
+  subtopic: Dynamic and private content at the edge
+  kind: tradeoff
+  claim: Caching a hot public API response for 1-5 seconds (s-maxage=2) cuts thousands of requests per second on one URL to about one origin request per interval per tier, with collapsing absorbing the rest.
+  prompt: What does micro-caching a hot public API response achieve?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.http-cdn.s-maxage-shared-ttl
+  - sd.http-cdn.request-collapsing
+- id: sd.http-cdn.signed-urls-private-media
+  subtopic: Dynamic and private content at the edge
+  kind: mechanism
+  claim: 'Private content is served from the edge with short-lived signed URLs or cookies: the origin authorises the user and issues the signature, and the edge verifies it without calling the origin.'
+  prompt: How is private media served from a CDN edge without making it public?
+  objectives:
+  - 3
+  requires:
+  - sd.http-cdn.private-vs-public
+- id: sd.http-cdn.split-personal-from-public
+  subtopic: Dynamic and private content at the edge
+  kind: principle
+  claim: Separate personal parts from public ones (for example load a personalised header from a private endpoint) so the public page stays cacheable, and use tag purges rather than short TTLs to make edits visible.
+  prompt: How do you keep a page cacheable when part of it is personalised?
+  objectives:
+  - 0
+  - 2
+  - 3
+  requires:
+  - sd.http-cdn.personalised-never-shared
+  - sd.http-cdn.purge-by-surrogate-key
+- id: sd.http-cdn.long-edge-ttl-with-purge
+  subtopic: Dynamic and private content at the edge
+  kind: tradeoff
+  claim: For content needing quick corrections, use a long s-maxage at the edge, a short browser max-age and a tag purge on every edit.
+  prompt: How can a CDN hold articles for a day yet show corrections within a minute?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.http-cdn.s-maxage-shared-ttl
+  - sd.http-cdn.purge-by-surrogate-key
+items:
+  http-cdn-check-1-v2:
+  - sd.http-cdn.no-cache-vs-no-store
+  http-cdn-check-2-v2:
+  - sd.http-cdn.personalised-never-shared
+  - sd.http-cdn.private-vs-public
+  http-cdn-check-3-v2:
+  - sd.http-cdn.conditional-revalidation-304
+  - sd.http-cdn.revalidation-saves-body
+  http-cdn-check-4-v2:
+  - sd.http-cdn.origin-offload-calculation
+  - sd.http-cdn.byte-vs-request-hit-ratio
+  http-cdn-fire-1-v2:
+  - sd.http-cdn.vary-cookie-kills-hit-ratio
+  http-cdn-fire-2-v2:
+  - sd.http-cdn.origin-shield-tiering
+  - sd.http-cdn.request-collapsing
+  http-cdn-fire-3-v2:
+  - sd.http-cdn.long-edge-ttl-with-purge
+  - sd.http-cdn.purge-by-surrogate-key
+  - sd.http-cdn.s-maxage-shared-ttl
+  http-cdn-fire-4-v2:
+  - sd.http-cdn.signed-urls-private-media
+  http-cdn-fire-5-v2:
+  - sd.http-cdn.key-normalisation
+  - sd.http-cdn.stale-while-revalidate-if-error
+  - sd.http-cdn.vary-cookie-kills-hit-ratio
+  http-cdn:b1:
+  - sd.http-cdn.conditional-revalidation-304
+  - sd.http-cdn.revalidation-saves-body
+  http-cdn:b10:
+  - sd.http-cdn.origin-offload-calculation
+  - sd.http-cdn.byte-vs-request-hit-ratio
+  http-cdn:b12:
+  - sd.http-cdn.split-personal-from-public
+  - sd.http-cdn.long-edge-ttl-with-purge
+  - sd.http-cdn.immutable-directive
+  http-cdn:b14:
+  - sd.http-cdn.hashed-filename-release
+  - sd.http-cdn.immutable-directive
+  http-cdn:b3:
+  - sd.http-cdn.personalised-never-shared
+  - sd.http-cdn.no-cache-vs-no-store
+  http-cdn:b4:
+  - sd.http-cdn.directive-per-resource-type
+  - sd.http-cdn.private-vs-public
+  http-cdn:b6:
+  - sd.http-cdn.personalised-never-shared
+  - sd.http-cdn.vary-cookie-kills-hit-ratio

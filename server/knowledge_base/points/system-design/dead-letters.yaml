@@ -1,0 +1,255 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: dead-letters
+source_hash: efe1810368a1eb56
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.dead-letters.poison-message-stalls-partition
+  subtopic: Introduction
+  kind: mechanism
+  claim: In Kafka a consumer's progress per partition is just an offset, so a poison message it keeps retrying without committing stalls every later message in that partition while the process still looks healthy.
+  prompt: What happens to a Kafka partition when the consumer endlessly retries one failing message without committing its offset?
+  objectives:
+  - 1
+  requires:
+  - sd.acknowledgements.at-least-once-ack-after
+  - sd.queue-basics.retained-log-replay
+- id: sd.dead-letters.alert-on-lag-age
+  subtopic: Introduction
+  kind: principle
+  claim: Alert on per-partition lag and the age of the oldest unprocessed message, plus DLQ inflow and retry rate by error type, not on whether the consumer process is running.
+  prompt: Which signals catch a stuck partition that a 'process is up' health check misses?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.queue-basics.age-over-depth
+- id: sd.dead-letters.three-failure-classes
+  subtopic: Not all failures are equal
+  kind: principle
+  claim: Failures are transient (retry with backoff), permanent (dead-letter), or dependency-wide (pause or slow the whole consumer), and each needs a different response.
+  prompt: What three classes of failure should a consumer distinguish, and how does it respond to each?
+  objectives:
+  - 0
+  requires:
+  - sd.retry-identity.which-errors-retry
+- id: sd.dead-letters.permanent-failures-dead-letter
+  subtopic: Not all failures are equal
+  kind: principle
+  claim: Permanent failures such as schema validation errors or references to nonexistent records will not succeed on retry, so dead-letter them quickly with error context for a human or code fix.
+  prompt: How should a consumer handle a message that fails validation because a required field is missing?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.dead-letters.three-failure-classes
+- id: sd.dead-letters.transient-retry-jitter
+  subtopic: Not all failures are equal
+  kind: fact
+  claim: Transient failures like a single 503 or a hot-row lock timeout usually clear soon, so retry with backoff and jitter.
+  prompt: How should you handle a one-off 503 or lock timeout?
+  objectives:
+  - 0
+  requires:
+  - sd.retry-identity.backoff-with-jitter
+- id: sd.dead-letters.dependency-outage-pause-consumer
+  subtopic: Not all failures are equal
+  kind: tradeoff
+  claim: When every message fails because a dependency is down or rate-limiting, pause, back off or circuit-break the whole consumer rather than dead-lettering, which would flood the DLQ with good messages needing redrive.
+  prompt: What should a consumer do when the database is refusing every connection, and why?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.dead-letters.three-failure-classes
+- id: sd.dead-letters.rate-limit-slow-consumer
+  subtopic: Not all failures are equal
+  kind: procedure
+  claim: For a rate limit such as a 429 with Retry-After, slow the consumer to the allowed rate instead of failing messages one by one.
+  prompt: How should a consumer respond to a provider's 429 with Retry-After?
+  objectives:
+  - 0
+  requires:
+  - sd.api-contracts.rate-limit-429-retry-after
+- id: sd.dead-letters.no-inline-sleep-retry
+  subtopic: Retrying without blocking
+  kind: principle
+  claim: Sleeping and retrying inside the consumer holds a worker, and in ordered streams the whole partition, for the full backoff, so push retries out of band.
+  prompt: Why is sleeping inside the consumer a poor way to retry?
+  objectives:
+  - 1
+  requires:
+  - sd.dead-letters.poison-message-stalls-partition
+- id: sd.dead-letters.delayed-redelivery
+  subtopic: Retrying without blocking
+  kind: mechanism
+  claim: Delayed redelivery works by nacking with a delay or extending the SQS visibility timeout, or in RabbitMQ by routing through TTL delay queues plus a dead-letter exchange.
+  prompt: How can SQS or RabbitMQ redeliver a failed message after a delay?
+  objectives:
+  - 1
+  requires:
+  - sd.acknowledgements.visibility-timeout-mechanism
+  - sd.dead-letters.no-inline-sleep-retry
+- id: sd.dead-letters.kafka-retry-topics
+  subtopic: Retrying without blocking
+  kind: mechanism
+  claim: In Kafka, publish a failed message to retry topics (e.g. orders.retry.1m, then .10m, then the DLQ) and commit the original offset, so the main partition keeps flowing while separate consumers handle retries after the delay.
+  prompt: How do Kafka retry topics avoid blocking the main partition?
+  objectives:
+  - 1
+  requires:
+  - sd.dead-letters.no-inline-sleep-retry
+  - sd.dead-letters.poison-message-stalls-partition
+- id: sd.dead-letters.bounded-attempts
+  subtopic: Retrying without blocking
+  kind: principle
+  claim: Every retry loop needs a bound and a destination, such as SQS maxReceiveCount moving the message to the DLQ, because infinite retries drain capacity and block ordered consumers.
+  prompt: Why must every retry loop be bounded, and what happens at the bound?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.dead-letters.transient-retry-jitter
+- id: sd.dead-letters.backoff-total-delay
+  subtopic: Retrying without blocking
+  kind: procedure
+  claim: The time to dead-letter is the sum of the backoff waits (1+2+4+8+16+32 = 63 minutes); the schedule should fit the SLA, shortening it and alerting sooner if results are promised within 15 minutes.
+  prompt: How do you work out how long a message takes to reach the DLQ under an exponential backoff schedule?
+  objectives:
+  - 1
+  requires:
+  - sd.dead-letters.bounded-attempts
+  - sd.retry-identity.backoff-with-jitter
+- id: sd.dead-letters.maxreceive-tradeoff
+  subtopic: Retrying without blocking
+  kind: tradeoff
+  claim: Raising maxReceiveCount reduces dead-lettering during outages but makes genuinely bad messages loop many more times, so it does not replace distinguishing outages from bad messages.
+  prompt: What is the downside of raising maxReceiveCount from 5 to 500 to survive outages?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.dead-letters.bounded-attempts
+  - sd.dead-letters.dependency-outage-pause-consumer
+- id: sd.dead-letters.ordered-stream-options
+  subtopic: Poison messages in ordered streams
+  kind: tradeoff
+  claim: For a poison message in an ordered stream you can dead-letter and continue (if events are independent or idempotent), park the key, or stop the partition and page someone only when correctness demands it.
+  prompt: What are the options for handling a poison message when ordering matters?
+  objectives:
+  - 1
+  requires:
+  - sd.dead-letters.poison-message-stalls-partition
+  - sd.dead-letters.permanent-failures-dead-letter
+- id: sd.dead-letters.park-the-key
+  subtopic: Poison messages in ordered streams
+  kind: mechanism
+  claim: Parking the key dead-letters the bad message and diverts that key's later messages to the DLQ or a holding table until it is fixed, preserving its order while other keys flow.
+  prompt: How does parking the key preserve per-key ordering without stopping other keys?
+  objectives:
+  - 1
+  requires:
+  - sd.dead-letters.ordered-stream-options
+- id: sd.dead-letters.dlq-alerting-ownership
+  subtopic: Owning the dead-letter queue
+  kind: principle
+  claim: 'A DLQ is only useful if someone looks at it: alert on any arrival or rate threshold, routed to the team owning the consumer.'
+  prompt: How should DLQ alerting be set up?
+  objectives:
+  - 2
+  requires:
+  - sd.dead-letters.permanent-failures-dead-letter
+- id: sd.dead-letters.dlq-context-retention
+  subtopic: Owning the dead-letter queue
+  kind: fact
+  claim: Keep the original payload, headers, error and stack trace, attempt count and first-failure time, and retain long enough to fix; SQS retention maxes at 14 days, so archive anything regulatory elsewhere.
+  prompt: What should a dead-lettered message carry, and how long can SQS retain it?
+  objectives:
+  - 2
+  requires:
+  - sd.dead-letters.permanent-failures-dead-letter
+- id: sd.dead-letters.dlq-spike-diagnosis
+  subtopic: Owning the dead-letter queue
+  kind: procedure
+  claim: When the DLQ spikes, first sample error messages and timestamps to tell bad messages from a bad dependency; never redrive blindly or purge.
+  prompt: What should you do first when thousands of messages suddenly hit the DLQ?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.dead-letters.three-failure-classes
+  - sd.dead-letters.dlq-context-retention
+- id: sd.dead-letters.safe-redrive
+  subtopic: Owning the dead-letter queue
+  kind: procedure
+  claim: Redrive safely by grouping by error, deploying the fix and testing a sample, ensuring idempotency with original message IDs, then replaying throttled while watching error rates and downstream load.
+  prompt: What makes a redrive of dead-lettered messages safe?
+  objectives:
+  - 3
+  requires:
+  - sd.dead-letters.dlq-spike-diagnosis
+  - sd.acknowledgements.effectively-once-definition
+- id: sd.dead-letters.classified-handler-design
+  subtopic: Owning the dead-letter queue
+  kind: mechanism
+  claim: A robust handler catches permanent errors and dead-letters with context, trips a breaker on dependency-down without burning attempts, and sends transient errors through delayed retry.
+  prompt: How should a consumer's error handler be structured?
+  objectives:
+  - 0
+  - 1
+  - 2
+  requires:
+  - sd.dead-letters.three-failure-classes
+  - sd.dead-letters.delayed-redelivery
+  - sd.dead-letters.dependency-outage-pause-consumer
+items:
+  dead-letters-check-1-v2:
+  - sd.dead-letters.permanent-failures-dead-letter
+  dead-letters-check-2-v2:
+  - sd.dead-letters.dlq-context-retention
+  - sd.dead-letters.dlq-alerting-ownership
+  - sd.dead-letters.safe-redrive
+  dead-letters-check-3-v2:
+  - sd.dead-letters.dependency-outage-pause-consumer
+  dead-letters-check-4-v2:
+  - sd.dead-letters.backoff-total-delay
+  dead-letters-fire-1-v2:
+  - sd.dead-letters.poison-message-stalls-partition
+  dead-letters-fire-2-v2:
+  - sd.dead-letters.kafka-retry-topics
+  - sd.dead-letters.no-inline-sleep-retry
+  dead-letters-fire-3-v2:
+  - sd.dead-letters.safe-redrive
+  dead-letters-fire-4-v2:
+  - sd.dead-letters.park-the-key
+  - sd.dead-letters.ordered-stream-options
+  dead-letters-fire-5-v2:
+  - sd.dead-letters.alert-on-lag-age
+  - sd.dead-letters.dlq-alerting-ownership
+  dead-letters:b1:
+  - sd.dead-letters.three-failure-classes
+  - sd.dead-letters.dependency-outage-pause-consumer
+  - sd.dead-letters.transient-retry-jitter
+  dead-letters:b11:
+  - sd.dead-letters.permanent-failures-dead-letter
+  - sd.dead-letters.dependency-outage-pause-consumer
+  dead-letters:b3:
+  - sd.dead-letters.backoff-total-delay
+  dead-letters:b5:
+  - sd.dead-letters.poison-message-stalls-partition
+  - sd.dead-letters.alert-on-lag-age
+  dead-letters:b7:
+  - sd.dead-letters.safe-redrive
+  dead-letters:b8:
+  - sd.dead-letters.dlq-spike-diagnosis
+  - sd.dead-letters.dependency-outage-pause-consumer
+  - sd.dead-letters.maxreceive-tradeoff
+  dead-letters:b9:
+  - sd.dead-letters.classified-handler-design
+  - sd.dead-letters.no-inline-sleep-retry
+  - sd.dead-letters.bounded-attempts

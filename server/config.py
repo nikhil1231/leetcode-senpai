@@ -94,6 +94,14 @@ JOB_SCOUT_URL = os.environ.get("JOB_SCOUT_URL", "").rstrip("/")
 JOB_SCOUT_TOKEN = os.environ.get("JOB_SCOUT_TOKEN", "")
 JOB_SCOUT_PUBLIC_URL = os.environ.get("JOB_SCOUT_PUBLIC_URL", "https://jobs.nikhil.ing").rstrip("/")
 
+# Services on the box (a Telegram bot, the Threads card, …) call /api/knowledge without a
+# browser sign-in: "name:token,name2:token2". A token acts as the owner (ACCESS_UID) and its
+# name becomes the source of what it records. Unset: browser sign-in only.
+KNOWLEDGE_SOURCE_TOKENS = {
+    name.strip(): token.strip()
+    for name, token in (pair.split(":", 1) for pair in os.environ.get("KNOWLEDGE_SOURCE_TOKENS", "").split(",") if ":" in pair)
+    if name.strip() and token.strip()}
+
 SENPAI_CHARTER = """Teach me, don't just assign work. Prefer retrieval and explanation before more volume.
 Diagnose before prescribing remedial work; an untouched topic is unknown, not weak.
 Use my real projects as context when it helps. Keep advice to one change at a time.

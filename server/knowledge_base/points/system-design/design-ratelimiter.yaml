@@ -1,0 +1,212 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-ratelimiter
+source_hash: 1d038ed0c9b6d3f7
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-ratelimiter.local-counters-multiply-limit
+  subtopic: 2. Where does the check run?
+  kind: principle
+  claim: Independent per-instance counters multiply a per-key limit by the number of gateways that see the key (200 gateways at 100 req/s allows up to about 20,000 req/s), so a shared counter, a split budget or synced local buckets is needed.
+  prompt: What happens to a per-key limit if each of 200 gateways counts independently?
+  objectives:
+  - 0
+  same_as: sd.rate-limiting.per-instance-limit-multiplies
+- id: sd.design-ratelimiter.enforcement-placement-tradeoffs
+  subtopic: 2. Where does the check run?
+  kind: tradeoff
+  claim: An in-gateway library with shared Redis costs one hop (~0.3-1 ms) and is simplest; a central gRPC service is language-agnostic with central rules but is an extra component needing high availability; local synced buckets add no hop but can overshoot during bursts.
+  prompt: What are the trade-offs between in-gateway Redis, a central rate-limit service and locally synced buckets?
+  objectives:
+  - 0
+  requires:
+  - sd.rate-limiting.distributed-limiting-options
+- id: sd.design-ratelimiter.chosen-hybrid-enforcement
+  subtopic: 2. Where does the check run?
+  kind: principle
+  claim: Keyed limits are enforced in the gateway against a sharded Redis cluster (about 1 ms, accurate), with local token buckets as fallback and for coarse per-IP limits at the edge.
+  prompt: Which enforcement design fits a 2 ms p99 budget with accurate per-key limits?
+  objectives:
+  - 0
+  requires:
+  - sd.design-ratelimiter.enforcement-placement-tradeoffs
+- id: sd.design-ratelimiter.requirements-targets
+  subtopic: 1. Requirements
+  kind: fact
+  claim: 'Targets: 200 gateways, 2M requests/s peak, 5M API keys, under 2 ms p99 added latency, limits approximately right (a few percent over acceptable), plan changes applied within a minute.'
+  prompt: What scale, latency and accuracy targets frame the rate limiter?
+  objectives:
+  - 0
+- id: sd.design-ratelimiter.outage-must-not-kill-api
+  subtopic: 1. Requirements
+  kind: principle
+  claim: A limiter outage must not take the API down, yet abuse-sensitive endpoints such as login and SMS must stay protected.
+  prompt: What failure requirement applies to a rate limiter outage?
+  objectives:
+  - 3
+  requires:
+  - sd.rate-limiting.fail-open-default
+  - sd.rate-limiting.fail-closed-sensitive
+- id: sd.design-ratelimiter.shard-count-calculation
+  subtopic: 3. Sizing the counter store
+  kind: procedure
+  claim: Shards = peak checks/s ÷ (per-shard capacity × target utilisation); 2M/s ÷ (100k × 0.5) = 40 primaries, each with a replica.
+  prompt: How do you size Redis shards for 2M checks/s with 100k calls/s per shard and 50% max load?
+  objectives:
+  - 1
+  requires:
+  - sd.estimates.shard-count-calc
+- id: sd.design-ratelimiter.throughput-sizes-cluster
+  subtopic: 3. Sizing the counter store
+  kind: fact
+  claim: Memory is small (5M keys × 2 counters × ~100 bytes ≈ 1 GB), so throughput, not memory, sizes the cluster.
+  prompt: What sizes the counter store, memory or throughput?
+  objectives:
+  - 1
+  requires:
+  - sd.design-ratelimiter.shard-count-calculation
+- id: sd.design-ratelimiter.hash-tag-same-slot
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: Hash tags like {key} put the current and previous window keys in the same Cluster slot, so one Lua script can atomically touch both on one shard.
+  prompt: Why use braces in the counter key names in Redis Cluster?
+  objectives:
+  - 1
+- id: sd.design-ratelimiter.sliding-window-counter-script
+  subtopic: 5. Deep dives
+  kind: mechanism
+  claim: The atomic script increments the current window with a 2-window TTL, estimates previous × (1 − elapsed fraction) + current, rejects if over the limit without consuming budget, and returns remaining and reset for headers.
+  prompt: How does the sliding-window counter Lua script decide and what does it return?
+  objectives:
+  - 1
+  requires:
+  - sd.rate-limiting.sliding-window-counter-estimate
+  - sd.rate-limiting.atomic-increment-check
+  - sd.design-ratelimiter.hash-tag-same-slot
+- id: sd.design-ratelimiter.sliding-vs-fixed-window
+  subtopic: 5. Deep dives
+  kind: tradeoff
+  claim: Fixed windows allow up to 2× the limit around boundaries; a sliding-window counter uses two counters per key and closely approximates a true rolling count.
+  prompt: Why prefer a sliding-window counter to a fixed window?
+  objectives:
+  - 1
+  requires:
+  - sd.rate-limiting.fixed-window-boundary-burst
+- id: sd.design-ratelimiter.cache-rules-in-memory
+  subtopic: 4. Architecture
+  kind: principle
+  claim: Gateways cache rules in memory, pushed by a rules service with polling as backup, because querying a config store 2M times/s adds latency and creates a single point of failure.
+  prompt: Why not read limit rules from a database per request?
+  objectives:
+  - 2
+- id: sd.design-ratelimiter.request-path-order
+  subtopic: 4. Architecture
+  kind: procedure
+  claim: Edge drops per-IP floods; the gateway authenticates the key and loads rules from memory; one atomic Redis call per applicable rule; then forward with RateLimit headers or return 429 with Retry-After.
+  prompt: What is the order of steps for a request through the limiter?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - sd.design-ratelimiter.chosen-hybrid-enforcement
+  - sd.design-ratelimiter.cache-rules-in-memory
+- id: sd.design-ratelimiter.shadow-mode-rollout
+  subtopic: 5. Deep dives
+  kind: procedure
+  claim: New or tightened limits first run in shadow mode, logging would-be rejections without enforcing, so impact is checked before enforcement; rules are versioned for instant rollback.
+  prompt: How do you roll out a new rate limit safely?
+  objectives:
+  - 2
+- id: sd.design-ratelimiter.hot-key-mitigation
+  subtopic: 5. Deep dives
+  kind: tradeoff
+  claim: A hot key overloading one shard is handled by local pre-aggregation (batching increments about every 50 ms against a per-gateway share), splitting the counter into sub-keys, or a dedicated shard, trading slight accuracy.
+  prompt: How do you handle one API key sending 30% of traffic to a single Redis shard?
+  objectives:
+  - 3
+  requires:
+  - sd.hot-keys.batch-write-behind-increments
+- id: sd.design-ratelimiter.multi-region-budget-split
+  subtopic: 5. Deep dives
+  kind: tradeoff
+  claim: Global limits across regions are usually enforced by giving each region a share of the budget, rebalanced from observed traffic, accepting small overshoot, since exact counting needs cross-region round trips per request.
+  prompt: How are global limits enforced across regions?
+  objectives:
+  - 3
+- id: sd.design-ratelimiter.fail-open-local-fallback
+  subtopic: 6. Failure modes
+  kind: mechanism
+  claim: If Redis is unreachable after a short timeout (~5 ms), gateways fall back to local token buckets with a per-gateway share of the limit; accuracy degrades briefly, which beats an outage or no protection.
+  prompt: What happens when a Redis shard fails during peak?
+  objectives:
+  - 3
+  requires:
+  - sd.rate-limiting.fail-open-default
+- id: sd.design-ratelimiter.per-endpoint-fail-closed
+  subtopic: 6. Failure modes
+  kind: principle
+  claim: 'Failure policy is per endpoint: ordinary endpoints fall back to local buckets, while login, SMS and OTP fail closed. Failing closed everywhere turns a limiter blip into a full outage.'
+  prompt: Which endpoints should fail closed when the limiter is down, and why not all?
+  objectives:
+  - 3
+  same_as: sd.rate-limiting.fail-closed-sensitive
+- id: sd.design-ratelimiter.other-failure-responses
+  subtopic: 6. Failure modes
+  kind: fact
+  claim: If the rules service is down, gateways keep their last known rules and changes are delayed.
+  prompt: What happens when the rules service goes down?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.design-ratelimiter.cache-rules-in-memory
+items:
+  design-ratelimiter-check-1-v2:
+  - sd.design-ratelimiter.shard-count-calculation
+  - sd.design-ratelimiter.throughput-sizes-cluster
+  design-ratelimiter-check-2-v2:
+  - sd.design-ratelimiter.hash-tag-same-slot
+  design-ratelimiter-check-3-v2:
+  - sd.design-ratelimiter.per-endpoint-fail-closed
+  - sd.design-ratelimiter.fail-open-local-fallback
+  design-ratelimiter-check-4-v2:
+  - sd.design-ratelimiter.cache-rules-in-memory
+  design-ratelimiter-fire-1-v2:
+  - sd.design-ratelimiter.shadow-mode-rollout
+  design-ratelimiter-fire-2-v2:
+  - sd.design-ratelimiter.hot-key-mitigation
+  design-ratelimiter-fire-3-v2:
+  - sd.design-ratelimiter.multi-region-budget-split
+  design-ratelimiter-fire-4-v2:
+  - sd.design-ratelimiter.fail-open-local-fallback
+  design-ratelimiter-fire-5-v2:
+  - sd.design-ratelimiter.request-path-order
+  design-ratelimiter:b1:
+  - sd.design-ratelimiter.local-counters-multiply-limit
+  design-ratelimiter:b10:
+  - sd.design-ratelimiter.cache-rules-in-memory
+  - sd.design-ratelimiter.per-endpoint-fail-closed
+  design-ratelimiter:b14:
+  - sd.design-ratelimiter.local-counters-multiply-limit
+  - sd.design-ratelimiter.sliding-window-counter-script
+  - sd.design-ratelimiter.fail-open-local-fallback
+  design-ratelimiter:b15:
+  - sd.design-ratelimiter.local-counters-multiply-limit
+  - sd.design-ratelimiter.per-endpoint-fail-closed
+  design-ratelimiter:b3:
+  - sd.design-ratelimiter.enforcement-placement-tradeoffs
+  design-ratelimiter:b5:
+  - sd.design-ratelimiter.shard-count-calculation
+  design-ratelimiter:b6:
+  - sd.design-ratelimiter.sliding-window-counter-script
+  - sd.design-ratelimiter.hash-tag-same-slot
+  redesign:design-ratelimiter:
+  - sd.design-ratelimiter.chosen-hybrid-enforcement
+  - sd.design-ratelimiter.shard-count-calculation
+  - sd.design-ratelimiter.per-endpoint-fail-closed

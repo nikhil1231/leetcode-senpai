@@ -1,0 +1,254 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: indexes
+source_hash: 8ce7ca3719c04254
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.indexes.btree-sorted-pages
+  subtopic: How a B-tree finds a row
+  kind: mechanism
+  claim: 'A B-tree keeps keys sorted in 8-16 KB pages: inner pages point to child pages, and leaf pages hold keys plus pointers to table rows (or the rows themselves in clustered stores).'
+  prompt: How is a B-tree index structured, and what do its leaf pages hold?
+  objectives:
+  - 0
+- id: sd.indexes.btree-depth-fanout
+  subtopic: How a B-tree finds a row
+  kind: principle
+  claim: Tree depth is roughly log base fan-out of the entry count. With about 400 keys per page, 4 levels cover 25.6 billion entries, so 500 million entries need only 4 levels.
+  prompt: How many B-tree levels does 500 million entries need with a fan-out of 400, and how do you work it out?
+  objectives:
+  - 0
+  requires:
+  - sd.indexes.btree-sorted-pages
+- id: sd.indexes.btree-cached-top-levels
+  subtopic: How a B-tree finds a row
+  kind: fact
+  claim: The top levels of a B-tree are almost always cached in memory, so an indexed lookup costs about one or two disk page reads, even on billion-row tables.
+  prompt: Why do indexed lookups stay in single-digit milliseconds as tables grow to billions of rows?
+  objectives:
+  - 0
+  requires:
+  - sd.indexes.btree-depth-fanout
+- id: sd.indexes.btree-supported-operations
+  subtopic: How a B-tree finds a row
+  kind: fact
+  claim: Because entries are sorted, a B-tree supports equality seeks, range scans (including prefix LIKE 'abc%') and ordered reads, so ORDER BY in index order lets LIMIT stop early.
+  prompt: Which kinds of access does a sorted B-tree index support?
+  objectives:
+  - 0
+  requires:
+  - sd.indexes.btree-sorted-pages
+- id: sd.indexes.leftmost-prefix-rule
+  subtopic: 'Composite indexes: order is everything'
+  kind: principle
+  claim: A composite index on (a, b, c) is sorted by a, then b within a, then c within b, so it can only seek from the left without gaps. WHERE b = ? alone can't seek, since b is only ordered within each a.
+  prompt: For an index on (a, b, c), why can't WHERE b = ? seek on it?
+  objectives:
+  - 1
+  requires:
+  - sd.indexes.btree-supported-operations
+- id: sd.indexes.equality-before-range
+  subtopic: 'Composite indexes: order is everything'
+  kind: principle
+  claim: Put equality columns first, then one range or sort column. Columns after a range column can't narrow the seek.
+  prompt: What column ordering rule applies when designing a composite index?
+  objectives:
+  - 1
+  requires:
+  - sd.indexes.leftmost-prefix-rule
+- id: sd.indexes.gap-column-filters-only
+  subtopic: 'Composite indexes: order is everything'
+  kind: mechanism
+  claim: With an index on (a, b, c), WHERE a = ? AND c > ? seeks on a only, then filters c across that a's entries because b sits between them. An index on (a, c) would serve it fully.
+  prompt: With an index on (a, b, c), what happens for WHERE a = ? AND c > ??
+  objectives:
+  - 1
+  requires:
+  - sd.indexes.leftmost-prefix-rule
+- id: sd.indexes.sort-avoidance-order
+  subtopic: 'Composite indexes: order is everything'
+  kind: mechanism
+  claim: An index on (customer_id, created_at) with an equality on customer_id returns rows already ordered by created_at, so ORDER BY ... LIMIT 20 reads about 20 entries with no sort. A skipped middle column, such as status, forces a sort.
+  prompt: How should you index WHERE customer_id = ? ORDER BY created_at DESC LIMIT 20, and why?
+  objectives:
+  - 1
+  requires:
+  - sd.indexes.leftmost-prefix-rule
+  - sd.indexes.btree-supported-operations
+- id: sd.indexes.column-order-cost
+  subtopic: 'Composite indexes: order is everything'
+  kind: tradeoff
+  claim: 'The same columns in a different order can cost around 1,000 times more: (created_at, customer_id) reads everyone''s orders for a period, whereas (customer_id, created_at) reads only one customer''s.'
+  prompt: Why does (customer_id, created_at) beat (created_at, customer_id) for a customer's recent orders?
+  objectives:
+  - 1
+  requires:
+  - sd.indexes.leftmost-prefix-rule
+  - sd.indexes.equality-before-range
+- id: sd.indexes.predicate-order-irrelevant
+  subtopic: 'Composite indexes: order is everything'
+  kind: fact
+  claim: The planner matches predicates to index columns regardless of the order they are written in the WHERE clause. Equality on the first column plus a range on the second is the ideal shape.
+  prompt: Does the order of predicates in a WHERE clause affect whether a composite index is used?
+  objectives:
+  - 1
+  requires:
+  - sd.indexes.equality-before-range
+- id: sd.indexes.in-list-equality
+  subtopic: 'Composite indexes: order is everything'
+  kind: fact
+  claim: A small IN-list on an index column is handled as a few equality seeks, so it doesn't break use of later columns the way a range does.
+  prompt: How does a planner treat a small IN-list on a composite index column?
+  objectives:
+  - 1
+  requires:
+  - sd.indexes.equality-before-range
+- id: sd.indexes.covering-index
+  subtopic: Covering, partial and expression indexes
+  kind: mechanism
+  claim: A covering index holds every column the query needs, giving an index-only scan that skips a random table read per row. Postgres INCLUDE adds non-key columns to leaf pages.
+  prompt: What does a covering index achieve, and how do you add non-key columns in Postgres?
+  objectives:
+  - 2
+  requires:
+  - sd.indexes.btree-sorted-pages
+- id: sd.indexes.partial-index
+  subtopic: Covering, partial and expression indexes
+  kind: tradeoff
+  claim: A partial index (CREATE INDEX ... WHERE status = 'pending') covers only the rows queries want. It is smaller, cheaper to maintain and very selective, which suits a rare value such as 1-2% pending or open orders.
+  prompt: When is a partial index the best choice, and what are its benefits?
+  objectives:
+  - 2
+  requires:
+  - sd.indexes.btree-sorted-pages
+- id: sd.indexes.expression-index
+  subtopic: Covering, partial and expression indexes
+  kind: fact
+  claim: An expression index, such as on lower(email), indexes a computed value so WHERE lower(email) = ? can use it.
+  prompt: How can you make WHERE lower(email) = ? use an index?
+  objectives:
+  - 2
+  requires:
+  - sd.indexes.btree-sorted-pages
+- id: sd.indexes.other-index-types
+  subtopic: Covering, partial and expression indexes
+  kind: fact
+  claim: Hash indexes serve equality only, GIN serves arrays, JSONB and full-text, GiST serves geometry and ranges, and BRIN gives tiny summaries for huge, naturally ordered tables such as append-only logs.
+  prompt: Which index types suit equality-only, JSONB or full-text, geometry, and naturally ordered huge tables?
+  objectives:
+  - 2
+- id: sd.indexes.function-on-column-defeats-index
+  subtopic: Queries that can't use your index
+  kind: principle
+  claim: Wrapping the indexed column in a function (lower(email), date(created_at)) stops a plain index being used. Rewrite as a half-open range on the bare column, or add an expression index.
+  prompt: Why does WHERE date(created_at) = '2026-03-01' not use an index on created_at, and how do you fix it?
+  objectives:
+  - 2
+  requires:
+  - sd.indexes.expression-index
+  - sd.indexes.btree-supported-operations
+- id: sd.indexes.leading-wildcard
+  subtopic: Queries that can't use your index
+  kind: fact
+  claim: LIKE '%suffix' can't seek in a B-tree because keys are sorted from the first character, but LIKE 'prefix%' can. Use a trigram index or a reversed-string column for suffix search.
+  prompt: Why can LIKE 'sam%' use a B-tree but LIKE '%@gmail.com' can't?
+  objectives:
+  - 2
+  requires:
+  - sd.indexes.btree-supported-operations
+- id: sd.indexes.low-selectivity-seq-scan
+  subtopic: Queries that can't use your index
+  kind: mechanism
+  claim: When a predicate matches a large fraction of rows (low selectivity, such as 80% 'delivered'), random index lookups cost more than one sequential scan, so the planner chooses the scan using its statistics.
+  prompt: Why might a planner ignore an index on status when 80% of rows match?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.indexes.btree-sorted-pages
+- id: sd.indexes.write-amplification
+  subtopic: The cost side
+  kind: tradeoff
+  claim: Every index is maintained on each insert, delete and update touching an indexed column, so eight indexes mean nine writes per insert, plus extra disk and cache use. Drop unused indexes, checking scan counts in pg_stat_user_indexes.
+  prompt: What do extra indexes cost a write-heavy table, and how do you find ones to drop?
+  objectives:
+  - 3
+  requires:
+  - sd.indexes.btree-sorted-pages
+- id: sd.indexes.explain-analyze-checks
+  subtopic: The cost side
+  kind: procedure
+  claim: Run EXPLAIN (ANALYZE, BUFFERS) on production-like data and check the access method, estimated versus actual rows (a big gap means stale statistics), unwanted Sort nodes and buffer reads.
+  prompt: What do you check in EXPLAIN (ANALYZE, BUFFERS) output for a slow query?
+  objectives:
+  - 3
+- id: sd.indexes.plans-change-with-data
+  subtopic: Introduction
+  kind: principle
+  claim: Access paths must be designed, since plans degrade as data grows and distributions shift. A date-only index made a per-customer sorted query take 9 seconds, whereas (customer_id, created_at) brought it to 2 ms.
+  prompt: Why did a query with an index on created_at alone degrade as the table grew, and what fixed it?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.indexes.sort-avoidance-order
+- id: sd.indexes.index-every-column-wrong
+  subtopic: The cost side
+  kind: principle
+  claim: Indexing every column is wrong because each index slows writes and takes storage and cache, and single-column indexes often don't serve multi-column queries. Index for real queries.
+  prompt: Why not add an index on every column?
+  objectives:
+  - 3
+  requires:
+  - sd.indexes.write-amplification
+items:
+  indexes-check-1-v2:
+  - sd.indexes.sort-avoidance-order
+  - sd.indexes.equality-before-range
+  indexes-check-2-v2:
+  - sd.indexes.function-on-column-defeats-index
+  - sd.indexes.leading-wildcard
+  - sd.indexes.btree-supported-operations
+  indexes-check-3-v2:
+  - sd.indexes.btree-depth-fanout
+  - sd.indexes.btree-cached-top-levels
+  indexes-check-4-v2:
+  - sd.indexes.low-selectivity-seq-scan
+  indexes-fire-1-v2:
+  - sd.indexes.covering-index
+  indexes-fire-2-v2:
+  - sd.indexes.partial-index
+  indexes-fire-3-v2:
+  - sd.indexes.write-amplification
+  - sd.indexes.index-every-column-wrong
+  indexes-fire-4-v2:
+  - sd.indexes.predicate-order-irrelevant
+  - sd.indexes.equality-before-range
+  indexes-fire-5-v2:
+  - sd.indexes.explain-analyze-checks
+  indexes:b1:
+  - sd.indexes.btree-depth-fanout
+  - sd.indexes.btree-cached-top-levels
+  indexes:b10:
+  - sd.indexes.equality-before-range
+  - sd.indexes.covering-index
+  - sd.indexes.partial-index
+  indexes:b12:
+  - sd.indexes.leftmost-prefix-rule
+  - sd.indexes.gap-column-filters-only
+  indexes:b3:
+  - sd.indexes.leftmost-prefix-rule
+  - sd.indexes.sort-avoidance-order
+  - sd.indexes.in-list-equality
+  indexes:b7:
+  - sd.indexes.function-on-column-defeats-index
+  - sd.indexes.leading-wildcard
+  - sd.indexes.expression-index
+  indexes:b8:
+  - sd.indexes.low-selectivity-seq-scan
+  - sd.indexes.partial-index

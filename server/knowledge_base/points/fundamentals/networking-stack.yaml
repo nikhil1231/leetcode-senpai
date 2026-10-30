@@ -1,0 +1,254 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: networking-stack
+source_hash: fb57c0e28213500d
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.networking-stack.dns-resolution-walk
+  subtopic: DNS
+  kind: mechanism
+  claim: On a cache miss, a recursive resolver walks the root servers, then the TLD servers, then the domain's authoritative servers, and caches the answer for its TTL.
+  prompt: How does a recursive resolver resolve a name that is not in its cache?
+  objectives:
+  - 0
+- id: fundamentals.networking-stack.dns-record-types
+  subtopic: DNS
+  kind: fact
+  claim: A/AAAA records hold addresses, CNAME is an alias, MX names mail servers, TXT holds verification and SPF data, and NS names the authoritative servers.
+  prompt: What are the purposes of the main DNS record types A, AAAA, CNAME, MX, TXT and NS?
+  objectives:
+  - 0
+- id: fundamentals.networking-stack.dns-ttl-tradeoff
+  subtopic: DNS
+  kind: tradeoff
+  claim: A long TTL means fewer lookups, but a failover or migration can take up to that long to reach everyone, and some clients ignore TTLs.
+  prompt: What is the trade-off in choosing a long DNS TTL?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.networking-stack.dns-resolution-walk
+- id: fundamentals.networking-stack.lower-ttl-before-migration
+  subtopic: DNS
+  kind: procedure
+  claim: Lower the TTL days before a planned migration, so caches that fetched the record expire quickly when you change it.
+  prompt: When should you lower a DNS record's TTL for a planned migration, and why?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.networking-stack.dns-ttl-tradeoff
+- id: fundamentals.networking-stack.dns-load-balancing-coarse
+  subtopic: DNS
+  kind: principle
+  claim: DNS-based load balancing is coarse because clients cache records and pick addresses unevenly.
+  prompt: Why is DNS-based load balancing coarse?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.networking-stack.dns-ttl-tradeoff
+- id: fundamentals.networking-stack.tcp-handshake-one-rtt
+  subtopic: TCP
+  kind: mechanism
+  claim: The TCP handshake (SYN, SYN-ACK, ACK) costs one round trip before data can be sent.
+  prompt: How many round trips does the TCP handshake cost before data flows?
+  objectives:
+  - 0
+  - 1
+- id: fundamentals.networking-stack.tcp-flow-control
+  subtopic: TCP
+  kind: mechanism
+  claim: Flow control uses a window advertised by the receiver so a fast sender cannot overwhelm it.
+  prompt: How does TCP stop a fast sender overwhelming a slow receiver?
+  objectives:
+  - 1
+- id: fundamentals.networking-stack.tcp-slow-start
+  subtopic: TCP
+  kind: mechanism
+  claim: A new connection starts with a congestion window of about 10 segments (roughly 14 KB) and roughly doubles it each round trip until it sees loss.
+  prompt: How does TCP slow start behave on a new connection?
+  objectives:
+  - 1
+- id: fundamentals.networking-stack.connection-reuse-matters
+  subtopic: TCP
+  kind: principle
+  claim: New connections are slow for their first few round trips because of the handshake and slow start, so connection reuse and keep-alive matter greatly.
+  prompt: Why do connection reuse and keep-alive matter so much for latency?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.networking-stack.tcp-handshake-one-rtt
+  - fundamentals.networking-stack.tcp-slow-start
+- id: fundamentals.networking-stack.tcp-head-of-line-blocking
+  subtopic: TCP
+  kind: mechanism
+  claim: In TCP, one lost packet holds up all data behind it in the stream until it is retransmitted.
+  prompt: What is head-of-line blocking in TCP?
+  objectives:
+  - 1
+- id: fundamentals.networking-stack.time-wait-purpose
+  subtopic: TCP
+  kind: mechanism
+  claim: The side that closes first keeps the connection's 4-tuple reserved in TIME_WAIT for about 2 x MSL (60 s on Linux) so stray packets cannot corrupt a new connection.
+  prompt: What is TIME_WAIT for, and how long does it last on Linux?
+  objectives:
+  - 1
+- id: fundamentals.networking-stack.ephemeral-port-exhaustion
+  subtopic: TCP
+  kind: tradeoff
+  claim: Opening and closing thousands of short connections to one backend can exhaust ephemeral ports through TIME_WAIT; the fix is pooling and keep-alive, not kernel tricks.
+  prompt: How do you fix ephemeral port exhaustion from many short connections to one backend?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.networking-stack.time-wait-purpose
+- id: fundamentals.networking-stack.tls-three-guarantees
+  subtopic: TLS
+  kind: fact
+  claim: TLS provides confidentiality, integrity, and authentication of the server.
+  prompt: What three things does TLS provide?
+  objectives:
+  - 2
+- id: fundamentals.networking-stack.tls-certificate-validation
+  subtopic: TLS
+  kind: mechanism
+  claim: The server proves it holds the private key for a certificate a trusted CA signed for that hostname; the client checks the chain of trust, validity dates and that the hostname matches the SAN.
+  prompt: What does a client check, and what does it learn, when validating a TLS certificate?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.networking-stack.tls-three-guarantees
+- id: fundamentals.networking-stack.tls13-one-rtt
+  subtopic: TLS
+  kind: mechanism
+  claim: TLS 1.3 needs one round trip because the client sends its key share in the first message; TLS 1.2 needed two.
+  prompt: Why is the TLS 1.3 handshake faster than TLS 1.2?
+  objectives:
+  - 2
+- id: fundamentals.networking-stack.zero-rtt-replay
+  subtopic: TLS
+  kind: tradeoff
+  claim: Resumption and 0-RTT can skip more round trips, but 0-RTT data can be replayed, so use it only for idempotent requests.
+  prompt: What is the risk of TLS 0-RTT?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.networking-stack.tls13-one-rtt
+- id: fundamentals.networking-stack.mtls
+  subtopic: TLS
+  kind: fact
+  claim: mTLS also authenticates the client with a certificate, which is common for service-to-service traffic.
+  prompt: What does mTLS add, and where is it common?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.networking-stack.tls-certificate-validation
+- id: fundamentals.networking-stack.cold-start-rtt-count
+  subtopic: Introduction
+  kind: procedure
+  claim: With DNS cached, a fresh HTTPS connection takes 1 RTT for TCP plus 1 RTT for TLS 1.3 before the request goes out (3 with TLS 1.2, 1 with HTTP/3, 0 on a reused connection), so 160 ms at 80 ms RTT.
+  prompt: How many round trips pass before the request is sent on a fresh TCP plus TLS 1.3 connection?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.networking-stack.tcp-handshake-one-rtt
+  - fundamentals.networking-stack.tls13-one-rtt
+- id: fundamentals.networking-stack.request-order-cold-load
+  subtopic: Introduction
+  kind: procedure
+  claim: 'A cold page load runs in order: cache check and DNS lookup, TCP handshake, TLS handshake, HTTP request, then response and subresources over the same connection.'
+  prompt: In what order do DNS, TCP, TLS and HTTP happen on a first page load?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.networking-stack.dns-resolution-walk
+  - fundamentals.networking-stack.cold-start-rtt-count
+- id: fundamentals.networking-stack.http11-concurrency
+  subtopic: HTTP versions
+  kind: fact
+  claim: HTTP/1.1 handles one request at a time per connection, so browsers open about 6 connections per origin.
+  prompt: How does HTTP/1.1 achieve concurrency in browsers?
+  objectives:
+  - 3
+- id: fundamentals.networking-stack.http2-multiplexing
+  subtopic: HTTP versions
+  kind: mechanism
+  claim: HTTP/2 multiplexes many streams on one TCP connection with HPACK header compression, helping most with many small requests to one origin, but one lost TCP packet still stalls all streams.
+  prompt: What does HTTP/2 improve, and what limitation remains?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.networking-stack.http11-concurrency
+- id: fundamentals.networking-stack.http3-quic
+  subtopic: HTTP versions
+  kind: mechanism
+  claim: HTTP/3 runs over QUIC on UDP, so loss stalls only the affected stream, and transport and crypto share a 1-RTT handshake.
+  prompt: What does HTTP/3 over QUIC fix compared with HTTP/2?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.networking-stack.tcp-head-of-line-blocking
+- id: fundamentals.networking-stack.http3-when-it-helps
+  subtopic: HTTP versions
+  kind: tradeoff
+  claim: HTTP/3 helps most on lossy mobile networks and survives network changes such as Wi-Fi to cellular because QUIC connections are identified by connection ID, not IP and port.
+  prompt: When does HTTP/3 help most, and why does it survive network changes?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.networking-stack.http3-quic
+- id: fundamentals.networking-stack.debug-latency-curl
+  subtopic: Debugging the network
+  kind: procedure
+  claim: curl -w with time_namelookup, time_connect, time_appconnect and time_starttransfer breaks latency into DNS, TCP, TLS and server time.
+  prompt: How can curl break request latency into DNS, TCP, TLS and server time?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.networking-stack.request-order-cold-load
+- id: fundamentals.networking-stack.debug-tools
+  subtopic: Debugging the network
+  kind: fact
+  claim: Use dig +trace for DNS resolution, openssl s_client for certificate chains, ss -tanp for socket states, and tcpdump or Wireshark as a last resort.
+  prompt: Which tools inspect DNS resolution, certificate chains and socket states?
+  objectives: []
+- id: fundamentals.networking-stack.close-wait-meaning
+  subtopic: Debugging the network
+  kind: principle
+  claim: Many sockets in CLOSE_WAIT mean your application never closed sockets the peer already closed.
+  prompt: What do thousands of CLOSE_WAIT sockets indicate?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.networking-stack.time-wait-purpose
+items:
+  networking-stack-check-1-v2:
+  - fundamentals.networking-stack.connection-reuse-matters
+  - fundamentals.networking-stack.tcp-slow-start
+  - fundamentals.networking-stack.tcp-handshake-one-rtt
+  networking-stack-check-2-v2:
+  - fundamentals.networking-stack.tls-certificate-validation
+  networking-stack-check-3-v2:
+  - fundamentals.networking-stack.http3-quic
+  - fundamentals.networking-stack.tcp-head-of-line-blocking
+  networking-stack-fire-1-v2:
+  - fundamentals.networking-stack.close-wait-meaning
+  networking-stack-fire-2-v2:
+  - fundamentals.networking-stack.lower-ttl-before-migration
+  - fundamentals.networking-stack.dns-ttl-tradeoff
+  networking-stack-fire-3-v2:
+  - fundamentals.networking-stack.tls13-one-rtt
+  networking-stack-fire-4-v2:
+  - fundamentals.networking-stack.ephemeral-port-exhaustion
+  - fundamentals.networking-stack.time-wait-purpose
+  networking-stack:b1:
+  - fundamentals.networking-stack.cold-start-rtt-count
+  - fundamentals.networking-stack.tcp-handshake-one-rtt
+  - fundamentals.networking-stack.tls13-one-rtt
+  networking-stack:b3:
+  - fundamentals.networking-stack.request-order-cold-load
+  - fundamentals.networking-stack.dns-resolution-walk

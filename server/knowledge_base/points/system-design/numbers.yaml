@@ -1,0 +1,481 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: numbers
+source_hash: ee0d1739f246220c
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.numbers.seconds-per-day
+  subtopic: Introduction
+  kind: fact
+  claim: One day is 86,400 s, about 10⁵ s, so dividing a daily total by 10⁵ gives its average per-second rate (about 15% low, which rarely changes a design).
+  prompt: About how many seconds are in a day, and how do you turn a daily total into a per-second rate?
+  objectives:
+  - 0
+- id: sd.numbers.seconds-per-month-year
+  subtopic: Introduction
+  kind: fact
+  claim: A 30-day month is about 2.6 million s (2.5 × 10⁶) and a year is about 31.5 million s (3 × 10⁷).
+  prompt: About how many seconds are in a month and in a year?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.seconds-per-day
+- id: sd.numbers.daily-to-per-second-table
+  subtopic: Introduction
+  kind: procedure
+  claim: 'Per-day totals convert to average per-second rates as: 1M/day ≈ 12/s, 10M ≈ 120/s, 100M ≈ 1,200/s, 1B ≈ 12,000/s; 1M per month is only about 0.4/s.'
+  prompt: What average rate does 100 million requests a day give, and what does 1 million a month give?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.seconds-per-day
+  - sd.numbers.seconds-per-month-year
+- id: sd.numbers.powers-of-two-sizes
+  subtopic: Introduction
+  kind: fact
+  claim: 2¹⁰ ≈ thousand (KB), 2²⁰ ≈ million (MB), 2³⁰ ≈ billion (GB), 2⁴⁰ ≈ trillion (TB), 2⁵⁰ ≈ quadrillion (PB).
+  prompt: What are 2¹⁰, 2²⁰, 2³⁰, 2⁴⁰ and 2⁵⁰ roughly?
+  objectives:
+  - 0
+- id: sd.numbers.integer-limits
+  subtopic: Introduction
+  kind: fact
+  claim: 2¹⁶ = 65,536; 2³¹ ≈ 2.1 billion (max signed 32-bit); 2³² ≈ 4.3 billion; 2⁶⁴ ≈ 1.8 × 10¹⁹.
+  prompt: How many values does an unsigned 32-bit integer hold, and what is the largest signed 32-bit integer roughly?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.powers-of-two-sizes
+- id: sd.numbers.bits-bytes-bandwidth
+  subtopic: Introduction
+  kind: fact
+  claim: 'Network speeds are in bits: 1 Gbps ≈ 125 MB/s and 10 Gbps ≈ 1.25 GB/s.'
+  prompt: How many bytes per second is a 1 Gbps link, and a 10 Gbps link?
+  objectives:
+  - 1
+  - 2
+- id: sd.numbers.typical-data-sizes
+  subtopic: Introduction
+  kind: fact
+  claim: A 64-bit integer or timestamp is 8 bytes, a UUID is 16 bytes binary (36 as text), a short text record is about 1 KB, a compressed photo 200 KB–2 MB, and an hour of 1080p streaming video about 2 GB.
+  prompt: Roughly how big are a UUID, a tweet-sized record, a photo and an hour of streaming video?
+  objectives:
+  - 0
+  requires:
+  - sd.numbers.powers-of-two-sizes
+- id: sd.numbers.memory-and-cache-latency
+  subtopic: Introduction
+  kind: fact
+  claim: An L1 cache reference takes about 1 ns, a main memory reference about 100 ns, and reading 1 MB sequentially from memory about 10 µs.
+  prompt: About how long do an L1 reference, a memory reference and a 1 MB sequential memory read take?
+  objectives:
+  - 1
+- id: sd.numbers.storage-latency
+  subtopic: Introduction
+  kind: fact
+  claim: A random NVMe SSD read takes about 20–100 µs, 1 MB sequential from SSD about 0.3–1 ms, and an HDD seek about 5–10 ms.
+  prompt: About how long do a random NVMe read, a 1 MB SSD read and an HDD seek take?
+  objectives:
+  - 1
+- id: sd.numbers.network-round-trips
+  subtopic: Introduction
+  kind: fact
+  claim: Round trips take about 0.5 ms in a datacentre, 1–2 ms between availability zones, 60–70 ms US east–west, 70–80 ms New York–London, and 250–300 ms Europe–Australia.
+  prompt: What are typical round-trip times within a datacentre, between zones, across the US, New York–London and Europe–Australia?
+  objectives:
+  - 1
+- id: sd.numbers.latency-ratios
+  subtopic: Introduction
+  kind: principle
+  claim: Memory is about 1,000× faster than a random SSD read, and an SSD read is about 100× faster than an HDD seek.
+  prompt: How much faster is memory than a random SSD read, and an SSD than an HDD seek?
+  objectives:
+  - 1
+  requires:
+  - sd.numbers.memory-and-cache-latency
+  - sd.numbers.storage-latency
+- id: sd.numbers.fibre-distance-latency
+  subtopic: Introduction
+  kind: principle
+  claim: Light in fibre covers about 200 km per ms, so every 100 km of distance adds about 1 ms of round trip.
+  prompt: How far does light travel in fibre per millisecond, and what does 100 km add to a round trip?
+  objectives:
+  - 1
+  same_as: sd.request-flow.rtt-physical-limit
+- id: sd.numbers.https-connection-round-trips
+  subtopic: Introduction
+  kind: fact
+  claim: A new HTTPS connection (TCP + TLS 1.3) costs 2 round trips before the request is sent; reusing connections avoids them.
+  prompt: How many round trips does a new TCP + TLS 1.3 connection need before the request is sent?
+  objectives:
+  - 1
+  requires:
+  - sd.request-flow.handshake-rtt-counts
+- id: sd.numbers.user-perception-thresholds
+  subtopic: Introduction
+  kind: fact
+  claim: Under 100 ms feels instant, under 1 s keeps the user's flow, and past 10 s attention is lost.
+  prompt: What response times feel instant, keep flow and lose attention?
+  objectives:
+  - 1
+- id: sd.numbers.app-server-capacity
+  subtopic: Introduction
+  kind: fact
+  claim: A stateless app server handles about 1k–10k simple requests/s.
+  prompt: About how many simple requests per second can one stateless app server handle?
+  objectives:
+  - 2
+- id: sd.numbers.cache-capacity
+  subtopic: Introduction
+  kind: fact
+  claim: One Redis or Memcached node serves about 100k operations/s.
+  prompt: About how many operations per second can one Redis node serve?
+  objectives:
+  - 2
+- id: sd.numbers.database-capacity
+  subtopic: Introduction
+  kind: fact
+  claim: A relational primary sustains about 5k–20k simple writes/s (more reads) and comfortably holds up to a few TB.
+  prompt: About how many simple writes per second and how much data can one relational primary handle?
+  objectives:
+  - 2
+- id: sd.numbers.broker-disk-gateway-capacity
+  subtopic: Introduction
+  kind: fact
+  claim: A Kafka broker handles hundreds of MB/s; an NVMe SSD does 100k+ random IOPS and 1–3 GB/s sequential; an HDD does 100–200 random IOPS and 100–200 MB/s; a gateway holds 100k–1M mostly idle connections, limited by memory.
+  prompt: What throughput can a Kafka broker, NVMe SSD, HDD and real-time gateway each handle?
+  objectives:
+  - 2
+- id: sd.numbers.availability-nines-downtime
+  subtopic: Introduction
+  kind: fact
+  claim: Per year, 99% allows ~3.7 days, 99.9% ~8.8 hours, 99.99% ~53 minutes, 99.999% ~5 minutes; per 30 days that is 7.2 h, 43 min, 4.3 min, 26 s. Each extra nine is 10× less.
+  prompt: How much downtime do 99%, 99.9%, 99.99% and 99.999% allow per year and per 30 days?
+  objectives:
+  - 3
+  same_as: sd.guarantees.downtime-arithmetic
+- id: sd.numbers.serial-dependency-availability
+  subtopic: Introduction
+  kind: mechanism
+  claim: 'Required dependencies multiply availability: add the failure rates, so five services at 99.9% give about 99.5%.'
+  prompt: What is the availability of a request needing five 99.9% services, all of which must work?
+  objectives:
+  - 3
+  requires:
+  - sd.numbers.availability-nines-downtime
+  same_as: sd.service-quality.serial-availability-multiplies
+- id: sd.numbers.redundant-replica-availability
+  subtopic: Introduction
+  kind: mechanism
+  claim: 'With independent redundant copies the failures multiply: two 99% replicas where either will do give 1 − 0.01² = 99.99%, provided failures are independent.'
+  prompt: What is the availability of two independent 99% replicas when either can serve?
+  objectives:
+  - 3
+  requires:
+  - sd.numbers.availability-nines-downtime
+  same_as: sd.service-quality.redundancy-independence
+- id: sd.numbers.peak-factor
+  subtopic: Introduction
+  kind: principle
+  claim: Peak traffic is about 2–3× the daily average, and up to 10× for spiky products.
+  prompt: How many times the daily average is peak traffic?
+  objectives:
+  - 4
+- id: sd.numbers.littles-law
+  subtopic: Introduction
+  kind: principle
+  claim: 'Little''s Law: requests in flight = arrival rate × time in system, e.g. 2,000/s × 50 ms = 100.'
+  prompt: How do you work out how many requests are in flight?
+  objectives:
+  - 4
+  same_as: sd.service-quality.littles-law
+- id: sd.numbers.fanout-n-times-p
+  subtopic: Introduction
+  kind: principle
+  claim: The chance that at least one of N calls is slow is about N × p while that is well below 1; 20 calls at 1% gives about 20% (exactly 18%).
+  prompt: A page makes 20 calls, each slow 1% of the time. About what share of loads hit a slow call?
+  objectives:
+  - 4
+  requires:
+  - sd.service-quality.fanout-tail-probability
+- id: sd.numbers.utilisation-headroom
+  subtopic: Introduction
+  kind: tradeoff
+  claim: Plan for about 60–70% utilisation at peak; queueing delay grows like ρ/(1−ρ), so at 90% waits are about 9× the service time.
+  prompt: What peak utilisation should you target and why?
+  objectives:
+  - 4
+  requires:
+  - sd.service-quality.queueing-knee
+  same_as: sd.service-quality.utilisation-headroom
+- id: sd.numbers.hot-set-and-read-ratio
+  subtopic: Introduction
+  kind: principle
+  claim: About 20% of items get about 80% of requests, so caching the hot set covers most reads; content and social products run 10:1 to 100:1 reads to writes.
+  prompt: What do the 80/20 rule and typical read:write ratios imply for caching?
+  objectives:
+  - 4
+- id: sd.numbers.replication-index-overhead
+  subtopic: Introduction
+  kind: fact
+  claim: Three copies is the usual replication default, and indexes add 20–100% to storage.
+  prompt: What replication factor and index overhead should you assume for storage?
+  objectives:
+  - 4
+- id: sd.numbers.token-size
+  subtopic: Introduction
+  kind: fact
+  claim: 1 token ≈ 4 characters ≈ 0.75 English words, so 1,000 tokens ≈ 750 words; code and non-English text use more tokens.
+  prompt: How many words is 1,000 tokens?
+  objectives:
+  - 5
+- id: sd.numbers.llm-token-pricing
+  subtopic: Introduction
+  kind: fact
+  claim: Output tokens cost about 4–8× input tokens, and the batch API gives about 50% off for results within 24 hours.
+  prompt: How do output and input token prices compare, and what does batch give?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.token-size
+- id: sd.numbers.prompt-caching
+  subtopic: Introduction
+  kind: mechanism
+  claim: Prompt caching stores only the input prefix; cache reads cost about 0.1× input and writes about 1.25× (5-minute cache), and any early change invalidates the rest. Output is never cached.
+  prompt: What does prompt caching cache, and what do cache reads and writes cost?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.llm-token-pricing
+- id: sd.numbers.context-window-size
+  subtopic: Introduction
+  kind: fact
+  claim: Frontier models have context windows of about 200k–1M tokens.
+  prompt: What is a typical frontier context window?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.token-size
+- id: sd.numbers.llm-latency
+  subtopic: Introduction
+  kind: fact
+  claim: Time to first token is about 0.3–1 s, output streams at about 50–150 tokens/s per user, so 500 tokens takes about 5 s; prefill is parallel while decode is one token at a time.
+  prompt: What are typical time to first token and streaming speed, and how long does a 500-token answer take?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.token-size
+- id: sd.numbers.model-weight-memory
+  subtopic: Introduction
+  kind: procedure
+  claim: Weight memory = params × bytes per param (FP16 2, INT8 1, INT4 0.5), so 7B ≈ 14 GB and 70B ≈ 140 GB in FP16.
+  prompt: How do you estimate the memory for model weights?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.powers-of-two-sizes
+- id: sd.numbers.training-memory
+  subtopic: Introduction
+  kind: fact
+  claim: Mixed-precision training with Adam needs about 16 bytes per parameter before activations, so 7B ≈ 110 GB.
+  prompt: About how much memory does training a 7B model need before activations?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.model-weight-memory
+- id: sd.numbers.kv-cache-size
+  subtopic: Introduction
+  kind: fact
+  claim: KV cache takes about 0.1–0.3 MB per token for 8B–70B FP16 models, so a 100k-token context takes 10–30 GB.
+  prompt: How much KV cache does each context token need?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.token-size
+  - sd.numbers.model-weight-memory
+- id: sd.numbers.llm-compute-flops
+  subtopic: Introduction
+  kind: fact
+  claim: Inference costs about 2 × params FLOPs per generated token; training costs about 6 × params × tokens, with compute-optimal about 20 tokens per param.
+  prompt: How many FLOPs per generated token, and for training?
+  objectives:
+  - 5
+- id: sd.numbers.decode-bandwidth-ceiling
+  subtopic: Introduction
+  kind: mechanism
+  claim: Single-stream decode speed is capped at memory bandwidth ÷ weight bytes, e.g. 3.35 TB/s ÷ 16 GB ≈ 200 tokens/s for an 8B FP16 model; batching shares each weight read.
+  prompt: What limits single-stream decode speed, and what is the ceiling for an 8B FP16 model on an H100?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.model-weight-memory
+- id: sd.numbers.gpu-hardware-specs
+  subtopic: Introduction
+  kind: fact
+  claim: An H100 has 80 GB HBM at ~3.35 TB/s; H200 ~141 GB at 4.8 TB/s; B200 ~180 GB at 8 TB/s; consumer GPUs 8–32 GB; NVLink ~900 GB/s vs PCIe 5 ~64 GB/s.
+  prompt: What memory and bandwidth does an H100 have, and how do NVLink and PCIe compare?
+  objectives:
+  - 5
+- id: sd.numbers.embedding-index-size
+  subtopic: Introduction
+  kind: procedure
+  claim: A 1,536-dimension float32 vector is about 6 KB, so 1M vectors ≈ 6 GB and 100M ≈ 600 GB; int8 quantisation cuts this 4×.
+  prompt: How big is a 1,536-dimension float32 embedding, and 1M of them?
+  objectives:
+  - 5
+  requires:
+  - sd.numbers.typical-data-sizes
+- id: sd.numbers.ann-search-latency
+  subtopic: Introduction
+  kind: fact
+  claim: Approximate nearest-neighbour search (HNSW) takes about 1–10 ms at roughly 95–99% recall.
+  prompt: How fast is HNSW vector search?
+  objectives:
+  - 5
+items:
+  numbers-check-1-v2:
+  - sd.numbers.seconds-per-day
+  numbers-check-2-v2:
+  - sd.numbers.storage-latency
+  - sd.numbers.memory-and-cache-latency
+  - sd.numbers.network-round-trips
+  numbers-check-3-v2:
+  - sd.numbers.availability-nines-downtime
+  numbers-check-4-v2:
+  - sd.numbers.bits-bytes-bandwidth
+  numbers-check-5-v2:
+  - sd.numbers.daily-to-per-second-table
+  numbers-check-6-v2:
+  - sd.numbers.powers-of-two-sizes
+  numbers-fire-1-v2:
+  - sd.numbers.seconds-per-month-year
+  numbers-fire-10-v2:
+  - sd.numbers.typical-data-sizes
+  numbers-fire-11-v2:
+  - sd.numbers.typical-data-sizes
+  numbers-fire-12-v2:
+  - sd.numbers.bits-bytes-bandwidth
+  numbers-fire-13-v2:
+  - sd.numbers.memory-and-cache-latency
+  numbers-fire-14-v2:
+  - sd.numbers.memory-and-cache-latency
+  numbers-fire-15-v2:
+  - sd.numbers.storage-latency
+  numbers-fire-16-v2:
+  - sd.numbers.storage-latency
+  numbers-fire-17-v2:
+  - sd.numbers.network-round-trips
+  numbers-fire-18-v2:
+  - sd.numbers.network-round-trips
+  numbers-fire-19-v2:
+  - sd.numbers.network-round-trips
+  numbers-fire-2-v2:
+  - sd.numbers.seconds-per-month-year
+  numbers-fire-20-v2:
+  - sd.numbers.network-round-trips
+  numbers-fire-21-v2:
+  - sd.numbers.network-round-trips
+  numbers-fire-22-v2:
+  - sd.numbers.fibre-distance-latency
+  numbers-fire-23-v2:
+  - sd.numbers.latency-ratios
+  numbers-fire-24-v2:
+  - sd.numbers.memory-and-cache-latency
+  numbers-fire-25-v2:
+  - sd.numbers.https-connection-round-trips
+  numbers-fire-26-v2:
+  - sd.numbers.user-perception-thresholds
+  numbers-fire-27-v2:
+  - sd.numbers.cache-capacity
+  numbers-fire-28-v2:
+  - sd.numbers.app-server-capacity
+  numbers-fire-29-v2:
+  - sd.numbers.database-capacity
+  numbers-fire-3-v2:
+  - sd.numbers.daily-to-per-second-table
+  numbers-fire-30-v2:
+  - sd.numbers.broker-disk-gateway-capacity
+  numbers-fire-31-v2:
+  - sd.numbers.broker-disk-gateway-capacity
+  - sd.numbers.storage-latency
+  numbers-fire-32-v2:
+  - sd.numbers.availability-nines-downtime
+  numbers-fire-33-v2:
+  - sd.numbers.availability-nines-downtime
+  numbers-fire-34-v2:
+  - sd.numbers.availability-nines-downtime
+  numbers-fire-35-v2:
+  - sd.numbers.serial-dependency-availability
+  numbers-fire-36-v2:
+  - sd.numbers.redundant-replica-availability
+  numbers-fire-37-v2:
+  - sd.numbers.peak-factor
+  numbers-fire-38-v2:
+  - sd.numbers.littles-law
+  numbers-fire-39-v2:
+  - sd.numbers.fanout-n-times-p
+  numbers-fire-4-v2:
+  - sd.numbers.peak-factor
+  - sd.numbers.daily-to-per-second-table
+  numbers-fire-40-v2:
+  - sd.numbers.utilisation-headroom
+  numbers-fire-41-v2:
+  - sd.numbers.hot-set-and-read-ratio
+  numbers-fire-42-v2:
+  - sd.numbers.hot-set-and-read-ratio
+  numbers-fire-43-v2:
+  - sd.numbers.token-size
+  numbers-fire-44-v2:
+  - sd.numbers.prompt-caching
+  numbers-fire-45-v2:
+  - sd.numbers.prompt-caching
+  numbers-fire-46-v2:
+  - sd.numbers.prompt-caching
+  numbers-fire-47-v2:
+  - sd.numbers.llm-token-pricing
+  numbers-fire-48-v2:
+  - sd.numbers.llm-token-pricing
+  - sd.numbers.token-size
+  numbers-fire-49-v2:
+  - sd.numbers.llm-token-pricing
+  numbers-fire-5-v2:
+  - sd.numbers.daily-to-per-second-table
+  numbers-fire-50-v2:
+  - sd.numbers.llm-latency
+  numbers-fire-51-v2:
+  - sd.numbers.model-weight-memory
+  numbers-fire-52-v2:
+  - sd.numbers.training-memory
+  numbers-fire-53-v2:
+  - sd.numbers.kv-cache-size
+  numbers-fire-54-v2:
+  - sd.numbers.gpu-hardware-specs
+  numbers-fire-55-v2:
+  - sd.numbers.decode-bandwidth-ceiling
+  numbers-fire-56-v2:
+  - sd.numbers.llm-compute-flops
+  numbers-fire-57-v2:
+  - sd.numbers.embedding-index-size
+  numbers-fire-58-v2:
+  - sd.numbers.context-window-size
+  numbers-fire-6-v2:
+  - sd.numbers.powers-of-two-sizes
+  numbers-fire-7-v2:
+  - sd.numbers.integer-limits
+  numbers-fire-8-v2:
+  - sd.numbers.typical-data-sizes
+  numbers-fire-9-v2:
+  - sd.numbers.typical-data-sizes
+  numbers:b1:
+  - sd.numbers.memory-and-cache-latency
+  - sd.numbers.storage-latency
+  - sd.numbers.network-round-trips
+  numbers:b3:
+  - sd.numbers.daily-to-per-second-table
+  - sd.numbers.availability-nines-downtime
+  - sd.numbers.fanout-n-times-p

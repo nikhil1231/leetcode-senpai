@@ -35,6 +35,27 @@ class FakeStore:
         self.design_records = {}
         self.track_records = {}
         self.senpai = {}
+        self.knowledge = {}
+
+    def _knowledge_coll(self, coll):
+        from server.store import FirestoreStore
+        if coll not in FirestoreStore.KNOWLEDGE:
+            raise ValueError(f"unknown knowledge collection {coll}")
+        return self.knowledge.setdefault(coll, {})
+
+    def list_knowledge(self, coll):
+        return deepcopy(list(self._knowledge_coll(coll).values()))
+
+    def create_knowledge(self, coll, key, doc):
+        c = self._knowledge_coll(coll)
+        if key in c:
+            return None
+        c[key] = deepcopy({**doc, '_key': key})
+        return deepcopy(c[key])
+
+    def put_knowledge(self, coll, key, doc):
+        self._knowledge_coll(coll)[key] = deepcopy({**doc, '_key': key})
+        return deepcopy(self._knowledge_coll(coll)[key])
 
     def _senpai_coll(self, coll):
         from server.store import FirestoreStore

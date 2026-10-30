@@ -1,0 +1,213 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: tradeoffs
+source_hash: 3990d53d086955da
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.tradeoffs.five-part-decision-format
+  subtopic: The shape of a good decision
+  kind: procedure
+  claim: Justify each design decision as requirement → choice → cost → alternative considered → trigger to revisit, with numbers wherever possible.
+  prompt: What five parts make up a well-explained design decision?
+  objectives:
+  - 0
+- id: sd.tradeoffs.justify-with-numbers-not-slogans
+  subtopic: The shape of a good decision
+  kind: principle
+  claim: A choice justified only by 'it scales', a brand name or big-company use is weak; a strong one ties the choice to a requirement with a number, a cost, a rejected alternative and a trigger.
+  prompt: Why is 'it scales' a poor justification for a technology choice, and what makes one strong?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.tradeoffs.five-part-decision-format
+- id: sd.tradeoffs.cache-justification-example
+  subtopic: The shape of a good decision
+  kind: procedure
+  claim: 'Justify a cache from the numbers: if reads peak at 40k/s and the database budget is 4k/s you need a hit rate of at least 90%, plus a staleness tolerance that fits the TTL. State the costs (extra infrastructure, staleness window, protected miss path) and revisit if hit rate drops below target.'
+  prompt: Reads peak at 40k/s and the database can take 4k/s. What cache hit rate is needed, and what costs should you name?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.cache-aside.required-hit-rate
+- id: sd.tradeoffs.decision-with-trigger-to-revisit
+  subtopic: The shape of a good decision
+  kind: principle
+  claim: Every decision should carry an observable trigger for revisiting it, such as sustained writes passing 50% of primary capacity or queue age above five minutes for an hour.
+  prompt: What should accompany a design choice so that you know when to change it?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.tradeoffs.five-part-decision-format
+- id: sd.tradeoffs.queue-decision-example
+  subtopic: The shape of a good decision
+  kind: tradeoff
+  claim: A queue absorbs bursts (e.g. 5k/s arrivals against 2k/s workers) when users can wait, at the cost of another component, at-least-once delivery needing idempotent consumers, and queue-age monitoring.
+  prompt: What does adding a message queue cost you, and when is it justified?
+  objectives:
+  - 0
+  requires:
+  - sd.queue-basics.burst-absorption-isolation
+- id: sd.tradeoffs.one-way-vs-two-way-doors
+  subtopic: One-way and two-way doors
+  kind: principle
+  claim: Two-way-door decisions are cheap to reverse, so decide quickly and learn; one-way-door decisions are expensive to undo, so slow down and gather evidence.
+  prompt: How should effort differ between one-way-door and two-way-door decisions?
+  objectives:
+  - 1
+- id: sd.tradeoffs.one-way-door-examples
+  subtopic: One-way and two-way doors
+  kind: fact
+  claim: Typical one-way doors are the shard key of a huge table, a public API contract and an event schema used by many teams; typical two-way doors are cache TTLs, worker counts and the managed cache provider behind an interface.
+  prompt: Give examples of one-way-door and two-way-door decisions in system design.
+  objectives:
+  - 1
+  requires:
+  - sd.tradeoffs.one-way-vs-two-way-doors
+- id: sd.tradeoffs.why-shard-key-is-one-way
+  subtopic: One-way and two-way doors
+  kind: mechanism
+  claim: Public APIs and event schemas are hard to change because every independent consumer must migrate; a shard key is hard to change because every row must be migrated while live.
+  prompt: Why are shard keys and public API contracts costly to change?
+  objectives:
+  - 1
+  requires:
+  - sd.tradeoffs.one-way-door-examples
+- id: sd.tradeoffs.expected-downtime-cost
+  subtopic: Putting numbers on trade-offs
+  kind: procedure
+  claim: Expected annual downtime cost is outage minutes per year multiplied by cost per minute (4 hours at $5,000/min is $1.2M), which you compare with the cost of redundancy.
+  prompt: How do you compute the expected annual cost of downtime to weigh against redundancy?
+  objectives:
+  - 2
+- id: sd.tradeoffs.middle-option-from-numbers
+  subtopic: Putting numbers on trade-offs
+  kind: tradeoff
+  claim: If multi-region costs more than the expected downtime it prevents (e.g. $500k vs $300k a year), a cheaper warm standby or pilot light is often the better middle option.
+  prompt: When active-active multi-region costs more than the downtime it avoids, what is a sensible alternative?
+  objectives:
+  - 2
+  requires:
+  - sd.tradeoffs.expected-downtime-cost
+- id: sd.tradeoffs.simplicity-vs-flexibility
+  subtopic: Putting numbers on trade-offs
+  kind: tradeoff
+  claim: Every extra system adds operations, on-call and expertise costs, so one well-understood database usually beats a polyglot zoo unless a requirement demands more.
+  prompt: What is the cost of adding Kafka, Cassandra and Elasticsearch to a small system for future use cases?
+  objectives:
+  - 2
+- id: sd.tradeoffs.monolith-before-microservices
+  subtopic: Putting numbers on trade-offs
+  kind: tradeoff
+  claim: Start with a modular monolith and split along real seams when team or scaling pressure demands, because services add network failures, distributed transactions and operational load.
+  prompt: Why start with a monolith rather than many microservices?
+  objectives:
+  - 2
+  requires:
+  - sd.tradeoffs.simplicity-vs-flexibility
+- id: sd.tradeoffs.build-vs-buy
+  subtopic: Putting numbers on trade-offs
+  kind: tradeoff
+  claim: Managed services trade money and control for time saved and less operational burden.
+  prompt: What does buying a managed service trade off against building?
+  objectives:
+  - 2
+- id: sd.tradeoffs.unjustified-claims-in-docs
+  subtopic: Putting numbers on trade-offs
+  kind: principle
+  claim: Claims like 'infinitely scalable' are slogans that cannot be checked; good design-doc statements give a reason, a simple default and an explicit trigger for change.
+  prompt: What makes a design-doc statement helpful rather than a slogan?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.tradeoffs.justify-with-numbers-not-slogans
+- id: sd.tradeoffs.interview-phase-order
+  subtopic: Running the interview
+  kind: procedure
+  claim: 'A 45-minute design interview runs: requirements and assumptions (~5 min), estimates (~5), API and data model (~5), high-level design and flows (~10), deep dives (~15), trade-offs and evolution (~5).'
+  prompt: In what order, and with what time split, should you run a 45-minute design interview?
+  objectives:
+  - 3
+  same_as: sd.design-links.interview-flow-order
+- id: sd.tradeoffs.handle-pushback-with-evidence
+  subtopic: Running the interview
+  kind: procedure
+  claim: 'Treat pushback as a probe: respond with the requirement, the numbers, the cost of the alternative and the trigger for change, rather than capitulating or digging in.'
+  prompt: How should you respond when an interviewer says your chosen database won't scale?
+  objectives:
+  - 3
+  requires:
+  - sd.tradeoffs.five-part-decision-format
+- id: sd.tradeoffs.replicas-scale-reads-not-writes
+  subtopic: Running the interview
+  kind: fact
+  claim: Read replicas scale reads, not writes; scaling writes beyond one primary needs sharding (e.g. by conversation_id) or moving high-volume data to a different store.
+  prompt: Why don't more replicas fix a write bottleneck, and what does?
+  objectives:
+  - 3
+  requires:
+  - sd.scaling.stateful-scale-order
+- id: sd.tradeoffs.show-evolution-path
+  subtopic: Running the interview
+  kind: principle
+  claim: Strong candidates start simple, add components only when a requirement demands, name failure modes and the likely first bottleneck, and explain how the design evolves at 10× load.
+  prompt: Which behaviours distinguish a strong design interview?
+  objectives:
+  - 3
+  requires:
+  - sd.tradeoffs.decision-with-trigger-to-revisit
+items:
+  tradeoffs-check-1-v2:
+  - sd.tradeoffs.justify-with-numbers-not-slogans
+  - sd.tradeoffs.five-part-decision-format
+  tradeoffs-check-2-v2:
+  - sd.tradeoffs.one-way-door-examples
+  - sd.tradeoffs.why-shard-key-is-one-way
+  tradeoffs-check-3-v2:
+  - sd.tradeoffs.expected-downtime-cost
+  tradeoffs-check-4-v2:
+  - sd.tradeoffs.interview-phase-order
+  tradeoffs-fire-1-v2:
+  - sd.tradeoffs.handle-pushback-with-evidence
+  tradeoffs-fire-2-v2:
+  - sd.tradeoffs.monolith-before-microservices
+  tradeoffs-fire-3-v2:
+  - sd.tradeoffs.unjustified-claims-in-docs
+  tradeoffs-fire-4-v2:
+  - sd.tradeoffs.middle-option-from-numbers
+  - sd.tradeoffs.expected-downtime-cost
+  tradeoffs-fire-5-v2:
+  - sd.tradeoffs.show-evolution-path
+  tradeoffs:b1:
+  - sd.tradeoffs.cache-justification-example
+  - sd.tradeoffs.five-part-decision-format
+  - sd.tradeoffs.decision-with-trigger-to-revisit
+  tradeoffs:b10:
+  - sd.tradeoffs.handle-pushback-with-evidence
+  - sd.tradeoffs.replicas-scale-reads-not-writes
+  - sd.tradeoffs.show-evolution-path
+  tradeoffs:b12:
+  - sd.tradeoffs.queue-decision-example
+  - sd.tradeoffs.five-part-decision-format
+  tradeoffs:b3:
+  - sd.tradeoffs.one-way-door-examples
+  - sd.tradeoffs.one-way-vs-two-way-doors
+  - sd.tradeoffs.why-shard-key-is-one-way
+  tradeoffs:b5:
+  - sd.tradeoffs.expected-downtime-cost
+  - sd.tradeoffs.middle-option-from-numbers
+  tradeoffs:b7:
+  - sd.tradeoffs.unjustified-claims-in-docs
+  - sd.tradeoffs.simplicity-vs-flexibility
+  - sd.tradeoffs.monolith-before-microservices
+  tradeoffs:b9:
+  - sd.tradeoffs.interview-phase-order

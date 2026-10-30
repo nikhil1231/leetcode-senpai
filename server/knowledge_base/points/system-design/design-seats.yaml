@@ -1,0 +1,270 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-seats
+source_hash: e8a26585a4ad94dd
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-seats.browse-hold-path-split
+  subtopic: 1. Two paths, two guarantees
+  kind: principle
+  claim: Browsing may use a cached view up to 10 seconds stale, while holds and confirms are ownership transitions that must be decided on authoritative state at the primary.
+  prompt: How should the read path and the hold/confirm path differ in their data guarantees?
+  objectives:
+  - 0
+  requires:
+  - sd.guarantees.per-operation-guarantees
+- id: sd.design-seats.stale-map-never-double-books
+  subtopic: 1. Two paths, two guarantees
+  kind: mechanism
+  claim: A stale seat map can only cause a failed hold attempt, because the hold is an atomic conditional update that re-checks current state at the primary, so two owners can never result.
+  prompt: Why can a stale seat map not cause a double booking?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.concurrent-holds.check-inside-write
+- id: sd.design-seats.own-holds-read-primary
+  subtopic: 1. Two paths, two guarantees
+  kind: principle
+  claim: A user's own active holds and expiry timers are read from the primary for read-your-writes accuracy; this is cheap because it touches only one user's rows.
+  prompt: Where should a user's own holds be read from, and why?
+  objectives:
+  - 0
+  requires:
+  - sd.replication.read-your-writes-routing
+- id: sd.design-seats.seat-data-size
+  subtopic: 2. Estimates
+  kind: fact
+  claim: 60,000 seats across 2,000 concurrent events is about 120 million rows, roughly 24 GB at 200 bytes each, so one primary with replicas suffices.
+  prompt: Roughly how large is the seat dataset for 2,000 events of 60,000 seats, and what does that imply for the database?
+  objectives:
+  - 2
+  requires:
+  - sd.estimates.storage-formula
+- id: sd.design-seats.contention-not-volume
+  subtopic: 2. Estimates
+  kind: principle
+  claim: Data is modest; the challenge is contention and read amplification, so cache browsing aggressively and protect the hold path with admission control. Successful holds are capped by seat count (60,000), however many users arrive.
+  prompt: What is the real scaling challenge in seat reservation, and what caps successful holds in an on-sale?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.design-seats.seat-data-size
+- id: sd.design-seats.cache-shields-db-reads
+  subtopic: 2. Estimates
+  kind: fact
+  claim: A seat map viewed 20,000 times per second and served from a cache refreshed every 2 seconds costs the database about 0.5 queries per second for that event.
+  prompt: If a hot event's seat map is viewed 20,000 times per second from a cache refreshed every 2 s, how many queries per second reach the database?
+  objectives:
+  - 0
+  - 2
+- id: sd.design-seats.seat-row-schema
+  subtopic: 3. Schema and API
+  kind: mechanism
+  claim: One row per (event_id, seat_id) holds status (available, held, booked), hold_id, held_by, hold_expires_at and booking_id; the composite primary key guarantees one row per seat, and a partial unique index on booked seats backs the invariant.
+  prompt: What does the seats table look like and how is one booking per seat enforced by the schema?
+  objectives:
+  - 1
+- id: sd.design-seats.api-status-codes
+  subtopic: 3. Schema and API
+  kind: fact
+  claim: Hold returns 201 with hold_id and expires_at, or 409 if taken; confirm takes a client booking_id and returns 200, 410 if expired, or 403 if not the owner.
+  prompt: What responses do the hold and confirm endpoints return?
+  objectives:
+  - 1
+  requires:
+  - sd.api-contracts.status-codes-2xx-creation
+- id: sd.design-seats.hold-conditional-update
+  subtopic: 4. Architecture
+  kind: mechanism
+  claim: A hold is one conditional UPDATE succeeding if the seat is available or its hold has expired (judged by the database clock), setting new hold_id, owner and expiry of now()+5 minutes; one row updated means success, zero means taken.
+  prompt: How is a hold granted atomically, and how does the API tell success from failure?
+  objectives:
+  - 1
+  same_as: sd.concurrent-holds.claim-treats-expired-as-free
+- id: sd.design-seats.confirm-predicate
+  subtopic: 4. Architecture
+  kind: mechanism
+  claim: Confirm is an UPDATE setting status=booked and booking_id WHERE hold_id matches, held_by is the requester, status=held and hold_expires_at >= now().
+  prompt: Which conditions must the confirm UPDATE check together?
+  objectives:
+  - 1
+  same_as: sd.concurrent-holds.confirm-predicate-fields
+- id: sd.design-seats.sweeper-housekeeping-only
+  subtopic: 4. Architecture
+  kind: principle
+  claim: The expiry sweeper only resets expired holds so the map looks right; correctness comes from expiry checks in the hold and confirm predicates, so sweeper outages or delays affect only presentation.
+  prompt: What is the expiry sweeper responsible for, and does correctness depend on it?
+  objectives:
+  - 1
+  - 3
+  same_as: sd.concurrent-holds.expiry-not-dependent-on-cleanup
+- id: sd.design-seats.seat-map-cache-design
+  subtopic: 4. Architecture
+  kind: mechanism
+  claim: The seat map is cached per event and rebuilt from a replica every 2 seconds, so it is about 2-4 seconds old, within the 10-second allowance.
+  prompt: How is the browse seat map produced and how stale is it?
+  objectives:
+  - 0
+  requires:
+  - sd.design-seats.cache-shields-db-reads
+- id: sd.design-seats.single-database-clock
+  subtopic: 5. Races, step by step
+  kind: principle
+  claim: Expiry races are decided by one clock, the database's now(), inside atomic serialised updates; client clocks or sweeper timing would make outcomes arbitrary.
+  prompt: What decides fairly whether a confirm or a competing hold wins at the expiry deadline?
+  objectives:
+  - 1
+  - 3
+  same_as: sd.concurrent-holds.single-authoritative-clock
+- id: sd.design-seats.retry-same-booking-id
+  subtopic: 5. Races, step by step
+  kind: mechanism
+  claim: If a confirm matches zero rows but the seat is booked with the request's booking_id, the server treats it as a retry and returns the original 200 result rather than 410 or a second booking.
+  prompt: A confirm succeeded but its response was lost; the client retries with the same booking_id. What is returned and how does the server know?
+  objectives:
+  - 1
+  - 3
+  same_as: sd.concurrent-holds.retry-safe-confirm
+- id: sd.design-seats.partition-by-event
+  subtopic: 6. Hot events and partitioning
+  kind: tradeoff
+  claim: Partitioning by event_id keeps every hold and confirm single-partition and lets a hot event move to dedicated capacity.
+  prompt: Why partition seat data by event_id?
+  objectives:
+  - 2
+  requires:
+  - sd.partitioning.shard-key-matches-access
+- id: sd.design-seats.waiting-room-admission
+  subtopic: 6. Hot events and partitioning
+  kind: mechanism
+  claim: For on-sales, a waiting room admits users at the rate the hold path sustains, randomises order among early arrivals, shows honest positions and stops admitting once everything is held.
+  prompt: How does a waiting room protect the hold path during an on-sale?
+  objectives:
+  - 2
+  same_as: sd.concurrent-holds.waiting-room-admission
+- id: sd.design-seats.short-holds-recycle
+  subtopic: 6. Hot events and partitioning
+  kind: principle
+  claim: Short holds keep inventory circulating, and expired holds rejoin the pool instantly because the claim predicate treats them as available.
+  prompt: Why use short holds, and how do expired holds become claimable again?
+  objectives:
+  - 2
+  same_as: sd.concurrent-holds.short-holds-auto-release
+- id: sd.design-seats.admission-rate-calc
+  subtopic: 6. Hot events and partitioning
+  kind: procedure
+  claim: Admission rate = sustainable attempts per second × 60 ÷ attempts per user per minute; 1,500/s with 3 attempts each gives 30,000 users per minute.
+  prompt: How do you compute users per minute to admit from hold-path capacity and attempts per user?
+  objectives:
+  - 2
+  requires:
+  - sd.design-seats.waiting-room-admission
+- id: sd.design-seats.failover-fail-fast
+  subtopic: 7. Failure modes and evolution
+  kind: tradeoff
+  claim: During primary failover, holds and confirms fail fast with a retry message and never use a replica or cache to decide ownership, choosing consistency over availability while browsing continues from cache.
+  prompt: What should hold and confirm requests do when the primary is unreachable?
+  objectives:
+  - 3
+- id: sd.design-seats.cache-down-degradation
+  subtopic: 7. Failure modes and evolution
+  kind: mechanism
+  claim: If the seat-map cache is stale or down, rebuild it from the replica; at worst the map lags, and holds still check authoritatively.
+  prompt: What happens if the seat-map cache is stale or down?
+  objectives:
+  - 3
+  requires:
+  - sd.design-seats.seat-map-cache-design
+- id: sd.design-seats.no-distributed-seat-lock
+  subtopic: 7. Failure modes and evolution
+  kind: tradeoff
+  claim: The seat row with a conditional update is already the lock; a separate distributed lock adds failure modes and still needs fencing.
+  prompt: Why not use a distributed lock per seat?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.concurrent-holds.distributed-lock-for-processes
+- id: sd.design-seats.payments-saga
+  subtopic: 7. Failure modes and evolution
+  kind: procedure
+  claim: 'Adding payments turns confirm into a saga: keep the hold, charge with an idempotency key, then confirm; release the hold if the charge fails and refund if confirmation fails after charging.'
+  prompt: How would you add payments while keeping the one-booking-per-seat invariant?
+  objectives:
+  - 3
+- id: sd.design-seats.evolution-order
+  subtopic: 7. Failure modes and evolution
+  kind: procedure
+  claim: 'Evolve in this order: baseline (primary, replica, conditional updates, cached map, sweeper), waiting room, partition by event, SSE push for big events, then payments saga.'
+  prompt: In what order would you add features as the reservation business grows?
+  objectives:
+  - 3
+- id: sd.design-seats.cron-expiry-and-cache-confirm-bugs
+  subtopic: 5. Races, step by step
+  kind: principle
+  claim: Never rely on cron for expiry correctness and never confirm against cached availability; confirm must be a conditional write on the authoritative row checking state, owner and expires_at > now().
+  prompt: What two mistakes make a seat design double-book or confirm expired holds?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.design-seats.sweeper-housekeeping-only
+items:
+  design-seats-check-1-v2:
+  - sd.design-seats.browse-hold-path-split
+  - sd.design-seats.hold-conditional-update
+  design-seats-check-2-v2:
+  - sd.design-seats.confirm-predicate
+  design-seats-check-3-v2:
+  - sd.design-seats.retry-same-booking-id
+  design-seats-check-4-v2:
+  - sd.design-seats.admission-rate-calc
+  design-seats-fire-1-v2:
+  - sd.design-seats.sweeper-housekeeping-only
+  design-seats-fire-2-v2:
+  - sd.design-seats.partition-by-event
+  design-seats-fire-3-v2:
+  - sd.design-seats.failover-fail-fast
+  design-seats-fire-4-v2:
+  - sd.design-seats.payments-saga
+  design-seats-fire-5-v2:
+  - sd.design-seats.hold-conditional-update
+  - sd.design-seats.browse-hold-path-split
+  - sd.design-seats.retry-same-booking-id
+  design-seats:b1:
+  - sd.design-seats.browse-hold-path-split
+  - sd.design-seats.own-holds-read-primary
+  design-seats:b10:
+  - sd.design-seats.admission-rate-calc
+  - sd.design-seats.waiting-room-admission
+  design-seats:b12:
+  - sd.design-seats.evolution-order
+  - sd.design-seats.payments-saga
+  design-seats:b14:
+  - sd.design-seats.stale-map-never-double-books
+  - sd.design-seats.browse-hold-path-split
+  design-seats:b15:
+  - sd.design-seats.cron-expiry-and-cache-confirm-bugs
+  - sd.design-seats.confirm-predicate
+  - sd.design-seats.sweeper-housekeeping-only
+  design-seats:b3:
+  - sd.design-seats.seat-data-size
+  - sd.design-seats.cache-shields-db-reads
+  - sd.design-seats.contention-not-volume
+  design-seats:b7:
+  - sd.design-seats.single-database-clock
+  - sd.design-seats.confirm-predicate
+  design-seats:b8:
+  - sd.design-seats.retry-same-booking-id
+  redesign:design-seats:
+  - sd.design-seats.browse-hold-path-split
+  - sd.design-seats.hold-conditional-update
+  - sd.design-seats.waiting-room-admission

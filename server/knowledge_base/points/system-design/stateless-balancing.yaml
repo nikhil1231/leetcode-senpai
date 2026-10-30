@@ -1,0 +1,241 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: stateless-balancing
+source_hash: 785979b7a143d58f
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.stateless-balancing.stateless-instance-definition
+  subtopic: What "stateless" means
+  kind: principle
+  claim: An instance is stateless if it can be killed at any moment and any other instance can serve the next request; the product's state (users, carts, sessions) lives in shared systems, not instance memory.
+  prompt: What makes a service instance stateless?
+  objectives:
+  - 0
+  same_as: sd.request-flow.stateless-service-any-instance
+- id: sd.stateless-balancing.shared-store-sessions
+  subtopic: What "stateless" means
+  kind: tradeoff
+  claim: Sessions in a shared store such as Redis cost one extra lookup per request and need the store to be highly available, but they are revocable and small.
+  prompt: What is the cost of keeping session state in a shared store?
+  objectives:
+  - 0
+  requires:
+  - sd.stateless-balancing.stateless-instance-definition
+- id: sd.stateless-balancing.signed-token-tradeoff
+  subtopic: What "stateless" means
+  kind: tradeoff
+  claim: A signed token such as a JWT needs no lookup, but it cannot easily be revoked before it expires and grows with its claims, so keep it small.
+  prompt: What are the benefit and drawback of signed tokens for session state?
+  objectives:
+  - 0
+  requires:
+  - sd.stateless-balancing.stateless-instance-definition
+- id: sd.stateless-balancing.in-memory-state-problems
+  subtopic: What "stateless" means
+  kind: principle
+  claim: Sessions held in instance memory are lost on restart or deploy, force sticky routing and make load uneven; a crash or deploy logs out the pinned users.
+  prompt: What goes wrong when sessions live in server memory with sticky routing?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.stateless-balancing.stateless-instance-definition
+- id: sd.stateless-balancing.short-access-plus-refresh
+  subtopic: What "stateless" means
+  kind: tradeoff
+  claim: A common hybrid is short-lived access tokens (5-15 minutes) verified locally plus a refresh token checked against a store, so revocation takes effect within one access-token lifetime.
+  prompt: Why pair short-lived access tokens with a store-checked refresh token?
+  objectives:
+  - 0
+  requires:
+  - sd.stateless-balancing.signed-token-tradeoff
+  - sd.stateless-balancing.shared-store-sessions
+- id: sd.stateless-balancing.horizontal-scaling-shared-state
+  subtopic: What "stateless" means
+  kind: principle
+  claim: To scale horizontally, anything that must outlive an instance or be seen by others (sessions, uploads, queued jobs) belongs in shared durable systems such as object storage or a shared queue, not local disk or memory.
+  prompt: Where should uploads, jobs and sessions live so a tier scales horizontally?
+  objectives:
+  - 0
+  requires:
+  - sd.stateless-balancing.stateless-instance-definition
+- id: sd.stateless-balancing.l4-vs-l7
+  subtopic: L4 versus L7
+  kind: tradeoff
+  claim: 'L4 balancers route TCP/UDP connections by IP and port: very fast and protocol-agnostic but blind to HTTP. L7 balancers terminate HTTP, so they can route by path or header, retry idempotent requests, balance per request and terminate TLS, at the cost of more CPU and an extra hop.'
+  prompt: How do L4 and L7 load balancers differ in capability and cost?
+  objectives:
+  - 1
+  requires:
+  - sd.request-flow.lb-health-and-request-id
+- id: sd.stateless-balancing.grpc-l4-imbalance
+  subtopic: L4 versus L7
+  kind: mechanism
+  claim: gRPC multiplexes many requests over one long-lived HTTP/2 connection, and an L4 balancer balances connections, so one client sends all its traffic to one backend; use an L7 proxy or client-side balancing.
+  prompt: Why does gRPC stay unbalanced behind an L4 load balancer, and what fixes it?
+  objectives:
+  - 1
+  requires:
+  - sd.stateless-balancing.l4-vs-l7
+- id: sd.stateless-balancing.round-robin-weakness
+  subtopic: Choosing an algorithm
+  kind: tradeoff
+  claim: Round robin is fine for uniform requests and servers, but it keeps sending a slow server its full share (1/N of requests), so that slow share can set p99.
+  prompt: When does round robin fail?
+  objectives:
+  - 1
+  requires:
+  - sd.service-quality.mean-hides-tail
+- id: sd.stateless-balancing.least-outstanding-requests
+  subtopic: Choosing an algorithm
+  kind: mechanism
+  claim: Least connections or least outstanding requests sends work to the backend with the fewest in flight, so a slow server naturally gets less, but it needs a view of every backend's load.
+  prompt: How does least outstanding requests handle a slow server, and what does it require?
+  objectives:
+  - 1
+  requires:
+  - sd.stateless-balancing.round-robin-weakness
+- id: sd.stateless-balancing.power-of-two-choices
+  subtopic: Choosing an algorithm
+  kind: mechanism
+  claim: Power of two choices picks two backends at random and sends to the less loaded one, giving near-optimal spreading without global state or herding onto one server.
+  prompt: How does power of two choices work and why is it popular?
+  objectives:
+  - 1
+  requires:
+  - sd.stateless-balancing.least-outstanding-requests
+- id: sd.stateless-balancing.consistent-hashing-tradeoff
+  subtopic: Choosing an algorithm
+  kind: tradeoff
+  claim: Consistent hashing on a key (user ID, tenant) sends the same key to the same backend, which helps local caches and affinity, at the cost of hot keys and rebalancing when backends change.
+  prompt: When is consistent hashing used for balancing, and what does it cost?
+  objectives:
+  - 1
+- id: sd.stateless-balancing.outlier-detection
+  subtopic: Choosing an algorithm
+  kind: mechanism
+  claim: Outlier detection ejects backends whose real-traffic error rate or latency is far worse than their peers, catching servers that pass health checks but are sick.
+  prompt: What removes a backend that passes health checks but returns many errors?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.request-flow.lb-health-and-request-id
+- id: sd.stateless-balancing.liveness-local-only
+  subtopic: Health checks that help rather than hurt
+  kind: principle
+  claim: Liveness failure restarts the process, so it should test only local, unrecoverable problems such as a stuck event loop or deadlock, never a database or other dependency.
+  prompt: What should a liveness check cover, and what should it avoid?
+  objectives:
+  - 2
+- id: sd.stateless-balancing.liveness-dependency-cascade
+  subtopic: Health checks that help rather than hurt
+  kind: mechanism
+  claim: If liveness depends on the database, a failover fails every pod at once and restarts the whole fleet, which comes back cold and stampedes the database as it recovers, turning a short blip into a long outage.
+  prompt: Why can a database-dependent liveness probe turn a 40-second failover into a long outage?
+  objectives:
+  - 2
+  requires:
+  - sd.stateless-balancing.liveness-local-only
+- id: sd.stateless-balancing.readiness-purpose
+  subtopic: Health checks that help rather than hurt
+  kind: mechanism
+  claim: Readiness failure takes an instance out of rotation without restarting it, used during start-up, warm-up, overload or (carefully) a critical dependency outage so the whole fleet does not go unready together.
+  prompt: What does failing readiness do, and when is it appropriate?
+  objectives:
+  - 2
+  requires:
+  - sd.stateless-balancing.liveness-local-only
+- id: sd.stateless-balancing.probe-thresholds
+  subtopic: Health checks that help rather than hurt
+  kind: procedure
+  claim: Configure liveness with several consecutive failures (e.g. failureThreshold 3) and a startup probe for slow starters, so one GC pause or blip does not kill a healthy pod.
+  prompt: Why should a liveness probe tolerate several consecutive failures?
+  objectives:
+  - 2
+  requires:
+  - sd.stateless-balancing.liveness-local-only
+- id: sd.stateless-balancing.graceful-draining
+  subtopic: Deploys and scale-in without dropped requests
+  kind: procedure
+  claim: To remove an instance safely, stop sending it new requests, let in-flight requests finish, close idle keep-alives, then exit, with a termination grace period (e.g. 30s) rather than zero.
+  prompt: What steps avoid dropped requests when removing an instance?
+  objectives:
+  - 3
+  requires:
+  - sd.stateless-balancing.readiness-purpose
+- id: sd.stateless-balancing.long-lived-connection-draining
+  subtopic: Deploys and scale-in without dropped requests
+  kind: mechanism
+  claim: WebSockets, gRPC streams and keep-alives do not end on their own, so draining must actively close them (e.g. HTTP/2 GOAWAY) and let clients reconnect spread over time to avoid a reconnect stampede.
+  prompt: How do you drain long-lived connections safely?
+  objectives:
+  - 3
+  requires:
+  - sd.stateless-balancing.graceful-draining
+- id: sd.stateless-balancing.lb-redundancy
+  subtopic: Balancing the balancer, and across regions
+  kind: fact
+  claim: 'A load balancer is itself a single point of failure unless redundant: managed cloud LBs are distributed; self-hosted ones run in pairs with a floating IP (VRRP/keepalived) or behind anycast.'
+  prompt: How do you avoid the load balancer being a single point of failure?
+  objectives:
+  - 3
+  requires:
+  - sd.request-flow.lb-health-and-request-id
+- id: sd.stateless-balancing.global-balancing-dns-anycast
+  subtopic: Balancing the balancer, and across regions
+  kind: mechanism
+  claim: DNS-based global balancing returns the nearest healthy region's address (limited by TTL caching), while anycast advertises one IP from many locations and BGP picks the nearest.
+  prompt: How do DNS-based and anycast global load balancing differ?
+  objectives:
+  - 3
+- id: sd.stateless-balancing.zone-failure-sizing
+  subtopic: Balancing the balancer, and across regions
+  kind: procedure
+  claim: 'Size for zone loss: instances needed at peak = peak load / per-instance capacity, then divide by (zones-1)/zones; for 3 zones multiply by 1.5 (e.g. 30 needed becomes 45, 15 per zone).'
+  prompt: How do you size a fleet across 3 zones to survive losing one at peak?
+  objectives:
+  - 3
+  requires:
+  - sd.estimates.server-count-formula
+items:
+  stateless-balancing-check-1-v2:
+  - sd.stateless-balancing.grpc-l4-imbalance
+  - sd.stateless-balancing.l4-vs-l7
+  stateless-balancing-check-2-v2:
+  - sd.stateless-balancing.liveness-local-only
+  stateless-balancing-check-3-v2:
+  - sd.stateless-balancing.in-memory-state-problems
+  stateless-balancing-check-4-v2:
+  - sd.stateless-balancing.zone-failure-sizing
+  stateless-balancing-fire-1-v2:
+  - sd.stateless-balancing.power-of-two-choices
+  stateless-balancing-fire-2-v2:
+  - sd.stateless-balancing.short-access-plus-refresh
+  - sd.stateless-balancing.signed-token-tradeoff
+  stateless-balancing-fire-3-v2:
+  - sd.stateless-balancing.graceful-draining
+  stateless-balancing-fire-4-v2:
+  - sd.stateless-balancing.outlier-detection
+  stateless-balancing-fire-5-v2:
+  - sd.stateless-balancing.horizontal-scaling-shared-state
+  - sd.stateless-balancing.in-memory-state-problems
+  stateless-balancing:b10:
+  - sd.stateless-balancing.liveness-dependency-cascade
+  - sd.stateless-balancing.readiness-purpose
+  - sd.stateless-balancing.liveness-local-only
+  stateless-balancing:b2:
+  - sd.stateless-balancing.round-robin-weakness
+  - sd.stateless-balancing.outlier-detection
+  - sd.stateless-balancing.least-outstanding-requests
+  stateless-balancing:b4:
+  - sd.stateless-balancing.liveness-dependency-cascade
+  - sd.stateless-balancing.probe-thresholds
+  - sd.stateless-balancing.graceful-draining
+  stateless-balancing:b8:
+  - sd.stateless-balancing.zone-failure-sizing

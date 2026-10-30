@@ -1,0 +1,214 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: rate-limiting
+source_hash: fa6c836e32a5eba2
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.rate-limiting.fixed-window-boundary-burst
+  subtopic: The algorithms
+  kind: mechanism
+  claim: A fixed-window counter resets at clock boundaries, so a client can send the full limit just before and just after a boundary, getting up to 2× the limit through in a short span.
+  prompt: Why can a fixed-window limiter of 100 per minute let through about 200 requests in two seconds?
+  objectives:
+  - 0
+- id: sd.rate-limiting.sliding-log-exact-costly
+  subtopic: The algorithms
+  kind: tradeoff
+  claim: A sliding log stores a timestamp for every request, so it is exact with no burst beyond the limit, but memory per key grows with the request count.
+  prompt: What is the accuracy and cost trade-off of a sliding log limiter?
+  objectives:
+  - 0
+  requires:
+  - sd.rate-limiting.fixed-window-boundary-burst
+- id: sd.rate-limiting.sliding-window-counter-estimate
+  subtopic: The algorithms
+  kind: mechanism
+  claim: A sliding-window counter keeps two counters per key and estimates the rolling count as previous count × the fraction of the previous window still overlapping, plus the current count. It uses constant memory with a small approximation error (Cloudflare reported about 0.003% wrong decisions).
+  prompt: How does a sliding-window counter estimate the rolling request count, and what does it cost?
+  objectives:
+  - 0
+  requires:
+  - sd.rate-limiting.fixed-window-boundary-burst
+  - sd.rate-limiting.sliding-log-exact-costly
+- id: sd.rate-limiting.token-bucket-burst-rate
+  subtopic: The algorithms
+  kind: mechanism
+  claim: 'A token bucket refills at rate r up to capacity b and each request takes a token: capacity sets the maximum burst and refill rate sets the long-run average.'
+  prompt: In a token bucket, what do capacity and refill rate each control?
+  objectives:
+  - 0
+- id: sd.rate-limiting.token-bucket-allowance-calc
+  subtopic: The algorithms
+  kind: procedure
+  claim: Requests allowed from a full token bucket over t seconds are capacity + refill rate × t; for example capacity 50 at 10/s allows 100 in 5 seconds.
+  prompt: How do you calculate requests allowed in t seconds from a full token bucket?
+  objectives:
+  - 0
+  requires:
+  - sd.rate-limiting.token-bucket-burst-rate
+- id: sd.rate-limiting.leaky-bucket-smoothing
+  subtopic: The algorithms
+  kind: tradeoff
+  claim: A leaky bucket queues requests and drains them at a constant rate, smoothing bursts into delay. It suits protecting a fragile downstream but is poor for interactive latency.
+  prompt: When is a leaky bucket the right choice, and what does it cost?
+  objectives:
+  - 0
+  requires:
+  - sd.rate-limiting.token-bucket-burst-rate
+- id: sd.rate-limiting.choose-token-vs-sliding-counter
+  subtopic: The algorithms
+  kind: tradeoff
+  claim: Use a sliding-window counter for 'N per period' limits; use a token bucket when clients legitimately burst and you only need to bound the average.
+  prompt: When would you pick a token bucket over a sliding-window counter?
+  objectives:
+  - 0
+  requires:
+  - sd.rate-limiting.token-bucket-burst-rate
+  - sd.rate-limiting.sliding-window-counter-estimate
+- id: sd.rate-limiting.per-instance-limit-multiplies
+  subtopic: Distributed limiting
+  kind: principle
+  claim: 'Per-instance limits multiply by instance count: 50 instances each allowing 100/min can let a client make about 5,000/min if traffic is spread evenly.'
+  prompt: What is the effective limit when N instances each enforce the full limit locally?
+  objectives:
+  - 1
+- id: sd.rate-limiting.distributed-limiting-options
+  subtopic: Distributed limiting
+  kind: tradeoff
+  claim: Central Redis counters are accurate but add a network hop and a critical dependency. Local limit÷N shares are approximate and break when traffic is uneven or N changes. Hybrid local buckets that sync centrally are fast and roughly accurate.
+  prompt: What are the three approaches to distributed limiting and their trade-offs?
+  objectives:
+  - 1
+  requires:
+  - sd.rate-limiting.per-instance-limit-multiplies
+- id: sd.rate-limiting.atomic-increment-check
+  subtopic: Distributed limiting
+  kind: mechanism
+  claim: 'Read-check-write on a counter is a race: concurrent requests all read the same count and pass. Increment first and compare the returned value, or use a Lua script.'
+  prompt: Why does reading a count, checking it, then incrementing leak under concurrency, and how do you fix it?
+  objectives:
+  - 1
+  requires:
+  - sd.guarantees.read-check-write-race
+- id: sd.rate-limiting.atomic-expiry-with-incr
+  subtopic: Distributed limiting
+  kind: mechanism
+  claim: Setting the TTL in a separate command from INCR risks a key that never expires if the process dies between them; set both atomically via a Lua script or MULTI/pipeline.
+  prompt: What goes wrong if EXPIRE is a separate call after INCR?
+  objectives:
+  - 1
+  requires:
+  - sd.rate-limiting.atomic-increment-check
+- id: sd.rate-limiting.limit-key-choice
+  subtopic: Keys, scopes and responses
+  kind: tradeoff
+  claim: Limit by API key or account for customer fairness, IP for anonymous traffic (beware shared NAT IPs), and endpoint for expensive operations; often combine several layers.
+  prompt: Which keys can you limit on, and when is each suited?
+  objectives:
+  - 2
+- id: sd.rate-limiting.limit-placement
+  subtopic: Keys, scopes and responses
+  kind: tradeoff
+  claim: Put coarse limits at the edge or gateway, where they are cheap and protect everything, and fine-grained cost-aware limits in the service that knows each operation's cost.
+  prompt: Where should coarse and fine-grained limits be enforced?
+  objectives:
+  - 2
+  requires:
+  - sd.request-flow.edge-generic-checks
+- id: sd.rate-limiting.cost-weighted-endpoint-limits
+  subtopic: Keys, scopes and responses
+  kind: principle
+  claim: Expensive endpoints get tighter, cost-weighted limits, such as 5 reports a minute even when the general limit is 1,000 calls a minute.
+  prompt: How should an expensive endpoint be limited relative to the general limit?
+  objectives:
+  - 2
+  requires:
+  - sd.rate-limiting.limit-key-choice
+- id: sd.rate-limiting.rate-limit-response
+  subtopic: Keys, scopes and responses
+  kind: fact
+  claim: A limited request gets 429 Too Many Requests with a Retry-After header, ideally plus RateLimit-Limit, RateLimit-Remaining and RateLimit-Reset so clients can self-pace and avoid retry storms.
+  prompt: What should a rate-limited response contain?
+  objectives:
+  - 2
+  same_as: sd.api-contracts.rate-limit-429-retry-after
+- id: sd.rate-limiting.quota-vs-rate-limit
+  subtopic: Keys, scopes and responses
+  kind: principle
+  claim: A quota (e.g. 10,000 calls a month) is a billing allowance tracked durably over a long period. A rate limit (e.g. 100 per second) protects capacity over short windows; many APIs have both.
+  prompt: How does a quota differ from a rate limit?
+  objectives:
+  - 3
+- id: sd.rate-limiting.fail-open-default
+  subtopic: When the limiter fails
+  kind: tradeoff
+  claim: Fail open for fairness and soft-capacity limits so a limiter outage does not become an API outage, using a local per-instance fallback bucket for approximate limits.
+  prompt: When should a limiter fail open, and what should back it up?
+  objectives:
+  - 3
+- id: sd.rate-limiting.fail-closed-sensitive
+  subtopic: When the limiter fails
+  kind: tradeoff
+  claim: Fail closed for limits protecting security or money, such as login and OTP attempts, SMS sending (toll fraud) and free-trial abuse, where letting abuse through is worse than briefly blocking users.
+  prompt: Which limits should fail closed when the limiter store is down?
+  objectives:
+  - 3
+  requires:
+  - sd.rate-limiting.fail-open-default
+- id: sd.rate-limiting.fail-closed-all-spof
+  subtopic: When the limiter fails
+  kind: principle
+  claim: 'Failing closed on every endpoint makes the rate limiter a single point of failure: a Redis outage rejects all API requests.'
+  prompt: What happens if a limiter fails closed for all endpoints and its store goes down?
+  objectives:
+  - 3
+  requires:
+  - sd.rate-limiting.fail-open-default
+items:
+  rate-limiting-check-1-v2:
+  - sd.rate-limiting.fixed-window-boundary-burst
+  rate-limiting-check-2-v2:
+  - sd.rate-limiting.token-bucket-allowance-calc
+  - sd.rate-limiting.token-bucket-burst-rate
+  rate-limiting-check-3-v2:
+  - sd.rate-limiting.atomic-increment-check
+  rate-limiting-check-4-v2:
+  - sd.rate-limiting.fail-closed-sensitive
+  - sd.rate-limiting.fail-open-default
+  rate-limiting-fire-1-v2:
+  - sd.rate-limiting.per-instance-limit-multiplies
+  rate-limiting-fire-2-v2:
+  - sd.rate-limiting.token-bucket-burst-rate
+  - sd.rate-limiting.choose-token-vs-sliding-counter
+  rate-limiting-fire-3-v2:
+  - sd.rate-limiting.rate-limit-response
+  rate-limiting-fire-4-v2:
+  - sd.rate-limiting.sliding-window-counter-estimate
+  - sd.rate-limiting.sliding-log-exact-costly
+  rate-limiting-fire-5-v2:
+  - sd.rate-limiting.quota-vs-rate-limit
+  rate-limiting:b10:
+  - sd.rate-limiting.fixed-window-boundary-burst
+  - sd.rate-limiting.sliding-window-counter-estimate
+  - sd.rate-limiting.token-bucket-burst-rate
+  rate-limiting:b2:
+  - sd.rate-limiting.token-bucket-allowance-calc
+  - sd.rate-limiting.token-bucket-burst-rate
+  rate-limiting:b4:
+  - sd.rate-limiting.atomic-increment-check
+  - sd.rate-limiting.atomic-expiry-with-incr
+  - sd.rate-limiting.fixed-window-boundary-burst
+  rate-limiting:b6:
+  - sd.rate-limiting.limit-key-choice
+  - sd.rate-limiting.cost-weighted-endpoint-limits
+  - sd.rate-limiting.quota-vs-rate-limit
+  rate-limiting:b8:
+  - sd.rate-limiting.fail-closed-all-spof
+  - sd.rate-limiting.fail-open-default
+  - sd.rate-limiting.fail-closed-sensitive

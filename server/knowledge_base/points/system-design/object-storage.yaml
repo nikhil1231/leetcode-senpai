@@ -1,0 +1,268 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: object-storage
+source_hash: 85516f37bdab1ab7
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+points:
+- id: sd.object-storage.proxying-uploads-melts-api
+  subtopic: Introduction
+  kind: principle
+  claim: Proxying large uploads through API servers ties up their memory, bandwidth and connection slots on slow transfers, so a surge degrades every endpoint; direct uploads leave the API only authorising and recording metadata.
+  prompt: Why is streaming user uploads through your API servers a reliability risk, and what is the alternative?
+  objectives:
+  - 1
+- id: sd.object-storage.object-store-data-model
+  subtopic: What object storage is (and isn't)
+  kind: fact
+  claim: An object store holds objects (bytes plus metadata) addressed by a key in a bucket; the namespace is flat, so slashes in keys are only a naming convention.
+  prompt: How are objects addressed in an object store, and are the slashes in a key real directories?
+  objectives:
+  - 0
+- id: sd.object-storage.whole-object-writes
+  subtopic: What object storage is (and isn't)
+  kind: mechanism
+  claim: Objects are written whole and replaced rather than edited in place; appending needs a new object or multipart composition.
+  prompt: How do you change the content of an existing object in an object store?
+  objectives:
+  - 0
+  requires:
+  - sd.object-storage.object-store-data-model
+- id: sd.object-storage.eleven-nines-durability
+  subtopic: What object storage is (and isn't)
+  kind: fact
+  claim: S3 is designed for 99.999999999% (eleven nines) durability by storing data redundantly across multiple availability zones.
+  prompt: What durability is S3 designed for, and how is it achieved?
+  objectives:
+  - 0
+  requires:
+  - sd.object-storage.object-store-data-model
+- id: sd.object-storage.strong-read-after-write
+  subtopic: What object storage is (and isn't)
+  kind: fact
+  claim: S3 now gives strong read-after-write consistency for PUTs and DELETEs, though older documentation and some other stores are weaker.
+  prompt: What consistency does S3 now provide for PUTs and DELETEs?
+  objectives:
+  - 0
+  requires:
+  - sd.object-storage.object-store-data-model
+- id: sd.object-storage.per-prefix-throughput
+  subtopic: What object storage is (and isn't)
+  kind: fact
+  claim: S3 supports at least 3,500 writes and 5,500 reads per second per prefix, and scales out across many prefixes, so one hot prefix may need keys spread out.
+  prompt: What request rates does S3 support per prefix, and how do you go beyond them?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.object-storage.object-store-data-model
+- id: sd.object-storage.object-store-latency-limits
+  subtopic: What object storage is (and isn't)
+  kind: principle
+  claim: Object storage has tens of milliseconds to first byte, no locking, no cheap renames and no queries over contents, so it is not a filesystem, database or cache replacement.
+  prompt: Why can't object storage replace a database row lookup or a filesystem?
+  objectives:
+  - 0
+  requires:
+  - sd.object-storage.object-store-data-model
+- id: sd.object-storage.bytes-vs-metadata-placement
+  subtopic: What object storage is (and isn't)
+  kind: tradeoff
+  claim: Large immutable bytes (originals, thumbnails, backups) go in object storage; data you query and authorise on (ownership, sharing, status, key, size, checksum) goes in the database.
+  prompt: How do you decide which data goes in object storage and which in the database?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.object-storage.object-store-data-model
+- id: sd.object-storage.presigned-url-definition
+  subtopic: Direct uploads with presigned URLs
+  kind: mechanism
+  claim: A presigned URL is signed with your service's credentials and grants one operation on one key (with fixed type and size where possible) until a short expiry, so the client talks to the store directly.
+  prompt: What is a presigned URL and what does it grant?
+  objectives:
+  - 1
+  requires:
+  - sd.object-storage.object-store-data-model
+- id: sd.object-storage.presigned-signature-is-authorisation
+  subtopic: Direct uploads with presigned URLs
+  kind: principle
+  claim: 'A presigned URL is a bearer credential, so issuing it is an authorisation decision: check ownership first, scope to one key and operation, keep expiry to minutes, and pin size and content type.'
+  prompt: Why is generating a presigned URL a security-critical step and how do you scope it?
+  objectives:
+  - 1
+  requires:
+  - sd.object-storage.presigned-url-definition
+  - sd.request-flow.authz-in-owning-service
+- id: sd.object-storage.server-generated-keys
+  subtopic: Direct uploads with presigned URLs
+  kind: principle
+  claim: Generate object keys on the server (such as u/{user_id}/{uuid}) and record them in a metadata row; client-supplied filenames let users overwrite each other's files.
+  prompt: Why should the server, not the client, choose the object key?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.object-storage.object-store-data-model
+  - sd.object-storage.bytes-vs-metadata-placement
+- id: sd.object-storage.authorise-downloads
+  subtopic: Direct uploads with presigned URLs
+  kind: principle
+  claim: A download endpoint must check the caller may view that specific object before returning a signed URL, otherwise IDs can be enumerated to read private files.
+  prompt: What vulnerability arises if a download-URL endpoint skips the per-object permission check?
+  objectives:
+  - 1
+  requires:
+  - sd.object-storage.presigned-url-definition
+  - sd.request-flow.ui-hiding-not-access-control
+- id: sd.object-storage.upload-flow-steps
+  subtopic: Direct uploads with presigned URLs
+  kind: procedure
+  claim: 'Upload flow: API checks quota, size and type and inserts a pending row with a server key; returns a short-lived presigned URL; the client uploads directly; an object-created event triggers idempotent verification, thumbnails and status=ready.'
+  prompt: Outline the steps of a direct presigned upload from request to ready.
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.object-storage.presigned-url-definition
+  - sd.object-storage.server-generated-keys
+  - sd.object-storage.bytes-vs-metadata-placement
+- id: sd.object-storage.cdn-signed-download
+  subtopic: Direct uploads with presigned URLs
+  kind: mechanism
+  claim: For downloads, the API authorises the caller and returns a short-lived signed CDN URL; the bucket stays private and only the CDN reads it as origin.
+  prompt: How are downloads authorised and served when a CDN fronts a private bucket?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - sd.object-storage.authorise-downloads
+- id: sd.object-storage.pending-row-first
+  subtopic: Two systems, one crash window
+  kind: principle
+  claim: With no transaction across the database and object store, write the metadata row first as pending so the normal path never produces unknown bytes.
+  prompt: Why write the metadata row as pending before the bytes are uploaded?
+  objectives:
+  - 2
+  requires:
+  - sd.object-storage.upload-flow-steps
+- id: sd.object-storage.pending-without-object-cleanup
+  subtopic: Two systems, one crash window
+  kind: procedure
+  claim: A pending row with no object (client gave up) is removed by a cleanup job deleting pending rows older than the URL expiry plus a margin.
+  prompt: How do you handle pending rows whose upload never happened?
+  objectives:
+  - 2
+  requires:
+  - sd.object-storage.pending-row-first
+  - sd.object-storage.presigned-url-definition
+- id: sd.object-storage.events-fast-path-reconciler
+  subtopic: Two systems, one crash window
+  kind: mechanism
+  claim: Object-created events are only a fast path; a reconciler HEADs pending rows or lists recent objects to complete uploads whose event was lost, and processing must be idempotent.
+  prompt: What recovers an upload whose object-created event was lost?
+  objectives:
+  - 2
+  requires:
+  - sd.object-storage.upload-flow-steps
+  - sd.retry-identity.exactly-once-composition
+- id: sd.object-storage.orphan-reconciliation-and-deletion
+  subtopic: Two systems, one crash window
+  kind: procedure
+  claim: Periodically reconcile the bucket listing with the database to find orphans, and delete by marking the row deleted first, then removing objects asynchronously with a grace period or versioning.
+  prompt: How do you find orphans and safely delete files across the two systems?
+  objectives:
+  - 2
+  requires:
+  - sd.object-storage.pending-row-first
+  - sd.object-storage.bytes-vs-metadata-placement
+- id: sd.object-storage.multipart-upload
+  subtopic: Big files, cost and lifecycle
+  kind: fact
+  claim: Multipart upload splits a file into parts of 5 MB to 5 GB (up to 10,000), uploaded in parallel and retried individually; it is required above 5 GB in S3 and better above about 100 MB.
+  prompt: What are the multipart upload limits and when should you use it?
+  objectives:
+  - 3
+  requires:
+  - sd.object-storage.whole-object-writes
+- id: sd.object-storage.multipart-time-estimate
+  subtopic: Big files, cost and lifecycle
+  kind: procedure
+  claim: Estimate multipart time as parts = size ÷ part size, rounds = parts ÷ parallelism, time = rounds × time per part; a failed part retries alone and recorded part numbers and ETags allow resuming.
+  prompt: How do you estimate multipart upload time and what happens when a part fails?
+  objectives:
+  - 3
+  requires:
+  - sd.object-storage.multipart-upload
+- id: sd.object-storage.abort-incomplete-multipart
+  subtopic: Big files, cost and lifecycle
+  kind: mechanism
+  claim: Abandoned incomplete multipart uploads are billed for their parts, so add a lifecycle rule to abort them after a set number of days.
+  prompt: How do you stop abandoned multipart uploads accumulating cost?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.object-storage.multipart-upload
+- id: sd.object-storage.storage-classes-lifecycle
+  subtopic: Big files, cost and lifecycle
+  kind: tradeoff
+  claim: Storage classes (standard, infrequent access, archive) trade retrieval latency and cost for lower storage price; lifecycle rules move objects by age and expire temporary files.
+  prompt: What do storage classes and lifecycle rules trade off?
+  objectives:
+  - 3
+  requires:
+  - sd.object-storage.object-store-data-model
+- id: sd.object-storage.cdn-for-immutable-reads
+  subtopic: Big files, cost and lifecycle
+  kind: tradeoff
+  claim: A CDN in front of the bucket cuts egress cost per GB and latency for frequently read content; versioned keys on immutable objects allow long cache lifetimes without invalidation.
+  prompt: What is the best fix for high egress cost and latency on widely read immutable images?
+  objectives:
+  - 3
+  requires:
+  - sd.object-storage.object-store-data-model
+items:
+  object-storage-check-1-v2:
+  - sd.object-storage.proxying-uploads-melts-api
+  - sd.object-storage.presigned-url-definition
+  object-storage-check-2-v2:
+  - sd.object-storage.presigned-signature-is-authorisation
+  - sd.object-storage.server-generated-keys
+  object-storage-check-3-v2:
+  - sd.object-storage.events-fast-path-reconciler
+  object-storage-check-4-v2:
+  - sd.object-storage.multipart-time-estimate
+  - sd.object-storage.multipart-upload
+  object-storage-fire-1-v2:
+  - sd.object-storage.bytes-vs-metadata-placement
+  object-storage-fire-2-v2:
+  - sd.object-storage.authorise-downloads
+  object-storage-fire-3-v2:
+  - sd.object-storage.cdn-for-immutable-reads
+  object-storage-fire-4-v2:
+  - sd.object-storage.abort-incomplete-multipart
+  object-storage-fire-5-v2:
+  - sd.object-storage.per-prefix-throughput
+  - sd.object-storage.eleven-nines-durability
+  - sd.object-storage.whole-object-writes
+  object-storage:b1:
+  - sd.object-storage.bytes-vs-metadata-placement
+  - sd.object-storage.storage-classes-lifecycle
+  object-storage:b10:
+  - sd.object-storage.cdn-for-immutable-reads
+  object-storage:b12:
+  - sd.object-storage.presigned-signature-is-authorisation
+  - sd.object-storage.upload-flow-steps
+  - sd.object-storage.presigned-url-definition
+  object-storage:b5:
+  - sd.object-storage.server-generated-keys
+  - sd.object-storage.presigned-signature-is-authorisation
+  - sd.object-storage.authorise-downloads
+  object-storage:b9:
+  - sd.object-storage.multipart-time-estimate
+  - sd.object-storage.multipart-upload

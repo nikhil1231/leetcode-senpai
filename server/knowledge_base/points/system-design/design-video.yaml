@@ -1,0 +1,233 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: design-video
+source_hash: b08c878dc2261f02
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.design-video.daily-upload-volume
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: 500 hours uploaded per minute × 1,440 minutes per day gives 720,000 hours of video uploaded per day.
+  prompt: How many hours of video arrive per day if 500 hours are uploaded every minute?
+  objectives:
+  - 0
+  same_as: sd.estimates.video-upload-volume
+- id: sd.design-video.storage-growth-estimate
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: At about 3 GB per hour of video (original plus renditions), 720,000 hours a day is about 2.2 PB of new storage per day, roughly 800 PB per year.
+  prompt: Roughly how much new storage per year does the platform need at ~3 GB per video hour and 720,000 hours a day?
+  objectives:
+  - 0
+  requires:
+  - sd.design-video.daily-upload-volume
+  - sd.estimates.storage-formula
+- id: sd.design-video.egress-estimate
+  subtopic: 2. Estimates
+  kind: procedure
+  claim: 5B views a day × 300 s watched × ~0.19 MB/s (1.5 Mbps) is about 280 PB of egress per day, served mostly from CDN edges.
+  prompt: Estimate daily streaming egress for 5B views of 5 minutes at 1.5 Mbps.
+  objectives:
+  - 0
+  requires:
+  - sd.estimates.bandwidth-formula
+- id: sd.design-video.dominant-costs
+  subtopic: 2. Estimates
+  kind: principle
+  claim: Video platforms are bandwidth and storage businesses; egress and storage dominate cost, so CDN hit ratio, codecs and storage tiering are the main levers, not app servers.
+  prompt: What dominates the cost of a large video platform, and which levers matter most?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.estimates.find-dominant-term
+- id: sd.design-video.resumable-multipart-upload
+  subtopic: 3. Upload
+  kind: mechanism
+  claim: Clients upload directly to object storage via presigned multipart URLs in parallel parts (e.g. 16 MB); the client tracks completed parts so after a failure it resends only missing parts, then completes.
+  prompt: How do you make a multi-GB upload resumable and keep bytes off the API servers?
+  objectives:
+  - 1
+  requires:
+  - sd.object-storage.multipart-upload
+  - sd.object-storage.presigned-url-definition
+- id: sd.design-video.no-bytes-through-app-servers
+  subtopic: 3. Upload
+  kind: principle
+  claim: Streaming uploads or video through application servers saturates their network and memory; use presigned direct uploads and validate afterwards in a processing job.
+  prompt: Why should API servers not proxy upload or video bytes?
+  objectives:
+  - 1
+  - 2
+  same_as: sd.object-storage.proxying-uploads-melts-api
+- id: sd.design-video.parallel-chunk-transcoding
+  subtopic: 3. Upload
+  kind: mechanism
+  claim: Splitting video at keyframes (GOP-aligned) into ~10-second chunks and transcoding chunks and renditions in parallel cuts wall time from hours to minutes.
+  prompt: How do you cut transcoding time for a 2-hour video from hours to minutes?
+  objectives:
+  - 1
+- id: sd.design-video.idempotent-transcode-tasks
+  subtopic: 3. Upload
+  kind: mechanism
+  claim: Transcode tasks write to deterministic keys (video/rendition/chunk) and run under leases, so if a worker dies the task is rescheduled and overwrites partial output; only that chunk is redone.
+  prompt: How does the pipeline recover safely when a transcode worker crashes mid-chunk?
+  objectives:
+  - 1
+  requires:
+  - sd.design-video.parallel-chunk-transcoding
+  - sd.design-jobs.deterministic-output-key
+- id: sd.design-video.progressive-availability
+  subtopic: 3. Upload
+  kind: tradeoff
+  claim: Publish low renditions (e.g. 360p and 720p) first and mark the video ready, with higher qualities following, so it is watchable within minutes.
+  prompt: How do you make a video watchable within minutes before 4K finishes encoding?
+  objectives:
+  - 1
+  requires:
+  - sd.design-video.parallel-chunk-transcoding
+- id: sd.design-video.upload-to-playback-flow
+  subtopic: 3. Upload
+  kind: procedure
+  claim: 'Flow: resumable upload to object storage, workflow triggered (validate, split), parallel transcode and segment, publish manifests and mark ready, player fetches from CDN.'
+  prompt: What are the stages from upload to playback, in order?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.design-video.resumable-multipart-upload
+  - sd.design-video.parallel-chunk-transcoding
+- id: sd.design-video.abr-renditions-segments
+  subtopic: '4. Playback: adaptive bitrate'
+  kind: mechanism
+  claim: Video is encoded into several renditions and cut into 2-6 second segments listed in an HLS (.m3u8) or DASH (.mpd) manifest; the player picks the next segment's rendition from measured throughput and buffer level.
+  prompt: How does adaptive bitrate streaming choose quality, and why segments in multiple renditions?
+  objectives:
+  - 2
+- id: sd.design-video.cdn-serves-segments
+  subtopic: '4. Playback: adaptive bitrate'
+  kind: mechanism
+  claim: Segments are static files with immutable URLs, so CDN edges cache them with near-100% hit ratio for popular videos; an origin shield collapses misses from many edges into one fetch, and app servers handle only metadata, auth and signed URLs.
+  prompt: Where do video bytes come from on playback, and what does an origin shield do?
+  objectives:
+  - 2
+  requires:
+  - sd.design-video.abr-renditions-segments
+  - sd.http-cdn.hashed-filename-release
+- id: sd.design-video.component-responsibilities
+  subtopic: '4. Playback: adaptive bitrate'
+  kind: principle
+  claim: The player does ABR switching; the CDN serves segments and collapses misses; the backend authorises and issues signed URLs and stores playback position.
+  prompt: Which of player, CDN and backend handles ABR switching, segment serving and authorisation?
+  objectives:
+  - 2
+  requires:
+  - sd.design-video.abr-renditions-segments
+- id: sd.design-video.premiere-stampede-protection
+  subtopic: '4. Playback: adaptive bitrate'
+  kind: tradeoff
+  claim: To avoid an origin stampede for a viral or premiere video, pre-warm edges with the first segments, use an origin shield and collapse concurrent misses.
+  prompt: How do you stop millions of simultaneous viewers of a new video stampeding the origin?
+  objectives:
+  - 2
+  requires:
+  - sd.http-cdn.request-collapsing
+  - sd.http-cdn.origin-shield-tiering
+- id: sd.design-video.storage-tiering
+  subtopic: 5. Storage tiering and cost
+  kind: tradeoff
+  claim: Move rarely watched videos to colder storage via lifecycle rules, and keep fewer renditions for the long tail (original plus a couple), regenerating rare ones on demand at the cost of first-view latency.
+  prompt: How do you cut storage cost for long-tail videos, and what does it cost?
+  objectives:
+  - 3
+  requires:
+  - sd.object-storage.storage-classes-lifecycle
+- id: sd.design-video.codec-egress-savings
+  subtopic: 5. Storage tiering and cost
+  kind: tradeoff
+  claim: Newer codecs (VP9, AV1) cut bitrate at the same quality; the encoding compute is paid once while egress savings recur, so re-encode popular videos first (30% on 200 PB/month at $0.005/GB saves about $0.3M/month).
+  prompt: Why is a more efficient codec worth the extra encoding compute for popular videos?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.design-video.dominant-costs
+- id: sd.design-video.view-counting-stream
+  subtopic: 6. View counting
+  kind: mechanism
+  claim: 'Count views as a stream of player events: deduplicate per session and video, filter bots, apply a minimum-watch rule (e.g. 30 s), and aggregate into counters every few seconds or minutes.'
+  prompt: How should view counts be computed at scale?
+  objectives:
+  - 3
+- id: sd.design-video.no-hot-counter-row
+  subtopic: 6. View counting
+  kind: principle
+  claim: A per-request UPDATE on a views row creates a hot row for viral videos and counts retries and bots; use asynchronous aggregation instead.
+  prompt: Why is incrementing a views column on every play wrong?
+  objectives:
+  - 3
+  requires:
+  - sd.hot-keys.write-hot-needs-write-spreading
+- id: sd.design-video.fixed-quality-endpoint-flaw
+  subtopic: '4. Playback: adaptive bitrate'
+  kind: principle
+  claim: A playback endpoint should return a signed CDN manifest of renditions rather than a fixed-quality file, so ABR works and the CDN serves bytes.
+  prompt: What should a playback endpoint return instead of a single 1080p file?
+  objectives:
+  - 2
+  requires:
+  - sd.design-video.abr-renditions-segments
+items:
+  design-video-check-1-v2:
+  - sd.design-video.abr-renditions-segments
+  - sd.design-video.cdn-serves-segments
+  design-video-check-2-v2:
+  - sd.design-video.daily-upload-volume
+  design-video-check-3-v2:
+  - sd.design-video.idempotent-transcode-tasks
+  - sd.design-video.progressive-availability
+  - sd.design-video.parallel-chunk-transcoding
+  design-video-check-4-v2:
+  - sd.design-video.dominant-costs
+  design-video-fire-1-v2:
+  - sd.design-video.resumable-multipart-upload
+  design-video-fire-2-v2:
+  - sd.design-video.no-hot-counter-row
+  - sd.design-video.view-counting-stream
+  design-video-fire-3-v2:
+  - sd.design-video.storage-tiering
+  design-video-fire-4-v2:
+  - sd.design-video.premiere-stampede-protection
+  design-video-fire-5-v2:
+  - sd.design-video.upload-to-playback-flow
+  design-video:b1:
+  - sd.design-video.egress-estimate
+  - sd.design-video.storage-growth-estimate
+  - sd.design-video.daily-upload-volume
+  design-video:b10:
+  - sd.design-video.codec-egress-savings
+  design-video:b12:
+  - sd.design-video.fixed-quality-endpoint-flaw
+  - sd.design-video.no-hot-counter-row
+  - sd.design-video.no-bytes-through-app-servers
+  design-video:b14:
+  - sd.design-video.upload-to-playback-flow
+  - sd.design-video.idempotent-transcode-tasks
+  - sd.design-video.abr-renditions-segments
+  design-video:b15:
+  - sd.design-video.no-bytes-through-app-servers
+  - sd.design-video.no-hot-counter-row
+  design-video:b7:
+  - sd.design-video.cdn-serves-segments
+  design-video:b8:
+  - sd.design-video.component-responsibilities
+  redesign:design-video:
+  - sd.design-video.upload-to-playback-flow
+  - sd.design-video.dominant-costs
+  - sd.design-video.view-counting-stream

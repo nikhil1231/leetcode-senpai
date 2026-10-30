@@ -1,0 +1,195 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: geo-index
+source_hash: 42b69e16f611b7cd
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.geo-index.two-btree-indexes-poor
+  subtopic: Why lat/lng indexes struggle
+  kind: mechanism
+  claim: Separate B-tree indexes on lat and lng each find a whole band; 'near me' is the intersection of two huge bands, so the database scans far more rows than it returns. A composite (lat, lng) index helps only along latitude.
+  prompt: Why do separate B-tree indexes on latitude and longitude perform poorly for proximity queries?
+  objectives:
+  - 0
+- id: sd.geo-index.geohash-structure
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: mechanism
+  claim: Geohash recursively halves the world, alternating longitude and latitude, and encodes the path in base-32 characters. Each extra character splits a cell into 32, and a shared prefix means the same cell.
+  prompt: How does a geohash encode a location, and what does a shared prefix mean?
+  objectives:
+  - 1
+- id: sd.geo-index.geohash-precision-sizes
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: fact
+  claim: 'Geohash cell sizes at mid-latitudes: 4 characters about 39 km x 20 km, 5 about 4.9 km square, 6 about 1.2 km x 0.6 km, 7 about 153 m square, 8 about 38 m x 19 m.'
+  prompt: Roughly how big is a 6-character geohash cell, and which precision gives cells of about 150 m?
+  objectives:
+  - 1
+  requires:
+  - sd.geo-index.geohash-structure
+- id: sd.geo-index.geohash-prefix-btree
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: mechanism
+  claim: Because a geohash is a string prefix, proximity lookups become ordinary prefix range scans on a B-tree (or a Redis sorted set, as in Redis GEO).
+  prompt: Why can geohash proximity search use an ordinary B-tree index?
+  objectives:
+  - 1
+  requires:
+  - sd.geo-index.geohash-structure
+  - sd.indexes.btree-supported-operations
+- id: sd.geo-index.geohash-edge-problem
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: principle
+  claim: 'Cells are hard partitions: points metres apart across a cell edge can have unrelated prefixes, so searching only the home cell misses them. Adjacent in space does not mean adjacent as strings.'
+  prompt: What goes wrong if you query only the user's own geohash cell?
+  objectives:
+  - 1
+  requires:
+  - sd.geo-index.geohash-structure
+- id: sd.geo-index.neighbour-cells-then-filter
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: procedure
+  claim: Pick a precision whose cells are about the search radius, query the home cell plus its 8 neighbours (a 3x3 block), then filter and sort candidates by exact distance.
+  prompt: What steps answer 'within 1 km' with geohashes while avoiding edge misses?
+  objectives:
+  - 1
+  requires:
+  - sd.geo-index.geohash-edge-problem
+  - sd.geo-index.geohash-precision-sizes
+- id: sd.geo-index.quadtree-adaptive
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: mechanism
+  claim: Quadtrees split a cell into four only where data is dense, so city centres get small cells and empty areas stay large, which suits skewed density.
+  prompt: Why do quadtrees suit unevenly distributed data?
+  objectives:
+  - 1
+  - 2
+- id: sd.geo-index.s2-cells
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: mechanism
+  claim: S2 projects the sphere onto a cube and uses a Hilbert curve, so cells are similar in size worldwide and nearby cells usually have nearby IDs.
+  prompt: What are the key properties of Google's S2 cells?
+  objectives:
+  - 1
+- id: sd.geo-index.h3-hexagons
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: mechanism
+  claim: H3 (Uber) uses hexagons at 16 resolutions; every neighbour is the same distance away, which simplifies rings, k-cells-out queries and per-area aggregation such as demand.
+  prompt: What advantages do H3 hexagonal cells offer?
+  objectives:
+  - 1
+- id: sd.geo-index.cell-id-shard-key
+  subtopic: 'Cells: turning 2D into 1D'
+  kind: tradeoff
+  claim: Cell IDs (S2 or geohash prefixes) make locality-preserving shard keys so nearby places live together, and uniform cells suit per-area aggregation.
+  prompt: Why are cell IDs good shard keys for a global places table?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.geo-index.geohash-prefix-btree
+  - sd.partitioning.shard-key-matches-access
+- id: sd.geo-index.rtree-postgis
+  subtopic: R-trees and spatial databases
+  kind: mechanism
+  claim: An R-tree groups nearby shapes into nested bounding rectangles, like a B-tree for rectangles, and handles points, lines and polygons. PostGIS implements it with GiST indexes, using ST_DWithin and KNN ordering (<->).
+  prompt: What does an R-tree index and how does PostGIS provide it?
+  objectives:
+  - 2
+- id: sd.geo-index.cells-vs-rtree-choice
+  subtopic: R-trees and spatial databases
+  kind: tradeoff
+  claim: Use R-trees/PostGIS for irregular shapes such as point-in-polygon delivery zones; use cell indexes for simple proximity, aggregation and sharding; use an in-memory cell grid for fast-moving objects.
+  prompt: When would you choose an R-tree over cell-based indexing?
+  objectives:
+  - 2
+  requires:
+  - sd.geo-index.rtree-postgis
+- id: sd.geo-index.moving-objects-ephemeral
+  subtopic: 'Moving objects: the update problem'
+  kind: principle
+  claim: Driver positions are ephemeral and overwritten within seconds, so they should not go into a disk-based spatial table; keep the latest position in memory with a TTL.
+  prompt: Why not store driver locations in the same disk-based spatial table as restaurants?
+  objectives:
+  - 3
+- id: sd.geo-index.update-rate-estimate
+  subtopic: 'Moving objects: the update problem'
+  kind: procedure
+  claim: 'Update rate is the number of online objects divided by the update interval: 800,000 drivers every 4 s is 200,000 updates/s.'
+  prompt: How do you estimate location update ingest rate, e.g. 800,000 drivers each reporting every 4 seconds?
+  objectives:
+  - 3
+- id: sd.geo-index.location-service-architecture
+  subtopic: 'Moving objects: the update problem'
+  kind: mechanism
+  claim: Location updates go through a gateway that upserts the driver into an in-memory cell index (sharded by city or cell, with a TTL) and appends to a log such as Kafka for history, off the hot query path.
+  prompt: How should a driver location service handle each incoming update?
+  objectives:
+  - 3
+  requires:
+  - sd.geo-index.moving-objects-ephemeral
+- id: sd.geo-index.expanding-ring-search
+  subtopic: 'Moving objects: the update problem'
+  kind: procedure
+  claim: Search the rider's cell, then expand rings of neighbouring cells until enough candidates are found or a maximum radius is hit, then filter by distance, ETA and availability.
+  prompt: How should matching find enough nearby drivers when density varies?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.geo-index.neighbour-cells-then-filter
+- id: sd.geo-index.density-skew-handling
+  subtopic: 'Moving objects: the update problem'
+  kind: tradeoff
+  claim: Fixed-precision cells give hot shards in dense cities and empty ones elsewhere; use adaptive cells (quadtrees or coarser levels in sparse areas), shard by city and split hot cities further.
+  prompt: How do you handle non-uniform density across cells and shards?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - sd.geo-index.quadtree-adaptive
+items:
+  geo-index-check-1-v2:
+  - sd.geo-index.two-btree-indexes-poor
+  geo-index-check-2-v2:
+  - sd.geo-index.geohash-edge-problem
+  - sd.geo-index.neighbour-cells-then-filter
+  geo-index-check-3-v2:
+  - sd.geo-index.update-rate-estimate
+  geo-index-check-4-v2:
+  - sd.geo-index.h3-hexagons
+  geo-index-fire-1-v2:
+  - sd.geo-index.cells-vs-rtree-choice
+  - sd.geo-index.rtree-postgis
+  geo-index-fire-2-v2:
+  - sd.geo-index.moving-objects-ephemeral
+  - sd.geo-index.location-service-architecture
+  geo-index-fire-3-v2:
+  - sd.geo-index.density-skew-handling
+  - sd.geo-index.quadtree-adaptive
+  geo-index-fire-4-v2:
+  - sd.geo-index.expanding-ring-search
+  geo-index-fire-5-v2:
+  - sd.geo-index.geohash-prefix-btree
+  - sd.geo-index.geohash-structure
+  - sd.geo-index.geohash-edge-problem
+  geo-index:b10:
+  - sd.geo-index.neighbour-cells-then-filter
+  - sd.geo-index.geohash-precision-sizes
+  - sd.geo-index.geohash-edge-problem
+  geo-index:b3:
+  - sd.geo-index.cells-vs-rtree-choice
+  - sd.geo-index.cell-id-shard-key
+  - sd.geo-index.moving-objects-ephemeral
+  geo-index:b5:
+  - sd.geo-index.update-rate-estimate
+  - sd.geo-index.location-service-architecture
+  geo-index:b8:
+  - sd.geo-index.geohash-edge-problem
+  - sd.geo-index.neighbour-cells-then-filter

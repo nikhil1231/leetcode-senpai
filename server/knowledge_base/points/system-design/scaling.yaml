@@ -1,0 +1,231 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: system-design
+lesson: scaling
+source_hash: 4862df00f76bb6a5
+generated:
+  model: anthropic/claude-sonnet-5.5
+  prompt_version: 1
+  date: '2026-10-30'
+  linked: true
+  linked_by: claude-code
+points:
+- id: sd.scaling.throughput-is-narrowest-stage
+  subtopic: Throughput follows the narrowest point
+  kind: principle
+  claim: A request path is a pipeline, so its throughput is the minimum of its stages' capacities; scaling a non-limiting stage does not raise throughput.
+  prompt: What determines the maximum throughput of a request path made of several stages?
+  objectives:
+  - 0
+  same_as: sd.service-quality.throughput-bottleneck
+- id: sd.scaling.use-method
+  subtopic: Throughput follows the narrowest point
+  kind: fact
+  claim: The USE method checks each resource (CPU, memory, disk, network, pools, locks) for Utilisation, Saturation and Errors.
+  prompt: What does the USE method examine, and for which things?
+  objectives:
+  - 0
+- id: sd.scaling.red-method
+  subtopic: Throughput follows the narrowest point
+  kind: fact
+  claim: The RED method looks at each service's Rate, Errors and Duration, and traces show where latency accumulates.
+  prompt: What does the RED method measure, and at what level?
+  objectives:
+  - 0
+- id: sd.scaling.saturation-signals-bottleneck
+  subtopic: Throughput follows the narrowest point
+  kind: principle
+  claim: 'Saturation (waiting) is the telling bottleneck signal: pool waits, run queues longer than core count, lock waiters or rising latency with flat throughput indicate a bottleneck even when CPU looks idle.'
+  prompt: Which signals reveal a bottleneck even when CPU is low?
+  objectives:
+  - 0
+  same_as: sd.service-quality.saturation-signals
+- id: sd.scaling.low-cpu-high-latency-downstream
+  subtopic: Throughput follows the narrowest point
+  kind: procedure
+  claim: If API CPU is low but latency rises and throughput flattens, requests are waiting; check saturation downstream (database CPU/IO, locks, pool waits, slow dependencies) before adding instances.
+  prompt: API CPU is 25% but p99 latency has tripled. What do you check before adding instances?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - sd.scaling.saturation-signals-bottleneck
+- id: sd.scaling.scaling-front-tier-overloads-database
+  subtopic: Throughput follows the narrowest point
+  kind: mechanism
+  claim: Adding API instances multiplies total database connections (instances × pool size); beyond the database's limit, new instances queue, time out and retry, and connection churn burns database CPU, so throughput falls.
+  prompt: Why can doubling API instances from 20 to 40 reduce throughput?
+  objectives:
+  - 0
+  - 1
+- id: sd.scaling.pool-total-within-db-limit
+  subtopic: Autoscaling done right
+  kind: procedure
+  claim: Keep instances × pool size within the database's connection limit by capping max instances, shrinking pools, or using a pooler such as PgBouncer.
+  prompt: How do you stop autoscaling from exceeding database connection limits?
+  objectives:
+  - 3
+  requires:
+  - sd.scaling.scaling-front-tier-overloads-database
+- id: sd.scaling.vertical-scaling-tradeoff
+  subtopic: Vertical versus horizontal
+  kind: tradeoff
+  claim: Vertical scaling is simple with no distribution logic, but has a ceiling, a single point of failure and pricing that rises faster than capacity.
+  prompt: What are the benefits and costs of scaling vertically?
+  objectives:
+  - 1
+- id: sd.scaling.horizontal-scaling-tradeoff
+  subtopic: Vertical versus horizontal
+  kind: tradeoff
+  claim: Horizontal scaling is near-unlimited and fault tolerant but needs stateless services, partitioned data and coordination, which add latency and complexity.
+  prompt: What does horizontal scaling need, and what does it cost?
+  objectives:
+  - 1
+  requires:
+  - sd.stateless-balancing.horizontal-scaling-shared-state
+- id: sd.scaling.stateful-scale-order
+  subtopic: Vertical versus horizontal
+  kind: principle
+  claim: Stateless tiers scale out easily; stateful ones like databases usually go up first, then out through replicas, then partitioning, because each step is harder to undo.
+  prompt: In what order do you usually scale a database, and why?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - sd.scaling.vertical-scaling-tradeoff
+  - sd.scaling.horizontal-scaling-tradeoff
+- id: sd.scaling.amdahl-law
+  subtopic: Why parallelism stops helping
+  kind: mechanism
+  claim: 'Amdahl''s law: with serial fraction s and N workers, speedup is at most 1/(s + (1−s)/N), approaching 1/s however many workers are added.'
+  prompt: What does Amdahl's law say the maximum speedup is for serial fraction s?
+  objectives:
+  - 1
+- id: sd.scaling.amdahl-ceiling-calc
+  subtopic: Why parallelism stops helping
+  kind: fact
+  claim: 'A job that is 5% serial can never exceed 20× speedup (10% serial: 10×); to go faster, shrink the serial part rather than add workers.'
+  prompt: What is the maximum speedup for a 5% serial job, and how do you beat it?
+  objectives:
+  - 1
+  requires:
+  - sd.scaling.amdahl-law
+- id: sd.scaling.usl-coherency
+  subtopic: Why parallelism stops helping
+  kind: mechanism
+  claim: The Universal Scalability Law adds a coherency cost (locks, cache invalidation, consensus) growing roughly with N², so past a point adding nodes reduces throughput.
+  prompt: What does the Universal Scalability Law add to Amdahl's law?
+  objectives:
+  - 1
+  requires:
+  - sd.scaling.amdahl-law
+- id: sd.scaling.ladder-order
+  subtopic: The scaling ladder
+  kind: procedure
+  claim: 'Climb from cheap and reversible to permanent: measure, fix the work (indexes, N+1), cache, add read replicas, go async, then partition; vertical scaling is a quick stopgap.'
+  prompt: In what order should you try responses to a database running out of capacity?
+  objectives:
+  - 2
+- id: sd.scaling.fix-work-first
+  subtopic: The scaling ladder
+  kind: principle
+  claim: Early ladder steps like indexes and removing N+1 queries often give 10× gains for days of work, while sharding gives months of headroom at the price of permanent complexity.
+  prompt: Why fix inefficient work before sharding?
+  objectives:
+  - 2
+  requires:
+  - sd.scaling.ladder-order
+- id: sd.scaling.cache-and-replicas
+  subtopic: The scaling ladder
+  kind: tradeoff
+  claim: A cache cuts read load more cheaply than a bigger database, and replicas only help with the tolerant reads that remain; async moves non-urgent work off the request path.
+  prompt: What do caches, replicas and async each take off the database?
+  objectives:
+  - 2
+  requires:
+  - sd.cache-aside.db-load-is-miss-rate
+- id: sd.scaling.shard-trigger
+  subtopic: The scaling ladder
+  kind: principle
+  claim: Partition only when a single primary's write or storage limits are in sight (e.g. about 60% sustained write capacity), choosing the shard key from access patterns.
+  prompt: When should you shard a database and how do you choose the key?
+  objectives:
+  - 2
+  requires:
+  - sd.estimates.small-scale-no-sharding
+- id: sd.scaling.autoscale-right-metric
+  subtopic: Autoscaling done right
+  kind: principle
+  claim: Scale on saturation or demand (requests per instance, concurrency, queue age, latency), not CPU alone, because I/O-bound services show low CPU when overloaded.
+  prompt: Why is CPU a poor autoscaling metric for I/O-bound services?
+  objectives:
+  - 3
+  requires:
+  - sd.scaling.saturation-signals-bottleneck
+- id: sd.scaling.autoscale-warmup
+  subtopic: Autoscaling done right
+  kind: principle
+  claim: New instances need seconds to minutes to warm up (JIT, cache fill, connections), so use predictive or scheduled scaling ahead of known peaks.
+  prompt: How should autoscaling handle instance warm-up?
+  objectives:
+  - 3
+- id: sd.scaling.autoscale-scale-in-slowly
+  subtopic: Autoscaling done right
+  kind: principle
+  claim: Scale in slowly with cooldowns and conservative thresholds, and drain connections first; short windows cause flapping and kill in-flight requests.
+  prompt: How should scale-in be configured to be safe?
+  objectives:
+  - 3
+- id: sd.scaling.autoscale-cap-downstream
+  subtopic: Autoscaling done right
+  kind: principle
+  claim: Autoscaling a tier in front of a fixed-capacity database just moves the failure, so cap maximum instances to what downstream can serve.
+  prompt: Why cap the maximum instances of an autoscaled tier?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - sd.scaling.scaling-front-tier-overloads-database
+items:
+  scaling-check-1-v2:
+  - sd.scaling.scaling-front-tier-overloads-database
+  - sd.scaling.throughput-is-narrowest-stage
+  scaling-check-2-v2:
+  - sd.scaling.amdahl-ceiling-calc
+  - sd.scaling.amdahl-law
+  scaling-check-3-v2:
+  - sd.scaling.saturation-signals-bottleneck
+  scaling-check-4-v2:
+  - sd.scaling.ladder-order
+  - sd.scaling.fix-work-first
+  scaling-fire-1-v2:
+  - sd.scaling.scaling-front-tier-overloads-database
+  - sd.scaling.usl-coherency
+  scaling-fire-2-v2:
+  - sd.scaling.autoscale-right-metric
+  scaling-fire-3-v2:
+  - sd.scaling.usl-coherency
+  scaling-fire-4-v2:
+  - sd.scaling.pool-total-within-db-limit
+  - sd.scaling.autoscale-cap-downstream
+  scaling-fire-5-v2:
+  - sd.scaling.autoscale-warmup
+  - sd.scaling.autoscale-scale-in-slowly
+  - sd.scaling.autoscale-cap-downstream
+  scaling:b10:
+  - sd.scaling.scaling-front-tier-overloads-database
+  - sd.scaling.throughput-is-narrowest-stage
+  - sd.scaling.usl-coherency
+  scaling:b3:
+  - sd.scaling.amdahl-ceiling-calc
+  - sd.scaling.amdahl-law
+  scaling:b5:
+  - sd.scaling.ladder-order
+  - sd.scaling.fix-work-first
+  scaling:b6:
+  - sd.scaling.low-cpu-high-latency-downstream
+  - sd.scaling.saturation-signals-bottleneck
+  scaling:b8:
+  - sd.scaling.autoscale-right-metric
+  - sd.scaling.autoscale-scale-in-slowly
+  - sd.scaling.pool-total-within-db-limit
