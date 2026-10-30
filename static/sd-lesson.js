@@ -63,7 +63,10 @@
     const t = S.explain[key] || {loading: true};
     // Per-item notes sit on their rows (itemNotes); only the shared point stays below.
     if (!t.loading && t.items?.length && !t.reply?.trim()) return '';
-    return `<div class="sd-tutor-reply" aria-live="polite">${t.loading ? '<p class="sd-muted">The tutor is looking at your answer…</p>' : t.reply?.trim() ? `<span class="sd-say-label">${t.items?.length ? 'What your mistakes share' : 'Why that was wrong'}</span>${md(t.reply)}` : `<p class="sd-muted">${esc(t.message)}</p>${btn('Try again', 'explain', `data-key="${esc(key)}"`)}`}</div>`;
+    // Name the question: an interview's follow-ups sit between it and this reply.
+    const b = S.lesson.blocks.find(x => x.key === key) || {}, q = b.type === 'interview' ? b.ask : b.title || b.prompt;
+    const about = q ? `<p class="sd-muted">${b.type === 'interview' ? 'Your opening answer to' : 'On'}: “${inline(q.length > 140 ? q.slice(0, 140) + '…' : q)}”</p>` : '';
+    return `<div class="sd-tutor-reply" aria-live="polite">${t.loading ? '<p class="sd-muted">The tutor is looking at your answer…</p>' : t.reply?.trim() ? `<span class="sd-say-label">${t.items?.length ? 'What your mistakes share' : 'Why that was wrong'}</span>${about}${md(t.reply)}` : `<p class="sd-muted">${esc(t.message)}</p>${btn('Try again', 'explain', `data-key="${esc(key)}"`)}`}</div>`;
   }
   function itemNotes() {
     Object.entries(S.explain).forEach(([key, t]) => {
@@ -227,7 +230,8 @@
   // ---------- Paint and wire ----------
   function paint() {
     if (!S) return;
-    const keep = {};
+    // Swapping the page out can clamp the scroll position; put the reader back where they were.
+    const y = window.scrollY, keep = {};
     S.host.querySelectorAll('[data-draft]').forEach(n => { keep[n.dataset.draft] = n.value; });
     Object.assign(S.drafts, keep);
     Object.values(S.nodes).forEach(n => n.remove());
@@ -250,6 +254,7 @@
     })));
     S.rail.querySelectorAll('[data-lp=page]').forEach(n => n.addEventListener('click', e => { e.preventDefault(); goPage(Number(n.dataset.page)); }));
     applyPage();
+    if (window.scrollY !== y) window.scrollTo(0, y);
     if (S.session?.planned) {
       loadCallbacks();
       const P = pages();
