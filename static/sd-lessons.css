@@ -374,6 +374,7 @@ details.sd-goals summary { cursor:pointer; font-size:11px; letter-spacing:.08em;
 .sd-warmup h3 { margin:4px 0 6px; font-size:20px; letter-spacing:-.01em; }
 .sd-warmup > p { color:var(--text-2); font-size:13.5px; line-height:1.7; max-width:680px; }
 .sd-probe { display:grid; grid-template-columns:28px minmax(0,1fr); gap:10px; align-items:start; }
+.sd-probe > .sd-tutor-reply { grid-column:-2; margin-top:0; }
 .sd-probe-n { font:600 12px var(--font-mono); color:var(--accent); border:1px solid var(--accent-line); border-radius:50%; width:24px; height:24px; display:grid; place-items:center; margin-top:22px; }
 .sd-warmup-note { display:grid; gap:6px; margin:6px 0 0 38px; font-size:13px; color:var(--text); }
 .sd-warmup-note small { color:var(--muted); font-size:11px; }
