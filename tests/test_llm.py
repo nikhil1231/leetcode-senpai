@@ -325,3 +325,14 @@ def test_valid_model_accepts_latest_aliases():
     assert llm.valid_model("openai/gpt-5.6-luna")
     assert not llm.valid_model("~~openai/x")
     assert not llm.valid_model("openai")
+
+
+def test_anthropic_models_are_never_used_through_openrouter():
+    from server import llm
+    for model in ('anthropic/claude-sonnet-5.5', '~anthropic/claude-latest', ' Anthropic/claude-opus-5.5'):
+        assert llm.forbidden_model(model) and not llm.valid_model(model.strip())
+    assert not llm.forbidden_model('openai/gpt-5.6-luna') and llm.valid_model('openai/gpt-5.6-luna')
+    assert llm._selected({'llm_model': 'anthropic/claude-sonnet-5.5'})[1] == 'openai/gpt-5.6-luna'
+    import pytest
+    with pytest.raises(ValueError, match='never used'):
+        llm._raw_generate('openrouter', 'anthropic/claude-haiku-5.5', 's', 'p', None)

@@ -36,6 +36,16 @@ it — it is the source of truth.**
   service, or a call only the user can make — spending money, deleting data, or changing
   the LeetCode account integration.
 
+## Model spend (OpenRouter)
+
+- **Never use Anthropic models (`anthropic/…`) through OpenRouter.** They are far too
+  expensive for this app. `llm.forbidden_model` enforces it: such a setting falls back to the
+  default and the transport refuses the call.
+- Paid model calls are for the app's runtime features only. One-off content work (drafting,
+  linking, mapping, rewriting lessons) is done by the agent in its own session, not scripted
+  through OpenRouter; scripts that need answers export prompts and import the agent's answers
+  (see `scripts/generate_knowledge_points.py`). The OpenRouter balance is shared with Kimi.
+
 ## Tests
 
 `pytest` (see `pytest.ini`, `tests/`). Analytics and scheduling changes must keep or add

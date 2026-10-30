@@ -783,15 +783,23 @@ def normalize_model(model: str) -> str:
     return config.LLM_MODEL if "/" in config.LLM_MODEL else "openai/gpt-5.6-luna"
 
 
+def forbidden_model(model: str) -> bool:
+    """Anthropic models are never used through OpenRouter: they cost far more than this app warrants."""
+    return model.strip().lstrip("~").lower().startswith("anthropic/")
+
+
 def valid_model(model: str) -> bool:
-    return bool(re.fullmatch(r"~?[A-Za-z0-9._-]+/[A-Za-z0-9._:/-]+", model)) and len(model) <= 200
+    return (bool(re.fullmatch(r"~?[A-Za-z0-9._-]+/[A-Za-z0-9._:/-]+", model)) and len(model) <= 200
+            and not forbidden_model(model))
 
 
 def _selected(settings: Optional[dict] = None) -> tuple[str, str]:
     # Old Firestore settings may still name openai/gemini. All requests now
     # use OpenRouter; the saved model vendor becomes part of the model ID.
-    model = (settings or {}).get("llm_model") or config.LLM_MODEL
-    return "openrouter", normalize_model(model)
+    model = normalize_model((settings or {}).get("llm_model") or config.LLM_MODEL)
+    if forbidden_model(model):
+        model = "openai/gpt-5.6-luna"
+    return "openrouter", model
 
 
 def enabled(settings: Optional[dict] = None) -> bool:
@@ -868,6 +876,8 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema, *
     """Single transport choke point; tests replace this to avoid network calls."""
     if provider != "openrouter":
         raise ValueError(f"unsupported LLM provider {provider}")
+    if forbidden_model(model):
+        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
     extra = {}
     if options:
         extra = {"reasoning": {"effort": options["effort"], "exclude": True},
