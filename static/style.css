@@ -2985,6 +2985,8 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .dictate-btn:hover { color: var(--text); background: var(--panel3); }
 .dictate-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dictate-btn.is-listening { color: var(--red); background: rgba(251, 113, 133, .14); animation: dictate-pulse 1.4s ease-in-out infinite; }
+.dictate-btn.is-transcribing { color: var(--accent); animation: dictate-fade 1s ease-in-out infinite; }
 .dictate-wrap:has(textarea:disabled) .dictate-btn { display: none; }
+@keyframes dictate-fade { 50% { opacity: .35; } }
 @keyframes dictate-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, .35); } 50% { box-shadow: 0 0 0 5px rgba(251, 113, 133, 0); } }
-@media (prefers-reduced-motion: reduce) { .dictate-btn.is-listening { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dictate-btn.is-listening, .dictate-btn.is-transcribing { animation: none; } }

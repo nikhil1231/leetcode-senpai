@@ -60,6 +60,11 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 LLM_PROVIDER = "openrouter"
 # OpenRouter model IDs include the model vendor (e.g. openai/ or google/).
 LLM_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-5.6-luna").strip()
+# Re-transcribes dictated answers before grading. Scribe v2 led a 2026-10 bake-off on spoken
+# DSA answers: ~1.5% WER, 1.2-2.1s a clip, ~$0.21/hour. gpt-4o-mini-transcribe was a touch
+# more accurate but often took 4-6s; Nova-3 was fastest but misheard Dijkstra, Kadane, deque.
+# OpenRouter takes no keyterm hints for any STT model yet.
+STT_MODEL = os.environ.get("STT_MODEL", "elevenlabs/scribe-v2").strip()
 
 
 # ---- Scheduler ------------------------------------------------------------------

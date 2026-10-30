@@ -54,3 +54,4 @@ def _no_unmocked_model_calls(monkeypatch, request):
     def reject(*args, **kwargs):
         raise RuntimeError("Unmocked model call in test")
     monkeypatch.setattr(llm, "_raw_generate", reject)
+    monkeypatch.setattr(llm, "_raw_transcribe", reject)

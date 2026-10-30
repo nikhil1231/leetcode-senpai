@@ -283,8 +283,10 @@
     const area = el.querySelector('textarea'), r = el.querySelector('.sd-reveal');
     const status = { covered: ['✓', 'is-right'], partial: ['◐', 'is-partial'], missing: ['○', 'is-missing'], incorrect: ['✗', 'is-wrong'] };
     el.querySelector('[data-b=check]').addEventListener('click', async () => {
+      const btn = el.querySelector('[data-b=check]'); if (btn.disabled) return;
+      btn.disabled = true; await window.Dictate?.settle(area); btn.disabled = false;
       const text = area.value.trim(); if (text.length < 15) { area.focus(); return; }
-      const btn = el.querySelector('[data-b=check]'); btn.disabled = true; area.disabled = true; btn.textContent = 'Checking…';
+      btn.disabled = true; area.disabled = true; btn.textContent = 'Checking…';
       let res = null;
       try { res = await ctx.recall(b, text); } catch (e) { res = { message: 'Saved locally only: ' + e.message }; }
       btn.textContent = 'Checked'; r.hidden = false;
@@ -456,6 +458,8 @@
       const step = live.querySelector(`[data-fu="${i}"]`), area = step.querySelector('textarea'), out = step.querySelector('.sd-pitch-out');
       area.focus({ preventScroll: true });
       const go = async skipped => {
+        if (area.disabled || area.dataset.settling) return;
+        area.dataset.settling = '1'; await window.Dictate?.settle(area); delete area.dataset.settling;
         const text = area.value.trim(); if (!skipped && text.length < 5) { area.focus(); return; }
         step.querySelectorAll('button').forEach(x => { x.disabled = true; }); area.disabled = true;
         const res = skipped ? null : (out.hidden = false, out.innerHTML = '<p class="sd-muted">Grading…</p>', await send(text, i));
@@ -467,6 +471,8 @@
     };
     const pitchStep = el.querySelector('[data-step=pitch]'), area = pitchStep.querySelector('textarea'), out = pitchStep.querySelector('.sd-pitch-out');
     const go = async skipped => {
+      if (area.disabled || area.dataset.settling) return;
+      area.dataset.settling = '1'; await window.Dictate?.settle(area); delete area.dataset.settling;
       const text = area.value.trim(); if (!skipped && text.length < 15) { area.focus(); return; }
       pitchStep.querySelectorAll('button').forEach(x => { x.disabled = true; }); area.disabled = true;
       out.hidden = false; out.innerHTML = skipped ? '' : '<p class="sd-muted">Grading…</p>';

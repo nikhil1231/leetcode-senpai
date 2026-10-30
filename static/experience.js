@@ -165,9 +165,14 @@
         bar.style.width = Math.min(100, 100 * seconds / d.max_clean_seconds) + '%';
       }, 250);
     }
-    function stageCheck() {
+    async function stageCheck() {
       clearInterval(timer); seconds = Math.max(1, Math.round((Date.now() - started) / 1000));
-      const text = ctx.root.querySelector('.tr-transcript')?.value || '';
+      const area = ctx.root.querySelector('.tr-transcript');
+      if (!area || area.dataset.settling) return;
+      area.dataset.settling = '1';
+      await window.Dictate?.settle(area);
+      if (ctx.stale()) return;
+      const text = area.value || '';
       ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">SELF-CHECK · ${fmt(seconds)} ${seconds > d.max_clean_seconds ? '· TOO LONG' : seconds > hi ? '· A LITTLE LONG' : seconds < lo ? '· SHORT' : '· GOOD LENGTH'}</span><h2>How did that go?</h2><p>Be honest: this decides when the prompt comes back. A clean answer needs at least five ticks, including role, result and fit, in under ${fmt(d.max_clean_seconds)}.</p></div>
         <section class="sd-panel"><ul class="tr-checks">${d.checks.map(c => `<li><label><input type="checkbox" data-check="${c.key}"> ${esc(c.text)}</label></li>`).join('')}</ul>
         <div class="sd-actions">${btn('Save', 'save', '', true)}</div></section>`;
@@ -218,6 +223,8 @@
     wireActions(ctx.root, {
       ...handlers(ctx, d),
       check: async node => {
+        if (node.disabled) return;
+        node.disabled = true; await window.Dictate?.settle(area); node.disabled = false;
         if (area.value.trim().length < 15) { area.focus(); return; }
         node.disabled = true; area.disabled = true; node.textContent = 'Checking…';
         const res = await ctx.call('/dives/' + q.id, 'POST', { text: area.value.trim() });

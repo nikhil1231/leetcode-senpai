@@ -900,6 +900,45 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema, *
     return content if isinstance(content, str) else None
 
 
+# ---- speech-to-text ---------------------------------------------------------------
+# Dictation shows the browser's live transcript; this re-transcribes the recorded
+# audio so grading reads what was actually said. One pooled client keeps the TLS
+# connection to OpenRouter warm between a dictation's segments.
+_stt_client: Optional[httpx.Client] = None
+
+
+def _raw_transcribe(audio_b64: str, fmt: str, language: Optional[str]) -> Optional[str]:
+    """Transport choke point for transcription; tests replace this."""
+    global _stt_client
+    if _stt_client is None:
+        _stt_client = httpx.Client(timeout=httpx.Timeout(30, connect=5))
+    body = {"model": config.STT_MODEL, "input_audio": {"data": audio_b64, "format": fmt},
+            "temperature": 0}
+    if language:
+        body["language"] = language
+    resp = _stt_client.post(
+        "https://openrouter.ai/api/v1/audio/transcriptions",
+        headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "X-Title": "LeetCode Senpai"},
+        json=body,
+    )
+    if resp.is_error:
+        log.warning("OpenRouter STT HTTP %s for %s: %s", resp.status_code, config.STT_MODEL, resp.text[:300])
+        return None
+    text = resp.json().get("text")
+    return text.strip() if isinstance(text, str) else None
+
+
+def transcribe(audio_b64: str, fmt: str, language: Optional[str] = None) -> Optional[str]:
+    """Never raises: the browser keeps its own transcript when this returns None."""
+    if not enabled():
+        return None
+    try:
+        return _raw_transcribe(audio_b64, fmt, language)
+    except Exception:
+        log.warning("Transcription failed", exc_info=True)
+        return None
+
+
 async def extract_or_error(
     task_name: str, payload: dict, settings: Optional[dict] = None
 ) -> tuple[Optional[dict], Optional[str]]:

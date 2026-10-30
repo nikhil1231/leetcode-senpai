@@ -151,10 +151,11 @@
         startRequest = null; adopt(doc);
       }
       if (action === 'open') adopt(await call('/papers/' + node.dataset.id));
-      if (action === 'leave') { await flush(); stop(); paper = null; list = await call('/papers'); }
+      if (action === 'leave') { await window.Dictate?.settle(); await flush(); stop(); paper = null; list = await call('/papers'); }
       if (action === 'home') { stop(); paper = null; list = await call('/papers'); }
       if (action === 'mistakes') { stop(); paper = null; busy = false; await window.SystemDesign.openView('mistakes'); return; }
       if (action === 'finish') {
+        await window.Dictate?.settle();  // dictated answers save their server transcript
         await flush();
         const missing = paper.items.filter(p => !answered(p.n)).length;
         if (missing && !window.confirm(`${missing} question${missing === 1 ? ' is' : 's are'} unanswered and will score zero. Finish anyway?`)) return;

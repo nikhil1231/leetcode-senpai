@@ -2939,6 +2939,23 @@ async def api_page_chat(body: PageChatRequest, uid: str = Depends(auth.require_u
     return {"reply": reply, "model": llm.current_model(settings)["model"]}
 
 
+class TranscribeRequest(BaseModel):
+    audio: str = Field(min_length=1, max_length=14_000_000)  # base64, ~10 MB of audio
+    format: Literal["webm", "ogg", "m4a", "mp3", "wav", "aac", "flac"]
+    language: Optional[str] = Field(None, pattern=r"^[a-z]{2}$")
+
+
+@app.post("/api/transcribe")
+async def api_transcribe(body: TranscribeRequest, uid: str = Depends(auth.require_user)):
+    """Re-transcribe one dictated audio segment; the client keeps its live text on failure."""
+    if not llm.enabled():
+        raise HTTPException(503, "Transcription needs the coach enabled.")
+    text = await asyncio.to_thread(llm.transcribe, body.audio, body.format, body.language)
+    if text is None:
+        raise HTTPException(502, "Transcription failed.")
+    return {"text": text}
+
+
 @app.get("/api/me")
 def api_me(uid: str = Depends(auth.require_user)):
     settings = get_store(uid).get_settings()

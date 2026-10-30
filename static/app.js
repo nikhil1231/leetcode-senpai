@@ -1314,6 +1314,8 @@ $("#coach-input").addEventListener("keydown", async (e) => {
   if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
   e.preventDefault();
   const input = e.target;
+  if (coachPending) return;
+  await window.Dictate?.settle(input);
   const text = input.value.trim();
   if (!text || coachPending) return;
   input.value = "";
@@ -2334,6 +2336,10 @@ async function askRecallClarification() {
   const input = $("#recall-clarify-text");
   const reply = $("#recall-clarify-reply");
   const btn = $("#btn-recall-clarify");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  await window.Dictate?.settle(input);
+  btn.disabled = false;
   const question = (input && input.value || "").trim();
   if (!question) { toast("Ask a clarification question first."); return; }
   if (!currentRecall.attempt_id) return;
@@ -2351,6 +2357,15 @@ async function askRecallClarification() {
 }
 
 async function submitRecall() {
+  // A dictated answer is graded from its server transcript, which lands moments after the mic stops.
+  const dictation = window.Dictate?.settle($("#recall-text"));
+  if (dictation) {
+    const submitBtn = $("#btn-submit-recall");
+    if (submitBtn.disabled) return;
+    submitBtn.disabled = true;
+    await dictation;
+    submitBtn.disabled = false;
+  }
   const text = $("#recall-text").value.trim();
   const body = {
     slug: currentRecall.slug, recall_text: text,

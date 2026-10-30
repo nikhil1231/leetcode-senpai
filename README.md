@@ -180,6 +180,10 @@ it with `LLM_MODEL` or choose a model in **Settings → Coach model**.
 The picker fetches OpenRouter's current text models with structured-output
 support and caches the list for ten minutes. You can also enter a
 `vendor/model` ID directly, including when the catalog is unavailable.
+
+Dictated answers (the mic in answer boxes) are also re-transcribed through
+OpenRouter before grading, with `STT_MODEL` (default `elevenlabs/scribe-v2`). Without
+a key, dictation still works on the browser's own speech recognition.
 A model must support strict JSON schema output to run coaching tasks.
 
 The sparkle button in the top right opens a page-aware coach in both learning
