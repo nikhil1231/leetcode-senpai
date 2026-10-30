@@ -62,7 +62,7 @@
 .sd-prompt p { margin:0 0 10px; }
 .sd-reveal { margin-top:14px; padding:14px 16px; border-radius:8px; background:var(--panel2); font-size:13.5px; line-height:1.7; color:var(--text-2); }
 .sd-reveal p { margin:0 0 8px; } .sd-reveal p:last-child { margin:0; }
-.sd-ok { color:#35d39a; } .sd-bad { color:#fb7185; }
+.sd-ok { color:#35d39a; } .sd-bad { color:#fb7185; } .sd-close { color:#fbbf24; }
 .sd-block .sd-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:14px; }
 .sd-option { display:flex; gap:12px; align-items:flex-start; width:100%; text-align:left; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:11px 14px; color:var(--text); font:inherit; font-size:13.5px; line-height:1.55; margin-bottom:8px; cursor:pointer; }
 .sd-option:hover:not(:disabled) { border-color:#4b5963; background:var(--panel3); }

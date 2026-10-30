@@ -67,7 +67,7 @@
     // Name the question: an interview's follow-ups sit between it and this reply.
     const b = S.lesson.blocks.find(x => x.key === key) || {}, q = b.type === 'interview' ? b.ask : b.title || b.prompt;
     const about = q ? `<p class="sd-muted">${b.type === 'interview' ? 'Your opening answer to' : 'On'}: “${inline(q.length > 140 ? q.slice(0, 140) + '…' : q)}”</p>` : '';
-    return `<div class="sd-tutor-reply" aria-live="polite">${t.loading ? '<p class="sd-muted">The tutor is looking at your answer…</p>' : t.reply?.trim() ? `<span class="sd-say-label">${t.items?.length ? 'What your mistakes share' : 'Why that was wrong'}</span>${about}${md(t.reply)}` : `<p class="sd-muted">${esc(t.message)}</p>${btn('Try again', 'explain', `data-key="${esc(key)}"`)}`}</div>`;
+    return `<div class="sd-tutor-reply" aria-live="polite">${t.loading ? '<p class="sd-muted">The tutor is looking at your answer…</p>' : t.reply?.trim() ? `<span class="sd-say-label">${t.items?.length ? 'What your mistakes share' : t.close ? 'Where it drifted' : 'Why that was wrong'}</span>${about}${md(t.reply)}` : `<p class="sd-muted">${esc(t.message)}</p>${btn('Try again', 'explain', `data-key="${esc(key)}"`)}`}</div>`;
   }
   function itemNotes() {
     Object.entries(S.explain).forEach(([key, t]) => {

@@ -313,3 +313,13 @@ def test_numbers_sheet_is_one_unfolded_page_without_a_warmup():
     assert len(adaptive.sections(lesson)['sections']) == 1
     assert adaptive.probes(lesson, {}) == []
     assert len(lesson['quickfire_ids']) >= 40
+
+
+def test_estimate_gap_separates_near_misses_from_wrong_answers():
+    from server.system_design_tutor import estimate_gap
+    block = {'type': 'calc', 'answer': 14, 'tolerance': 1.08}
+    near = estimate_gap(block, '10 shards (close: about 1.4× from the reference)')
+    assert near['close'] and near['off_by_factor'] == 1.4 and near['learner_value'] == 10
+    assert not estimate_gap(block, '3 shards')['close']
+    assert estimate_gap({'type': 'calc', 'answer': 2e6}, '1.5m req/s')['close']
+    assert estimate_gap(block, 'no idea') is None and estimate_gap({'type': 'quiz'}, '10') is None

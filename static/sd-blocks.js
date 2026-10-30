@@ -219,9 +219,10 @@
       if (!isFinite(v) || v <= 0) { input.focus(); return; }
       const ratio = v / b.answer, ok = ratio <= factor && ratio >= 1 / factor;
       el.dataset.answer = `${input.value} ${b.unit}`; ctx.save(b, { v: input.value });
-      const off = ratio >= 1 ? ratio : 1 / ratio;
+      const off = ratio >= 1 ? ratio : 1 / ratio, close = !ok && off <= factor * 1.5;
+      if (close) el.dataset.answer += ` (close: about ${fmtNum(off)}× from the reference)`;
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
-      r.innerHTML = `<p>${ok ? '<b class="sd-ok">Within range.</b>' : `<b class="sd-bad">Off by about ${fmtNum(off)}×.</b>`} Reference answer: <b>${fmtNum(b.answer)} ${esc(b.unit)}</b>${off < 1.05 ? '' : ` (accepted range ${fmtNum(b.answer / factor)}–${fmtNum(b.answer * factor)})`}.</p><div class="sd-steps">${md(b.steps)}</div>`;
+      r.innerHTML = `<p>${ok ? '<b class="sd-ok">Within range.</b>' : close ? `<b class="sd-close">Close: about ${fmtNum(off)}× off.</b>` : `<b class="sd-bad">Off by about ${fmtNum(off)}×.</b>`} Reference answer: <b>${fmtNum(b.answer)} ${esc(b.unit)}</b>${off < 1.05 ? '' : ` (accepted range ${fmtNum(b.answer / factor)}–${fmtNum(b.answer * factor)})`}.</p><div class="sd-steps">${md(b.steps)}</div>`;
       input.disabled = true; el.querySelector('[data-b=check]').disabled = true;
       ctx.done(b, ok);
     };
