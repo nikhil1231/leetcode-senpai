@@ -4,7 +4,9 @@
   'use strict';
   const { $ } = window.H;
   const trigger = $('#section-trigger'), menu = $('#section-menu');
-  const views = ['home', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire', 'papers', 'mistakes', 'drills'];
+  const views = ['home', 'practise', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire', 'papers', 'mistakes', 'drills'];
+  // Sub-views light up the sidebar item they live under.
+  const UNDER = {lessons: 'curriculum', lesson: 'curriculum', setup: 'practise', workspace: 'practise', exercise: 'practise', skills: 'practise', cases: 'practise', quickfire: 'practise', papers: 'practise', drills: 'practise', mistakes: 'practise', redesign: 'practise'};
   const NAMES = {leetcode: ['Leetcode Senpai', 'Interview prep'], 'system-design': ['System Design', 'Learn and practise'],
     fundamentals: ['Fundamentals', 'Role stack knowledge'], ai: ['AI Engineering', 'LLMs, RAG, evals and agents'],
     experience: ['Experience', 'Your stories, under questioning'], practical: ['Practical Coding', 'Build, debug and review']};
@@ -39,11 +41,11 @@
   }
   function setView(view) {
     $('#design-nav').querySelectorAll('[data-design-view]').forEach(n => {
-      const selected = n.dataset.designView === ({setup:'cases',workspace:'cases',exercise:'skills',lesson:'lessons'}[view] || view);
+      const selected = n.dataset.designView === (UNDER[view] || view);
       n.classList.toggle('is-active', selected);
       if (selected) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
     });
-    const titles = {home:'Overview', curriculum:'Curriculum', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', lesson:'Lesson', cases:'Design cases', skills:'Skill drills', lessons:'Lessons', progress:'Your progress', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
+    const titles = {home:'Home', practise:'Practise', curriculum:'Learn', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', lesson:'Lesson', cases:'Design cases', skills:'Skill drills', lessons:'Learn', progress:'What you know', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
     $('#page-title').textContent = titles[view] || 'System Design';
     $('#page-sub').textContent = 'System Design';
   }

@@ -171,6 +171,17 @@ def next_question(track, records, now, exclude=(), lesson=None):
     return min(pool, key=lambda q: (tier(q), order[q['lesson_id']], q['kind'] != 'quickfire', q['id']))
 
 
+def placement_question(track, records, exclude=(), category=None):
+    """The first question, in course order, from a lesson of `category` with no answers yet and none
+    asked this round (`exclude`). Quickfire questions first. None when every lesson has one."""
+    qs = questions(track)
+    tested = {r['lesson_id'] for r in records if r.get('kind') == 'answer'} | {qs[q]['lesson_id'] for q in exclude if q in qs}
+    order = {key: i for i, key in enumerate(lessons(track))}
+    pool = [q for q in qs.values() if q['lesson_id'] not in tested
+            and (category is None or lessons(track)[q['lesson_id']]['category'] == category)]
+    return min(pool, key=lambda q: (order[q['lesson_id']], q['kind'] != 'quickfire', q['id'])) if pool else None
+
+
 def heatmap(track, views):
     by_topic = {}
     for v in views:

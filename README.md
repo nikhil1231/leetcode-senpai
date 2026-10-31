@@ -469,14 +469,8 @@ supported. An unfinished Quickfire round and selected answer can be recovered
 after refreshing the same tab for up to 24 hours; the server's saved answer wins
 when a submission response was interrupted. Browser storage is optional.
 
-**Your progress** shows course coverage, latest/best lesson scores, accuracy with
-sample counts, supported attempts, due reviews, recent answer explanations, and
-the existing full-design observations. Accuracy counts the first independent
-answer per question per UTC day; guessed responses count as uncertain. Topic
-strength/weakness labels require at least three independent attempts and use the
-latest five. Unknown topics remain unassessed. Quiz completion is not a claim of
-full-design mastery. The daily process coach receives activity metadata once per
-answer, without raw answer text or explanations.
+**What you know** (the section's progress page) reads the knowledge base, not the question
+ledger: see "Home, Practise and What you know" below.
 
 Learning records share the account-scoped `system_design` collection, using
 `course_lesson`, `quiz`, and `quickfire` record kinds. Started quizzes/questions
@@ -507,30 +501,56 @@ deriving events from existing records, so earlier history counts without a migra
   in interview terms. Review and mistakes papers are unranked.
 - **Results slip** — after a paper, Quickfire round or drill sprint: marks, new items, items
   that became solid, the knowledge change and any personal bests broken.
-- **Personal bests** — best paper per scope, fastest A* pace, longest Quickfire streak (shown
-  live in rounds), most marks in a day, best estimation sprint.
-- **Knowledge map** — one square per item, coloured by status and fading with recall.
 - **Mistakes book** — latest answer wrong, revealed or guessed; an item clears only when answered
   correctly on a later day.
 - **Estimation drills** — 13 parametric back-of-envelope templates, endless; Blitz (3 minutes) or
   Ten. Within 25% counts.
-- **Today** — one button on the overview: clear mistakes, top up fading items, continue the
-  course, or sit a mixed paper. `GET /api/activity` merges LeetCode solves and system design
-  marks into one practice calendar and streak.
+- **Practice calendar** — `GET /api/activity` merges LeetCode solves and system design marks into
+  one calendar, shown at the foot of What you know.
 
 Records are additive `paper` and `sprint` kinds in the `system_design` collection.
 
 ### Tutor (a conversation that leads you through a lesson)
 
-`server/tutor/` and `static/tutor.js`. Every system design, Fundamentals and AI Engineering
-lesson has a tutor card: pick a mode (Teach me, I explain, Spot the flaws, War room, Interview)
-and the lesson body becomes a chat with the objectives as a checklist. The tutor brings in the
+`server/tutor/` and `static/tutor.js`. With the model on, every system design, Fundamentals and
+AI Engineering lesson opens as a choice: learn it with the tutor (style: Teach me, I explain, Spot
+the flaws, War room, Interview) or read the notes, which are hidden until chosen (choosing notes is
+remembered in the browser). A session turns the lesson into a chat with the objectives as a checklist. The tutor brings in the
 lesson's own activities (answers are recorded as in the lesson) and writes soft evidence and
 misconceptions to the knowledge base, only when quoting your words. Sessions run at Ripple, a
 fictional company whose size and milestones follow what you hold (`server/tutor/story.yaml`).
-Needs the model (`TUTOR_MODEL`, default `openai/gpt-6-luna`); without it the lesson is unchanged.
+Needs the model (`TUTOR_MODEL`, default `openai/gpt-6-luna`); without it there is no card and the
+lesson is the notes.
 API: `GET /api/tutor`, `GET /api/tutor/lessons/{section}/{lesson}`, `POST /api/tutor/sessions`,
 `POST /api/tutor/sessions/{id}/turns` (retry a failed reply with the same key), `/end`.
+
+### Home, Practise and What you know
+
+System Design, Fundamentals and AI Engineering share one shell (`static/hub.js`): four sidebar
+items, **Home · Learn · Practise · What you know**. Everything else (Quickfire, papers, drills,
+skill drills, design cases, the mistakes book, the AI round) lives under Practise.
+
+- **Home** shows one next step, chosen by `GET /api/tutor/next?section=` from the knowledge base
+  (`server/knowledge_base/progress.py`, pure): resume an open tutor session; clear the newest open
+  misconception or gap; review when 5+ ideas are slipping; a placement check before the first
+  lesson of an area with nothing tested; the next lesson (a started one first; areas you are
+  strong in, and lessons whose placement probe went well, wait); else a mixed review. Two
+  alternatives sit under it, with last time's tutor note above. With the model on, lessons go
+  through the tutor (`Tutor.queue` starts the session when the lesson opens); without it the
+  same step opens the lesson.
+- **What you know** (`GET /api/knowledge/report?section=`): of the ideas tested so far, how many
+  you would get right today (mean recall), how much of the course has been tested, depth
+  (explain/apply), this week's gains and slips, the open misconceptions, an 8-week trend, and
+  each area and lesson with a level (Weak <40, Patchy <70, Good <85, Strong). Untested is shown as
+  unknown, never as zero; under 3 tested ideas a level reads "too early to say". A lesson opens to
+  each idea's status.
+- **Placement** ("Find your level"): one question per lesson of an area with no answers yet.
+  System Design runs it as a Quickfire round (`mode: "placement"`); the tracks use
+  `POST /api/tracks/{track}/quickfire/next` with `placement` and `category`. Answers are ordinary
+  graded answers, so they are hard evidence.
+
+Answers to an older version of a question (`…-v1`) count for the points of the version the
+catalog maps (`sources.mapped`).
 
 ### Telegram drip (questions wherever you are)
 

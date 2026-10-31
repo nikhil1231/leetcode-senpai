@@ -64,7 +64,7 @@ class NextQuestion(BaseModel):
     category: str = ''
     lesson_id: str = ''
     difficulty: Literal['mixed', 'beginner', 'standard'] = 'mixed'
-    mode: Literal['adaptive', 'mistakes', 'learned'] = 'adaptive'
+    mode: Literal['adaptive', 'mistakes', 'learned', 'placement'] = 'adaptive'  # placement: one question per untested lesson
     question_id: str = ''  # one specific question, e.g. a callback inside a later lesson
     recent: list[str] = Field(default_factory=list, max_length=100)
 
@@ -371,6 +371,14 @@ def fire_public(doc):
             'result': doc.get('result')}
 
 
+def placement_pool(candidates, answers, recent):
+    """Questions from lessons with no answers yet and not already asked this round."""
+    tested = {a['lesson_id'] for a in answers}
+    asked = {QUESTIONS[q]['lesson_id'] for q in recent if q in QUESTIONS}
+    return [q for q in candidates if q['lesson_id'] not in tested | asked and q['difficulty'] != 'standard'] \
+        or [q for q in candidates if q['lesson_id'] not in tested | asked]
+
+
 @router.post('/quickfire/next')
 def next_question(body: NextQuestion, store=Depends(store_for)):
     key = 'fire_' + body.request_id
@@ -397,6 +405,8 @@ def next_question(body: NextQuestion, store=Depends(store_for)):
                   and (body.difficulty == 'mixed' or q['difficulty'] == body.difficulty)
                   and (body.mode != 'learned' or q['lesson_id'] in learned)
                   and (body.mode != 'mistakes' or (q['id'] in latest and needs_repair(latest[q['id']])))]
+    if body.mode == 'placement':
+        candidates = placement_pool(candidates, answers, body.recent)
     if body.question_id:
         candidates = [QUESTIONS[body.question_id]]
     if not candidates:

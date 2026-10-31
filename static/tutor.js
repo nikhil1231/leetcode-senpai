@@ -1,9 +1,10 @@
-// The tutor: a conversation that leads you through a lesson. A card above the lesson offers a
-// session (with the company's story, last time's note and a choice of mode); a session replaces
-// the lesson body with a chat, the lesson's objectives as a checklist and, in "Teach me", the
-// lesson's own activities brought in by the tutor. Activity answers are recorded exactly as in the
-// lesson. Ending a session brings a debrief from the tutor: the only teaching in the role-play modes.
-// Without the model the card says so and the lesson works as usual.
+// The tutor: a conversation that leads you through a lesson. With the model on, a lesson opens as
+// a choice: learn it with the tutor, or read the notes (the choice of notes is remembered). A
+// session replaces the lesson body with a chat, the lesson's objectives as a checklist and, in
+// "Teach me", the lesson's own activities brought in by the tutor. Activity answers are recorded
+// exactly as in the lesson. Ending a session brings a debrief from the tutor: the only teaching in
+// the role-play modes. Home can queue a session, which starts as soon as the lesson opens.
+// Without the model there is no card and the lesson works as usual.
 (function () {
   'use strict';
   const {api, escapeHtml: esc} = window.H;
@@ -14,7 +15,10 @@
   const btn = (text, act, attrs = '', primary = false) =>
     `<button type="button" class="button ${primary ? 'is-primary' : ''}" data-tu="${act}" ${attrs}>${esc(text)}</button>`;
   const MARK = {open: ['○', 'Not yet'], working: ['◐', 'In progress'], demonstrated: ['●', 'Shown']};
-  let T = null;
+  const PREFER_NOTES = 'tutor:prefer-notes';
+  const preferNotes = () => { try { return localStorage.getItem(PREFER_NOTES) === '1'; } catch (_) { return false; } };
+  const setPreferNotes = on => { try { if (on) localStorage.setItem(PREFER_NOTES, '1'); else localStorage.removeItem(PREFER_NOTES); } catch (_) {} };
+  let T = null, queued = null;
 
   // ctx: {section, lesson: {id, title, objectives, blocks}, layout: node hidden during a session,
   //       done(key, correct), recall(block, text), pitch(block, text, followup)}
@@ -22,17 +26,31 @@
     if (!slot) return;
     if (T?.id !== ctx.section + ':' + ctx.lesson.id) {
       T = {id: ctx.section + ':' + ctx.lesson.id, ctx, host: document.createElement('div'), info: null, overview: null,
-           session: null, open: false, busy: false, pending: null, rendered: 0, mode: 'teach', error: ''};
+           session: null, open: false, busy: false, pending: null, rendered: 0, mode: 'teach', error: '', notes: preferNotes()};
       T.host.className = 'tu-host';
       load();
     }
     T.ctx = ctx;
     slot.replaceWith(T.host);
     hideLesson();
+    if (T.info) takeQueued();
   }
 
-  // The lesson body's own display rule beats [hidden], so hide it inline.
-  function hideLesson() { if (T.ctx.layout) T.ctx.layout.style.display = T.open ? 'none' : ''; }
+  // Home asks for a session on a lesson before opening it: {section, lesson, resume}.
+  function queue(q) { queued = q; }
+  function takeQueued() {
+    const q = queued;
+    if (!q || q.section !== T.ctx.section || q.lesson !== T.ctx.lesson.id) return;
+    queued = null;
+    if (!T.info.enabled) return;
+    act(T.session?.status === 'active' ? 'resume' : 'start');
+  }
+
+  // Notes stay hidden until chosen when the tutor is on. The lesson body's own display rule beats
+  // [hidden], so hide it inline.
+  function hideLesson() {
+    if (T.ctx.layout) T.ctx.layout.style.display = T.open || (T.info?.enabled && !T.notes) ? 'none' : '';
+  }
 
   async function load() {
     const t = T;
@@ -44,35 +62,31 @@
       if (info.active) t.session = info.active;
     } catch (e) { if (T === t) t.host.innerHTML = ''; return; }
     paint();
+    takeQueued();
   }
 
   const cast = id => (T.overview?.story?.cast || []).find(c => c.id === id);
-  function companyHtml() {
-    const st = T.overview.story, sc = st.scale;
-    const next = sc.next ? `<div class="tu-bar" title="${esc(sc.next.progress)}% of the way to ${esc(sc.next.label)}"><span style="width:${sc.next.progress}%"></span></div><small>Next: ${esc(sc.next.label)} (${esc(sc.next.users)}) at ${sc.next.at}% held</small>` : '<small>Ripple has gone global.</small>';
-    return `<div class="tu-company"><b>${esc(st.company)}</b> · ${esc(sc.label)} · ${esc(sc.users)}${next}</div>`;
-  }
+
 
   function entryHtml() {
     const i = T.info, o = T.overview;
-    if (!i.enabled) return `<div class="tu-entry tu-off"><span class="sd-eyebrow">TUTOR</span><p class="sd-muted">The tutor needs the model, which is not connected. The lesson below works as usual.</p></div>`;
-    const modes = o.modes.map(m => `<label class="tu-mode ${T.mode === m.id ? 'is-on' : ''}"><input type="radio" name="tu-mode" value="${m.id}" ${T.mode === m.id ? 'checked' : ''}><b>${esc(m.label)}</b><small>${esc(m.blurb)}</small></label>`).join('');
+    if (!i.enabled) return '';
     const active = T.session && T.session.status === 'active';
-    const last = i.previously ? `<p class="tu-previously"><b>Last time:</b> ${inline(i.previously)}</p>` : '';
-    const ms = (o.story.scale.milestones || []).find(m => m.section === T.ctx.section && m.area === T.ctx.lesson.category);
-    const milestone = ms ? `<p class="tu-milestone">${ms.done ? `<b>✓ ${esc(ms.title)}</b> unlocked.` : `<b>Milestone:</b> ${esc(ms.title)}, ${ms.progress}% of the way. It unlocks when you hold enough of this area.`}</p>` : '';
-    return `<section class="tu-entry"><div class="tu-entry-head"><div><span class="sd-eyebrow">LEARN WITH THE TUTOR</span>
-        <p class="tu-scene">${esc(i.scene)}</p>${milestone}</div>${companyHtml()}</div>${last}
-      ${active ? '' : `<div class="tu-modes" role="radiogroup" aria-label="Session style">${modes}</div>`}
-      <div class="sd-actions">${active ? btn('Continue your session', 'resume', '', true) + btn('End it and get the debrief', 'fresh') : btn('Start a session', 'start', '', true)}
-        <span class="sd-muted tu-hint">${active ? '' : T.mode === 'teach' ? 'The tutor asks, you answer. Talk or type; activities from the lesson come up as you go.' : 'Talk or type. No hints or corrections until the debrief at the end.'}</span></div>
+    const go = active ? btn('Continue your session', 'resume', '', true) : btn(T.notes ? 'Learn this with the tutor' : 'Start', 'start', '', true);
+    if (T.notes) return `<section class="tu-entry tu-compact"><span>Rather be taught? The tutor asks the questions and brings in this lesson's activities.</span>${go}</section>`;
+    const mode = o.modes.find(m => m.id === T.mode);
+    const style = active ? '' : `<label class="tu-style">Style <select data-tu-mode aria-label="Session style">${o.modes.map(m => `<option value="${m.id}" ${T.mode === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>`;
+    return `<section class="tu-entry"><span class="sd-eyebrow">LEARN THIS WITH THE TUTOR</span>
+      <p class="tu-scene">${esc(i.scene)}</p>${i.previously ? `<p class="tu-previously"><b>Last time:</b> ${inline(i.previously)}</p>` : ''}
+      <p class="sd-muted tu-hint">${active ? 'Your session is waiting where you left it.' : esc(mode?.blurb || '')} Talk or type.</p>
+      <div class="sd-actions">${go}${active ? btn('End it and get the debrief', 'fresh') : ''}${btn('Read the notes instead', 'notes')}${style}</div>
       ${T.error ? `<p class="tu-error">${esc(T.error)}</p>` : ''}</section>`;
   }
 
   function panelHtml() {
     const s = T.session, mode = T.overview.modes.find(m => m.id === s.mode);
     return `<section class="tu-panel"><header class="tu-head"><div><span class="sd-eyebrow">TUTOR · ${esc(mode?.label || s.mode)}</span><h3>${esc(T.ctx.lesson.title)}</h3></div>
-        ${companyHtml()}<div class="tu-head-actions">${btn('Back to the lesson', 'close')}${s.status === 'active' ? btn('End session', 'end') : ''}</div></header>
+        <div class="tu-head-actions">${btn('Show the notes', 'close')}${s.status === 'active' ? btn('End session', 'end') : ''}</div></header>
       <div class="tu-body"><div class="tu-chat" aria-live="polite"></div>
         <details class="tu-rail" ${window.matchMedia?.('(max-width: 760px)').matches ? '' : 'open'}><summary><span class="sd-eyebrow">OBJECTIVES</span> <span class="sd-muted tu-progress"></span></summary><ol class="tu-objectives"></ol></details></div>
       <form class="tu-compose"><textarea data-dictate rows="2" aria-label="Your reply" placeholder="Answer, ask, or think out loud…"></textarea>
@@ -91,7 +105,7 @@
   }
 
   function wireEntry() {
-    T.host.querySelectorAll('input[name="tu-mode"]').forEach(n => n.addEventListener('change', () => { T.mode = n.value; paint(); }));
+    T.host.querySelector('[data-tu-mode]')?.addEventListener('change', e => { T.mode = e.target.value; paint(); });
     T.host.querySelectorAll('[data-tu]').forEach(n => n.addEventListener('click', () => act(n.dataset.tu)));
   }
   function wirePanel() {
@@ -113,7 +127,10 @@
   async function act(action) {
     const t = T;
     try {
-      if (action === 'start') {
+      if (action === 'notes') {
+        t.notes = true; setPreferNotes(true); paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
+      } else if (action === 'start') {
+        setPreferNotes(false);
         t.busy = true; t.error = ''; t.open = true;
         t.session = {id: null, mode: t.mode, status: 'active', turns: [], objectives: t.info.objectives.map(() => ({status: 'open'})), progress: {demonstrated: 0, total: t.info.objectives.length}};
         paint(); status(`${cast(firstSpeaker(t.mode))?.name || 'The tutor'} is getting ready…`);
@@ -123,7 +140,7 @@
       } else if (action === 'resume') {
         t.open = true; paint();
       } else if (action === 'close') {
-        t.open = false; paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
+        t.open = false; t.notes = true; paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
       } else if (action === 'end' || action === 'fresh') {
         if (action === 'fresh') { t.open = true; paint(); }
         t.busy = true; status('Writing your debrief…');
@@ -236,5 +253,5 @@
   }
 
   function reset() { T = null; }
-  window.Tutor = {mount, reset};
+  window.Tutor = {mount, reset, queue};
 })();

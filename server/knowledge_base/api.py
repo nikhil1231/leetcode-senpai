@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from .. import auth, config
 from ..store import get_store
-from . import catalog as cat, model, sources
+from . import catalog as cat, model, progress, sources
 
 router = APIRouter(prefix='/api/knowledge', tags=['knowledge'])
 KEY = r'^[A-Za-z0-9_.:-]{1,120}$'
@@ -66,6 +66,15 @@ def overview(who=Depends(caller)):
             'catalog': {'points': len(cat.active(c)), 'aliases': len(c['aliases']), 'stale': c['stale'],
                         'unmapped': {s: len(v) for s, v in c['unmapped'].items()}, 'problems': c['problems']},
             'evidence': by_source}
+
+
+@router.get('/report')
+def report(section: Literal['system-design', 'fundamentals', 'ai'], who=Depends(caller)):
+    """How good you are in one section: per area and lesson, what is tested and how well you hold it."""
+    now = time.time()
+    c, events, states, seen, mis = evidence(get_store(who['uid']), now)
+    week_ago, _ = model.replay(events, now - progress.WEEK)
+    return progress.report(c, states, week_ago, seen, mis, now, section, progress.trend(c, events, now, section))
 
 
 @router.get('/catalog')

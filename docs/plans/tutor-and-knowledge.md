@@ -104,8 +104,9 @@ and the lesson is unchanged. Runs on `TUTOR_MODEL` (default `openai/gpt-6-luna`,
 a turn, ~2.5 s). Tested with unit and HTTP tests and end to end in a headless browser on an
 in-memory store (desktop and phone widths) with the real model.
 
-Not built yet: the tutor speaking its replies aloud (text-to-speech costs money: Nikhil's call),
-and a view of the whole knowledge model outside the tutor.
+Not built yet: the tutor speaking its replies aloud (text-to-speech costs money: Nikhil's call).
+The whole knowledge model now has its own view (What you know), and the tutor picks the next
+step on each section's Home: see the 2026-10-31 log entry.
 
 Today the lesson script is in charge and the AI only annotates it (planning notes, explaining on
 request, grading). Flip it:
@@ -200,6 +201,20 @@ quality is checked.
 - 2026-10-31: Rule added: never an Anthropic model through OpenRouter (CLAUDE.md, enforced in
   `llm.py`). Built the tutor and the story (see their Status sections). Deployed.
 
+- 2026-10-31: Redesign after Nikhil's feedback: the AI work felt like more features bolted on, he
+  had no visibility of how good his knowledge is, the pages were busy (tutor card stacked on top
+  of the whole old lesson), and he **wants the tutor to be proactive** about what to do next.
+  Built: Home with one next step chosen from the knowledge base (`GET /api/tutor/next`); What you
+  know (`GET /api/knowledge/report`): score over tested ideas only, coverage, depth, misconceptions,
+  trend, per area and lesson; placement checks per area; lessons open as a choice of tutor or
+  notes; four sidebar items per section. Also fixed: answers to `-v1` questions were not reaching
+  the knowledge base. Tested with unit and HTTP tests and in a headless browser on an in-memory
+  copy of the real data (desktop and phone).
+
 ## Dropped
 
-Nothing yet.
+- 2026-10-31: the old System Design overview (Today card, case cards, course links), the old
+  progress page (knowledge map of question squares, personal bests, stat tiles, topic table,
+  design observations table) and the tracks' three-card overview. Nikhil found them busy and they
+  gave no sense of how good he is; Home and What you know replace them. Sidebars went from 10
+  items (System Design) to 4. The underlying records are untouched.

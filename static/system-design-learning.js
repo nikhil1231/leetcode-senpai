@@ -32,13 +32,9 @@
     tickAt=performance.now();clock=setInterval(()=>{tick();checkpoint();},1000);
   }
   function progress(completed,total) {return `<div class="sd-course-bar" role="progressbar" aria-label="Lessons completed" aria-valuenow="${completed}" aria-valuemin="0" aria-valuemax="${total}"><span style="width:${total?100*completed/total:0}%"></span></div>`;}
-  function statsHtml() {
-    const t=catalog.course.totals, independent=t.independent_attempts;
-    return `<div class="sd-course-stats"><div><strong>${t.completed}<small> / ${t.lessons}</small></strong><span>Lessons completed</span></div><div><strong>${t.passed}</strong><span>Lesson checks passed</span></div><div><strong>${independent?Math.round(100*t.independent_correct/independent)+'%':'—'}</strong><span>Independent Quickfire · ${independent} attempts</span></div><div><strong>${t.due}</strong><span>Checks due for review</span></div></div>`;
-  }
   const statusText = l => l.status==='completed'?'Completed':l.status==='in_progress'?'In progress':'Not started';
   function lessonRow(l,index) {
-    return `<article class="sd-curriculum-topic"><div class="sd-topic-main"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><div><a class="sd-topic-link" href="#/system-design/lesson/${l.id}">${esc(l.title)}</a>${window.StudyPrompt?.button({section:'system-design',lesson:l.id},l.title)||''}<div class="sd-topic-meta"><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span>${l.passed?'<span class="sd-status is-done">Check passed</span>':''}${l.needs_review?'<span class="sd-status is-review">Needs review</span>':''}<span>${l.minutes} min${l.activities_total?` · ${l.activities_done}/${l.activities_total} activities`:''} · ${l.latest_score===null?'Check not finished':`Latest check ${l.latest_score}/${l.latest_total||3}`}</span></div></div></div><details class="sd-objectives"><summary>Learning objectives & practice</summary><ul>${l.objective_progress.map(o=>`<li>${esc(o.title)} <span class="sd-objective-status">${o.status==='passed'?'✓ Check passed':o.status==='review'?'↻ Review':'○ Not checked'}</span></li>`).join('')}</ul><p class="sd-muted">Quickfire: ${l.accuracy===null?'not yet assessed':`${l.accuracy}% across ${l.independent_attempts} independent attempts`} · ${l.due} reviews due</p><div class="sd-actions">${btn('Study lesson','lesson',`data-id="${l.id}"`,true)}${btn('Practise topic','topic-fire',`data-id="${l.id}"`)}</div></details></article>`;
+    return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span><span class="sd-muted">${l.minutes} min</span></a>`;
   }
   function matches(l) {
     return (!category || l.category===category) && (!search || (l.title+' '+l.objectives.join(' ')).toLowerCase().includes(search.toLowerCase())) &&
@@ -46,10 +42,8 @@
   }
   function mapHtml() {
     const t=catalog.course.totals;
-    return intro(view==='lessons'?'LESSON LIBRARY':'YOUR LEARNING MAP',view==='lessons'?'Learn one concept at a time.':'From your first request to a complete design.',`A guided course in ${catalog.course.categories.length} stages, from foundations to full interview walkthroughs. Follow the suggested order or explore any topic; your activities, lesson checks and practice are recorded.`) + statsHtml()+
-      `<div class="sd-course-toolbar"><label>Show<select id="sd-course-filter" class="select">${[['all','All lessons'],['unfinished','Unfinished'],['review','Needs review'],['completed','Completed']].map(([k,v])=>`<option value="${k}" ${filter===k?'selected':''}>${v}</option>`).join('')}</select></label><label>Category<select id="sd-course-category" class="select"><option value="">All categories</option>${catalog.course.categories.map(c=>`<option value="${c.id}" ${category===c.id?'selected':''}>${esc(c.title)}</option>`).join('')}</select></label><label class="sd-course-search">Find a concept<input class="input" id="sd-course-search" type="search" value="${esc(search)}" placeholder="e.g. cache, retries, ownership"></label>${catalog.course.next_lesson?btn('Continue learning →','lesson',`data-id="${catalog.course.next_lesson}"`,true):''}</div>
-      <p class="sd-muted">${t.completed} of ${t.lessons} lessons completed. Completion tracks study and attempted checks; later independent practice tracks retention.</p>
-      <div class="sd-actions sd-map-controls">${btn('Expand all categories','expand-map')}${btn('Collapse all categories','collapse-map')}</div><div id="sd-course-results">${mapResults()}</div>`;
+    return intro('LEARN','The course, in order.',`${catalog.course.categories.length} areas, ${t.lessons} lessons, from your first request to full interview designs. Home picks the next one for you; open any lesson here when you want to choose.`)+
+      `<div id="sd-course-results">${mapResults()}</div>`;
   }
   function mapResults() {
     let number=0;
@@ -122,32 +116,27 @@
   function quickfireHtml() {
     if(round?.item && !round.finished) {
       const q=round.item.question,a=round.item.result,l=catalog.course.lessons.find(l=>l.id===q.lesson_id);
-      return intro('SYSTEM DESIGN QUICKFIRE',round.length?`Question ${round.answers.length+(a?0:1)} of ${round.length}`:'Continuous practice','Choose an answer, understand the explanation, and keep building your instincts.')+
+      const placing=round.settings.mode==='placement', area=placing&&catalog.course.categories.find(c=>c.id===round.settings.category);
+      return (placing?intro('FIND YOUR LEVEL · '+(area?area.title.toUpperCase():''),`Question ${round.answers.length+(a?0:1)} of ${round.length}`,'One question per lesson you have not been tested on. "Reveal answer" is a fine answer when you do not know: it tells us just as much.')
+        :intro('SYSTEM DESIGN QUICKFIRE',round.length?`Question ${round.answers.length+(a?0:1)} of ${round.length}`:'Continuous practice','Choose an answer, understand the explanation, and keep building your instincts.'))+
         `<div class="sd-quickfire-meta"><span>${esc(l.title)}</span><span>${round.answers.filter(a=>a.correct&&!a.revealed).length} correct / ${round.answers.length} answered</span>${comboHtml()}${btn('Stop round','stop-round')}</div><article class="sd-panel sd-fire-question"><span class="sd-eyebrow">${q.difficulty==='standard'?'ADVANCED':'CORE'} · ${a?'ANSWER SAVED':esc(formatLabel(q))}</span><div class="sd-q-prompt sd-q-big">${B()?B().md(q.prompt):esc(q.prompt)}</div>${choices(q,a)}${confidenceHtml(a)}${a?feedback(a):''}<div class="sd-actions">${a?btn(round.length&&round.answers.length>=round.length?'Finish round →':'Next question →','next-fire','',true):btn('Check answer →','fire-answer','',true)}${!a?btn('Reveal answer','fire-reveal'):a.correct&&!a.guessed?btn('I guessed','guess'):''}${btn('Read the lesson','lesson',`data-id="${q.lesson_id}"`)}</div><p class="sd-muted">Number keys choose · S / U mark sure or unsure · Enter checks or continues · Esc stops.</p></article>`;
     }
     if(round?.finished) {
       const n=round.answers.length,correct=round.answers.filter(a=>a.correct&&!a.revealed).length;
       const missed=[...new Set(round.answers.filter(a=>!a.correct||a.revealed||a.guessed).map(a=>a.lesson_id))];
+      if(round.settings.mode==='placement')return intro('LEVEL FOUND',`${correct} of ${n} right.`,'Your answers are saved, and What you know now shows this area. Home will skip what you got right and start you where you missed.')+
+        `<article class="sd-panel"><div class="sd-actions">${btn('Back to Home','navigate','data-view="home"',true)}${btn('What you know','navigate','data-view="progress"')}</div></article>`;
       return intro('ROUND COMPLETE',`${correct} correct out of ${n}.`,'Your answers are saved. Revealed and guessed answers return sooner; supported work stays labelled.')+
-        `<div data-round-slip></div><article class="sd-panel"><h3>${missed.length?'Worth another look':'Keep the reasoning fresh'}</h3>${missed.length?missed.map(k=>`<p>${btn(catalog.course.lessons.find(l=>l.id===k).title,'lesson',`data-id="${k}"`)}</p>`).join(''):'<p>Try another topic or return on a later day for an independent check.</p>'}<div class="sd-actions">${btn('Another round','new-round','',true)}${btn('Your progress','navigate','data-view="progress"')}</div></article>`;
+        `<div data-round-slip></div><article class="sd-panel"><h3>${missed.length?'Worth another look':'Keep the reasoning fresh'}</h3>${missed.length?missed.map(k=>`<p>${btn(catalog.course.lessons.find(l=>l.id===k).title,'lesson',`data-id="${k}"`)}</p>`).join(''):'<p>Try another topic or return on a later day for an independent check.</p>'}<div class="sd-actions">${btn('Another round','new-round','',true)}${btn('Home','navigate','data-view="home"')}</div></article>`;
     }
     if(round&&!round.item&&!round.finished)return intro('QUICKFIRE','Loading your next question.','If the connection failed, retry to recover the same question.')+btn('Retry loading question','next-fire','',true);
     return intro('QUICK DECISIONS, CLEAR REASONS','System Design Quickfire','Short multiple-choice questions about components, products, trade-offs, capacity, and failures. No timer pressure.')+
       (pendingRound?`<div class="sd-panel sd-resume"><h3>You have an unfinished round.</h3><p>Your question and saved results can be recovered.</p><div class="sd-actions">${btn('Resume round','resume','',true)}${btn('Discard round','discard')}</div></div>`:'')+
       `<div class="sd-panel"><div class="sd-fire-controls"><label>Category<select class="select" id="sd-fire-category">${selectOptions([['','All categories'],...catalog.course.categories.map(c=>[c.id,c.title])],settings.category)}</select></label><label>Topic<select class="select" id="sd-fire-topic">${selectOptions([['','All topics'],...catalog.course.lessons.filter(l=>!settings.category||l.category===settings.category).map(l=>[l.id,l.title])],settings.lesson_id)}</select></label><label>Difficulty<select class="select" id="sd-fire-difficulty">${selectOptions([['mixed','Mixed'],['beginner','Core'],['standard','Advanced']],settings.difficulty)}</select></label><label>Practice<select class="select" id="sd-fire-mode">${selectOptions([['adaptive','Adaptive mix'],['mistakes','Review mistakes'],['learned','Learned topics']],settings.mode)}</select></label><label>Round length<select class="select" id="sd-fire-length">${selectOptions([[5,'5 questions'],[10,'10 questions'],[0,'Continuous']],settings.length)}</select></label></div><div class="sd-actions">${btn('Start Quickfire →','start-fire','',true)}</div><p class="sd-muted">${catalog.course.totals.quickfire_questions} authored questions. Due reviews and mistakes are prioritised; recent questions are spaced out.</p></div>`;
   }
-  function progressHtml() {
-    const lessons=catalog.course.lessons, attention=lessons.filter(l=>l.needs_review), history=catalog.course.history;
-    const label={not_assessed:'Not yet assessed',more_practice:'More practice needed',needs_work:'Needs work',developing_strength:'Developing strength'};
-    const L=window.DesignLedger, slots=L?['knowledge','records','activity','heatmap'].map(p=>L.slot(p)).join(''):'';
-    return intro('YOUR LEARNING RECORD','Know what to focus on.','Course coverage, supported learning, independent practice, and design observations each tell a different part of the story.')+slots+statsHtml()+
-      `<div class="sd-panel"><h3>${attention.length?'Your next focus':'Your next step'}</h3>${attention.length?`<div class="sd-focus-list">${attention.slice(0,6).map(l=>`<div><strong>${esc(l.title)}</strong><p class="sd-muted">${l.due} due · ${l.mistakes} latest answers to revisit</p><div class="sd-actions">${btn('Review lesson','lesson',`data-id="${l.id}"`)}${btn('Practise topic','topic-fire',`data-id="${l.id}"`)}</div></div>`).join('')}</div>`:`<p>${catalog.course.totals.quickfire_attempts?'No outstanding mistakes recorded. Continue the curriculum or revisit a topic later.':'Start a lesson, then try its checks. Your results will appear here.'}</p>${btn('Open curriculum','navigate','data-view="curriculum"',true)}`}</div>
-      <div class="sd-panel"><h3>Topic performance</h3><p class="sd-muted">Accuracy uses the first independent answer per question per UTC day. Guesses count as uncertain; supported and revealed answers are shown separately. A strength/weakness label needs at least three independent attempts; its signal uses the latest five.</p><div class="sd-scroll"><table class="sd-evidence"><thead><tr><th>Topic</th><th>Study</th><th>Latest / best check</th><th>Independent Quickfire</th><th>Supported</th><th>Focus</th></tr></thead><tbody>${lessons.map(l=>`<tr><td><a href="#/system-design/lesson/${l.id}">${esc(l.title)}</a></td><td>${statusText(l)}</td><td>${l.latest_score===null?'—':`${l.latest_score}/3 · ${l.best_score}/3`}</td><td>${l.accuracy===null?'—':`${l.accuracy}% · ${l.independent_attempts} attempts`}</td><td>${l.supported_attempts}</td><td>${label[l.calibration]}${l.due?` · ${l.due} due`:''}</td></tr>`).join('')}</tbody></table></div></div>
-      <details class="sd-panel"><summary>Recent checks and answers (${history.length}${history.length===100?' most recent':''})</summary>${history.length?`<div class="sd-history">${history.map(a=>`<details><summary><span>${esc(catalog.course.lessons.find(l=>l.id===a.lesson_id)?.title||a.lesson_id)}</span><span>${a.source==='quiz'?'Lesson check':'Quickfire'} · ${a.revealed?'revealed':a.correct?'correct':'incorrect'}${a.guessed?' · guessed':''}</span><small>${esc(stamp(a.answered_at))}</small></summary><p>${esc(a.question_title)}</p><p>Your answer: ${esc(a.choices?.find(c=>c.id===a.answer)?.text||'Revealed')}</p>${feedback(a)}</details>`).join('')}</div>`:'<p>No recorded checks yet.</p>'}</details>`;
-  }
   function render(nextView,nextCatalog) {
     view=nextView;catalog=nextCatalog;
-    const body=view==='lesson'?lessonHtml():view==='quickfire'?quickfireHtml():view==='progress'?progressHtml():mapHtml();
+    const body=view==='lesson'?lessonHtml():view==='quickfire'?quickfireHtml():mapHtml();
     return `<div id="sd-learning-error" class="sd-error" role="alert" ${error?'':'hidden'}>${esc(error)}</div>`+body;
   }
   async function refresh() {catalog=await call('');window.SystemDesign.setCatalog(catalog);window.DesignLedger?.invalidate();}
@@ -325,7 +314,19 @@
     if(event.key==='Enter') {event.preventDefault();act(round.item.result?'next-fire':'fire-answer',{});}
     if(event.key==='Escape') {event.preventDefault();act('stop-round',{});}
   });
-  window.DesignLearning={render,wire,openLesson,stop,startClock,isBusy:()=>busy,statsHtml,progressHtml,
+  // Start a round straight away, without the setup screen: Home's review and placement steps.
+  async function startRound(preset) {
+    if(busy)return;
+    busy=true;error='';
+    try {
+      settings={...defaults(),...preset};pendingRound=null;writeStorage(storageKey(),null);
+      round={settings:{...settings},length:settings.length,answers:[],recent:[],item:null,nextRequest:id(),startedAt:Math.floor(Date.now()/1000)};
+      busy=false;await go('quickfire');busy=true;
+      await nextFire();
+    } catch(e) {error=e.message;}
+    finally {busy=false;window.SystemDesign.repaint();}
+  }
+  window.DesignLearning={render,wire,openLesson,stop,startClock,isBusy:()=>busy,startRound,
     route:()=>lesson?'lesson/'+lesson.id:'lessons',
     setCatalog(value,nextView=view){
       if(nextView!==view) {

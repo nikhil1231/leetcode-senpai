@@ -86,6 +86,8 @@ class Answer(BaseModel):
 class NextQuestion(BaseModel):
     exclude: list[str] = Field(default_factory=list, max_length=200)
     lesson: str | None = None
+    category: str | None = Field(default=None, max_length=80, description='Placement: the area to place you in.')
+    placement: bool = Field(default=False, description='One question per lesson of the area not yet tested.')
 
 
 @router.get('/{track}/lessons/{key}')
@@ -155,7 +157,10 @@ def next_question(track: str, body: NextQuestion, store=Depends(store_for)):
     course_track(track)
     if body.lesson:
         lesson_of(track, body.lesson)
-    q = courses.next_question(track, store.list_track_records(track), time.time(), set(body.exclude), body.lesson)
+    if body.placement:
+        q = courses.placement_question(track, store.list_track_records(track), set(body.exclude), body.category)
+    else:
+        q = courses.next_question(track, store.list_track_records(track), time.time(), set(body.exclude), body.lesson)
     return {'question': courses.public_question(q) if q else None}
 
 

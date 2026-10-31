@@ -10,16 +10,17 @@
   const KIND = { fundamentals: 'course', ai: 'course', experience: 'experience', practical: 'practical' };
   const TITLES = { fundamentals: 'Fundamentals', ai: 'AI Engineering', experience: 'Experience', practical: 'Practical Coding' };
   const NAV = {
-    course: [['home', 'Overview', 'i-today'], ['lessons', 'Lessons', 'i-topics'], ['quickfire', 'Quickfire', 'i-drill'], ['mistakes', 'Mistakes book', 'i-insights']],
+    course: [['home', 'Home', 'i-today'], ['lessons', 'Learn', 'i-topics'], ['practise', 'Practise', 'i-drill'], ['progress', 'What you know', 'i-insights']],
     experience: [['home', 'Overview', 'i-today'], ['stories', 'Story bank', 'i-playbook'], ['drill', 'Timed answers', 'i-drill'], ['dives', 'Deep dives', 'i-topics'], ['mistakes', 'Mistakes book', 'i-insights']],
     practical: [['home', 'Exercises', 'i-today'], ['mistakes', 'Mistakes book', 'i-insights']],
   };
-  const TRACK_NAV = { ai: [NAV.course[0], ['round', 'AI round', 'i-playbook'], ...NAV.course.slice(1)] };
   // Extra prep for an interview round that lives in another section.
   const ROUND_LINKS = { workflow: [['experience', 'dives', 'Deep dives on your CV']] };
   const NOTES = { course: 'Read it once.<br>Recall it often.<br>Explain it simply.', experience: 'Specific.<br>Measured.<br>In the first person.', practical: 'Run the tests.<br>Change one thing.<br>Say what you see.' };
-  const VIEW_TITLES = { home: 'Overview', lessons: 'Lessons', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round' };
+  const VIEW_TITLES = { home: 'Home', practise: 'Practise', progress: 'What you know', placement: 'Find your level', lessons: 'Learn', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round' };
   const ACTIVE = { lesson: 'lessons', story: 'stories', dive: 'dives', claim: 'dives', exercise: 'home' };
+  // Course tracks: practice views sit under Practise.
+  const COURSE_ACTIVE = { lesson: 'lessons', quickfire: 'practise', mistakes: 'practise', placement: 'practise', round: 'practise', exercise: 'practise' };
   const registry = { course: {} };
   let current = { track: null, view: 'home', arg: null, seq: 0 };
   const cleanups = [];
@@ -34,13 +35,13 @@
     const el = $('#track-nav'); if (!el) return;
     const kind = KIND[track];
     el.innerHTML = `<span class="design-nav-label">${esc(TITLES[track].toUpperCase())}</span>` +
-      (TRACK_NAV[track] || NAV[kind]).map(([v, label, icon]) => `<button type="button" data-track-view="${v}"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#${icon}"/></svg>${label}</button>`).join('') +
+      NAV[kind].map(([v, label, icon]) => `<button type="button" data-track-view="${v}"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#${icon}"/></svg>${label}</button>`).join('') +
       `<div class="design-nav-note">${NOTES[kind]}</div>`;
     el.querySelectorAll('[data-track-view]').forEach(n => n.addEventListener('click', () => window.AppSections.select(track, n.dataset.trackView)));
   }
   function markNav(view) {
     document.querySelectorAll('#track-nav [data-track-view]').forEach(n => {
-      const on = n.dataset.trackView === (current.track === 'ai' && view === 'exercise' ? 'round' : ACTIVE[view] || view);
+      const on = n.dataset.trackView === ((KIND[current.track] === 'course' ? COURSE_ACTIVE : ACTIVE)[view] || view);
       n.classList.toggle('is-active', on);
       if (on) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
     });
@@ -175,28 +176,22 @@
         <div class="tr-round-links">${r.id === 'assisted' ? `<button type="button" class="tr-chip is-lead" data-t="go" data-view="round">Playbook →</button>` : ''}${r.lessons.map(l => `<button type="button" class="tr-chip ${l.checked ? 'is-held' : ''}" data-t="lesson" data-id="${l.id}" title="${l.held}/${l.items} held">${l.checked ? '✓ ' : ''}${esc(l.title.split(' - ')[0].replace(/^AI system design: /, 'Design: '))}</button>`).join('')}${r.exercises.map(e => `<button type="button" class="tr-chip is-ex ${ROUND_STATUS[e.status] || ''}" data-t="exercise" data-id="${e.id}">▶ ${esc(shortTitle(e.title))}</button>`).join('')}${(ROUND_LINKS[r.id] || []).map(([s, v, label]) => `<button type="button" class="tr-chip is-ex" data-t="section" data-section="${s}" data-view="${v}">↗ ${esc(label)}</button>`).join('')}</div></div>
         <div class="tr-round-meter"><span class="tr-round-pct">${r.pct}%</span><div class="sd-course-bar"><span style="width:${r.pct}%"></span></div><small>${r.held} of ${r.items} held</small></div></li>`).join('')}</ol></section>`;
   }
-  C.home = async ctx => {
-    const d = await ctx.call('');
-    if (ctx.stale()) return;
-    const next = d.next_lesson;
-    ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">${esc(d.track.title.toUpperCase())}</span><h2>${esc(d.track.blurb)}</h2></div>
-      ${knowledgeHtml(d)}
-      <div class="tr-next-grid">
-        <section class="sd-panel tr-next"><span class="sd-eyebrow">KEEP IT</span><h3>${d.due ? `${d.due} fading item${d.due === 1 ? '' : 's'} due` : d.answers ? 'Nothing due' : 'Quickfire'}</h3><p class="sd-muted">${d.due ? 'Answer them before they slip. Mistakes come first, then fading items, then new questions from lessons you have opened.' : 'Short questions, mistakes first. A good five-minute warm-up.'}</p>${btn('Start Quickfire', 'go', 'data-view="quickfire"', !!d.due)}</section>
-        <section class="sd-panel tr-next"><span class="sd-eyebrow">LEARN</span><h3>${next ? esc(next.title) : 'Every lesson checked'}</h3><p class="sd-muted">${next ? `${next.minutes} minutes · ${next.interactive} activities, then a short check.` : 'Keep the knowledge alive with Quickfire and the mistakes book.'}</p>${next ? btn(next.opened ? 'Continue lesson' : 'Start lesson', 'lesson', `data-id="${next.id}"`, !d.due) : ''}</section>
-        <section class="sd-panel tr-next"><span class="sd-eyebrow">FIX</span><h3>${d.mistakes.fix.length} to fix · ${d.mistakes.confirm.length} to confirm</h3><p class="sd-muted">Wrong answers wait here until you get them right on a later day.</p>${btn('Open the mistakes book', 'go', 'data-view="mistakes"')}</section>
-      </div>
-      ${loopHtml(d.rounds)}
-      ${d.course.map(c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`).join('')}`;
-    wireActions(ctx.root, { go: n => ctx.go(n.dataset.view), lesson: n => ctx.go('lesson/' + n.dataset.id), exercise: n => ctx.go('exercise/' + n.dataset.id),
-      section: n => window.AppSections.select(n.dataset.section, n.dataset.view) });
+  const hub = view => async ctx => {
+    const slot = document.createElement('div');
+    ctx.root.replaceChildren(slot);
+    await window.Hub.mount(slot, ctx.track, view);
   };
+  C.home = hub('home');
+  C.practise = hub('practise');
+  C.progress = hub('progress');
+  C.placement = ctx => window.Hub.placement(ctx.root, ctx.track, ctx.arg, { questionHtml, wireQuestion });
   C.lessons = async ctx => {
     const d = await ctx.call('');
     if (ctx.stale()) return;
-    ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">${d.course.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><h2>${esc(d.track.title)} lessons</h2><p>Each lesson mixes reading with interactive activities, then a short check. Your first try on each activity counts toward what you hold.</p></div>
+    ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">${d.course.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><h2>The course, in order.</h2><p>Home picks the next lesson for you; open any lesson here when you want to choose.</p></div>${loopHtml(d.rounds)}
       ${d.course.map(c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`).join('')}`;
-    wireActions(ctx.root, { lesson: n => ctx.go('lesson/' + n.dataset.id) });
+    wireActions(ctx.root, { go: n => ctx.go(n.dataset.view), lesson: n => ctx.go('lesson/' + n.dataset.id), exercise: n => ctx.go('exercise/' + n.dataset.id),
+      section: n => window.AppSections.select(n.dataset.section, n.dataset.view) });
   };
   C.lesson = async ctx => {
     const [lesson, overview] = await Promise.all([ctx.call('/lessons/' + ctx.arg), ctx.call('')]);

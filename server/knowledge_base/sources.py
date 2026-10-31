@@ -35,12 +35,25 @@ def item_events(section, records):
     return courses.events(section, records)
 
 
+def mapped(catalog, item):
+    """The catalog's id for a ledger item. An answer to an older version of a question
+    (`…-v1`) counts for the points of the version the catalog maps (`…-v2`)."""
+    if item in catalog['items']:
+        return item
+    base, _, version = item.rpartition('-v')
+    if base and version.isdigit():
+        return next((f'{base}-v{n}' for n in range(int(version) + 1, int(version) + 6)
+                     if f'{base}-v{n}' in catalog['items']), None)
+    return None
+
+
 def derived(catalog, records_by_section):
     """Point events from ledger records: {section: [records]}."""
     out = []
     for section, records in records_by_section.items():
         for e in item_events(section, records):
-            pids, info = catalog['items'].get(e['item']), catalog['item_info'].get(e['item'])
+            item = mapped(catalog, e['item']) or e['item']
+            pids, info = catalog['items'].get(item), catalog['item_info'].get(item)
             if not pids or not info:
                 continue
             base = {'at': e['at'], 'kind': 'answer', 'clean': bool(e['clean']), 'depth': item_depth(info),

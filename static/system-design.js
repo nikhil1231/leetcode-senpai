@@ -218,26 +218,14 @@
     if (screen === 'cases') return pageIntro('DESIGN PRACTICE','One brief. Many defensible designs.','Work through a realistic case, explain your choices, and revisit the weak spots.') + caseCards() + savedHtml(20);
     if (screen === 'skills') return skillsHtml();
     if (['lessons','curriculum','lesson','quickfire'].includes(screen)) return window.DesignLearning.render(screen,catalog);
-    if (screen === 'progress') return progressHtml();
     if (screen === 'papers') return window.DesignPapers.render(catalog);
     if (screen === 'drills') return window.DesignDrills.render();
     if (screen === 'redesign') return window.DesignRedesign.render();
     if (screen === 'mistakes') return pageIntro('MISTAKES BOOK','Every miss, in one place.','Wrong, revealed and guessed answers land here. An item clears when you answer it correctly on a later day, so a same-day fix waits for confirmation.') + window.DesignLedger.slot('mistakes');
-    return pageIntro('SYSTEM DESIGN','Build your system design foundations.','One thing to do next is below. Lessons start with a short warm-up and skip what you already know.') + todaySlot() + window.DesignLedger.slot('knowledge') +
-      `<div class="sd-section-title"><div><h3>Design a whole system</h3><p>${catalog.cases.length} briefs, each a different kind of reasoning. Write your design, then get it reviewed.</p></div>${button('All cases →','view','data-view="cases"')}</div>${caseCards(3)}${savedHtml(3)}
-      <div class="sd-bottom-links"><button type="button" data-sd="view" data-view="curriculum"><span class="sd-mini-icon">≡</span><span><strong>The course</strong><small>${catalog.course.totals.completed} of ${catalog.course.totals.lessons} lessons done. Each adapts to what you already know.</small></span><span>→</span></button><button type="button" data-sd="view" data-view="skills"><span class="sd-mini-icon">↯</span><span><strong>Have five minutes?</strong><small>Practise one focused decision.</small></span><span>→</span></button></div>` + window.DesignLedger.slot('activity');
-  }
-  function todaySlot() {
-    const next = catalog.course.lessons.find(l => l.id === catalog.course.next_lesson);
-    return window.DesignLedger.slot('today', next ? `data-next="${esc(next.id)}" data-next-title="${esc(next.title)}"` : '');
+    return `<div class="hub-slot" data-hub-view="${['practise','progress'].includes(screen)?screen:'home'}"></div>`;
   }
   function skillsHtml() {
     return pageIntro('FOCUSED PRACTICE','Small decisions. Stronger instincts.','A short exercise isolates one skill. Make your choice before opening the explanation.') + `<div class="sd-drill-list">${catalog.exercises.map((q,i)=>`<button type="button" class="sd-drill-row" data-sd="practice" data-id="${q.id}"><span class="sd-row-number">0${i+1}</span><span><small>${esc(catalog.skills[q.skill])}</small><strong>${esc(q.title)}</strong></span><span class="sd-duration">2–5 min</span><span class="sd-row-arrow">→</span></button>`).join('')}</div>`;
-  }
-  function progressHtml() {
-    return window.DesignLearning.render('progress',catalog) +
-      `
-      <div class="sd-panel sd-progress-panel"><div class="sd-section-title"><h3>Design assessment observations</h3><span>From reviewed designs</span></div><div class="sd-scroll"><table class="sd-evidence"><thead><tr><th>Skill</th><th>Demonstrated</th><th>Independent cases</th><th>Later checks</th><th>Needs work</th></tr></thead><tbody>${Object.entries(catalog.evidence).map(([k,v])=>`<tr><td>${esc(catalog.skills[k])}</td><td>${v.designs||'—'}</td><td>${v.independent_cases||'—'}</td><td>${v.later_checks||'—'}</td><td>${v.needs_work||'—'}</td></tr>`).join('')}</tbody></table></div><p class="sd-muted">These are AI observations, not a mastery score. A later check requires independent work at least a day later. Regrading the same answer adds no evidence.</p></div>${savedHtml(20)}`;
   }
   function setupHtml() {
     const c = caseOf(selectedCase);
@@ -281,6 +269,8 @@
     if (screen==='drills') window.DesignDrills.wire(root()); else window.DesignDrills.stop();
     if (screen==='redesign') window.DesignRedesign.wire(root()); else window.DesignRedesign.stop();
     window.DesignLedger.mount(root());
+    const hub=root().querySelector('.hub-slot');
+    if(hub)window.Hub.mount(hub,'system-design',hub.dataset.hubView);
     renderModelChip();
     if (document.body.classList.contains('section-design')) {
       window.AppSections?.setView(screen);
@@ -398,7 +388,7 @@
     }));
   }
 
-  const VIEWS = ['home','cases','skills','lessons','progress','curriculum','quickfire','papers','mistakes','drills'];
+  const VIEWS = ['home','practise','cases','skills','lessons','progress','curriculum','quickfire','papers','mistakes','drills'];
   let loading = null;
   async function renderDesign() {
     active=true;

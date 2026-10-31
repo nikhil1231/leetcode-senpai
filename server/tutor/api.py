@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import auth, config, llm
-from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel
+from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel, progress
 from ..store import get_store
 from . import lessons, session as ses, story
 
@@ -71,6 +71,40 @@ def overview(store=Depends(store_for)):
     _, _, _, _, summary = _knowledge(store, time.time())
     return {'enabled': llm.enabled(store.get_settings()), 'model': config.TUTOR_MODEL, 'modes': _modes(),
             'story': story.public(summary, store.get_knowledge('tutor_memory', STORY_KEY))}
+
+
+@router.get('/next')
+def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Depends(store_for)):
+    """The one thing to do next in a section, chosen from what you know, with two alternatives.
+
+    Works without the model: the choice is deterministic; with it, lessons go through the tutor.
+    """
+    now = time.time()
+    c, events, states, seen, mis = kb_api.evidence(store, now)
+    week_ago, _ = kmodel.replay(events, now - progress.WEEK)
+    rep = progress.report(c, states, week_ago, seen, mis, now, section)
+    tutor = llm.enabled(store.get_settings())
+    prefix = f'lesson:{section}:'
+    mine = sorted((m for m in store.list_knowledge('tutor_memory') if m.get('_key', '').startswith(prefix)),
+                  key=lambda m: -(m.get('last_at') or 0))
+    titles = {l['id']: l['title'] for a in rep['areas'] for l in a['lessons']}
+    active = None
+    for m in mine:
+        s = store.get_knowledge('tutor_sessions', m['active']) if m.get('active') else None
+        if s and s['status'] == 'active':
+            active = {'lesson': s['lesson'], 'lesson_title': titles.get(s['lesson'], s['lesson'])}
+            break
+    last = next((m for m in mine if m.get('summary')), None)
+    lesson = last['_key'][len(prefix):] if last else None
+    previously = {'lesson': lesson, 'lesson_title': titles.get(lesson, lesson), 'summary': last['summary'],
+                  'at': last.get('last_at')} if last else None
+    summary = kmodel.summary(c, states, seen, mis, now)
+    sc = story.scale(summary)
+    return {**progress.next_step(rep, tutor, active, mine[0]['_key'][len(prefix):] if mine else None),
+            'tutor': tutor, 'previously': previously,
+            'standing': {k: rep[k] for k in ('total', 'tested', 'coverage', 'score', 'level', 'slipping', 'held')}
+                        | {'misconceptions': len(rep['misconceptions']), 'week': {k: rep['week'][k] for k in ('gained', 'slipped')}},
+            'company': {'name': story.BIBLE['company'], 'label': sc['label'], 'users': sc['users']}}
 
 
 @router.get('/lessons/{section}/{lesson}')
