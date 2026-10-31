@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0c11" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Senpai feed</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <!-- The phone feed (server/feed.py): full-screen cards, swiped like Shorts. Self-contained so it
+       opens in a moment. ?n=3 cards (1-10); ?then=youtube ends with a way on to YouTube. -->
+  <style>
+    :root {
+      --ink: #12131a; --ink-2: rgba(18, 19, 26, .68); --bg: #0a0c11; --text: #e9ecf3; --muted: #8b93a8;
+      --fact: #ffd84d; --principle: #ff8fb8; --mechanism: #5fe0e8; --tradeoff: #ffad5c; --procedure: #8ce99a;
+    }
+    * { box-sizing: border-box; margin: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text);
+      font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+    body { overflow: hidden; -webkit-tap-highlight-color: transparent; }
+    #deck { height: 100dvh; overflow-y: auto; scroll-snap-type: y mandatory; overscroll-behavior: contain; }
+    .card { height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; position: relative;
+      display: flex; flex-direction: column; padding: calc(env(safe-area-inset-top) + 22px) 22px calc(env(safe-area-inset-bottom) + 22px);
+      color: var(--ink); background: var(--c, var(--fact)); }
+    .card::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(120% 70% at 100% 0%, rgba(255,255,255,.45), transparent 60%); }
+    .card > * { position: relative; }
+    .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; color: var(--ink-2);
+      padding-right: 118px; min-height: 30px; }  /* clear of the fixed Not now pill */
+    .count { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .who { margin-top: 18px; font-size: 15px; color: var(--ink-2); }
+    .who b { color: var(--ink); }
+    .ask { margin-top: 10px; font-size: clamp(26px, 7.4vw, 40px); line-height: 1.18; font-weight: 750; letter-spacing: -.01em; }
+    .answer { margin-top: 22px; display: none; }
+    .card.revealed .answer { display: block; }
+    .answer .piece { font-size: 15px; color: var(--ink-2); margin-bottom: 8px; }
+    .answer .idea { font-size: clamp(19px, 5vw, 24px); line-height: 1.35; font-weight: 550;
+      background: rgba(255,255,255,.55); border-radius: 16px; padding: 14px 16px; }
+    .meta { margin-top: auto; padding-top: 18px; font-size: 13px; color: var(--ink-2); }
+    .actions { display: flex; gap: 10px; margin-top: 14px; }
+    button, .btn { flex: 1; appearance: none; border: 0; border-radius: 16px; padding: 17px 14px; font: inherit;
+      font-weight: 700; cursor: pointer; text-align: center; text-decoration: none; color: inherit; }
+    .reveal { background: var(--ink); color: #fff; }
+    .knew { background: var(--ink); color: #fff; }
+    .missed { background: rgba(255,255,255,.6); color: var(--ink); }
+    .card.revealed .reveal, .card:not(.revealed) .grade { display: none; }
+    .card.done .actions { visibility: hidden; }
+    .verdict { display: none; margin-top: 14px; font-weight: 700; }
+    .card.done .verdict { display: block; }
+    .hint { text-align: center; font-size: 12px; color: var(--ink-2); margin-top: 10px; }
+    .end { background: var(--bg); color: var(--text); justify-content: center; text-align: center; }
+    .end::before { display: none; }
+    .end h1 { font-size: 34px; line-height: 1.15; }
+    .end p { color: var(--muted); margin-top: 10px; }
+    .end .actions { flex-direction: column; max-width: 420px; width: 100%; margin: 28px auto 0; }
+    .end .go { background: #fff; color: var(--ink); }
+    .end .more { background: #1e2330; color: var(--text); }
+    .end a.quiet { color: var(--muted); font-size: 14px; margin-top: 18px; display: inline-block; }
+    .skip { position: fixed; z-index: 5; top: calc(env(safe-area-inset-top) + 18px); right: 18px; padding: 6px 12px;
+      border-radius: 999px; background: rgba(18,19,26,.75); color: #fff; font-size: 13px; text-decoration: none; display: none; }
+    .msg { height: 100dvh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
+      padding: 24px; text-align: center; color: var(--muted); }
+    .msg a { color: var(--text); }
+  </style>
+</head>
+<body>
+  <a class="skip" id="skip" href="#">Not now</a>
+  <main id="deck"><div class="msg">Loading…</div></main>
+  <script>
+  (function () {
+    'use strict';
+    const q = new URLSearchParams(location.search);
+    const N = Math.min(10, Math.max(1, parseInt(q.get('n') || '3', 10) || 3));
+    const THEN = q.get('then') === 'youtube';
+    const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const YOUTUBE = IOS ? 'youtube://' : 'https://www.youtube.com/';
+    const deck = document.getElementById('deck');
+    const skip = document.getElementById('skip');
+    const run = Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    let cards = [], company = null, batch = 0;
+
+    async function api(path, body, keepalive) {
+      const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                          body: JSON.stringify(body), keepalive: !!keepalive, credentials: 'same-origin'}
+                                       : {credentials: 'same-origin'});
+      if (!r.ok) throw Object.assign(new Error('HTTP ' + r.status), {status: r.status});
+      return r.json();
+    }
+
+    function onward() {
+      if (THEN) location.href = YOUTUBE;
+      else location.href = '/';
+    }
+    skip.textContent = THEN ? 'Not now →' : 'Close';
+    skip.onclick = e => { e.preventDefault(); flushSeen(); onward(); };
+    skip.style.display = 'block';
+
+    async function load() {
+      batch += 1;
+      try {
+        const data = await api('/api/feed?n=' + N);
+        company = data.company;
+        const fresh = data.cards.map((c, i) => ({...c, key: `f-${run}-${batch}-${i}`, state: 'new', shownAt: 0}));
+        if (!fresh.length && !cards.length) return message('Nothing to practise right now. Start a lesson in the app and its ideas show up here.');
+        cards = cards.concat(fresh);
+        render();
+      } catch (err) {
+        if (err.status === 401 || err.status === 403) return message('Sign in to the app first, then come back.', '/');
+        message('Could not load the cards. <a href="#" id="retry">Try again</a>');
+        const r = document.getElementById('retry');
+        if (r) r.onclick = e => { e.preventDefault(); load(); };
+      }
+    }
+
+    function message(html, link) {
+      deck.innerHTML = `<div class="msg"><div>${html}</div>${link ? `<a href="${link}">Open the app</a>` : ''}
+        ${THEN ? `<a href="${YOUTUBE}">Continue to YouTube</a>` : ''}</div>`;
+    }
+
+    function cardHtml(c, i) {
+      const focus = c.focus ? `<div class="piece">The piece: ${esc(c.focus)}</div>` : '';
+      return `<section class="card ${c.state === 'revealed' ? 'revealed' : ''} ${c.state === 'done' ? 'revealed done' : ''}" data-i="${i}"
+          style="--c: var(--${esc(c.kind)}, var(--fact))">
+        <div class="top"><span>${esc(c.tag)}</span><span class="count">${i + 1} / ${cards.length}</span></div>
+        <div class="who"><b>${esc(c.speaker)}</b> · ${esc(c.role)} — ${esc(c.lead)}</div>
+        <div class="ask">${esc(c.ask)}</div>
+        <div class="answer">${focus}<div class="idea">${esc(c.claim)}</div></div>
+        <div class="verdict">${c.outcome === 'knew' ? 'Nice. Logged.' : c.outcome === 'missed' ? 'Logged. It will come back sooner.' : ''}</div>
+        <div class="meta">${esc(c.lesson)}</div>
+        <div class="actions">
+          <button class="reveal" data-act="reveal">Show the idea</button>
+          <button class="grade missed" data-act="missed">Didn't know</button>
+          <button class="grade knew" data-act="knew">Knew it</button>
+        </div>
+        <div class="hint">${{new: 'Think of the answer, then tap', revealed: 'Be honest: it only helps you'}[c.state] || 'Swipe up for the next'}</div>
+      </section>`;
+    }
+
+    function endHtml() {
+      const done = cards.filter(c => c.outcome), knew = done.filter(c => c.outcome === 'knew').length;
+      const co = company ? `Ripple is at ${esc(company.label)} (${esc(company.users)}). You hold ${esc(company.pct)}% of the ideas.` : '';
+      return `<section class="card end">
+        <h1>${done.length ? `${knew} of ${done.length} known.` : 'That is the lot.'}</h1>
+        <p>${co}</p>
+        <div class="actions">
+          ${THEN ? `<a class="btn go" href="${YOUTUBE}" data-act="go">Continue to YouTube</a>` : ''}
+          <button class="more" data-act="more">${N} more</button>
+          ${THEN ? '' : '<a class="btn go" href="/">Open the app</a>'}
+        </div>
+      </section>`;
+    }
+
+    function render() {
+      const at = deck.scrollTop;
+      deck.innerHTML = cards.map(cardHtml).join('') + endHtml();
+      deck.scrollTop = at;
+      observe();
+    }
+
+    function update(i) {
+      const el = deck.querySelector(`.card[data-i="${i}"]`);
+      if (el) el.outerHTML = cardHtml(cards[i], i);
+      const end = deck.querySelector('.end');
+      if (end) end.outerHTML = endHtml();
+      observe();
+    }
+
+    let io = null;
+    function observe() {
+      io?.disconnect();
+      io = new IntersectionObserver(entries => {
+        for (const e of entries) {
+          const c = cards[+e.target.dataset.i];
+          if (!c) continue;
+          if (e.isIntersecting) c.shownAt = c.shownAt || Date.now();
+          else if (c.shownAt && Date.now() - c.shownAt > 1500) report(c, 'seen');
+        }
+      }, {threshold: 0.6});
+      deck.querySelectorAll('.card[data-i]').forEach(el => io.observe(el));
+    }
+
+    // A card swiped past counts as seen (once); answering it later still records the answer.
+    function report(c, outcome, keepalive) {
+      if (c.outcome || (outcome === 'seen' && c.seen)) return;
+      if (outcome === 'seen') c.seen = true; else c.outcome = outcome;
+      const key = outcome === 'seen' ? c.key + '-seen' : c.key;
+      api('/api/feed/result', {key, point: c.point, outcome, gap: c.gap}, keepalive).catch(() => {});
+    }
+
+    function flushSeen() {
+      for (const c of cards) if (c.shownAt && Date.now() - c.shownAt > 1500) report(c, 'seen', true);
+    }
+    addEventListener('pagehide', flushSeen);
+
+    function next(i) {
+      const el = deck.querySelector(`.card[data-i="${i + 1}"]`) || deck.querySelector('.end');
+      setTimeout(() => el?.scrollIntoView({behavior: 'smooth'}), 450);
+    }
+
+    deck.addEventListener('click', e => {
+      const b = e.target.closest('[data-act]');
+      const sec = e.target.closest('.card[data-i]');
+      const i = sec ? +sec.dataset.i : -1, c = cards[i];
+      const act = b?.dataset.act || (c && c.state === 'new' ? 'reveal' : null);
+      if (act === 'more') return load();
+      if (act === 'go') return flushSeen();
+      if (!c || !act) return;
+      if (act === 'reveal' && c.state === 'new') { c.state = 'revealed'; update(i); }
+      else if ((act === 'knew' || act === 'missed') && c.state === 'revealed') {
+        report(c, act);
+        c.state = 'done';
+        update(i);
+        next(i);
+      }
+    });
+
+    load();
+  })();
+  </script>
+</body>
+</html>

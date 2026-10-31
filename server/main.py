@@ -42,6 +42,7 @@ from .tracks.api import router as tracks_router
 from .knowledge_base.api import router as knowledge_router
 from .tutor.api import router as tutor_router
 from .drip import bot as drip_bot
+from .feed import router as feed_router
 from .senpai import jobscout as senpai_jobscout, service as senpai_service, worker as senpai_worker
 from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
 
@@ -86,6 +87,7 @@ app.include_router(tracks_router)
 app.include_router(senpai_router)
 app.include_router(knowledge_router)
 app.include_router(tutor_router)
+app.include_router(feed_router)
 # The daily review API, under its old path (kept for compatibility) and under Senpai's.
 app.include_router(senpai_daily_router, prefix="/api/coach/daily")
 app.include_router(senpai_daily_router, prefix="/api/senpai/daily")
@@ -3082,6 +3084,16 @@ def index():
             .replace("__FIREBASE_SDK__", _FIREBASE_SDK if gate else "")
             .replace("__AUTH_MODE__", config.AUTH_MODE))
     return HTMLResponse(html)
+
+
+@app.get("/feed")
+def feed_page():
+    """The phone feed: its own small page, so it opens in a moment without the app around it."""
+    with open(os.path.join(STATIC_DIR, "feed.html"), encoding="utf-8") as fh:
+        html = fh.read()
+    resp = HTMLResponse(html.replace("__ASSET_VER__", asset_version()).replace("__AUTH_MODE__", config.AUTH_MODE))
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")

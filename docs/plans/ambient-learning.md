@@ -66,8 +66,10 @@ of resetting it, and opens a *gap*: the one piece that was missing plus a questi
 that piece. After 3 hours the next card for that idea asks only the follow-up, and answering it
 right closes the gap (one gap per idea; a repeat updates it). Nikhil asked for this because
 re-asking the whole question and missing the same part again was annoying. Without the model, "Show answer" then "I knew it / I did not". Skipped or
-unanswered cards (after 3 hours) count as exposures. Commands: /next, /stats, /pause, /resume,
-/help. Tested with unit tests and end to end against a fake Telegram with real grading.
+unanswered cards (after 3 hours) count as exposures. Commands: /next, /stats, /frequency, /pause,
+/resume, /help (filled into the bot's command menu at startup). `/frequency 8` sets how many
+cards a day, 1 to 10, and reschedules at once; it is saved in the bot's state and overrides
+`DRIP_PER_DAY`. Nikhil asked for it. Tested with unit tests and end to end against a fake Telegram with real grading.
 
 To switch it on (Nikhil): create a bot with @BotFather, put `TELEGRAM_BOT_TOKEN=…` in
 `~/secrets/leetcode-senpai.env` (the whats Secrets tab works), recreate the container, send the
@@ -103,6 +105,27 @@ Every morning he opens YouTube to watch Shorts. A phone shortcut can redirect th
 learning app. Agreed refinement: rather than a hard block (which tends to get switched off), a
 short "toll" of a few quick swipeable cards in a Shorts-like format, then continue to YouTube.
 The learning feed should compete with Shorts on its own format.
+
+Status: **built, waiting on the phone shortcut.** `/feed` (`server/feed.py`, `static/feed.html`) is a
+standalone phone page: full-screen cards, one bright colour per kind of idea, swiped like Shorts.
+Cards are chosen like the drip's (open gaps first, asking only the missing piece, then
+misconceptions, shaky and fading points), never the point a drip card is still waiting on. You think,
+tap to see the idea, then "Knew it" or "Didn't know" (self-graded, soft evidence, source `feed`;
+"Knew it" on a gap card closes the gap). A card swiped past after a second and a half is an
+exposure. The end card shows the score and Ripple's stage, with "N more" and, given
+`?then=youtube`, "Continue to YouTube" (the app on iOS). "Not now" always lets him through: a toll,
+not a wall. `?n=` sets the number of cards (default 3, at most 10). No model is used. It works
+under Access and in local mode; in Firebase sign-in mode it asks you to sign in to the app first.
+
+Decided: the loop guard lives in the shortcut, not the page. Opening YouTube from the feed would
+trigger the "YouTube opened" automation again, and only the shortcut can stop itself before Safari
+opens. To switch it on (Nikhil, on the phone; not yet verified on a device):
+1. Shortcuts → Automation → New → App → YouTube → Is Opened → Run Immediately.
+2. Get File `feed-toll.txt` from the Shortcuts folder (Error If Not Found off).
+3. If the file has any value, Get Time Between that date and Current Date in minutes.
+4. If there was no file, or the minutes are over 30: Save Current Date to `feed-toll.txt`
+   (overwrite), then Open URL `https://leetcode.nikhil.ing/feed?then=youtube`. Otherwise do nothing.
+The same page works as a home-screen bookmark (`/feed`) for any spare minute.
 
 ### A YouTube extension that shows more productive videos (his idea)
 A browser extension that makes YouTube show him more videos relevant to what he is learning,
@@ -172,7 +195,9 @@ expensive); bulk content work is done by the agent itself, not a paid API.
   (`KNOWLEDGE_SOURCE_TOKENS`).
 - 2026-10-31: Built the Telegram drip inside the app (see its Status). Switched on as
   @codi_nikhil_bot; first card answered. Then: partly-right answers open a gap and get a
-  targeted follow-up instead of the whole question again.
+  targeted follow-up instead of the whole question again. `/frequency 1-10` sets cards a day.
+  Built the Shorts-style feed at `/feed` (see Morning YouTube Shorts); the iOS shortcut that
+  opens it before YouTube is Nikhil's step.
 
 ## Dropped
 
