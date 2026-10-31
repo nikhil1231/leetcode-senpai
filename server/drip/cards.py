@@ -178,17 +178,38 @@ def bedtime_text(n):
             f'and I will check {them} again in the morning.')
 
 
-def stats_text(summary, sent, answered, right, paused):
+def stats_text(summary, sent, answered, right, paused, note=''):
     sc = story.scale(summary)
     nxt = f' Next: {sc["next"]["label"]} at {sc["next"]["at"]}% held.' if sc['next'] else ''
     return (f'Today: {answered} of {sent} answered, {right} right.\n'
             f'You hold {summary["pct"]}% of {summary["total"]} ideas. Ripple is at {sc["label"]} ({sc["users"]}).{nxt}'
+            + (f'\n{note}' if note else '')
             + ('\nThe drip is paused: /resume to restart.' if paused else ''))
 
 
 HELP = ('I send a few questions a day from what you are learning. Reply with text or a voice note, '
         'or tap a button.\n\n/next  a question now\n/stats  how you are doing\n/frequency  questions a day (1 to 10)\n/pause  stop the questions\n'
         '/resume  start them again\n/help  this message')
+
+
+def sleep_factor(sleep):
+    """Share of the usual cards for today, from last night: {asleep_min, score, readiness} or None."""
+    if not sleep:
+        return 1.0
+    mins, score = sleep.get('asleep_min'), sleep.get('score')
+    if (mins is not None and mins < 330) or (score is not None and score < 60):
+        return 0.5
+    if (mins is not None and mins < 390) or (score is not None and score < 70):
+        return 0.75
+    return 1.0
+
+
+def sleep_text(sleep, per_day, usual):
+    if per_day >= usual or not sleep:
+        return ''
+    mins = sleep.get('asleep_min')
+    slept = f'{mins // 60} h {mins % 60:02d} m asleep' if mins is not None else f'sleep score {sleep.get("score")}'
+    return f'Lighter today after a short night ({slept}): {per_day} questions instead of {usual}.'
 
 
 def tz_for(settings):

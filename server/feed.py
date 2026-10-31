@@ -146,7 +146,7 @@ def result(body: ResultIn, who=Depends(kb_api.caller)):
         knew = body.outcome == 'knew'
         event = {'key': body.key, 'points': [pid], 'clean': knew, 'strength': 'soft', 'ref': body.key,
                  'depth': dcards.depth(point) if knew else 'recall', 'note': f'self-graded: {body.outcome}'}
-    recorded, _ = kb_api.write_events(store, SOURCE, [event], now)
+    recorded, _ = kb_api.write_events(store, who['source'] or SOURCE, [event], now)   # a token's name, e.g. threads
     closed = []
     if recorded and body.outcome == 'knew' and body.gap:
         closed = kb_api.resolve_open(store, pid, now, 'Knew the missing piece in the feed.', kind='gap')

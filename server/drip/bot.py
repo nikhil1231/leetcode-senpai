@@ -15,6 +15,8 @@ import random
 import threading
 import time
 
+import httpx
+
 from .. import config, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel
 from . import cards, context, telegram
@@ -61,7 +63,7 @@ class Bot:
     def roll_day(self, now):
         today = cards.local_day(now, self.tz())
         if self.state['day'] != today:
-            self.state.update(day=today, sent=0, answered=0, right=0)
+            self.state.update(day=today, sent=0, answered=0, right=0, sleep=self.load_sleep(today), next_at=None)
 
     # ---- the loop ---------------------------------------------------------------------
     def step(self, poll=telegram.POLL):
@@ -147,8 +149,26 @@ class Bot:
         if text:
             self.answer(text)
 
-    def per_day(self):
+    def usual_per_day(self):
         return cards.clamp_per_day(self.state.get('per_day') or config.DRIP_PER_DAY)
+
+    def per_day(self):
+        """Today's pace: the usual one, lighter after a poor night."""
+        usual = self.usual_per_day()
+        return max(1, round(usual * cards.sleep_factor(self.state.get('sleep'))))
+
+    def load_sleep(self, today):
+        """Last night from Sundial, once a day. Any failure means no adjustment."""
+        if not config.SUNDIAL_URL:
+            return None
+        try:
+            r = httpx.get(f'{config.SUNDIAL_URL}/api/coach/days', params={'start': today, 'end': today}, timeout=15)
+            r.raise_for_status()
+            sleep = (r.json() or [{}])[-1].get('sleep') or {}
+            return {k: sleep.get(k) for k in ('asleep_min', 'score', 'readiness')} if sleep else None
+        except Exception:
+            log.warning('Drip could not read sleep from Sundial', exc_info=True)
+            return None
 
     def command(self, cmd, args=()):
         now = self.clock()
@@ -172,14 +192,15 @@ class Bot:
             if args and n is None:
                 self.say(f'Send a number from {cards.PER_DAY_MIN} to {cards.PER_DAY_MAX}, like /frequency 8.')
             elif n is None:
-                self.say(cards.frequency_text(self.per_day(), config.DRIP_WINDOW, current=True))
+                self.say(cards.frequency_text(self.usual_per_day(), config.DRIP_WINDOW, current=True))
             else:
                 self.state.update(per_day=n, next_at=None)
                 self.say(cards.frequency_text(n, config.DRIP_WINDOW))
         elif cmd == '/stats':
             c, _, states, seen, mis = kb_api.evidence(self.store, now)
             summary = kmodel.summary(c, states, seen, mis, now)
-            self.say(cards.stats_text(summary, self.state['sent'], self.state['answered'], self.state['right'], self.state['paused']))
+            note = cards.sleep_text(self.state.get('sleep'), self.per_day(), self.usual_per_day())
+            self.say(cards.stats_text(summary, self.state['sent'], self.state['answered'], self.state['right'], self.state['paused'], note))
         else:
             self.say(cards.HELP)
         self.save()

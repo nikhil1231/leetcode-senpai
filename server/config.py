@@ -83,6 +83,9 @@ DRIP_WINDOW = os.environ.get("DRIP_WINDOW", "08:30-22:30").strip()
 # the app's public address for links in its messages.
 DRIP_BEDTIME = os.environ.get("DRIP_BEDTIME", "21:45").strip()
 APP_URL = os.environ.get("APP_URL", "https://leetcode.nikhil.ing").rstrip("/")
+# Sundial, for last night's sleep (coarse: minutes asleep, sleep score, readiness only), so the
+# drip asks less after a poor night. Unset: the drip never looks. On the box: http://sundial:8700
+SUNDIAL_URL = os.environ.get("SUNDIAL_URL", "").rstrip("/")
 
 
 # ---- Scheduler ------------------------------------------------------------------

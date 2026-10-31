@@ -436,3 +436,41 @@ def test_bedtime_links_to_the_days_misses_once(env, monkeypatch):
     assert tg.sent[-1]['reply_markup']['inline_keyboard'][0][0]['url'].endswith('/feed?set=tonight&n=1')
     b.tick()
     assert len(tg.sent) == 1
+
+
+def test_sleep_makes_the_day_lighter():
+    assert cards.sleep_factor(None) == 1.0
+    assert cards.sleep_factor({'asleep_min': 460, 'score': 82}) == 1.0
+    assert cards.sleep_factor({'asleep_min': 370, 'score': 80}) == 0.75
+    assert cards.sleep_factor({'asleep_min': 460, 'score': 55}) == 0.5
+    assert cards.sleep_factor({'asleep_min': 294, 'score': None}) == 0.5
+    assert cards.sleep_text({'asleep_min': 294}, 3, 6) == 'Lighter today after a short night (4 h 54 m asleep): 3 questions instead of 6.'
+    assert cards.sleep_text({'asleep_min': 480}, 6, 6) == ''
+
+
+def test_the_bot_reads_last_night_from_sundial_once_a_day(env, monkeypatch):
+    b, store, tg, clock, _ = env
+    calls = []
+
+    class R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [{'date': '2026-11-03', 'sleep': {'asleep_min': 300, 'score': 52, 'readiness': 60, 'bedtime': 'x'}}]
+    monkeypatch.setattr(config, 'SUNDIAL_URL', 'http://sundial:8700')
+    monkeypatch.setattr(drip.httpx, 'get', lambda url, params, timeout: calls.append((url, params)) or R())
+    clock.t += DAY
+    b.tick()
+    assert calls == [('http://sundial:8700/api/coach/days', {'start': '2026-11-03', 'end': '2026-11-03'})]
+    assert b.state['sleep'] == {'asleep_min': 300, 'score': 52, 'readiness': 60} and b.per_day() == 3
+    b.tick()
+    assert len(calls) == 1
+    tg.updates = [msg('/stats'), msg('/frequency')]
+    b.step(poll=0)
+    assert 'Lighter today after a short night (5 h 00 m asleep): 3 questions instead of 6.' in tg.sent[-2]['text']
+    assert tg.last().startswith('Right now: about 6')
+    monkeypatch.setattr(drip.httpx, 'get', lambda *a, **k: (_ for _ in ()).throw(RuntimeError('down')))
+    clock.t += DAY
+    b.tick()
+    assert b.state['sleep'] is None and b.per_day() == 6

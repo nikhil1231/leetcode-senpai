@@ -113,3 +113,15 @@ def test_tonight_text_and_set_param(client):
     assert text.startswith('- ') and kcat.CATALOG['points'][MISS]['claim'] in text
     d = ok(client.get('/api/feed', params={'set': 'tonight', 'n': 2}))
     assert d['set'] == 'tonight' and d['first'] == 1 and d['cards'][0]['point'] == MISS
+
+
+def test_a_source_token_records_under_its_own_name(monkeypatch):
+    from server import config
+    store = FakeStore('owner')
+    monkeypatch.setattr(api, 'get_store', lambda uid: store)
+    monkeypatch.setattr(config, 'KNOWLEDGE_SOURCE_TOKENS', {'threads': 't0ken'})
+    c = TestClient(main.app)
+    h = {'Authorization': 'Bearer t0ken'}
+    assert ok(c.get('/api/feed', params={'n': 1, 'set': 'due'}, headers=h))['cards']
+    ok(c.post('/api/feed/result', json={'key': 'q1', 'point': MISS, 'outcome': 'knew'}, headers=h))
+    assert store.list_knowledge('knowledge_events')[0]['source'] == 'threads'
