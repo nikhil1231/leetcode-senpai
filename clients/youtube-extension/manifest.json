@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Senpai on YouTube",
+  "version": "1.0.0",
+  "description": "A row of videos about what you are learning, above your usual YouTube recommendations.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.youtube.com/*", "https://leetcode.nikhil.ing/*", "http://127.0.0.1/*", "http://localhost/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "content_scripts": [{"matches": ["https://www.youtube.com/*"], "js": ["content.js"], "css": ["shelf.css"], "run_at": "document_idle"}],
+  "options_page": "options.html",
+  "action": {"default_title": "Senpai on YouTube: settings"}
+}

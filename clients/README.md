@@ -64,6 +64,15 @@ It runs at login and hourly, sizes the poster to the main screen, and keeps only
 image. The first run asks for permission to control System Events. Errors go to
 `/tmp/senpai-wallpaper.log`.
 
+## YouTube (desktop Chrome)
+
+`youtube-extension/` adds a row, "For what you're learning", to the top of the YouTube home page:
+two videos for each of your weakest lessons (Shorts and streams over 90 minutes left out), with
+the lesson each one is for. It asks Senpai for the lessons (`/api/wall/topics`) and searches
+YouTube itself, so no API key; results are kept for 3 hours. Install: `chrome://extensions` →
+Developer mode → Load unpacked → this folder. Sign in to Senpai once in the same browser, or put
+the service token in the extension's options (click its icon). ✕ hides the row for that visit.
+
 ## A wall, a TV, a projector
 
 Open `https://leetcode.nikhil.ing/wall` full screen in any browser that is signed in (click once

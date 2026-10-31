@@ -133,6 +133,35 @@ def fading_map(summary):
     return {'parts': parts, 'edges': [e for e in EDGES if e[0] in ids and e[1] in ids], 'rooms': rooms}
 
 
+SECTION_HINT = {'system-design': 'system design', 'fundamentals': '', 'ai': 'LLM'}
+
+
+def search_query(lesson_title, section):
+    """A YouTube search for a lesson: its title, tidied, plus a hint of the field."""
+    title = ' '.join(lesson_title.replace(' - ', ' ').replace(':', ' ').replace(', end to end', '').split())
+    hint = SECTION_HINT.get(section, '')
+    return f'{title} {hint}'.strip() if hint and hint.lower() not in title.lower() else title
+
+
+def topics(views, n):
+    """Up to n lessons to watch videos about, weakest first: where misconceptions, shaky and fading
+    points gather, then lessons started but barely held. -> [{lesson, title, section, query, why}]"""
+    score = {}
+    for v in views:
+        w = {'shaky': 5, 'fading': 4}.get(v['status'], 0) + 6 * bool(v['misconceptions']) + 2 * bool(v['unconfirmed'])
+        started = v['status'] != 'unseen'
+        s = score.setdefault(v['lesson'], {'w': 0, 'started': False, 'title': v['lesson_title'], 'section': v['section']})
+        s['w'] += w
+        s['started'] = s['started'] or started
+    ranked = sorted((k for k, s in score.items() if s['started']), key=lambda k: -score[k]['w'])
+    out = []
+    for k in ranked[:n]:
+        s = score[k]
+        out.append({'lesson': k, 'title': s['title'], 'section': s['section'], 'query': search_query(s['title'], s['section']),
+                    'why': 'slipping' if s['w'] else 'started'})
+    return out
+
+
 # ---- drawing a wallpaper -----------------------------------------------------------------
 
 def _font(size, bold=True):
@@ -232,6 +261,13 @@ def _current(uid, now):
     _, _, _, _, views = _views(uid, now)
     key, reveal = slot(dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())))
     return slot_poster(views, key), reveal
+
+
+@router.get('/topics')
+def watch_topics(n: int = Query(default=4, ge=1, le=12), who=Depends(kb_api.caller)):
+    """What to watch: YouTube searches for your weakest lessons (the YouTube extension)."""
+    _, _, _, _, views = _views(who['uid'], time.time())
+    return {'topics': topics(views, n)}
 
 
 @router.get('/now')

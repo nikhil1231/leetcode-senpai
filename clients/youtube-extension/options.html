@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Senpai on YouTube</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; max-width: 560px; margin: 32px auto; padding: 0 16px; color: #1d1d1f; }
+  label { display: block; margin-top: 14px; font-weight: 600; } input { width: 100%; padding: 7px 9px; margin-top: 4px; box-sizing: border-box; }
+  small { color: #666; font-weight: 400; } button { margin-top: 18px; padding: 8px 14px; } #saved { margin-left: 10px; color: #2a7; }
+</style></head>
+<body>
+  <h1>Senpai on YouTube</h1>
+  <p>A row of videos about your weakest lessons, above your YouTube home feed. It asks Leetcode Senpai what you are learning, then searches YouTube.</p>
+  <label>Senpai address <input id="base" placeholder="https://leetcode.nikhil.ing"></label>
+  <label>Access service token client id <small>(optional: without it, sign in to Senpai in this browser once)</small><input id="clientId"></label>
+  <label>Access service token secret <input id="clientSecret" type="password"></label>
+  <label>Lessons <small>(how many weak lessons to find videos for)</small><input id="topics" type="number" min="1" max="12"></label>
+  <label>Videos per lesson <input id="perTopic" type="number" min="1" max="4"></label>
+  <button id="save">Save and refresh</button><span id="saved"></span>
+  <script src="options.js"></script>
+</body></html>

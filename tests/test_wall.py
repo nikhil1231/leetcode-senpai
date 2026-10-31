@@ -86,3 +86,16 @@ def test_endpoints(client):
     assert now['poster']['ask'] and isinstance(now['reveal'], bool)
     page = client.get('/wall')
     assert page.status_code == 200 and '/api/wall' in page.text
+
+
+def test_watch_topics_rank_slipping_lessons_and_skip_unopened_ones():
+    views = [v('a1', 'shaky', lesson='a'), v('a2', 'fading', lesson='a'), v('b1', 'solid', lesson='b'),
+             v('c1', 'unseen', lesson='c'), v('d1', 'learning', lesson='d', mis=1)]
+    for x in views:
+        x.update(lesson_title=f'Lesson {x["lesson"]}: part - two', section='system-design')
+    out = wall.topics(views, 5)
+    assert [t['lesson'] for t in out] == ['a', 'd', 'b'] and [t['why'] for t in out] == ['slipping', 'slipping', 'started']
+    assert out[0]['query'] == 'Lesson a part two system design'
+    assert wall.search_query('Design search autocomplete', 'system-design') == 'Design search autocomplete system design'
+    assert wall.search_query('How LLMs behave', 'ai') == 'How LLMs behave'  # the hint is already there
+    assert wall.search_query('Evals', 'ai') == 'Evals LLM'
