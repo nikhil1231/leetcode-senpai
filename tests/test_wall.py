@@ -82,5 +82,7 @@ def test_endpoints(client):
     assert len(d['posters']) == 4 and d['map']['parts'] and d['company']['label']
     r = client.get('/api/wall/poster.png', params={'w': 400, 'h': 800, 'side': 'answer'})
     assert r.status_code == 200 and r.headers['content-type'] == 'image/png' and r.headers['cache-control'] == 'no-store'
+    now = client.get('/api/wall/now').json()
+    assert now['poster']['ask'] and isinstance(now['reveal'], bool)
     page = client.get('/wall')
     assert page.status_code == 200 and '/api/wall' in page.text

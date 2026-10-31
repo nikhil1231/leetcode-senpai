@@ -227,17 +227,27 @@ def wall(n: int = Query(default=12, ge=1, le=40), who=Depends(kb_api.caller)):
             'company': {'label': sc['label'], 'users': sc['users'], 'pct': summary['pct']}}
 
 
+def _current(uid, now):
+    store = kb_api.get_store(uid)
+    _, _, _, _, views = _views(uid, now)
+    key, reveal = slot(dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())))
+    return slot_poster(views, key), reveal
+
+
+@router.get('/now')
+def now_poster(who=Depends(kb_api.caller)):
+    """The poster the wallpaper shows right now, as data (for widgets)."""
+    p, reveal = _current(who['uid'], time.time())
+    return {'poster': p, 'reveal': bool(p) and reveal}
+
+
 @router.get('/poster.png')
 def poster_png(w: int = Query(default=1179, ge=320, le=4000), h: int = Query(default=2556, ge=320, le=4000),
                side: Literal['auto', 'question', 'answer'] = 'auto', top: float = Query(default=0.3, ge=0, le=0.6),
                who=Depends(kb_api.caller)):
     """A wallpaper. iPhone lock screen: the defaults (the top 30% stays clear for the clock).
     A Mac desktop: w=2560&h=1600&top=0."""
-    now = time.time()
-    store = kb_api.get_store(who['uid'])
-    _, _, _, _, views = _views(who['uid'], now)
-    key, reveal = slot(dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())))
-    p = slot_poster(views, key)
+    p, reveal = _current(who['uid'], time.time())
     if not p:
         p = {'kind': 'fact', 'colour': COLOURS['fact'], 'ask': 'Open a lesson and its ideas appear here.',
              'claim': '', 'lesson': 'Leetcode Senpai', 'speaker': 'Jo', 'role': 'Junior engineer'}

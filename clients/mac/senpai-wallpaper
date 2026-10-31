@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Set the Mac desktop to the current Senpai poster (server/wall.py): a new question every two
+# hours, its answer in the second hour. Run hourly by the launchd agent next to this file.
+#
+# Settings in ~/.config/senpai/env:
+#   SENPAI_URL=https://leetcode.nikhil.ing
+#   CF_ACCESS_CLIENT_ID=…       an Access service token whose client id is in the app's
+#   CF_ACCESS_CLIENT_SECRET=…   ACCESS_SERVICE_TOKENS
+# Optional: SENPAI_WALLPAPER_SIZE=2560x1600 (default: the main screen's size).
+#
+#   senpai-wallpaper            fetch and set
+#   senpai-wallpaper --fetch    fetch only, print the file (works anywhere; used by the tests)
+set -euo pipefail
+
+ENV_FILE="${SENPAI_ENV:-$HOME/.config/senpai/env}"
+[ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
+URL="${SENPAI_URL:-https://leetcode.nikhil.ing}"
+DIR="${SENPAI_WALLPAPER_DIR:-$HOME/Library/Application Support/senpai}"
+mkdir -p "$DIR"
+
+size="${SENPAI_WALLPAPER_SIZE:-}"
+if [ -z "$size" ] && [ "$(uname)" = Darwin ]; then
+  size="$(system_profiler SPDisplaysDataType 2>/dev/null | awk '/Resolution:/{print $2"x"$4; exit}')"
+fi
+size="${size:-2560x1600}"
+w="${size%x*}" h="${size#*x}"
+
+# macOS keeps showing a cached image for a path it has seen, so every poster gets a new name.
+out="$DIR/poster-$(date +%s).png"
+headers=()
+[ -n "${CF_ACCESS_CLIENT_ID:-}" ] && headers+=(-H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET")
+if ! curl -fsS --max-time 30 "${headers[@]}" -o "$out" "$URL/api/wall/poster.png?w=$w&h=$h&top=0"; then
+  rm -f "$out"; echo "senpai-wallpaper: could not fetch the poster" >&2; exit 1
+fi
+if [ "$(head -c 8 "$out" | od -An -tx1 | tr -d ' \n')" != "89504e470d0a1a0a" ]; then
+  rm -f "$out"; echo "senpai-wallpaper: the server did not send a PNG (signed out of Access?)" >&2; exit 1
+fi
+find "$DIR" -name 'poster-*.png' ! -path "$out" -mmin +5 -delete 2>/dev/null || true
+
+if [ "${1:-}" = "--fetch" ] || [ "$(uname)" != Darwin ]; then
+  echo "$out"; exit 0
+fi
+osascript -e "tell application \"System Events\" to tell every desktop to set picture to POSIX file \"$out\""
