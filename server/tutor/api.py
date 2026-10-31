@@ -1,10 +1,12 @@
 """HTTP API for the tutor: /api/tutor/... The learner's turn is stored before the model is called.
 
-A turn whose reply failed can be retried with the same key: the stored turn is reused and only
-the reply is generated again. Ending a session writes its debrief (also when the last objective
-is shown); a debrief that failed is written again by ending the session again. Validated evidence and misconceptions go to the knowledge base
-(source "tutor", soft evidence); block answers are recorded by the lesson's own activity
-endpoint, so they stay hard evidence.
+Each turn makes two calls at once (session.py): the tutor talks (TUTOR_MODEL, plain chat) and the
+note-taker records what the learner's latest words show (TUTOR_NOTES_MODEL, structured). A turn
+whose reply failed can be retried with the same key: the stored turn is reused and only the reply
+is generated again; a failed note is simply skipped. Ending a session writes its debrief; a
+debrief that failed is written again by ending the session again. Validated evidence and
+misconceptions go to the knowledge base (source "tutor", soft evidence); block answers are
+recorded by the lesson's own activity endpoint, so they stay hard evidence.
 """
 import asyncio
 import json
@@ -215,50 +217,80 @@ def _remember(store, s, now, event):
     store.put_knowledge('tutor_memory', STORY_KEY, st)
 
 
-async def _ask(store, s, l, now, debrief=False):
-    """One model call for this session. -> (validated reply or None, allowed points, open misconceptions)."""
+def _context(store, s, l, now):
+    """What both calls need: the lesson's point views, open misconceptions, memory and story."""
     c, states, seen, mis, summary = _knowledge(store, now)
     own, prereqs = lessons.points(l['section'], l['id'], c)
-    views = kmodel.views(c, states, seen, mis, now, own)
-    prereq_views = kmodel.views(c, states, seen, mis, now, prereqs)
     allowed = {p['id'] for p in own + prereqs}
-    open_mis = [m for m in mis if m.get('status') == 'open' and m['point'] in allowed]
     memory = store.get_knowledge('tutor_memory', _memory_key(l['section'], l['id'])) or {}
     story_mem = store.get_knowledge('tutor_memory', STORY_KEY) or {}
-    prompt = ses.payload(s, l, views, prereq_views, open_mis, {**memory, 'events': story_mem.get('events', [])},
-                         story.scale(summary), debrief=debrief)
-    try:
-        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_MODEL, ses.system(s['mode'], debrief),
-                                      json.dumps(prompt, ensure_ascii=False), ses.TutorReply,
-                                      options={'effort': 'low', 'max_tokens': 4000, 'timeout': 60, 'metadata': True})
-        reply = ses.TutorReply.model_validate_json(raw['content']).model_dump()
-    except Exception as exc:
-        log.warning('Tutor reply failed: %s', type(exc).__name__)
-        s['error'] = DEBRIEF_FAILED if debrief else FAILED
-        store.put_knowledge('tutor_sessions', s['id'], s)
-        return None, allowed, open_mis
-    s.pop('error', None)
-    usage = raw.get('usage') or {}
+    return {'views': kmodel.views(c, states, seen, mis, now, own), 'prereq_views': kmodel.views(c, states, seen, mis, now, prereqs),
+            'allowed': allowed, 'open': [m for m in mis if m.get('status') == 'open' and m['point'] in allowed],
+            'memory': {**memory, 'events': story_mem.get('events', [])}, 'story': story.scale(summary)}
+
+
+def _count(s, usage):
     s['usage'] = {'calls': s['usage']['calls'] + 1, 'input': s['usage']['input'] + int(usage.get('prompt_tokens') or 0),
                   'output': s['usage']['output'] + int(usage.get('completion_tokens') or 0)}
-    return reply, allowed, open_mis
+
+
+async def _talk(s, l, ctx, debrief=False):
+    """The tutor's reply as plain text, or None when the model failed."""
+    system = ses.system(s, l, ctx['views'], ctx['open'], ctx['memory'], ctx['story'], debrief=debrief)
+    try:
+        raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, [{'role': 'system', 'content': system}, *ses.messages(s, l, debrief)],
+                                      options={'max_tokens': 2500, 'timeout': 60})
+    except Exception as exc:
+        log.warning('Tutor reply failed: %s', type(exc).__name__)
+        return None
+    _count(s, raw.get('usage') or {})
+    return raw['content']
+
+
+async def _take_notes(s, l, ctx):
+    """The note-taker's record of the learner's latest words, or None (the turn still goes ahead)."""
+    payload = ses.notes_payload(s, l, ctx['views'], ctx['prereq_views'], ctx['open'])
+    try:
+        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_NOTES_MODEL, ses.NOTES_SYSTEM,
+                                      json.dumps(payload, ensure_ascii=False), ses.Notes,
+                                      options={'effort': 'low', 'max_tokens': 3000, 'timeout': 60, 'metadata': True})
+        notes = ses.Notes.model_validate_json(raw['content']).model_dump()
+    except Exception as exc:
+        log.warning('Tutor notes failed: %s', type(exc).__name__)
+        return None
+    _count(s, raw.get('usage') or {})
+    return notes
 
 
 async def _debrief(store, s, l):
     now = time.time()
-    reply, _, _ = await _ask(store, s, l, now, debrief=True)
-    if reply:
-        ses.apply_debrief(s, reply, now)
-        store.put_knowledge('tutor_sessions', s['id'], s)
+    text = await _talk(s, l, _context(store, s, l, now), debrief=True)
+    if text is None:
+        s['error'] = DEBRIEF_FAILED
+    else:
+        s.pop('error', None)
+        ses.add_debrief(s, text, now)
+    store.put_knowledge('tutor_sessions', s['id'], s)
     _remember(store, s, now, '')
 
 
 async def _reply(store, s, l):
+    """One turn: the tutor talks while the note-taker records the learner's latest words."""
     now = time.time()
-    reply, allowed, open_mis = await _ask(store, s, l, now)
-    if not reply:
+    ctx = _context(store, s, l, now)
+    said, blocks = ses.latest_learner(s)
+    learner_spoke = bool(said or blocks)
+    text, notes = await asyncio.gather(_talk(s, l, ctx), _take_notes(s, l, ctx) if learner_spoke else asyncio.sleep(0))
+    if text is None:
+        s['error'] = FAILED
+        store.put_knowledge('tutor_sessions', s['id'], s)
         return public(s)
-    turn, writes, event = ses.apply(s, reply, l, allowed, {m['_key'] for m in open_mis}, now)
+    s.pop('error', None)
+    writes, event = ({'evidence': [], 'misconceptions': [], 'resolved': []}, '')
+    if notes:
+        writes, event = ses.apply_notes(s, notes, said, blocks, ctx['allowed'], {m['_key'] for m in ctx['open']}, now)
+    turn = ses.add_reply(s, text, l, now)
+    turn['recorded'] = {k: len(v) for k, v in writes.items()}
     store.put_knowledge('tutor_sessions', s['id'], s)
     n = len(s['turns'])
     kb_api.write_events(store, SOURCE, [
@@ -269,6 +301,4 @@ async def _reply(store, s, l):
     for key in writes['resolved']:
         kb_api.set_misconception(store, key, 'resolved', 'Corrected in a tutor session.', now)
     _remember(store, s, now, event)
-    if ses.needs_debrief(s):  # the last objective was just shown
-        await _debrief(store, s, l)
     return public(s)

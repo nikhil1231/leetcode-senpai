@@ -925,6 +925,31 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema, *
     return content if isinstance(content, str) else None
 
 
+def _raw_chat(model: str, messages: list, *, options=None) -> dict:
+    """Plain-text chat completion (the tutor's voice). Tests replace this to avoid network calls.
+    -> {content, model, usage}."""
+    if forbidden_model(model):
+        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+    options = options or {}
+    body = {"model": model, "messages": messages, "stream": False, "max_tokens": options.get("max_tokens", 1500)}
+    if options.get("effort"):
+        body["reasoning"] = {"effort": options["effort"], "exclude": True}
+    resp = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=options.get("timeout", 60), json=body,
+                      headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "Content-Type": "application/json",
+                               "X-Title": "LeetCode Senpai"})
+    if resp.is_error:
+        log.warning("OpenRouter HTTP %s for %s: %s", resp.status_code, model, resp.text[:500])
+        raise RuntimeError(f"OpenRouter request failed (HTTP {resp.status_code})")
+    data = resp.json()
+    choices = data.get("choices") or []
+    content = (choices[0].get("message") or {}).get("content") if choices else None
+    if data.get("error") or not isinstance(content, str) or not content.strip():
+        raise RuntimeError("OpenRouter returned no reply")
+    if choices[0].get("finish_reason") == "length":
+        raise RuntimeError("OpenRouter response exceeded the output limit")
+    return {"content": content, "model": data.get("model", model), "usage": data.get("usage") or {}}
+
+
 # ---- speech-to-text ---------------------------------------------------------------
 # Dictation shows the browser's live transcript; this re-transcribes the recorded
 # audio so grading reads what was actually said. One pooled client keeps the TLS

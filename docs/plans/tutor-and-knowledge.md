@@ -100,8 +100,8 @@ activities, which the tutor brings in and whose answers are recorded exactly as 
 misconceptions, but only when they quote the learner's own words; objectives only advance the
 same way, and a session cannot be ended early by the model. A running note opens the next
 session ("Last time: …"). Dictation works in the reply box. Without the model the card says so
-and the lesson is unchanged. Runs on `TUTOR_MODEL` (default `openai/gpt-6-luna`, about $0.001
-a turn, ~2.5 s). Tested with unit and HTTP tests and end to end in a headless browser on an
+and the lesson is unchanged. Runs on `TUTOR_MODEL` (now `deepseek/deepseek-v4.1-flash`) with a note-taker on
+`TUTOR_NOTES_MODEL`: see the 2026-10-31 rebuild in the log. Tested with unit and HTTP tests and end to end in a headless browser on an
 in-memory store (desktop and phone widths) with the real model.
 
 Not built yet: the tutor speaking its replies aloud (text-to-speech costs money: Nikhil's call).
@@ -210,6 +210,16 @@ quality is checked.
   notes; four sidebar items per section. Also fixed: answers to `-v1` questions were not reaching
   the knowledge base. Tested with unit and HTTP tests and in a headless browser on an in-memory
   copy of the real data (desktop and phone).
+- 2026-10-31: Tutor rebuilt after Nikhil found it robotic and rude, and drilling one narrow
+  phrasing (an open Telegram gap) instead of judging whether he understood. He wants it
+  enthusiastic, engaging and upbeat, and more human: like a good chatbot conversation. Cause: the
+  prompt told it to withhold praise and correct bluntly, every turn was one JSON form (reply plus
+  strict grading), and gaps arrived with a ready question to ask. Now two calls: the tutor talks in
+  plain chat (warm persona; judge ideas, not wording; add the precise version itself and move on;
+  gaps are background), and a separate note-taker records evidence. Chose DeepSeek V4.1 Flash for
+  the voice after a bake-off (prompt variants × five models × four simulated learners, $0.23).
+  The Telegram grader now marks a right idea in loose words as right and records gaps as general
+  ideas. Sessions no longer end themselves when every objective is shown; the tutor suggests it.
 
 ## Dropped
 

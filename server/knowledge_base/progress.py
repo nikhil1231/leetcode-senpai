@@ -7,6 +7,8 @@ for the section's home page, with the reason, and two alternatives.
 
 Levels need a few tested points to mean anything: below MIN_TESTED an area is "early".
 """
+import re
+
 from .. import knowledge
 from . import catalog as cat, model
 
@@ -19,6 +21,12 @@ LEVELS = ((40, 'weak'), (70, 'patchy'), (STRONG, 'good'), (101, 'strong'))
 HELD = ('solid', 'learning')
 SLIPPING = ('fading', 'shaky')
 WEEK = 7 * 86400
+
+
+def general(text):
+    """A gap's idea without its worked example: the part before "such as" or "e.g.", as a sentence."""
+    head = re.split(r',?\s+(?:such as|e\.g\.|for example)\b', text or '', maxsplit=1)[0].strip().rstrip('.,;:')
+    return head + '.' if head else ''
 
 
 def level(score, tested):
@@ -123,7 +131,8 @@ def next_step(rep, tutor=False, active=None, last_lesson=None):
     for m in rep['misconceptions'][:1]:
         found.append({'kind': 'fix', 'lesson': m['lesson'], 'point': m['point'], 'key': m['key'],
                       'title': f'Clear up {m["lesson_title"]}',
-                      'why': (f'You are missing a piece: {m["text"]}' if m['kind'] == 'gap' else f'Last time you seemed to think: "{m["quote"] or m["text"]}". Worth ten minutes to fix.'),
+                      'why': (f'Something that has been slippery: {general(m["text"])} Ten minutes with the tutor should settle it.' if m['kind'] == 'gap'
+                              else f'Last time you seemed to think: "{m["quote"] or m["text"]}". Worth ten minutes to fix.'),
                       'label': 'Fix it with the tutor' if tutor else 'Open the lesson', 'tutor': tutor})
     due = rep['slipping']
     if due >= DUE_REVIEW:

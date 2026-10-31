@@ -20,7 +20,7 @@ def grade(store, point, text, ask=None, focus=None):
     if not llm.enabled(store.get_settings()):
         return None
     try:
-        raw = llm._raw_generate('openrouter', config.TUTOR_MODEL, cards.GRADE_SYSTEM,
+        raw = llm._raw_generate('openrouter', config.TUTOR_NOTES_MODEL, cards.GRADE_SYSTEM,
                                 json.dumps(cards.grade_payload(point, text, ask, focus), ensure_ascii=False), cards.Grade,
                                 options={'effort': 'low', 'max_tokens': 1000, 'timeout': 30, 'metadata': True})
         return cards.Grade.model_validate_json(raw['content']).model_dump()

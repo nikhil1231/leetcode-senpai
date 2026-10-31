@@ -519,8 +519,20 @@ remembered in the browser). A session turns the lesson into a chat with the obje
 lesson's own activities (answers are recorded as in the lesson) and writes soft evidence and
 misconceptions to the knowledge base, only when quoting your words. Sessions run at Ripple, a
 fictional company whose size and milestones follow what you hold (`server/tutor/story.yaml`).
-Needs the model (`TUTOR_MODEL`, default `openai/gpt-6-luna`); without it there is no card and the
-lesson is the notes.
+
+Each turn makes two calls at once (`server/tutor/session.py`, prompt version 5). The tutor talks:
+a role prompt (an enthusiastic, warm tutor in Teach me; Jo, Marcus or Priya in the others), the
+lesson as private notes, what you hold and what you have found slippery (background only, never
+drilled), and the conversation as ordinary chat messages; it replies in plain text, ending with
+`[[activity bN]]` to hand over one of the lesson's activities, and the role-play modes keep their
+plan in `<private>…</private>`. It judges ideas, not wording: a right idea in loose words counts,
+and it adds the crisper interview phrasing itself. The note-taker records what your latest words
+show (objectives, evidence, misconceptions, the summary for next time) as structured output, kept
+only when it quotes you. `TUTOR_MODEL` (default `deepseek/deepseek-v4.1-flash`, ~$0.0005 a turn)
+talks; `TUTOR_NOTES_MODEL` (default `openai/gpt-6-luna`) takes notes and also grades the Telegram
+drip. DeepSeek won a 2026-10-31 bake-off against GPT-6 Luna, GPT-6.1 Terra and Gemini 3.8 Flash
+with simulated learners (a beginner, a strong engineer, a distractible one). Needs the model;
+without it there is no card and the lesson is the notes.
 API: `GET /api/tutor`, `GET /api/tutor/lessons/{section}/{lesson}`, `POST /api/tutor/sessions`,
 `POST /api/tutor/sessions/{id}/turns` (retry a failed reply with the same key), `/end`.
 

@@ -116,7 +116,8 @@ def test_priorities_resume_fix_review():
     s = progress.next_step(r, tutor=True, active={'lesson': 'numbers'})
     assert [s['primary']['kind']] + [a['kind'] for a in s['alternatives']] == ['resume', 'fix', 'review']
     s = progress.next_step(r, tutor=False, active={'lesson': 'numbers'})
-    assert s['primary']['kind'] == 'fix' and not s['primary']['tutor'] and 'missing a piece' in s['primary']['why']
+    assert s['primary']['kind'] == 'fix' and not s['primary']['tutor'] and 'slippery: name the invariant.' in s['primary']['why']
+    assert progress.general('Specify the invariant precisely, such as at most one CONFIRMED booking.') == 'Specify the invariant precisely.'
 
 
 # ---- placement pickers ------------------------------------------------------------------

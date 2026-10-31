@@ -68,9 +68,12 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-5.6-luna").strip()
 # more accurate but often took 4-6s; Nova-3 was fastest but misheard Dijkstra, Kadane, deque.
 # OpenRouter takes no keyterm hints for any STT model yet.
 STT_MODEL = os.environ.get("STT_MODEL", "elevenlabs/scribe-v2").strip()
-# The conversational tutor talks every turn, so it runs on a cheap model by default
-# (~$0.001 a turn). Never an Anthropic model through OpenRouter (see CLAUDE.md).
-TUTOR_MODEL = os.environ.get("TUTOR_MODEL", "openai/gpt-6-luna").strip()
+# The tutor makes two calls a turn: TUTOR_MODEL talks (plain chat; DeepSeek V4.1 Flash won a
+# 2026-10-31 bake-off on warmth and judgement against GPT-6 Luna, GPT-6.1 Terra, Gemini 3.8
+# Flash and Mistral Large 4, at ~$0.0005 a turn) and TUTOR_NOTES_MODEL records what the learner
+# showed (structured output, ~$0.0003). Never an Anthropic model through OpenRouter (CLAUDE.md).
+TUTOR_MODEL = os.environ.get("TUTOR_MODEL", "deepseek/deepseek-v4.1-flash").strip()
+TUTOR_NOTES_MODEL = os.environ.get("TUTOR_NOTES_MODEL", "openai/gpt-6-luna").strip()
 
 # The Telegram drip (server/drip). Only the process with a bot token runs it, so set the token
 # in one place (the box). TELEGRAM_CHAT_ID is the one chat it serves; /start tells you yours.
