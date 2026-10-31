@@ -18,6 +18,7 @@ Collections:
   users/{uid}/tracks/{track}/records/{key}  Fundamentals / AI / Experience / Practical records
   users/{uid}/knowledge_events/{key}   knowledge-base answers and exposures from any source (append-only)
   users/{uid}/knowledge_misconceptions/{key}  misconceptions per knowledge point, open or resolved
+  users/{uid}/study_sessions/{code}  study prompts copied for an outside chatbot, and their pasted debriefs
   users/{uid}/tutor_sessions/{id}      tutor conversations (raw learner text first, then the reply)
   users/{uid}/tutor_memory/{key}       small per-lesson and story notes the tutor opens with
   users/{uid}/drip/{key}               the Telegram drip: its state, and one document per card sent
@@ -650,7 +651,8 @@ class FirestoreStore:
     # Events are append-only and keyed by the source's idempotency key, so a retried post
     # records once. Misconceptions are updated in place (open → resolved). Tutor sessions
     # are read one at a time (they grow); tutor memory is a handful of small documents.
-    KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions', 'tutor_sessions', 'tutor_memory', 'drip')
+    KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions', 'tutor_sessions', 'tutor_memory', 'drip',
+                 'study_sessions')
 
     def _knowledge(self, coll):
         if coll not in self.KNOWLEDGE:

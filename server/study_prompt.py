@@ -1,6 +1,8 @@
 """Study prompts: a topic and what you hold of it, as text to paste into a voice chatbot. /api/study-prompt
 
-The copy button on a page (or on a category or lesson in a list) fetches one. The chatbot already
+The copy button on a page (or on a category or lesson in a list) fetches one. A course prompt
+numbers the ideas it lists and asks the bot for a debrief block at the end; pasting that back
+records what you studied (study_debrief.py). The chatbot already
 knows the material; the prompt names the topic, says what you hold of it right now and how to run
 a spoken teach-and-test session. No model writes it. Pure: knowledge, leetcode. I/O: the router.
 
@@ -8,12 +10,14 @@ Scopes: a knowledge-base section (System design, Fundamentals, AI), one of its c
 lesson; the LeetCode map, one family of topics, or one topic. A scope with nothing in it is None
 (the page shows no button), so this never invents a topic.
 """
+import secrets
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
-from . import auth, scheduler
-from .knowledge_base import api as kb_api, model as kmodel
+from . import auth, scheduler, study_debrief
+from .knowledge_base import api as kb_api, catalog as kb_cat, model as kmodel
 from .store import get_store
 
 router = APIRouter(prefix='/api/study-prompt', tags=['study-prompt'])
@@ -23,6 +27,7 @@ STATUS_TEXT = {'shaky': 'got it wrong last time', 'fading': 'knew it, now slippi
                'learning': 'recently learned', 'solid': 'solid'}
 WEAK = ('shaky', 'fading')
 MAX_WEAK = {'section': 10, 'category': 14}
+MAX_NEW = {'section': 4, 'category': 6}
 MAX_GAPS = 8
 TAG_TEXT = {'misread': 'misreading the problem', 'wrong_pattern': 'picking the wrong pattern', 'off_by_one': 'off-by-one errors',
             'edge_case': 'missed edge cases', 'wrong_ds': 'choosing the wrong data structure',
@@ -74,11 +79,26 @@ def _gaps(mis, ids, title_of):
 def _weakest(vs, n):
     weak = [v for v in vs if v['status'] in WEAK or v.get('misconceptions')]
     weak.sort(key=lambda v: (-v.get('misconceptions', 0), v['status'] != 'shaky', v['r']))
-    return [f"- {v['claim']} ({v['lesson_title']}; {STATUS_TEXT[_status(v)]})" for v in weak[:n]]
+    return weak[:n]
 
 
-def knowledge(views, misconceptions, section, category=None, lesson=None):
-    """-> prompt text for a knowledge-base scope, or None when it holds no points."""
+def _debrief(session):
+    return f"""When I type "debrief" (after the voice chat), reply with only this block, filled in from our session, so I can log it in my practice app:
+
+SENPAI-DEBRIEF session={session}
+P3 right explain "what I said, in a few words"
+P5 wrong recall "what I got wrong"
+NOTE "anything we covered that has no P-number"
+
+- One line for each numbered idea you actually tested; skip the rest. Use only the P-numbers above.
+- Verdict: right (correct and complete without hints), partial (some of it, or only with a hint) or wrong. Judge strictly.
+- Depth: recognise (I picked it out), recall (I stated it), explain (I explained why), apply (I used it on a scenario)."""
+
+
+def knowledge(views, misconceptions, section, category=None, lesson=None, session=None):
+    """-> (prompt text, {ref: point id}) for a knowledge-base scope, or None when it holds no points.
+
+    Ideas the prompt lists are numbered P1, P2… so a debrief can report on them exactly."""
     vs = [v for v in views if v['section'] == section and (not category or v['category'] == category)
           and (not lesson or v['lesson'] == lesson)]
     if not vs:
@@ -95,6 +115,12 @@ def knowledge(views, misconceptions, section, category=None, lesson=None):
         topic, where = section_title, ''
     summary, _ = _counts(vs)
     lines = [_intro(topic, where), '', 'Where I am, from my practice app:', f'- Overall: {summary}.']
+    refs = {}
+
+    def ref(v):
+        r = f'P{len(refs) + 1}'
+        refs[r] = v['id']
+        return r
 
     if lesson:
         subs = {}
@@ -103,7 +129,7 @@ def knowledge(views, misconceptions, section, category=None, lesson=None):
         lines += ['', 'The ideas in this lesson, by subtopic, with my status on each:']
         for sub, group in subs.items():
             lines.append(f'{sub}:')
-            lines += [f"- {v['claim']} [{STATUS_TEXT[_status(v)]}]" for v in group]
+            lines += [f"- {ref(v)}: {v['claim']} [{STATUS_TEXT[_status(v)]}]" for v in group]
     else:
         groups = {}
         for v in vs:
@@ -118,14 +144,23 @@ def knowledge(views, misconceptions, section, category=None, lesson=None):
             untouched = all(v['status'] == 'unseen' for v in group)
             lines.append(f"- {name}: " + ('not started' if untouched else f"{_pct(held)} held") +
                          ('' if untouched else f" ({text.split(': ', 1)[1]})"))
-        weak = _weakest(vs, MAX_WEAK['category' if category else 'section'])
+        level = 'category' if category else 'section'
+        weak = _weakest(vs, MAX_WEAK[level])
         if weak:
-            lines += ['', 'Ideas I am weakest on:'] + weak
+            lines += ['', 'Ideas I am weakest on:']
+            lines += [f"- {ref(v)}: {v['claim']} ({v['lesson_title']}; {STATUS_TEXT[_status(v)]})" for v in weak]
+        new = [v for v in vs if v['status'] == 'unseen'][:MAX_NEW[level]]
+        if new:
+            lines += ['', 'Ideas to learn next, in course order:']
+            lines += [f"- {ref(v)}: {v['claim']} ({v['lesson_title']})" for v in new]
 
     gaps = _gaps(misconceptions, set(by_id), title_of)
     if gaps:
         lines += ['', 'Mistakes I have made that are still open:'] + gaps
-    return '\n'.join(lines + ['', HOW])
+    lines += ['', HOW]
+    if session and refs:
+        lines += ['', _debrief(session)]
+    return '\n'.join(lines), refs
 
 
 # ---- LeetCode ---------------------------------------------------------------------------
@@ -223,22 +258,85 @@ def leetcode(families, problems, attempts, enrichments, family=None, topic=None)
 
 # ---- HTTP -------------------------------------------------------------------------------
 
-@router.get('')
-def study_prompt(section: str, category: str | None = None, lesson: str | None = None,
-                 family: str | None = None, topic: str | None = None, uid: str = Depends(auth.require_user)):
+def _session_code():
+    return ''.join(secrets.choice('abcdefghjkmnpqrstuvwxyz23456789') for _ in range(6))
+
+
+class PromptIn(BaseModel):
+    section: str
+    category: str | None = None
+    lesson: str | None = None
+    family: str | None = None
+    topic: str | None = None
+
+
+@router.post('')
+def study_prompt(body: PromptIn, uid: str = Depends(auth.require_user)):
+    """The prompt for a scope. A course prompt saves a session: which point each P-number is."""
     store = get_store(uid)
-    if section == 'leetcode':
+    if body.section == 'leetcode':
         problems, attempts, enrichments = store.list_problems(), store.list_attempts(), store.list_enrichments()
         text = leetcode(scheduler.topic_tree(problems, attempts, enrichments), problems, attempts, enrichments,
-                        family=family, topic=topic)
-    else:
-        now = time.time()
-        c, _, states, seen, mis = kb_api.evidence(store, now)
-        vs = kmodel.views(c, states, seen, mis, now)
-        titles = {p['id']: (p['section_title'], p['category_title']) for p in c['points'].values()}
-        for v in vs:
-            v['section_title'], v['category_title'] = titles[v['id']]
-        text = knowledge(vs, mis, section, category, lesson)
-    if not text:
+                        family=body.family, topic=body.topic)
+        if not text:
+            raise HTTPException(404, 'Nothing to study here yet')
+        return {'prompt': text, 'session': None}
+    now = time.time()
+    c, _, states, seen, mis = kb_api.evidence(store, now)
+    vs = kmodel.views(c, states, seen, mis, now)
+    titles = {p['id']: (p['section_title'], p['category_title']) for p in c['points'].values()}
+    for v in vs:
+        v['section_title'], v['category_title'] = titles[v['id']]
+    code = _session_code()
+    out = knowledge(vs, mis, body.section, body.category, body.lesson, session=code)
+    if not out:
         raise HTTPException(404, 'Nothing to study here yet')
-    return {'prompt': text}
+    text, refs = out
+    if refs:
+        store.create_knowledge('study_sessions', code, {
+            'scope': body.model_dump(exclude_none=True), 'refs': refs, 'created_at': now,
+            'imported_at': None, 'debrief': None, 'counts': None})
+    return {'prompt': text, 'session': code if refs else None}
+
+
+class DebriefIn(BaseModel):
+    text: str = Field(max_length=50_000)
+    apply: bool = False
+
+
+def _public(p):
+    return {**p, 'changes': [{k: v for k, v in ch.items() if k != 'event'} for ch in p['changes']]}
+
+
+@router.post('/debrief')
+def debrief(body: DebriefIn, uid: str = Depends(auth.require_user)):
+    """Preview (apply=false) or record (apply=true) a pasted debrief. A session is recorded once."""
+    store, now = get_store(uid), time.time()
+    parsed = study_debrief.parse(body.text)
+    if not parsed['session']:
+        raise HTTPException(400, 'No "SENPAI-DEBRIEF session=…" line found. Ask the chatbot to "debrief" and paste its whole reply.')
+    session = store.get_knowledge('study_sessions', parsed['session'])
+    if not session:
+        raise HTTPException(404, f"Session {parsed['session']} is not one this app made. Copy a fresh study prompt.")
+    c = kb_cat.CATALOG
+    refs = {r: kb_cat.canonical(c, pid) for r, pid in session['refs'].items()}
+    p = study_debrief.plan(parsed, {r: pid for r, pid in refs.items() if pid}, c['points'],
+                           store.list_knowledge('knowledge_misconceptions'))
+    out = {**_public(p), 'session': parsed['session'], 'scope': session['scope'],
+           'imported_at': session.get('imported_at'), 'applied': False}
+    if not body.apply or session.get('imported_at') or not p['changes']:
+        return out
+    code, src = parsed['session'], study_debrief.SOURCE
+    kb_api.write_events(store, src, [{**ch['event'], 'key': f"{code}.{ch['ref']}", 'ref': f'study:{code}'}
+                                     for ch in p['changes']], now)
+    for ch in p['changes']:
+        key, o = f"{code}.{ch['ref']}", ch['opens']
+        if o and o['kind'] == 'gap':
+            kb_api.open_gap(store, src, key, ch['point'], o['text'], o['ask'], ch['note'], now)
+        elif o:
+            kb_api.add_misconception(store, src, key, ch['point'], o['text'], ch['note'], now, kind='belief', ask=o['ask'])
+        elif ch['resolves']:
+            kb_api.resolve_open(store, ch['point'], now, f'Right in voice-chat study session {code}')
+    store.put_knowledge('study_sessions', code, {**{k: v for k, v in session.items() if k != '_key'},
+                        'imported_at': now, 'debrief': body.text, 'counts': p['counts'], 'notes': p['notes']})
+    return {**out, 'imported_at': now, 'applied': True}

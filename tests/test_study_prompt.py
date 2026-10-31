@@ -19,21 +19,26 @@ MIS = [{'point': 'a2', 'status': 'open', 'kind': 'belief', 'text': 'caches are a
        {'point': 'b1', 'status': 'resolved', 'kind': 'gap', 'text': 'old news', 'created_at': 2}]
 
 
-def test_lesson_prompt_lists_every_idea_by_subtopic_with_its_status():
-    t = sp.knowledge(VIEWS, MIS, 'system-design', lesson='a')
+def test_lesson_prompt_numbers_every_idea_by_subtopic_with_its_status():
+    t, refs = sp.knowledge(VIEWS, MIS, 'system-design', lesson='a', session='abc234')
     assert 'Topic: Lesson a (System design > Cat c1)' in t
-    assert 'Basics:\n- claim a1 [solid]' in t and 'Edges:\n- claim a2 [got it wrong last time]' in t
+    assert 'Basics:\n- P1: claim a1 [solid]' in t and 'Edges:\n- P2: claim a2 [got it wrong last time]' in t
+    assert refs == {'P1': 'a1', 'P2': 'a2'}
     assert 'Edges: I wrongly believed: caches are always fresh' in t and 'old news' not in t
     assert 'claim b1' not in t and 'live voice' in t
+    assert 'SENPAI-DEBRIEF session=abc234' in t
+    assert 'SENPAI-DEBRIEF' not in sp.knowledge(VIEWS, MIS, 'system-design', lesson='a')[0]  # no session, no debrief
 
 
 def test_category_and_section_prompts_summarise_lessons_and_name_the_weakest_ideas():
-    t = sp.knowledge(VIEWS, MIS, 'system-design', category='c1')
+    t, refs = sp.knowledge(VIEWS, MIS, 'system-design', category='c1')
     assert 'Topic: Cat c1 (System design)' in t
     assert '- Lesson a: 48% held' in t and '- Lesson b: 70% held' in t and 'Lesson d' not in t
     weak = t.split('Ideas I am weakest on:\n')[1]
-    assert weak.index('claim a2') < weak.index('claim b1') and 'claim a1' not in weak  # misconception first, solid never
-    s = sp.knowledge(VIEWS, MIS, 'system-design')
+    assert weak.index('P1: claim a2') < weak.index('P2: claim b1') and 'claim a1' not in weak  # misconception first, solid never
+    assert refs == {'P1': 'a2', 'P2': 'b1'}  # nothing unseen in c1, so nothing to learn next
+    s, refs = sp.knowledge(VIEWS, MIS, 'system-design')
+    assert 'Ideas to learn next, in course order:\n- P3: claim d1 (Lesson d)' in s and refs['P3'] == 'd1'
     assert 'Topic: System design\n' in s and '- Cat c2: not started' in s and 'claim f1' not in s
 
 
@@ -92,7 +97,48 @@ def client(monkeypatch):
 
 
 def test_endpoint(client):
-    r = client.get('/api/study-prompt', params={'section': 'system-design', 'lesson': 'cache-aside'})
-    assert r.status_code == 200 and 'Topic: Cache-aside' in r.json()['prompt'] and 'never practised' in r.json()['prompt']
-    assert client.get('/api/study-prompt', params={'section': 'system-design', 'lesson': 'nope'}).status_code == 404
-    assert client.get('/api/study-prompt', params={'section': 'leetcode'}).status_code == 404  # nothing imported yet
+    r = client.post('/api/study-prompt', json={'section': 'system-design', 'lesson': 'cache-aside'})
+    body = r.json()
+    assert r.status_code == 200 and 'Topic: Cache-aside' in body['prompt'] and 'never practised' in body['prompt']
+    assert f"SENPAI-DEBRIEF session={body['session']}" in body['prompt']
+    assert client.post('/api/study-prompt', json={'section': 'system-design', 'lesson': 'nope'}).status_code == 404
+    lc = client.post('/api/study-prompt', json={'section': 'leetcode'})
+    assert lc.status_code == 404  # nothing imported yet
+
+
+def test_a_pasted_debrief_previews_then_records_once(client, monkeypatch):
+    from server.knowledge_base import api as kb_api
+    store = sp.get_store('me')
+    monkeypatch.setattr(kb_api, 'get_store', lambda uid: store)
+    main.app.dependency_overrides[kb_api.caller] = lambda: {'uid': 'me', 'source': None}
+    session = client.post('/api/study-prompt', json={'section': 'system-design', 'lesson': 'cache-aside'}).json()['session']
+    refs = store.get_knowledge('study_sessions', session)['refs']
+    text = (f'Sure! Here is your debrief:\n```\nSENPAI-DEBRIEF session={session}\nP1 right explain "nailed the miss-rate maths"\n'
+            f'P2 wrong recall "thought a cache is optional for capacity"\nP3 partial apply "missed the mass-miss case"\n'
+            f'P99 right recall\nNOTE "talked about CDNs too"\n```')
+    preview = client.post('/api/study-prompt/debrief', json={'text': text}).json()
+    assert preview['counts'] == {'right': 1, 'partial': 1, 'wrong': 1} and not preview['applied']
+    assert preview['notes'] == ['talked about CDNs too'] and any('P99' in s for s in preview['skipped'])
+    assert store.list_knowledge('knowledge_events') == []  # a preview records nothing
+
+    done = client.post('/api/study-prompt/debrief', json={'text': text, 'apply': True}).json()
+    assert done['applied'] and done['imported_at']
+    events = {e['_key']: e for e in store.list_knowledge('knowledge_events')}
+    assert set(events) == {f'voice-chat:{session}.P1', f'voice-chat:{session}.P2', f'voice-chat:{session}.P3'}
+    first = events[f'voice-chat:{session}.P1']
+    assert first['clean'] and first['strength'] == 'soft' and first['depth'] == 'explain' and first['points'] == [refs['P1']]
+    assert events[f'voice-chat:{session}.P3']['partial']
+    mis = {m['point']: m for m in store.list_knowledge('knowledge_misconceptions')}
+    assert mis[refs['P2']]['kind'] == 'belief' and mis[refs['P2']]['text'] == 'thought a cache is optional for capacity'
+    assert mis[refs['P3']]['kind'] == 'gap' and refs['P1'] not in mis
+
+    points = {p['id']: p for p in client.get('/api/knowledge/points', params={'lesson': 'cache-aside'}).json()['points']}
+    assert points[refs['P1']]['unconfirmed'] and points[refs['P2']]['status'] == 'shaky'
+
+    again = client.post('/api/study-prompt/debrief', json={'text': text, 'apply': True}).json()
+    assert not again['applied'] and len(store.list_knowledge('knowledge_events')) == 3
+
+
+def test_debrief_errors(client):
+    assert client.post('/api/study-prompt/debrief', json={'text': 'P1 right'}).status_code == 400
+    assert client.post('/api/study-prompt/debrief', json={'text': 'SENPAI-DEBRIEF session=zzzzzz\nP1 right'}).status_code == 404

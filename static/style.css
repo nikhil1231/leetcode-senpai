@@ -606,13 +606,28 @@ body.has-active-session #btn-quick-start { display: none; }
 .study-copy.is-top { width: 32px; height: 32px; margin: 0; border: 1px solid var(--line-hi); border-radius: 10px; color: var(--text-2); }
 .study-copy.is-top svg { width: 16px; height: 16px; }
 /* The course sections hide the rest of the top bar; this button stays. */
-body.section-design .topbar-side > #btn-study-prompt:not(.hidden) { display: inline-flex !important; }
-body.section-track .topbar-side:has(> #btn-study-prompt:not(.hidden)) { display: flex !important; }
-body.section-track .topbar-side > :not(#btn-study-prompt) { display: none !important; }
+body.section-design .topbar-side > #btn-study-prompt:not(.hidden),
+body.section-design .topbar-side > #btn-study-import:not(.hidden) { display: inline-flex !important; }
+body.section-track .topbar-side:has(> .study-top:not(.hidden)) { display: flex !important; }
+body.section-track .topbar-side > :not(.study-top) { display: none !important; }
+#btn-study-import { margin-right: -8px; }
 @media (max-width: 960px) {
   #btn-study-prompt { position: absolute; top: 12px; right: 56px; }
-  .topbar:has(#btn-study-prompt:not(.hidden)) { padding-right: 104px; }
+  #btn-study-import { position: absolute; top: 12px; right: 96px; margin: 0; }
+  .topbar:has(.study-top:not(.hidden)) { padding-right: 144px; }
 }
+.study-import-card { width: min(640px, 96vw); }
+.study-import-card .textarea { width: 100%; min-height: 150px; font-family: var(--mono, ui-monospace, monospace); font-size: 12.5px; }
+.study-preview { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; max-height: 42vh; overflow-y: auto; }
+.study-preview:empty { display: none; }
+.study-preview-head { font-size: 13.5px; color: var(--text-2); }
+.study-change { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; line-height: 1.45; }
+.study-change b { font-weight: 600; }
+.study-change .small { display: block; margin-top: 3px; }
+.study-mark { font-weight: 700; text-align: center; }
+.study-mark.is-right { color: var(--green, #4ade80); }
+.study-mark.is-partial { color: var(--amber, #f5b544); }
+.study-mark.is-wrong { color: var(--red, #f87171); }
 
 .overview { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .overview .stat {

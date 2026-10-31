@@ -34,7 +34,7 @@
   function progress(completed,total) {return `<div class="sd-course-bar" role="progressbar" aria-label="Lessons completed" aria-valuenow="${completed}" aria-valuemin="0" aria-valuemax="${total}"><span style="width:${total?100*completed/total:0}%"></span></div>`;}
   const statusText = l => l.status==='completed'?'Completed':l.status==='in_progress'?'In progress':'Not started';
   function lessonRow(l,index) {
-    return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span><span class="sd-muted">${l.minutes} min</span></a>`;
+    return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}${window.StudyPrompt?.button({section:'system-design',lesson:l.id},l.title)||''}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span><span class="sd-muted">${l.minutes} min</span></a>`;
   }
   function matches(l) {
     return (!category || l.category===category) && (!search || (l.title+' '+l.objectives.join(' ')).toLowerCase().includes(search.toLowerCase())) &&
