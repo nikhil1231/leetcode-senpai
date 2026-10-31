@@ -23,6 +23,7 @@ from . import assess, cards, context, telegram
 
 log = logging.getLogger(__name__)
 RUNNING = None   # the bot the app's background task runs, for /api/drip/opened
+SLEEP_RECHECK = 30 * 60
 COLL = 'drip'
 SOURCE = 'telegram'
 
@@ -63,7 +64,7 @@ class Bot:
     def roll_day(self, now):
         today = cards.local_day(now, self.tz())
         if self.state['day'] != today:
-            self.state.update(day=today, sent=0, answered=0, right=0, sleep=self.load_sleep(today), next_at=None)
+            self.state.update(day=today, sent=0, answered=0, right=0, sleep=None, sleep_checked=0, next_at=None)
 
     # ---- the loop ---------------------------------------------------------------------
     def step(self, poll=telegram.POLL):
@@ -89,6 +90,7 @@ class Bot:
             return
         now = self.clock()
         self.roll_day(now)
+        self.refresh_sleep(now)
         self.bedtime(now)
         self.morning_podcast(now)
         if self.state['pending'] is not None:
@@ -188,6 +190,19 @@ class Bot:
         usual = self.usual_per_day()
         return max(1, round(usual * cards.sleep_factor(self.state.get('sleep'))))
 
+    def refresh_sleep(self, now):
+        """Last night appears in Sundial once Oura syncs after waking, so from 05:00 look every
+        SLEEP_RECHECK until it does. Midnight is too early: the night hasn't happened yet."""
+        if not config.SUNDIAL_URL or self.state.get('sleep') or now - (self.state.get('sleep_checked') or 0) < SLEEP_RECHECK:
+            return
+        if dt.datetime.fromtimestamp(now, self.tz()).hour < 5:
+            return
+        self.state['sleep_checked'] = now
+        self.state['sleep'] = self.load_sleep(self.state['day'])
+        if self.state['sleep'] and self.per_day() < self.usual_per_day():
+            self.state['next_at'] = None   # space the rest of the day at the lighter pace
+        self.save()
+
     def load_sleep(self, today):
         """Last night from Sundial, once a day. Any failure means no adjustment."""
         if not config.SUNDIAL_URL:
@@ -196,7 +211,8 @@ class Bot:
             r = httpx.get(f'{config.SUNDIAL_URL}/api/coach/days', params={'start': today, 'end': today}, timeout=15)
             r.raise_for_status()
             sleep = (r.json() or [{}])[-1].get('sleep') or {}
-            return {k: sleep.get(k) for k in ('asleep_min', 'score', 'readiness')} if sleep else None
+            out = {k: sleep.get(k) for k in ('asleep_min', 'score', 'readiness')}
+            return out if any(v is not None for v in out.values()) else None
         except Exception:
             log.warning('Drip could not read sleep from Sundial', exc_info=True)
             return None

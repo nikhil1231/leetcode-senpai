@@ -448,24 +448,35 @@ def test_sleep_makes_the_day_lighter():
     assert cards.sleep_text({'asleep_min': 480}, 6, 6) == ''
 
 
-def test_the_bot_reads_last_night_from_sundial_once_a_day(env, monkeypatch):
+def test_the_bot_reads_last_night_from_sundial_once_it_appears(env, monkeypatch):
     b, store, tg, clock, _ = env
-    calls = []
+    calls, nights = [], [None, {'asleep_min': 300, 'score': 52, 'readiness': 60, 'bedtime': 'x'}]
 
     class R:
         def raise_for_status(self):
             pass
 
         def json(self):
-            return [{'date': '2026-11-03', 'sleep': {'asleep_min': 300, 'score': 52, 'readiness': 60, 'bedtime': 'x'}}]
+            night = nights[min(len(calls), len(nights)) - 1]
+            return [{'date': '2026-11-03', 'sleep': night or {'asleep_min': None, 'score': None, 'readiness': None}}]
     monkeypatch.setattr(config, 'SUNDIAL_URL', 'http://sundial:8700')
     monkeypatch.setattr(drip.httpx, 'get', lambda url, params, timeout: calls.append((url, params)) or R())
-    clock.t += DAY
+    clock.t = dt.datetime(2026, 11, 3, 0, 30, tzinfo=LON).timestamp()
+    b.tick()
+    assert calls == []  # too early: the night hasn't happened
+    clock.t = dt.datetime(2026, 11, 3, 6, 0, tzinfo=LON).timestamp()
     b.tick()
     assert calls == [('http://sundial:8700/api/coach/days', {'start': '2026-11-03', 'end': '2026-11-03'})]
-    assert b.state['sleep'] == {'asleep_min': 300, 'score': 52, 'readiness': 60} and b.per_day() == 3
+    assert b.state['sleep'] is None and b.per_day() == 6  # not synced yet
+    clock.t += 10 * 60
     b.tick()
-    assert len(calls) == 1
+    assert len(calls) == 1  # waits before asking again
+    clock.t += 25 * 60
+    b.tick()
+    assert b.state['sleep'] == {'asleep_min': 300, 'score': 52, 'readiness': 60} and b.per_day() == 3
+    clock.t += 3600
+    b.tick()
+    assert len(calls) == 2
     tg.updates = [msg('/stats'), msg('/frequency')]
     b.step(poll=0)
     assert 'Lighter today after a short night (5 h 00 m asleep): 3 questions instead of 6.' in tg.sent[-2]['text']

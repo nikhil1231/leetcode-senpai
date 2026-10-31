@@ -84,14 +84,15 @@ He spends many short waits on Claude sessions every day. Sundial's Threads card 
 always on screen and already knows when a session is running, so it (or something like it)
 shows one question while an agent works, answerable instantly.
 
-Status: **built, needs a token to switch on.** In Sundial (`src/sundial/learn.py`, commit
+Status: **live** (token set on 2026-10-31). In Sundial (`src/sundial/learn.py`, commit
 e6dcbcc): while any thread is Running, the card shows one question at the top (the feed's next
 card): "Show the idea", then "Knew it" or "Didn't"; the next one follows. Sundial asks the app
 over the `edge` network (`http://leetcode-senpai:8080`) with a knowledge source token named
 `threads`, so answers count under that source. No model. A card setting turns it off. To switch
 it on (Nikhil): pick a random token, add `threads:<token>` to `KNOWLEDGE_SOURCE_TOKENS` in
 `~/secrets/leetcode-senpai.env` and `LEETCODE_TOKEN=<token>` to `~/secrets/sundial.env`, then
-recreate both containers. Tested with Sundial unit tests and in the card against a fake app.
+recreate both containers (done). Tested with Sundial unit tests, in the card against a fake app,
+and live: Sundial fetched a real question from the app with the token.
 
 ### Living wallpaper and phone surfaces (very interested)
 He looks at his phone screen many times a day, so the phone is the most valuable surface.
@@ -256,8 +257,9 @@ A4 page for a weekly colour print. A Kindle would need a monochrome layout: not 
 Lighter load on poor-sleep days; review before sleep and recall the next morning (served by the
 bedtime write-up above).
 
-Status: **built; switch on with `SUNDIAL_URL=http://sundial:8700`** in the app's env (unset, the
-drip never looks). Once a day the bot reads last night from Sundial's coach feed, keeping only
+Status: **live** (`SUNDIAL_URL=http://sundial:8700` set on 2026-10-31; unset, the drip never
+looks). From 05:00 the bot asks Sundial's coach feed every 30 minutes until last night appears
+(Oura syncs after waking; at midnight the night hasn't happened yet), keeping only
 minutes asleep, sleep score and readiness (coarse, per the plan's principle). Under 5.5 hours or a
 score under 60 halves the day's cards; under 6.5 hours or 70 sends three quarters. `/stats` says
 why it's lighter. Review before sleep and recall the next morning are the bedtime section above.
@@ -294,9 +296,9 @@ expensive); bulk content work is done by the agent itself, not a paid API.
 1. Cloudflare: create an Access service token and a Service Auth policy for the app; put its client
    id in `ACCESS_SERVICE_TOKENS` (clients/README.md). Phone shortcuts, the widget and the Mac
    script use it.
-2. `~/secrets/leetcode-senpai.env`: `SUNDIAL_URL=http://sundial:8700`, `threads:<token>` in
-   `KNOWLEDGE_SOURCE_TOKENS`, and for a podcast app `PODCAST_TOKEN` plus an Access Bypass for
-   `/podcast/*`. `~/secrets/sundial.env`: `LEETCODE_TOKEN=<the same token>`. Recreate both.
+2. Done 2026-10-31: `SUNDIAL_URL` and the `threads` token in `~/secrets/leetcode-senpai.env`,
+   `LEETCODE_TOKEN` in `~/secrets/sundial.env`, both recreated. Still to do for a podcast app:
+   `PODCAST_TOKEN` plus an Access Bypass for `/podcast/*`.
 3. iPhone: the YouTube toll, wallpaper and app-opened automations, and the Scriptable widget.
 4. Mac: the wallpaper script. Chrome: load the YouTube extension.
 5. Telegram: `/podcast daily` if wanted.
