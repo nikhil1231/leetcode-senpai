@@ -161,6 +161,7 @@
 
   // ---------- course views ----------
   const C = registry.course;
+  const studyCat = (track, c) => (window.StudyPrompt?.button({ section: track, category: c.id }, c.title) || '');
   function lessonCard(l) {
     const state = l.checked ? 'Checked ✓' : l.opened ? `${l.activities_done}/${l.interactive} activities` : 'Not started';
     return `<button type="button" class="sd-lesson-card tr-lesson-card ${l.checked ? 'is-done' : ''}" data-t="lesson" data-id="${l.id}"><span class="sd-eyebrow">${l.minutes} MIN · ${l.held}/${l.items} HELD</span><h3>${esc(l.title)}</h3><p class="tr-card-sum">${esc(l.summary.split('. ')[0])}.</p><span><span>${state}</span><span>Open →</span></span></button>`;
@@ -186,7 +187,7 @@
         <section class="sd-panel tr-next"><span class="sd-eyebrow">FIX</span><h3>${d.mistakes.fix.length} to fix · ${d.mistakes.confirm.length} to confirm</h3><p class="sd-muted">Wrong answers wait here until you get them right on a later day.</p>${btn('Open the mistakes book', 'go', 'data-view="mistakes"')}</section>
       </div>
       ${loopHtml(d.rounds)}
-      ${d.course.map(c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`).join('')}`;
+      ${d.course.map(c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`).join('')}`;
     wireActions(ctx.root, { go: n => ctx.go(n.dataset.view), lesson: n => ctx.go('lesson/' + n.dataset.id), exercise: n => ctx.go('exercise/' + n.dataset.id),
       section: n => window.AppSections.select(n.dataset.section, n.dataset.view) });
   };
@@ -194,7 +195,7 @@
     const d = await ctx.call('');
     if (ctx.stale()) return;
     ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">${d.course.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><h2>${esc(d.track.title)} lessons</h2><p>Each lesson mixes reading with interactive activities, then a short check. Your first try on each activity counts toward what you hold.</p></div>
-      ${d.course.map(c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`).join('')}`;
+      ${d.course.map(c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`).join('')}`;
     wireActions(ctx.root, { lesson: n => ctx.go('lesson/' + n.dataset.id) });
   };
   C.lesson = async ctx => {

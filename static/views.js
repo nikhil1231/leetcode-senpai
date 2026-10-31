@@ -457,6 +457,7 @@
         <div class="topic-node-name">
           ${escapeHtml(t.category)}
           ${focus.has(t.category) ? `<span class="focus-chip">focus</span>` : ""}
+          ${window.StudyPrompt?.button({ section: "leetcode", topic: t.category }, t.category) || ""}
           ${meta ? `<div class="small">${meta}</div>` : ""}
         </div>
         <div class="topic-node-count">${t.solved}<span class="small">/${t.total}</span></div>
@@ -495,7 +496,7 @@
       families.map((f) => `
         <details class="family" open>
           <summary>
-            <span class="family-name">${escapeHtml(f.family)}</span>
+            <span class="family-name">${escapeHtml(f.family)}${window.StudyPrompt?.button({ section: "leetcode", family: f.family }, f.family) || ""}</span>
             <span class="family-count small">${f.solved}/${f.total}</span>
             ${progressBar(f.coverage)}
             ${masteryPill(f)}
@@ -569,7 +570,8 @@
       <span class="topic-map-count">${t.solved}<span class="small">/${t.total} solved</span></span>
       ${progressBar(t.coverage)}
       ${masteryPill(t)}
-      <button id="topic-light-practice" class="button is-small" type="button">Warm up with Quickfire</button>`;
+      <button id="topic-light-practice" class="button is-small" type="button">Warm up with Quickfire</button>
+      ${window.StudyPrompt?.button({ section: "leetcode", topic: t.category }, t.category) || ""}`;
     $("#topic-light-practice").addEventListener("click", () => {
       closeTopic();
       window.Views.startLightPractice(t.category);

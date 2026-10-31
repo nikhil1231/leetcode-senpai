@@ -593,6 +593,27 @@ body.run-minimised.has-active-session #user-chip { opacity: 1; filter: none; poi
 .quick-start:active { transform: translateY(1px); }
 body.has-active-session #btn-quick-start { display: none; }
 
+/* Study prompt: copies a topic and your progress on it for a chatbot's live voice chat. */
+.study-copy {
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
+  width: 22px; height: 22px; margin-left: 6px; padding: 0; flex: 0 0 auto;
+  border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer;
+  transition: color .16s var(--ease), background .16s var(--ease);
+}
+.study-copy svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.study-copy:hover, .study-copy:focus-visible { color: var(--accent); background: var(--panel2); }
+.study-copy.is-busy { opacity: .5; pointer-events: none; }
+.study-copy.is-top { width: 32px; height: 32px; margin: 0; border: 1px solid var(--line-hi); border-radius: 10px; color: var(--text-2); }
+.study-copy.is-top svg { width: 16px; height: 16px; }
+/* The course sections hide the rest of the top bar; this button stays. */
+body.section-design .topbar-side > #btn-study-prompt:not(.hidden) { display: inline-flex !important; }
+body.section-track .topbar-side:has(> #btn-study-prompt:not(.hidden)) { display: flex !important; }
+body.section-track .topbar-side > :not(#btn-study-prompt) { display: none !important; }
+@media (max-width: 960px) {
+  #btn-study-prompt { position: absolute; top: 12px; right: 56px; }
+  .topbar:has(#btn-study-prompt:not(.hidden)) { padding-right: 104px; }
+}
+
 .overview { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .overview .stat {
   display: flex;
