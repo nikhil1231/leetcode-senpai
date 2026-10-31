@@ -529,12 +529,23 @@ plan in `<private>…</private>`. It judges ideas, not wording: a right idea in 
 and it adds the crisper interview phrasing itself. The note-taker records what your latest words
 show (objectives, evidence, misconceptions, the summary for next time) as structured output, kept
 only when it quotes you. `TUTOR_MODEL` (default `deepseek/deepseek-v4.1-flash`, ~$0.0005 a turn)
-talks; `TUTOR_NOTES_MODEL` (default `openai/gpt-6-luna`) takes notes and also grades the Telegram
-drip. DeepSeek won a 2026-10-31 bake-off against GPT-6 Luna, GPT-6.1 Terra and Gemini 3.8 Flash
+talks and grades the Telegram drip, feed and walk answers; `TUTOR_NOTES_MODEL` (default
+`openai/gpt-6-luna`) takes notes. DeepSeek won a 2026-10-31 bake-off against GPT-6 Luna, GPT-6.1 Terra and Gemini 3.8 Flash
 with simulated learners (a beginner, a strong engineer, a distractible one). Needs the model;
 without it there is no card and the lesson is the notes.
 API: `GET /api/tutor`, `GET /api/tutor/lessons/{section}/{lesson}`, `POST /api/tutor/sessions`,
 `POST /api/tutor/sessions/{id}/turns` (retry a failed reply with the same key), `/end`.
+
+### One voice, and a cast with personalities
+
+`server/voice.py` holds the tutor's voice (`TUTOR` for conversations, `FEEDBACK` for one-off
+feedback: warm, upbeat, judges ideas rather than wording) and the cast's personalities, which live
+in `server/tutor/story.yaml` (`personality` and `leads` per character). Every surface that teaches
+starts from it: the tutor and its role-play modes (Jo, Marcus, Priya, with Sam chiming in), the
+Telegram, feed and walk grader (which replies as the cast member who asked), in-lesson
+explanations, recall grading, the design-case coach, the examiner's report and the track coaches.
+Templated surfaces use the cast's opening lines: Telegram cards and the daily podcast, where each
+question is asked by its character. Senpai and the LeetCode helpers keep their own voice.
 
 ### Home, Practise and What you know
 

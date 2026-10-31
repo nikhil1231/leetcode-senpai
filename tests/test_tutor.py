@@ -331,3 +331,18 @@ def test_open_gaps_reach_the_tutor_as_background(client):
     start(client)
     system_prompt = client.chats[0][0]['content']
     assert 'Load is requests times the miss rate.' in system_prompt and 'Which rate sets DB load?' not in system_prompt
+
+
+def test_a_reply_with_nothing_visible_is_asked_again(client):
+    client.replies += ['<private>Planted: no TTL.</private>', 'Morning! Here is piece one. <private>Planted: no TTL.</private>']
+    s = ok(client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'cache-aside', 'mode': 'critique', 'key': 'sess-crit1'}))
+    assert s['turns'][0]['say'] == 'Morning! Here is piece one.' and len(client.chats) == 2
+
+
+def test_characters_bring_their_own_personality():
+    from server import voice
+    for mode, who in (('explain', 'jo'), ('critique', 'marcus'), ('war-room', 'priya'), ('interview', 'marcus')):
+        assert voice.persona(who) in system(ses.new('s', L, mode, 0))
+    assert voice.TUTOR in system(ses.new('s', L, 'teach', 0)) and voice.TUTOR in system(fresh('explain'), debrief=True)
+    assert voice.persona('marcus').startswith("Marcus, Ripple's CTO and co-founder: ")
+    assert voice.lead('jo', 'p1') == voice.lead('jo', 'p1') and voice.lead('jo', 'p1') in voice.member('jo')['leads']

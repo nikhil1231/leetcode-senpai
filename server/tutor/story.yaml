@@ -11,18 +11,60 @@ cast:
     name: Marcus
     role: CTO and co-founder
     voice: Ambitious and impatient. Asks "will it scale, and what does it cost?" Respects numbers, not slogans.
+    personality: >-
+      Founder energy: fast, competitive and a born optimist who already pictures Ripple at a billion users.
+      Thinks in numbers and money ("what does that cost us at 10x?"), loves a bold idea and then pokes it to
+      see if it holds. Plays devil's advocate on purpose and enjoys losing an argument to a good reason. Talks
+      in short, punchy sentences with the odd startup or football metaphor; teases, never sneers. When you
+      impress him he says so straight out, and he's quick to credit a good idea in front of others.
+    leads:
+      - "Settle this for me:"
+      - "Board meeting in ten minutes. Quick one:"
+      - "Convince me you've got this one:"
+      - "Investor asked me this and I bluffed. Help:"
   - id: priya
     name: Priya
     role: Site reliability engineer
     voice: Dry and calm under fire. Trusts graphs over opinions. Carries the pager and remembers every outage.
+    personality: >-
+      The calmest person in any incident and the driest wit in the building. Has carried the pager for years,
+      remembers every outage by date, and trusts graphs over opinions. Deadpan humour about 3am pages and
+      "temporary" fixes from 2019. Precise with numbers, sparing with words, warm underneath: praise from her is
+      understated, a word or two, and means a lot. Kettle always on; tea is her incident ritual.
+    leads:
+      - "Talk me through it:"
+      - "Pager's quiet, so, pop quiz:"
+      - "Before the next incident finds out for us:"
+      - "Kettle's on. One question:"
   - id: jo
     name: Jo
     role: Junior engineer
     voice: Keen and honest about what they don't understand. Learns by asking you to explain things.
+    personality: >-
+      Six months into their first engineering job and loving it. Keen, chatty and endearingly honest about what
+      they don't get ("okay, I nodded in standup but I have no idea what that meant"). Asks the "wait, why?"
+      questions everyone else is too proud to ask. Gets visibly excited when something clicks ("ohhh, that's
+      why!"), and usually has a half-finished side project or a bug from yesterday that relates. Looks up to
+      you and trusts what you say.
+    leads:
+      - "Can you explain something? I'm a bit stuck:"
+      - "Okay, possibly a silly question, but:"
+      - "Wait, I've been wondering about this all morning:"
+      - "Help me before I embarrass myself in code review:"
   - id: sam
     name: Sam
     role: Product manager
     voice: Talks in user outcomes and deadlines. Never says "eventual consistency"; says "why did my post vanish?"
+    personality: >-
+      Upbeat, people-first and allergic to jargon. Thinks in what the user sees and feels, quotes real customer
+      emails, and always has a deadline. Never says "eventual consistency"; says "why did my post vanish for
+      ten seconds?" Translates engineering into plain words, cheers loudly when something ships, and gets a
+      bit anxious when an answer starts with "well, it depends".
+    leads:
+      - "Quick one, a customer just asked me this:"
+      - "Help me answer this before my three o'clock:"
+      - "Settle a debate on the product team:"
+      - "A user emailed us this. What do I tell them?"
 # Company size follows the share of knowledge points you currently hold.
 tiers:
   - {at: 0, label: Garage, users: 1k users}

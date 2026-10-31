@@ -5,21 +5,24 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from server import config, main, podcast, podcast_synth
+from server import config, main, podcast, podcast_synth, voice
 from server.knowledge_base import api
 from tests.fake_store import FakeStore
 
-ITEM = {'reason': 'gap', 'speaker': 'Marcus', 'ask': 'Why delete -> not set?', 'claim': 'Deletes are order-insensitive, e.g. under races.'}
+ITEM = {'reason': 'gap', 'speaker': 'Marcus', 'cast': 'marcus', 'point': 'p1', 'ask': 'Why delete -> not set?', 'claim': 'Deletes are order-insensitive, e.g. under races.'}
 
 
 def test_script_reads_each_question_then_gives_time_then_the_idea():
     items = [dict(ITEM, reason=r) for r in ('morning', 'shaky', 'fading', 'new', 'held')]
     seg = podcast.script(items, {'label': 'Launched', 'users': '50k users'}, dt.date(2026, 11, 2))
-    assert seg[0]['text'].startswith('Senpai daily, Monday 2 November. Ripple is at Launched') and '5 ideas' in seg[0]['text']
-    q, a = seg[1], seg[2]
-    assert q['voice'] == podcast.ASKER and q['pause'] == podcast.THINK and q['text'] == 'One you missed last night. Marcus asks: Why delete to not set?'
+    assert seg[0]['text'].startswith('Morning! This is Senpai daily for Monday 2 November. Ripple is at Launched') and '5 ideas' in seg[0]['text']
+    lead, q, a = seg[1], seg[2], seg[3]
+    assert lead == {'voice': podcast.NARRATOR, 'pause': 0.4, 'text': 'This one tripped you up last night.'}
+    assert q['voice'] == podcast.ASKER and q['pause'] == podcast.THINK
+    assert q['text'] == f"Marcus here. {voice.lead('marcus', 'p1')} Why delete to not set?"
     assert a['voice'] == podcast.NARRATOR and a['text'] == 'Deletes are order-insensitive, for example under races.'
-    assert any(s['text'] == 'That is 4 of 5.' for s in seg) and seg[-1]['text'].startswith('That is today.')
+    assert any(s['text'].startswith('That is 4 of 5.') for s in seg) and seg[-1]['text'].startswith('That is today.')
+    assert len(seg) == 1 + 5 * 2 + 1 + 1 + 1   # intro, ask + idea each, one lead-in, one cheer, sign-off
 
 
 def test_long_sentences_are_spoken_in_short_phrases():

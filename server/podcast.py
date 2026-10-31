@@ -25,7 +25,7 @@ import time
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
 
-from . import config
+from . import config, voice
 from .drip import cards as dcards
 from .feed import deck, day_bounds, morning
 from .knowledge_base import api as kb_api, model as kmodel
@@ -46,23 +46,32 @@ def speakable(text):
     return ' '.join(text.split())
 
 
+LEADS = {'morning': 'This one tripped you up last night.', 'gap': 'Just the bit that slipped last time.',
+         'misconception': 'You had this one backwards before. Second chance.'}
+CHEERS = ('Nice going.', 'Keep it up.', 'You are warming up nicely.', 'Halfway feeling good?', 'Lovely.')
+
+
 def script(items, company, day):
-    """-> segments [{voice, text, pause}] for one episode. `items`: feed cards."""
+    """-> segments [{voice, text, pause}] for one episode. `items`: feed cards.
+
+    Each question is asked by the cast member the card belongs to, with their own opening line
+    (voice.lead), so Marcus, Priya, Jo and Sam sound like themselves; the narrator gives the idea."""
     when = day.strftime('%A %-d %B')
     n = len(items)
     seg = [{'voice': NARRATOR, 'pause': 1.0,
-            'text': f'Senpai daily, {when}. Ripple is at {company["label"]}, with {company["users"]}. '
-                    f'{n} idea{"s" if n != 1 else ""} today, the shakiest first. After each question, answer it in your head '
-                    f'before you hear the idea.'}]
+            'text': f'Morning! This is Senpai daily for {when}. Ripple is at {company["label"]}, with {company["users"]}. '
+                    f'{n} idea{"s" if n != 1 else ""} today, the shakiest first. When you hear a question, have a go in '
+                    f'your head before the answer comes.'}]
     for i, c in enumerate(items, 1):
-        lead = {'morning': 'One you missed last night. ', 'gap': 'Just the part you missed last time. ',
-                'misconception': 'You got this one wrong before. '}.get(c['reason'], '')
-        seg.append({'voice': ASKER, 'pause': THINK, 'text': f'{lead}{c["speaker"]} asks: {speakable(c["ask"])}'})
+        if c['reason'] in LEADS:
+            seg.append({'voice': NARRATOR, 'pause': 0.4, 'text': LEADS[c['reason']]})
+        opener = voice.lead(c.get('cast', ''), c.get('point', c['ask'])) if c.get('cast') else 'Quick one.'
+        seg.append({'voice': ASKER, 'pause': THINK, 'text': f'{c["speaker"]} here. {speakable(opener)} {speakable(c["ask"])}'})
         seg.append({'voice': NARRATOR, 'pause': 1.6, 'text': speakable(c['claim'])})
         if i % 4 == 0 and i < n:
-            seg.append({'voice': NARRATOR, 'pause': 0.8, 'text': f'That is {i} of {n}.'})
+            seg.append({'voice': NARRATOR, 'pause': 0.8, 'text': f'That is {i} of {n}. {CHEERS[(i // 4 - 1) % len(CHEERS)]}'})
     seg.append({'voice': NARRATOR, 'pause': 0.5,
-                'text': 'That is today. Anything you could not answer will come back on Telegram. See you tomorrow.'})
+                'text': 'That is today. Anything that did not come to mind will pop up again on Telegram. See you tomorrow!'})
     return seg
 
 

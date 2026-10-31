@@ -237,14 +237,18 @@ def _count(s, usage):
 async def _talk(s, l, ctx, debrief=False):
     """The tutor's reply as plain text, or None when the model failed."""
     system = ses.system(s, l, ctx['views'], ctx['open'], ctx['memory'], ctx['story'], debrief=debrief)
-    try:
-        raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, [{'role': 'system', 'content': system}, *ses.messages(s, l, debrief)],
-                                      options={'max_tokens': 2500, 'timeout': 60})
-    except Exception as exc:
-        log.warning('Tutor reply failed: %s', type(exc).__name__)
-        return None
-    _count(s, raw.get('usage') or {})
-    return raw['content']
+    messages = [{'role': 'system', 'content': system}, *ses.messages(s, l, debrief)]
+    for _ in range(2):   # a reply with nothing visible (all private notes) gets one more try
+        try:
+            raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, messages, options={'max_tokens': 2500, 'timeout': 60})
+        except Exception as exc:
+            log.warning('Tutor reply failed: %s', type(exc).__name__)
+            return None
+        _count(s, raw.get('usage') or {})
+        if ses.parse(raw['content'], s, l)[0]:
+            return raw['content']
+    log.warning('Tutor reply had nothing to show')
+    return None
 
 
 async def _take_notes(s, l, ctx):

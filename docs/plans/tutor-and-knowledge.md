@@ -220,6 +220,14 @@ quality is checked.
   the voice after a bake-off (prompt variants × five models × four simulated learners, $0.23).
   The Telegram grader now marks a right idea in loose words as right and records gaps as general
   ideas. Sessions no longer end themselves when every objective is shown; the tutor suggests it.
+- 2026-10-31: One voice across every AI surface, and a cast with real personalities, at Nikhil's
+  request. `server/voice.py` (tutor voice, feedback voice, persona and opening lines from
+  story.yaml) feeds the tutor modes, the drip/feed/walk grader (now DeepSeek, replying as the
+  character who asked: Luna ignored personas), in-lesson explanations, recall grading, the design
+  coach, the examiner and the track coaches; Telegram cards and the podcast use each character's
+  own opening lines. Tuned from real transcripts: role-play modes always say something visible
+  (a reply that was all private notes is asked again), Priya gets the odd dry aside, quoted
+  example phrases are no longer repeated as catchphrases. Senpai and LeetCode helpers unchanged.
 
 ## Dropped
 

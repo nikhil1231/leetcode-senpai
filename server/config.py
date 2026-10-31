@@ -71,7 +71,8 @@ STT_MODEL = os.environ.get("STT_MODEL", "elevenlabs/scribe-v2").strip()
 # The tutor makes two calls a turn: TUTOR_MODEL talks (plain chat; DeepSeek V4.1 Flash won a
 # 2026-10-31 bake-off on warmth and judgement against GPT-6 Luna, GPT-6.1 Terra, Gemini 3.8
 # Flash and Mistral Large 4, at ~$0.0005 a turn) and TUTOR_NOTES_MODEL records what the learner
-# showed (structured output, ~$0.0003). Never an Anthropic model through OpenRouter (CLAUDE.md).
+# showed (structured output, ~$0.0003). TUTOR_MODEL also grades the Telegram drip, feed and walk
+# answers, in the voice of the cast member who asked. Never an Anthropic model through OpenRouter (CLAUDE.md).
 TUTOR_MODEL = os.environ.get("TUTOR_MODEL", "deepseek/deepseek-v4.1-flash").strip()
 TUTOR_NOTES_MODEL = os.environ.get("TUTOR_NOTES_MODEL", "openai/gpt-6-luna").strip()
 

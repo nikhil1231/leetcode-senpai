@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from . import voice
 from .drip import cards as dcards
 from .knowledge_base import api as kb_api, catalog as kcat, model as kmodel
 from .tutor import story
@@ -34,7 +35,7 @@ SOURCE = 'feed'
 def card(point, reason, gap=None):
     who = dcards.speaker(point)
     return {'point': point['id'], 'reason': reason, 'tag': dcards.TAG.get(reason, ''), 'kind': point['kind'],
-            'speaker': who['name'], 'role': who['role'], 'lead': dcards.LEAD[who['id']],
+            'speaker': who['name'], 'cast': who['id'], 'role': who['role'], 'lead': voice.lead(who['id'], point['id']),
             'ask': (gap or {}).get('ask') or point['prompt'], 'claim': point['claim'],
             'focus': (gap or {}).get('text') or '', 'gap': (gap or {}).get('_key') or '',
             'lesson': point['lesson_title'], 'section': point['section']}

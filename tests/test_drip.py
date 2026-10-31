@@ -157,7 +157,7 @@ def test_a_typed_answer_is_graded_and_recorded(env):
     grades.append({'verdict': 'wrong', 'feedback': 'You described latency, not load.', 'misconception': 'thinks caches only cut latency'})
     tg.updates = [msg('caches just make it faster')]
     b.step(poll=0)
-    assert 'Not quite' in tg.last() and 'The idea:' in tg.last()
+    assert '❌' in tg.last() and 'The idea:' in tg.last() and 'You described latency' in tg.last()
     e = events(store)[-1]
     assert (e['source'], e['strength'], e['clean'], e['points']) == ('telegram', 'soft', False, [c['point']])
     m = store.list_knowledge('knowledge_misconceptions')[0]
@@ -206,7 +206,7 @@ def test_voice_notes_are_transcribed_then_graded(env, monkeypatch):
     grades.append({'verdict': 'right', 'feedback': 'Exactly.', 'misconception': ''})
     tg.updates = [{'update_id': next(uid), 'message': {'chat': {'id': 42}, 'voice': {'file_id': 'v1'}}}]
     b.step(poll=0)
-    assert any('Heard:' in s['text'] for s in tg.sent) and 'Right' in tg.last()
+    assert any('Heard:' in s['text'] for s in tg.sent) and '✅' in tg.last()
     assert events(store)[-1]['clean'] is True and b.state['right'] == 1
 
 
@@ -263,7 +263,7 @@ def test_a_partly_right_answer_opens_a_gap_and_the_follow_up_targets_it(env):
                    'missing': piece, 'follow_up': ask})
     tg.updates = [msg('DNS, edge, load balancer, service, database')]
     b.step(poll=0)
-    assert 'Partly' in tg.last() and 'just the part you missed' in tg.last()
+    assert '🟡' in tg.last() and 'just the part you missed' in tg.last()
     e = events(store)[-1]
     assert e['clean'] is False and e['partial'] is True
     gap = store.list_knowledge('knowledge_misconceptions')[0]
@@ -513,3 +513,12 @@ def test_podcast_command_sends_audio_and_daily_sends_each_morning(env, monkeypat
     t = b.morning_podcast(clock.t)
     t.join(5)
     assert len(uploads) == 2 and b.morning_podcast(clock.t) is None
+
+
+def test_the_grader_speaks_as_the_colleague_who_asked():
+    from server import voice
+    from server.knowledge_base import catalog as kcat
+    p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
+    payload = cards.grade_payload(p, 'my answer')
+    assert payload['SPEAKER'] == voice.persona('priya') and 'SPEAKER' in cards.GRADE_SYSTEM and voice.FEEDBACK in cards.GRADE_SYSTEM
+    assert voice.lead('priya', p['id']) in cards.card_text(p, 'new')

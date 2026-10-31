@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import llm, system_design_coach as coach
+from . import llm, system_design_coach as coach, voice
 from .system_design_lessons import calc_bounds
 
 log = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ def section_text(section, limit=6000):
 
 
 async def plan_notes(lesson, sections, probe_results, self_report, settings=None):
-    system = ('You tailor one lesson to what the learner already knows. Given the lesson outline, the '
+    system = voice.FEEDBACK + ' ' + ('You tailor one lesson to what the learner already knows. Given the lesson outline, the '
               'result of a short warm-up (which sections they answered correctly or not, plus prior '
               'evidence) and anything they said about themselves, choose a mode for every section: '
               'known (skip it: they have shown it), skim (key points plus practice) or learn (work through '
@@ -126,7 +126,7 @@ async def plan_notes(lesson, sections, probe_results, self_report, settings=None
 
 
 async def explain(lesson, section, question, block=None, answer=None, settings=None):
-    system = ('You are a tutor inside a lesson. Answer the learner using the lesson text as ground '
+    system = voice.FEEDBACK + ' ' + ('You are a tutor inside a lesson. Answer the learner using the lesson text as ground '
               'truth; you may add standard industry knowledge when the lesson is silent. If they got '
               'an activity wrong, say what went wrong (a misconception, or just one step that slipped) and '
               'the reasoning that fixes it, in two to four sentences; do not go through each item or restate '
@@ -148,7 +148,7 @@ async def explain(lesson, section, question, block=None, answer=None, settings=N
         return ({**result, 'close': True} if result and gap and gap['close'] else result), message
     # Sorting: one note per misplaced item, shown on that item's row.
     payload['misplaced'] = wrong
-    system = ('You are a tutor inside a lesson. Answer the learner using the lesson text as ground truth; you may '
+    system = voice.FEEDBACK + ' ' + ('You are a tutor inside a lesson. Answer the learner using the lesson text as ground truth; you may '
               'add standard industry knowledge when the lesson is silent. They sorted items into buckets and got '
               'the misplaced ones wrong. items: one note per misplaced item, keyed by its index, in one or two '
               'sentences: why their bucket is wrong and the reasoning to the right one. Do not repeat the '
@@ -191,7 +191,7 @@ def misplaced(block, answer):
 
 
 async def compare_attempt(lesson, section, attempt, settings=None):
-    system = ('The learner attempted one stage of a system design walkthrough before reading it. '
+    system = voice.FEEDBACK + ' ' + ('The learner attempted one stage of a system design walkthrough before reading it. '
               'Compare their attempt with the walkthrough stage. got: up to five specific things they '
               'covered well (credit defensible alternatives). missed: up to five specific important '
               'points from the stage they missed or got wrong, each one short sentence. note: one or two '
@@ -209,7 +209,7 @@ async def grade_pitch(block, text, followup=None, settings=None, lesson_title=''
     else:
         f = block['followups'][followup]
         target = {'question_asked': f['q'], 'model_answer': f['a']}
-    system = ('Give feedback on a short, spoken-style interview answer, as a friendly interviewer coaching '
+    system = voice.FEEDBACK + ' ' + ('Give feedback on a short, spoken-style interview answer, as a friendly interviewer coaching '
               'a candidate in practice. Judge it only against question_asked: what matters is whether it '
               'answers that exact question, using the model answer as a guide to what a strong answer '
               'contains. covered: the ideas they got right (short phrases). missing: the most important '
@@ -223,7 +223,7 @@ async def grade_pitch(block, text, followup=None, settings=None, lesson_title=''
 
 
 async def twist(lesson, sections, focus=None, settings=None):
-    system = ('Write one interview curveball for this lesson: a realistic change to the requirements or '
+    system = voice.FEEDBACK + ' ' + ('Write one interview curveball for this lesson: a realistic change to the requirements or '
               'a new failure (for example 10× traffic, a strict freshness rule, a second region, a hot '
               'tenant) that forces the learner to change a design decision from the lesson. scenario: the '
               'situation in two to four sentences with concrete numbers. question: what they must decide. '
@@ -250,7 +250,7 @@ class GapSet(BaseModel):
 
 async def gap_questions(lesson, mistakes, settings=None):
     """Two or three new questions aimed at what this pass through the lesson got wrong."""
-    system = ('The learner has finished a lesson. Below is everything they got wrong or left out in it: '
+    system = voice.FEEDBACK + ' ' + ('The learner has finished a lesson. Below is everything they got wrong or left out in it: '
               'wrong activity answers, rubric points missed in written and interview answers, and wrong check '
               'answers. Look for the common thread: the same idea missed repeatedly, a recurring kind of omission '
               '(for example never stating numbers, or never covering failure), or one underlying misconception. '
