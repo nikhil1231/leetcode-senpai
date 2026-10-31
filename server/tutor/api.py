@@ -1,7 +1,8 @@
 """HTTP API for the tutor: /api/tutor/... The learner's turn is stored before the model is called.
 
 A turn whose reply failed can be retried with the same key: the stored turn is reused and only
-the reply is generated again. Validated evidence and misconceptions go to the knowledge base
+the reply is generated again. Ending a session writes its debrief (also when the last objective
+is shown); a debrief that failed is written again by ending the session again. Validated evidence and misconceptions go to the knowledge base
 (source "tutor", soft evidence); block answers are recorded by the lesson's own activity
 endpoint, so they stay hard evidence.
 """
@@ -25,6 +26,7 @@ KEY = r'^[A-Za-z0-9_-]{6,64}$'
 STORY_KEY = 'story'
 UNAVAILABLE = 'The tutor needs the model, which is not connected. The lesson itself still works.'
 FAILED = 'The tutor could not answer just now. Your message is saved; try again.'
+DEBRIEF_FAILED = 'The debrief could not be written just now. Your session is saved; try again.'
 SOURCE = 'tutor'
 
 
@@ -60,7 +62,7 @@ def _knowledge(store, now):
 
 
 def public(s):
-    return {k: v for k, v in s.items() if k not in ('_key', 'usage')} | {'progress': ses.progress(s)}
+    return ses.public(s)
 
 
 @router.get('')
@@ -153,11 +155,15 @@ async def turn(sid: str, body: Turn, store=Depends(store_for)):
 
 
 @router.post('/sessions/{sid}/end')
-def end(sid: str, store=Depends(store_for)):
+async def end(sid: str, store=Depends(store_for)):
+    """End the session and write its debrief. Ending an ended session retries a debrief that failed."""
     s, now = _session(store, sid), time.time()
-    if s['status'] == 'active':
-        s.update(status='ended', ended_at=now, updated_at=now)
-        store.put_knowledge('tutor_sessions', sid, s)
+    was_active = s['status'] == 'active'
+    ses.end(s, now)
+    store.put_knowledge('tutor_sessions', sid, s)
+    if ses.needs_debrief(s) and llm.enabled(store.get_settings()):
+        await _debrief(store, s, _lesson(s['section'], s['lesson']))
+    elif was_active:
         _remember(store, s, now, '')
     return public(s)
 
@@ -175,8 +181,8 @@ def _remember(store, s, now, event):
     store.put_knowledge('tutor_memory', STORY_KEY, st)
 
 
-async def _reply(store, s, l):
-    now = time.time()
+async def _ask(store, s, l, now, debrief=False):
+    """One model call for this session. -> (validated reply or None, allowed points, open misconceptions)."""
     c, states, seen, mis, summary = _knowledge(store, now)
     own, prereqs = lessons.points(l['section'], l['id'], c)
     views = kmodel.views(c, states, seen, mis, now, own)
@@ -186,21 +192,38 @@ async def _reply(store, s, l):
     memory = store.get_knowledge('tutor_memory', _memory_key(l['section'], l['id'])) or {}
     story_mem = store.get_knowledge('tutor_memory', STORY_KEY) or {}
     prompt = ses.payload(s, l, views, prereq_views, open_mis, {**memory, 'events': story_mem.get('events', [])},
-                         story.scale(summary))
+                         story.scale(summary), debrief=debrief)
     try:
-        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_MODEL, ses.SYSTEM,
+        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_MODEL, ses.system(s['mode'], debrief),
                                       json.dumps(prompt, ensure_ascii=False), ses.TutorReply,
                                       options={'effort': 'low', 'max_tokens': 4000, 'timeout': 60, 'metadata': True})
         reply = ses.TutorReply.model_validate_json(raw['content']).model_dump()
     except Exception as exc:
         log.warning('Tutor reply failed: %s', type(exc).__name__)
-        s['error'] = FAILED
+        s['error'] = DEBRIEF_FAILED if debrief else FAILED
         store.put_knowledge('tutor_sessions', s['id'], s)
-        return public(s)
+        return None, allowed, open_mis
     s.pop('error', None)
     usage = raw.get('usage') or {}
     s['usage'] = {'calls': s['usage']['calls'] + 1, 'input': s['usage']['input'] + int(usage.get('prompt_tokens') or 0),
                   'output': s['usage']['output'] + int(usage.get('completion_tokens') or 0)}
+    return reply, allowed, open_mis
+
+
+async def _debrief(store, s, l):
+    now = time.time()
+    reply, _, _ = await _ask(store, s, l, now, debrief=True)
+    if reply:
+        ses.apply_debrief(s, reply, now)
+        store.put_knowledge('tutor_sessions', s['id'], s)
+    _remember(store, s, now, '')
+
+
+async def _reply(store, s, l):
+    now = time.time()
+    reply, allowed, open_mis = await _ask(store, s, l, now)
+    if not reply:
+        return public(s)
     turn, writes, event = ses.apply(s, reply, l, allowed, {m['_key'] for m in open_mis}, now)
     store.put_knowledge('tutor_sessions', s['id'], s)
     n = len(s['turns'])
@@ -212,4 +235,6 @@ async def _reply(store, s, l):
     for key in writes['resolved']:
         kb_api.set_misconception(store, key, 'resolved', 'Corrected in a tutor session.', now)
     _remember(store, s, now, event)
+    if ses.needs_debrief(s):  # the last objective was just shown
+        await _debrief(store, s, l)
     return public(s)

@@ -41,6 +41,8 @@
 .tu-block { margin-top: 10px; }
 .tu-block > [data-block] { margin: 0; }
 .tu-wrap { padding: 14px; border: 1px solid var(--accent-line); border-radius: 10px; background: var(--accent-soft); }
+.tu-debrief { align-self: stretch; max-width: none; }
+.tu-debrief .tu-text { border-color: var(--accent-line); background: var(--accent-soft); }
 .tu-rail { position: sticky; top: 12px; align-self: start; }
 .tu-rail summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .tu-rail summary::-webkit-details-marker { display: none; }

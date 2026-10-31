@@ -1,7 +1,8 @@
 // The tutor: a conversation that leads you through a lesson. A card above the lesson offers a
 // session (with the company's story, last time's note and a choice of mode); a session replaces
-// the lesson body with a chat, the lesson's objectives as a checklist, and the lesson's own
-// activities brought in by the tutor. Activity answers are recorded exactly as in the lesson.
+// the lesson body with a chat, the lesson's objectives as a checklist and, in "Teach me", the
+// lesson's own activities brought in by the tutor. Activity answers are recorded exactly as in the
+// lesson. Ending a session brings a debrief from the tutor: the only teaching in the role-play modes.
 // Without the model the card says so and the lesson works as usual.
 (function () {
   'use strict';
@@ -63,8 +64,8 @@
     return `<section class="tu-entry"><div class="tu-entry-head"><div><span class="sd-eyebrow">LEARN WITH THE TUTOR</span>
         <p class="tu-scene">${esc(i.scene)}</p>${milestone}</div>${companyHtml()}</div>${last}
       ${active ? '' : `<div class="tu-modes" role="radiogroup" aria-label="Session style">${modes}</div>`}
-      <div class="sd-actions">${active ? btn('Continue your session', 'resume', '', true) + btn('Start fresh', 'fresh') : btn('Start a session', 'start', '', true)}
-        <span class="sd-muted tu-hint">The tutor asks, you answer. Talk or type; activities from the lesson come up as you go.</span></div>
+      <div class="sd-actions">${active ? btn('Continue your session', 'resume', '', true) + btn('End it and get the debrief', 'fresh') : btn('Start a session', 'start', '', true)}
+        <span class="sd-muted tu-hint">${active ? '' : T.mode === 'teach' ? 'The tutor asks, you answer. Talk or type; activities from the lesson come up as you go.' : 'Talk or type. No hints or corrections until the debrief at the end.'}</span></div>
       ${T.error ? `<p class="tu-error">${esc(T.error)}</p>` : ''}</section>`;
   }
 
@@ -112,8 +113,7 @@
   async function act(action) {
     const t = T;
     try {
-      if (action === 'start' || action === 'fresh') {
-        if (action === 'fresh' && t.session?.status === 'active') await api(`/tutor/sessions/${t.session.id}/end`, 'POST', {});
+      if (action === 'start') {
         t.busy = true; t.error = ''; t.open = true;
         t.session = {id: null, mode: t.mode, status: 'active', turns: [], objectives: t.info.objectives.map(() => ({status: 'open'})), progress: {demonstrated: 0, total: t.info.objectives.length}};
         paint(); status(`${cast(firstSpeaker(t.mode))?.name || 'The tutor'} is getting ready…`);
@@ -124,10 +124,14 @@
         t.open = true; paint();
       } else if (action === 'close') {
         t.open = false; paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
-      } else if (action === 'end') {
+      } else if (action === 'end' || action === 'fresh') {
+        if (action === 'fresh') { t.open = true; paint(); }
+        t.busy = true; status('Writing your debrief…');
+        t.host.querySelectorAll('[data-tu="end"]').forEach(n => { n.disabled = true; });
         t.session = await api(`/tutor/sessions/${t.session.id}/end`, 'POST', {});
         t.info = await api(`/tutor/lessons/${t.ctx.section}/${t.ctx.lesson.id}`);
-        paint();
+        if (T !== t) return;
+        t.busy = false; t.pending = null; paint();
       } else if (action === 'retry' && t.pending) {
         send(t.pending, true);
       } else if (action === 'again') {
@@ -181,7 +185,8 @@
     s.turns.slice(T.rendered).forEach(turn => chat.appendChild(turnNode(turn, answered)));
     T.rendered = s.turns.length;
     if (s.status === 'ended' && !chat.querySelector('.tu-wrap')) {
-      chat.insertAdjacentHTML('beforeend', `<div class="tu-wrap"><b>Session ended.</b> ${s.progress.demonstrated} of ${s.progress.total} objectives shown. What you showed is now in your knowledge model.<div class="sd-actions">${btn('Back to the lesson', 'close', '', true)}${btn('Another session', 'again')}</div></div>`);
+      const retry = s.debrief_due ? btn('Write the debrief', 'end', '', true) : '';
+      chat.insertAdjacentHTML('beforeend', `<div class="tu-wrap"><b>Session ended.</b> ${s.progress.demonstrated} of ${s.progress.total} objectives shown. What you showed is now in your knowledge model.<div class="sd-actions">${retry}${btn('Back to the lesson', 'close', '', !retry)}${btn('Another session', 'again')}</div></div>`);
       chat.querySelectorAll('.tu-wrap [data-tu]').forEach(n => n.addEventListener('click', () => act(n.dataset.tu)));
       T.host.querySelector('.tu-compose')?.remove();
       T.host.querySelector('.tu-head [data-tu="end"]')?.remove();
@@ -202,8 +207,8 @@
     } else if (turn.role === 'block') {
       n.className = 'tu-note'; n.textContent = turn.correct ? 'You got the activity right.' : 'You missed the activity.';
     } else {
-      const who = turn.speaker === 'tutor' ? {name: 'Tutor', role: ''} : (cast(turn.speaker) || {name: turn.speaker, role: ''});
-      n.className = 'tu-msg tu-them'; n.dataset.speaker = turn.speaker;
+      const who = turn.debrief ? {name: 'Tutor', role: 'Debrief'} : turn.speaker === 'tutor' ? {name: 'Tutor', role: ''} : (cast(turn.speaker) || {name: turn.speaker, role: ''});
+      n.className = 'tu-msg tu-them' + (turn.debrief ? ' tu-debrief' : ''); n.dataset.speaker = turn.speaker;
       n.innerHTML = `<div class="tu-who"><span class="tu-avatar" aria-hidden="true">${esc(who.name[0])}</span><b>${esc(who.name)}</b>${who.role ? `<small>${esc(who.role)}</small>` : ''}</div><div class="tu-text sd-md">${md(turn.say)}</div>`;
       if (turn.show_block) n.appendChild(blockNode(turn.show_block, answered.has(turn.show_block)));
     }

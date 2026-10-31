@@ -15,7 +15,7 @@ DELETE = 'sd.cache-aside.delete-beats-set'
 
 def reply(**over):
     base = {'speaker': 'tutor', 'say': 'Go on.', 'show_block': '', 'objectives': [], 'evidence': [],
-            'misconceptions': [], 'resolved': [], 'summary': '', 'story_event': '', 'done': False}
+            'misconceptions': [], 'resolved': [], 'summary': '', 'story_event': '', 'notes': '', 'done': False}
     return {**base, **over}
 
 
@@ -58,8 +58,8 @@ def test_every_section_and_category_has_a_scene():
 
 # ---- validation ------------------------------------------------------------------------
 
-def fresh():
-    s = ses.new('s1', L, 'teach', 0)
+def fresh(mode='teach'):
+    s = ses.new('s1', L, mode, 0)
     s['turns'].append({'role': 'learner', 'text': 'Load on the DB is requests times the miss rate, so 99% is ten times better than 90%', 'key': 'k1', 'at': 1})
     return s
 
@@ -130,11 +130,12 @@ def client(monkeypatch):
     monkeypatch.setattr(config, 'OPENROUTER_API_KEY', 'test')
     main.app.dependency_overrides[auth.require_user] = lambda: 'alice'
     c = TestClient(main.app)
-    c.store, c.replies, c.prompts = store, [], []
+    c.store, c.replies, c.prompts, c.systems = store, [], [], []
 
     def fake(provider, model, system, prompt, schema, options=None):
         assert not llm.forbidden_model(model) and schema is ses.TutorReply
         c.prompts.append(json.loads(prompt))
+        c.systems.append(system)
         nxt = c.replies.pop(0)
         if isinstance(nxt, Exception):
             raise nxt
@@ -177,8 +178,12 @@ def test_a_session_from_start_to_finish(client):
     assert client.prompts[-1]['OPEN_MISCONCEPTIONS'][0]['point'] == DELETE
     assert client.store.list_knowledge('knowledge_misconceptions')[0]['status'] == 'resolved'
 
+    client.replies.append(reply(speaker='marcus', say='**What you showed**: the miss storm.', summary='Knows mass misses hit the DB.', done=True))
     s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/end'))
-    assert s['status'] == 'ended'
+    assert s['status'] == 'ended' and s['turns'][-1]['debrief'] and s['turns'][-1]['speaker'] == 'tutor'
+    assert client.prompts[-1]['PHASE'] == 'debrief' and 'THE SESSION IS OVER' in client.systems[-1]
+    assert client.prompts[-1]['SESSION_MISTAKES'] == [{'belief': 'thinks setting the cache on write is always safe', 'said': 'just set the new value'}]
+    assert not s['debrief_due'] and client.replies == []
     state = ok(client.get('/api/tutor/lessons/system-design/cache-aside'))
     assert state['previously'] == 'Knows mass misses hit the DB.' and state['active'] is None and state['sessions'] == 1
     overview = ok(client.get('/api/tutor'))
@@ -218,7 +223,8 @@ def test_bad_input_is_rejected(client):
 def test_course_track_lessons_work_too(client):
     client.replies.append(reply(say='Jo here. What even is a chunk?', speaker='jo'))
     s = ok(client.post('/api/tutor/sessions', json={'section': 'ai', 'lesson': 'rag', 'mode': 'explain', 'key': 'sess-rag01'}))
-    assert s['turns'][0]['speaker'] == 'jo' and client.prompts[0]['MODE'].startswith('Jo')
+    assert s['turns'][0]['speaker'] == 'jo' and client.prompts[0]['MODE'] == 'I explain'
+    assert 'you ARE Jo' in client.systems[0] and client.prompts[0]['BLOCKS'] == []
     assert any(p['id'].startswith('ai.rag.') for p in client.prompts[0]['POINTS'])
 
 
@@ -227,3 +233,70 @@ def test_without_the_model_the_tutor_is_cleanly_unavailable(client, monkeypatch)
     assert ok(client.get('/api/tutor'))['enabled'] is False
     r = client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'cache-aside', 'key': 'sess-0003'})
     assert r.status_code == 503 and 'lesson itself still works' in r.json()['detail']
+
+
+# ---- modes -----------------------------------------------------------------------------
+
+def test_each_mode_has_its_own_role_and_only_teach_teaches():
+    prompts = {m: ses.system(m) for m in ses.MODES}
+    assert len(set(prompts.values())) == len(ses.MODES)
+    assert 'BLOCKS are interactive' in prompts['teach']
+    assert all('BLOCKS are interactive' not in p for m, p in prompts.items() if m != 'teach')
+    assert 'never teach' in prompts['explain'] and 'believe them' in prompts['explain']
+    assert 'THE SESSION IS OVER' not in prompts['explain'] and 'postmortem' in ses.system('war-room', debrief=True)
+
+
+def test_role_play_modes_cannot_show_activities_or_switch_speaker():
+    s = fresh('explain')
+    turn, _, _ = ses.apply(s, reply(speaker='tutor', show_block='b1', notes='They think 99% is barely better.'), L, set(), set(), 2)
+    assert turn['speaker'] == 'jo' and turn['show_block'] == '' and s['shown'] == []
+    assert s['notes'] == 'They think 99% is barely better.'
+    p = ses.payload(s, L, [], [], [], {}, story.scale(summary(0)))
+    assert p['BLOCKS'] == [] and p['NOTES_TO_SELF'] == s['notes'] and 'PHASE' not in p
+    war = fresh('war-room')
+    assert ses.apply(war, reply(speaker='sam'), L, set(), set(), 2)[0]['speaker'] == 'sam'
+    assert ses.apply(war, reply(speaker='jo'), L, set(), set(), 3)[0]['speaker'] == 'priya'
+
+
+def test_wrong_claims_are_kept_for_the_debrief_and_notes_stay_private():
+    s = fresh('explain')
+    ses.apply(s, reply(misconceptions=[{'point': MISS, 'text': 'thinks 99% is only slightly better', 'quote': 'ten times better'}]),
+              L, {MISS}, set(), 2)
+    assert s['mistakes'] == [{'point': MISS, 'text': 'thinks 99% is only slightly better', 'quote': 'ten times better'}]
+    s['notes'] = 'secret plan'
+    assert 'notes' not in ses.public(s) and not ses.public(s)['debrief_due']
+    ses.end(s, 3)
+    assert ses.public(s)['notes'] == 'secret plan' and ses.needs_debrief(s)
+    ses.apply_debrief(s, reply(say='What was wrong: …', summary='Mixed up miss rates.'), 4)
+    assert s['turns'][-1]['debrief'] and not ses.needs_debrief(s) and s['summary'] == 'Mixed up miss rates.'
+
+
+def test_an_unused_session_ends_without_a_debrief(client):
+    s = start(client, mode='explain')
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/end'))
+    assert s['status'] == 'ended' and not s['debrief_due'] and len(client.prompts) == 1
+
+
+def test_a_failed_debrief_can_be_written_again(client):
+    s = start(client, mode='interview')
+    client.replies.append(reply(speaker='marcus', say='OK. Go deeper.'))
+    ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0001', 'text': 'I would cache it'}))
+    client.replies.append(RuntimeError('provider down'))
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/end'))
+    assert s['status'] == 'ended' and s['debrief_due'] and s['error']
+    client.replies.append(reply(say='Feedback: mixed for senior.'))
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/end'))
+    assert not s['debrief_due'] and 'error' not in s and s['turns'][-1]['say'] == 'Feedback: mixed for senior.'
+
+
+def test_showing_the_last_objective_brings_the_debrief(client):
+    s = start(client, mode='explain')
+    sess = client.store.get_knowledge('tutor_sessions', s['id'])
+    for o in sess['objectives'][1:]:
+        o['status'] = 'demonstrated'
+    client.store.put_knowledge('tutor_sessions', s['id'], sess)
+    client.replies.append(reply(speaker='jo', say='Oh, that makes sense now!', done=True,
+                                objectives=[{'objective': 0, 'status': 'demonstrated', 'quote': 'delete the key'}]))
+    client.replies.append(reply(say='**What you showed**: all of it.'))
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0001', 'text': 'On a write, delete the key'}))
+    assert s['status'] == 'ended' and [t.get('debrief', False) for t in s['turns'][-2:]] == [False, True]
