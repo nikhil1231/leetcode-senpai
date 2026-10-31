@@ -43,7 +43,7 @@ def access_configured(monkeypatch, keypair):
 
 
 def make_token(keypair, *, aud=AUD, iss=None, email=OWNER, age_seconds=0,
-               lifetime_seconds=3600, omit=()):
+               lifetime_seconds=3600, omit=(), extra=None):
     private, _ = keypair
     now = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=age_seconds)
     claims = {
@@ -52,6 +52,7 @@ def make_token(keypair, *, aud=AUD, iss=None, email=OWNER, age_seconds=0,
         "iat": now,
         "exp": now + dt.timedelta(seconds=lifetime_seconds),
         "email": email,
+        **(extra or {}),
     }
     for name in omit:
         claims.pop(name, None)
@@ -119,6 +120,18 @@ def test_missing_expiry_is_refused(keypair):
 def test_service_token_without_an_email_is_refused(keypair):
     with pytest.raises(access.AccessError):
         access.verify(make_token(keypair, email=""))
+
+
+def test_allowlisted_service_token_acts_as_the_owner(keypair, monkeypatch):
+    monkeypatch.setattr(config, "ACCESS_SERVICE_TOKENS", {"abc.access"})
+    token = make_token(keypair, email="", extra={"common_name": "abc.access"})
+    assert access.verify(token) == "service:abc.access"
+    assert auth._require_access(token) == "firebase-uid-123"
+    with pytest.raises(access.AccessError):
+        access.verify(make_token(keypair, email="", extra={"common_name": "other.access"}))
+    with pytest.raises(HTTPException) as exc:
+        auth._require_access(make_token(keypair, email="service:abc.access@evil.example"))
+    assert exc.value.status_code == 403
 
 
 def test_empty_assertion_is_refused():

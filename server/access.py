@@ -4,7 +4,7 @@ A tunnel puts this app on the public internet, so it cannot trust the network it
 is reached over. Access signs a per-application JWT and sends it as
 `Cf-Access-Jwt-Assertion`; this module checks that token against the team's
 published keys — signature, audience, issuer, expiry — and returns the email it
-asserts.
+asserts, or for an allowlisted service token (ACCESS_SERVICE_TOKENS) "service:<client id>".
 
 The `Cf-Access-Authenticated-User-Email` header is deliberately never read.
 Cloudflare sets it, but it is a claim rather than a proof: anything that can
@@ -31,6 +31,9 @@ _JWKS_TTL_SECONDS = 600
 # unknown `kid` — a misconfiguration, or someone probing — would turn every
 # request into an outbound fetch to Cloudflare.
 _JWKS_REFETCH_FLOOR_SECONDS = 30
+
+
+SERVICE = "service:"   # prefix of the identity verify() returns for an allowed service token
 
 
 class AccessError(Exception):
@@ -114,8 +117,11 @@ def verify(token: str) -> str:
         raise AccessError(f"invalid assertion: {exc}") from exc
 
     email = (claims.get("email") or "").strip().lower()
-    if not email:
-        # Service tokens authenticate without one. This app has a single human
-        # user, so an identity with no email is not one of ours.
-        raise AccessError("assertion carries no email")
-    return email
+    if email:
+        return email
+    # A service token (a phone shortcut, a script) carries its client id instead of an email.
+    # Only client ids listed in ACCESS_SERVICE_TOKENS act as the owner.
+    client = (claims.get("common_name") or "").strip()
+    if client and client in config.ACCESS_SERVICE_TOKENS:
+        return SERVICE + client
+    raise AccessError("assertion carries no email")

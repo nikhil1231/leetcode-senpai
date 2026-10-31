@@ -43,6 +43,7 @@ from .knowledge_base.api import router as knowledge_router
 from .tutor.api import router as tutor_router
 from .drip import bot as drip_bot
 from .feed import router as feed_router
+from .wall import router as wall_router
 from .senpai import jobscout as senpai_jobscout, service as senpai_service, worker as senpai_worker
 from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
 
@@ -88,6 +89,7 @@ app.include_router(senpai_router)
 app.include_router(knowledge_router)
 app.include_router(tutor_router)
 app.include_router(feed_router)
+app.include_router(wall_router)
 # The daily review API, under its old path (kept for compatibility) and under Senpai's.
 app.include_router(senpai_daily_router, prefix="/api/coach/daily")
 app.include_router(senpai_daily_router, prefix="/api/senpai/daily")
@@ -3063,7 +3065,7 @@ async def asset_cache_headers(request, call_next):
     if path in _VERSIONED_ASSETS and request.query_params.get("v"):
         # The URL carries a content hash, so this exact body can never change.
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif path.endswith((".png", ".ico", ".svg")):
+    elif path.endswith((".png", ".ico", ".svg")) and not path.startswith("api/"):
         resp.headers["Cache-Control"] = "public, max-age=86400"
     elif request.url.path == "/":
         # Must be revalidated, or a new asset version would never be picked up.
@@ -3086,14 +3088,20 @@ def index():
     return HTMLResponse(html)
 
 
+def _standalone(name):
+    """A self-contained page outside the app (the feed, the wall): opens in a moment, no app around it."""
+    with open(os.path.join(STATIC_DIR, name), encoding="utf-8") as fh:
+        return HTMLResponse(fh.read(), headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/feed")
 def feed_page():
-    """The phone feed: its own small page, so it opens in a moment without the app around it."""
-    with open(os.path.join(STATIC_DIR, "feed.html"), encoding="utf-8") as fh:
-        html = fh.read()
-    resp = HTMLResponse(html.replace("__ASSET_VER__", asset_version()).replace("__AUTH_MODE__", config.AUTH_MODE))
-    resp.headers["Cache-Control"] = "no-cache"
-    return resp
+    return _standalone("feed.html")
+
+
+@app.get("/wall")
+def wall_page():
+    return _standalone("wall.html")
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")

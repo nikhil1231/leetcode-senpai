@@ -32,6 +32,8 @@ def _require_access(assertion: str | None) -> str:
         email = access.verify(assertion)
     except access.AccessError:
         raise HTTPException(401, "invalid access assertion")
+    if email.startswith(access.SERVICE) and email[len(access.SERVICE):] in config.ACCESS_SERVICE_TOKENS:
+        return config.ACCESS_UID   # an allowlisted service token (a phone shortcut, a script)
     if config.ALLOWED_EMAILS and email not in config.ALLOWED_EMAILS:
         raise HTTPException(403, "not authorized")
     return config.ACCESS_UID

@@ -32,6 +32,9 @@ ACCESS_AUD = (os.environ.get("ACCESS_AUD") or "").strip()
 # The Firebase uid whose Firestore data a verified Access caller reads and
 # writes. Single-user app: a verified, allow-listed email *is* this account.
 # Defaults to DEV_UID so one variable covers both non-Firebase modes.
+# Cloudflare Access service tokens allowed to act as the owner, by client id (the JWT's
+# common_name), comma-separated: phone shortcuts and scripts that cannot sign in.
+ACCESS_SERVICE_TOKENS = {t.strip() for t in os.environ.get("ACCESS_SERVICE_TOKENS", "").split(",") if t.strip()}
 ACCESS_UID = os.environ.get("ACCESS_UID") or os.environ.get("DEV_UID", "local-dev")
 
 # GCP project (set automatically on Cloud Run; needed for Firestore).

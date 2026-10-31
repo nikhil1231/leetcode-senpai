@@ -183,6 +183,16 @@ HELP = ('I send a few questions a day from what you are learning. Reply with tex
         '/resume  start them again\n/help  this message')
 
 
+def tz_for(settings):
+    """The learner's timezone from the Senpai setting; Europe/London when unset or unknown."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    name = (settings or {}).get('daily_coach_timezone') or 'Europe/London'
+    try:
+        return ZoneInfo('Europe/London' if name == 'UTC' else name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo('Europe/London')
+
+
 def local_day(now, tz):
     return dt.datetime.fromtimestamp(now, tz).date().isoformat()
 

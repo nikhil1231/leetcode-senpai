@@ -13,7 +13,6 @@ import json
 import logging
 import random
 import time
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .. import config, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel
@@ -38,11 +37,7 @@ class Bot:
 
     # ---- plumbing -------------------------------------------------------------------
     def tz(self):
-        name = (self.store.get_settings() or {}).get('daily_coach_timezone') or 'Europe/London'
-        try:
-            return ZoneInfo('Europe/London' if name == 'UTC' else name)
-        except (ZoneInfoNotFoundError, ValueError):
-            return ZoneInfo('Europe/London')
+        return cards.tz_for(self.store.get_settings())
 
     def save(self):
         self.store.put_knowledge(COLL, 'state', self.state)
