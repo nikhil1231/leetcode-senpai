@@ -25,7 +25,7 @@ COURSES = {
             'languages': ['java-concurrency', 'python-runtime'],
             'systems': ['linux-processes', 'networking-stack'],
             'data': ['postgres-internals'],
-            'infrastructure': ['kubernetes', 'aws-core', 'cicd-iac'],
+            'infrastructure': ['kubernetes', 'aws-core', 'cicd-iac', 'home-lab'],
         },
     },
     'ai': {

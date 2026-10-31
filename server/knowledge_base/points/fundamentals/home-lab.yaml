@@ -1,0 +1,196 @@
+# Knowledge points, written by hand by the agent from ~/infra (README, bin/deploy, bin/reaper, the October incident).
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: home-lab
+source_hash: abdafedd4b2c380c
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-10-31'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.home-lab.pull-based-deploys
+  subtopic: Deploys that undo themselves
+  kind: tradeoff
+  claim: The box polls GitHub every 2 minutes and deploys when the branch moves, so nothing outside needs credentials to reach in; the cost is up to two minutes of delay.
+  prompt: Why does your box pull deploys from GitHub instead of CI pushing to it, and what does it cost?
+  objectives:
+  - 0
+- id: fundamentals.home-lab.immutable-image-rollback
+  subtopic: Deploys that undo themselves
+  kind: mechanism
+  claim: 'Each commit is built into an image tagged with that commit, and the running one is kept as :previous, so rolling back just runs the old image again: seconds, with no rebuild.'
+  prompt: Why does rolling back a deploy on your box take seconds rather than minutes?
+  objectives:
+  - 0
+- id: fundamentals.home-lab.health-check-gates-deploy
+  subtopic: Deploys that undo themselves
+  kind: principle
+  claim: A deploy only counts once the new container reports healthy (its health check calls /api/health) within 90 seconds; otherwise :previous is restored, because a started process is not a working one.
+  prompt: What decides whether a deploy on your box succeeded, and what happens if it does not?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.home-lab.immutable-image-rollback
+- id: fundamentals.home-lab.failed-commit-retry-storm
+  subtopic: Deploys that undo themselves
+  kind: mechanism
+  claim: The deploy only records a commit once it succeeds, so a broken commit is retried every poll and the site flaps until a fix lands; remembering the failed commit would make it one blip and an alert.
+  prompt: A broken commit fails its health check on your box. Why does the site keep dropping out every couple of minutes, and how would you stop it?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.home-lab.health-check-gates-deploy
+- id: fundamentals.home-lab.tunnel-outbound-only
+  subtopic: Publishing without open ports
+  kind: mechanism
+  claim: cloudflared makes an outbound connection to Cloudflare and requests come back down it to containers by name, so the router has no open ports and the home IP is never in DNS.
+  prompt: How does a Cloudflare Tunnel publish your apps without any open ports?
+  objectives:
+  - 1
+- id: fundamentals.home-lab.access-at-edge
+  subtopic: Publishing without open ports
+  kind: mechanism
+  claim: Cloudflare Access signs a person in at the edge, before the request reaches the tunnel, then adds a signed JWT header to every request it lets through.
+  prompt: Where does Cloudflare Access sign you in, and what does it pass on to the app?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.home-lab.tunnel-outbound-only
+- id: fundamentals.home-lab.verify-access-jwt
+  subtopic: Publishing without open ports
+  kind: procedure
+  claim: 'An app behind Access verifies the JWT itself: signature against Access''s public keys, issuer, audience, expiry and email, so a request that skipped the edge is still refused.'
+  prompt: What should an app behind Cloudflare Access check before trusting a request, and why not just the header being present?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.home-lab.access-at-edge
+- id: fundamentals.home-lab.machines-use-service-tokens
+  subtopic: Publishing without open ports
+  kind: fact
+  claim: Machines cannot do an interactive sign-in, so they use an Access service token (client id and secret as headers) or a separate hostname that skips Access and is protected by the app's own token.
+  prompt: How does a script or phone shortcut get past Cloudflare Access?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.home-lab.access-at-edge
+- id: fundamentals.home-lab.reaper-levels
+  subtopic: Load shedding by memory
+  kind: fact
+  claim: Idle agent sessions are reaped after 24 hours with 2 GiB or more free, 4 hours under 2 GiB, 1 hour under 1 GiB (or under 2 GiB with swap 90% full), and 15 minutes under 0.5 GiB.
+  prompt: How long may an idle agent session live on your box at each level of free memory?
+  objectives:
+  - 2
+- id: fundamentals.home-lab.shed-harder-as-scarcer
+  subtopic: Load shedding by memory
+  kind: principle
+  claim: Good load shedding keeps less around the scarcer the resource gets, protects work still in progress, and bounds each pass (8 kills every 30 seconds) rather than doing everything at once.
+  prompt: What makes the reaper a good example of load shedding?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.home-lab.reaper-levels
+- id: fundamentals.home-lab.caps-dont-reserve
+  subtopic: Load shedding by memory
+  kind: principle
+  claim: 'A per-service memory cap (systemd MemoryMax) protects the others from that service but reserves nothing for the host: every service can stay under its cap while their sum exceeds the machine.'
+  prompt: Every service on your box had a memory cap, yet the box ran out of memory. How?
+  objectives:
+  - 2
+- id: fundamentals.home-lab.fixed-rules-miss-pressure
+  subtopic: Load shedding by memory
+  kind: principle
+  claim: 'In the October 2026 incident swap was full for over an hour while the old reaper ran fine: its fixed 24-hour rule ignored memory, and a 15-minute interval cannot catch demand that grows between runs.'
+  prompt: Why did the old reaper not prevent the October 2026 memory incident?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.home-lab.reaper-levels
+- id: fundamentals.home-lab.offsite-encrypted-backups
+  subtopic: Backups you have actually restored
+  kind: fact
+  claim: Every night restic makes an encrypted, deduplicated snapshot of the data, secrets and local backups and sends it to Google Drive, off the box, so a dead disk or stolen laptop does not take the backups too.
+  prompt: What does your box back up every night, where to, and why there?
+  objectives:
+  - 3
+- id: fundamentals.home-lab.sqlite-safe-copy
+  subtopic: Backups you have actually restored
+  kind: mechanism
+  claim: A live SQLite database is copied with SQLite's own backup, not cp, which can capture a half-written page and give a corrupt copy.
+  prompt: Why are SQLite databases copied specially before the backup runs?
+  objectives:
+  - 3
+- id: fundamentals.home-lab.retention-7-4-12
+  subtopic: Backups you have actually restored
+  kind: fact
+  claim: 'Retention keeps 7 daily, 4 weekly and 12 monthly snapshots: fine recent history and a year of coarse history, cheap thanks to deduplication.'
+  prompt: What retention do your off-site backups keep, and why that shape?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.home-lab.offsite-encrypted-backups
+- id: fundamentals.home-lab.restore-tests
+  subtopic: Backups you have actually restored
+  kind: principle
+  claim: 'A backup nobody has restored is a hope: every month the latest snapshot is restored, every database is opened and checked for rows, and the Postgres dump is loaded into a throwaway server.'
+  prompt: How do you know your backups would work, and how often do you check?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.home-lab.offsite-encrypted-backups
+- id: fundamentals.home-lab.key-off-box
+  subtopic: Backups you have actually restored
+  kind: principle
+  claim: The backup password must also be kept off the box, or the encrypted backup is useless exactly when the box is lost.
+  prompt: Where must the restic password live, and why?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.home-lab.offsite-encrypted-backups
+- id: fundamentals.home-lab.autofix-ladder
+  subtopic: Self-healing that knows when to stop
+  kind: procedure
+  claim: The auto-fixer leaves deliberate states alone, waits about 3 minutes for a problem to last, tries one cheap fix, then one AI diagnosis run, then escalates to a human on Telegram.
+  prompt: Walk through what the auto-fixer does with a new problem.
+  objectives:
+  - 4
+- id: fundamentals.home-lab.no-fix-loops
+  subtopic: Self-healing that knows when to stop
+  kind: principle
+  claim: A problem that returns within 24 hours of a fix is escalated rather than retried, and AI runs happen at most once per problem a day, so a fix that briefly works cannot become an endless restart loop.
+  prompt: How does the auto-fixer avoid getting stuck restarting the same thing forever?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.home-lab.autofix-ladder
+- id: fundamentals.home-lab.rerun-safe-only
+  subtopic: Self-healing that knows when to stop
+  kind: principle
+  claim: Only jobs that are safe to repeat are rerun automatically; a booking or prescription request never is, because repeating it has real-world effects.
+  prompt: Which jobs may the auto-fixer rerun, and which never?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.home-lab.autofix-ladder
+items:
+  home-lab-check-1-v2:
+  - fundamentals.home-lab.immutable-image-rollback
+  home-lab-check-2-v2:
+  - fundamentals.home-lab.tunnel-outbound-only
+  home-lab-check-3-v2:
+  - fundamentals.home-lab.caps-dont-reserve
+  home-lab-fire-1-v2:
+  - fundamentals.home-lab.verify-access-jwt
+  home-lab-fire-2-v2:
+  - fundamentals.home-lab.reaper-levels
+  home-lab-fire-3-v2:
+  - fundamentals.home-lab.restore-tests
+  home-lab-fire-4-v2:
+  - fundamentals.home-lab.no-fix-loops
+  home-lab:b1:
+  - fundamentals.home-lab.failed-commit-retry-storm
+  - fundamentals.home-lab.health-check-gates-deploy
+  home-lab:b3:
+  - fundamentals.home-lab.reaper-levels
