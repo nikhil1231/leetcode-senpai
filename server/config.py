@@ -86,6 +86,11 @@ APP_URL = os.environ.get("APP_URL", "https://leetcode.nikhil.ing").rstrip("/")
 # Sundial, for last night's sleep (coarse: minutes asleep, sleep score, readiness only), so the
 # drip asks less after a poor night. Unset: the drip never looks. On the box: http://sundial:8700
 SUNDIAL_URL = os.environ.get("SUNDIAL_URL", "").rstrip("/")
+# The daily podcast: where episodes are kept (derived, remade when missing), the Piper voices,
+# and the secret in the RSS address a podcast app follows (unset: no feed; Telegram still works).
+PODCAST_DIR = os.environ.get("PODCAST_DIR", os.path.join(os.path.expanduser("~"), ".cache", "senpai-podcast"))
+PODCAST_VOICES = os.environ.get("PODCAST_VOICES", os.path.join(os.path.expanduser("~"), ".cache", "senpai-voices"))
+PODCAST_TOKEN = os.environ.get("PODCAST_TOKEN", "").strip()
 
 
 # ---- Scheduler ------------------------------------------------------------------

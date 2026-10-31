@@ -474,3 +474,31 @@ def test_the_bot_reads_last_night_from_sundial_once_a_day(env, monkeypatch):
     clock.t += DAY
     b.tick()
     assert b.state['sleep'] is None and b.per_day() == 6
+
+
+def test_podcast_command_sends_audio_and_daily_sends_each_morning(env, monkeypatch, tmp_path):
+    from server import podcast
+    b, store, tg, clock, _ = env
+    ep = tmp_path / '2026-11-02.mp3'
+    ep.write_bytes(b'ID3audio')
+    monkeypatch.setattr(podcast, 'make', lambda store, now=None, force=False: str(ep))
+    uploads = []
+    tg.upload = lambda method, field, name, data, mime, **p: uploads.append((method, name, data, p['title']))
+    tg.updates = [msg('/podcast')]
+    b.step(poll=0)
+    b._podcast_thread = None
+    import threading
+    for t in threading.enumerate():
+        if t.name == 'podcast':
+            t.join(5)
+    assert uploads == [('sendAudio', 'senpai-2026-11-02.mp3', b'ID3audio', 'Senpai daily, 2026-11-02')]
+    tg.updates = [msg('/podcast daily')]
+    b.step(poll=0)
+    assert b.state['podcast_daily'] and 'every morning' in tg.last()
+    clock.t = dt.datetime(2026, 11, 3, 7, 0, tzinfo=LON).timestamp()
+    assert b.morning_podcast(clock.t) is None  # before the window opens
+    b.roll_day(clock.t)
+    clock.t = dt.datetime(2026, 11, 3, 9, 0, tzinfo=LON).timestamp()
+    t = b.morning_podcast(clock.t)
+    t.join(5)
+    assert len(uploads) == 2 and b.morning_podcast(clock.t) is None

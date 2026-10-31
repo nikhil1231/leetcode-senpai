@@ -11,6 +11,7 @@ import html
 import datetime as dt
 import json
 import logging
+import os
 import random
 import threading
 import time
@@ -90,6 +91,7 @@ class Bot:
         now = self.clock()
         self.roll_day(now)
         self.bedtime(now)
+        self.morning_podcast(now)
         if self.state['pending'] is not None:
             c = self.card(self.state['pending'])
             if c and c['status'] == 'pending' and now - c['sent_at'] > cards.EXPIRE:
@@ -106,6 +108,36 @@ class Bot:
             self.send_card(now)
             self.state['next_at'] = cards.next_send(local, self.per_day(), config.DRIP_WINDOW, self.rng).timestamp()
             self.save()
+
+    def send_podcast(self):
+        """Make today's episode off the poll loop, then send it as audio."""
+        def work():
+            from .. import podcast
+            try:
+                path = podcast.make(self.store)
+                with open(path, 'rb') as fh:
+                    data = fh.read()
+                day = os.path.basename(path)[:-4]
+                with self.lock:
+                    self.tg.upload('sendAudio', 'audio', f'senpai-{day}.mp3', data, 'audio/mpeg', chat_id=self.chat,
+                                   title=f'Senpai daily, {day}', performer='Leetcode Senpai')
+            except Exception as e:
+                log.warning('Podcast failed', exc_info=True)
+                with self.lock:
+                    self.say(f'Could not make the episode: {html.escape(str(e))}')
+        t = threading.Thread(target=work, name='podcast', daemon=True)
+        t.start()
+        return t
+
+    def morning_podcast(self, now):
+        """With /podcast daily: the day's episode once the questions start."""
+        if not self.state.get('podcast_daily') or self.state['paused'] or self.state.get('podcast_day') == self.state['day']:
+            return None
+        if not self.in_window(now):
+            return None
+        self.state['podcast_day'] = self.state['day']
+        self.save()
+        return self.send_podcast()
 
     def bedtime(self, now):
         """Once a day after DRIP_BEDTIME: if you missed anything today, a link to go over it."""
@@ -187,6 +219,18 @@ class Bot:
         elif cmd == '/resume':
             self.state.update(paused=False, next_at=None)
             self.say('Back on. The next question comes later today.')
+        elif cmd == '/podcast':
+            arg = (args[0].lower() if args else '')
+            if arg in ('daily', 'on'):
+                self.state['podcast_daily'] = True
+                self.say('Done: a new episode every morning when the questions start. /podcast off to stop.')
+            elif arg in ('off', 'stop'):
+                self.state['podcast_daily'] = False
+                self.say('No more daily episodes. /podcast still makes one when you ask.')
+            else:
+                self.say("Making today's episode. It takes about a minute.")
+                self.state['podcast_day'] = self.state['day']   # the daily one won't send it again
+                self.send_podcast()
         elif cmd in ('/frequency', '/freq'):
             n = cards.parse_per_day(args[0]) if args else None
             if args and n is None:
@@ -365,7 +409,7 @@ class Bot:
 
 
 COMMANDS = [('next', 'A question now'), ('stats', 'How you are doing'), ('frequency', 'Questions a day, 1 to 10'),
-            ('pause', 'Stop the questions'), ('resume', 'Start them again'), ('help', 'What I do')]
+            ('podcast', "Today's audio episode"), ('pause', 'Stop the questions'), ('resume', 'Start them again'), ('help', 'What I do')]
 
 
 def register(tg=telegram):

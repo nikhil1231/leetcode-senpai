@@ -15,6 +15,16 @@ def call(method, **params):
     return data['result']
 
 
+def upload(method, field, filename, data, mime, **params):
+    """A call that sends a file (sendAudio): multipart, other parameters as form fields."""
+    r = httpx.post(f'{config.TELEGRAM_API}/bot{config.TELEGRAM_BOT_TOKEN}/{method}', data={k: str(v) for k, v in params.items()},
+                   files={field: (filename, data, mime)}, timeout=120)
+    out = r.json()
+    if not out.get('ok'):
+        raise RuntimeError(f'Telegram {method} failed: {out.get("description", r.status_code)}')
+    return out['result']
+
+
 def download(file_id):
     path = call('getFile', file_id=file_id)['file_path']
     r = httpx.get(f'{config.TELEGRAM_API}/file/bot{config.TELEGRAM_BOT_TOKEN}/{path}', timeout=30)

@@ -189,7 +189,7 @@ def stats_text(summary, sent, answered, right, paused, note=''):
 
 HELP = ('I send a few questions a day from what you are learning. Reply with text or a voice note, '
         'or tap a button.\n\n/next  a question now\n/stats  how you are doing\n/frequency  questions a day (1 to 10)\n/pause  stop the questions\n'
-        '/resume  start them again\n/help  this message')
+        '/resume  start them again\n/podcast  today\'s episode (/podcast daily for every morning)\n/help  this message')
 
 
 def sleep_factor(sleep):
