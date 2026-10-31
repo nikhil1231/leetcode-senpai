@@ -1,0 +1,66 @@
+# Apps that, when opened on the phone, earn a question about how they work (server/drip/context.py).
+# name: what the shortcut sends (matched case-insensitively, aliases too); lessons: where the
+# question comes from, most fitting first; line: how the card opens.
+# Telegram, Safari and Chrome are left out on purpose: answering the bot and opening the feed
+# use them, so they would trigger themselves.
+apps:
+  - name: YouTube
+    aliases: [youtube music]
+    lessons: [design-video, http-cdn, object-storage]
+    line: You just opened YouTube. Every video starts in a second, from an edge near you.
+  - name: Uber
+    aliases: [bolt, lyft, free now, addison lee]
+    lessons: [design-rides, geo-index, concurrent-holds]
+    line: You just opened Uber. Riders and drivers have to find each other in seconds.
+  - name: Deliveroo
+    aliases: [uber eats, just eat]
+    lessons: [geo-index, design-rides, queue-basics]
+    line: You just opened Deliveroo. A courier nearby has to be matched and tracked live.
+  - name: Instagram
+    aliases: [tiktok, x, twitter, threads, facebook, reddit, linkedin, bluesky]
+    lessons: [design-feed, feed-fanout, hot-keys, cache-aside]
+    line: You just opened your feed. It was built for you before you asked.
+  - name: WhatsApp
+    aliases: [messenger, signal, discord, slack, imessage, messages]
+    lessons: [design-chat, realtime-push, acknowledgements]
+    line: You just opened a chat app. Your message has to arrive once, in order, even offline.
+  - name: Spotify
+    aliases: [netflix, prime video, disney+, bbc iplayer, apple music, audible]
+    lessons: [http-cdn, design-video, object-storage, cache-aside]
+    line: You just started streaming. The bytes come from much closer than the company's servers.
+  - name: Google Maps
+    aliases: [maps, citymapper, apple maps, waze]
+    lessons: [geo-index, design-rides]
+    line: You just opened a map. "What is near me?" is a hard query to make fast.
+  - name: Amazon
+    aliases: [ebay, vinted, depop, asos, argos, tesco]
+    lessons: [design-payments, transactions, retry-identity, design-seats]
+    line: You just opened a shop. Checkout must charge you once, even when the network blinks.
+  - name: Monzo
+    aliases: [revolut, starling, wise, paypal, barclays, hsbc, lloyds, natwest, santander, chase]
+    lessons: [design-payments, transactions, outbox, retry-identity]
+    line: You just opened your bank. Money cannot be lost or counted twice.
+  - name: Gmail
+    aliases: [mail, outlook, superhuman]
+    lessons: [design-notifications, search-index, queue-basics]
+    line: You just opened your email. Finding one message among years of them takes an index.
+  - name: Google
+    aliases: [google search]
+    lessons: [design-typeahead, search-index, design-crawler]
+    line: You just opened Google. Suggestions appear before you finish typing.
+  - name: ChatGPT
+    aliases: [claude, gemini, perplexity, copilot]
+    lessons: [llm-basics, serving, rag, prompting]
+    line: You just opened an AI assistant. Here is how it works underneath.
+  - name: GitHub
+    aliases: [gitlab]
+    lessons: [cicd-iac, home-lab]
+    line: You just opened GitHub. A push to main deploys your box two minutes later.
+  - name: Trainline
+    aliases: [ticketmaster, eventbrite, dice, booking.com, airbnb, opentable, easyjet, ryanair]
+    lessons: [design-seats, concurrent-holds, transactions]
+    line: You just opened a booking app. Two people must never get the same seat.
+  - name: Dropbox
+    aliases: [google drive, icloud, photos, google photos, onedrive]
+    lessons: [object-storage, replication, design-kv]
+    line: You just opened your files. They live on several machines at once.

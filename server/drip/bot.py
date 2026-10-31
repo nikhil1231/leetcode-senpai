@@ -12,13 +12,15 @@ import datetime as dt
 import json
 import logging
 import random
+import threading
 import time
 
 from .. import config, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel
-from . import cards, telegram
+from . import cards, context, telegram
 
 log = logging.getLogger(__name__)
+RUNNING = None   # the bot the app's background task runs, for /api/drip/opened
 COLL = 'drip'
 SOURCE = 'telegram'
 
@@ -30,6 +32,7 @@ def configured():
 class Bot:
     def __init__(self, store, tg=telegram, clock=time.time, rng=None):
         self.store, self.tg, self.clock, self.rng = store, tg, clock, rng or random.Random()
+        self.lock = threading.RLock()   # the poll loop and web requests (nudge) share the state
         self.chat = str(config.TELEGRAM_CHAT_ID or '')
         saved = store.get_knowledge(COLL, 'state') or {}
         self.state = {'offset': 0, 'n': 0, 'pending': None, 'paused': False, 'next_at': None, 'day': None,
@@ -51,7 +54,8 @@ class Bot:
     def say(self, text, buttons=None):
         params = {'chat_id': self.chat, 'text': text, 'parse_mode': 'HTML', 'disable_web_page_preview': True}
         if buttons:
-            params['reply_markup'] = {'inline_keyboard': [[{'text': t, 'callback_data': d} for t, d in buttons]]}
+            params['reply_markup'] = {'inline_keyboard': [[{'text': t, 'url': d} if d.startswith('https://') else
+                                                           {'text': t, 'callback_data': d} for t, d in buttons]]}
         return self.tg.call('sendMessage', **params)
 
     def roll_day(self, now):
@@ -63,6 +67,10 @@ class Bot:
     def step(self, poll=telegram.POLL):
         updates = self.tg.call('getUpdates', offset=self.state['offset'], timeout=poll,
                                allowed_updates=['message', 'callback_query'])
+        with self.lock:
+            self._process(updates)
+
+    def _process(self, updates):
         self.roll_day(self.clock())
         for u in updates:
             self.state['offset'] = u['update_id'] + 1
@@ -79,6 +87,7 @@ class Bot:
             return
         now = self.clock()
         self.roll_day(now)
+        self.bedtime(now)
         if self.state['pending'] is not None:
             c = self.card(self.state['pending'])
             if c and c['status'] == 'pending' and now - c['sent_at'] > cards.EXPIRE:
@@ -95,6 +104,21 @@ class Bot:
             self.send_card(now)
             self.state['next_at'] = cards.next_send(local, self.per_day(), config.DRIP_WINDOW, self.rng).timestamp()
             self.save()
+
+    def bedtime(self, now):
+        """Once a day after DRIP_BEDTIME: if you missed anything today, a link to go over it."""
+        if not config.DRIP_BEDTIME or self.state['paused'] or self.state.get('bedtime_day') == self.state['day']:
+            return
+        start, _ = cards.window(config.DRIP_BEDTIME + '-23:59')
+        local = dt.datetime.fromtimestamp(now, self.tz())
+        if local.hour * 60 + local.minute < start:
+            return
+        from ..feed import tonight_points   # feed imports drip.cards; import here to keep the layers one way
+        missed = tonight_points(self.store, now)
+        self.state['bedtime_day'] = self.state['day']
+        self.save()
+        if missed:
+            self.say(cards.bedtime_text(len(missed)), [('Go over them', f'{config.APP_URL}/feed?set=tonight&n={min(10, len(missed))}')])
 
     # ---- updates ----------------------------------------------------------------------
     def handle(self, u):
@@ -207,10 +231,38 @@ class Bot:
         pid = kcat.canonical(kcat.CATALOG, c['point'])
         return kcat.CATALOG['points'].get(pid) if pid else None
 
-    def send_card(self, now):
+    def in_window(self, now):
+        start, end = cards.window(config.DRIP_WINDOW)
+        local = dt.datetime.fromtimestamp(now, self.tz())
+        return start <= local.hour * 60 + local.minute < end
+
+    def nudge(self, name):
+        """An app was just opened on the phone: maybe send a question about how it works."""
+        with self.lock:
+            now = self.clock()
+            self.roll_day(now)
+            app = context.find(name)
+            pending = self.card(self.state['pending']) if self.state['pending'] is not None else None
+            pending = pending if pending and pending['status'] == 'pending' else None
+            ok, why = context.decide(app, self.state, pending['sent_at'] if pending else None, now, self.in_window(now))
+            if not ok or not self.chat:
+                return {'sent': False, 'reason': why if ok is False else 'no chat configured'}
+            if pending:
+                self.close(pending, 'replaced', now)
+            c = self.send_card(now, app=app)
+            if not c:
+                return {'sent': False, 'reason': 'nothing to ask about it yet'}
+            context.remember(self.state, app, now)
+            self.save()
+            return {'sent': True, 'reason': 'ok', 'point': c['point']}
+
+    def send_card(self, now, app=None):
         self.roll_day(now)
         cat, _, states, seen, mis = kb_api.evidence(self.store, now)
-        point, reason = cards.pick(cat, states, seen, mis, now, self.rng)
+        if app:
+            point, reason = context.pick(cat, states, seen, mis, now, app, cards.COOLDOWN)
+        else:
+            point, reason = cards.pick(cat, states, seen, mis, now, self.rng)
         if not point:
             return None
         self.state['n'] += 1
@@ -218,10 +270,10 @@ class Bot:
         gap = cards.open_gap(mis, point['id'])
         if gap:
             reason = 'gap'
-        text = cards.card_text(point, reason, gap['ask'] if gap else None)
+        text = cards.card_text(point, reason, gap['ask'] if gap else None, app['line'] if app else None)
         msg = self.say(text, [('Show answer', f'reveal:{n}'), ('Skip', f'skip:{n}')])
         c = {'n': n, 'point': point['id'], 'reason': reason, 'text': text, 'sent_at': now, 'status': 'pending',
-             'message_id': (msg or {}).get('message_id')}
+             'message_id': (msg or {}).get('message_id'), 'app': app['name'] if app else None}
         if gap:
             c.update(gap=gap['_key'], ask=gap['ask'], focus=gap['text'])
         self.put_card(c)
@@ -305,6 +357,7 @@ def register(tg=telegram):
 
 async def run(get_store):
     """Own the bot for the app's lifetime. Every failure is logged and retried; nothing else waits on it."""
+    global RUNNING
     uid = config.DEV_UID if config.local_mode() else config.ACCESS_UID
     bot, delay = None, 5
     while True:
@@ -312,6 +365,7 @@ async def run(get_store):
             if bot is None:
                 bot = await asyncio.to_thread(Bot, await asyncio.to_thread(get_store, uid))
                 await asyncio.to_thread(register)
+                RUNNING = bot
             await asyncio.to_thread(bot.step)
             delay = 5
         except asyncio.CancelledError:

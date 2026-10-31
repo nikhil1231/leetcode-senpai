@@ -9,7 +9,8 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <!-- The phone feed (server/feed.py): full-screen cards, swiped like Shorts. Self-contained so it
-       opens in a moment. ?n=3 cards (1-10); ?then=youtube ends with a way on to YouTube. -->
+       opens in a moment. ?n=3 cards (1-10); ?then=youtube ends with a way on to YouTube;
+       ?set=tonight|morning|due (default auto: last night's misses before noon, today's from 20:00). -->
   <style>
     :root {
       --ink: #12131a; --ink-2: rgba(18, 19, 26, .68); --bg: #0a0c11; --text: #e9ecf3; --muted: #8b93a8;
@@ -28,7 +29,7 @@
     .card > * { position: relative; }
     .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; color: var(--ink-2);
       padding-right: 118px; min-height: 30px; }  /* clear of the fixed Not now pill */
-    .count { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .count { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
     .who { margin-top: 18px; font-size: 15px; color: var(--ink-2); }
     .who b { color: var(--ink); }
     .ask { margin-top: 10px; font-size: clamp(26px, 7.4vw, 40px); line-height: 1.18; font-weight: 750; letter-spacing: -.01em; }
@@ -100,7 +101,7 @@
     async function load() {
       batch += 1;
       try {
-        const data = await api('/api/feed?n=' + N);
+        const data = await api(`/api/feed?n=${N}&set=${batch === 1 ? encodeURIComponent(q.get('set') || 'auto') : 'due'}`);
         company = data.company;
         const fresh = data.cards.map((c, i) => ({...c, key: `f-${run}-${batch}-${i}`, state: 'new', shownAt: 0}));
         if (!fresh.length && !cards.length) return message('Nothing to practise right now. Start a lesson in the app and its ideas show up here.');

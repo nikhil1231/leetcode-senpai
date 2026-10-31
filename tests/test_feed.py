@@ -82,3 +82,34 @@ def test_results_record_answers_and_exposures_once_and_knowing_a_gap_closes_it(c
 def test_the_page_is_served(client):
     r = client.get('/feed')
     assert r.status_code == 200 and '/api/feed' in r.text and r.headers['cache-control'] == 'no-cache'
+
+
+def ev(point, at, clean):
+    return {'point': point, 'at': at, 'kind': 'answer', 'clean': clean}
+
+
+def test_tonight_and_morning_sets():
+    today, yesterday = T0, T0 - DAY
+    events = [ev(MISS, yesterday + 100, False), ev(OTHER, yesterday + 200, False), ev('x', yesterday + 300, True),
+              ev(OTHER, today + 50, True), ev('y', today + 60, False), ev('z', today + 70, False),
+              {'point': 'w', 'at': today + 80, 'kind': 'exposure'}]
+    assert feed.misses(events, today, today + DAY) == ['z', 'y']
+    assert feed.morning(events, yesterday, today) == [MISS]  # OTHER was answered again this morning
+    assert [feed.choose_set('auto', h) for h in (7, 13, 21)] == ['morning', 'due', 'tonight']
+    assert feed.choose_set('due', 7) == 'due'
+    c = kcat.CATALOG
+    states, seen = kmodel.replay([])
+    cards = feed.deck(c, states, seen, [], T0, 3, random.Random(0), first=[OTHER, MISS], first_reason='tonight')
+    assert [x['point'] for x in cards[:2]] == [OTHER, MISS] and cards[0]['tag'].startswith('Missed today')
+    assert len(cards) == 3 and cards[2]['reason'] != 'tonight'
+
+
+def test_tonight_text_and_set_param(client):
+    store = client.store
+    assert client.get('/api/feed/tonight.txt').text == 'Nothing missed today.\n'
+    import time as _t
+    api.write_events(store, 'telegram', [{'key': 'k', 'points': [MISS], 'clean': False}], _t.time())
+    text = client.get('/api/feed/tonight.txt').text
+    assert text.startswith('- ') and kcat.CATALOG['points'][MISS]['claim'] in text
+    d = ok(client.get('/api/feed', params={'set': 'tonight', 'n': 2}))
+    assert d['set'] == 'tonight' and d['first'] == 1 and d['cards'][0]['point'] == MISS

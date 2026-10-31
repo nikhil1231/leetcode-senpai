@@ -79,6 +79,10 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 TELEGRAM_API = os.environ.get("TELEGRAM_API", "https://api.telegram.org").rstrip("/")
 DRIP_PER_DAY = int(os.environ.get("DRIP_PER_DAY", "6"))
 DRIP_WINDOW = os.environ.get("DRIP_WINDOW", "08:30-22:30").strip()
+# When the drip offers a short review of the day's misses before sleep ("" turns it off), and
+# the app's public address for links in its messages.
+DRIP_BEDTIME = os.environ.get("DRIP_BEDTIME", "21:45").strip()
+APP_URL = os.environ.get("APP_URL", "https://leetcode.nikhil.ing").rstrip("/")
 
 
 # ---- Scheduler ------------------------------------------------------------------

@@ -356,3 +356,83 @@ def test_register_fills_the_command_menu_and_never_raises():
         raise RuntimeError('down')
     tg.call = boom
     drip.register(tg)
+
+
+# ---- questions tied to your day ----------------------------------------------------------
+
+def test_app_names_resolve_and_every_lesson_exists():
+    from server.drip import context
+    assert context.find('Uber')['name'] == 'Uber' and context.find('  uber   EATS ')['name'] == 'Deliveroo'
+    assert context.find('Telegram') is None and context.find('Safari') is None
+    lessons = {p['lesson'] for p in kcat.active(kcat.CATALOG)}
+    assert all(set(a['lessons']) <= lessons for a in context.APPS.values())
+
+
+def test_context_limits():
+    from server.drip import context
+    uber, yt = context.find('uber'), context.find('youtube')
+    st = {'day': '2026-11-02'}
+    assert context.decide(uber, st, None, T0, True) == (True, 'ok')
+    assert context.decide(None, st, None, T0, True)[0] is False
+    assert context.decide(uber, {**st, 'paused': True}, None, T0, True)[1] == 'paused'
+    assert context.decide(uber, st, None, T0, False)[1] == 'outside the window'
+    assert context.decide(uber, st, T0 - 60, T0, True)[1] == 'a question just arrived'
+    assert context.decide(uber, st, T0 - context.FRESH - 1, T0, True)[0]
+    context.remember(st, uber, T0)
+    assert context.decide(uber, st, None, T0 + 3600, True)[1] == 'asked about this app recently'
+    assert context.decide(yt, st, None, T0 + 3600, True)[0]
+    for _ in range(context.DAILY_CAP):
+        context.remember(st, yt, T0)
+    assert context.decide(context.find('spotify'), st, None, T0, True)[1] == 'enough for today'
+    st['day'] = '2026-11-03'
+    assert context.decide(context.find('spotify'), st, None, T0, True)[0]
+
+
+def test_opening_an_app_sends_a_question_about_it_and_replaces_a_stale_card(env):
+    b, store, tg, clock, _ = env
+    old = b.send_card(clock.t)
+    clock.t += 20 * 60
+    out = b.nudge('Uber')
+    assert out['sent'] and kcat.CATALOG['points'][out['point']]['lesson'] in ('design-rides', 'geo-index', 'concurrent-holds')
+    assert 'You just opened Uber' in tg.last() and b.state['pending'] == old['n'] + 1
+    assert store.get_knowledge('drip', f'card-{old["n"]}')['status'] == 'replaced'
+    assert b.nudge('Uber')['reason'] == 'asked about this app recently'
+    assert b.nudge('YouTube') == {'sent': False, 'reason': 'a question just arrived'}
+    assert b.nudge('Telegram')['reason'] == 'unknown app'
+    clock.t = dt.datetime(2026, 11, 2, 23, 30, tzinfo=LON).timestamp()
+    assert b.nudge('YouTube')['reason'] == 'outside the window'
+
+
+def test_opened_endpoint(env, monkeypatch):
+    from fastapi.testclient import TestClient
+    from server import main
+    from server.knowledge_base import api as kb_api
+    b, store, tg, clock, _ = env
+    main.app.dependency_overrides[kb_api.caller] = lambda: {'uid': 'me', 'source': None}
+    try:
+        c = TestClient(main.app)
+        monkeypatch.setattr(drip, 'RUNNING', None)
+        assert c.post('/api/drip/opened', json={'app': 'uber'}).status_code == 503
+        monkeypatch.setattr(drip, 'RUNNING', b)
+        r = c.post('/api/drip/opened', json={'app': 'uber'})
+        assert r.status_code == 200 and r.json()['sent'] is True
+        assert 'Uber' in [a['name'] for a in c.get('/api/drip/apps').json()['apps']]
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_bedtime_links_to_the_days_misses_once(env, monkeypatch):
+    from server.knowledge_base import api as kb_api
+    b, store, tg, clock, _ = env
+    monkeypatch.setattr(kb_api, 'get_store', lambda uid: store)
+    clock.t = dt.datetime(2026, 11, 2, 21, 0, tzinfo=LON).timestamp()
+    b.state['next_at'] = clock.t + DAY
+    b.tick()
+    assert tg.sent == []
+    kb_api.write_events(store, 'telegram', [{'key': 'k1', 'points': [MISS], 'clean': False}], clock.t)
+    clock.t += 50 * 60
+    b.tick()
+    assert 'You missed 1 idea today' in tg.last()
+    assert tg.sent[-1]['reply_markup']['inline_keyboard'][0][0]['url'].endswith('/feed?set=tonight&n=1')
+    b.tick()
+    assert len(tg.sent) == 1

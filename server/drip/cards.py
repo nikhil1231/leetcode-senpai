@@ -26,7 +26,8 @@ PER_DAY_MIN, PER_DAY_MAX = 1, 10
 VOICE = {'fact': 'sam', 'principle': 'marcus', 'mechanism': 'jo', 'tradeoff': 'marcus', 'procedure': 'priya'}
 TAG = {'gap': 'The part you missed last time', 'misconception': 'Something you got wrong before',
        'shaky': 'You missed this last time', 'fading': 'Before it fades', 'unconfirmed': 'Worth confirming',
-       'new': 'New idea', 'held': 'Keep it fresh'}
+       'new': 'New idea', 'held': 'Keep it fresh', 'tonight': 'Missed today',
+       'morning': 'From last night'}
 LEAD = {'sam': 'Quick one for a customer:', 'marcus': 'Settle this for me:', 'jo': 'Can you explain something?',
         'priya': 'Talk me through it:'}
 
@@ -118,10 +119,11 @@ def speaker(point):
     return next(c for c in story.cast() if c['id'] == VOICE.get(point['kind'], 'jo'))
 
 
-def card_text(point, reason, ask=None):
+def card_text(point, reason, ask=None, context=None):
     who = speaker(point)
     tag = TAG.get(reason, '')
-    return (f'<b>{html.escape(who["name"])}</b> <i>({html.escape(who["role"])})</i>: {LEAD[who["id"]]}\n\n'
+    opener = f'📱 <i>{html.escape(context)}</i>\n\n' if context else ''
+    return (f'{opener}<b>{html.escape(who["name"])}</b> <i>({html.escape(who["role"])})</i>: {LEAD[who["id"]]}\n\n'
             f'{html.escape(ask or point["prompt"])}\n\n'
             f'<i>{html.escape(tag)} · {html.escape(point["lesson_title"])}. Reply by text or voice, or tap a button.</i>')
 
@@ -168,6 +170,12 @@ def result_text(verdict, feedback, point, missing=''):
 def reveal_text(point, focus=None):
     piece = f'<b>The piece:</b> {html.escape(focus)}\n\n' if focus else ''
     return f'{piece}<b>The idea:</b> {html.escape(point["claim"])}\n\nDid you know it?'
+
+
+def bedtime_text(n):
+    them = 'it' if n == 1 else 'them'
+    return (f'🌙 You missed {n} idea{"s" if n != 1 else ""} today. Two minutes on {them} before bed, '
+            f'and I will check {them} again in the morning.')
 
 
 def stats_text(summary, sent, answered, right, paused):

@@ -37,7 +37,17 @@ token, kept in Scriptable's Keychain), then add a Scriptable widget and pick the
 charging phone on its side, StandBy shows the same widget as a bedside poster. Tapping it opens
 the feed.
 
-**The YouTube toll** and the feed: see "Morning YouTube Shorts" in the plan.
+**Questions tied to your day.** For each app you want (the list is `server/drip/apps.yaml`, or
+`GET /api/drip/apps`): Automation → App → pick it → Is Opened → Run Immediately, with one action:
+Get Contents of URL `https://leetcode.nikhil.ing/api/drip/opened`, method POST, the two headers
+above, JSON body `app` = the app's name (e.g. `Uber`). The Telegram bot then sends a question
+about how that app works within a second or two. It holds back when you are outside the drip's
+hours, paused, were asked about that app in the last 3 hours, have had 4 today, or got a
+question in the last 10 minutes. Don't add Telegram, Safari or Chrome: they would trigger
+themselves.
+
+**The YouTube toll** and the feed: see "Morning YouTube Shorts" in the plan. Before noon the
+feed starts with last night's misses; from 20:00 with today's (`?set=` overrides).
 
 ## Mac desktop
 
