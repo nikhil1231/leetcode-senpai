@@ -22,7 +22,11 @@ MIN_GAP = 45 * 60
 EXPIRE = 3 * 3600
 COOLDOWN = 20 * 3600
 GAP_COOLDOWN = 3 * 3600
+PER_DAY_MIN, PER_DAY_MAX = 1, 10
 VOICE = {'fact': 'sam', 'principle': 'marcus', 'mechanism': 'jo', 'tradeoff': 'marcus', 'procedure': 'priya'}
+TAG = {'gap': 'The part you missed last time', 'misconception': 'Something you got wrong before',
+       'shaky': 'You missed this last time', 'fading': 'Before it fades', 'unconfirmed': 'Worth confirming',
+       'new': 'New idea', 'held': 'Keep it fresh'}
 LEAD = {'sam': 'Quick one for a customer:', 'marcus': 'Settle this for me:', 'jo': 'Can you explain something?',
         'priya': 'Talk me through it:'}
 
@@ -87,14 +91,36 @@ def next_send(now_local, per_day, spec, rng=None):
     return at if at < today_end else opening(now_local.date() + dt.timedelta(days=1))
 
 
+def clamp_per_day(n):
+    return max(PER_DAY_MIN, min(PER_DAY_MAX, int(n)))
+
+
+def parse_per_day(arg):
+    """'8' -> 8; anything outside PER_DAY_MIN..PER_DAY_MAX or not a whole number -> None."""
+    try:
+        n = int(str(arg).strip())
+    except ValueError:
+        return None
+    return n if PER_DAY_MIN <= n <= PER_DAY_MAX else None
+
+
+def frequency_text(per_day, spec, current=False):
+    start, end = window(spec)
+    every = (end - start) / per_day
+    spacing = f'roughly every {round(every / 30) / 2:g} hours' if every >= 90 else f'roughly every {round(every)} minutes'
+    head = 'Right now: about' if current else 'Done. From now on, about'
+    tail = f'\n\nChange it with /frequency and a number from {PER_DAY_MIN} to {PER_DAY_MAX}.' if current else ''
+    plural = 's' if per_day != 1 else ''
+    return f'{head} {per_day} question{plural} a day between {spec.replace("-", " and ")}, {spacing}.{tail}'
+
+
 def speaker(point):
     return next(c for c in story.cast() if c['id'] == VOICE.get(point['kind'], 'jo'))
 
 
 def card_text(point, reason, ask=None):
     who = speaker(point)
-    tag = {'gap': 'The part you missed last time', 'misconception': 'Something you got wrong before', 'shaky': 'You missed this last time',
-           'fading': 'Before it fades', 'unconfirmed': 'Worth confirming', 'new': 'New idea', 'held': 'Keep it fresh'}.get(reason, '')
+    tag = TAG.get(reason, '')
     return (f'<b>{html.escape(who["name"])}</b> <i>({html.escape(who["role"])})</i>: {LEAD[who["id"]]}\n\n'
             f'{html.escape(ask or point["prompt"])}\n\n'
             f'<i>{html.escape(tag)} · {html.escape(point["lesson_title"])}. Reply by text or voice, or tap a button.</i>')
@@ -153,7 +179,7 @@ def stats_text(summary, sent, answered, right, paused):
 
 
 HELP = ('I send a few questions a day from what you are learning. Reply with text or a voice note, '
-        'or tap a button.\n\n/next  a question now\n/stats  how you are doing\n/pause  stop the questions\n'
+        'or tap a button.\n\n/next  a question now\n/stats  how you are doing\n/frequency  questions a day (1 to 10)\n/pause  stop the questions\n'
         '/resume  start them again\n/help  this message')
 
 

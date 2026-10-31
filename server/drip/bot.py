@@ -94,11 +94,11 @@ class Bot:
             return
         local = dt.datetime.fromtimestamp(now, self.tz())
         if self.state['next_at'] is None:
-            self.state['next_at'] = cards.next_send(local, config.DRIP_PER_DAY, config.DRIP_WINDOW, self.rng).timestamp()
+            self.state['next_at'] = cards.next_send(local, self.per_day(), config.DRIP_WINDOW, self.rng).timestamp()
             self.save()
         if now >= self.state['next_at']:
             self.send_card(now)
-            self.state['next_at'] = cards.next_send(local, config.DRIP_PER_DAY, config.DRIP_WINDOW, self.rng).timestamp()
+            self.state['next_at'] = cards.next_send(local, self.per_day(), config.DRIP_WINDOW, self.rng).timestamp()
             self.save()
 
     # ---- updates ----------------------------------------------------------------------
@@ -119,7 +119,8 @@ class Bot:
         if chat != self.chat:
             return
         if text.startswith('/'):
-            return self.command(text.split()[0].split('@')[0].lower())
+            word, *args = text.split()
+            return self.command(word.split('@')[0].lower(), args)
         if m.get('voice'):
             text = self.transcribe(m['voice'])
             if text is None:
@@ -127,7 +128,10 @@ class Bot:
         if text:
             self.answer(text)
 
-    def command(self, cmd):
+    def per_day(self):
+        return cards.clamp_per_day(self.state.get('per_day') or config.DRIP_PER_DAY)
+
+    def command(self, cmd, args=()):
         now = self.clock()
         self.roll_day(now)
         if cmd in ('/start', '/help'):
@@ -144,6 +148,15 @@ class Bot:
         elif cmd == '/resume':
             self.state.update(paused=False, next_at=None)
             self.say('Back on. The next question comes later today.')
+        elif cmd in ('/frequency', '/freq'):
+            n = cards.parse_per_day(args[0]) if args else None
+            if args and n is None:
+                self.say(f'Send a number from {cards.PER_DAY_MIN} to {cards.PER_DAY_MAX}, like /frequency 8.')
+            elif n is None:
+                self.say(cards.frequency_text(self.per_day(), config.DRIP_WINDOW, current=True))
+            else:
+                self.state.update(per_day=n, next_at=None)
+                self.say(cards.frequency_text(n, config.DRIP_WINDOW))
         elif cmd == '/stats':
             c, _, states, seen, mis = kb_api.evidence(self.store, now)
             summary = kmodel.summary(c, states, seen, mis, now)
@@ -283,6 +296,18 @@ class Bot:
         self.save()
 
 
+COMMANDS = [('next', 'A question now'), ('stats', 'How you are doing'), ('frequency', 'Questions a day, 1 to 10'),
+            ('pause', 'Stop the questions'), ('resume', 'Start them again'), ('help', 'What I do')]
+
+
+def register(tg=telegram):
+    """Fill the bot's command menu. Cosmetic: a failure is logged and ignored."""
+    try:
+        tg.call('setMyCommands', commands=[{'command': c, 'description': d} for c, d in COMMANDS])
+    except Exception:
+        log.warning('Drip command menu not set', exc_info=True)
+
+
 async def run(get_store):
     """Own the bot for the app's lifetime. Every failure is logged and retried; nothing else waits on it."""
     uid = config.DEV_UID if config.local_mode() else config.ACCESS_UID
@@ -291,6 +316,7 @@ async def run(get_store):
         try:
             if bot is None:
                 bot = await asyncio.to_thread(Bot, await asyncio.to_thread(get_store, uid))
+                await asyncio.to_thread(register)
             await asyncio.to_thread(bot.step)
             delay = 5
         except asyncio.CancelledError:

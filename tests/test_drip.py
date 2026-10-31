@@ -317,3 +317,42 @@ def test_a_partial_on_a_held_idea_keeps_it_held():
     s_full, _ = kmodel.replay(held + [full])
     assert s_part[MISS]['last_clean'] and not s_full[MISS]['last_clean']
     assert s_part[MISS]['stability'] > s_full[MISS]['stability']
+
+
+def test_frequency_parsing_and_text():
+    assert [cards.parse_per_day(a) for a in ('1', '10', ' 7 ', '0', '11', 'lots', '2.5')] == [1, 10, 7, None, None, None, None]
+    assert cards.clamp_per_day(40) == 10 and cards.clamp_per_day(0) == 1
+    assert 'about 2 questions a day between 08:30 and 22:30, roughly every 7 hours' in cards.frequency_text(2, '08:30-22:30')
+    assert 'roughly every 84 minutes' in cards.frequency_text(10, '08:30-22:30')
+    assert '1 question a day' in cards.frequency_text(1, '08:30-22:30', current=True)
+
+
+def test_frequency_command_sets_questions_a_day_and_reschedules(env):
+    b, store, tg, clock, _ = env
+    b.tick()
+    assert b.per_day() == config.DRIP_PER_DAY
+    tg.updates = [msg('/frequency'), msg('/frequency 11'), msg('/frequency@codi_nikhil_bot 10')]
+    b.step(poll=0)
+    texts = [s['text'] for s in tg.sent]
+    assert texts[0].startswith('Right now: about 6') and texts[1].startswith('Send a number from 1 to 10')
+    assert texts[2].startswith('Done. From now on, about 10')
+    assert store.get_knowledge('drip', 'state')['per_day'] == 10
+    assert b.state['next_at'] - clock.t <= 84 * 60 * 1.25 + 1  # rescheduled at the new pace, not the old one
+    again = drip.Bot(store, tg=tg, clock=clock)
+    assert again.per_day() == 10
+    tg.updates = [msg('/freq 1')]
+    b.step(poll=0)
+    assert b.per_day() == 1 and b.state['next_at'] - clock.t >= 14 * 3600 * 0.75 - 1
+
+
+def test_register_fills_the_command_menu_and_never_raises():
+    tg = FakeTelegram()
+    calls = []
+    tg.call = lambda method, **p: calls.append((method, p))
+    drip.register(tg)
+    assert calls[0][0] == 'setMyCommands' and 'frequency' in [c['command'] for c in calls[0][1]['commands']]
+
+    def boom(method, **p):
+        raise RuntimeError('down')
+    tg.call = boom
+    drip.register(tg)
