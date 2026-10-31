@@ -125,3 +125,22 @@ def test_a_source_token_records_under_its_own_name(monkeypatch):
     assert ok(c.get('/api/feed', params={'n': 1, 'set': 'due'}, headers=h))['cards']
     ok(c.post('/api/feed/result', json={'key': 'q1', 'point': MISS, 'outcome': 'knew'}, headers=h))
     assert store.list_knowledge('knowledge_events')[0]['source'] == 'threads'
+
+
+def test_spoken_answers_are_graded_and_open_a_gap(client, monkeypatch):
+    import json
+    from server import config, llm
+    r = client.post('/api/feed/answer', json={'key': 'walk-a-0', 'point': MISS, 'text': 'misses reach the db'})
+    assert r.status_code == 503  # no model: the page falls back to tapping
+    monkeypatch.setattr(config, 'OPENROUTER_API_KEY', 'test')
+    monkeypatch.setattr(llm, '_raw_generate', lambda *a, **k: {'content': json.dumps(
+        {'verdict': 'partly', 'feedback': 'Half there.', 'misconception': '', 'missing': 'load is requests times miss rate',
+         'follow_up': 'What sets the load?'})})
+    d = ok(client.post('/api/feed/answer', json={'key': 'walk-a-0', 'point': MISS, 'text': 'misses reach the db'}))
+    assert d == {'verdict': 'partly', 'feedback': 'Half there.', 'missing': 'load is requests times miss rate',
+                 'claim': kcat.CATALOG['points'][MISS]['claim']}
+    e = client.store.list_knowledge('knowledge_events')[0]
+    assert (e['source'], e['clean'], e['partial'], e['strength']) == ('walk', False, True, 'soft')
+    gap = client.store.list_knowledge('knowledge_misconceptions')[0]
+    assert gap['kind'] == 'gap' and gap['ask'] == 'What sets the load?'
+    assert client.get('/walk').status_code == 200

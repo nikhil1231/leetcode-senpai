@@ -9,7 +9,6 @@ import asyncio
 import base64
 import html
 import datetime as dt
-import json
 import logging
 import os
 import random
@@ -20,7 +19,7 @@ import httpx
 
 from .. import config, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel
-from . import cards, context, telegram
+from . import assess, cards, context, telegram
 
 log = logging.getLogger(__name__)
 RUNNING = None   # the bot the app's background task runs, for /api/drip/opened
@@ -363,14 +362,7 @@ class Bot:
             return self.button(f'reveal:{c["n"]}')
         verdict, clean = grade['verdict'], grade['verdict'] == 'right'
         self.record(c, point, clean, cards.depth(point), text[:500], now, partial=verdict == 'partly')
-        missing = ''
-        if clean:
-            kb_api.resolve_open(self.store, point['id'], now, 'Answered in full on Telegram.', kind='gap')
-        elif verdict == 'partly' and grade['missing'].strip() and grade['follow_up'].strip():
-            missing = grade['missing'].strip()
-            kb_api.open_gap(self.store, SOURCE, f'card-{c["n"]}', point['id'], missing, grade['follow_up'], text[:400], now)
-        elif verdict == 'wrong' and grade['misconception'].strip():
-            kb_api.add_misconception(self.store, SOURCE, f'card-{c["n"]}', point['id'], grade['misconception'], text[:400], now)
+        missing = assess.consequences(self.store, SOURCE, f'card-{c["n"]}', point, grade, text, now, 'on Telegram')
         c.update(status='answered', answer=text[:2000], verdict=verdict, feedback=grade['feedback'], answered_at=now)
         self.put_card(c)
         self.state.update(pending=None, right=self.state['right'] + clean)
@@ -378,16 +370,7 @@ class Bot:
         self.say(cards.result_text(verdict, grade['feedback'], point, missing))
 
     def grade(self, point, text, ask=None, focus=None):
-        if not llm.enabled(self.store.get_settings()):
-            return None
-        try:
-            raw = llm._raw_generate('openrouter', config.TUTOR_MODEL, cards.GRADE_SYSTEM,
-                                    json.dumps(cards.grade_payload(point, text, ask, focus), ensure_ascii=False), cards.Grade,
-                                    options={'effort': 'low', 'max_tokens': 1000, 'timeout': 30, 'metadata': True})
-            return cards.Grade.model_validate_json(raw['content']).model_dump()
-        except Exception:
-            log.warning('Drip grading failed', exc_info=True)
-            return None
+        return assess.grade(self.store, point, text, ask, focus)
 
     def record(self, c, point, clean, depth, note, now, partial=False):
         kb_api.write_events(self.store, SOURCE, [{'key': f'card-{c["n"]}', 'points': [point['id']], 'clean': clean,

@@ -3108,4 +3108,9 @@ def wall_page():
     return _standalone("wall.html")
 
 
+@app.get("/walk")
+def walk_page():
+    return _standalone("walk.html")
+
+
 app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")

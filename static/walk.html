@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0c11" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Senpai walk</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <!-- Walk mode (server/feed.py /answer): hands-free practice out loud. The phone reads a
+       question, listens until you stop talking, has the model grade what you said, and reads
+       back the verdict and the idea. Say "skip", "repeat" or "stop" at any time. Without the
+       model it reads the question, waits, reads the idea, and you tap whether you knew it.
+       The screen stays on while it runs (phones pause speech when they lock). ?n=6 questions. -->
+  <style>
+    :root { --bg: #0a0c11; --panel: #141821; --line: #262c3a; --text: #e9ecf3; --muted: #8b93a8; --accent: #7c86ff;
+      --right: #59d48a; --partly: #f2c14e; --wrong: #ff7a7a; }
+    * { box-sizing: border-box; margin: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text);
+      font: 18px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+    main { min-height: 100dvh; display: flex; flex-direction: column; gap: 18px;
+      padding: calc(env(safe-area-inset-top) + 22px) 20px calc(env(safe-area-inset-bottom) + 22px); max-width: 640px; margin: 0 auto; }
+    .top { display: flex; justify-content: space-between; color: var(--muted); font-size: 14px; }
+    .orb { width: 92px; height: 92px; flex-shrink: 0; border-radius: 50%; margin: 6px auto 0; display: grid; place-items: center;
+      background: radial-gradient(circle at 35% 30%, #a3abff, var(--accent) 55%, #3b43b8); box-shadow: 0 0 0 0 rgba(124,134,255,.5);
+      transition: transform .15s ease; font-size: 30px; }
+    .orb.listening { animation: pulse 1.4s infinite; background: radial-gradient(circle at 35% 30%, #9ff0c0, var(--right) 55%, #217a49); }
+    .orb.thinking { opacity: .7; animation: spin 1.6s linear infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(89,212,138,.45); } 70% { box-shadow: 0 0 0 28px rgba(89,212,138,0); } 100% { box-shadow: 0 0 0 0 rgba(89,212,138,0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .state { text-align: center; color: var(--muted); font-size: 15px; min-height: 22px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+    .who { font-size: 14px; color: var(--muted); }
+    .ask { font-size: 23px; font-weight: 700; line-height: 1.25; margin-top: 6px; }
+    .heard { margin-top: 12px; color: var(--muted); font-style: italic; font-size: 16px; }
+    .verdict { margin-top: 12px; font-weight: 700; }
+    .verdict.right { color: var(--right); } .verdict.partly { color: var(--partly); } .verdict.wrong { color: var(--wrong); }
+    .idea { margin-top: 10px; font-size: 17px; }
+    .actions { display: flex; gap: 10px; margin-top: auto; position: sticky; bottom: 0; margin-bottom: calc(-1 * env(safe-area-inset-bottom) - 22px);
+      padding: 28px 0 calc(env(safe-area-inset-bottom) + 16px); background: linear-gradient(transparent, var(--bg) 26px); }
+    .feedback { margin-top: 6px; font-size: 16px; color: var(--text); }
+    .idea { color: var(--muted); }
+    button { flex: 1; appearance: none; border: 0; border-radius: 14px; padding: 16px 10px; font: inherit; font-weight: 700;
+      background: #1e2330; color: var(--text); cursor: pointer; }
+    button.primary { background: var(--accent); color: #fff; }
+    .hide { display: none !important; }
+    .intro p { color: var(--muted); margin-top: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="top"><span>Walk mode</span><span id="count"></span></div>
+  <section class="intro" id="intro">
+    <h1>Practise out loud</h1>
+    <p>I read you a question, you answer out loud, and I tell you how you did. Say <b>skip</b>, <b>repeat</b> or <b>stop</b> at any time.</p>
+    <p>Headphones in, screen on: phones stop talking when they lock.</p>
+  </section>
+  <div class="orb hide" id="orb">🎧</div>
+  <div class="state" id="state"></div>
+  <section class="card hide" id="card">
+    <div class="who" id="who"></div>
+    <div class="ask" id="ask"></div>
+    <div class="heard" id="heard"></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="feedback" id="feedback"></div>
+    <div class="idea" id="idea"></div>
+  </section>
+  <div class="actions">
+    <button class="primary" id="start">Start</button>
+    <button class="hide" id="skip">Skip</button>
+    <button class="hide" id="stop">Stop</button>
+    <button class="hide" id="missed">Didn't know</button>
+    <button class="hide primary" id="knew">Knew it</button>
+  </div>
+</main>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  const N = Math.min(10, Math.max(1, parseInt(q.get('n') || '6', 10) || 6));
+  const run = Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, '0')).join('');
+  let cards = [], idx = 0, stopped = false, graded = null, voice = null, stream = null, lock = null, skipNow = null;
+
+  const show = (id, on) => $(id).classList.toggle('hide', !on);
+  const setState = (text, orb = '') => { $('state').textContent = text; $('orb').className = 'orb ' + orb; };
+
+  async function api(path, body) {
+    const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {});
+    if (!r.ok) throw Object.assign(new Error('HTTP ' + r.status), {status: r.status});
+    return r.json();
+  }
+
+  // ---- speaking: the device's own voice; resolves on end, or on a timer if the event never comes
+  function pickVoice() {
+    const vs = speechSynthesis.getVoices();
+    return vs.find(v => /en-GB/i.test(v.lang) && /natural|premium|enhanced|serena|daniel|kate/i.test(v.name))
+      || vs.find(v => /en-GB/i.test(v.lang)) || vs.find(v => /^en/i.test(v.lang)) || null;
+  }
+  function say(text) {
+    return new Promise(resolve => {
+      if (stopped || !('speechSynthesis' in window)) return resolve();
+      const u = new SpeechSynthesisUtterance(text);
+      voice = voice || pickVoice();
+      if (voice) u.voice = voice;
+      u.lang = voice?.lang || 'en-GB';
+      u.rate = 1.0;
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      u.onend = finish; u.onerror = finish;
+      setTimeout(finish, 1500 + text.split(/\s+/).length * 420);
+      speechSynthesis.speak(u);
+    });
+  }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // ---- listening: record until a pause after speech, a long silence, or a time limit
+  function mime() {
+    for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']) if (window.MediaRecorder?.isTypeSupported?.(m)) return m;
+    return '';
+  }
+  async function listen() {
+    stream = stream || await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
+    const type = mime();
+    const rec = new MediaRecorder(stream, type ? {mimeType: type} : undefined);
+    const chunks = [];
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ctx.createAnalyser();
+    an.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    rec.start(250);
+    const t0 = Date.now();
+    let heard = false, quietSince = Date.now();
+    await new Promise(resolve => {
+      skipNow = resolve;
+      const tick = () => {
+        if (stopped) return resolve();
+        an.getFloatTimeDomainData(buf);
+        const rms = Math.sqrt(buf.reduce((a, x) => a + x * x, 0) / buf.length);
+        if (rms > 0.02) { heard = true; quietSince = Date.now(); }
+        const quiet = Date.now() - quietSince;
+        if ((heard && quiet > 1800) || (!heard && Date.now() - t0 > 9000) || Date.now() - t0 > 45000) return resolve();
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
+    skipNow = null;
+    await new Promise(r => { rec.onstop = r; rec.stop(); });
+    ctx.close();
+    if (!heard) return null;
+    const blob = new Blob(chunks, {type: rec.mimeType || type});
+    const format = /mp4/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm';
+    const audio = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+    return {audio, format};
+  }
+
+  // ---- one question
+  async function ask(c) {
+    $('who').textContent = `${c.speaker} · ${c.tag}`;
+    $('ask').textContent = c.ask;
+    $('heard').textContent = $('verdict').textContent = $('feedback').textContent = $('idea').textContent = '';
+    $('verdict').className = 'verdict';
+    $('count').textContent = `${idx + 1} of ${cards.length}`;
+    show('card', true);
+    setState('Asking…');
+    await say(`${c.speaker} asks: ${c.ask}`);
+    for (let tries = 0; tries < 3 && !stopped; tries++) {
+      if (graded === false) return selfGrade(c);
+      setState('Listening… answer out loud', 'listening');
+      const clip = await listen();
+      if (stopped) return;
+      if (!clip) { setState('Nothing heard'); await say("I didn't hear anything. Here's the idea."); return reveal(c, 'seen'); }
+      setState('Working it out…', 'thinking');
+      let text;
+      try { text = (await api('/api/transcribe', {...clip, language: 'en'})).text || ''; }
+      catch (e) { if (e.status === 503) { graded = false; return selfGrade(c); } text = ''; }
+      $('heard').textContent = text ? `“${text}”` : '';
+      const said = text.toLowerCase().replace(/[^a-z ]/g, '').trim();
+      if (/^(stop|stop it|end|finish)$/.test(said)) { stopped = true; return; }
+      if (/^(skip|next|pass|skip it)$/.test(said)) return reveal(c, 'seen');
+      if (/^(repeat|again|say it again|what)$/.test(said) || !text) { await say(text ? c.ask : "Sorry, I didn't catch that. " + c.ask); continue; }
+      try {
+        const g = await api('/api/feed/answer', {key: `walk-${run}-${idx}`, point: c.point, text, ask: c.ask, focus: c.focus || ''});
+        graded = true;
+        $('verdict').textContent = {right: 'Right', partly: 'Partly', wrong: 'Not quite'}[g.verdict];
+        $('verdict').classList.add(g.verdict);
+        $('feedback').textContent = g.feedback;
+        $('idea').textContent = `The idea: ${c.claim}`;
+        setState('');
+        await say(`${{right: 'Right.', partly: 'Partly.', wrong: 'Not quite.'}[g.verdict]} ${g.feedback}`);
+        if (g.verdict !== 'right') await say(`The idea: ${c.claim}`);
+        return;
+      } catch (e) {
+        if (e.status === 503) { graded = false; return selfGrade(c); }
+        await say("I couldn't grade that. Here's the idea.");
+        return reveal(c, 'seen');
+      }
+    }
+  }
+
+  async function reveal(c, outcome) {
+    $('idea').textContent = c.claim;
+    api('/api/feed/result', {key: `walk-${run}-${idx}-${outcome}`, point: c.point, outcome, gap: c.gap || ''}).catch(() => {});
+    await say(`The idea: ${c.claim}`);
+  }
+
+  // Without the model: think, hear the idea, tap.
+  async function selfGrade(c) {
+    setState('Answer in your head…');
+    await sleep(7000);
+    $('idea').textContent = c.claim;
+    await say(`The idea: ${c.claim}`);
+    setState('Did you know it?');
+    show('knew', true); show('missed', true); show('skip', false);
+    const outcome = await new Promise(r => { $('knew').onclick = () => r('knew'); $('missed').onclick = () => r('missed'); });
+    show('knew', false); show('missed', false); show('skip', true);
+    api('/api/feed/result', {key: `walk-${run}-${idx}`, point: c.point, outcome, gap: c.gap || ''}).catch(() => {});
+  }
+
+  async function start() {
+    show('intro', false); show('start', false); show('orb', true); show('skip', true); show('stop', true);
+    try { lock = await navigator.wakeLock?.request('screen'); } catch { /* the screen may sleep */ }
+    speechSynthesis.getVoices();
+    try {
+      cards = (await api(`/api/feed?n=${N}`)).cards;
+    } catch (e) {
+      setState(e.status === 401 || e.status === 403 ? 'Sign in to the app first.' : 'Could not load questions.');
+      return;
+    }
+    if (!cards.length) { setState('Nothing to practise yet: start a lesson first.'); return; }
+    await say(`Walk mode. ${cards.length} questions. Answer out loud after each one.`);
+    for (idx = 0; idx < cards.length && !stopped; idx++) {
+      await ask(cards[idx]);
+      await sleep(600);
+    }
+    finish();
+  }
+
+  function finish() {
+    speechSynthesis.cancel();
+    stream?.getTracks().forEach(t => t.stop());
+    stream = null;
+    lock?.release?.().catch(() => {});
+    show('skip', false); show('stop', false); show('knew', false); show('missed', false); show('start', true);
+    $('start').textContent = 'Again';
+    setState(stopped ? 'Stopped.' : 'Done. Nice walk.');
+    if (!stopped) say('That is all for now.');
+    stopped = false;
+  }
+
+  $('start').onclick = () => { stopped = false; start(); };
+  $('stop').onclick = () => { stopped = true; speechSynthesis.cancel(); skipNow?.(); };
+  $('skip').onclick = () => { speechSynthesis.cancel(); skipNow?.(); };
+})();
+</script>
+</body>
+</html>

@@ -151,3 +151,32 @@ def result(body: ResultIn, who=Depends(kb_api.caller)):
     if recorded and body.outcome == 'knew' and body.gap:
         closed = kb_api.resolve_open(store, pid, now, 'Knew the missing piece in the feed.', kind='gap')
     return {'recorded': bool(recorded), 'closed_gaps': closed}
+
+
+class AnswerIn(BaseModel):
+    key: str = Field(pattern=kb_api.KEY)
+    point: str = Field(max_length=200)
+    text: str = Field(min_length=1, max_length=4000)
+    ask: str = Field(default='', max_length=500)
+    focus: str = Field(default='', max_length=300)
+
+
+@router.post('/answer')
+def answer(body: AnswerIn, who=Depends(kb_api.caller)):
+    """A spoken answer (the walk page), graded by the model like a Telegram reply. 503 without it."""
+    from .drip import assess
+    now, store = time.time(), kb_api.get_store(who['uid'])
+    pid = kcat.canonical(kcat.CATALOG, body.point)
+    if not pid:
+        raise HTTPException(404, f'Unknown knowledge point {body.point}')
+    point = kcat.CATALOG['points'][pid]
+    g = assess.grade(store, point, body.text, body.ask or None, body.focus or None)
+    if g is None:
+        raise HTTPException(503, 'Grading needs the model, which is not connected')
+    source = who['source'] or 'walk'
+    clean = g['verdict'] == 'right'
+    recorded, _ = kb_api.write_events(store, source, [{'key': body.key, 'points': [pid], 'clean': clean, 'partial': g['verdict'] == 'partly',
+                                                        'depth': dcards.depth(point), 'strength': 'soft', 'note': body.text[:500], 'ref': body.key}], now)
+    missing = assess.consequences(store, source, body.key, point, g, body.text, now, 'out loud') if recorded else ''
+    return {'verdict': g['verdict'], 'feedback': g['feedback'], 'missing': missing, 'claim': point['claim']}
+
