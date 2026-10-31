@@ -302,3 +302,19 @@ def test_generator_validation_names_every_problem():
     errors = gen.check_points(got, ['Introduction'], ['x:b1', 'x:b2'], 2)
     for needle in ('duplicate slug', 'subtopic', 'objective', 'unknown slug ghost', 'x:b2 is missing', 'stray is not a listed item'):
         assert any(needle in e for e in errors), needle
+
+
+def test_gaps_are_one_per_point_and_partial_misses_only_weaken(client):
+    body = {'key': 'g1', 'point': A, 'text': 'the miss rate sets the load', 'kind': 'gap', 'ask': 'What sets DB load?', 'source': 'tutor'}
+    first = ok(client.post('/api/knowledge/misconceptions', json=body))
+    again = ok(client.post('/api/knowledge/misconceptions', json={**body, 'key': 'g2', 'ask': 'Which rate sets DB load?'}))
+    assert first['kind'] == 'gap' and again['duplicate'] and again['repeats'] == 1 and again['ask'] == 'Which rate sets DB load?'
+    assert len(client.store.list_knowledge('knowledge_misconceptions')) == 1
+    r = client.post('/api/knowledge/events', json={'events': [{'key': 'p0', 'points': [A], 'clean': True, 'partial': True}]})
+    assert r.status_code == 422
+    ok(client.post('/api/knowledge/events', json={'events': [
+        {'key': 'p1', 'points': [B], 'clean': True}, {'key': 'p3', 'points': [B], 'clean': False, 'partial': True}]}))
+    stored = {e['_key']: e for e in client.store.list_knowledge('knowledge_events')}
+    assert stored['app:p3']['partial'] is True
+    evs = sources.direct(cat.CATALOG, client.store.list_knowledge('knowledge_events'))
+    assert sorted(e['blame'] for e in evs if e['point'] == B) == ['full', 'shared']

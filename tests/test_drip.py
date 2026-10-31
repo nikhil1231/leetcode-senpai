@@ -105,14 +105,16 @@ def env(monkeypatch):
     monkeypatch.setattr(config, 'OPENROUTER_API_KEY', 'test')
     store, tg, clock = FakeStore('me'), FakeTelegram(), Clock(T0)
     store.settings = {'daily_coach_timezone': 'Europe/London'}
-    grades = []
+    grades, env_prompts = [], []
 
     def fake(provider, model, system, prompt, schema, options=None):
         assert schema is cards.Grade and not llm.forbidden_model(model)
         assert json.loads(prompt)['ANSWER']
-        return {'content': json.dumps(grades.pop(0))}
+        env_prompts.append(json.loads(prompt))
+        return {'content': json.dumps({'missing': '', 'follow_up': '', 'misconception': '', **grades.pop(0)})}
     monkeypatch.setattr(llm, '_raw_generate', fake)
     b = drip.Bot(store, tg=tg, clock=clock, rng=random.Random(3))
+    b.prompts = env_prompts
     return b, store, tg, clock, grades
 
 
@@ -250,3 +252,68 @@ def test_a_just_missed_point_is_not_asked_again_straight_away(env):
     tg.updates = [press('reveal:2'), press('self:2:1')]
     b.step(poll=0)
     assert b.state['right'] == 1 and b.state['answered'] == 2
+
+
+def test_a_partly_right_answer_opens_a_gap_and_the_follow_up_targets_it(env):
+    b, store, tg, clock, grades = env
+    c = b.send_card(clock.t)
+    piece = 'The state change is committed last, after every check.'
+    ask = 'At which point in the request path is the write actually committed?'
+    grades.append({'verdict': 'partly', 'feedback': 'You named the hops but not where the write lands.',
+                   'missing': piece, 'follow_up': ask})
+    tg.updates = [msg('DNS, edge, load balancer, service, database')]
+    b.step(poll=0)
+    assert 'Partly' in tg.last() and 'just the part you missed' in tg.last()
+    e = events(store)[-1]
+    assert e['clean'] is False and e['partial'] is True
+    gap = store.list_knowledge('knowledge_misconceptions')[0]
+    assert (gap['kind'], gap['text'], gap['ask'], gap['point']) == ('gap', piece, ask, c['point'])
+
+    # A partial miss weakens rather than resets: the idea is not "shaky".
+    from server.knowledge_base import api as kb_api
+    _, _, states, seen, mis = kb_api.evidence(store, clock.t)
+    assert kmodel.views(kcat.CATALOG, states, seen, mis, clock.t, [kcat.CATALOG['points'][c['point']]])[0]['status'] == 'shaky'
+    # (a first-ever answer has nothing to weaken; a later partial on a held idea keeps it held)
+
+    clock.t += cards.GAP_COOLDOWN - 60
+    nxt = b.send_card(clock.t)
+    assert nxt['point'] != c['point']  # too soon for the follow-up
+    tg.updates = [press(f'skip:{nxt["n"]}')]
+    b.step(poll=0)
+    clock.t += 120
+    follow = b.send_card(clock.t)
+    assert follow['point'] == c['point'] and follow['reason'] == 'gap' and follow['ask'] == ask
+    assert ask in tg.last() and 'The part you missed' in tg.last()
+
+    grades.append({'verdict': 'right', 'feedback': 'Yes, last.'})
+    tg.updates = [msg('right at the end, after auth and the rules')]
+    b.step(poll=0)
+    assert b.prompts[-1]['QUESTION'] == ask and b.prompts[-1]['FOCUS'] == piece
+    assert store.list_knowledge('knowledge_misconceptions')[0]['status'] == 'resolved'
+    assert events(store)[-1]['clean'] is True
+
+
+def test_a_repeated_partial_updates_the_same_gap(env):
+    b, store, tg, clock, grades = env
+    b.send_card(clock.t)
+    grades.append({'verdict': 'partly', 'feedback': 'f', 'missing': 'piece one', 'follow_up': 'q one?'})
+    tg.updates = [msg('a')]
+    b.step(poll=0)
+    clock.t += cards.GAP_COOLDOWN + 1
+    b.send_card(clock.t)
+    grades.append({'verdict': 'partly', 'feedback': 'f', 'missing': 'piece two', 'follow_up': 'q two?'})
+    tg.updates = [msg('b')]
+    b.step(poll=0)
+    gaps = store.list_knowledge('knowledge_misconceptions')
+    assert len(gaps) == 1 and gaps[0]['text'] == 'piece two' and gaps[0]['repeats'] == 1
+    assert b.prompts[-1]['FOCUS'] == 'piece one'
+
+
+def test_a_partial_on_a_held_idea_keeps_it_held():
+    held = [ans(MISS, T0 - 6 * DAY), ans(MISS, T0 - 3 * DAY)]
+    partial = {**ans(MISS, T0, clean=False), 'blame': 'shared'}
+    full = ans(MISS, T0, clean=False)
+    s_part, _ = kmodel.replay(held + [partial])
+    s_full, _ = kmodel.replay(held + [full])
+    assert s_part[MISS]['last_clean'] and not s_full[MISS]['last_clean']
+    assert s_part[MISS]['stability'] > s_full[MISS]['stability']

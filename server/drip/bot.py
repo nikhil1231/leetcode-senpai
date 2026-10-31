@@ -168,7 +168,7 @@ class Bot:
             self.put_card(c)
             self.state['pending'] = None
             self.save()
-            self.say(cards.reveal_text(point), [('I knew it', f'self:{c["n"]}:1'), ('I did not', f'self:{c["n"]}:0')])
+            self.say(cards.reveal_text(point, c.get('focus')), [('I knew it', f'self:{c["n"]}:1'), ('I did not', f'self:{c["n"]}:0')])
         elif parts[0] == 'self' and len(parts) == 3 and c['status'] in ('revealed', 'pending') and point:
             knew = parts[2] == '1'
             self.record(c, point, knew, cards.depth(point) if knew else 'recall', f'self-graded: {"knew it" if knew else "did not"}', now)
@@ -207,10 +207,15 @@ class Bot:
             return None
         self.state['n'] += 1
         n = self.state['n']
-        text = cards.card_text(point, reason)
+        gap = cards.open_gap(mis, point['id'])
+        if gap:
+            reason = 'gap'
+        text = cards.card_text(point, reason, gap['ask'] if gap else None)
         msg = self.say(text, [('Show answer', f'reveal:{n}'), ('Skip', f'skip:{n}')])
         c = {'n': n, 'point': point['id'], 'reason': reason, 'text': text, 'sent_at': now, 'status': 'pending',
              'message_id': (msg or {}).get('message_id')}
+        if gap:
+            c.update(gap=gap['_key'], ask=gap['ask'], focus=gap['text'])
         self.put_card(c)
         self.state.update(pending=n, sent=self.state['sent'] + 1)
         self.save()
@@ -226,36 +231,43 @@ class Bot:
         if not point:
             self.close(c, 'expired', now)
             return
-        grade = self.grade(point, text)
+        grade = self.grade(point, text, c.get('ask'), c.get('focus'))
         if grade is None:
             c.update(answer=text[:2000])
             self.put_card(c)
             return self.button(f'reveal:{c["n"]}')
-        clean = grade['verdict'] == 'right'
-        self.record(c, point, clean, cards.depth(point), text[:500], now)
-        if grade['verdict'] == 'wrong' and grade['misconception'].strip():
+        verdict, clean = grade['verdict'], grade['verdict'] == 'right'
+        self.record(c, point, clean, cards.depth(point), text[:500], now, partial=verdict == 'partly')
+        missing = ''
+        if clean:
+            kb_api.resolve_open(self.store, point['id'], now, 'Answered in full on Telegram.', kind='gap')
+        elif verdict == 'partly' and grade['missing'].strip() and grade['follow_up'].strip():
+            missing = grade['missing'].strip()
+            kb_api.open_gap(self.store, SOURCE, f'card-{c["n"]}', point['id'], missing, grade['follow_up'], text[:400], now)
+        elif verdict == 'wrong' and grade['misconception'].strip():
             kb_api.add_misconception(self.store, SOURCE, f'card-{c["n"]}', point['id'], grade['misconception'], text[:400], now)
-        c.update(status='answered', answer=text[:2000], verdict=grade['verdict'], feedback=grade['feedback'], answered_at=now)
+        c.update(status='answered', answer=text[:2000], verdict=verdict, feedback=grade['feedback'], answered_at=now)
         self.put_card(c)
         self.state.update(pending=None, right=self.state['right'] + clean)
         self.save()
-        self.say(cards.result_text(grade['verdict'], grade['feedback'], point))
+        self.say(cards.result_text(verdict, grade['feedback'], point, missing))
 
-    def grade(self, point, text):
+    def grade(self, point, text, ask=None, focus=None):
         if not llm.enabled(self.store.get_settings()):
             return None
         try:
             raw = llm._raw_generate('openrouter', config.TUTOR_MODEL, cards.GRADE_SYSTEM,
-                                    json.dumps(cards.grade_payload(point, text), ensure_ascii=False), cards.Grade,
+                                    json.dumps(cards.grade_payload(point, text, ask, focus), ensure_ascii=False), cards.Grade,
                                     options={'effort': 'low', 'max_tokens': 1000, 'timeout': 30, 'metadata': True})
             return cards.Grade.model_validate_json(raw['content']).model_dump()
         except Exception:
             log.warning('Drip grading failed', exc_info=True)
             return None
 
-    def record(self, c, point, clean, depth, note, now):
+    def record(self, c, point, clean, depth, note, now, partial=False):
         kb_api.write_events(self.store, SOURCE, [{'key': f'card-{c["n"]}', 'points': [point['id']], 'clean': clean,
-                                                  'depth': depth, 'strength': 'soft', 'note': note, 'ref': f'card-{c["n"]}'}], now)
+                                                  'partial': partial and not clean, 'depth': depth, 'strength': 'soft',
+                                                  'note': note, 'ref': f'card-{c["n"]}'}], now)
         self.state['answered'] += 1
         if self.state['pending'] == c['n']:
             self.state['pending'] = None

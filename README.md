@@ -536,7 +536,8 @@ API: `GET /api/tutor`, `GET /api/tutor/lessons/{section}/{lesson}`, `POST /api/t
 
 `server/drip/`: a background task in the app that sends about six questions a day on Telegram,
 picked from the knowledge base and voiced by the story's cast, and grades text or voice replies
-with the tutor model (or lets you self-grade without it). Everything is recorded in the
+with the tutor model (or lets you self-grade without it). A partly-right answer opens a gap
+(the missing piece and a question about it); the next card for that idea asks only that. Everything is recorded in the
 knowledge base as source `telegram`. Off unless `TELEGRAM_BOT_TOKEN` is set; serves only
 `TELEGRAM_CHAT_ID` (before that is set, /start replies with your chat id). Tuning:
 `DRIP_PER_DAY` (6), `DRIP_WINDOW` (08:30-22:30, local time). Run it in one process only.

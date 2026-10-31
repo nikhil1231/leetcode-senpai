@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from .. import llm
 from . import lessons, story
 
-PROMPT_VERSION = 3
+PROMPT_VERSION = 4
 MAX_TURNS = 120
 TRANSCRIPT_TURNS = 24
 MAX_MISTAKES = 12
@@ -29,7 +29,7 @@ ROLES = {
     'teach': """Your role: the tutor. Teach the lesson Socratically, leading the learner through it.
 - Lead. Each turn: react briefly to what they just did, then move them on with ONE question or ONE small task. Never more than one question per turn.
 - Keep turns short, usually under 90 words. Never lecture. Explain only after they have had a go, and only what they missed. Short paragraphs or a short list; Markdown is fine.
-- Start from what they know: use PREVIOUSLY and their state on each point. Skip what is solid, probe what is shaky, unseen or fading, and come back to OPEN MISCONCEPTIONS early.
+- Start from what they know: use PREVIOUSLY and their state on each point. Skip what is solid, probe what is shaky, unseen or fading, and come back to OPEN MISCONCEPTIONS early. A "gap" there is one piece of an idea the learner keeps missing: ask about that piece on its own (its "ask" is a ready question), not the whole idea again.
 - OBJECTIVES are the exit criteria. Work through them; move on once one is shown.
 - BLOCKS are interactive activities from the lesson. Show one (its key in show_block) when doing beats talking: a prediction, an estimate, a bug to spot, an incident to work. Say in one line what to do; never give its answer. At most one block per turn, not every turn, never one already shown.
 - A turn of role "block" is the learner's result on a block. React to it: if wrong, ask them to reason about why before you explain.
@@ -111,7 +111,7 @@ What you record (it updates the learner's knowledge model, so be strict):
 - objectives: progress made in THIS turn, with the learner's exact words as quote ("working" if partly shown correctly, "demonstrated" if fully shown). Explaining it correctly to a character counts. A wrong answer is not progress. For a correct block result the quote may be empty.
 - evidence: only for ids in POINTS or PREREQUISITES, only when the learner's latest message shows the idea right (clean true) or wrong (clean false), with a short exact quote from that message. depth: recall (stated it), explain (said why or how), apply (used it on a new case). Never for block results or for things you said. Usually 0 to 2 items.
 - misconceptions: every wrong belief the learner states, even when your role doesn't react to it now: the point, what they believe, their exact words. Imprecise arithmetic in an estimate is never a misconception.
-- resolved: keys of OPEN MISCONCEPTIONS the learner has now clearly corrected.
+- resolved: keys of OPEN MISCONCEPTIONS the learner has now clearly corrected (for a gap: has now stated the missing piece correctly).
 - summary: rewrite every turn, under 80 words: what they have shown, what is shaky, where you are. It opens the next session.
 - story_event: usually empty. A one-line event worth remembering in the story, such as an incident they resolved or one that got away.
 - done: true only when every objective is demonstrated.
@@ -238,7 +238,8 @@ def payload(session, lesson, views, prereq_views, misconceptions, memory, story_
                        for i, o in enumerate(lesson['objectives'])],
         'POINTS': [point(v) for v in views],
         'PREREQUISITES': [point(v) for v in prereq_views if v['status'] in ('unseen', 'shaky', 'fading')],
-        'OPEN_MISCONCEPTIONS': [{'key': m['_key'], 'point': m['point'], 'belief': m['text']} for m in misconceptions],
+        'OPEN_MISCONCEPTIONS': [{'key': m['_key'], 'point': m['point'], 'kind': m.get('kind', 'belief'), 'text': m['text'],
+                                 **({'ask': m['ask']} if m.get('ask') else {})} for m in misconceptions],
         'NOTES_TO_SELF': session.get('notes') or '(none yet)',
         'TRANSCRIPT': [_turn_for_prompt(t) for t in turns] or [{'role': 'system', 'text': 'Open the session.'}],
     }

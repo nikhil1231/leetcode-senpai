@@ -300,3 +300,11 @@ def test_showing_the_last_objective_brings_the_debrief(client):
     client.replies.append(reply(say='**What you showed**: all of it.'))
     s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0001', 'text': 'On a write, delete the key'}))
     assert s['status'] == 'ended' and [t.get('debrief', False) for t in s['turns'][-2:]] == [False, True]
+
+
+def test_open_gaps_reach_the_tutor_with_their_question(client):
+    from server.knowledge_base import api as kb_api
+    kb_api.open_gap(client.store, 'telegram', 'card-1', MISS, 'Load is requests times the miss rate.', 'Which rate sets DB load?', 'it is the hit rate', 1)
+    start(client)
+    gap = client.prompts[0]['OPEN_MISCONCEPTIONS'][0]
+    assert gap['kind'] == 'gap' and gap['ask'] == 'Which rate sets DB load?' and gap['point'] == MISS

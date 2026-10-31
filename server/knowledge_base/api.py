@@ -138,6 +138,7 @@ class EventIn(BaseModel):
                               description='For a miss, the points that failed, when the source knows.')
     depth: Literal['recognise', 'recall', 'explain', 'apply'] | None = None
     strength: Literal['hard', 'soft'] = 'hard'
+    partial: bool = Field(default=False, description='A miss that was partly right: weakens memory instead of resetting it.')
     at: float | None = None
     note: str = Field(default='', max_length=500)
     ref: str = Field(default='', max_length=200)
@@ -161,6 +162,8 @@ def record(body: EventsIn, who=Depends(caller)):
             problems.append(f'{e.key}: an answer needs clean')
         if not set(e.failed) <= set(e.points):
             problems.append(f'{e.key}: failed points must be among its points')
+        if e.partial and e.clean is not False:
+            problems.append(f'{e.key}: only a miss can be partial')
         if e.at is not None and not now - LATE <= e.at <= now + SKEW:
             problems.append(f'{e.key}: at is outside the last 30 days')
     if problems:
@@ -176,9 +179,11 @@ def record(body: EventsIn, who=Depends(caller)):
 class MisconceptionIn(BaseModel):
     key: str = Field(pattern=KEY)
     point: str = Field(max_length=200)
-    text: str = Field(min_length=3, max_length=500, description='What the learner believes, e.g. "write-through prevents stale reads".')
+    text: str = Field(min_length=3, max_length=500, description='A wrong belief ("write-through prevents stale reads"), or for a gap the piece the learner keeps missing.')
     quote: str = Field(default='', max_length=1000, description="The learner's own words that showed it.")
     source: str | None = Field(default=None, pattern=SOURCE)
+    kind: Literal['belief', 'gap'] = 'belief'
+    ask: str = Field(default='', max_length=300, description='For a gap: a question about just the missing piece.')
 
 
 class MisconceptionUpdate(BaseModel):
@@ -196,8 +201,10 @@ def misconceptions(status: Literal['open', 'resolved'] | None = None, point: str
 
 @router.post('/misconceptions')
 def add_misconception(body: MisconceptionIn, who=Depends(caller)):
-    store = get_store(who['uid'])
-    return add_misconception(store, _source(who, body.source), body.key, _point(body.point), body.text, body.quote, time.time())
+    store, source, pid, now = get_store(who['uid']), _source(who, body.source), _point(body.point), time.time()
+    if body.kind == 'gap':
+        return open_gap(store, source, body.key, pid, body.text, body.ask, body.quote, now)
+    return add_misconception(store, source, body.key, pid, body.text, body.quote, now)
 
 
 @router.patch('/misconceptions/{key}')
@@ -219,7 +226,7 @@ def write_events(store, source, events, now):
                'source': source, 'recorded_at': now, 'note': e.get('note', ''), 'ref': e.get('ref', '')}
         if doc['kind'] == 'answer':
             doc.update(clean=bool(e['clean']), failed=list(e.get('failed') or []), depth=e.get('depth'),
-                       strength=e.get('strength', 'hard'))
+                       strength=e.get('strength', 'hard'), partial=bool(e.get('partial')) and not e['clean'])
         if store.create_knowledge('knowledge_events', f'{source}:{e["key"]}', doc) is None:
             duplicates.append(e['key'])
         else:
@@ -227,14 +234,35 @@ def write_events(store, source, events, now):
     return recorded, duplicates
 
 
-def add_misconception(store, source, key, point, text, quote, now):
+def add_misconception(store, source, key, point, text, quote, now, kind='belief', ask=''):
     key = f'{source}:{key}'
     doc = {'point': point, 'text': text.strip(), 'quote': (quote or '').strip(), 'source': source,
-           'status': 'open', 'created_at': now, 'resolved_at': None, 'note': ''}
+           'status': 'open', 'created_at': now, 'resolved_at': None, 'note': '', 'kind': kind, 'ask': (ask or '').strip()}
     saved = store.create_knowledge('knowledge_misconceptions', key, doc)
     if saved is None:
         return {'duplicate': True, **next(m for m in store.list_knowledge('knowledge_misconceptions') if m['_key'] == key)}
     return {'duplicate': False, **saved}
+
+
+def open_gap(store, source, key, point, text, ask, quote, now):
+    """A piece of an idea the learner keeps missing. One open gap per point: a repeat updates it."""
+    found = next((m for m in store.list_knowledge('knowledge_misconceptions')
+                  if m['point'] == point and m['status'] == 'open' and m.get('kind') == 'gap'), None)
+    if not found:
+        return add_misconception(store, source, key, point, text, quote, now, kind='gap', ask=ask)
+    doc = {k: v for k, v in found.items() if k != '_key'}
+    doc.update(text=text.strip() or doc['text'], ask=(ask or '').strip() or doc.get('ask', ''),
+               quote=(quote or '').strip() or doc['quote'], repeats=doc.get('repeats', 0) + 1, updated_at=now)
+    return {'duplicate': True, **store.put_knowledge('knowledge_misconceptions', found['_key'], doc)}
+
+
+def resolve_open(store, point, now, note, kind=None):
+    """Close every open misconception (or only one kind) on a point. -> keys closed."""
+    keys = [m['_key'] for m in store.list_knowledge('knowledge_misconceptions')
+            if m['point'] == point and m['status'] == 'open' and (kind is None or m.get('kind', 'belief') == kind)]
+    for k in keys:
+        set_misconception(store, k, 'resolved', note, now)
+    return keys
 
 
 def set_misconception(store, key, status, note, now):

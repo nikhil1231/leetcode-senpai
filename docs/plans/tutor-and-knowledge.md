@@ -194,6 +194,9 @@ quality is checked.
   stopped at 28 lessons when the balance ran out; the agent then linked the other 46 lessons and
   mapped the 25 practice items itself, and the script now defaults to agent export/import.
   Checked read-only against real history: existing answers flow in with no migration.
+- 2026-10-31: Gaps: a misconception can now be a "gap" (a piece of an idea the learner keeps
+  missing, with a question about just that piece), and answers can be partial (weaken memory
+  instead of resetting it). The drip opens gaps; the tutor sees them and probes the piece.
 - 2026-10-31: Rule added: never an Anthropic model through OpenRouter (CLAUDE.md, enforced in
   `llm.py`). Built the tutor and the story (see their Status sections). Deployed.
 

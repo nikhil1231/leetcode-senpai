@@ -52,7 +52,7 @@ Each item notes Nikhil's reaction. Status for all: **not started** unless marked
 A few questions a day, chosen from what is due or weak, answered by tap, text or voice note,
 graded, and counted. No app to open, no decision to study.
 
-Status: **built, waiting for a bot token.** Decided: a separate bot (the existing bots each have
+Status: **live** (@codi_nikhil_bot). Decided: a separate bot (the existing bots each have
 one reader, and learning stays apart from life admin). `server/drip/` runs inside the app as a
 background task, only where `TELEGRAM_BOT_TOKEN` is set. About six cards a day between 08:30
 and 22:30 (`DRIP_PER_DAY`, `DRIP_WINDOW`, local time from the Senpai timezone setting), never
@@ -61,7 +61,11 @@ unconfirmed points, then points seen before, then new ideas from lessons already
 card comes from a cast member (Sam asks facts, Marcus principles and trade-offs, Jo mechanisms,
 Priya procedures). Reply by text or voice note: the cheap model grades it against the point's
 claim and replies with what was missing and the idea itself (soft evidence; wrong beliefs become
-misconceptions). Without the model, "Show answer" then "I knew it / I did not". Skipped or
+misconceptions). A "partly" answer no longer counts as a full miss: it weakens the memory instead
+of resetting it, and opens a *gap*: the one piece that was missing plus a question about just
+that piece. After 3 hours the next card for that idea asks only the follow-up, and answering it
+right closes the gap (one gap per idea; a repeat updates it). Nikhil asked for this because
+re-asking the whole question and missing the same part again was annoying. Without the model, "Show answer" then "I knew it / I did not". Skipped or
 unanswered cards (after 3 hours) count as exposures. Commands: /next, /stats, /pause, /resume,
 /help. Tested with unit tests and end to end against a fake Telegram with real grading.
 
@@ -166,7 +170,9 @@ expensive); bulk content work is done by the agent itself, not a paid API.
   at runtime) and reports back with `POST /api/knowledge/events` (answers, or `kind: exposure`
   for things merely shown). Services authenticate with a source token
   (`KNOWLEDGE_SOURCE_TOKENS`).
-- 2026-10-31: Built the Telegram drip inside the app (see its Status). Off until a bot token is set.
+- 2026-10-31: Built the Telegram drip inside the app (see its Status). Switched on as
+  @codi_nikhil_bot; first card answered. Then: partly-right answers open a gap and get a
+  targeted follow-up instead of the whole question again.
 
 ## Dropped
 

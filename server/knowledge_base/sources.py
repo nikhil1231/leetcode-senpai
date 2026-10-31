@@ -8,7 +8,8 @@ model's reading of free text are soft evidence.
 
 Direct sources (the tutor, Telegram, the Threads card, …) store their own events, which name
 their points. A miss counts against `failed` when the source names which points failed (the
-rest are left untouched), else against every point named.
+rest are left untouched), else against every point named. A `partial` miss (the gist was right,
+a piece was missing) weakens memory like a shared miss instead of resetting it.
 """
 from .. import system_design_items as sd_items
 from ..tracks import courses
@@ -63,7 +64,9 @@ def direct(catalog, docs):
         for p in dict.fromkeys(points):
             if not d['clean'] and failed and p not in failed:
                 continue
+            partial = bool(d.get('partial')) and not d['clean']
             out.append({'point': p, 'at': d['at'], 'kind': 'answer', 'clean': bool(d['clean']),
-                        'depth': d.get('depth'), 'strength': d.get('strength', 'hard'), 'blame': 'full',
+                        'depth': d.get('depth'), 'strength': d.get('strength', 'hard'),
+                        'blame': 'shared' if partial else 'full',
                         'source': d.get('source'), 'ref': d.get('_key')})
     return out
