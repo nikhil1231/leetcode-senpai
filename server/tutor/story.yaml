@@ -22,6 +22,11 @@ cast:
       - "Board meeting in ten minutes. Quick one:"
       - "Convince me you've got this one:"
       - "Investor asked me this and I bluffed. Help:"
+    lines:
+      reveal: ["Right, here's the answer. Be honest with me:", "Answer's below. Did you have it?", "Here it is. No bluffing:"]
+      knew: ["Knew it. Good.", "Course you did. Next one'll be harder.", "Good. That's one I won't worry about."]
+      missed: ["No shame. It's coming back for a rematch.", "Fair. I'll throw it at you again soon.", "Happens. Rematch later this week."]
+      skip: ["Fine, I'll ambush you with it later.", "Dodged it. For now.", "Parking it. It'll be back."]
   - id: priya
     name: Priya
     role: Site reliability engineer
@@ -36,6 +41,11 @@ cast:
       - "Pager's quiet, so, pop quiz:"
       - "Before the next incident finds out for us:"
       - "Kettle's on. One question:"
+    lines:
+      reveal: ["Here it is.", "Answer's below. No peeking at the graphs first.", "Here. Did you have it?"]
+      knew: ["Nice.", "Good. Noted.", "That's the one."]
+      missed: ["Happens. I'll bring it back.", "Noted. It'll page you again soon.", "Fine. Better here than at 3am."]
+      skip: ["Parked. It'll page you again later.", "Snoozed. Not resolved.", "Fine. Back in the queue."]
   - id: jo
     name: Jo
     role: Junior engineer
@@ -51,6 +61,11 @@ cast:
       - "Okay, possibly a silly question, but:"
       - "Wait, I've been wondering about this all morning:"
       - "Help me before I embarrass myself in code review:"
+    lines:
+      reveal: ["Okay, here's what I found. Did you know it?", "Here's the answer! Did you have it?", "So apparently it's this. Did you know?"]
+      knew: ["Ha, of course you did!", "Nice, you're way ahead of me.", "Okay, writing that down. Thanks!"]
+      missed: ["Phew, not just me then! It'll come round again.", "Same, honestly. I'll ask again soon!", "Good to know I'm in good company. It'll be back!"]
+      skip: ["No worries, I'll ask again another time!", "All good, I'll bug you later!", "Fair, bad timing. Later!"]
   - id: sam
     name: Sam
     role: Product manager
@@ -65,6 +80,11 @@ cast:
       - "Help me answer this before my three o'clock:"
       - "Settle a debate on the product team:"
       - "A user emailed us this. What do I tell them?"
+    lines:
+      reveal: ["Here's the answer I'd give the customer:", "Okay, here's the real answer. Did you have it?", "Answer's below. Did you know it?"]
+      knew: ["Brilliant, thank you!", "Perfect, that's exactly what I needed.", "Lovely. Customer sorted."]
+      missed: ["All good, it'll come round again.", "No worries, I'll ask again soon.", "That's fine, we'll get it next time."]
+      skip: ["No problem, I'll circle back.", "Sure, later works.", "No rush, I'll ask again."]
 # Company size follows the share of knowledge points you currently hold.
 tiers:
   - {at: 0, label: Garage, users: 1k users}

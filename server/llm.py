@@ -880,7 +880,7 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema, *
         raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
     extra = {}
     if options:
-        extra = {"reasoning": {"effort": options["effort"], "exclude": True},
+        extra = {"reasoning": {"enabled": False} if options.get("think") is False else {"effort": options["effort"], "exclude": True},
                  "max_tokens": options["max_tokens"]}
     resp = httpx.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -932,7 +932,9 @@ def _raw_chat(model: str, messages: list, *, options=None) -> dict:
         raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
     options = options or {}
     body = {"model": model, "messages": messages, "stream": False, "max_tokens": options.get("max_tokens", 1500)}
-    if options.get("effort"):
+    if options.get("think") is False:
+        body["reasoning"] = {"enabled": False}   # answer straight away: no hidden reasoning eating the token budget
+    elif options.get("effort"):
         body["reasoning"] = {"effort": options["effort"], "exclude": True}
     resp = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=options.get("timeout", 60), json=body,
                       headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "Content-Type": "application/json",

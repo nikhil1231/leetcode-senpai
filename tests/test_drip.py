@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from server import config, llm
-from server.drip import bot as drip, cards
+from server import config, llm, voice
+from server.drip import assess, bot as drip, cards
 from server.knowledge_base import catalog as kcat, model as kmodel
 from tests.fake_store import FakeStore
 
@@ -113,8 +113,15 @@ def env(monkeypatch):
         env_prompts.append(json.loads(prompt))
         return {'content': json.dumps({'missing': '', 'follow_up': '', 'misconception': '', **grades.pop(0)})}
     monkeypatch.setattr(llm, '_raw_generate', fake)
+    phrasings = []
+
+    def chat(model, messages, options=None):
+        assert not llm.forbidden_model(model) and messages[0]['content'] == assess.PHRASE_SYSTEM
+        phrasings.append(json.loads(messages[1]['content']))
+        return {'content': f'"Quick one from Ripple: {phrasings[-1]["QUESTION"]}"', 'usage': {}}
+    monkeypatch.setattr(llm, '_raw_chat', chat)
     b = drip.Bot(store, tg=tg, clock=clock, rng=random.Random(3))
-    b.prompts = env_prompts
+    b.prompts, b.phrasings = env_prompts, phrasings
     return b, store, tg, clock, grades
 
 
@@ -157,7 +164,7 @@ def test_a_typed_answer_is_graded_and_recorded(env):
     grades.append({'verdict': 'wrong', 'feedback': 'You described latency, not load.', 'misconception': 'thinks caches only cut latency'})
     tg.updates = [msg('caches just make it faster')]
     b.step(poll=0)
-    assert '❌' in tg.last() and 'The idea:' in tg.last() and 'You described latency' in tg.last()
+    assert tg.last().startswith('❌ <b>Priya:</b> You described latency') and '<blockquote expandable><b>The idea</b>' in tg.last()
     e = events(store)[-1]
     assert (e['source'], e['strength'], e['clean'], e['points']) == ('telegram', 'soft', False, [c['point']])
     m = store.list_knowledge('knowledge_misconceptions')[0]
@@ -166,7 +173,7 @@ def test_a_typed_answer_is_graded_and_recorded(env):
     assert b.state['offset'] == tg_offset(store)
     tg.updates = [msg('another answer')]
     b.step(poll=0)
-    assert 'No question is open' in tg.last()
+    assert "Nothing's open" in tg.last()
 
 
 def tg_offset(store):
@@ -179,7 +186,7 @@ def test_without_the_model_you_see_the_answer_and_grade_yourself(env, monkeypatc
     b.send_card(clock.t)
     tg.updates = [msg('my guess')]
     b.step(poll=0)
-    assert 'Did you know it?' in tg.last() and tg.sent[-1]['reply_markup']['inline_keyboard'][0][0]['callback_data'] == 'self:1:1'
+    assert tg.last().startswith('<b>Priya:</b> ') and tg.sent[-1]['reply_markup']['inline_keyboard'][0][0]['callback_data'] == 'self:1:1'
     tg.updates = [press('self:1:1')]
     b.step(poll=0)
     assert events(store)[-1]['clean'] is True and store.get_knowledge('drip', 'card-1')['self_graded']
@@ -195,7 +202,7 @@ def test_skip_and_reveal_buttons(env):
     b.send_card(clock.t)
     tg.updates = [press('reveal:2'), press('self:2:0')]
     b.step(poll=0)
-    assert events(store)[-1]['clean'] is False and 'sooner' in tg.last()
+    assert events(store)[-1]['clean'] is False and tg.last()[len('<b>Priya:</b> '):] in voice.member('priya')['lines']['missed']
 
 
 def test_voice_notes_are_transcribed_then_graded(env, monkeypatch):
@@ -263,7 +270,7 @@ def test_a_partly_right_answer_opens_a_gap_and_the_follow_up_targets_it(env):
                    'missing': piece, 'follow_up': ask})
     tg.updates = [msg('DNS, edge, load balancer, service, database')]
     b.step(poll=0)
-    assert '🟡' in tg.last() and 'just the part you missed' in tg.last()
+    assert '🟡' in tg.last() and 'just that bit' in tg.last()
     e = events(store)[-1]
     assert e['clean'] is False and e['partial'] is True
     gap = store.list_knowledge('knowledge_misconceptions')[0]
@@ -282,8 +289,10 @@ def test_a_partly_right_answer_opens_a_gap_and_the_follow_up_targets_it(env):
     b.step(poll=0)
     clock.t += 120
     follow = b.send_card(clock.t)
-    assert follow['point'] == c['point'] and follow['reason'] == 'gap' and follow['ask'] == ask
-    assert ask in tg.last() and 'The part you missed' in tg.last()
+    assert follow['point'] == c['point'] and follow['reason'] == 'gap'
+    assert b.phrasings[-1]['QUESTION'] == ask and b.phrasings[-1]['REASON'] == 'gap'   # the character asks the gap's question
+    assert follow['ask'] == f'Quick one from Ripple: {ask}' and ask in tg.last() and 'The bit that slipped last time' in tg.last()
+    ask = follow['ask']
 
     grades.append({'verdict': 'right', 'feedback': 'Yes, last.'})
     tg.updates = [msg('right at the end, after auth and the rules')]
@@ -432,7 +441,7 @@ def test_bedtime_links_to_the_days_misses_once(env, monkeypatch):
     kb_api.write_events(store, 'telegram', [{'key': 'k1', 'points': [MISS], 'clean': False}], clock.t)
     clock.t += 50 * 60
     b.tick()
-    assert 'You missed 1 idea today' in tg.last()
+    assert '1 idea slipped today' in tg.last()
     assert tg.sent[-1]['reply_markup']['inline_keyboard'][0][0]['url'].endswith('/feed?set=tonight&n=1')
     b.tick()
     assert len(tg.sent) == 1
@@ -522,3 +531,30 @@ def test_the_grader_speaks_as_the_colleague_who_asked():
     payload = cards.grade_payload(p, 'my answer')
     assert payload['SPEAKER'] == voice.persona('priya') and 'SPEAKER' in cards.GRADE_SYSTEM and voice.FEEDBACK in cards.GRADE_SYSTEM
     assert voice.lead('priya', p['id']) in cards.card_text(p, 'new')
+
+
+def test_cards_are_phrased_by_their_character_and_graded_against_that_question(env):
+    b, store, tg, clock, grades = env
+    c = b.send_card(clock.t)
+    p = b.phrasings[-1]
+    assert p['SPEAKER'] == voice.persona('priya') and p['IDEA'] and p['REASON'] == c['reason']
+    assert c['ask'] == f'Quick one from Ripple: {p["QUESTION"]}'          # quotes stripped
+    assert tg.sent[-1]['text'].startswith('<b>Priya</b> <i>· Site reliability engineer</i>\nQuick one from Ripple:')
+    grades.append({'verdict': 'right', 'feedback': 'Nice.', 'misconception': ''})
+    tg.updates = [msg('dns, edge, lb, service, then the commit')]
+    b.step(poll=0)
+    assert b.prompts[-1]['QUESTION'] == c['ask']
+
+
+def test_a_self_introduction_is_dropped(env, monkeypatch):
+    b, store, tg, clock, grades = env
+    monkeypatch.setattr(llm, '_raw_chat', lambda *a, **k: {'content': 'Priya here — what commits the write?'})
+    p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
+    assert assess.phrase(store, p, 'new') == 'What commits the write?'
+
+
+def test_without_the_model_cards_use_the_template(env, monkeypatch):
+    b, store, tg, clock, grades = env
+    monkeypatch.setattr(config, 'OPENROUTER_API_KEY', '')
+    b.send_card(clock.t)
+    assert b.phrasings == [] and any(lead in tg.sent[-1]['text'] for lead in voice.member('priya')['leads'])

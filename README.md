@@ -544,8 +544,11 @@ in `server/tutor/story.yaml` (`personality` and `leads` per character). Every su
 starts from it: the tutor and its role-play modes (Jo, Marcus, Priya, with Sam chiming in), the
 Telegram, feed and walk grader (which replies as the cast member who asked), in-lesson
 explanations, recall grading, the design-case coach, the examiner's report and the track coaches.
-Templated surfaces use the cast's opening lines: Telegram cards and the daily podcast, where each
-question is asked by its character. Senpai and the LeetCode helpers keep their own voice.
+On Telegram each card is written by the character who asks it (`drip/assess.phrase`: the
+point's question as a short message from a colleague at Ripple, told what was recently sent so it
+doesn't repeat itself, graded against the question as asked; the template is the fallback), and
+reveals, skips and self-grades get that character's own lines (`lines` in story.yaml). The daily
+podcast uses each character's opening lines. Senpai and the LeetCode helpers keep their own voice.
 
 ### Home, Practise and What you know
 

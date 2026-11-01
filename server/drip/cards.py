@@ -25,10 +25,9 @@ COOLDOWN = 20 * 3600
 GAP_COOLDOWN = 3 * 3600
 PER_DAY_MIN, PER_DAY_MAX = 1, 10
 VOICE = {'fact': 'sam', 'principle': 'marcus', 'mechanism': 'jo', 'tradeoff': 'marcus', 'procedure': 'priya'}
-TAG = {'gap': 'The part you missed last time', 'misconception': 'Something you got wrong before',
-       'shaky': 'You missed this last time', 'fading': 'Before it fades', 'unconfirmed': 'Worth confirming',
-       'new': 'New idea', 'held': 'Keep it fresh', 'tonight': 'Missed today',
-       'morning': 'From last night'}
+TAG = {'gap': 'The bit that slipped last time', 'misconception': 'Second chance', 'shaky': 'Rematch',
+       'fading': 'Before it fades', 'unconfirmed': 'Double-checking', 'new': 'New one', 'held': 'Keeping it fresh',
+       'tonight': 'From today', 'morning': 'From last night'}
 
 
 def open_gap(misconceptions, point_id):
@@ -118,13 +117,14 @@ def speaker(point):
     return next(c for c in story.cast() if c['id'] == VOICE.get(point['kind'], 'jo'))
 
 
-def card_text(point, reason, ask=None, context=None):
+def card_text(point, reason, ask=None, context=None, phrased=None):
+    """A card. `phrased` is the question as its cast member wrote it; without it, their opening line and the prompt."""
     who = speaker(point)
-    tag = TAG.get(reason, '')
     opener = f'📱 <i>{html.escape(context)}</i>\n\n' if context else ''
-    return (f'{opener}<b>{html.escape(who["name"])}</b> <i>({html.escape(who["role"])})</i>: {html.escape(voice.lead(who["id"], point["id"]), quote=False)}\n\n'
-            f'{html.escape(ask or point["prompt"])}\n\n'
-            f'<i>{html.escape(tag)} · {html.escape(point["lesson_title"])}. Reply by text or voice, or tap a button.</i>')
+    body = phrased or f'{voice.lead(who["id"], point["id"])} {ask or point["prompt"]}'
+    footer = ' · '.join(x for x in (TAG.get(reason, ''), point['lesson_title']) if x)
+    return (f'{opener}<b>{html.escape(who["name"])}</b> <i>· {html.escape(who["role"])}</i>\n'
+            f'{html.escape(body, quote=False)}\n\n<i>{html.escape(footer, quote=False)}</i>')
 
 
 def depth(point):
@@ -167,37 +167,51 @@ def grade_payload(point, answer, ask=None, focus=None):
     return {**out, 'FOCUS': focus} if focus else out
 
 
+def _idea(point):
+    return f'<blockquote expandable><b>The idea</b>\n{html.escape(point["claim"], quote=False)}</blockquote>'
+
+
 def result_text(verdict, feedback, point, missing=''):
     head = {'right': '✅', 'partly': '🟡', 'wrong': '❌'}[verdict]
-    text = f'{head} <b>{html.escape(speaker(point)["name"])}:</b> {html.escape(feedback)}\n\n<b>The idea:</b> {html.escape(point["claim"])}'
+    text = f'{head} <b>{html.escape(speaker(point)["name"])}:</b> {html.escape(feedback, quote=False)}\n\n{_idea(point)}'
     if missing:
-        text += f'\n\n<i>Next time I will ask about just the part you missed: {html.escape(missing)}</i>'
+        text += f'\n<i>I\'ll come back to just that bit another time.</i>'
     return text
 
 
-def reveal_text(point, focus=None):
-    piece = f'<b>The piece:</b> {html.escape(focus)}\n\n' if focus else ''
-    return f'{piece}<b>The idea:</b> {html.escape(point["claim"])}\n\nDid you know it?'
+def reveal_text(point, focus=None, seed=''):
+    who = speaker(point)
+    piece = f'<b>The bit that slipped:</b> {html.escape(focus, quote=False)}\n\n' if focus else ''
+    return (f'<b>{html.escape(who["name"])}:</b> {html.escape(voice.line(who["id"], "reveal", seed), quote=False)}\n\n'
+            f'{piece}{html.escape(point["claim"], quote=False)}')
+
+
+def moment_text(point, kind, seed=''):
+    """The cast member's one-liner after a skip or a self-grade (kind: skip, knew, missed)."""
+    who = speaker(point)
+    return f'<b>{html.escape(who["name"])}:</b> {html.escape(voice.line(who["id"], kind, seed), quote=False)}'
 
 
 def bedtime_text(n):
     them = 'it' if n == 1 else 'them'
-    return (f'🌙 You missed {n} idea{"s" if n != 1 else ""} today. Two minutes on {them} before bed, '
-            f'and I will check {them} again in the morning.')
+    return (f'🌙 {n} idea{"s" if n != 1 else ""} slipped today. Two minutes on {them} before bed? '
+            f'I\'ll check {them} again in the morning.')
 
 
 def stats_text(summary, sent, answered, right, paused, note=''):
     sc = story.scale(summary)
-    nxt = f' Next: {sc["next"]["label"]} at {sc["next"]["at"]}% held.' if sc['next'] else ''
-    return (f'Today: {answered} of {sent} answered, {right} right.\n'
-            f'You hold {summary["pct"]}% of {summary["total"]} ideas. Ripple is at {sc["label"]} ({sc["users"]}).{nxt}'
+    nxt = f' Next stop: {sc["next"]["label"]} at {sc["next"]["at"]}% held.' if sc['next'] else ''
+    today = (f'Today so far: {answered} of {sent} answered, {right} right.' if sent else 'Nothing sent yet today.')
+    return (f'{today}\n'
+            f'You\'re holding {summary["pct"]}% of {summary["total"]} ideas, and Ripple is at {sc["label"]} ({sc["users"]}).{nxt}'
             + (f'\n{note}' if note else '')
-            + ('\nThe drip is paused: /resume to restart.' if paused else ''))
+            + ('\nThe questions are paused: /resume when you\'re ready.' if paused else ''))
 
 
-HELP = ('I send a few questions a day from what you are learning. Reply with text or a voice note, '
-        'or tap a button.\n\n/next  a question now\n/stats  how you are doing\n/frequency  questions a day (1 to 10)\n/pause  stop the questions\n'
-        '/resume  start them again\n/podcast  today\'s episode (/podcast daily for every morning)\n/help  this message')
+HELP = ('Hi! Marcus, Priya, Jo and Sam will send you a few questions a day from what you\'re learning. Answer '
+        'however suits you: type it, send a voice note, or tap Show answer.\n\n/next  a question now\n'
+        '/stats  how you\'re doing\n/frequency  questions a day (1 to 10)\n/pause  a break from the questions\n'
+        '/resume  start them again\n/podcast  today\'s episode (/podcast daily for one every morning)\n/help  this message')
 
 
 def sleep_factor(sleep):

@@ -228,6 +228,13 @@ quality is checked.
   own opening lines. Tuned from real transcripts: role-play modes always say something visible
   (a reply that was all private notes is asked again), Priya gets the odd dry aside, quoted
   example phrases are no longer repeated as catchphrases. Senpai and LeetCode helpers unchanged.
+- 2026-11-01: Telegram still read as robotic: the question was the catalog prompt word for word and
+  the bot's messages were fixed templates. Now the asking character writes each card as a chat
+  message (DeepSeek, ~1 s, template fallback), and reveal, skip and "I knew it" replies, bedtime,
+  stats and help are in a warmer voice, the character ones from story.yaml. Found while testing:
+  DeepSeek's hidden reasoning sometimes used up the whole token budget (empty replies) and caused
+  the 20-90 s replies; it is now off for the tutor and phrasing (no loss of quality in tests) and
+  kept, with a large budget, for grading, where verdicts were worse without it.
 
 ## Dropped
 

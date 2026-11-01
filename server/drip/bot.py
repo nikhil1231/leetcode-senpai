@@ -230,20 +230,20 @@ class Bot:
                 self.send_card(now)
         elif cmd == '/pause':
             self.state['paused'] = True
-            self.say('Paused. /resume to start again.')
+            self.say("Paused. Nobody will bother you. /resume when you're ready.")
         elif cmd == '/resume':
             self.state.update(paused=False, next_at=None)
-            self.say('Back on. The next question comes later today.')
+            self.say("Back on! The next question will turn up later today.")
         elif cmd == '/podcast':
             arg = (args[0].lower() if args else '')
             if arg in ('daily', 'on'):
                 self.state['podcast_daily'] = True
-                self.say('Done: a new episode every morning when the questions start. /podcast off to stop.')
+                self.say("Done: a fresh episode every morning when the questions start. /podcast off to stop.")
             elif arg in ('off', 'stop'):
                 self.state['podcast_daily'] = False
                 self.say('No more daily episodes. /podcast still makes one when you ask.')
             else:
-                self.say("Making today's episode. It takes about a minute.")
+                self.say("On it: making today's episode. About a minute.")
                 self.state['podcast_day'] = self.state['day']   # the daily one won't send it again
                 self.send_podcast()
         elif cmd in ('/frequency', '/freq'):
@@ -274,13 +274,13 @@ class Bot:
         point = self.point(c)
         if parts[0] == 'skip' and c['status'] == 'pending':
             self.close(c, 'skipped', now)
-            self.say('Skipped. I will bring it back another time.')
+            self.say(cards.moment_text(point, 'skip', c['n']) if point else 'Skipped. It will come back another time.')
         elif parts[0] == 'reveal' and c['status'] == 'pending' and point:
             c.update(status='revealed', revealed_at=now)
             self.put_card(c)
             self.state['pending'] = None
             self.save()
-            self.say(cards.reveal_text(point, c.get('focus')), [('I knew it', f'self:{c["n"]}:1'), ('I did not', f'self:{c["n"]}:0')])
+            self.say(cards.reveal_text(point, c.get('focus'), c['n']), [('I knew it', f'self:{c["n"]}:1'), ('I did not', f'self:{c["n"]}:0')])
         elif parts[0] == 'self' and len(parts) == 3 and c['status'] in ('revealed', 'pending') and point:
             knew = parts[2] == '1'
             self.record(c, point, knew, cards.depth(point) if knew else 'recall', f'self-graded: {"knew it" if knew else "did not"}', now)
@@ -288,11 +288,11 @@ class Bot:
             self.put_card(c)
             self.state['right'] += knew
             self.save()
-            self.say('Noted.' if knew else 'Noted. It will come back sooner.')
+            self.say(cards.moment_text(point, 'knew' if knew else 'missed', c['n']))
 
     def transcribe(self, voice):
         if not llm.enabled(self.store.get_settings()):
-            self.say('Voice needs the model, which is not connected. Type your answer instead.')
+            self.say("Voice notes need the model, which isn't connected right now. Could you type it instead?")
             return None
         try:
             audio = self.tg.download(voice['file_id'])
@@ -301,7 +301,7 @@ class Bot:
             log.warning('Drip voice download failed', exc_info=True)
             text = None
         if not text:
-            self.say('I could not make that out. Try again or type it.')
+            self.say("Sorry, I couldn't make that out. Try again, or type it?")
             return None
         self.say(f'<i>Heard:</i> {html.escape(text)}')
         return text
@@ -350,12 +350,17 @@ class Bot:
         gap = cards.open_gap(mis, point['id'])
         if gap:
             reason = 'gap'
-        text = cards.card_text(point, reason, gap['ask'] if gap else None, app['line'] if app else None)
+        ask, line = (gap['ask'] if gap else None), (app['line'] if app else None)
+        recent = [(self.card(k) or {}).get('ask') for k in range(n - 1, max(0, n - 6), -1)]
+        phrased = assess.phrase(self.store, point, reason, ask, line, recent)
+        text = cards.card_text(point, reason, ask, line, phrased)
         msg = self.say(text, [('Show answer', f'reveal:{n}'), ('Skip', f'skip:{n}')])
         c = {'n': n, 'point': point['id'], 'reason': reason, 'text': text, 'sent_at': now, 'status': 'pending',
              'message_id': (msg or {}).get('message_id'), 'app': app['name'] if app else None}
+        if phrased:
+            c['ask'] = phrased   # the grader judges the answer against the question as it was asked
         if gap:
-            c.update(gap=gap['_key'], ask=gap['ask'], focus=gap['text'])
+            c.update(gap=gap['_key'], ask=phrased or gap['ask'], focus=gap['text'])
         self.put_card(c)
         self.state.update(pending=n, sent=self.state['sent'] + 1)
         self.save()
@@ -365,7 +370,7 @@ class Bot:
         now = self.clock()
         c = self.card(self.state['pending']) if self.state['pending'] is not None else None
         if not c or c['status'] != 'pending':
-            self.say('No question is open. /next for one.')
+            self.say("Nothing's open right now. /next if you fancy one.")
             return
         point = self.point(c)
         if not point:

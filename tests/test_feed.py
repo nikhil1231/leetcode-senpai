@@ -100,7 +100,7 @@ def test_tonight_and_morning_sets():
     c = kcat.CATALOG
     states, seen = kmodel.replay([])
     cards = feed.deck(c, states, seen, [], T0, 3, random.Random(0), first=[OTHER, MISS], first_reason='tonight')
-    assert [x['point'] for x in cards[:2]] == [OTHER, MISS] and cards[0]['tag'].startswith('Missed today')
+    assert [x['point'] for x in cards[:2]] == [OTHER, MISS] and cards[0]['tag'].startswith('From today')
     assert len(cards) == 3 and cards[2]['reason'] != 'tonight'
 
 

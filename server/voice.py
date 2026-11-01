@@ -34,3 +34,9 @@ def lead(cast_id, seed=''):
     c = member(cast_id) or {}
     leads = c.get('leads') or ['Quick one:']
     return leads[sum(map(ord, str(seed))) % len(leads)]
+
+
+def line(cast_id, kind, seed=''):
+    """A cast member's line for a moment (reveal, knew, missed, skip), stable for the same seed."""
+    found = ((member(cast_id) or {}).get('lines') or {}).get(kind) or ['']
+    return found[sum(map(ord, f'{kind}:{seed}')) % len(found)]

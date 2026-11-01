@@ -240,7 +240,7 @@ async def _talk(s, l, ctx, debrief=False):
     messages = [{'role': 'system', 'content': system}, *ses.messages(s, l, debrief)]
     for _ in range(2):   # a reply with nothing visible (all private notes) gets one more try
         try:
-            raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, messages, options={'max_tokens': 2500, 'timeout': 60})
+            raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, messages, options={'max_tokens': 2500, 'timeout': 60, 'think': False})
         except Exception as exc:
             log.warning('Tutor reply failed: %s', type(exc).__name__)
             return None
