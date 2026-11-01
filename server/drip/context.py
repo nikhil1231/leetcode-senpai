@@ -62,11 +62,11 @@ def remember(state, app, now):
     state['context'] = ctx
 
 
-def pick(catalog, states, seen, misconceptions, now, app, cooldown):
+def pick(catalog, states, seen, misconceptions, now, app, cooldown, exclude=()):
     """The most useful point in the app's lessons: weak before new before held, earlier lessons first."""
     best = None
     for rank, lesson in enumerate(app['lessons']):
-        for r in kmodel.pick(catalog, states, seen, misconceptions, now, n=3, mode='any', lesson=lesson, cooldown=cooldown):
+        for r in kmodel.pick(catalog, states, seen, misconceptions, now, n=3, mode='any', lesson=lesson, cooldown=cooldown, exclude=exclude):
             key = (PRIORITY.index(r['reason']) if r['reason'] in PRIORITY else len(PRIORITY), rank)
             if best is None or key < best[0]:
                 best = (key, r['point'], r['reason'])

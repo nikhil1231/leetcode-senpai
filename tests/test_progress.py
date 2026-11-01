@@ -178,7 +178,10 @@ def test_track_placement_over_http(client):
     assert courses.lessons('ai')[q['lesson_id']]['category'] == cat_id
 
 
-def test_older_question_versions_count_for_the_current_points():
-    assert sources.mapped(C, 'request-flow-check-1-v1') == 'request-flow-check-1-v2'
-    assert sources.mapped(C, 'request-flow-check-1-v2') == 'request-flow-check-1-v2'
-    assert sources.mapped(C, 'nope-check-1-v1') is None and sources.mapped(C, 'plain') is None
+def test_an_older_question_version_is_not_evidence_for_the_new_one(monkeypatch):
+    # request-flow's checks were rewritten: v1 check 1 asked about ownership rules, v2 about the gateway.
+    answer = lambda item: {'item': item, 'at': NOW, 'marks': 1, 'max': 1, 'clean': True, 'source': 'quiz'}  # noqa: E731
+    monkeypatch.setattr(sources, 'item_events', lambda section, records: [answer('request-flow-check-1-v1')])
+    assert sources.derived(C, {'system-design': []}) == []
+    monkeypatch.setattr(sources, 'item_events', lambda section, records: [answer('request-flow-check-1-v2')])
+    assert {e['point'] for e in sources.derived(C, {'system-design': []})} == set(C['items']['request-flow-check-1-v2'])

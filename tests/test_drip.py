@@ -8,7 +8,7 @@ import pytest
 
 from server import config, llm, voice
 from server.drip import assess, bot as drip, cards
-from server.knowledge_base import catalog as kcat, model as kmodel
+from server.knowledge_base import api as kb_api, catalog as kcat, model as kmodel
 from tests.fake_store import FakeStore
 
 LON = ZoneInfo('Europe/London')
@@ -121,6 +121,9 @@ def env(monkeypatch):
         phrasings.append(json.loads(messages[1]['content']))
         return {'content': f'"Quick one from Ripple: {phrasings[-1]["QUESTION"]}"', 'usage': {}}
     monkeypatch.setattr(llm, '_raw_chat', chat)
+    # Everything has been covered in a lesson: Telegram only asks about ideas met elsewhere.
+    kb_api.write_events(store, 'lesson', [{'key': 'all', 'kind': 'exposure', 'points': [p['id'] for p in kcat.active(kcat.CATALOG)]}],
+                        T0 - 30 * DAY)
     b = drip.Bot(store, tg=tg, clock=clock, rng=random.Random(3))
     b.prompts, b.phrasings = env_prompts, phrasings
     return b, store, tg, clock, grades
@@ -138,7 +141,7 @@ def press(data, chat=42):
 
 
 def events(store):
-    return sorted(store.list_knowledge('knowledge_events'), key=lambda e: e['at'])
+    return sorted((e for e in store.list_knowledge('knowledge_events') if e['source'] != 'lesson'), key=lambda e: e['at'])
 
 
 def test_cards_go_out_on_schedule_and_wait_for_an_answer(env):
@@ -589,3 +592,16 @@ def test_marking_a_gap_card_known_closes_the_gap(env):
     tg.updates = [press(f'reveal:{g["n"]}'), press(f'self:{g["n"]}:1')]
     b.step(poll=0)
     assert store.list_knowledge('knowledge_misconceptions')[0]['status'] == 'resolved'
+
+
+def test_only_ideas_met_outside_telegram_are_asked():
+    c = kcat.CATALOG
+    known = [p['id'] for p in kcat.active(c) if p['lesson'] == 'guarantees'][:2]
+    evs = [{'point': known[0], 'source': 'lesson'}, {'point': known[1], 'source': 'tutor'},
+           {'point': MISS, 'source': 'telegram'}]                        # a Telegram miss alone is not "covered"
+    met = cards.met(evs)
+    assert met == set(known)
+    for _ in range(5):
+        p, reason = cards.pick(c, {}, {}, [], T0, random.Random(), met=met)
+        assert p['id'] in known and reason == 'new'
+    assert cards.pick(c, {}, {}, [], T0, met=set()) == (None, None)

@@ -340,12 +340,13 @@ class Bot:
 
     def send_card(self, now, app=None):
         self.roll_day(now)
-        cat, _, states, seen, mis = kb_api.evidence(self.store, now)
+        cat, evs, states, seen, mis = kb_api.evidence(self.store, now)
+        known = cards.met(evs, SOURCE)
         quiet = cards.ignored_gaps([self.card(k) or {} for k in range(self.state['n'], max(0, self.state['n'] - 10), -1)])
         if app:
-            point, reason = context.pick(cat, states, seen, mis, now, app, cards.COOLDOWN)
+            point, reason = context.pick(cat, states, seen, mis, now, app, cards.COOLDOWN, set(cat['points']) - known)
         else:
-            point, reason = cards.pick(cat, states, seen, mis, now, self.rng, quiet=quiet)
+            point, reason = cards.pick(cat, states, seen, mis, now, self.rng, quiet=quiet, met=known)
         if not point:
             return None
         self.state['n'] += 1

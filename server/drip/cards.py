@@ -4,8 +4,10 @@ A point with an open gap (a piece the learner keeps missing) comes first once GA
 passed, and is asked as a follow-up about that piece alone, not the whole question again. A gap
 left unanswered GAP_IGNORED times stops jumping the queue; the point comes back in its normal turn.
 Otherwise selection reuses the knowledge model's ranking with a cooldown so a point does not come back the
-same day, then falls back to points already seen, then to new points in lessons already started,
-and only then to new points in course order. Sending is spread over a daily window: about
+same day, then falls back to points already seen. With `met`, only ideas met somewhere other than
+the drip itself are asked (the bot passes it, so Telegram never asks about something not yet
+covered). Then new points (met but never answered, with `met`) in lessons already started, then
+in course order. Sending is spread over a daily window: about
 `per_day` cards, never two within MIN_GAP, never while one is still waiting for an answer.
 """
 import datetime as dt
@@ -46,9 +48,17 @@ def ignored_gaps(recent_cards):
     return {k for k, n in counts.items() if n >= GAP_IGNORED}
 
 
-def pick(catalog, states, seen, misconceptions, now, rng=None, exclude=(), quiet=()):
-    """-> (point, reason) or (None, None). `quiet`: gap keys that no longer jump the queue."""
+def met(events, own='telegram'):
+    """Points with evidence from anywhere but `own`: a lesson, check, quiz, the tutor, the feed."""
+    return {e['point'] for e in events if e.get('source') != own}
+
+
+def pick(catalog, states, seen, misconceptions, now, rng=None, exclude=(), quiet=(), met=None):
+    """-> (point, reason) or (None, None). `quiet`: gap keys that no longer jump the queue.
+    `met`: when given, only these points (a met idea never answered counts as new)."""
     rng = rng or random.Random()
+    if met is not None:
+        exclude = set(exclude) | (set(catalog['points']) - set(met))
     for g in sorted((m for m in misconceptions if m.get('kind') == 'gap' and m['status'] == 'open' and m.get('ask')
                      and m['_key'] not in quiet),
                     key=lambda m: m.get('updated_at') or m['created_at']):
@@ -68,7 +78,7 @@ def pick(catalog, states, seen, misconceptions, now, rng=None, exclude=(), quiet
             choice = top[0] if top[0]['reason'] == 'misconception' else rng.choice(top)
             return choice['point'], choice['reason']
     started = {catalog['points'][p]['lesson'] for p in list(states) + list(seen) if p in catalog['points']}
-    fresh = [r for r in kmodel.pick(catalog, states, seen, misconceptions, now, n=200, mode='learn',
+    fresh = [r for r in kmodel.pick(catalog, states, seen, misconceptions, now, n=200, mode='learn' if met is None else 'any',
                                      exclude=exclude, cooldown=COOLDOWN) if r['reason'] == 'new']
     for r in fresh:
         if r['point']['lesson'] in started:
