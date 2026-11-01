@@ -47,6 +47,7 @@ from .wall import router as wall_router
 from .drip.api import router as drip_router
 from .podcast import router as podcast_router
 from .study_prompt import router as study_prompt_router
+from .handover import router as handover_router
 from .senpai import jobscout as senpai_jobscout, service as senpai_service, worker as senpai_worker
 from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
 
@@ -96,6 +97,7 @@ app.include_router(wall_router)
 app.include_router(drip_router)
 app.include_router(podcast_router)
 app.include_router(study_prompt_router)
+app.include_router(handover_router)
 # The daily review API, under its old path (kept for compatibility) and under Senpai's.
 app.include_router(senpai_daily_router, prefix="/api/coach/daily")
 app.include_router(senpai_daily_router, prefix="/api/senpai/daily")

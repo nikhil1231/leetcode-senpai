@@ -258,6 +258,31 @@ def leetcode(families, problems, attempts, enrichments, family=None, topic=None)
 
 # ---- HTTP -------------------------------------------------------------------------------
 
+def titled_views(store, now):
+    """-> (every point's view with its section and category titles, misconceptions)."""
+    c, _, states, seen, mis = kb_api.evidence(store, now)
+    vs = kmodel.views(c, states, seen, mis, now)
+    titles = {p['id']: (p['section_title'], p['category_title']) for p in c['points'].values()}
+    for v in vs:
+        v['section_title'], v['category_title'] = titles[v['id']]
+    return vs, mis
+
+
+def record_changes(store, code, changes, source, now):
+    """Store a debrief plan's changes for one session: soft evidence, then misconceptions opened or
+    closed. Keys are per session and idea, so a repeat records nothing twice."""
+    kb_api.write_events(store, source, [{**ch['event'], 'key': f"{code}.{ch['ref']}", 'ref': f'study:{code}'}
+                                        for ch in changes], now)
+    for ch in changes:
+        key, o, quote = f"{code}.{ch['ref']}", ch['opens'], ch.get('quote') or ch['note']
+        if o and o['kind'] == 'gap':
+            kb_api.open_gap(store, source, key, ch['point'], o['text'], o['ask'], quote, now)
+        elif o:
+            kb_api.add_misconception(store, source, key, ch['point'], o['text'], quote, now, kind='belief', ask=o['ask'])
+        elif ch['resolves']:
+            kb_api.resolve_open(store, ch['point'], now, f'Right in outside study session {code}')
+
+
 def _session_code():
     return ''.join(secrets.choice('abcdefghjkmnpqrstuvwxyz23456789') for _ in range(6))
 
@@ -282,11 +307,7 @@ def study_prompt(body: PromptIn, uid: str = Depends(auth.require_user)):
             raise HTTPException(404, 'Nothing to study here yet')
         return {'prompt': text, 'session': None}
     now = time.time()
-    c, _, states, seen, mis = kb_api.evidence(store, now)
-    vs = kmodel.views(c, states, seen, mis, now)
-    titles = {p['id']: (p['section_title'], p['category_title']) for p in c['points'].values()}
-    for v in vs:
-        v['section_title'], v['category_title'] = titles[v['id']]
+    vs, mis = titled_views(store, now)
     code = _session_code()
     out = knowledge(vs, mis, body.section, body.category, body.lesson, session=code)
     if not out:
@@ -326,17 +347,8 @@ def debrief(body: DebriefIn, uid: str = Depends(auth.require_user)):
            'imported_at': session.get('imported_at'), 'applied': False}
     if not body.apply or session.get('imported_at') or not p['changes']:
         return out
-    code, src = parsed['session'], study_debrief.SOURCE
-    kb_api.write_events(store, src, [{**ch['event'], 'key': f"{code}.{ch['ref']}", 'ref': f'study:{code}'}
-                                     for ch in p['changes']], now)
-    for ch in p['changes']:
-        key, o = f"{code}.{ch['ref']}", ch['opens']
-        if o and o['kind'] == 'gap':
-            kb_api.open_gap(store, src, key, ch['point'], o['text'], o['ask'], ch['note'], now)
-        elif o:
-            kb_api.add_misconception(store, src, key, ch['point'], o['text'], ch['note'], now, kind='belief', ask=o['ask'])
-        elif ch['resolves']:
-            kb_api.resolve_open(store, ch['point'], now, f'Right in voice-chat study session {code}')
+    code = parsed['session']
+    record_changes(store, code, p['changes'], study_debrief.SOURCE, now)
     store.put_knowledge('study_sessions', code, {**{k: v for k, v in session.items() if k != '_key'},
                         'imported_at': now, 'debrief': body.text, 'counts': p['counts'], 'notes': p['notes']})
     return {**out, 'imported_at': now, 'applied': True}
