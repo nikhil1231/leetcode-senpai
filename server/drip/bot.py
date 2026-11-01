@@ -284,6 +284,8 @@ class Bot:
         elif parts[0] == 'self' and len(parts) == 3 and c['status'] in ('revealed', 'pending') and point:
             knew = parts[2] == '1'
             self.record(c, point, knew, cards.depth(point) if knew else 'recall', f'self-graded: {"knew it" if knew else "did not"}', now)
+            if knew and c.get('gap'):
+                kb_api.resolve_open(self.store, point['id'], now, 'Marked as known on Telegram.', kind='gap')
             c.update(status='answered', verdict='right' if knew else 'wrong', self_graded=True)
             self.put_card(c)
             self.state['right'] += knew
@@ -303,7 +305,7 @@ class Bot:
         if not text:
             self.say("Sorry, I couldn't make that out. Try again, or type it?")
             return None
-        self.say(f'<i>Heard:</i> {html.escape(text)}')
+        self.say(f'🎙️ {html.escape(text)}')
         return text
 
     # ---- cards --------------------------------------------------------------------------
@@ -339,21 +341,22 @@ class Bot:
     def send_card(self, now, app=None):
         self.roll_day(now)
         cat, _, states, seen, mis = kb_api.evidence(self.store, now)
+        quiet = cards.ignored_gaps([self.card(k) or {} for k in range(self.state['n'], max(0, self.state['n'] - 10), -1)])
         if app:
             point, reason = context.pick(cat, states, seen, mis, now, app, cards.COOLDOWN)
         else:
-            point, reason = cards.pick(cat, states, seen, mis, now, self.rng)
+            point, reason = cards.pick(cat, states, seen, mis, now, self.rng, quiet=quiet)
         if not point:
             return None
         self.state['n'] += 1
         n = self.state['n']
-        gap = cards.open_gap(mis, point['id'])
+        gap = cards.open_gap(mis, point['id'], quiet)
         if gap:
             reason = 'gap'
         ask, line = (gap['ask'] if gap else None), (app['line'] if app else None)
         recent = [(self.card(k) or {}).get('ask') for k in range(n - 1, max(0, n - 6), -1)]
         phrased = assess.phrase(self.store, point, reason, ask, line, recent)
-        text = cards.card_text(point, reason, ask, line, phrased)
+        text = cards.card_text(point, ask, line, phrased)
         msg = self.say(text, [('Show answer', f'reveal:{n}'), ('Skip', f'skip:{n}')])
         c = {'n': n, 'point': point['id'], 'reason': reason, 'text': text, 'sent_at': now, 'status': 'pending',
              'message_id': (msg or {}).get('message_id'), 'app': app['name'] if app else None}
@@ -383,12 +386,12 @@ class Bot:
             return self.button(f'reveal:{c["n"]}')
         verdict, clean = grade['verdict'], grade['verdict'] == 'right'
         self.record(c, point, clean, cards.depth(point), text[:500], now, partial=verdict == 'partly')
-        missing = assess.consequences(self.store, SOURCE, f'card-{c["n"]}', point, grade, text, now, 'on Telegram')
+        assess.consequences(self.store, SOURCE, f'card-{c["n"]}', point, grade, text, now, 'on Telegram')
         c.update(status='answered', answer=text[:2000], verdict=verdict, feedback=grade['feedback'], answered_at=now)
         self.put_card(c)
         self.state.update(pending=None, right=self.state['right'] + clean)
         self.save()
-        self.say(cards.result_text(verdict, grade['feedback'], point, missing))
+        self.say(cards.result_text(verdict, grade['feedback'], point))
 
     def grade(self, point, text, ask=None, focus=None):
         return assess.grade(self.store, point, text, ask, focus)

@@ -1,7 +1,8 @@
 """Which card to send, when, and how it reads. Pure; no I/O.
 
 A point with an open gap (a piece the learner keeps missing) comes first once GAP_COOLDOWN has
-passed, and is asked as a follow-up about that piece alone, not the whole question again.
+passed, and is asked as a follow-up about that piece alone, not the whole question again. A gap
+left unanswered GAP_IGNORED times stops jumping the queue; the point comes back in its normal turn.
 Otherwise selection reuses the knowledge model's ranking with a cooldown so a point does not come back the
 same day, then falls back to points already seen, then to new points in lessons already started,
 and only then to new points in course order. Sending is spread over a daily window: about
@@ -23,6 +24,7 @@ MIN_GAP = 45 * 60
 EXPIRE = 3 * 3600
 COOLDOWN = 20 * 3600
 GAP_COOLDOWN = 3 * 3600
+GAP_IGNORED = 2
 PER_DAY_MIN, PER_DAY_MAX = 1, 10
 VOICE = {'fact': 'sam', 'principle': 'marcus', 'mechanism': 'jo', 'tradeoff': 'marcus', 'procedure': 'priya'}
 TAG = {'gap': 'The bit that slipped last time', 'misconception': 'Second chance', 'shaky': 'Rematch',
@@ -30,15 +32,25 @@ TAG = {'gap': 'The bit that slipped last time', 'misconception': 'Second chance'
        'tonight': 'From today', 'morning': 'From last night'}
 
 
-def open_gap(misconceptions, point_id):
+def open_gap(misconceptions, point_id, quiet=()):
     return next((m for m in misconceptions if m.get('kind') == 'gap' and m['status'] == 'open'
-                 and m['point'] == point_id and m.get('ask')), None)
+                 and m['point'] == point_id and m.get('ask') and m['_key'] not in quiet), None)
 
 
-def pick(catalog, states, seen, misconceptions, now, rng=None, exclude=()):
-    """-> (point, reason) or (None, None)."""
+def ignored_gaps(recent_cards):
+    """Gap keys asked GAP_IGNORED or more times with no answer (skipped, expired, or revealed and never marked)."""
+    counts = {}
+    for c in recent_cards:
+        if c.get('gap') and c.get('status') in ('skipped', 'expired', 'revealed'):
+            counts[c['gap']] = counts.get(c['gap'], 0) + 1
+    return {k for k, n in counts.items() if n >= GAP_IGNORED}
+
+
+def pick(catalog, states, seen, misconceptions, now, rng=None, exclude=(), quiet=()):
+    """-> (point, reason) or (None, None). `quiet`: gap keys that no longer jump the queue."""
     rng = rng or random.Random()
-    for g in sorted((m for m in misconceptions if m.get('kind') == 'gap' and m['status'] == 'open' and m.get('ask')),
+    for g in sorted((m for m in misconceptions if m.get('kind') == 'gap' and m['status'] == 'open' and m.get('ask')
+                     and m['_key'] not in quiet),
                     key=lambda m: m.get('updated_at') or m['created_at']):
         pid = kcat.canonical(catalog, g['point'])
         if not pid or pid in exclude or catalog['points'][pid]['retired']:
@@ -117,14 +129,12 @@ def speaker(point):
     return next(c for c in story.cast() if c['id'] == VOICE.get(point['kind'], 'jo'))
 
 
-def card_text(point, reason, ask=None, context=None, phrased=None):
-    """A card. `phrased` is the question as its cast member wrote it; without it, their opening line and the prompt."""
+def card_text(point, ask=None, context=None, phrased=None):
+    """A card: the cast member's name, then their message. Without `phrased` (which already nods to the
+    context), the context line, their opening line and the prompt."""
     who = speaker(point)
-    opener = f'📱 <i>{html.escape(context)}</i>\n\n' if context else ''
-    body = phrased or f'{voice.lead(who["id"], point["id"])} {ask or point["prompt"]}'
-    footer = ' · '.join(x for x in (TAG.get(reason, ''), point['lesson_title']) if x)
-    return (f'{opener}<b>{html.escape(who["name"])}</b> <i>· {html.escape(who["role"])}</i>\n'
-            f'{html.escape(body, quote=False)}\n\n<i>{html.escape(footer, quote=False)}</i>')
+    body = phrased or ' '.join(x for x in (context, voice.lead(who['id'], point['id']), ask or point['prompt']) if x)
+    return f'<b>{html.escape(who["name"])}</b>\n{html.escape(body, quote=False)}'
 
 
 def depth(point):
@@ -171,11 +181,9 @@ def _idea(point):
     return f'<blockquote expandable><b>The idea</b>\n{html.escape(point["claim"], quote=False)}</blockquote>'
 
 
-def result_text(verdict, feedback, point, missing=''):
+def result_text(verdict, feedback, point):
     head = {'right': '✅', 'partly': '🟡', 'wrong': '❌'}[verdict]
     text = f'{head} <b>{html.escape(speaker(point)["name"])}:</b> {html.escape(feedback, quote=False)}\n\n{_idea(point)}'
-    if missing:
-        text += f'\n<i>I\'ll come back to just that bit another time.</i>'
     return text
 
 

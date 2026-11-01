@@ -63,8 +63,9 @@ def test_pick_prefers_misconceptions_then_weak_then_seen_then_started_lessons():
 
 def test_card_text_speaks_in_the_casts_voice_and_escapes_html():
     p = {**kcat.CATALOG['points'][MISS], 'prompt': 'Is 1 < 2 & does it matter?'}
-    text = cards.card_text(p, 'fading')
-    assert text.startswith('<b>Marcus</b>') and '1 &lt; 2 &amp; does' in text and 'Before it fades' in text
+    text = cards.card_text(p)
+    assert text.startswith('<b>Marcus</b>\n') and '1 &lt; 2 &amp; does' in text and '<i>' not in text
+    assert cards.card_text(p, context='You just opened Uber.').startswith('<b>Marcus</b>\nYou just opened Uber. ')
 
 
 # ---- the bot ---------------------------------------------------------------------------
@@ -213,7 +214,7 @@ def test_voice_notes_are_transcribed_then_graded(env, monkeypatch):
     grades.append({'verdict': 'right', 'feedback': 'Exactly.', 'misconception': ''})
     tg.updates = [{'update_id': next(uid), 'message': {'chat': {'id': 42}, 'voice': {'file_id': 'v1'}}}]
     b.step(poll=0)
-    assert any('Heard:' in s['text'] for s in tg.sent) and '✅' in tg.last()
+    assert any(s['text'].startswith('🎙️ load is')  for s in tg.sent) and '✅' in tg.last()
     assert events(store)[-1]['clean'] is True and b.state['right'] == 1
 
 
@@ -270,7 +271,7 @@ def test_a_partly_right_answer_opens_a_gap_and_the_follow_up_targets_it(env):
                    'missing': piece, 'follow_up': ask})
     tg.updates = [msg('DNS, edge, load balancer, service, database')]
     b.step(poll=0)
-    assert '🟡' in tg.last() and 'just that bit' in tg.last()
+    assert '🟡' in tg.last() and '<i>' not in tg.last()
     e = events(store)[-1]
     assert e['clean'] is False and e['partial'] is True
     gap = store.list_knowledge('knowledge_misconceptions')[0]
@@ -291,7 +292,7 @@ def test_a_partly_right_answer_opens_a_gap_and_the_follow_up_targets_it(env):
     follow = b.send_card(clock.t)
     assert follow['point'] == c['point'] and follow['reason'] == 'gap'
     assert b.phrasings[-1]['QUESTION'] == ask and b.phrasings[-1]['REASON'] == 'gap'   # the character asks the gap's question
-    assert follow['ask'] == f'Quick one from Ripple: {ask}' and ask in tg.last() and 'The bit that slipped last time' in tg.last()
+    assert follow['ask'] == f'Quick one from Ripple: {ask}' and ask in tg.last()
     ask = follow['ask']
 
     grades.append({'verdict': 'right', 'feedback': 'Yes, last.'})
@@ -403,7 +404,7 @@ def test_opening_an_app_sends_a_question_about_it_and_replaces_a_stale_card(env)
     clock.t += 20 * 60
     out = b.nudge('Uber')
     assert out['sent'] and kcat.CATALOG['points'][out['point']]['lesson'] in ('design-rides', 'geo-index', 'concurrent-holds')
-    assert 'You just opened Uber' in tg.last() and b.state['pending'] == old['n'] + 1
+    assert 'You just opened Uber' in b.phrasings[-1]['CONTEXT'] and b.state['pending'] == old['n'] + 1
     assert store.get_knowledge('drip', f'card-{old["n"]}')['status'] == 'replaced'
     assert b.nudge('Uber')['reason'] == 'asked about this app recently'
     assert b.nudge('YouTube') == {'sent': False, 'reason': 'a question just arrived'}
@@ -530,7 +531,7 @@ def test_the_grader_speaks_as_the_colleague_who_asked():
     p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
     payload = cards.grade_payload(p, 'my answer')
     assert payload['SPEAKER'] == voice.persona('priya') and 'SPEAKER' in cards.GRADE_SYSTEM and voice.FEEDBACK in cards.GRADE_SYSTEM
-    assert voice.lead('priya', p['id']) in cards.card_text(p, 'new')
+    assert voice.lead('priya', p['id']) in cards.card_text(p)
 
 
 def test_cards_are_phrased_by_their_character_and_graded_against_that_question(env):
@@ -539,7 +540,7 @@ def test_cards_are_phrased_by_their_character_and_graded_against_that_question(e
     p = b.phrasings[-1]
     assert p['SPEAKER'] == voice.persona('priya') and p['IDEA'] and p['REASON'] == c['reason']
     assert c['ask'] == f'Quick one from Ripple: {p["QUESTION"]}'          # quotes stripped
-    assert tg.sent[-1]['text'].startswith('<b>Priya</b> <i>· Site reliability engineer</i>\nQuick one from Ripple:')
+    assert tg.sent[-1]['text'].startswith('<b>Priya</b>\nQuick one from Ripple:')
     grades.append({'verdict': 'right', 'feedback': 'Nice.', 'misconception': ''})
     tg.updates = [msg('dns, edge, lb, service, then the commit')]
     b.step(poll=0)
@@ -558,3 +559,33 @@ def test_without_the_model_cards_use_the_template(env, monkeypatch):
     monkeypatch.setattr(config, 'OPENROUTER_API_KEY', '')
     b.send_card(clock.t)
     assert b.phrasings == [] and any(lead in tg.sent[-1]['text'] for lead in voice.member('priya')['leads'])
+
+
+def test_an_ignored_gap_stops_jumping_the_queue(env):
+    b, store, tg, clock, grades = env
+    c = b.send_card(clock.t)
+    grades.append({'verdict': 'partly', 'feedback': 'f', 'missing': 'the piece', 'follow_up': 'which piece?'})
+    tg.updates = [msg('half an answer')]
+    b.step(poll=0)
+    for _ in range(cards.GAP_IGNORED):
+        clock.t += cards.GAP_COOLDOWN + 1
+        again = b.send_card(clock.t)
+        assert again['reason'] == 'gap' and again['point'] == c['point']
+        tg.updates = [press(f'skip:{again["n"]}')]
+        b.step(poll=0)
+    clock.t += cards.GAP_COOLDOWN + 1
+    assert b.send_card(clock.t)['reason'] != 'gap'
+    assert store.list_knowledge('knowledge_misconceptions')[0]['status'] == 'open'   # kept, just not pushed
+
+
+def test_marking_a_gap_card_known_closes_the_gap(env):
+    b, store, tg, clock, grades = env
+    b.send_card(clock.t)
+    grades.append({'verdict': 'partly', 'feedback': 'f', 'missing': 'the piece', 'follow_up': 'which piece?'})
+    tg.updates = [msg('half an answer')]
+    b.step(poll=0)
+    clock.t += cards.GAP_COOLDOWN + 1
+    g = b.send_card(clock.t)
+    tg.updates = [press(f'reveal:{g["n"]}'), press(f'self:{g["n"]}:1')]
+    b.step(poll=0)
+    assert store.list_knowledge('knowledge_misconceptions')[0]['status'] == 'resolved'
