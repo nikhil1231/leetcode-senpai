@@ -41,9 +41,9 @@ When memory runs out, the **OOM killer** picks a process (by `oom_score`) and SI
 ```predict
 prompt: A Java pod has a 2 GiB memory limit and `-Xmx2g`. Under load it's restarted repeatedly, with exit code 137 and no Java OutOfMemoryError in the logs. Why?
 choices:
-  - A bug in the JVM's garbage collector
-  - Heap plus metaspace, thread stacks and direct buffers exceeds the 2 GiB cgroup limit, so the kernel kills it
-  - The liveness probe is failing
+  - A bug in the JVM's garbage collector that crashes it before it can log the error
+  - Heap plus metaspace, stacks and direct buffers exceed the 2 GiB cgroup limit, so the kernel kills it
+  - The liveness probe times out during GC pauses, so Kubernetes restarts the pod
   - Exit code 137 means the application called System.exit(137)
 answer: 1
 reveal: |
@@ -90,9 +90,9 @@ model: |
   choices:
     - text: The process was killed with SIGKILL, often by the OOM killer or after a grace period
       correct: true
-    - text: The image failed to pull
+    - text: The image failed to pull, so the container never started
       why: Pull failures show as ErrImagePull, before any process runs.
-    - text: A segmentation fault
+    - text: A segmentation fault in native code, reported as 128 plus the signal
       why: That's SIGSEGV, exit code 139.
     - text: The process exited normally with an error
       why: Codes above 128 mean "killed by signal (code minus 128)".
@@ -102,9 +102,9 @@ model: |
   choices:
     - text: Probably not; most of the used memory is reclaimable page cache
       correct: true
-    - text: Yes, the box is nearly out of memory
+    - text: Yes, only 300 MB is free, so the OOM killer is about to run
       why: The available column counts reclaimable cache.
-    - text: Yes, swap will be used immediately
+    - text: Yes, swap will be used for anything new, which slows every process down
       why: The kernel drops clean cache before it swaps.
   explanation: Judge memory pressure by available memory, swap activity and OOM events, not by "free".
 - kind: check
@@ -112,7 +112,7 @@ model: |
   choices:
     - text: Many tasks are blocked in uninterruptible I/O wait, which counts toward load
       correct: true
-    - text: The CPUs are saturated
+    - text: The CPUs are saturated, and the 20% figure is averaged over all cores
       why: CPU is 80% idle.
     - text: Load average only counts network connections
       why: It counts runnable tasks plus tasks in uninterruptible sleep.
@@ -120,11 +120,11 @@ model: |
 - kind: fire
   prompt: A container ignores SIGTERM and is killed after 30 seconds on every deploy. What's the most likely cause?
   choices:
-    - text: The app runs as PID 1 with no SIGTERM handler, or behind a shell that doesn't forward signals
+    - text: The app runs as PID 1 with no SIGTERM handler, or behind a shell that drops signals
       correct: true
-    - text: SIGTERM is blocked by the kernel in containers
+    - text: SIGTERM is blocked by the kernel in containers unless they run as privileged
       why: It's delivered, but PID 1 gets no default action.
-    - text: The grace period is too long
+    - text: The grace period is too long, so Kubernetes stops waiting for the app to exit
       why: The length doesn't explain the signal being ignored.
   explanation: Use exec-form CMD, handle SIGTERM, or run with an init such as tini.
 - kind: fire
@@ -132,9 +132,9 @@ model: |
   choices:
     - text: A process is holding a deleted file open
       correct: true
-    - text: du is broken on ext4
+    - text: du skips files over 2 GB on ext4
       why: du only counts files that still have names.
-    - text: The filesystem is corrupt
+    - text: The filesystem is corrupt and needs an fsck
       why: Possible, but the open-deleted file is far more common.
   explanation: Find it with `lsof | grep deleted`, then restart the process or truncate the file.
 - kind: fire
@@ -142,19 +142,19 @@ model: |
   choices:
     - text: strace -p <pid>
       correct: true
-    - text: iostat
-      why: iostat reports device statistics.
-    - text: vmstat
-      why: vmstat summarises the whole system.
+    - text: lsof -p <pid>
+      why: lsof lists open files, not system calls.
+    - text: perf top -p <pid>
+      why: perf samples CPU hotspots, not individual system calls.
   explanation: strace attaches with ptrace, which is useful but slows the process down.
 - kind: fire
   prompt: A service fails with "Too many open files" and its descriptor count climbs steadily. Best first fix?
   choices:
-    - text: Find and fix the leak, such as connections or files that are never closed
+    - text: Find and fix the leak, such as connections or files never closed
       correct: true
-    - text: Raise ulimit -n to a million
+    - text: Raise ulimit -n to a million, so the service has plenty of headroom
       why: That only delays a steady leak.
-    - text: Restart the service nightly
+    - text: Restart the service nightly so the descriptor count resets
       why: That hides the bug.
   explanation: A climbing count is a leak; a high but stable count is a limit problem.
 ```

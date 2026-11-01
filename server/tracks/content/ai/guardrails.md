@@ -81,41 +81,41 @@ items:
 - kind: check
   prompt: What is indirect prompt injection?
   choices:
-    - text: Malicious instructions hidden in content the model processes, such as a web page or email, rather than typed by the user
+    - text: Malicious instructions hidden in content the model reads, like a web page or email
       correct: true
-    - text: A user typing "ignore your instructions"
+    - text: A user typing "ignore your instructions" in a way the input filter doesn't recognise
       why: That's direct injection.
-    - text: Injecting SQL through an LLM
+    - text: Injecting SQL into a database through a query the LLM generates
       why: That's a downstream consequence, not the definition.
   explanation: The user can be the victim; the attacker controls the content.
 - kind: check
   prompt: What's the most robust defence against prompt injection causing harm?
   choices:
-    - text: Limit what the model can do, through least privilege, authorisation in code and human confirmation
+    - text: Limit what the model can do: least privilege, authorisation in code, human confirmation
       correct: true
-    - text: A stronger system prompt
+    - text: A stronger system prompt that marks untrusted content and forbids following it
       why: Prompts reduce risk but can be overridden.
-    - text: A larger model
-      why: Capable models are still vulnerable.
+    - text: A classifier that scans every input for injection attempts first
+      why: Classifiers miss novel attacks. Limiting what the model can do is what holds.
   explanation: Assume the model can be fooled, and contain the blast radius.
 - kind: check
   prompt: Why can rendering model output as markdown with images leak data?
   choices:
-    - text: An injected image URL can carry data in its query string, which the browser sends when it loads the image
+    - text: An injected image URL can carry data in its query string, sent when the browser loads it
       correct: true
-    - text: Markdown is executed as code
+    - text: Markdown is executed as HTML, so injected script tags run in the user's browser
       why: The issue is automatic URL fetching.
-    - text: Images make responses slower
+    - text: Images are fetched through the model provider, which logs their URLs
       why: Not a security issue.
   explanation: Block external images and links in model output, or proxy them through an allow list.
 - kind: fire
   prompt: Where should "may this user see this document?" be decided in a RAG assistant?
   choices:
-    - text: In code, by filtering retrieval to documents the user is authorised to read
+    - text: In code, by filtering retrieval to documents the user may read
       correct: true
-    - text: By the model, based on instructions
+    - text: By the model, based on the user's role given in the system prompt
       why: Models aren't access control.
-    - text: After generation, by checking the answer
+    - text: After generation, by checking the answer for content from restricted documents
       why: Too late, because restricted content has already influenced the answer.
   explanation: Authorisation is enforced outside the model.
 - kind: fire
@@ -123,7 +123,7 @@ items:
   choices:
     - text: As untrusted input, using parameterised queries or strict validation
       correct: true
-    - text: As trusted, because it came from our own system
+    - text: As trusted, because it came from our own system and passed schema validation
       why: It's shaped by untrusted inputs.
     - text: Escaped only when it contains quotes
       why: Ad-hoc escaping is fragile.
@@ -133,19 +133,19 @@ items:
   choices:
     - text: An LLM-as-judge check on every output
       correct: true
-    - text: JSON schema validation
+    - text: JSON schema validation with automatic retries
       why: Cheap and fast.
-    - text: A request size limit
+    - text: A regex filter for PII on every response
       why: Negligible cost.
   explanation: Place expensive checks by risk, or run them asynchronously.
 - kind: fire
   prompt: What should you check about an LLM provider before sending customer PII?
   choices:
-    - text: Its data retention and training-use policies, and the contractual terms that apply
+    - text: Its data retention and training-use policies, and the contract terms
       correct: true
-    - text: Only its price
+    - text: Its price per token for the volume of PII you expect to send each month
       why: Data handling has legal consequences.
-    - text: Its context window size
+    - text: Its context window size, so the PII fits in a single request
       why: Irrelevant to privacy.
   explanation: Minimise and redact PII where you can, and know where the data goes.
 ```

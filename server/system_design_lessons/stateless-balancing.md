@@ -61,10 +61,10 @@ takeaway: |
 ```predict
 prompt: A fleet of 20 servers sits behind round-robin balancing. One server develops a disk problem and becomes 5× slower, but it still passes its health check. What happens to overall p99 latency?
 choices:
-  - Nothing much — it's only 5% of servers
-  - It rises sharply, because 5% of requests still go to the slow server and the p99 lands in that slow 5%
+  - Nothing much — it's only 5% of servers, and p99 is dominated by the other 95% of requests
+  - It rises sharply: 5% of requests still go to the slow server, and p99 falls in that 5%
   - It improves, because the other servers get less traffic
-  - Round robin automatically skips slow servers
+  - Round robin skips the slow server once its connection queue grows, so p99 recovers
 answer: 1
 reveal: |
   Round robin sends exactly 1/20 = 5% of requests to the sick server regardless of how it performs. That slow 5% *is* your p99 (and p95). A load-aware algorithm (least outstanding, power of two) would send it less work automatically; **outlier detection** (eject backends whose error rate or latency is far worse than their peers) would remove it. Passing a health check is not the same as being healthy.
@@ -178,13 +178,13 @@ model: |
 - kind: check
   prompt: Why does a gRPC service often stay unbalanced behind an L4 load balancer?
   choices:
-    - text: gRPC multiplexes many requests over one long-lived HTTP/2 connection, and L4 balancing distributes connections, not requests
+    - text: gRPC multiplexes requests over one long-lived HTTP/2 connection, and L4 balances connections, not requests
       correct: true
-    - text: L4 balancers can't forward HTTP/2 traffic at all
+    - text: L4 balancers can't forward HTTP/2 traffic, so gRPC falls back to a single direct connection
       why: They forward the bytes fine. They just can't see individual requests inside a connection.
-    - text: gRPC requires sticky sessions
+    - text: gRPC requires sticky sessions, so each client stays pinned to the backend it first reached
       why: It doesn't. The imbalance is a side effect of connection-level balancing.
-    - text: L4 balancers only support round robin
+    - text: L4 balancers only support round robin, which ignores how busy each backend is
       why: The algorithm isn't the issue. Connection-level granularity is.
   explanation: Per-request balancing needs an L7 proxy or client-side balancing that understands HTTP/2 streams.
 - kind: check
@@ -207,9 +207,9 @@ model: |
       correct: true
     - text: Nothing, because sticky routing preserves sessions
       why: Stickiness routes users back to the same machine. It doesn't keep data alive when that machine goes away.
-    - text: Sessions migrate to the new instances automatically
+    - text: Sessions migrate to the new instances as part of the deploy's connection draining
       why: Nothing copies heap state between processes.
-    - text: The load balancer stores the sessions
+    - text: The load balancer keeps a copy of each session, so users stay logged in
       why: Load balancers route traffic. They don't store application sessions.
   explanation: In-memory state ties users to machines. A shared session store or signed tokens make instances interchangeable.
 - kind: check
@@ -222,50 +222,50 @@ model: |
 - kind: fire
   prompt: What's the main advantage of "power of two choices" balancing?
   choices:
-    - text: Near-optimal load spreading by comparing just two random backends, with no global coordination
+    - text: Near-optimal load spreading by comparing just two random backends, with no coordination
       correct: true
     - text: It always picks the single least-loaded server in the fleet
       why: That needs global state. Two choices gets most of the benefit without it.
     - text: It guarantees the same client always reaches the same server
       why: That's consistent hashing.
-    - text: It doubles every request for reliability
+    - text: It sends each request to two backends and uses whichever answers first
       why: It sends one request, to the less loaded of two candidates.
   explanation: Sampling two and picking the lighter one avoids herding onto a single "least loaded" server and dramatically reduces the maximum load compared with pure random choice.
 - kind: fire
   prompt: Why might short-lived JWT access tokens be paired with a refresh token checked against a store?
   choices:
-    - text: Services verify access tokens locally without a lookup, while revocation takes effect when the access token expires and refresh is denied
+    - text: Services verify access tokens locally; revocation takes effect once the token expires and refresh is denied
       correct: true
-    - text: JWTs can't be verified without a database call
+    - text: JWTs can't be verified without a database call, so the refresh token caches that check
       why: Signed JWTs verify locally with a public key. That's their main benefit.
-    - text: Refresh tokens make access tokens smaller
+    - text: Refresh tokens hold the user's claims, so access tokens can be much smaller to send
       why: Size isn't the reason for the pairing.
-    - text: It allows sessions to live in server memory
+    - text: It lets each server keep sessions in memory, with the store as a backup copy
       why: The point is to avoid server memory entirely.
   explanation: Local verification scales; a revocable refresh path limits how long a stolen or revoked access token remains usable.
 - kind: fire
   prompt: During scale-in, instances are terminated immediately and some users see 502 errors. What's missing?
   choices:
-    - text: Connection draining — stop routing new requests, let in-flight ones finish, then terminate
+    - text: Connection draining: stop routing new requests, let in-flight ones finish, then terminate
       correct: true
-    - text: More instances
+    - text: A higher minimum instance count, so scale-in happens less often
       why: Scaling in removes instances on purpose. The problem is how they're removed.
-    - text: Sticky sessions
+    - text: Sticky sessions, so users stay on instances that aren't being removed
       why: Stickiness would make it worse, by pinning users to the instances being removed.
-    - text: A longer DNS TTL
+    - text: A longer DNS TTL, so clients keep resolving to instances that are still up
       why: DNS has nothing to do with in-flight requests at the load balancer.
   explanation: Graceful shutdown (deregistration, a grace period, closing keep-alives) prevents in-flight requests being cut off.
 - kind: fire
   level: advanced
   prompt: One of 30 backends returns errors on 20% of requests but passes its health check. What mechanism removes it automatically?
   choices:
-    - text: Outlier detection, which ejects backends whose error rate or latency is much worse than their peers'
+    - text: Outlier detection, which ejects backends whose error rate or latency is far worse than peers'
       correct: true
-    - text: A longer health-check interval
-      why: That makes failures slower to detect, and it still checks the wrong signal.
-    - text: Round-robin balancing
+    - text: A stricter health check that fails after a single error response
+      why: One error would eject healthy backends too. Outlier detection compares error rates.
+    - text: Round-robin balancing, which spreads the bad backend's errors evenly across clients
       why: Round robin keeps sending it exactly its share.
-    - text: DNS failover
+    - text: DNS failover, which drops the bad backend's record after repeated errors
       why: DNS works at the region level and is slow to change.
   explanation: Health checks test a synthetic path. Passive outlier detection watches real traffic and ejects misbehaving backends temporarily.
 - kind: fire

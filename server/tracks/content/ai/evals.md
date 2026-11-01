@@ -51,9 +51,9 @@ items:
 ```predict
 prompt: You swap to a cheaper model. On your 400-case eval set the overall pass rate drops from 91% to 90%. What do you do?
 choices:
-  - Ship it; one point is noise
-  - Break the results down by category, and read the newly failing cases before deciding
-  - Reject it; any drop is unacceptable
+  - Ship it; one point on 400 cases is within run-to-run noise
+  - Break results down by category, and read the newly failing cases first
+  - Reject it; any drop on the eval set means the cheaper model is worse
   - Increase the eval set to 10,000 synthetic cases first
 answer: 1
 reveal: |
@@ -82,11 +82,11 @@ model: |
 - kind: check
   prompt: What's the best first step when you set up evals for a new LLM feature?
   choices:
-    - text: Collect real or realistic inputs and read the outputs to find how the system actually fails
+    - text: Collect real or realistic inputs and read the outputs to see how the system fails
       correct: true
-    - text: Pick standard metrics like BLEU and ROUGE
+    - text: Pick standard metrics like BLEU and ROUGE, so results compare with published benchmarks
       why: Generic metrics rarely match product quality.
-    - text: Generate 10,000 synthetic test cases
+    - text: Generate 10,000 synthetic test cases with an LLM so coverage is broad from day one
       why: Volume before understanding measures the wrong things.
   explanation: Error analysis tells you what to measure.
 - kind: check
@@ -94,9 +94,9 @@ model: |
   choices:
     - text: Run both orderings and combine the verdicts
       correct: true
-    - text: Always put your preferred answer first
-      why: That bakes in the bias.
-    - text: Use a higher temperature
+    - text: Put the answers side by side in one column instead
+      why: Layout doesn't remove position bias. Swap the order and combine.
+    - text: Use a higher temperature so the bias averages out
       why: That adds noise without removing bias.
   explanation: This is position bias; swapping and averaging cancels it out.
 - kind: check
@@ -104,7 +104,7 @@ model: |
   choices:
     - text: Whether the output parses as valid JSON for the schema
       correct: true
-    - text: Whether the tone is professional
+    - text: Whether the tone is professional and on-brand for customers
       why: That's subjective and suits a judge.
     - text: Whether claims are supported by the context
       why: A common judge task.
@@ -112,29 +112,29 @@ model: |
 - kind: fire
   prompt: Why break eval results down by category?
   choices:
-    - text: A small aggregate change can hide a large regression in one important category
+    - text: A small aggregate change can hide a big regression in one key category
       correct: true
-    - text: Providers require it
+    - text: Providers require per-category results before a model can be swapped
       why: They don't.
-    - text: It makes the suite run faster
+    - text: It makes the suite run faster, since each category can run in parallel
       why: It doesn't.
   explanation: Aggregate scores hide concentrated failures.
 - kind: fire
   prompt: A production failure is reported and fixed. What else should happen?
   choices:
-    - text: Add it to the eval set, so that a regression is caught automatically
+    - text: Add it to the eval set, so a regression is caught automatically
       correct: true
-    - text: Nothing; it's fixed
+    - text: Nothing more; the fix has been tested and deployed
       why: Without a test, it can return silently.
-    - text: Retrain the model
+    - text: Fine-tune the model on the failing example
       why: Rarely the right response to one failure.
   explanation: Evals grow from real failures.
 - kind: fire
   prompt: Which judge output format is usually more reliable?
   choices:
-    - text: Binary pass or fail per specific criterion, with a reason first
+    - text: Binary pass/fail per specific criterion, with a reason first
       correct: true
-    - text: A single 1 to 10 overall score
+    - text: A single 1 to 10 overall score, averaged over several runs
       why: Fine-grained overall scores are noisy and poorly calibrated.
     - text: A score with no explanation, to save tokens
       why: Reasoning first tends to improve judgments.
@@ -142,9 +142,9 @@ model: |
 - kind: fire
   prompt: For an agent, what should evals check beyond the final answer?
   choices:
-    - text: The trajectory, meaning the right tools, sensible steps and no unsafe actions
+    - text: The trajectory: the right tools, sensible steps and no unsafe actions
       correct: true
-    - text: Only the token count
+    - text: Only the token count and latency, since cost is what changes between runs
       why: Cost matters, but so does behaviour.
     - text: Nothing else; the final answer is all that matters
       why: Agents can reach right answers through unsafe or wasteful paths.

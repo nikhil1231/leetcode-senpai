@@ -98,23 +98,23 @@ debrief: Set `lock_timeout` on every migration, split long operations into low-l
 - kind: check
   prompt: Why don't readers block writers in Postgres?
   choices:
-    - text: Updates create new row versions, and readers see a snapshot of versions committed before they started
+    - text: Updates create new row versions, and readers see a snapshot of what was committed when they began
       correct: true
-    - text: Reads take no locks because they run on replicas
+    - text: Reads take no locks, because Postgres routes them to a replica automatically
       why: This holds on the primary too.
-    - text: Writers wait until all readers finish
+    - text: Writers wait until all readers finish, but readers never wait for writers
       why: That's lock-based concurrency, not MVCC.
   explanation: MVCC keeps old versions visible to older snapshots until vacuum removes them.
 - kind: check
   prompt: Two requests run `SELECT stock` then `UPDATE ... SET stock = <computed>` under read committed. Which change prevents the lost update with the least code?
   choices:
-    - text: A single relative, guarded UPDATE such as SET stock = stock - 1 WHERE stock > 0
+    - text: One guarded relative UPDATE: SET stock = stock - 1 WHERE stock > 0
       correct: true
     - text: Raise max_connections
       why: Unrelated to concurrency control.
-    - text: Add an index on stock
-      why: Indexes don't serialize writers.
-    - text: Read the value twice to confirm it
+    - text: Wrap both statements in BEGIN and COMMIT so they run as one transaction
+      why: Under read committed, a transaction alone doesn't stop the lost update.
+    - text: Read the value twice and update only if both reads match
       why: The race remains between the read and the write.
   explanation: The row lock on UPDATE serializes the two, and each recomputes from the current value.
 - kind: check
@@ -124,7 +124,7 @@ debrief: Set `lock_timeout` on every migration, split long operations into low-l
       correct: true
     - text: They skip ahead of the ALTER and run normally
       why: Postgres grants lock requests in a queue, so conflicting requests wait behind it.
-    - text: They are routed to a replica
+    - text: They are routed to a replica until the ALTER finishes
       why: Postgres doesn't reroute queries.
   explanation: Use lock_timeout so a blocked migration fails fast instead of taking the table down.
 - kind: fire
@@ -140,31 +140,31 @@ debrief: Set `lock_timeout` on every migration, split long operations into low-l
 - kind: fire
   prompt: What is `FOR UPDATE SKIP LOCKED` commonly used for?
   choices:
-    - text: Letting several workers claim different rows from a job table without blocking each other
+    - text: Letting several workers claim different job rows without blocking
       correct: true
-    - text: Reading uncommitted rows
+    - text: Reading rows other sessions have locked, without waiting for their commits
       why: Postgres never does dirty reads.
-    - text: Skipping vacuum
+    - text: Skipping rows that vacuum is currently cleaning up, so queries aren't slowed
       why: Unrelated.
   explanation: Each worker locks rows nobody else holds, which makes a simple, reliable queue.
 - kind: fire
   prompt: A session has sat idle in transaction for six hours. What's the main harm?
   choices:
-    - text: Vacuum can't remove dead tuples newer than its snapshot, so tables bloat, and any locks it holds remain
+    - text: Vacuum can't remove dead tuples newer than its snapshot, so tables bloat and its locks remain
       correct: true
-    - text: None, because idle sessions use no resources
+    - text: None, because idle sessions use no CPU and Postgres times them out after a day
       why: It pins a snapshot and holds a connection.
-    - text: It speeds up other queries by caching
+    - text: It speeds up other queries by keeping their pages cached
       why: No.
   explanation: Set idle_in_transaction_session_timeout and monitor transaction age.
 - kind: fire
   prompt: You put PgBouncer in transaction pooling mode. Which application feature may break?
   choices:
-    - text: Session-level state such as SET variables, advisory locks or server-side prepared statements
+    - text: Session state: SET variables, advisory locks, server-side prepared statements
       correct: true
-    - text: Ordinary transactions
+    - text: Ordinary multi-statement transactions that span several round trips
       why: Those are exactly what it pools.
-    - text: Indexes
+    - text: Indexes the app creates with CREATE INDEX CONCURRENTLY during migrations
       why: Unaffected.
   explanation: Consecutive transactions from one client may land on different server connections.
 ```

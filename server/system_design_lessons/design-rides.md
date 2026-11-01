@@ -103,10 +103,10 @@ find:
 ```predict
 prompt: The driver accepts at second 14.9 of a 15-second offer, but their phone is on a slow network and the accept arrives at second 15.3. Meanwhile the matcher, seeing the offer expired, offered the trip to another driver. What should happen?
 choices:
-  - Both drivers get the trip
-  - The late accept fails its condition (offer for this driver and trip, not expired, by the server clock) and the driver is told the offer has gone
-  - The first driver always wins because they pressed first
-  - The trip is cancelled
+  - Both drivers get the trip, and the rider's app shows whichever one is closer
+  - The late accept fails its condition (expired by the server clock), and the driver is told
+  - The first driver wins, because the accept was pressed before 15 s on the phone's own clock
+  - The trip is cancelled, and the rider is asked to request a new one
 answer: 1
 reveal: |
   Just like seat holds: the accept is a conditional update — `trip.state = REQUESTED AND offer.driver = me AND offer.expires_at >= now()` — judged by one authoritative clock. A slow network loses the race fairly and deterministically. A generous offer window and a "still available?" re-offer improve the experience.
@@ -207,7 +207,7 @@ explain: |
       correct: true
     - text: In the transactional trips database, updated every few seconds
       why: That's a high write rate for data that's obsolete within seconds.
-    - text: Only on the driver's phone
+    - text: Only on the driver's phone, which the matcher asks whenever a ride is requested
       why: Matching needs a server-side view.
     - text: In the data warehouse
       why: That's far too slow for matching.
@@ -238,51 +238,51 @@ explain: |
 - kind: fire
   prompt: A duplicate "complete trip" request arrives after the trip was already completed and charged. What prevents a second charge?
   choices:
-    - text: The transition requires state IN_PROGRESS (it now matches 0 rows), and the charge is idempotent on the trip ID
+    - text: The transition requires IN_PROGRESS (now 0 rows match), and the charge is idempotent per trip
       correct: true
-    - text: Payment processors never charge twice
+    - text: Payment processors reject a second charge for the same amount within a few minutes
       why: They will, unless you send an idempotency key.
-    - text: The driver app prevents double taps
+    - text: The driver app disables the button after the first tap, so no second request is sent
       why: Clients can't be relied on — retries and network issues create duplicates.
-    - text: Nothing
+    - text: Nothing, but the rider can dispute the second charge in the app
       why: That's the bug to avoid.
   explanation: Conditional transitions plus idempotent side effects make duplicate events harmless.
 - kind: fire
   prompt: Why shard matching by city or region?
   choices:
-    - text: Supply, demand and matching are local, so each shard owns its area's data and hotspots stay contained
+    - text: Supply, demand and matching are local, so each shard owns its area and hotspots stay contained
       correct: true
-    - text: To make cities equal in size
+    - text: To make each shard hold roughly the same number of drivers and riders
       why: They aren't, and big cities split further.
-    - text: Because drivers can't cross city lines
+    - text: Because drivers can't cross city lines, so trips never need data from two shards
       why: They can. Shards handle boundaries with neighbouring lookups.
-    - text: For billing
+    - text: So each city's fares and taxes can be billed by its own payments database
       why: Unrelated.
   explanation: Geographic locality is the natural partition for location-based marketplaces.
 - kind: fire
   prompt: A driver's accept arrives after their offer expired and the trip was re-offered. What should happen?
   choices:
-    - text: The accept's conditional update fails; tell the driver the offer has gone
+    - text: The accept's conditional update fails, and the driver is told the offer has gone
       correct: true
-    - text: Assign both drivers
+    - text: Assign both drivers, and let the one who arrives first take the rider
       why: That breaks the invariant.
-    - text: Prefer the first driver because they tapped first
+    - text: Prefer the first driver, because they tapped before the offer expired on their phone
       why: Client tap times aren't authoritative.
-    - text: Cancel the trip
+    - text: Cancel the trip and ask the rider to request again, since two drivers are now involved
       why: The second offer may succeed.
   explanation: One authoritative clock inside an atomic predicate makes the outcome deterministic.
 - kind: fire
   level: advanced
   prompt: A concert ends and 30,000 ride requests hit a few hexagons within ten minutes. What helps most?
   choices:
-    - text: Surge pricing from per-cell supply and demand, batched matching every few seconds, and finer shards for the hotspot
+    - text: Per-cell surge pricing, batched matching every few seconds, finer shards for the hotspot
       correct: true
-    - text: Matching each request strictly first-come-first-served in isolation
+    - text: Matching each request strictly first-come-first-served, in isolation, as soon as it arrives
       why: Greedy one-by-one matching gives worse global assignments under heavy load.
-    - text: Disabling the geo index
+    - text: Disabling the geo index and matching from a list of all nearby drivers
       why: Then matching scans everything.
-    - text: Telling riders to walk
-      why: That's not a system design.
+    - text: Queueing all requests city-wide and matching them in the order they arrived
+      why: One city-wide FIFO matches no better and ignores where supply actually is.
   explanation: Hotspots need economic and algorithmic responses, plus capacity focused where demand is.
 - kind: fire
   type: multi

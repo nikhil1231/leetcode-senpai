@@ -321,13 +321,13 @@ model: |
 - kind: check
   prompt: Which mechanism actually prevents the stale refill race, rather than just limiting how long it lasts?
   choices:
-    - text: Leases — a delete revokes the fill token issued on the miss, so the late SET is rejected
+    - text: Leases: a delete revokes the miss's fill token, so the late SET is rejected
       correct: true
     - text: A shorter TTL
       why: A shorter TTL only shortens how long the stale value survives. The race still happens.
-    - text: Switching from SET-on-write to DEL-on-write
+    - text: Switching from SET-on-write to DEL-on-write, so writers never put values into the cache
       why: The race already assumes DEL-on-write. The problem is a fill that lands after the delete.
-    - text: Adding more cache replicas
+    - text: Adding cache replicas, so a stale copy on one node is outvoted by the others
       why: Replication copies the stale value too. Ordering is the problem, not capacity.
   explanation: The race is a fill that lands after an invalidation. Leases (or fills checked against the source's version) make that late fill fail. TTLs and delayed double deletes only limit how long or how often it bites.
 - kind: check
@@ -341,37 +341,37 @@ model: |
 - kind: fire
   prompt: What does "delayed double delete" do, and what is its main limitation?
   choices:
-    - text: It deletes on write and again shortly afterwards to catch late refills; it reduces the race but only probabilistically
+    - text: It deletes on write and again shortly after to catch late refills; this only narrows the race
       correct: true
-    - text: It deletes the key from two cache replicas; it doubles network traffic
+    - text: It deletes the key from both the primary and the replica cache; its cost is double the network traffic
       why: It's about timing, not replicas. The second delete targets refills that land after the first.
     - text: It writes the value twice to make sure it's durable; it's slower than a single write
       why: Nothing is written — both operations are deletes.
-    - text: It guarantees the race can't happen if the delay exceeds the TTL
+    - text: It deletes twice, and guarantees no stale refill survives if the delay is longer than the TTL
       why: Any fill that lands after the second delete still sticks. The method is a heuristic.
   explanation: The second delete removes values refilled by readers that were in flight during the first. A reader slower than the delay still wins, so treat it as mitigation, not a guarantee.
 - kind: fire
   prompt: Why do teams drive cache invalidation from the database change log (CDC) rather than calling DEL in application code?
   choices:
-    - text: The log captures every committed change from any writer and can be replayed after crashes, so deletes are not silently lost
+    - text: The log records every commit from any writer and can be replayed, so deletes aren't silently lost
       correct: true
-    - text: CDC makes invalidation instantaneous
+    - text: CDC makes invalidation instantaneous, so readers never see a value older than the last commit
       why: CDC adds pipeline lag. Its advantage is reliability and coverage, not speed.
-    - text: CDC removes the need for a TTL
+    - text: CDC removes the need for a TTL on every key, which simplifies cache configuration
       why: Most teams keep a TTL as a backstop for bugs in the key mapping or long pipeline stalls.
-    - text: Database logs are smaller than cache keys
+    - text: Reading the database log costs far less than issuing DEL calls from every application server
       why: That has nothing to do with correctness.
   explanation: Application deletes live outside the transaction and miss other writers. The change log is ordered, durable and covers everything committed. Replays only repeat deletes, which are idempotent.
 - kind: fire
   prompt: An access-control service caches "user X may access workspace Y" for 15 minutes. Security asks that revocations take effect within seconds. What's the right direction?
   choices:
-    - text: Make the authorisation decision against authoritative state (or push revocations and keep any cache to seconds)
+    - text: Check authorisation against authoritative state, or push revocations and cache for seconds only
       correct: true
-    - text: Keep the 15-minute cache but add jitter
+    - text: Keep the 15-minute cache but add jitter so revoked entries expire at different times
       why: Jitter spreads expiries for load reasons. It doesn't shorten the revocation window.
     - text: Cache permissions in the CDN as well, so checks are faster
       why: That adds another layer that can serve a stale "allowed".
-    - text: Ask users to log out after a revocation
+    - text: Ask users to log out after a revocation, which clears their cached permissions
       why: The revoked user is exactly the one who won't do that.
   explanation: Security decisions need an authoritative or very short-lived answer. Caching display data is a trade-off; caching "allowed" for 15 minutes is a vulnerability.
 - kind: fire
@@ -393,13 +393,13 @@ model: |
   level: advanced
   prompt: A versioned fill accepts a value only if its version is newer than the cached one. Where must the version come from?
   choices:
-    - text: The source of truth, ordered by commit (e.g. a row version bumped in the UPDATE, or the log position)
+    - text: The source of truth, in commit order — a row version bumped by the UPDATE, or a log position
       correct: true
-    - text: The application server's clock when the fill happens
+    - text: The application server's clock when the fill happens, synced over NTP across servers
       why: A slow reader stamps an old value with a new time, so the race comes back.
     - text: A random UUID per fill
       why: UUIDs carry no order, so "newer" means nothing.
-    - text: The cache server's clock when the value is stored
+    - text: The cache server's clock when it stores the value, since one clock gives a single order
       why: That measures when the fill arrived, not when the data was committed. It's the same race again.
   explanation: Versions must follow the order in which the source committed the changes. Wall clocks on readers and writers measure when someone looked, not what they saw.
 ```

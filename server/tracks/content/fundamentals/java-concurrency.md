@@ -89,7 +89,7 @@ choices:
   - The pool grows to 32 threads and stays there
   - The pool stays at 4 threads and the queue grows without limit
   - Tasks are rejected once 32 are running
-  - The pool alternates between 4 and 32 threads
+  - The pool grows to 32 threads as the queue fills, then shrinks back to 4
 answer: 1
 reveal: |
   The executor creates threads beyond the core size only when the queue rejects an offer, and an unbounded queue never does. So you get 4 threads, an ever-growing backlog, rising latency, and eventually `OutOfMemoryError`. `Executors.newFixedThreadPool` is built exactly like this. Use a bounded `ArrayBlockingQueue` with a rejection policy, or a semaphore in front of the pool.
@@ -141,9 +141,9 @@ model: |
 - kind: check
   prompt: Why does an unbounded queue make a ThreadPoolExecutor's maximum pool size useless?
   choices:
-    - text: The pool only adds threads beyond the core size when the queue refuses a task
+    - text: The pool only adds threads beyond core size when the queue refuses a task
       correct: true
-    - text: Unbounded queues disable thread creation entirely
+    - text: Unbounded queues disable thread creation, so even the core threads start lazily
       why: Core threads are still created.
     - text: The maximum size applies only to scheduled executors
       why: It applies to every ThreadPoolExecutor.
@@ -163,21 +163,21 @@ model: |
 - kind: fire
   prompt: What's the standard way to prevent deadlock when transferring between two accounts that each have a lock?
   choices:
-    - text: Always acquire the two locks in a global order, such as by account id
+    - text: Always take the two locks in a global order, e.g. by account id
       correct: true
-    - text: Make the locks fair
+    - text: Make both locks fair, so threads acquire them in arrival order
       why: Fairness affects starvation, not lock-order cycles.
-    - text: Use volatile balances
+    - text: Make the balances volatile, so neither thread holds a stale value
       why: That gives no mutual exclusion.
   explanation: A consistent order breaks the circular-wait condition.
 - kind: fire
   prompt: A virtual thread blocks on a socket read inside a synchronized block (JDK 21). What happens?
   choices:
-    - text: It pins its carrier thread, which can't run other virtual threads until the read returns
+    - text: It pins its carrier thread, which can't run other virtual threads until the read is done
       correct: true
-    - text: It unmounts normally and frees the carrier
+    - text: It unmounts normally and frees the carrier, as with any other blocking call in JDK 21
       why: Monitors pinned the carrier before JDK 24; ReentrantLock doesn't.
-    - text: The JVM throws an IllegalStateException
+    - text: The JVM throws an IllegalStateException, since blocking inside synchronized is forbidden
       why: It runs, just with reduced scalability.
   explanation: Pinning keeps the carrier busy. Prefer ReentrantLock around blocking calls on JDK 21 to 23.
 - kind: fire

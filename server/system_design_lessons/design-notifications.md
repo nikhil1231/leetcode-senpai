@@ -30,10 +30,10 @@ case: notifications
 ```predict
 prompt: All notifications share one queue, and marketing launches a 50M-message campaign at 09:00. A user requests a password reset at 09:01. With a single FIFO queue processing 20k messages/s, how long might the reset email wait?
 choices:
-  - Seconds — the queue is fast
+  - A few seconds — at 20k messages/s the queue clears faster than anyone notices
   - Around 40 minutes — it sits behind 50M marketing messages
-  - It's sent first because it's important
-  - It's dropped
+  - It's sent first, because transactional emails are tagged as important by the template
+  - Around 4 minutes, since only the first batch of the campaign has been queued
 answer: 1
 reveal: |
   50M ÷ 20k/s = 2,500 s ≈ 42 minutes. A FIFO doesn't know what matters. Separate **priority lanes** — distinct queues with dedicated (or strictly prioritised) consumers and provider capacity — keep transactional traffic flowing regardless of bulk load.
@@ -234,73 +234,73 @@ explain: |
   choices:
     - text: Stop sending to it and delete or deactivate the token
       correct: true
-    - text: Retry with exponential backoff
+    - text: Retry with exponential backoff, as the device may be temporarily offline
       why: The app is gone, so it will never succeed.
-    - text: Switch to FCM for that token
+    - text: Switch to FCM for that token, which supports devices APNs has dropped
       why: Tokens are platform-specific.
-    - text: Mark the notification delivered
+    - text: Mark the notification delivered, since APNs has acknowledged the request
       why: It wasn't.
   explanation: Permanent errors fix the data. Retries are for transient ones.
 - kind: check
   prompt: Why does the notify API return 202 instead of sending synchronously?
   choices:
-    - text: Providers are slow and fail; queueing keeps callers fast, enables retries, priorities and rate limiting
+    - text: Providers are slow and fail; a queue keeps callers fast and allows retries and rate limits
       correct: true
-    - text: Providers require asynchronous calls
+    - text: APNs and FCM only accept asynchronous calls, so the API has to queue them anyway
       why: They accept synchronous API calls.
-    - text: 202 is faster to serialise
+    - text: 202 has no response body, so it is faster to serialise than a 200 with a result
       why: Unrelated.
-    - text: To hide failures from callers
+    - text: To hide provider failures from callers, who can't do anything about them
       why: Status is exposed through delivery tracking.
   explanation: Accept durably, then deliver with the machinery the problem needs.
 - kind: fire
   prompt: A push sender crashes after APNs accepted a push but before recording it, and another sender retries. How is a visible duplicate avoided?
   choices:
-    - text: Use the notification ID as the APNs collapse ID and deduplicate on the client
+    - text: Use the notification ID as the APNs collapse ID, and deduplicate on the client
       correct: true
-    - text: APNs never accepts duplicates
+    - text: APNs rejects a second push with the same payload to the same token within a minute
       why: It accepts them unless they're collapsed.
-    - text: Don't retry pushes ever
+    - text: Never retry pushes, since APNs delivers them at least once on its own
       why: That loses notifications when the send itself failed.
-    - text: Send by SMS instead
+    - text: Switch that user to SMS, which the provider deduplicates by message body
       why: That doesn't address duplicates.
   explanation: Downstream dedupe keys make at-least-once sending invisible to users.
 - kind: fire
   prompt: The SMS provider returns 429 repeatedly. What's the right response?
   choices:
-    - text: Lower the send rate for that provider (token bucket or breaker), keep messages queued, and consider a secondary provider
+    - text: Slow the send rate for that provider (token bucket or breaker), keep messages queued, maybe fail over
       correct: true
-    - text: Retry every message immediately
+    - text: Retry every message immediately on a new connection, which resets the provider's limit
       why: That deepens the throttling and risks a ban.
     - text: Drop all SMS
       why: Users lose OTPs and alerts.
-    - text: Mark them failed permanently
+    - text: Mark the messages failed permanently, since the provider has rejected them
       why: It's a temporary rate limit.
   explanation: Throttling is a channel-level signal. Adapt the rate for the whole provider.
 - kind: fire
   prompt: How should a 50M-user campaign be fed into the system?
   choices:
-    - text: As one campaign plus a segment that a scheduler expands in batches into the bulk lane at a controlled rate
+    - text: As one campaign plus a segment, expanded in batches into the bulk lane at a set rate
       correct: true
     - text: 50M individual API calls from the marketing tool as fast as possible
       why: That floods the API and the shared queues.
-    - text: Through the priority lane so it finishes faster
+    - text: Through the priority lane so the whole campaign goes out before users' working day starts
       why: That starves urgent traffic.
-    - text: A single giant message with all user IDs
+    - text: A single giant message listing all 50M user IDs, which each worker splits as it reads
       why: That's unbounded and impossible to retry partially.
   explanation: Batching and pacing protect shared capacity and allow per-batch retries.
 - kind: fire
   level: advanced
   prompt: A non-urgent notification would arrive during a user's quiet hours (23:00–07:00 in their timezone). What should happen?
   choices:
-    - text: Schedule it for delivery at the end of the quiet window (delay queue), unless the category bypasses quiet hours
+    - text: Delay it to the end of the quiet window, unless its category bypasses quiet hours
       correct: true
-    - text: Drop it
+    - text: Drop it, since a non-urgent notification is stale by the morning
       why: The user still wants it — just not now.
-    - text: Send it anyway
+    - text: Send it anyway, but silently, so the phone doesn't make a sound
       why: That breaks the preference.
-    - text: Convert it to SMS
-      why: SMS at night is even more intrusive.
+    - text: Convert it to an email, which the user can read in the morning without being woken
+      why: Switching channel ignores the user's quiet-hours preference. Delay it instead.
   explanation: Quiet hours defer non-urgent messages. Security messages bypass them.
 - kind: fire
   type: order

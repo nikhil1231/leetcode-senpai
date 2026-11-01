@@ -63,9 +63,9 @@ Terraform compares your **configuration** (desired state) with its **state file*
 prompt: A reviewer sees this in a Terraform plan for production. What should happen next? `-/+ resource "aws_db_instance" "main" (forces replacement): engine_version "15.4" -> "16.1"`
 choices:
   - Approve it; Terraform upgrades the database in place
-  - Stop. Replacement destroys the database and creates a new empty one. Plan a proper upgrade path
+  - Stop. Replacement destroys the database and creates an empty one; plan an upgrade path
   - Approve it; RDS keeps a snapshot, so nothing is lost
-  - Run apply twice to make it idempotent
+  - Approve it, but run apply in a maintenance window so the brief downtime goes unnoticed
 answer: 1
 reveal: |
   `-/+` with "forces replacement" means destroy and recreate. For a database, that's data loss and downtime unless something else saves you. Major version upgrades must go through the provider's supported in-place upgrade (`allow_major_version_upgrade` with `apply_immediately` planned carefully), or a blue-green or replica-based migration. Guard stateful resources with `lifecycle { prevent_destroy = true }` so a plan like this fails outright.
@@ -77,10 +77,10 @@ reveal: |
   choices:
     - text: Production then runs exactly the bits that passed testing in staging
       correct: true
-    - text: Builds are expensive
+    - text: Builds are slow and expensive, so rebuilding for each environment wastes CI time
       why: True, but secondary. The point is that what you test is what you ship.
-    - text: Containers can't be rebuilt
-      why: They can, which is the risk.
+    - text: Rebuilt containers get new image tags, which break the deploy scripts
+      why: Tags are a detail. The risk is that a rebuild isn't the artifact you tested.
   explanation: Rebuilds can pull different dependencies or base images.
 - kind: check
   prompt: Which strategy exposes the fewest users to a bad release, given good metrics?
@@ -97,9 +97,9 @@ reveal: |
   choices:
     - text: The old version keeps running during the rollout and still uses the old name
       correct: true
-    - text: Postgres can't rename columns
-      why: It can, instantly.
-    - text: It's only unsafe with blue-green deploys
+    - text: Postgres locks the table for the rename, so the deploy times out under load
+      why: The rename is a quick metadata change. Old code still using the old name is the problem.
+    - text: It's only unsafe with blue-green deploys, where two databases must be kept in step
       why: Every strategy has a window where both versions run.
   explanation: Use expand and contract so that every step works for adjacent code versions.
 - kind: fire
@@ -107,9 +107,9 @@ reveal: |
   choices:
     - text: Two concurrent applies corrupting the state or racing on changes
       correct: true
-    - text: Anyone from reading the configuration
+    - text: Anyone without access from reading the configuration or its secrets
       why: Locking is about concurrent writes.
-    - text: Drift
+    - text: Drift between the real resources and what the state file records
       why: Drift comes from changes made outside Terraform.
   explanation: Use a locking backend for every shared state.
 - kind: fire
@@ -117,19 +117,19 @@ reveal: |
   choices:
     - text: Drift; someone changed the resources outside Terraform
       correct: true
-    - text: Terraform randomly reorders resources
+    - text: Terraform reorders resources on each plan, so they show up as changes
       why: Plans are deterministic given the same inputs.
-    - text: The state file is encrypted
+    - text: The state file is encrypted, so Terraform can't read the last applied values
       why: Encryption doesn't cause diffs.
   explanation: Import the change into code or revert it, and restrict console write access.
 - kind: fire
   prompt: What's the main ongoing cost of feature flags?
   choices:
-    - text: Flag debt; stale flags multiply code paths and must be removed
+    - text: Flag debt: stale flags multiply code paths and must be removed
       correct: true
     - text: They require blue-green infrastructure
       why: They're independent of deployment strategy.
-    - text: They slow every request by seconds
+    - text: They slow every request, since each flag is fetched from a remote service
       why: A good flag check is a fast in-memory lookup.
   explanation: Give every release flag an owner and an expiry.
 - kind: fire
@@ -137,9 +137,9 @@ reveal: |
   choices:
     - text: OIDC federation to assume an IAM role with short-lived credentials
       correct: true
-    - text: Commit the keys to a private repo
+    - text: Commit the keys to a private repo that only the deploy workflow can read
       why: Private repos leak too.
-    - text: Use the root account's keys in a secret
-      why: Never use root, and it's still a long-lived key.
+    - text: Store an IAM user's keys as an encrypted repository secret and rotate them
+      why: It's still a long-lived key that can leak. OIDC removes it entirely.
   explanation: The workflow's identity token is exchanged for temporary role credentials.
 ```

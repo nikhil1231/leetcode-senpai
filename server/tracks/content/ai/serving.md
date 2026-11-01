@@ -53,9 +53,9 @@ LLM APIs are a remote dependency with rate limits (requests and tokens per minut
 prompt: A product's "summarise this page" button calls the LLM synchronously inside the page request. One afternoon the provider returns 529 overloaded errors for 20 minutes. What should have happened, ideally?
 choices:
   - The whole page fails to load until the provider recovers
-  - The page loads normally, and the summary area shows "Summary unavailable, retry", or falls back to a secondary model
+  - The page loads normally; the summary shows "unavailable, retry" or uses a backup model
   - The app retries every request 50 times in a tight loop
-  - Users are logged out
+  - The page waits for the provider with a 60-second timeout, then renders without a summary
 answer: 1
 reveal: |
   The LLM should never sit in the critical path of the core page. Load the page, then fetch the summary asynchronously with a timeout. On failure, try a fallback model with bounded, jittered retries, or show a clear "unavailable" state. Tight retry loops make provider overload worse and burn your rate limit. This is the same graceful-degradation rule as for any non-essential dependency.
@@ -76,29 +76,29 @@ Self-hosting open-weight models can cut cost at high, steady volume, keep data i
   choices:
     - text: Prompt caching of the shared prefix
       correct: true
-    - text: Lowering temperature
+    - text: Lowering temperature to cut output tokens
       why: Temperature doesn't affect cost.
-    - text: Streaming
+    - text: Streaming responses to the client
       why: Streaming improves perceived latency, not cost.
   explanation: Cached input tokens are billed at a steep discount.
 - kind: check
   prompt: What's a model cascade?
   choices:
-    - text: Try a cheap model first, and escalate to a stronger one when confidence or validation fails
+    - text: Try a cheap model first; escalate to a stronger one when validation fails
       correct: true
-    - text: Run several models and average their outputs
+    - text: Run several models in parallel and keep the answer most of them agree on
       why: That's an ensemble, and costs more.
-    - text: Chaining prompts in sequence
+    - text: Chaining prompts so each model's output becomes the next model's input
       why: That's a prompt chain.
   explanation: Most traffic is served cheaply, and only hard cases pay for the big model.
 - kind: check
   prompt: The provider returns 429 Too Many Requests. Right client behaviour?
   choices:
-    - text: Back off exponentially with jitter, respect retry-after, and give up after a bounded number of attempts
+    - text: Back off exponentially with jitter, respect retry-after, and give up after a few attempts
       correct: true
-    - text: Retry immediately in a tight loop
+    - text: Retry immediately on a fresh connection, which usually lands on a different server
       why: That makes the throttling worse.
-    - text: Switch to a larger model
+    - text: Switch to a larger model, which has a separate and higher rate limit
       why: Rate limits aren't solved by model size.
   explanation: Bounded, jittered backoff, plus a fallback for user-facing paths.
 - kind: fire
@@ -106,9 +106,9 @@ Self-hosting open-weight models can cut cost at high, steady volume, keep data i
   choices:
     - text: GPU throughput, by adding new requests to the running batch between decode steps
       correct: true
-    - text: Model accuracy
+    - text: Model accuracy, by letting requests share attention context
       why: Serving optimisations don't change model quality.
-    - text: Prompt caching hit rate
+    - text: Prompt caching hit rate, by grouping requests with the same prefix
       why: Different mechanism.
   explanation: Requests no longer wait for the slowest sequence in a static batch.
 - kind: fire
@@ -116,7 +116,7 @@ Self-hosting open-weight models can cut cost at high, steady volume, keep data i
   choices:
     - text: The KV cache, which grows with context length and batch size
       correct: true
-    - text: The tokenizer
+    - text: The tokenizer, which runs on one CPU core per GPU
       why: Tokenisation is cheap.
     - text: Network bandwidth to the client
       why: Rarely the bottleneck.
@@ -124,11 +124,11 @@ Self-hosting open-weight models can cut cost at high, steady volume, keep data i
 - kind: fire
   prompt: You must enrich 2 million product descriptions by next week. Cheapest sensible approach?
   choices:
-    - text: Submit them through a batch API at a discount, with a small model if your evals allow it
+    - text: A batch API at a discount, with a small model if your evals allow it
       correct: true
-    - text: Real-time calls from a single thread
+    - text: Real-time calls from many threads, as fast as the rate limit allows
       why: Slow, and pays full price.
-    - text: The largest model, synchronously
+    - text: The largest model, synchronously, so quality is as high as possible
       why: Unnecessary cost for offline work.
   explanation: Offline work tolerates delay, so batch it.
 - kind: fire
@@ -136,9 +136,9 @@ Self-hosting open-weight models can cut cost at high, steady volume, keep data i
   choices:
     - text: Less memory and often faster inference, for some loss of quality
       correct: true
-    - text: Higher quality for more memory
+    - text: Higher quality outputs, in exchange for more GPU memory
       why: It's the reverse.
-    - text: Longer context for less speed
+    - text: A longer context window, in exchange for slower inference
       why: Not directly.
   explanation: Validate the quality loss on your own evals.
 ```

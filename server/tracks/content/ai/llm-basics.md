@@ -70,13 +70,13 @@ The model is trained to produce *plausible continuations*, not to check facts. W
 - kind: check
   prompt: A chat feature feels slow. Responses average 900 output tokens and time to first token is 400 ms. What's the biggest lever?
   choices:
-    - text: Reduce output length, for example a terser format or a token cap
+    - text: Reduce output length, e.g. a terser format or a token cap
       correct: true
-    - text: Shorten the system prompt by 200 tokens
+    - text: Shorten the system prompt by 200 tokens so the first token arrives sooner
       why: Prompt tokens mainly affect prefill, which is already fast here.
     - text: Raise the temperature
       why: Temperature doesn't change speed.
-    - text: Use a larger model
+    - text: Use a larger model, which follows length instructions more closely
       why: Larger models usually decode more slowly.
   explanation: Decode is sequential, so output tokens dominate total latency.
 - kind: check
@@ -89,11 +89,11 @@ The model is trained to produce *plausible continuations*, not to check facts. W
 - kind: check
   prompt: What does temperature 0 give you?
   choices:
-    - text: Near-greedy decoding that's highly consistent, though not guaranteed bit-identical across calls
+    - text: Near-greedy decoding: very consistent, but not guaranteed identical across calls
       correct: true
-    - text: Guaranteed identical output for identical input
+    - text: Guaranteed identical output for identical input, on any provider and hardware
       why: Server-side batching and numerics can still vary.
-    - text: Faster responses
+    - text: Faster responses, because no sampling step is needed per token
       why: Sampling settings don't change speed meaningfully.
   explanation: Use it for extraction and classification, but don't rely on exact reproducibility.
 - kind: fire
@@ -101,17 +101,17 @@ The model is trained to produce *plausible continuations*, not to check facts. W
   choices:
     - text: Cost and time to first token for a repeated prompt prefix
       correct: true
-    - text: Output token cost
+    - text: Output token cost, when the same answer is requested twice
       why: Caching applies to input prefixes.
-    - text: Hallucinations
+    - text: Variation between answers to repeated questions
       why: It's an efficiency feature, not a quality one.
   explanation: Put stable content (system prompt, documents, examples) first so the prefix can be cached.
 - kind: fire
   prompt: Why does a chatbot "remember" earlier messages?
   choices:
-    - text: The application resends the conversation (or a summary) in each request's context
+    - text: The application resends the conversation, or a summary, in each request
       correct: true
-    - text: The model updates its weights during the chat
+    - text: The model updates a small set of its weights during the chat to remember context
       why: Weights are fixed at inference time.
     - text: The provider stores a hidden memory per user inside the model
       why: Any memory is application-level context.
@@ -119,11 +119,11 @@ The model is trained to produce *plausible continuations*, not to check facts. W
 - kind: fire
   prompt: Which approach most directly reduces hallucinated facts about your company's policies?
   choices:
-    - text: Retrieve the relevant policy text into the prompt and require answers to cite it
+    - text: Retrieve the relevant policy text into the prompt and require citations
       correct: true
     - text: Raise the temperature
       why: That increases variation, not accuracy.
-    - text: Fine-tune on general web data
+    - text: Fine-tune on general web data about companies, so it learns typical policies
       why: That doesn't teach your policies.
   explanation: Grounding with citations makes answers checkable.
 - kind: fire

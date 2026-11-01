@@ -107,10 +107,10 @@ explain: |
 ```predict
 prompt: "`orders` has 2M rows, 5 status values, and 80% of orders are 'delivered'. You add an index on `status`. What does the planner most likely do for `WHERE status = 'delivered'`?"
 choices:
-  - Use the index — indexes are always faster
-  - Scan the table — reading 1.6M rows via 1.6M random index lookups is slower than one sequential scan
-  - Refuse to run the query
-  - Use the index only for the first 20 rows
+  - Use the index, since the column is indexed and the query filters on it exactly
+  - Scan the table: 1.6M random index lookups are slower than one sequential scan
+  - Use a bitmap index scan, reading the matching pages in physical order
+  - Use the index for the first rows, then switch to a sequential scan for the rest
 answer: 1
 reveal: |
   Index lookups mean random reads into the table. When a predicate matches a large fraction of rows (low **selectivity**), a sequential scan is cheaper, and a good planner, using its statistics, chooses it. The same index *is* valuable for `status = 'pending'` if pending orders are rare — which is exactly what a **partial index** captures.
@@ -208,13 +208,13 @@ model: |
 - kind: check
   prompt: Why might a planner choose a sequential scan even though an index exists on the filtered column?
   choices:
-    - text: The predicate matches a large fraction of rows, so random index lookups would cost more than reading the table sequentially
+    - text: The predicate matches a large fraction of rows, so random index lookups cost more than a scan
       correct: true
-    - text: Planners always prefer scans
+    - text: Planners always prefer scans for columns that were indexed after the table was created
       why: They choose by estimated cost, and indexes win for selective predicates.
-    - text: The index is corrupt
+    - text: The index statistics are out of date, so the planner doesn't know the index exists
       why: That's possible but rare. Low selectivity is the usual reason.
-    - text: Sequential scans never touch disk
+    - text: Sequential scans never touch disk, because the whole table is kept in the buffer cache
       why: They read the whole table. They can still be cheaper than many random reads.
   explanation: Selectivity decides whether an index helps. Low-selectivity filters are often better served by scans, or by partial indexes on the rare values.
 - kind: fire
@@ -222,11 +222,11 @@ model: |
   choices:
     - text: It answers the query from the index alone, skipping a table lookup for each matching row
       correct: true
-    - text: It covers every possible query on the table
+    - text: It covers every column of the table, so any query on the table can use it
       why: It covers specific queries whose columns it contains.
-    - text: It replaces the need for a primary key
+    - text: It replaces the primary key, since it already identifies each row uniquely
       why: Primary keys enforce identity. Covering is about read efficiency.
-    - text: It makes writes faster
+    - text: It makes writes faster, because one wide index replaces several narrow ones
       why: More columns in the index make writes slightly slower.
   explanation: Including all the needed columns (key columns plus INCLUDE) enables index-only scans, which save a random read per row.
 - kind: fire
@@ -234,36 +234,36 @@ model: |
   choices:
     - text: "A partial index on (created_at) WHERE status = 'pending'"
       correct: true
-    - text: An index on (status) alone
+    - text: An index on (status), since it filters the table down to 1% first
       why: That works, but it's larger and still needs a sort for created_at.
-    - text: An index on every column
+    - text: Separate indexes on status and on created_at, combined by a bitmap scan
       why: That taxes every write and doesn't target the query.
-    - text: A BRIN index on status
+    - text: A BRIN index on (status, created_at), which stays tiny even for big tables
       why: BRIN suits naturally ordered data like time, not a scattered status column.
   explanation: Partial indexes contain only the rows queries ask for. They're small, selective and cheap to maintain.
 - kind: fire
   prompt: A write-heavy table has 12 indexes, and inserts have become slow. What's the likely cause and fix?
   choices:
-    - text: Every insert updates all 12 indexes; remove unused or redundant ones (check index usage statistics)
+    - text: Every insert updates all 12 indexes; remove unused or redundant ones (check usage stats)
       correct: true
-    - text: Indexes don't affect inserts
+    - text: Indexes don't affect inserts, so the cause is lock contention between writers
       why: Each index is a structure that has to be updated on every insert.
-    - text: Add more indexes to speed up the inserts
+    - text: The table needs a covering index so each insert can find its place without a scan
       why: That makes inserts slower.
-    - text: Increase the cache TTL
+    - text: The buffer cache is too small; raise shared_buffers so index pages stay in memory
       why: Caching doesn't change the cost of writes.
   explanation: Index maintenance is write amplification. Keep the indexes that serve real queries and drop the rest.
 - kind: fire
   level: advanced
   prompt: "Index (tenant_id, created_at). Query: WHERE created_at > now() - interval '1 day' AND tenant_id = 42. What happens?"
   choices:
-    - text: It seeks on tenant_id = 42, then range-scans created_at within that tenant — the order of predicates in SQL doesn't matter
+    - text: It seeks to tenant_id = 42, then range-scans created_at; SQL predicate order doesn't matter
       correct: true
-    - text: It can't use the index because created_at is written first in the WHERE clause
+    - text: It can't seek on the index, because created_at comes first in the WHERE clause and is a range
       why: The order you write predicates in SQL doesn't affect index use. Index column order does.
     - text: It scans the whole index because there's a range condition
       why: Equality on the leading column still narrows the range.
-    - text: It needs two separate indexes
+    - text: It needs separate indexes on tenant_id and created_at to use both conditions
       why: This composite index fits the query perfectly.
   explanation: Planners match predicates to index columns regardless of how the WHERE clause is written. Equality on the first column plus a range on the second is the ideal shape.
 - kind: fire

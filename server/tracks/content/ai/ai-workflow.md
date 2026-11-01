@@ -82,7 +82,7 @@ Use your own example, not this one. Pick something you really shipped, and know 
   choices:
     - text: A failing test that captures the expected behaviour, plus the relevant files
       correct: true
-    - text: A longer system prompt with general coding advice
+    - text: A longer system prompt with general coding advice and the team's style guide
       why: Generic advice adds noise; specific context helps.
     - text: Access to the whole repository so it can search
       why: Searching without direction often finds the wrong code.
@@ -92,7 +92,7 @@ Use your own example, not this one. Pick something you really shipped, and know 
   choices:
     - text: Fixing a subtle race condition in a payments ledger
       correct: true
-    - text: Adding unit tests for a pure function
+    - text: Adding unit tests for a pure function with many edge cases
       why: Easy to check, low risk.
     - text: Renaming an API across many call sites
       why: Mechanical, and verified by tests and the compiler.
@@ -100,11 +100,11 @@ Use your own example, not this one. Pick something you really shipped, and know 
 - kind: check
   prompt: How should you stop a coding agent from running destructive commands?
   choices:
-    - text: Configure its permissions so those commands need approval, and keep credentials out of its environment
+    - text: Require approval for those commands in its permissions, and keep credentials out of reach
       correct: true
-    - text: Tell it in the prompt never to run them
+    - text: Tell it in the system prompt never to run them, with a list of examples
       why: Instructions can be ignored or overridden by injected content.
-    - text: Use a more capable model
+    - text: Use a more capable model that understands which commands are destructive and avoids them
       why: Capability isn't a permission boundary.
   explanation: Limits belong in configuration, not in the prompt.
 - kind: fire
@@ -112,9 +112,9 @@ Use your own example, not this one. Pick something you really shipped, and know 
   choices:
     - text: Plans are cheap to review and correct; large diffs aren't
       correct: true
-    - text: It makes the model run faster
+    - text: It makes the model run faster, since the plan narrows its search
       why: It adds a step.
-    - text: Agents can't edit without a plan
+    - text: Agents can't edit files safely until a plan has been approved
       why: They can; the plan is for you.
   explanation: Correct the approach before the code exists.
 - kind: fire
@@ -122,9 +122,9 @@ Use your own example, not this one. Pick something you really shipped, and know 
   choices:
     - text: Build and test commands, conventions, and things never to touch
       correct: true
-    - text: The full design history of the project
+    - text: The full design history of the project, so the agent knows every past decision
       why: Too long; it dilutes the useful instructions.
-    - text: API keys so the agent can deploy
+    - text: API keys and deploy credentials, so the agent can ship its changes
       why: Never put secrets in context.
   explanation: Short, specific and operational.
 - kind: fire

@@ -107,10 +107,10 @@ A background job that resets expired holds to `available` is useful for tidiness
 ```predict
 prompt: The hold-cleanup job crashed at 10:00 and nobody noticed until 11:00. A user whose hold expired at 10:05 clicks "Confirm" at 10:30. With the predicates above, what happens?
 choices:
-  - The booking succeeds because the hold row still says 'held'
+  - The booking succeeds because the hold row still says 'held' and no job has released it
   - The confirm matches 0 rows because hold_expires_at < now(), and the user is told the hold expired
   - The database crashes
-  - The seat becomes available to everyone except this user
+  - The seat becomes available to everyone except this user, whose hold is still on record until 11:00
 answer: 1
 reveal: |
   Expiry is evaluated at decision time, inside the conditional update, using the database clock. The cleanup job is only housekeeping; the seat could have been claimed by someone else at 10:06, because the claim predicate also treats expired holds as available. Correctness lives in the predicates, not in the timeliness of background work.
@@ -226,11 +226,11 @@ model: |
   choices:
     - text: "`UPDATE seats SET status='held', held_by=? WHERE id=? AND status='available'`, then check that 1 row changed"
       correct: true
-    - text: SELECT the seat, check it's available in code, then UPDATE it unconditionally
+    - text: SELECT the seat inside a transaction, check it's available in code, then UPDATE it unconditionally
       why: Two requests can both pass the check before either writes.
-    - text: Lock a mutex in the API process, then update
+    - text: Lock a mutex in the API process, so only one request at a time can run the update
       why: Requests on other servers don't share that mutex.
-    - text: INSERT a hold row without any uniqueness constraint
+    - text: INSERT a hold row without any uniqueness constraint, then return success to the client
       why: Duplicates can be inserted concurrently.
   explanation: Putting the check inside the write lets the database serialise it. Exactly one request matches.
 - kind: check
@@ -251,13 +251,13 @@ model: |
 - kind: check
   prompt: The cleanup job that releases expired holds is down. What must still be true?
   choices:
-    - text: Expired holds can't be confirmed and can be claimed by others, because the predicates check expiry themselves
+    - text: Expired holds can't be confirmed and can be claimed by others, since the queries check expiry
       correct: true
-    - text: Expired holds remain valid until the job runs
+    - text: Expired holds stay valid until the job runs again, since only the job changes their status
       why: That makes correctness depend on background timing.
     - text: All seats become unavailable
       why: Claims treat expired holds as available.
-    - text: Confirmations must be blocked until the job is fixed
+    - text: Confirmations must be blocked until the job is fixed, or expired seats would be double-booked
       why: Not if the predicates handle expiry.
   explanation: Background jobs tidy up. Decisions evaluate expiry at the moment they're made.
 - kind: check
@@ -272,9 +272,9 @@ model: |
   choices:
     - text: The existing booking, recognised by the client-supplied booking ID
       correct: true
-    - text: An error saying the seat is no longer held
+    - text: An error saying the seat is no longer held, since the hold was consumed by the first request
       why: That's technically true, but the user did book it. Tell them so.
-    - text: A second booking
+    - text: A second booking, after checking the seat is still held by this customer
       why: The seat can only have one booking.
     - text: Nothing
       why: The client needs an answer.
@@ -284,9 +284,9 @@ model: |
   choices:
     - text: Admission control (a waiting room) so only a sustainable rate reaches the database
       correct: true
-    - text: Scale out the API servers
+    - text: Scale out the API servers so each request spends less time queued before it's handled
       why: That increases contention on the same rows.
-    - text: Raise the database connection limit
+    - text: Raise the database connection limit so more of the waiting requests can be served at once
       why: More concurrent contenders on the same locks makes it worse.
     - text: Remove the conditional check
       why: That oversells.
@@ -294,26 +294,26 @@ model: |
 - kind: fire
   prompt: Why pre-allocate 10,000 inventory tokens in Redis for a 10,000-unit drop?
   choices:
-    - text: Only requests that pop a token reach the database, so it handles about 10,000 transactions instead of millions of attempts
+    - text: Only requests that pop a token reach the database, so it sees about 10,000 transactions, not millions
       correct: true
-    - text: Redis replaces the database as the source of truth
+    - text: Redis then becomes the source of truth for orders, so the database no longer needs a stock check
       why: The durable store remains authoritative. Tokens gate access and are reconciled afterwards.
     - text: It makes holds permanent
       why: Holds still expire, and expired holds return their tokens.
-    - text: It prevents bots entirely
+    - text: It stops bots, since each client can only pop one token from Redis per drop
       why: Bot defence needs separate controls.
   explanation: A cheap, fast gate in front of the expensive, correct path shields the database from hopeless attempts.
 - kind: fire
   level: advanced
   prompt: A customer holds 4 adjacent seats (all or nothing). How do you avoid deadlocks while locking them?
   choices:
-    - text: Lock the rows in a consistent order (e.g. by seat ID) in one transaction, check all, then update
+    - text: Lock rows in a consistent order (e.g. seat ID) in one transaction, check all, then update
       correct: true
-    - text: Lock them in the order the user clicked
+    - text: Lock them in the order the user clicked, so each request's locks are predictable
       why: Two users locking overlapping seats in different orders can deadlock.
-    - text: Use four separate transactions
+    - text: Use four separate transactions, each one short, so no lock is held for long
       why: Then it's no longer all or nothing.
-    - text: Skip locking because conditional updates suffice for groups
+    - text: Skip locking: four conditional updates in a row already give all-or-nothing for the group
       why: A single conditional multi-row update can work, but it needs a count check. Separate per-row updates break atomicity.
   explanation: A consistent lock order removes deadlock cycles, and one transaction gives all-or-nothing behaviour.
 - kind: fire

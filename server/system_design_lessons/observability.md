@@ -55,10 +55,10 @@ Use **histograms** for latency so you can compute percentiles across instances. 
 ```predict
 prompt: Traces are head-sampled at 1%. A bug causes 0.05% of checkouts to fail after 9 seconds. Engineers search the tracing system for an example and find almost nothing. Why, and what fixes it?
 choices:
-  - The tracing system is broken
-  - With 1% head sampling, only about 1 in 2,000 failing requests is traced; tail-based sampling that keeps all errors and slow requests would capture them
-  - Failed requests can't be traced
-  - Traces only record successful requests
+  - The tracing system drops spans longer than a few seconds, so the 9 s requests never appear
+  - Only 1% of the rare failures are traced; tail-based sampling that keeps errors and slow requests captures them
+  - Failed requests can't be traced, because the span is never closed when the request errors
+  - Traces only record successful requests, so failures must be found in the logs instead
 answer: 1
 reveal: |
   Head sampling decides before anyone knows the request will be interesting, so rare failures are sampled at the same 1% as everything else. Tail sampling — buffer spans, then keep every trace with an error or high latency plus a baseline sample — is how teams make sure the traces they actually need exist.
@@ -187,12 +187,12 @@ model: |
   choices:
     - text: A distributed trace with spans per service call
       correct: true
-    - text: Average latency metric for the edge
+    - text: Per-service average latency metrics, compared side by side for the time of the request
       why: It shows that latency rose, not where.
-    - text: CPU metrics for each host
+    - text: CPU and memory metrics for each host the request touched
       why: CPU doesn't show request paths.
-    - text: The edge server's access log
-      why: It records the total time only.
+    - text: Each service's access log, matched up by timestamp
+      why: Timestamps are ambiguous across concurrent requests. A trace links the spans.
   explanation: Traces break one request into timed spans across services, which localises latency directly.
 - kind: check
   type: numeric
@@ -219,62 +219,62 @@ model: |
 - kind: check
   prompt: Which alert is most appropriate to page an on-call engineer at 3 a.m.?
   choices:
-    - text: The checkout error budget is burning 14× faster than sustainable over both the last hour and the last 5 minutes
+    - text: The checkout error budget is burning 14× too fast over the last hour and last 5 minutes
       correct: true
-    - text: Average CPU above 80% for one minute
+    - text: Average CPU on the checkout fleet stays above 80% for one minute
       why: Often harmless and not user-visible.
-    - text: Any error line appears in the logs
+    - text: Any error line appears in the checkout service's logs during the night, even a single one
       why: That fires constantly and trains people to ignore pages.
-    - text: Disk usage at 60%
+    - text: Disk usage on the primary database has passed 60% and is still growing
       why: Not urgent. Make it a ticket.
   explanation: Page on urgent, user-visible symptoms tied to SLOs. Causes and slow trends are tickets or dashboard items.
 - kind: fire
   prompt: Traces are head-sampled at 0.5%, and engineers can't find traces for a rare failure. What's the best fix?
   choices:
-    - text: Tail-based sampling that keeps all error and slow traces plus a small baseline sample
+    - text: Tail-based sampling that keeps all error and slow traces, plus a small baseline
       correct: true
-    - text: Sample 100% of traces forever
+    - text: Sample 100% of traces, and keep them for a year so rare failures are always there
       why: That's very expensive at scale and usually unnecessary.
-    - text: Turn tracing off and use logs only
-      why: That loses the cross-service view.
-    - text: Average the traces
+    - text: Raise the head sampling rate to 5% and wait for the failure to recur
+      why: 5% still misses most rare failures. Tail sampling keeps every error.
+    - text: Merge the sampled traces into an average trace for each endpoint
       why: Traces aren't averaged.
   explanation: Decide what to keep after you know a request was interesting.
 - kind: fire
   prompt: Why can't you average p99 latencies across 50 instances to get the fleet-wide p99?
   choices:
-    - text: Percentiles don't combine by averaging; you need the merged distribution (histograms) to compute a fleet percentile
+    - text: Percentiles don't combine by averaging; you need the merged distribution (histograms)
       correct: true
-    - text: Averaging is too slow
+    - text: Averaging 50 time series every few seconds is too slow for a live dashboard
       why: It's fast. It's just wrong.
-    - text: p99 is always the same on every instance
+    - text: p99 is the same on every instance behind a balancer, so one instance's value is enough
       why: It varies between instances.
-    - text: You can, if instances have equal traffic
+    - text: You can, provided every instance serves an equal share of the traffic
       why: Even then, the average of p99s isn't the p99 of the combined data.
   explanation: Record latency as histograms and aggregate the buckets, then compute percentiles from the merged distribution.
 - kind: fire
   prompt: What lets you follow one request through an API, a queue and an asynchronous worker?
   choices:
-    - text: Propagating a trace ID (e.g. W3C traceparent) in HTTP headers and message metadata, and logging it everywhere
+    - text: Passing a trace ID (e.g. W3C traceparent) in headers and message metadata, and logging it
       correct: true
-    - text: Matching timestamps across logs
+    - text: Matching timestamps across the three components' logs, within a few milliseconds
       why: Timestamps are ambiguous with concurrent requests and clock skew.
-    - text: Using the same hostname
+    - text: Running all three on the same host, so their logs land in one file
       why: Requests cross many hosts.
-    - text: Increasing log verbosity
+    - text: Raising log verbosity on all three components while you reproduce the request
       why: More logs without correlation IDs don't connect anything.
   explanation: Context propagation across every hop, including async boundaries, is what makes correlation possible.
 - kind: fire
   level: advanced
   prompt: Errors affect only customers of one partner bank, and global error rates barely move. Which capability finds this fastest?
   choices:
-    - text: Slicing errors by high-cardinality dimensions (bank, BIN range, tenant) using wide events or traces
+    - text: Slicing errors by high-cardinality fields (bank, BIN range, tenant) in wide events or traces
       correct: true
-    - text: A global average error-rate dashboard
+    - text: A global error-rate dashboard with a tighter alert threshold on the average
       why: A small slice disappears inside the average.
-    - text: Host CPU graphs
+    - text: Host CPU and memory graphs for the payment service fleet
       why: CPU says nothing about which customers are affected.
-    - text: Uptime pings
+    - text: Uptime pings against each partner bank's API, every minute
       why: The service is up. It's failing for a subset.
   explanation: Partial outages hide in aggregates. You need to break down by the dimensions that define your customers.
 - kind: fire

@@ -109,10 +109,10 @@ steps: |
 ```predict
 prompt: A query computes `SELECT region, sum(amount) FROM orders WHERE created_at >= '2026-01-01' GROUP BY region` over 2 billion rows with 40 columns. Roughly how much less data does a column store read than a row store?
 choices:
-  - About the same — it's the same data
-  - Something like 10–100× less — it reads only 3 of 40 columns, and those compress heavily
-  - 2× less
-  - More, because columns must be reassembled
+  - About the same, since every row must still be scanned to apply the filter
+  - Something like 10–100× less: it reads 3 of 40 columns, and they compress heavily
+  - About 13× less (40 ÷ 3), with no further gain from compression
+  - More, because each column file must be read and the rows reassembled
 answer: 1
 reveal: |
   It reads `region`, `amount` and `created_at` — about 3/40 of the bytes before compression — and columnar compression (dictionaries, run-length, delta encoding) often shrinks those another 5–10×. Combined with vectorised execution, that's why analytics moves to column stores or warehouses, fed from the OLTP database by CDC or batch exports.
@@ -150,13 +150,13 @@ model: |
 - kind: check
   prompt: Why does writing to a write-ahead log make commits both durable and fast?
   choices:
-    - text: A commit only needs a sequential append flushed to disk; data structures can be updated later and rebuilt from the log after a crash
+    - text: A commit needs only a sequential append flushed to disk; data structures are updated later from the log
       correct: true
-    - text: The log is kept only in memory
+    - text: The log is kept in memory and flushed in the background, so commits never wait on disk
       why: Then it couldn't survive a crash. The log is flushed to disk on commit.
-    - text: It skips writing data entirely
+    - text: It skips writing data pages entirely, since the log replaces the table files
       why: Data is still written, just later and in bigger batches.
-    - text: It makes every read faster
+    - text: It makes reads faster too, because recent writes are served straight from the log
       why: The WAL is about write durability and recovery, not reads.
   explanation: Sequential, batched log flushes are cheap. Page or file updates are deferred, and crash recovery replays the log.
 - kind: check
@@ -177,13 +177,13 @@ model: |
 - kind: check
   prompt: A Bloom filter says a key is "possibly present". What can you conclude?
   choices:
-    - text: The key may or may not be present — you must check the actual data
+    - text: The key may or may not be present; you must check the actual data
       correct: true
-    - text: The key is definitely present
+    - text: The key is definitely present, though it may have been deleted since
       why: False positives are possible when all the checked bits were set by other keys.
-    - text: The key is definitely absent
+    - text: The key is definitely absent, since the filter only reports possible matches
       why: That's what a 0 bit would tell you.
-    - text: The filter is corrupt
+    - text: The filter needs rebuilding, because it has too many keys for its size
       why: False positives are normal and expected.
   explanation: Bloom filters never give false negatives, but do give false positives at a rate set by bits per key and the number of hashes.
 - kind: check
@@ -200,7 +200,7 @@ model: |
       correct: true
     - text: Updating a single customer's address many times per second
       why: Single-row updates are expensive in column stores.
-    - text: Fetching one order with all its fields by ID
+    - text: Fetching one order with all its fields by ID, millions of times a day
       why: Row stores read a whole row in one place.
     - text: A shopping cart with frequent small transactions
       why: That's OLTP, which suits row-oriented engines.
@@ -208,25 +208,25 @@ model: |
 - kind: fire
   prompt: An LSM store's reads slowed down as write volume grew, and the engine reports write stalls. What's the most likely cause?
   choices:
-    - text: Compaction can't keep up, so files accumulate and reads consult more of them
+    - text: Compaction can't keep up, so files pile up and reads consult more of them
       correct: true
-    - text: The memtable is too fast
+    - text: The memtable is too large, so each flush to disk takes too long
       why: Memtable speed isn't a problem. The backlog of unmerged files is.
-    - text: B-tree pages are splitting
+    - text: B-tree pages are splitting as the index grows past memory
       why: An LSM engine has no in-place B-tree pages.
-    - text: Bloom filters stop working at high volume
+    - text: Bloom filters stop working at high volume, so every read checks every file
       why: They keep working, but there are more files to check.
   explanation: Budget disk and CPU for compaction. If it falls behind, read amplification grows and the engine throttles writes to catch up.
 - kind: fire
   prompt: In an LSM store, why can deleting lots of data temporarily make reads slower and use more space?
   choices:
-    - text: Deletes write tombstones; old values and tombstones remain until compaction, and reads must skip past them
+    - text: Deletes write tombstones; old values and tombstones stay until compaction, and reads skip past them
       correct: true
-    - text: Deletes rewrite every file immediately
+    - text: Deletes rewrite every file that holds the key immediately, which uses space and I/O
       why: Files are immutable. Deletes are just new writes.
-    - text: Deleted keys are moved to a separate disk
+    - text: Deleted keys are moved to a separate archive file, which reads must check as well
       why: Nothing is moved. The data stays until compaction drops it.
-    - text: Deletes disable Bloom filters
+    - text: Deletes disable Bloom filters for the affected files until they are rebuilt
       why: Filters still work, but tombstones are real entries that reads must process.
   explanation: Deletion in an LSM is logical until compaction. Mass deletes create tombstone build-up — a classic Cassandra performance problem.
 - kind: fire

@@ -72,9 +72,9 @@ Matching documents need ordering. The classic signals:
 ```predict
 prompt: A user searches "the north face jacket". Which term contributes most to a document's BM25 score, assuming each matches once?
 choices:
-  - '"the" — it appears in almost every document'
-  - '"north" or "face" — moderately common words'
-  - The rarest matching term in the corpus, likely the brand-specific combination's least common word
+  - '"the", because it appears in almost every document and matches most often'
+  - '"north" or "face", moderately common words that balance frequency and focus'
+  - The rarest matching term in the corpus, likely a word of the brand name
   - All terms contribute equally
 answer: 2
 reveal: |
@@ -199,13 +199,13 @@ model: |
 - kind: check
   prompt: Why can't a B-tree index speed up `WHERE title LIKE '%shoe%'`?
   choices:
-    - text: B-trees are ordered from the first character, so a leading wildcard gives no starting point and every row must be checked
+    - text: B-trees are ordered from the first character, so a leading wildcard gives no place to start
       correct: true
-    - text: B-trees don't support text columns
+    - text: B-trees don't support text columns longer than a few hundred bytes, like titles
       why: They do, for equality, ranges and prefixes.
-    - text: LIKE is not valid SQL
-      why: It's standard SQL.
-    - text: The index would be too large
+    - text: LIKE disables index use for any pattern containing a wildcard, at either end
+      why: A trailing wildcard (LIKE 'shoe%') can use a B-tree. Only a leading one can't.
+    - text: The index would be too large to keep in memory, so each lookup reads from disk
       why: Size isn't the problem. The sort order is.
   explanation: Substring and word search need a different structure — an inverted index (or trigram index).
 - kind: check
@@ -234,23 +234,23 @@ model: |
 - kind: check
   prompt: Why should a search index usually be fed from the database via CDC rather than written synchronously in the API request?
   choices:
-    - text: Synchronous dual writes diverge when one fails, and they couple write latency to search; CDC captures every committed change in order and can be replayed
+    - text: Dual writes diverge when one fails and tie write latency to search; CDC captures every commit in order
       correct: true
-    - text: CDC makes search results perfectly up to date with zero lag
+    - text: CDC makes search results perfectly up to date with zero lag, unlike writes from the API
       why: CDC adds a small lag. Its benefit is reliability and decoupling.
-    - text: Search engines can't accept writes from APIs
+    - text: Search engines can't accept writes from APIs at the rate a busy product needs
       why: They can. It's the coupling and divergence that's the problem.
-    - text: It removes the need for a database
+    - text: It removes the need for a separate database, since the search index holds every field
       why: The database stays the source of truth.
   explanation: The index is a derived view. Feed it from the commit log, idempotently, and rebuild it when needed.
 - kind: fire
   prompt: A user saves a product and immediately searches for it, but it doesn't appear for about a second. What's the most likely cause?
   choices:
-    - text: Near-real-time indexing — new documents become searchable after the next index refresh
+    - text: Near-real-time indexing: new documents become searchable after the next refresh
       correct: true
-    - text: The document failed to index
+    - text: The document failed to index at first and was retried a second later
       why: It appears a moment later, so it indexed fine.
-    - text: The database is slow
+    - text: The database replica that feeds search is a second behind the primary
       why: The save succeeded. The delay is in the search index.
     - text: Search results are cached in the browser for a second
       why: That's possible in theory, but refresh lag is the standard cause.
@@ -267,24 +267,24 @@ model: |
   choices:
     - text: Indexing with an external version, so the engine rejects lower versions
       correct: true
-    - text: Indexing faster
+    - text: Indexing each update as soon as it arrives, with no batching
       why: Speed doesn't prevent reordering.
-    - text: Using more shards
+    - text: Using more shards, so each product's updates go to one shard
       why: Unrelated.
-    - text: Disabling refresh
+    - text: Disabling refresh until both updates have arrived and been sorted
       why: That doesn't affect write ordering.
   explanation: Version-guarded writes make indexing idempotent and order-safe under retries and redelivery.
 - kind: fire
   level: advanced
   prompt: How do you change an index's field mappings (e.g. a new analyzer) with zero downtime?
   choices:
-    - text: Build a new index with the new mapping in the background, backfill and catch up from the change stream, then switch an alias to it
+    - text: Build a new index with the new mapping, backfill and catch up from the change stream, then switch an alias
       correct: true
-    - text: Edit the mapping in place on the live index
+    - text: Edit the mapping in place on the live index, which reanalyses documents in the background
       why: Analyzer changes generally can't be applied to existing indexed data in place.
-    - text: Delete the index and recreate it
+    - text: Delete the index and recreate it at night, when there is little search traffic
       why: Search is down until the rebuild finishes.
-    - text: Restart the cluster
+    - text: Restart the cluster with the new analyzer, one node at a time
       why: Restarting doesn't reindex anything.
   explanation: Aliases decouple the name clients query from the physical index, which allows blue/green reindexing and instant rollback.
 - kind: fire

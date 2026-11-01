@@ -22,8 +22,8 @@ case: links
 ```predict
 prompt: A Redis cluster has 16 shards, keys hashed evenly. One key now receives **30%** of all reads, and its shard is at 100% CPU. What happens if you grow the cluster to 32 shards?
 choices:
-  - The hot key's load halves because there are twice as many shards
-  - Nothing useful — the key still lives on exactly one shard, which still gets 30% of all reads
+  - The hot key's load roughly halves, since each shard now owns half as much of the keyspace
+  - Nothing useful — the key still lives on one shard, which still gets 30% of all reads
   - Load spreads automatically because Redis replicates hot keys
   - The hot shard gets worse because rebalancing moves more keys onto it
 answer: 1
@@ -258,13 +258,13 @@ model: |
 - kind: check
   prompt: One key gets 25% of all reads and its cache shard is saturated. Which change actually relieves that shard?
   choices:
-    - text: Serve the key from a short-lived in-process cache on each API server, or split it into copies on several shards
+    - text: Serve the key from a short-lived local cache on each API server, or copy it to several shards
       correct: true
-    - text: Double the number of shards in the cluster
+    - text: Double the number of shards, so the hot shard's share of all keys and traffic halves
       why: The key still hashes to a single shard, which still gets 25% of all reads.
-    - text: Switch the eviction policy from LRU to LFU
+    - text: Switch the eviction policy from LRU to LFU, so the hot key is never evicted and refilled
       why: Eviction decides what leaves the cache. The hot key is already cached; the problem is the request rate.
-    - text: Lower the key's TTL
+    - text: Lower the key's TTL, so it's refreshed more often and spends less time on the shard
       why: That causes more refills and more misses without spreading reads.
   explanation: Sharding distributes keys, not the traffic to one key. Local caching cuts reads before they reach the cache tier; key splitting spreads them over several shards.
 - kind: check
@@ -307,35 +307,35 @@ model: |
   choices:
     - text: Add random jitter to each key's TTL so the expiries spread out
       correct: true
-    - text: Enable request coalescing
+    - text: Enable request coalescing on the hottest few keys only
       why: These are distinct keys expiring at once. Coalescing merges concurrent requests for the same key.
-    - text: Increase the TTL to 60 minutes
+    - text: Raise the TTL to 60 minutes, which halves how often the spike happens
       why: The spikes would still come, just half as often.
-    - text: Shard the cache further
+    - text: Shard the cache further, so each spike is split across more nodes
       why: The misses go to the database regardless of how the cache is sharded.
   explanation: Synchronised expiry of many keys loaded together is fixed by randomising TTLs. Coalescing handles many requests for one key.
 - kind: fire
   prompt: A like counter receives 80,000 increments per second on a single key. What's a standard fix?
   choices:
-    - text: Split it into N sub-counters incremented at random, sum them on read, and cache the sum briefly
+    - text: Split it into N sub-counters incremented at random; sum them on read and cache the sum
       correct: true
-    - text: Add read replicas for the key
+    - text: Add read replicas for the key's shard, so each replica takes a share of the increments
       why: Replicas spread reads. Every increment still has to land on the primary.
-    - text: Put the counter behind a CDN
+    - text: Put the counter behind a CDN, which batches increments at the edge before sending them on
       why: CDNs cache responses to reads. They don't absorb writes.
-    - text: Lower the TTL of the counter
-      why: TTL has nothing to do with write throughput.
+    - text: Use INCRBY with pipelining, so each client sends its increments in batches of 100
+      why: Batching cuts round trips, but every increment still lands on the same key and shard.
   explanation: Sharded counters divide write load by N at the cost of N reads per total. Batching increments (write-behind) is the other common approach for display counters.
 - kind: fire
   prompt: In XFetch-style probabilistic early refresh, why does the refresh probability depend on how long the last recomputation took?
   choices:
-    - text: Expensive values should start refreshing earlier, so the new value is ready before the old one expires
+    - text: Expensive values should start refreshing sooner, so the new one is ready before expiry
       correct: true
-    - text: Slow recomputations should be skipped entirely
+    - text: Slow recomputations are skipped entirely, and the old value is served until it expires
       why: They still have to happen. The algorithm only decides how early to start them.
-    - text: It ensures every reader refreshes the key
+    - text: It ensures every reader refreshes the key once, so no reader ever sees a stale value
       why: It's designed so that usually only one reader refreshes, a little before expiry.
-    - text: It measures network latency to the cache
+    - text: It measures network latency to the cache, so far-away readers refresh less often
       why: The delta is recomputation time, not cache latency.
   explanation: The check `now - delta·β·ln(rand) ≥ expiry` makes refresh likelier as expiry nears and as recompute cost (delta) grows, so costly values are rebuilt before the herd arrives, with no coordination.
 - kind: fire
@@ -357,13 +357,13 @@ model: |
 - kind: fire
   prompt: A refill lock is taken with `SET lock:k 1 NX` and no expiry. What's the danger?
   choices:
-    - text: If the holder crashes before deleting it, the lock is never released and every caller for that key is stuck
+    - text: If the holder crashes before deleting it, the lock is never released and that key is stuck
       correct: true
-    - text: NX allows two callers to acquire it at once
+    - text: NX lets two callers acquire it at once if their requests reach different replicas
       why: NX is atomic. Only one caller can set it.
-    - text: Redis will evict the lock immediately
+    - text: Redis evicts keys with no expiry first under memory pressure, so the lock vanishes
       why: An unexpired key can be evicted under memory pressure, but that isn't the main danger here.
-    - text: The lock makes reads slower for other keys
+    - text: The lock blocks the whole shard, so reads of other keys wait until it's released
       why: It only affects the one key.
   explanation: Locks need a lease (expiry) so a crashed holder can't block everyone forever, and a token so a slow holder doesn't delete a lock someone else now owns. Waiters need a deadline and ideally a stale fallback.
 ```

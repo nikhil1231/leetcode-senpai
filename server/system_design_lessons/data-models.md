@@ -87,10 +87,10 @@ Denormalise when a read path is hot and the copied data changes rarely (or can b
 ```predict
 prompt: A social app copies each author's display name and avatar URL into every post document so feeds render without joins. Users can change their display name. What's the real cost?
 choices:
-  - None — copies are free
-  - Every name change must update all of that user's posts (potentially millions), or old posts show the old name until a background job catches up
-  - The feed becomes slower to read
-  - It's impossible to change a display name
+  - None — the copies cost a little storage, and nothing else changes
+  - Every rename must update all that user's posts (maybe millions), or old posts show the old name for a while
+  - The feed becomes slower, because each post document is larger to read
+  - Display names can no longer change, because posts would disagree with the profile forever
 answer: 1
 reveal: |
   Denormalisation moves work from reads to writes. A prolific user's rename becomes a large fan-out update, usually done asynchronously, so old posts show stale names for a while. Many systems instead store only `author_id` in posts and resolve names through a hot cache. Pick based on how often the copied data changes and how stale it may be.
@@ -181,9 +181,9 @@ model: |
       correct: true
     - text: The database with the most GitHub stars
       why: Popularity tells you nothing about whether a database fits your queries and guarantees.
-    - text: Whatever the UI page layout looks like
+    - text: The layout of the main UI pages, so each screen loads with one query
       why: Page layouts change, and they say nothing about write patterns or growth.
-    - text: The schema with the fewest tables
+    - text: The schema with the fewest tables, since joins are what slow systems down
       why: Fewer tables can mean unbounded documents and impossible invariants.
   explanation: Model for the queries that matter, the rules that must hold, and what grows without bound.
 - kind: check
@@ -191,7 +191,7 @@ model: |
   choices:
     - text: Partition by conversation ID, sort by a time-ordered message ID
       correct: true
-    - text: Partition by message ID, sort by conversation ID
+    - text: Partition by message ID so writes spread evenly, sort by conversation ID
       why: That spreads one conversation's messages across every partition, so the query must scatter.
     - text: Partition by sender, sort by text
       why: The query is by conversation, not sender.
@@ -225,11 +225,11 @@ model: |
 - kind: fire
   prompt: A post stores a copy of its author's display name. The author renames themselves. What must the design decide?
   choices:
-    - text: How and when the copies get updated (synchronously, asynchronously, or never), and how much staleness is acceptable
+    - text: When and how the copies get updated (sync, async or never), and how much staleness is acceptable
       correct: true
-    - text: Nothing — copies update themselves
+    - text: Nothing — the database keeps denormalised copies in sync with the source automatically
       why: Nothing updates copies unless you build it.
-    - text: Whether to delete the old posts
+    - text: Whether to delete and re-create the author's old posts so they pick up the new name
       why: Deleting user content isn't a way to manage consistency.
     - text: Whether to switch databases
       why: Every database has the same trade-off once you duplicate data.
@@ -237,11 +237,11 @@ model: |
 - kind: fire
   prompt: Which workload most clearly fits a graph database?
   choices:
-    - text: Finding accounts connected through up to four shared devices or payment cards (fraud rings)
+    - text: Finding accounts linked through up to four shared devices or cards (fraud rings)
       correct: true
-    - text: Storing user sessions by token
+    - text: Storing user sessions by token, with links from each session to its devices
       why: That's a key-value lookup.
-    - text: Monthly revenue by region
+    - text: Monthly revenue by region, rolled up from millions of orders
       why: That's an analytical aggregate, suited to SQL or a warehouse.
     - text: Appending sensor readings
       why: That's time-series or wide-column territory.
@@ -257,11 +257,11 @@ model: |
   level: advanced
   prompt: Why can renaming a column in a single deploy break a live system, even if the migration itself is instant?
   choices:
-    - text: During a rolling deploy, old code still running expects the old column name, and rollback becomes impossible
+    - text: In a rolling deploy, old code still expects the old name, and rollback becomes impossible
       correct: true
-    - text: Databases can't rename columns
-      why: They can. Compatibility is the issue.
-    - text: Renames always take hours
+    - text: Databases block all reads on the table while a rename commits, so requests time out
+      why: Renames are usually a quick metadata change. Compatibility with old code is the issue.
+    - text: Renames rewrite every row, which takes hours on a large table
       why: In many databases a rename is a quick metadata change. That's not the problem.
     - text: The new name must be shorter
       why: Length doesn't matter.
@@ -269,12 +269,12 @@ model: |
 - kind: fire
   prompt: A team proposes a key-value store for orders, then needs "orders over £500 in the last week by region". What's the core problem?
   choices:
-    - text: Key-value stores only support lookup by key, so ad hoc filters need a full scan or another system
+    - text: Key-value stores look up by key only, so ad hoc filters need a full scan or another system
       correct: true
-    - text: Key-value stores can't store numbers
+    - text: Key-value stores can't store decimal amounts like prices without rounding errors
       why: Values can hold anything.
-    - text: The query is too fast for a key-value store
-      why: The query is impossible to serve efficiently, not too fast.
+    - text: Key-value stores can't hold more than a week of orders without manual sharding
+      why: Capacity isn't the issue. The store can only look up by key.
     - text: Regions can't be keys
       why: They could be, but you'd need another table per query.
   explanation: Choose stores whose query model covers the questions you'll ask, or pair an operational store with an analytical one.

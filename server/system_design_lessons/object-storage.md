@@ -168,10 +168,10 @@ steps: |
 ```predict
 prompt: Your app serves 50 TB/month of image downloads directly from an S3 bucket in one region. Users are worldwide. What's the single biggest improvement for cost and latency?
 choices:
-  - Move the images into the database
-  - Put a CDN in front, with long cache lifetimes on immutable (versioned) image keys
+  - Move the images into a globally replicated database so reads stay local
+  - Put a CDN in front, with long cache lifetimes on versioned image keys
   - Replicate the bucket to every region and pick one at random
-  - Compress the database
+  - Re-encode every image at lower quality to cut the bytes sent per download
 answer: 1
 reveal: |
   Images are immutable and read many times, so a CDN serves most requests from edges near users and cuts origin egress — usually the largest cost line. Versioned keys (a new key per edit) let you cache forever without invalidation. Cross-region replication helps disaster recovery, but the CDN is the delivery solution.
@@ -209,11 +209,11 @@ model: |
 - kind: check
   prompt: Why upload large files directly to object storage with presigned URLs rather than through the API servers?
   choices:
-    - text: The API stops spending memory, bandwidth and connection slots on bytes; it only authorises and records metadata
+    - text: The API stops spending memory, bandwidth and connections on bytes; it only authorises and records metadata
       correct: true
-    - text: Presigned URLs make uploads unauthenticated
+    - text: Presigned URLs skip authentication, so uploads don't wait on the identity service
       why: The API authenticates and authorises before signing. The URL carries that decision.
-    - text: Object storage can't receive uploads any other way
+    - text: Object storage only accepts uploads signed per request, which API servers can't do for streamed bodies
       why: You can proxy uploads through your servers. It just scales badly.
     - text: It removes the need for metadata
       why: You still need rows recording owner, key and status.
@@ -236,13 +236,13 @@ model: |
 - kind: check
   prompt: A metadata row is written as pending, but the object-created event that should mark it ready is lost. What design handles this?
   choices:
-    - text: A reconciler that checks pending rows against the bucket (or lists recent objects) and completes them idempotently
+    - text: A reconciler that checks pending rows against the bucket and completes them idempotently
       correct: true
-    - text: Nothing — events are always delivered
+    - text: Nothing — S3 event notifications retry until delivered, so the row is marked ready eventually
       why: Events can be delayed, duplicated or dropped. Treat them as a fast path.
-    - text: Delete the object
+    - text: Delete the object after an hour if its row is still pending, and let the client retry
       why: That throws away a successful upload.
-    - text: Ask users to upload again
+    - text: Ask users to upload again when they see the file stuck as pending
       why: That's a poor experience, and it's unnecessary because the bytes are already there.
   explanation: Crossing two systems needs a recovery path beyond the happy-path notification.
 - kind: check
@@ -259,19 +259,19 @@ model: |
       correct: true
     - text: The original video bytes
       why: Large bytes belong in object storage.
-    - text: Generated thumbnails
+    - text: Generated thumbnails, so listing pages can show them in one query
       why: Those are bytes too, stored as objects.
-    - text: Archived log files
+    - text: Archived log files that compliance may need to search later
       why: Archives are object-storage material, with lifecycle rules.
   explanation: Put what you query and authorise on in the database, and the bytes in object storage, linked by the object key.
 - kind: fire
   prompt: A download endpoint returns a presigned GET URL for any photo ID without checking the caller. What's the vulnerability?
   choices:
-    - text: Anyone can obtain read access to private photos by enumerating IDs (broken object-level authorisation)
+    - text: Anyone can read private photos by enumerating IDs (broken object-level authorisation)
       correct: true
-    - text: The URL will expire too quickly
+    - text: The URL expires before slow clients finish downloading large photos
       why: Expiry isn't the problem. Handing out the URL at all is.
-    - text: Presigned URLs leak AWS credentials
+    - text: Presigned URLs embed the service's AWS secret key, so anyone can reuse its credentials
       why: They carry a signature, not your secret key.
     - text: Downloads will be slower
       why: Speed isn't the issue.
@@ -281,11 +281,11 @@ model: |
   choices:
     - text: A CDN with long cache lifetimes on versioned keys
       correct: true
-    - text: Moving images into the database
+    - text: Moving images into the database, whose replicas sit in every region
       why: That's slower and more expensive, and it doesn't reduce delivery distance.
     - text: Shorter object keys
       why: Key length doesn't affect egress.
-    - text: Disabling bucket versioning
+    - text: Disabling bucket versioning, so each download reads only the current copy
       why: That has nothing to do with delivery costs.
   explanation: Immutable, frequently read content is ideal for CDN caching, which cuts origin egress and latency.
 - kind: fire
@@ -294,11 +294,11 @@ model: |
   choices:
     - text: A lifecycle rule that aborts incomplete multipart uploads after a set number of days
       correct: true
-    - text: Disable multipart uploads
+    - text: Disable multipart uploads and send each file in a single PUT request
       why: You'd lose resumability and parallelism for large files.
     - text: Shorter object keys
       why: Unrelated.
-    - text: Nothing — incomplete uploads are free
+    - text: Nothing — incomplete uploads are free until they're completed, and S3 drops them after 24 hours
       why: Their stored parts are billed until aborted.
   explanation: Object stores bill for uploaded parts. Lifecycle rules clean up abandoned multipart uploads automatically.
 - kind: fire

@@ -113,10 +113,10 @@ steps: |
 ```predict
 prompt: You estimate 2,000 writes/s at peak, and a single managed Postgres primary comfortably handles 10,000/s. An interviewer asks whether you'd shard. Best answer?
 choices:
-  - Yes — sharding is always required at scale
-  - No sharding now; one primary with replicas fits with 5× headroom. Partition tables by time for retention, and name the trigger (e.g. sustained >50% of write capacity or >2 TB hot data) for sharding by user_id later
-  - No — databases scale vertically forever
-  - Use a NoSQL database instead to avoid the question
+  - Yes — shard by user_id now, because 2,000 writes/s will grow and resharding later means a risky migration
+  - Not now: one primary with replicas has 5× headroom. Partition by time and name the trigger for sharding
+  - No — if writes grow, move to a bigger instance; managed Postgres scales vertically far beyond this
+  - Use a NoSQL database instead, which spreads writes over nodes automatically and avoids the question
 answer: 1
 reveal: |
   Estimates exist to justify **not** adding complexity as much as adding it. A strong answer gives the headroom, the evolution path (shard key and trigger), and what would change the decision. That's what "senior" sounds like.
@@ -163,11 +163,11 @@ model: |
   choices:
     - text: About 1,000 seconds (~17 minutes)
       correct: true
-    - text: About 91 seconds
+    - text: About 91 seconds (20,000 ÷ 220 completions per second)
       why: That divides the backlog by the total completion rate and ignores the 200/s of new arrivals still coming in.
-    - text: About 100 seconds
+    - text: About 100 seconds (20,000 ÷ 200 arrivals per second)
       why: That divides by the arrival rate. Only the surplus capacity drains the backlog.
-    - text: It never drains
+    - text: It never drains, because new jobs keep arriving
       why: It drains, slowly, because completions exceed arrivals by 20/s.
   explanation: Drain rate = completions − arrivals = 20/s. 20,000 ÷ 20 = 1,000 s. Small headroom means long recoveries.
 - kind: check
@@ -188,13 +188,13 @@ model: |
 - kind: check
   prompt: An estimate shows peak writes of 1,500/s, and one database primary handles 10,000/s. What's the most senior conclusion?
   choices:
-    - text: One primary with replicas fits; plan time-based partitioning for retention and state the trigger that would justify sharding later
+    - text: One primary with replicas fits; partition by time for retention, and name the trigger for sharding later
       correct: true
-    - text: Shard immediately across 16 nodes to be safe
+    - text: Shard across 16 nodes from the start, since resharding a live system later is far harder
       why: That adds operational complexity the numbers don't justify.
-    - text: Estimates are unreliable, so assume the worst case
+    - text: Estimates are unreliable, so size for 10× the peak and shard if that exceeds one primary
       why: Estimates exist precisely to avoid guessing at the worst case.
-    - text: Switch to a database that never needs sharding
+    - text: Switch now to a distributed SQL database that shards automatically, so the question never comes up
       why: Every database has limits. The question is when you hit them.
   explanation: Good estimation justifies the simplest design that fits with headroom, and names the measurable condition that would change the decision.
 - kind: fire
@@ -219,13 +219,13 @@ model: |
 - kind: fire
   prompt: Each app server handles 2,000 req/s. Peak is 30,000 req/s, you target 60% utilisation, and you must survive losing one of three zones. How many servers?
   choices:
-    - text: About 38 (25 for peak at 60%, scaled up so any two zones can carry the full load)
+    - text: About 38: 25 for peak at 60%, scaled so any two zones carry the full load
       correct: true
-    - text: 15
+    - text: 15: 30,000 ÷ 2,000 servers, since zone loss is handled by autoscaling
       why: That's 30,000 ÷ 2,000 — no headroom and no zone failure tolerance.
-    - text: 25
+    - text: 25: 30,000 ÷ 2,000 = 15, divided by 0.6 for the utilisation target
       why: That covers utilisation headroom but not losing a zone.
-    - text: 100
+    - text: 100: three zones each sized to carry the full peak alone at 60% utilisation
       why: That's far more than the arithmetic supports.
   explanation: 30,000 ÷ (2,000 × 0.6) = 25. To survive a zone loss, the remaining two-thirds must carry the load, so 25 × 1.5 ≈ 38, spread evenly across zones.
 - kind: fire
@@ -247,13 +247,13 @@ model: |
   level: advanced
   prompt: An estimate says the hot working set is 400 GB and each cache node has 64 GB usable. Throughput needs only 2 nodes. How many cache nodes do you plan for?
   choices:
-    - text: About 8 — memory, not throughput, is the binding constraint (400 ÷ 64 ≈ 7, plus headroom)
+    - text: About 8 — memory is the binding constraint (400 ÷ 64 ≈ 7, plus headroom)
       correct: true
-    - text: 2, because throughput fits
+    - text: 2, because throughput fits and the cache evicts whatever doesn't fit in memory
       why: The working set won't fit, so the hit rate would collapse.
-    - text: 1, with a larger TTL
+    - text: 1, with a longer TTL so the hottest keys stay resident and misses stay rare
       why: TTL doesn't create memory.
-    - text: 400
-      why: That's GB, not nodes.
+    - text: About 6, since 400 ÷ 64 rounds down to 6
+      why: Rounding down leaves part of the working set with nowhere to live.
   explanation: Size against every limit — throughput, memory, storage, connections — and take the largest requirement. Different limits bind for different components.
 ```

@@ -128,10 +128,10 @@ With concurrent writes from different coordinators (or during partitions with sl
 ```predict
 prompt: Two clients concurrently `put` different values to the same key through different coordinators, and the store uses last-write-wins on client-supplied timestamps. One client's clock is 2 seconds fast. What happens?
 choices:
-  - Both values are kept
-  - The fast-clock client's value wins regardless of real order, and the other write is silently lost
-  - The store rejects both
-  - The store waits for clocks to sync
+  - Both values are kept as siblings, and the next read returns them for the client to merge
+  - The fast-clock client's value wins whatever the real order, and the other write is lost
+  - The store rejects both writes, because their timestamps conflict across coordinators
+  - The store waits for clocks to resync over NTP, then applies the writes in true order
 answer: 1
 reveal: |
   LWW resolves by timestamp, so skew decides. For data where losing a concurrent update matters, use version vectors with sibling resolution, CRDTs, or a consensus-based conditional write (like Cassandra's lightweight transactions) for compare-and-set semantics.
@@ -214,13 +214,13 @@ explain: |
 - kind: check
   prompt: What's a key's preference list in a Dynamo-style store?
   choices:
-    - text: The N distinct physical nodes (ideally in different zones) found walking clockwise from the key's ring position
+    - text: The N distinct physical nodes, ideally in different zones, clockwise from the key's position
       correct: true
-    - text: The list of clients allowed to read the key
+    - text: The list of clients allowed to read and write the key, checked by the coordinator
       why: That's access control.
-    - text: The previous versions of the key
+    - text: The previous versions of the key, kept so conflicting writes can be merged later
       why: Those are versions, not placement.
-    - text: The nodes with the most free disk
+    - text: The N nodes with the most free disk, re-chosen whenever the key is written
       why: Placement is deterministic from the ring.
   explanation: Deterministic placement on distinct failure domains is how replicas survive node and zone failures.
 - kind: check
@@ -239,35 +239,35 @@ explain: |
 - kind: check
   prompt: Why should a coordinator write to all replicas in parallel rather than one by one?
   choices:
-    - text: Latency becomes the time of the W-th fastest replica instead of the sum of all round trips, and one slow replica doesn't block the others
+    - text: Latency is the W-th fastest replica's time, not the sum of round trips, and a slow replica blocks nothing
       correct: true
-    - text: Parallel writes use less bandwidth
+    - text: Parallel writes share one TCP connection, so they use less bandwidth than one-by-one writes
       why: Bandwidth is the same.
     - text: Sequential writes are impossible
       why: They're possible, just slow.
-    - text: To guarantee linearizability
+    - text: Parallel writes land at the same moment, which guarantees linearizable reads afterwards
       why: Parallelism affects latency, not consistency.
   explanation: Waiting for the fastest W of N responses gives tail tolerance.
 - kind: fire
   prompt: What's the main risk of last-write-wins conflict resolution?
   choices:
-    - text: Concurrent updates are silently discarded, and clock skew decides which one survives
+    - text: Concurrent updates are silently dropped, and clock skew decides which survives
       correct: true
-    - text: It's too slow
+    - text: It's too slow, because each write must read every replica's timestamp first
       why: It's fast.
-    - text: It needs vector clocks
+    - text: It needs vector clocks on every key, which makes each value much larger to store
       why: It uses timestamps instead.
-    - text: It can't handle deletes
+    - text: It can't handle deletes, since a tombstone has no value to compare against
       why: Tombstones handle deletes.
   explanation: Use LWW only where overwrites are acceptable. Otherwise use version vectors, CRDTs or consensus.
 - kind: fire
   prompt: A replica was down for two days, its hints expired, and some keys were never read since. What repairs them?
   choices:
-    - text: Background anti-entropy comparing Merkle trees and syncing differing ranges
+    - text: Background anti-entropy that compares Merkle trees and syncs differing ranges
       correct: true
     - text: Read repair
       why: Only keys that are read get repaired that way.
-    - text: Nothing — they stay stale forever
+    - text: Nothing — they stay stale until a client writes those keys again
       why: Anti-entropy exists for exactly this case.
     - text: Restarting the cluster
       why: A restart doesn't sync data.
@@ -275,13 +275,13 @@ explain: |
 - kind: fire
   prompt: How do nodes learn about membership changes and failures without a central master?
   choices:
-    - text: Gossip protocols spreading state, with an accrual failure detector judging liveness from heartbeat gaps
+    - text: Gossip spreading membership state, plus an accrual failure detector based on heartbeat gaps
       correct: true
     - text: Every node pings every other node every millisecond
       why: That's O(N²) traffic at a high rate.
-    - text: A single coordinator node
+    - text: A coordinator node elected at startup, which broadcasts membership to everyone
       why: That's a single point of failure, which Dynamo avoids.
-    - text: DNS
+    - text: DNS records updated by each node as it joins or leaves the cluster
       why: DNS doesn't track liveness at this granularity.
   explanation: Gossip scales logarithmically, and accrual detectors adapt to network conditions.
 - kind: fire
@@ -290,11 +290,11 @@ explain: |
   choices:
     - text: Compare-and-set, such as "create the username only if it doesn't exist"
       correct: true
-    - text: Plain overwrites of a session blob
+    - text: Plain overwrites of a session blob that several devices update at the same time
       why: LWW quorum writes are fine for those.
     - text: Reading a cached profile
       why: That needs no coordination.
-    - text: Appending to a log with unique keys
+    - text: Appending entries to a per-user activity log, each under its own unique key
       why: Unique keys don't conflict.
   explanation: Conditional writes need agreement on the order of competing proposals, which is what consensus provides.
 - kind: fire

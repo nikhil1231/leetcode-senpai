@@ -100,11 +100,11 @@ fix: |
 - kind: check
   prompt: When is an autonomous agent loop the right choice over a fixed workflow?
   choices:
-    - text: When the steps needed can't be known in advance and depend on intermediate results
+    - text: When the steps can't be known ahead and depend on intermediate results
       correct: true
-    - text: Whenever the task uses an LLM
+    - text: Whenever the task needs an LLM at more than one point in the process
       why: Most LLM tasks are better as single calls or workflows.
-    - text: When you need the lowest latency
+    - text: When you need the lowest latency, since the model skips unneeded steps
       why: Agents add steps and latency.
   explanation: Use the simplest structure that works.
 - kind: check
@@ -114,37 +114,37 @@ fix: |
       correct: true
     - text: A system prompt saying "never send malicious emails"
       why: Prompt instructions can be overridden by injected content.
-    - text: A larger model
+    - text: A larger, more capable model that follows instructions reliably
       why: Capability isn't a permission boundary.
   explanation: Control irreversible actions in code and through approvals.
 - kind: check
   prompt: A tool call fails because a file doesn't exist. What should the loop do?
   choices:
-    - text: Return a descriptive error as the tool result so the model can adjust
+    - text: Return a descriptive error as the tool result, so the model adapts
       correct: true
-    - text: Crash the whole task
+    - text: Stop the task and report the failure to the user straight away
       why: Recoverable errors are normal in agent loops.
-    - text: Silently return an empty result
+    - text: Return an empty result, so the model carries on without the file
       why: The model will reason from false information.
   explanation: Errors are observations.
 - kind: fire
   prompt: What are the three ingredients of the "lethal trifecta" for agent data exfiltration?
   choices:
-    - text: Access to private data, exposure to untrusted content, and a way to send data out
+    - text: Private data access, exposure to untrusted content, and a way to send data out
       correct: true
-    - text: A large model, long context and high temperature
+    - text: A large model, long context and high temperature, which together raise the risk of leaks
       why: These don't create the exfiltration path.
-    - text: Logging, tracing and metrics
-      why: Those are observability.
+    - text: Long context, tool access and a high step budget
+      why: Those raise cost and risk, but the trifecta is private data, untrusted content and a way out.
   explanation: Remove any one of the three to break the attack.
 - kind: fire
   prompt: Why delegate a sub-task to a sub-agent with a fresh context?
   choices:
-    - text: To keep the main context small; the sub-agent returns only a concise result
+    - text: To keep the main context small; the sub-agent returns a short result
       correct: true
-    - text: Sub-agents are always cheaper per token
+    - text: Sub-agents run on a cheaper model, so every token they use costs less
       why: Cost depends on usage, not on the role.
-    - text: To bypass rate limits
+    - text: To run the sub-task under a separate rate limit from the main agent
       why: That's not the purpose.
   explanation: Context isolation keeps long tasks focused.
 - kind: fire
@@ -152,7 +152,7 @@ fix: |
   choices:
     - text: How applications expose tools and resources to models
       correct: true
-    - text: Model weights formats
+    - text: A common format for model weights, so tools can run on any model
       why: Unrelated.
     - text: Safety guarantees for tool execution
       why: Permissions are still your responsibility.
@@ -162,9 +162,9 @@ fix: |
   choices:
     - text: Maximum steps, tokens, time and cost per task, enforced in the loop
       correct: true
-    - text: A temperature of 0
+    - text: A temperature of 0, so the agent can't wander into loops
       why: Deterministic loops can still loop forever.
-    - text: A longer system prompt
+    - text: A system prompt that tells the agent its budget and asks it to stop
       why: Instructions don't enforce limits.
   explanation: Hard limits in code, plus a graceful partial answer.
 ```

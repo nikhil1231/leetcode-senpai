@@ -100,17 +100,17 @@ model: |
 - kind: check
   prompt: In the support assistant, who decides whether the requested order belongs to the customer?
   choices:
-    - text: The orchestrator, in code, using the authenticated user id it passes to the tool
+    - text: The orchestrator, in code, using the authenticated user id it passes on
       correct: true
-    - text: The LLM, based on the conversation
+    - text: The LLM, based on the order details and the name the customer gives
       why: The model can be manipulated, so it must never be the authorisation layer.
-    - text: The customer, by confirming
+    - text: The customer, by confirming the order number and email address in the chat
       why: Confirmation guards actions; it doesn't establish ownership.
   explanation: Identity and authorisation stay outside the model.
 - kind: check
   prompt: What's the safest first rollout step for the assistant?
   choices:
-    - text: Shadow mode, generating drafts that human agents can use or discard
+    - text: Shadow mode, with drafts that human agents can use or discard
       correct: true
     - text: Launch to 100% of traffic with a feedback button
       why: Too much exposure before quality is measured.
@@ -120,31 +120,31 @@ model: |
 - kind: check
   prompt: Which metric best captures whether the assistant actually helped?
   choices:
-    - text: Resolution without a human, checked against re-contact within a few days and a CSAT floor
+    - text: Resolution without a human, checked against re-contact and a CSAT floor
       correct: true
-    - text: Number of messages sent by the bot
+    - text: Average number of messages the bot sends per conversation
       why: More messages may mean more confusion.
-    - text: Average response length
-      why: Length isn't quality.
+    - text: Average time to first response, compared with human agents
+      why: A fast reply says nothing about whether the issue was solved.
   explanation: Pair resolution with re-contact so the bot can't "resolve" by getting rid of people.
 - kind: fire
   prompt: Why put a cheap router model in front of the large answering model?
   choices:
-    - text: To handle and route most traffic cheaply, sending only complex cases to the expensive model
+    - text: To handle most traffic cheaply and send only complex cases to the expensive model
       correct: true
-    - text: Because large models can't classify
+    - text: Because large models are poor at classification, so a specialist model must pick the route
       why: They can, just at higher cost.
-    - text: To improve the large model's accuracy
+    - text: To rewrite each question into a cleaner prompt, which improves the large model's accuracy
       why: Routing saves cost and latency; it doesn't change the large model.
   explanation: Routing is one of the main cost levers.
 - kind: fire
   prompt: The LLM provider is down. What should the assistant fall back to, ideally?
   choices:
-    - text: A secondary model, then plain search results of related articles, then the human queue
+    - text: A secondary model, then search results for related articles, then the human queue
       correct: true
-    - text: An error page
+    - text: An error page asking the customer to try again later
       why: Support shouldn't go dark.
-    - text: Retrying the same provider indefinitely
+    - text: Retrying the same provider with backoff until it comes back, holding the customer's place
       why: Unbounded retries make outages worse.
   explanation: Layered degradation keeps the core service working.
 - kind: fire
@@ -152,19 +152,19 @@ model: |
   choices:
     - text: A summary of the issue, what was tried, and the transcript and account context
       correct: true
-    - text: Only the customer's last message
+    - text: The customer's last message and their sentiment score from the bot
       why: The agent would have to start over.
-    - text: The model's confidence score alone
+    - text: The model's confidence score and the name of the intent it detected
       why: Not enough context to act on.
   explanation: Good handovers save the customer from repeating themselves.
 - kind: fire
   prompt: Why must actions such as start_cancellation be idempotent?
   choices:
-    - text: The model or the network may retry the call, and repeating it must not cause a double effect
+    - text: The model or the network may retry the call, and a repeat must not cause a double effect
       correct: true
-    - text: Idempotency makes the call faster
+    - text: Idempotent calls can be cached, which makes repeat requests faster
       why: It's about correctness under retries.
-    - text: The LLM requires it
+    - text: The LLM's tool-calling API rejects any tool that isn't marked idempotent
       why: Your system requires it.
   explanation: Agents retry. Design tools so that retries are safe.
 ```

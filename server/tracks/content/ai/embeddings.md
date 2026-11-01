@@ -40,10 +40,10 @@ Where vectors live: a dedicated vector database, or alongside your data with **p
 ```predict
 prompt: A support search uses pure vector search. Users report that searching for error code **E-4021** returns articles about other errors. Why?
 choices:
-  - The HNSW index is corrupt
-  - Embeddings capture general meaning, and nearly identical error codes land close together, so exact identifiers aren't matched reliably
-  - The query needs a higher temperature
-  - Cosine similarity can't handle numbers
+  - The HNSW index is missing the newest articles, so older ones about other errors fill the results
+  - Embeddings capture general meaning, so similar error codes land close together and exact IDs aren't matched
+  - The query is too short to embed, so it needs expanding with an LLM before searching
+  - Cosine similarity ignores digits, so E-4021 and E-4012 become the same vector
 answer: 1
 reveal: |
   "E-4021" and "E-4012" mean almost the same thing to an embedding model: "some error code". Exact tokens such as IDs, SKUs, error codes and names are what **keyword search (BM25)** is good at. The standard fix is **hybrid search**: run BM25 and vector search, merge the results (for example with reciprocal rank fusion), then optionally re-rank the top candidates with a cross-encoder.
@@ -82,9 +82,9 @@ items:
   choices:
     - text: Re-embed every document with the new model
       correct: true
-    - text: Nothing; vectors are interchangeable
+    - text: Nothing; vectors of the same dimension are interchangeable
       why: Different models produce incomparable spaces.
-    - text: Normalise the old vectors
+    - text: Normalise the old vectors to unit length so they match
       why: Normalisation doesn't map one space onto another.
   explanation: Store the model version with every vector so migrations are explicit.
 - kind: check
@@ -92,19 +92,19 @@ items:
   choices:
     - text: Improves recall at the cost of slower queries
       correct: true
-    - text: Reduces memory use
+    - text: Reduces memory use by storing fewer graph edges
       why: It affects search effort, not index size.
-    - text: Speeds up index builds
+    - text: Speeds up index builds by linking fewer neighbours
       why: That's ef_construction and M.
   explanation: A bigger candidate list explores more of the graph.
 - kind: fire
   prompt: Why re-rank with a cross-encoder instead of using it for all retrieval?
   choices:
-    - text: It's accurate but too slow to score every document, so it re-scores a small candidate set
+    - text: It's accurate but too slow to score every document, so it re-scores a few candidates
       correct: true
-    - text: Cross-encoders can't handle long documents
+    - text: Cross-encoders can't handle long documents, so they only see the top results' titles
       why: The main constraint is cost per query-document pair.
-    - text: It's less accurate than embeddings
+    - text: It's less accurate than embeddings, so it's used only as a tie-breaker between close results
       why: It's usually more accurate.
   explanation: Retrieve broadly and cheaply, then re-rank narrowly and accurately.
 - kind: fire
@@ -112,17 +112,17 @@ items:
   choices:
     - text: Too few results after filtering, and a bug can leak another tenant's documents
       correct: true
-    - text: None; post-filtering is standard
+    - text: None; post-filtering is the standard approach, and it keeps one shared index simple
       why: Filters that are security boundaries belong inside the query.
-    - text: Slower indexing
+    - text: Slower indexing, since each document must be tagged with its tenant first
       why: Indexing is unaffected.
   explanation: Apply tenant and ACL filters within the search, or partition indexes by tenant.
 - kind: fire
   prompt: How does reciprocal rank fusion merge BM25 and vector results?
   choices:
-    - text: Each document scores the sum of 1/(k + rank) across the lists
+    - text: Each document scores the sum of 1/(k + rank) over the lists
       correct: true
-    - text: It averages the raw scores
+    - text: It averages the raw scores after scaling both lists to the range 0–1
       why: BM25 and cosine scores are on incomparable scales.
     - text: It keeps only documents that appear in both lists
       why: That throws away good single-list hits.

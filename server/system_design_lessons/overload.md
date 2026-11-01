@@ -77,10 +77,10 @@ takeaway: |
 ```predict
 prompt: A product page calls inventory, reviews and recommendations through a single shared pool of 200 threads. Recommendations hangs. What happens to the page — and to checkout, which shares the same pool?
 choices:
-  - Only recommendations fail; everything else is fine
-  - Threads blocked on recommendations fill the shared pool, so product pages and checkout start failing too
-  - The load balancer routes around recommendations
-  - Recommendations time out instantly, so nothing happens
+  - Only recommendations fail; the other calls get their own threads from the pool as needed
+  - Threads blocked on recommendations fill the shared pool, so pages and checkout fail too
+  - The load balancer notices the hang and routes requests around the recommendations service
+  - Recommendations time out quickly, so the threads come back before the pool fills up
 answer: 1
 reveal: |
   A shared pool turns one slow dependency into a failure of everything that uses the pool. **Bulkheads** — a separate, small pool or concurrency limit per dependency — contain it: recommendations exhausts its 20 threads and fails fast, while checkout's pool is untouched. Add a timeout and a circuit breaker, and the page renders without recommendations.
@@ -154,13 +154,13 @@ model: |
 - kind: check
   prompt: Why does an unbounded request queue make sustained overload worse?
   choices:
-    - text: Waits grow until requests exceed their clients' timeouts, so the server spends its capacity on work nobody is waiting for
+    - text: Waits grow past clients' timeouts, so the server spends capacity on work nobody is waiting for
       correct: true
-    - text: Unbounded queues reject requests too early
+    - text: Unbounded queues reject requests too early, before the servers are actually saturated
       why: They never reject anything. That's the problem.
-    - text: Queues reduce throughput when lightly loaded
-      why: Light load isn't the issue.
-    - text: They make health checks fail first
+    - text: Queue bookkeeping costs CPU per request, which reduces throughput as the queue grows
+      why: Bookkeeping is cheap. The cost is serving requests whose clients have already given up.
+    - text: They make health checks fail first, so the load balancer removes healthy servers
       why: Not necessarily. Everything just gets slower.
   explanation: Bounded queues with fast rejection keep accepted work fast and let rejected clients back off.
 - kind: check
@@ -190,62 +190,62 @@ model: |
 - kind: check
   prompt: What is a bulkhead in system design?
   choices:
-    - text: An isolated resource pool (threads, connections, concurrency) per dependency or workload, so one can't exhaust resources shared by others
+    - text: An isolated pool of threads or connections per dependency, so one can't exhaust what others need
       correct: true
-    - text: A firewall rule
+    - text: A firewall rule that blocks traffic between services that shouldn't talk to each other
       why: Bulkheads isolate capacity, not network access.
-    - text: A type of database index
-      why: Unrelated.
-    - text: A retry policy
+    - text: A partition of a database table that holds one tenant's rows apart from the others
+      why: That's data partitioning. A bulkhead isolates capacity such as threads and connections.
+    - text: A retry policy that stops retrying a dependency after a set number of failures
       why: Retries are separate.
   explanation: Like a ship's watertight compartments, bulkheads contain the damage from a slow or failing dependency.
 - kind: fire
   prompt: A cache restart triggers a database overload that persists for 40 minutes after the cache is back. What kind of failure is this, and how do you get out?
   choices:
-    - text: A metastable failure sustained by retries and timeouts; escape by shedding load or cutting retries until the system recovers
+    - text: A metastable failure sustained by retries; escape by shedding load or cutting retries until it recovers
       correct: true
-    - text: A hardware failure; replace the database
+    - text: A hardware failure on the database host; fail over to a replica and replace it
       why: Nothing is broken. The load pattern is self-sustaining.
-    - text: A DNS issue; lower the TTL
+    - text: A DNS issue: clients still resolve the old cache address, so lower the TTL and wait
       why: Unrelated.
-    - text: Normal behaviour that fixes itself in seconds
+    - text: Normal cache warming; the database is busy refilling the cache and recovers once it's full
       why: It persisted for 40 minutes.
   explanation: Metastable states need deliberate intervention — shedding, pausing retries, warming caches — to drop load below capacity.
 - kind: fire
   prompt: An optional recommendations call has a 30 s timeout and 3 retries. What should change?
   choices:
-    - text: A short timeout (hundreds of ms), no retries, a circuit breaker and a fallback with no recommendations
+    - text: A short timeout (hundreds of ms), no retries, a circuit breaker, and a fallback without them
       correct: true
     - text: A longer timeout so recommendations always load
       why: That ties up threads and slows pages for an optional feature.
-    - text: More retries
+    - text: More retries with exponential backoff, so a slow recommendation eventually succeeds
       why: They multiply load on a struggling service.
-    - text: Moving it into the checkout thread pool
+    - text: Moving it into the checkout thread pool, which has more threads to spare
       why: That would let it starve checkout.
   explanation: Optional dependencies get small budgets and graceful fallbacks, so their failures can't hurt core flows.
 - kind: fire
   prompt: Where is the cheapest place to shed load?
   choices:
-    - text: As early as possible — at the edge or load balancer, before expensive work starts
+    - text: As early as possible, at the edge or load balancer, before expensive work starts
       correct: true
-    - text: After the database query completes
+    - text: After the database query completes, by dropping the response if the client has gone
       why: By then most of the cost has been paid.
-    - text: In the client's browser after rendering
+    - text: In the client's browser, by delaying requests after a page has rendered
       why: The server has already done all the work.
-    - text: Nowhere — never shed load
+    - text: At the database, which knows exactly how much capacity it has left
       why: Then overload sheds load for you, by failing everything.
   explanation: A rejection should cost almost nothing. The later you reject, the more capacity you've wasted.
 - kind: fire
   level: advanced
   prompt: Under overload, why might a server process its queue in LIFO order instead of FIFO?
   choices:
-    - text: The newest requests are the ones whose clients are most likely still waiting; the oldest have probably already timed out
+    - text: The newest requests' clients are most likely still waiting; the oldest have probably timed out
       correct: true
-    - text: LIFO is always fairer
+    - text: LIFO is fairer under overload, because every client is served in turn
       why: It's less fair, but it maximises useful work during overload.
-    - text: LIFO uses less memory
+    - text: LIFO uses less memory, because the stack never needs to be resized under load
       why: Memory use is the same.
-    - text: FIFO isn't possible with bounded queues
+    - text: FIFO isn't possible with bounded queues, since the oldest entry is dropped on overflow
       why: It's possible. It's just worse during overload.
   explanation: During overload, FIFO serves requests whose callers have given up. LIFO (with deadlines) maximises goodput.
 - kind: fire

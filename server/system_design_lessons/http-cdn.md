@@ -60,10 +60,10 @@ explain: Revalidation still costs a round trip, but no body is transferred and t
 ```predict
 prompt: A response for `/settings` (personalised to the logged-in user) carries `Cache-Control: no-cache` and nothing else. A shared corporate proxy sits between users and your site. What can happen?
 choices:
-  - Nothing is stored anywhere, so it's safe
-  - The proxy may store the response, but must revalidate it with the origin before serving it to anyone
+  - Nothing is stored anywhere, since no-cache forbids every cache from keeping a copy
+  - The proxy may store it, but must revalidate with the origin before serving it to anyone
   - The proxy will serve it to other users for up to 60 seconds
-  - The browser refuses to render the page
+  - The browser refuses to render the page, because the proxy strips the session cookie
 answer: 1
 reveal: |
   `no-cache` permits storage and requires revalidation. A correctly behaving proxy revalidates, and your origin decides per request — but you're relying on every intermediary behaving and on your origin varying the response per user during revalidation. For personalised data say what you mean: `Cache-Control: private` (only the browser), or `no-store` if it shouldn't be kept at all.
@@ -232,9 +232,9 @@ model: |
   choices:
     - text: It may store the response but must revalidate with the origin before each use
       correct: true
-    - text: It must never store the response
+    - text: It must never store the response, in memory or on disk
       why: That's `no-store`. `no-cache` allows storage and requires revalidation.
-    - text: Only the browser may store it, not shared caches
+    - text: Only the browser may store it, while shared caches like CDNs must not
       why: That's `private`.
     - text: Serve it for up to 60 seconds, then fetch a new copy
       why: `no-cache` sets no freshness lifetime. Each use requires revalidation.
@@ -272,44 +272,44 @@ model: |
 - kind: fire
   prompt: Why is `Vary: Cookie` usually a bad way to cache pages that differ by currency?
   choices:
-    - text: Every visitor's cookie string is unique, so each gets a separate cache entry and the hit ratio collapses
+    - text: Each visitor's cookie string is unique, so each gets their own cache entry and hits collapse
       correct: true
-    - text: Browsers ignore Vary
+    - text: Browsers ignore Vary, so a visitor's cached page shows a stale currency forever
       why: Browsers respect Vary. The problem is how fragmented the cache keys become in shared caches.
-    - text: Cookies can't be sent to CDNs
+    - text: CDNs strip cookies before forwarding requests, so the origin can't see the currency
       why: Cookies reach CDNs fine. That's exactly why the key gets fragmented.
-    - text: Vary only works for compression headers
+    - text: Vary only works for request headers the CDN understands, like Accept-Encoding
       why: Vary works with any request header. Cookie is just a terrible one to vary on.
   explanation: Vary on the whole Cookie header fragments the cache per user. Normalise the key to the one value that matters (e.g. currency) in the CDN, or put the variant in the URL.
 - kind: fire
   prompt: A popular new file is published and requested from 300 edge locations at once. Which CDN feature prevents 300 simultaneous fetches from the origin?
   choices:
-    - text: Tiered caching (an origin shield), combined with request collapsing
+    - text: Tiered caching (an origin shield) with request collapsing
       correct: true
-    - text: A longer max-age on the file
+    - text: A longer max-age on the file, so edges keep it cached once they have it
       why: Max-age doesn't matter before the first fetch. Every edge still misses once.
     - text: The immutable directive
       why: Immutable prevents revalidation of copies already held. It doesn't coordinate first fetches.
-    - text: Signed URLs
+    - text: Signed URLs, so only the first edge to sign the request may fetch from the origin
       why: Signed URLs control access, not miss storms.
   explanation: Edges miss into a shared regional shield, which collapses concurrent misses into one origin request. Without a shield, each PoP fetches from the origin independently.
 - kind: fire
   prompt: Corrections to news articles must appear within a minute, but you'd like the CDN to hold articles for a day. What's the cleanest approach?
   choices:
-    - text: Long s-maxage at the edge, short max-age for browsers, and a purge by the article's surrogate key on every edit
+    - text: Long s-maxage at the edge, short max-age in browsers, and a surrogate-key purge on every edit
       correct: true
-    - text: Set max-age=60 everywhere
+    - text: Set max-age=60 everywhere, so every copy refreshes within a minute
       why: That works but throws away most of the edge offload for content that rarely changes.
-    - text: Use no-store so there is nothing to correct
+    - text: Use no-store on articles and rely on the origin's own cache for speed
       why: That makes every view hit the origin.
-    - text: Change the article's URL on every correction
+    - text: Change the article's URL on every correction, so caches treat it as a new file
       why: That breaks links, search ranking and shares. Content-addressed URLs suit assets, not canonical pages.
   explanation: s-maxage lets shared caches hold content longer than browsers. A tag purge makes edits visible within seconds without shortening the TTL.
 - kind: fire
   level: advanced
   prompt: Paid course videos must be served from the CDN, but only to enrolled users. How does that usually work?
   choices:
-    - text: The origin checks enrolment and issues a short-lived signed URL or cookie; the edge verifies the signature without calling the origin
+    - text: The origin checks enrolment and issues a short-lived signed URL or cookie, which the edge verifies
       correct: true
     - text: Make the video URLs long and random so they can't be guessed
       why: Unguessable URLs leak through sharing, logs and referrers, and they can't be revoked. Obscurity isn't authorisation.

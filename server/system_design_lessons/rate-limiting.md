@@ -116,10 +116,10 @@ If Redis is unreachable, does every request get rejected (**fail closed**) or al
 ```predict
 prompt: The central Redis used for rate limiting goes down. Your limiter is configured to fail closed for all endpoints. What happens?
 choices:
-  - Only abusive clients are blocked
-  - Every API request is rejected — the rate limiter has become a single point of failure for the whole API
-  - Requests are queued until Redis returns
-  - Limits are enforced locally automatically
+  - Only clients already over their limit are blocked, using the last counts held in memory
+  - Every API request is rejected: the limiter has become a single point of failure for the API
+  - Requests are queued at the gateway until Redis returns, then processed in order
+  - Each gateway switches to local limits automatically, so traffic continues roughly as before
 answer: 1
 reveal: |
   Failing closed turns a limiter outage into a full outage. For most endpoints, fail open with a local per-instance fallback limit (approximate but safe), and reserve fail-closed for security-sensitive paths such as login attempts and SMS sending, where letting abuse through is worse than briefly blocking everyone.
@@ -159,9 +159,9 @@ model: |
   choices:
     - text: About 200, by bursting at the end of one window and the start of the next
       correct: true
-    - text: 100
+    - text: 100, because the window counts every request made in the same minute
       why: The counter resets at the boundary, so the next window grants another 100.
-    - text: About 3
+    - text: About 3, since 100 per minute is under 2 per second on average
       why: Fixed windows don't spread requests evenly.
     - text: Unlimited
       why: Each window is still capped at 100.
@@ -176,13 +176,13 @@ model: |
 - kind: check
   prompt: Why must a distributed limiter use an atomic increment-and-check?
   choices:
-    - text: Otherwise concurrent requests can all read the same count, all pass the check, and exceed the limit
+    - text: Otherwise concurrent requests can all read the same count, pass, and exceed the limit
       correct: true
-    - text: Atomic operations are faster
+    - text: Atomic operations are faster, since Redis runs them without a network round trip
       why: The reason is correctness, not speed.
-    - text: Redis requires it
+    - text: Redis Cluster rejects non-atomic writes to keys used by more than one client
       why: Redis allows non-atomic sequences. That's exactly how the bug happens.
-    - text: To make keys expire
+    - text: So the counter key and its expiry are set together and never leak
       why: Expiry is a separate concern (though it should also be set atomically).
   explanation: Increment first and act on the returned value, or use a Lua script, so the check reflects every concurrent request.
 - kind: check
@@ -203,9 +203,9 @@ model: |
   choices:
     - text: Up to about 4,000 per minute
       correct: true
-    - text: 100 per minute
+    - text: 100 per minute, the configured limit
       why: Each instance counts only the traffic it sees.
-    - text: 2.5 per minute
+    - text: 2.5 per minute (100 ÷ 40)
       why: Local limits don't divide automatically.
     - text: Unlimited
       why: It's bounded, just 40 times too high.
@@ -215,34 +215,34 @@ model: |
   choices:
     - text: Token bucket with capacity 50 and refill rate 10/s
       correct: true
-    - text: Fixed window of 10 per second
+    - text: Fixed window of 10 per second, which allows 50 across window edges
       why: That allows no deliberate bursts, and leaks double at boundaries.
-    - text: Leaky bucket at 10/s with no queue
+    - text: Leaky bucket draining at 10/s with no queue for bursts
       why: That smooths traffic. Bursts would be dropped, not allowed.
-    - text: Sliding log of 50 per second
+    - text: Sliding log of 50 per second, averaged to 10 over five seconds
       why: That allows 50 every second — five times the intended average.
   explanation: Capacity is the burst allowance; refill rate is the sustained rate.
 - kind: fire
   prompt: What should a rate-limited response contain?
   choices:
-    - text: 429 status, Retry-After, and rate-limit headers describing the limit and remaining budget
+    - text: 429 status, Retry-After, and headers describing the limit and remaining budget
       correct: true
-    - text: 500 status
-      why: 500 blames the server and invites immediate retries.
+    - text: 503 Service Unavailable with a Retry-After header and the limit
+      why: 503 says the server is unwell, not that this client is over its limit. Use 429.
     - text: 200 with an error message in the body
       why: Clients and monitoring branch on status codes.
-    - text: 403 Forbidden
+    - text: 403 Forbidden with a body saying when the quota resets
       why: 403 means "not allowed at all", not "slow down".
   explanation: Telling clients when to retry, and how much budget remains, prevents retry storms and lets good clients self-pace.
 - kind: fire
   level: advanced
   prompt: Cloudflare's sliding-window counter estimates the rolling count from two fixed windows. What's the main trade-off compared with a sliding log?
   choices:
-    - text: It uses constant memory per key at the cost of a small approximation error
+    - text: It uses constant memory per key, at the cost of a small approximation error
       correct: true
-    - text: It's exact but uses more memory
-      why: That describes the sliding log.
-    - text: It allows unlimited bursts
+    - text: It's exact, but it needs more memory per key than a sliding log
+      why: It's approximate, and it uses less memory than a sliding log.
+    - text: It allows unlimited bursts at the boundary between the two windows
       why: It closely tracks the rolling limit.
     - text: It needs synchronised clocks to the nanosecond
       why: Ordinary clock accuracy is enough.

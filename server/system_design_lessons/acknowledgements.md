@@ -134,10 +134,10 @@ Durability is configuration, not a default to assume: durable or quorum queues, 
 ```predict
 prompt: A producer publishes an order event and gets a publisher confirm from RabbitMQ. What has been guaranteed?
 choices:
-  - The warehouse service has processed the order
-  - The broker has accepted the message and stored it according to the queue's durability settings
-  - The message will be delivered exactly once
-  - The message is now in the database
+  - The warehouse service has received the order and acknowledged it to the broker
+  - The broker has accepted the message and stored it per the queue's durability settings
+  - The message will be delivered exactly once, since the broker has recorded it
+  - The order is now saved in the database the order service writes to
 answer: 1
 reveal: |
   A confirm covers the hop to the broker only. Processing is the consumer's job (and its ack), delivery is still at-least-once, and the database knows nothing about it. Each hop has its own acknowledgement and its own failure window, which is why end-to-end reliability is designed hop by hop.
@@ -177,9 +177,9 @@ model: |
   choices:
     - text: At-most-once — a crash during processing loses the message
       correct: true
-    - text: At-least-once — crashes cause redelivery
+    - text: At-least-once — a crash before the ack leads to redelivery after restart
       why: Redelivery only happens for unacked messages, and this one was acked before the work.
-    - text: Exactly-once
+    - text: Exactly-once — the broker removes the message as soon as it is read
       why: Nothing deduplicates, and crashes lose work.
     - text: It depends on the producer
       why: Where the consumer acks is what decides this.
@@ -202,11 +202,11 @@ model: |
 - kind: check
   prompt: Messages take up to 45 s to process, but the SQS visibility timeout is 30 s. What happens?
   choices:
-    - text: Slow messages become visible again mid-processing and another consumer processes them too
+    - text: Slow messages reappear mid-processing and another consumer handles them too
       correct: true
-    - text: SQS waits for processing to finish
+    - text: SQS extends the timeout automatically while a consumer is still connected
       why: SQS has no idea about processing. It only tracks the timeout.
-    - text: The messages are deleted after 30 s
+    - text: SQS deletes each message after 30 s, so slow ones are dropped unprocessed
       why: They reappear. They aren't deleted.
     - text: Processing speeds up to fit the timeout
       why: The timeout doesn't change how long the work takes.
@@ -214,11 +214,11 @@ model: |
 - kind: check
   prompt: What does a publisher confirm (or Kafka acks=all) guarantee?
   choices:
-    - text: The broker has accepted and persisted the message per its durability configuration
+    - text: The broker stored the message per its durability settings
       correct: true
-    - text: A consumer has processed the message
+    - text: At least one consumer has received and processed the message
       why: That's the consumer's ack, a separate hop.
-    - text: The message will never be delivered twice
+    - text: The message will be delivered to consumers exactly once, with no duplicates
       why: Delivery to consumers is still at-least-once.
     - text: The database write succeeded
       why: The broker doesn't know about your database.
@@ -228,11 +228,11 @@ model: |
   choices:
     - text: Sampled telemetry where occasional loss is acceptable
       correct: true
-    - text: Payment captures
+    - text: Payment captures, as long as the gateway reports failures
       why: Losing them loses money.
     - text: Account deletions requested by users
       why: Those must eventually happen.
-    - text: Shipment creation
+    - text: Shipment creation, since a carrier can always be re-booked by hand
       why: Losing one means a customer never receives their order.
   explanation: Choose at-most-once only when losing data is cheaper than handling duplicates.
 - kind: fire
@@ -245,24 +245,24 @@ model: |
 - kind: fire
   prompt: A consumer inserts its dedupe record in one transaction and performs the database effect in a second transaction. What can go wrong?
   choices:
-    - text: A crash between them marks the event as processed without its effect, so the redelivery is skipped and the effect is lost
+    - text: A crash between them marks the event done without its effect, so redelivery is skipped
       correct: true
-    - text: Nothing — the order of transactions doesn't matter
+    - text: Nothing — the dedupe record makes a second delivery harmless, whatever the order
       why: Separate transactions leave a window between them.
     - text: The dedupe table grows too large
       why: That's a retention question, not a correctness one.
-    - text: The broker rejects the message
+    - text: The broker rejects the message because the consumer took two transactions to process it
       why: The broker doesn't see your transactions.
   explanation: The dedupe record and the effect must commit atomically. Otherwise you trade duplicates for losses.
 - kind: fire
   level: advanced
   prompt: In Kafka, a consumer commits its offset, then processes the batch, then crashes mid-batch. What happens on restart?
   choices:
-    - text: The unprocessed messages in that batch are skipped (lost), because the committed offset is already past them
+    - text: The rest of that batch is skipped, because the committed offset is already past it
       correct: true
-    - text: The whole batch is redelivered
+    - text: The whole batch is redelivered, because the consumer never acknowledged its results
       why: That's what happens when you commit after processing.
-    - text: Kafka detects the crash and rolls back the offset
+    - text: Kafka notices the consumer left the group and rewinds the offset to the batch start
       why: Offsets are what you commit. Kafka won't undo a commit.
     - text: Messages are duplicated
       why: Committing first causes loss, not duplication.

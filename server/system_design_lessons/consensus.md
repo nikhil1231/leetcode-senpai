@@ -183,13 +183,13 @@ model: |
 - kind: check
   prompt: Why does Raft use randomised election timeouts?
   choices:
-    - text: To make it unlikely that several followers become candidates at the same time and split the vote
+    - text: So that several followers rarely become candidates at once and split the vote
       correct: true
     - text: To encrypt votes
       why: Randomisation is about timing, not security.
-    - text: To make leaders change regularly
+    - text: To make leadership rotate between nodes so no single node carries the load for long
       why: A healthy leader keeps its role as long as heartbeats arrive.
-    - text: Because clocks can't be read precisely
+    - text: Because node clocks drift, so a fixed timeout would fire at different times anyway
       why: The point is spreading candidates out in time.
   explanation: Staggered timeouts let one candidate usually start and win before the others time out.
 - kind: check
@@ -197,9 +197,9 @@ model: |
   choices:
     - text: Once a majority of the cluster has stored it
       correct: true
-    - text: As soon as the leader appends it
+    - text: As soon as the leader appends it to its own durable log
       why: The leader alone could crash and lose it.
-    - text: When every node has stored it
+    - text: When every node has stored it, so any node can serve it after a crash
       why: That would let one slow node block progress.
     - text: When the client receives it back
       why: The client is told only after the entry is committed.
@@ -222,11 +222,11 @@ model: |
 - kind: fire
   prompt: A lock holder pauses for longer than its lease, and another process acquires the lock. What prevents the first from corrupting data when it resumes?
   choices:
-    - text: Fencing tokens checked by the protected resource, which rejects writes with an older token
+    - text: Fencing tokens: the resource rejects writes carrying an older token
       correct: true
-    - text: A longer lease
+    - text: A longer lease, set well above the longest pause ever observed
       why: Pauses can always exceed it.
-    - text: Renewing the lease more often
+    - text: Renewing the lease more often, so it can't expire while the holder is still working
       why: A paused process can't renew anything.
     - text: Logging a warning
       why: That doesn't stop the write.
@@ -234,23 +234,23 @@ model: |
 - kind: fire
   prompt: Why are 4-node consensus clusters uncommon?
   choices:
-    - text: They tolerate the same single failure as a 3-node cluster while needing more nodes per write
+    - text: They survive only one failure, like 3 nodes, but every write needs one more ack
       correct: true
-    - text: Raft requires an odd number of nodes
+    - text: Raft requires an odd number of nodes so an election can never end in a tie
       why: It works with any size. Even sizes are just less efficient.
     - text: They elect two leaders
       why: Majority voting prevents that.
-    - text: They can't tolerate any failures
+    - text: They can't tolerate any failure, because 3 of 4 isn't a strict majority
       why: They tolerate one.
   explanation: A majority of 4 is 3, so 4 nodes tolerate one failure — the same as 3 — at a higher write cost.
 - kind: fire
   prompt: During a 2 | 3 partition of a 5-node Raft cluster, what can the 2-node side do?
   choices:
-    - text: Nothing that commits — it can't reach a majority to elect a leader or commit entries
+    - text: Nothing that commits — without a majority it can't elect a leader or commit
       correct: true
-    - text: Elect its own leader and accept writes
+    - text: Elect its own leader and accept writes, reconciling them with the majority when it heals
       why: It would need 3 votes and only has 2.
-    - text: Serve linearizable reads normally
+    - text: Serve linearizable reads from its old leader, but reject writes until it heals
       why: Linearizable reads also need majority confirmation or a valid lease.
     - text: Merge with the majority automatically
       why: Not until the partition heals.
@@ -259,13 +259,13 @@ model: |
   level: advanced
   prompt: What does the FLP impossibility result imply for practical consensus systems?
   choices:
-    - text: They can't guarantee progress in a fully asynchronous network with crashes, so they use timeouts for liveness while always preserving safety
+    - text: Progress can't be guaranteed in a fully async network, so they use timeouts for liveness but never give up safety
       correct: true
-    - text: Consensus is impossible in practice
+    - text: Consensus is impossible in practice, so real systems settle for eventual consistency instead
       why: It works whenever the network is reasonably timely.
-    - text: They must use synchronised atomic clocks
+    - text: They must use synchronised atomic clocks so every node agrees on when a timeout has passed
       why: Some systems use clocks for performance, but Raft and Paxos don't need them for safety.
-    - text: They lose committed data during partitions
+    - text: They may lose committed entries during partitions, so clients must retry writes after a failover
       why: Safety is preserved. Only progress stalls.
   explanation: Real systems never violate safety. Under bad network conditions they may stall or hold repeated elections instead.
 - kind: fire

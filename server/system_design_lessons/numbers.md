@@ -268,11 +268,11 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 3 × 10⁷ (31.5 million)
       correct: true
-    - text: About 3 × 10⁶
+    - text: About 3 × 10⁶ (3.15 million)
       why: That's roughly a month.
-    - text: About 3 × 10⁸
+    - text: About 3 × 10⁸ (315 million)
       why: That's about ten years.
-    - text: About 8.6 × 10⁵
+    - text: About 8.6 × 10⁵ (864,000)
       why: That's ten days.
   explanation: 365 × 86,400 ≈ 31.5 million ≈ 3 × 10⁷.
 - kind: fire
@@ -280,11 +280,11 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 2.6 million
       correct: true
-    - text: About 260,000
+    - text: About 260,000 seconds
       why: That's three days.
-    - text: About 26 million
+    - text: About 26 million seconds
       why: That's ten months.
-    - text: About 600,000
+    - text: About 600,000 seconds
       why: That's a week.
   explanation: 30 × 86,400 ≈ 2.6 million ≈ 2.5 × 10⁶.
 - kind: fire
@@ -314,13 +314,13 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
 - kind: fire
   prompt: 1 million events a month is about what average rate?
   choices:
-    - text: About 0.4 per second
+    - text: About 0.4 events per second
       correct: true
-    - text: About 4 per second
+    - text: About 4 events per second
       why: That's 10 million a month.
-    - text: About 12 per second
+    - text: About 12 events per second
       why: That's 1 million a day.
-    - text: About 40 per second
+    - text: About 40–50 events per second
       why: That's 100 million a month.
   explanation: A month is about 2.6 million seconds, so 10⁶ ÷ 2.6 × 10⁶ ≈ 0.4/s. Monthly totals sound big and are usually tiny rates.
 - kind: fire
@@ -380,7 +380,7 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       why: That's a small thumbnail.
     - text: About 20–200 MB
       why: That's a minute or more of video.
-    - text: About 1 GB
+    - text: About 500 MB–1 GB
       why: That's roughly half an hour of streaming video.
   explanation: Web-sized photos are a few hundred KB; phone originals are a few MB.
 - kind: fire
@@ -400,11 +400,11 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 1.25 GB/s
       correct: true
-    - text: About 10 GB/s
+    - text: About 10 GB/s (1:1)
       why: Network speeds are in bits; divide by 8.
     - text: About 125 MB/s
       why: That's 1 Gbps.
-    - text: About 80 GB/s
+    - text: About 80 GB/s (10 × 8)
       why: That multiplies by 8 instead of dividing.
   explanation: 10,000 Mb/s ÷ 8 = 1,250 MB/s.
 - kind: fire
@@ -414,9 +414,9 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       correct: true
     - text: About 1 ns
       why: That's an L1 cache hit.
-    - text: About 10 µs
+    - text: About 10–20 µs
       why: That's reading a whole megabyte from memory.
-    - text: About 1 ms
+    - text: About 1–2 ms
       why: That's slower than a datacentre round trip.
   explanation: ~100 ns, about 100× slower than L1 cache.
 - kind: fire
@@ -436,11 +436,11 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 20–100 µs
       correct: true
-    - text: About 100 ns
+    - text: About 100–500 ns
       why: That's main memory.
     - text: About 5–10 ms
       why: That's a spinning disk seek.
-    - text: About 1 s
+    - text: About 0.5–1 s
       why: No storage device is that slow for one read.
   explanation: Tens of microseconds, about 1,000× slower than memory and 100× faster than an HDD seek.
 - kind: fire
@@ -462,10 +462,10 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       correct: true
     - text: About 50 ms
       why: That's a cross-country round trip.
-    - text: About 5 ns
+    - text: About 5–10 ns
       why: That's a few CPU cache hits.
-    - text: About 5 s
-      why: Nothing healthy in a datacentre takes that long.
+    - text: About 2–5 µs
+      why: That's faster than the network stack can turn a packet round. Real round trips are hundreds of µs.
   explanation: ~0.5 ms, often less on modern networks. It's why a chatty service making 100 sequential calls adds ~50 ms.
 - kind: fire
   prompt: About how long is a round trip between two availability zones in the same region?
@@ -486,7 +486,7 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       correct: true
     - text: About 6–7 ms
       why: That's a few hundred km.
-    - text: About 600 ms
+    - text: About 500–600 ms
       why: That's more than twice round the world.
     - text: About 1 ms
       why: That's about 100 km.
@@ -496,11 +496,11 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 70–80 ms
       correct: true
-    - text: About 7 ms
+    - text: About 7–8 ms
       why: Light in fibre can't cross the Atlantic that fast.
-    - text: About 700 ms
+    - text: About 700–800 ms
       why: That's more than twice round the world.
-    - text: About 15 ms
+    - text: About 15–20 ms
       why: That's about 1,500 km of round trip.
   explanation: ~5,500 km each way at ~200 km/ms is ~55 ms round trip for light alone; real routes give ~70–80 ms.
 - kind: fire
@@ -508,12 +508,12 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 250–300 ms
       correct: true
-    - text: About 25 ms
+    - text: About 25–30 ms
       why: That's a few thousand km at most.
-    - text: About 2–3 s
+    - text: About 1.5–3 s
       why: Even halfway round the world is well under a second.
-    - text: About 80 ms
-      why: That's a transatlantic round trip.
+    - text: About 800 ms–1 s
+      why: That's several times the real figure. Even halfway round the world is a few hundred ms.
   explanation: It's close to the far side of the world. A design that needs several sequential round trips between them is noticeably slow.
 - kind: fire
   prompt: About how far does light travel in fibre in one millisecond?
@@ -570,9 +570,9 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       correct: true
     - text: About 1 s
       why: Under a second keeps flow, but the delay is noticeable.
-    - text: About 10 s
-      why: Around 10 s users lose attention.
-    - text: About 1 ms
+    - text: About 1–2 s
+      why: At 1 s users notice the wait, even if they keep their train of thought.
+    - text: About 1–10 ms
       why: People can't perceive differences that small.
   explanation: ~100 ms feels instant, ~1 s keeps flow, ~10 s loses attention.
 - kind: fire
@@ -640,9 +640,9 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 53 minutes
       correct: true
-    - text: About 5 minutes
+    - text: About 5.26 minutes
       why: That's 99.999%.
-    - text: About 8.8 hours
+    - text: About 8.76 hours
       why: That's 99.9%.
     - text: About 3.7 days
       why: That's 99%.
@@ -690,7 +690,7 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       correct: true
     - text: About 99.5%
       why: Redundancy multiplies the failure chances, 1% × 1%.
-    - text: About 98%
+    - text: About 98.01%
       why: That's two required services in series.
     - text: About 99%
       why: The second replica helps, provided failures are independent.
@@ -740,7 +740,7 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       why: Queueing delay grows like ρ/(1−ρ); at 95% waits are ~19× the service time.
     - text: About 100%
       why: There's no headroom for bursts or losing an instance.
-    - text: About 10%
+    - text: About 10–20%
       why: That wastes most of the fleet.
   explanation: Headroom absorbs bursts and the loss of an instance or zone, and keeps queueing delay low.
 - kind: fire
@@ -760,9 +760,9 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 10:1 to 100:1
       correct: true
-    - text: About 1:1
+    - text: About 1:1 to 2:1
       why: People view far more than they post.
-    - text: About 1:10
+    - text: About 1:10 to 1:100
       why: That's write-heavy, like logging or metrics.
     - text: About 1,000,000:1
       why: Too extreme for most products.
@@ -794,13 +794,13 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
 - kind: fire
   prompt: What does LLM prompt caching actually cache?
   choices:
-    - text: An identical prefix of the input, so repeat requests skip re-processing it
+    - text: An identical prefix of the input, so repeat requests skip processing it
       correct: true
     - text: The model's output, so the same question returns the stored answer
       why: That's an application-level response cache. Prompt caching never caches output, and output is the expensive part.
     - text: Any input text that appeared before, wherever it is in the prompt
       why: It's a prefix match; a change early in the prompt invalidates everything after it.
-    - text: The model weights on the client
+    - text: The model weights, copied to a server closer to the client
       why: Weights stay on the provider's GPUs.
   explanation: Order the prompt stable-first (tools, system prompt, documents) and put anything that varies (the question, timestamps) at the end.
 - kind: fire
@@ -812,7 +812,7 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       why: That's reading from the cache.
     - text: About 10×
       why: The write premium is small; it pays off after one or two reuses.
-    - text: Nothing extra
+    - text: Nothing extra; only reads are billed
       why: There's a small premium, and more for a 1-hour cache.
   explanation: A 25% premium once, then ~90% off each reuse within the lifetime. One reuse already comes out ahead.
 - kind: fire
@@ -856,9 +856,9 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: About 50–150 tokens per second
       correct: true
-    - text: About 5 tokens per second
+    - text: About 5–10 tokens per second
       why: Far slower than typical hosted serving.
-    - text: About 5,000 tokens per second
+    - text: About 2,000–5,000 tokens per second
       why: That's closer to how fast input is processed, not output.
     - text: About 1 token per second
       why: That's much too slow.
@@ -878,13 +878,13 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
 - kind: fire
   prompt: Roughly how much memory does full training of a 7B model with Adam in mixed precision need, before activations?
   choices:
-    - text: About 110 GB
+    - text: About 110 GB (16 bytes/weight)
       correct: true
-    - text: About 14 GB
+    - text: About 14 GB (2 bytes per weight)
       why: That's the FP16 weights alone, enough for inference.
-    - text: About 28 GB
+    - text: About 28 GB (4 bytes per weight)
       why: Training also holds gradients and two Adam states per parameter.
-    - text: About 1 TB
+    - text: About 1 TB (with activations)
       why: That's well over 100 bytes per parameter.
   explanation: ~16 bytes per param (weights, gradients, FP32 master copy and Adam moments) × 7B ≈ 112 GB.
 - kind: fire
@@ -904,12 +904,12 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
   choices:
     - text: 80 GB at about 3.35 TB/s
       correct: true
-    - text: 24 GB at about 1 TB/s
+    - text: 24 GB at about 1.01 TB/s
       why: That's a consumer RTX 4090.
     - text: 1 TB at about 100 GB/s
       why: That's closer to a CPU server's RAM.
-    - text: 8 GB at about 450 GB/s
-      why: That's a consumer RTX 3070.
+    - text: 192 GB at about 8 TB/s
+      why: That's closer to a later-generation B200.
   explanation: 80 GB of HBM at ~3.35 TB/s. H200 has ~141 GB; B200 ~180 GB.
 - kind: fire
   prompt: Batch size 1, an 8B model in FP16 (16 GB) on a GPU with 3.35 TB/s of memory bandwidth. Roughly what's the decode speed ceiling?
@@ -956,7 +956,7 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
       why: That was early models, years ago.
     - text: About 100M tokens
       why: No production model has a window that large.
-    - text: Unlimited
+    - text: Unlimited, with paging
       why: Windows are fixed, and cost and latency grow with every token used.
   explanation: Large windows still cost per token and slow time to first token, so retrieval and caching still matter.
 ```

@@ -126,9 +126,9 @@ The version check and the write are **one** conditional `UPDATE`, so no race can
 ```predict
 prompt: A mobile client sends `PATCH /cart/items/5 {"quantity_delta": +1}`, times out, and retries. What happens?
 choices:
-  - Nothing bad, because PATCH is idempotent
+  - Nothing bad, because PATCH is defined as idempotent in the HTTP spec
   - The quantity may be incremented twice, because this PATCH is not idempotent
-  - The server rejects the retry automatically
+  - The server spots the repeated request body and rejects the retry automatically
   - HTTP deduplicates PATCH requests
 answer: 1
 reveal: |
@@ -215,11 +215,11 @@ model: |
 - kind: check
   prompt: Two users edit the same record. What contract prevents the second save from silently overwriting the first?
   choices:
-    - text: Return a version (ETag); updates send If-Match; the server does a conditional update and returns 412 if the version changed
+    - text: Return a version (ETag); updates send If-Match, and stale ones are rejected with 412
       correct: true
-    - text: Use PUT instead of POST
+    - text: Use PUT instead of POST, since PUT replaces the whole record atomically
       why: PUT is idempotent, but it still overwrites whatever is there. It doesn't detect concurrent edits.
-    - text: Have the client read the record again just before saving
+    - text: Have the client re-read the record just before saving, so it always has the latest copy
       why: Another write can still land between the read and the save.
     - text: Return 200 for every save
       why: That hides the conflict.
@@ -227,11 +227,11 @@ model: |
 - kind: check
   prompt: A feed uses `?offset=40&limit=20`, and new posts arrive at the top while a user pages. What will they see?
   choices:
-    - text: Some posts repeated on the next page, because positions shift down as posts are inserted above
+    - text: Some posts repeat on the next page, because existing posts shift down
       correct: true
-    - text: A consistent snapshot of the feed
+    - text: A consistent snapshot, since the offset is fixed when the first page loads
       why: Offsets read the list as it is now, which keeps changing.
-    - text: An error once the list changes
+    - text: An error once the list changes, because the offset no longer points to a valid row
       why: Nothing detects the change. The results are just quietly wrong.
     - text: Only new posts
       why: The offset still points into the older part of the list.
@@ -248,11 +248,11 @@ model: |
 - kind: fire
   prompt: Why is `GET /emails/{id}/send` a dangerous endpoint?
   choices:
-    - text: GET must be safe; crawlers, link previews, prefetchers and retrying proxies may call it and send emails
+    - text: GET must be safe; crawlers, link previews and retrying proxies may call it and send mail
       correct: true
-    - text: GET requests can't carry an ID in the path
+    - text: GET requests can't carry an ID in the path, so the server can't tell which email to send
       why: They can. The problem is the side effect.
-    - text: GET responses are always cached forever
+    - text: GET responses are cached by browsers, so the email would only be sent the first time
       why: Caching depends on headers. The bigger problem is that intermediaries assume GETs are safe to call.
     - text: GET is slower than POST
       why: Performance has nothing to do with it.
@@ -266,17 +266,17 @@ model: |
       why: That blames the server and invites immediate retries.
     - text: 200 with {"error":"rate limited"}
       why: Clients and monitoring branch on status, so this hides the condition.
-    - text: 403 Forbidden
+    - text: 403 Forbidden with a message saying the quota is used up
       why: 403 means "not allowed at all", not "slow down".
   explanation: 429 plus Retry-After tells well-behaved clients exactly when to come back, which prevents retry storms.
 - kind: fire
   prompt: A cursor-paginated list orders by `created_at` only. What bug can occur?
   choices:
-    - text: Rows sharing a created_at value can be skipped or repeated at page boundaries
+    - text: Rows sharing a created_at value can be skipped or repeated across pages
       correct: true
-    - text: The list becomes unordered
+    - text: The list loses its order once rows are updated after being created
       why: The ordering is fine for distinct timestamps. Ties are the problem.
-    - text: Cursors stop working after 100 pages
+    - text: The cursor grows with each page until it no longer fits in a URL
       why: There's no such limit.
     - text: Pagination becomes offset-based
       why: It's still cursor-based, just ambiguous for ties.
@@ -285,11 +285,11 @@ model: |
   level: advanced
   prompt: Internal services in Go, Java and Python call each other at high volume with strict latency budgets. Which interface fits best?
   choices:
-    - text: gRPC with Protobuf — typed contracts and codegen across languages, efficient encoding, built-in deadlines
+    - text: gRPC with Protobuf — typed contracts, codegen for each language, built-in deadlines
       correct: true
-    - text: GraphQL, because clients pick their fields
+    - text: GraphQL, because each service asks only for the fields it needs, which cuts payload size
       why: GraphQL suits varied UI data needs. For service-to-service RPC it adds a query layer without the main benefits.
-    - text: REST with free-form JSON and no schema
+    - text: REST with free-form JSON, since every language parses JSON and no codegen is needed
       why: It works, but loses typed contracts and adds parsing overhead at high volume.
     - text: Shared database tables
       why: That couples services through storage, with no contract or ownership.

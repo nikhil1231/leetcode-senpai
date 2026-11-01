@@ -146,8 +146,8 @@ When a gateway restarts, every client on it reconnects. If all of them do so ins
 prompt: A gateway holding 500,000 connections crashes. Clients reconnect after a fixed 1 s delay. Each reconnect needs an auth check and a "fetch missed messages" query. What's the most likely next failure?
 choices:
   - None — the other gateways have spare connection capacity
-  - The auth service and message store get ~500k requests in about one second and overload, causing failures and more retries
-  - Clients will lose all their messages
+  - Auth and the message store get ~500k requests in a second and overload, causing more retries
+  - Clients lose the messages that arrived while they were disconnected from the gateway
   - The load balancer will route everyone back to the crashed gateway
 answer: 1
 reveal: |
@@ -218,21 +218,21 @@ model: |
       correct: true
     - text: WebSockets, because they're the fastest
       why: They work, but you'd build the heartbeats and resume logic SSE gives you over plain HTTP.
-    - text: Mobile push notifications
+    - text: Web push notifications delivered through the browser
       why: Push is for waking devices, not continuous streams in a browser.
-    - text: Short polling every 100 ms
+    - text: Short polling every 100 ms, which survives any proxy
       why: That wastes requests and still adds latency.
   explanation: SSE is a one-way stream over HTTP with built-in reconnection and resume. Use WebSockets when you need both directions.
 - kind: check
   prompt: A chat app scales its WebSocket servers from 1 to 10 instances, and users in the same room stop seeing each other's messages. Why?
   choices:
-    - text: Broadcasts only reach sockets on the same instance; a pub/sub backplane is needed to route across instances
+    - text: Broadcasts only reach sockets on one instance; a pub/sub backplane routes across them
       correct: true
-    - text: WebSockets can't work behind a load balancer
+    - text: WebSockets can't work behind a load balancer that spreads one room's users over instances
       why: They can, with upgrade support. The bug is in how messages are routed.
-    - text: The database is too slow
+    - text: The database can't keep up with ten instances writing messages at once
       why: Messages aren't being lost to latency. They're never sent to the other servers.
-    - text: Each room needs its own load balancer
+    - text: Each room needs its own load balancer so its users land on one instance
       why: Routing between instances is the application's job, not the load balancer's.
   explanation: Connection state is per machine. A backplane (Redis pub/sub, NATS, Kafka) lets any instance publish to the instances holding the recipients.
 - kind: check
@@ -255,37 +255,37 @@ model: |
 - kind: fire
   prompt: Why shouldn't a WebSocket connection be treated as the source of truth for message delivery?
   choices:
-    - text: Connections drop routinely (network changes, backgrounding, deploys), so messages must be stored and replayed by sequence
+    - text: Connections drop routinely (network changes, deploys), so messages must be stored and replayed
       correct: true
-    - text: WebSockets corrupt data
+    - text: WebSocket frames can be corrupted by proxies that don't understand the protocol
       why: TCP gives integrity within a connection. The problem is that connections end.
-    - text: WebSockets can't carry binary data
+    - text: WebSockets can't carry binary data, so attachments must be sent another way
       why: They can.
-    - text: WebSockets are slower than HTTP
+    - text: WebSockets are slower than HTTP for delivery because each message is framed separately
       why: Speed isn't the issue.
   explanation: Reliable delivery means persisting first and resuming from the last ack. The socket is just a fast path.
 - kind: fire
   prompt: A gateway restart causes 400,000 clients to reconnect at once, overloading auth. What's the best mitigation?
   choices:
-    - text: Jittered exponential backoff on clients, gradual connection draining on deploy, and cheap locally-verified reconnect tokens
+    - text: Jittered client backoff, gradual draining on deploy, and cheap locally checked reconnect tokens
       correct: true
     - text: Make clients reconnect immediately so the outage is shorter
       why: Synchronised reconnects are exactly what overloads auth.
-    - text: Add more gateways
+    - text: Add more gateways, so each one holds fewer connections when it restarts
       why: Connection capacity isn't the bottleneck. The reconnect side effects are.
-    - text: Disable authentication during deploys
+    - text: Skip authentication for any reconnect that arrives within a minute of a deploy finishing
       why: That's a security hole, not a mitigation.
   explanation: Spread reconnects in time, avoid mass disconnects, and make each reconnect cheap.
 - kind: fire
   prompt: Which is true of mobile push notifications (APNs/FCM)?
   choices:
-    - text: They can reach a backgrounded or closed app, but delivery is best-effort with size and rate limits
+    - text: They can reach a closed app, but delivery is best-effort with size and rate limits
       correct: true
-    - text: They guarantee delivery within one second
+    - text: They guarantee delivery once the device is online, in the order they were sent
       why: Delivery is best-effort and can be delayed or dropped.
     - text: They replace the need to store messages server-side
       why: The app should still fetch from your store when it opens.
-    - text: They are bidirectional
+    - text: They are bidirectional, so the app can reply through the same channel
       why: Push is one-way, from the platform to the device.
   explanation: Use push to wake the user or app, then sync from your durable store.
 - kind: fire

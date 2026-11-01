@@ -115,10 +115,10 @@ Then tell users what failure looks like: "We couldn't confirm your seat — plea
 ```predict
 prompt: A messaging app shows a reply before the message it replies to for some users, then fixes itself a second later. Which guarantee is missing?
 choices:
-  - Linearizability
-  - Causal consistency — causally related messages must appear in order everywhere
+  - "Linearizability: every user must see each message at the same real-time instant"
+  - Causal consistency: related messages must appear in order everywhere
   - Durability
-  - Partition tolerance
+  - "Partition tolerance: replicas must keep accepting messages while cut off"
 answer: 1
 reveal: |
   The reply depends on the original, so everyone should see them in that order. Causal consistency (implemented with per-conversation sequence numbers, version vectors or delivery ordering) prevents this without the cost of full linearizability across the whole system.
@@ -190,11 +190,11 @@ model: |
 - kind: check
   prompt: What does PACELC add to CAP?
   choices:
-    - text: Even with no partition, stronger consistency costs latency, because of the coordination round trips
+    - text: Without a partition, stronger consistency still costs latency for coordination
       correct: true
-    - text: Partitions can be avoided with better networks
+    - text: Partitions can be avoided with redundant networks, so the trade-off rarely applies
       why: Partitions still happen. PACELC is about normal operation.
-    - text: Availability is more important than consistency
+    - text: During normal operation, availability matters more than consistency for most systems
       why: It frames a trade-off, not a preference.
     - text: Databases must be CP
       why: It describes trade-offs and prescribes nothing.
@@ -214,11 +214,11 @@ model: |
 - kind: fire
   prompt: In a 3-replica quorum system with W = 2 and R = 2, two replicas become unreachable. What happens?
   choices:
-    - text: Both reads and writes fail for keys on those replicas — the system chose consistency for them
+    - text: Both reads and writes fail for those keys — the system chose consistency
       correct: true
-    - text: Reads and writes continue normally
+    - text: Reads and writes continue, because one remaining replica still holds the latest value
       why: Only one replica is reachable, which is fewer than either quorum.
-    - text: Writes succeed but reads fail
+    - text: Writes succeed on the remaining replica, but reads fail until a second one returns
       why: Writes need 2 acknowledgements too.
     - text: The data is lost
       why: It's unavailable, not lost.
@@ -226,24 +226,24 @@ model: |
 - kind: fire
   prompt: Why is calling a database "AP" or "CP" usually unhelpful?
   choices:
-    - text: Behaviour depends on configuration and on the operation, and many systems offer different levels per request
+    - text: Behaviour depends on configuration and operation; many systems offer levels per request
       correct: true
-    - text: Because CAP is wrong
+    - text: Because CAP only applies to databases with more than three replicas
       why: The theorem is fine. Labels oversimplify how it applies.
     - text: Because databases never partition
       why: Networks partition.
-    - text: Because every database is CA
+    - text: Because every distributed database is really CA once partitions are handled by the network
       why: CA doesn't exist under partitions.
   explanation: Describe each operation's behaviour during partitions and its latency cost instead.
 - kind: fire
   level: advanced
   prompt: Why might R + W > N still fail to give linearizable behaviour?
   choices:
-    - text: Concurrent writes, last-write-wins on skewed clocks, sloppy quorums and partially failed writes can all expose anomalies
+    - text: Concurrent writes, last-write-wins on skewed clocks, sloppy quorums and partial writes all break it
       correct: true
-    - text: The arithmetic is wrong
+    - text: The overlap arithmetic is wrong: R + W > N does not ensure read and write sets share a node
       why: The overlap argument is right for reaching the latest acknowledged write. The anomalies come from elsewhere.
-    - text: Quorums only work with N = 3
+    - text: Quorum overlap only holds when N is odd, such as N = 3 or N = 5
       why: Any N works.
     - text: Reads ignore versions
       why: Reads compare versions. That doesn't remove these edge cases.

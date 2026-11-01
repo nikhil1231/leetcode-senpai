@@ -84,9 +84,9 @@ explain: The early steps often deliver 10× gains for days of work; sharding del
 prompt: The API tier's CPU is at 25% while p99 latency has tripled and throughput has flattened. Someone proposes doubling the API instances. What should you check first?
 choices:
   - Nothing — doubling instances always helps latency
-  - Saturation further down — database CPU, lock waits, connection pool waits, a slow downstream service
-  - The API's memory leak
-  - The DNS TTL
+  - Saturation further down: database CPU, lock waits, pool waits, a slow downstream service
+  - The API instances' memory, since a leak causes garbage-collection pauses
+  - The load balancer's algorithm, which may be sending most traffic to a few instances
 answer: 1
 reveal: |
   Low CPU with rising latency means requests are **waiting**, not computing. Something downstream is saturated, and more API instances would send it even more concurrent requests. Look at pool wait times, database CPU and I/O, lock contention, and traces showing where time accumulates.
@@ -148,13 +148,13 @@ model: |
 - kind: check
   prompt: API CPU is 30%, the database is at 95% CPU, and latency is rising. What's the best next step?
   choices:
-    - text: Investigate and relieve the database — slow queries, indexes, caching, replicas
+    - text: Investigate and relieve the database: slow queries, indexes, caching, replicas
       correct: true
-    - text: Double the API instances
+    - text: Double the API instances so each one handles fewer concurrent requests
       why: That adds load to the saturated database.
-    - text: Increase the API's thread count
+    - text: Raise the API's thread count so more requests can wait on the database at once
       why: More concurrency into the same bottleneck.
-    - text: Lower the load balancer timeout
+    - text: Lower the load balancer timeout so slow requests fail fast and free up capacity
       why: That turns slowness into errors without fixing it.
   explanation: Scale or fix the limiting resource. Everything else just changes where requests wait.
 - kind: check
@@ -191,50 +191,50 @@ model: |
 - kind: fire
   prompt: Why can scaling an API tier from 20 to 40 instances reduce throughput?
   choices:
-    - text: Total connections or contention against a shared database can exceed its limits, adding overhead and timeouts
+    - text: Connections or contention on a shared database can exceed its limits, adding timeouts
       correct: true
-    - text: Load balancers can't handle 40 instances
+    - text: The load balancer's health checks multiply with each instance and starve real traffic
       why: They handle far more.
-    - text: Stateless services can't scale horizontally
-      why: They can. That's why they're stateless.
-    - text: More instances always mean more latency
+    - text: Stateless services lose their in-memory caches when doubled, so every request gets slower
+      why: New instances warm up quickly. Contention on the shared database is what cuts throughput.
+    - text: More instances mean more network hops per request, which adds latency and cuts throughput
       why: Only when they increase pressure on a bottleneck.
   explanation: Retrograde scaling comes from contention and coordination on shared resources. Cap concurrency to what downstream can take.
 - kind: fire
   prompt: An I/O-bound service autoscales on CPU above 70%. What's the risk?
   choices:
-    - text: It may never scale out while requests queue, because waiting threads use little CPU
+    - text: It may never scale out while requests queue, since waiting threads use little CPU
       correct: true
-    - text: It will scale out too quickly
+    - text: It will scale out too quickly, because I/O waits are counted as CPU time
       why: CPU stays low for I/O-bound work, so the policy barely triggers.
-    - text: CPU metrics aren't available in the cloud
+    - text: CPU metrics are averaged over five minutes in the cloud, so scaling lags every spike
       why: They are. The problem is that they're the wrong signal.
-    - text: It will scale in to zero
+    - text: It will scale in to zero overnight, then be slow to start in the morning
       why: The minimum instance count prevents that.
   explanation: Scale I/O-bound services on concurrency, request rate per instance or latency.
 - kind: fire
   prompt: What does the Universal Scalability Law add beyond Amdahl's law?
   choices:
-    - text: A coherency cost that grows with the number of nodes, so throughput can decrease past a point
+    - text: A coherency cost that grows with the node count, so throughput can fall past a point
       correct: true
-    - text: The idea that serial work limits speedup
+    - text: The idea that serial work limits speedup, however many nodes are added
       why: That's Amdahl's law itself.
-    - text: Proof that horizontal scaling is always linear
+    - text: Proof that horizontal scaling is linear once contention has been removed
       why: It shows the opposite.
-    - text: A formula for cache hit rates
+    - text: A formula for how cache hit rates fall as data is split across nodes
       why: Unrelated.
   explanation: Coordination between workers (locks, consistency traffic) makes very large clusters slower per added node — eventually slower in total.
 - kind: fire
   level: advanced
   prompt: 60 API instances each have a 25-connection pool, and the database accepts at most 800 connections. What should you do before letting autoscaling go to 120 instances?
   choices:
-    - text: Add a connection pooler (e.g. PgBouncer) or shrink per-instance pools so the total stays within the database limit
+    - text: Add a pooler (e.g. PgBouncer) or shrink per-instance pools so the total stays under the limit
       correct: true
     - text: Nothing — the database will queue extra connections
       why: Beyond max_connections it refuses them, and each connection costs memory even below that.
-    - text: Raise the database connection limit to 10,000
+    - text: Raise the database connection limit to 10,000 so every instance keeps its full pool
       why: Every connection costs memory and scheduling overhead. Throughput falls long before that.
-    - text: Disable autoscaling permanently
+    - text: Cap autoscaling at 60 instances and add read replicas instead
       why: The goal is to scale within limits, not to stop scaling.
   explanation: 60 × 25 = 1,500 already exceeds 800, and 120 instances would make it 3,000. Pool centrally and bound the total.
 - kind: fire

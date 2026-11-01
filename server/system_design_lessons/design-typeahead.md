@@ -28,10 +28,10 @@ case: typeahead
 ```predict
 prompt: Why can't the server answer "top 10 completions for 'how to m'" by querying the search-log table at request time?
 choices:
-  - SQL can't do prefix matching
-  - It would scan and aggregate millions of matching queries per keystroke — far beyond a 50 ms budget at 200k requests/s
-  - Logs are encrypted
-  - It would return too few results
+  - SQL can't do prefix matching with LIKE unless the column has a full-text index
+  - It would aggregate millions of matching queries per keystroke — far beyond 50 ms at 200k requests/s
+  - Logs are encrypted at rest, so they can't be queried from the request path
+  - It would return too few results, because most prefixes have under ten logged queries
 answer: 1
 reveal: |
   Ranking needs counts over all queries starting with the prefix. Computing that live is enormously expensive and repeated on every keystroke by every user. The answer for a prefix changes slowly, so compute it ahead of time and make serving a single lookup.
@@ -199,13 +199,13 @@ explain: |
 - kind: check
   prompt: Why is top-k per prefix precomputed rather than computed at request time?
   choices:
-    - text: Aggregating matching queries per keystroke is far too expensive for a 50 ms budget at hundreds of thousands of requests per second
+    - text: Aggregating matching queries per keystroke is far too slow for 50 ms at hundreds of thousands of requests/s
       correct: true
-    - text: Databases can't sort by count
+    - text: Databases can't sort by count over text columns without a full-text index on each prefix
       why: They can — just not cheaply enough at this rate.
-    - text: Prefixes change every second
+    - text: Prefixes change every second, so a cached result would be wrong by the time it returned
       why: Rankings change slowly, which is why precomputation works.
-    - text: Users prefer stale suggestions
+    - text: Users prefer stable suggestions that don't change while they type, so results are fixed daily
       why: Freshness is handled by a streaming layer.
   explanation: Move heavy aggregation offline and make serving a lookup.
 - kind: check
@@ -231,62 +231,62 @@ explain: |
 - kind: check
   prompt: How should an urgent suggestion removal be implemented?
   choices:
-    - text: A serve-time blocklist filter pushed to all servers within minutes, plus edge cache purges
+    - text: A serve-time blocklist pushed to all servers within minutes, plus edge cache purges
       correct: true
-    - text: Wait for the next daily rebuild
+    - text: Wait for the next daily rebuild, which will drop it once the query volume falls
       why: That takes up to a day or more.
-    - text: Delete the search logs
+    - text: Delete the matching queries from the search logs so the next build drops the suggestion
       why: Logs aren't what's being served.
-    - text: Rebuild the whole table immediately
+    - text: Rebuild the whole suggestion table immediately, excluding the removed phrase
       why: That takes hours, and the blocklist is faster.
   explanation: Separate fast safety controls from slow ranking rebuilds.
 - kind: fire
   prompt: The baseline is rebuilt daily, and trends must surface within an hour. What's the usual design?
   choices:
-    - text: A streaming aggregation of recent queries that produces trending candidates merged at serve time
+    - text: A streaming aggregation of recent queries, with trending candidates merged at serve time
       correct: true
-    - text: Rebuild the full table every hour
+    - text: Rebuild the full table every hour on a larger batch cluster, so trends are at most an hour old
       why: It's expensive, and a multi-hour build can't run hourly.
     - text: Query the logs live for trending prefixes
       why: That's too slow at serving time.
-    - text: Ignore trends
+    - text: Raise the weight of the most recent day's queries in the daily rebuild
       why: That violates the requirement.
   explanation: Lambda-style — a batch baseline plus a streaming delta, merged at read time.
 - kind: fire
   prompt: Sharding by first letter makes some shards much hotter than others. What's better?
   choices:
-    - text: Shard by a hash of the prefix, and absorb the hottest short prefixes in edge and client caches
+    - text: Shard by a hash of the prefix, and serve the hottest short prefixes from edge and client caches
       correct: true
-    - text: One shard per letter of the alphabet
-      why: Letter frequencies are very skewed.
+    - text: Split each hot letter into more shards by its second letter, and keep the rest as they are
+      why: Second letters are skewed too, and one hot prefix still lands on a single shard.
     - text: A single unsharded server
       why: It can't handle the load or survive a failure.
-    - text: Shard by user
+    - text: Shard by user, so each person's requests always reach the same server
       why: Suggestions are mostly global, so user sharding duplicates everything.
   explanation: Hashing balances storage and load. Caches handle the extreme hot set.
 - kind: fire
   prompt: What does storing top-k at each trie node buy, and what does it cost?
   choices:
-    - text: O(prefix length) lookups with no subtree traversal, at the cost of extra memory and rebuild work
+    - text: O(prefix length) lookups with no subtree traversal, at the cost of memory and rebuild work
       correct: true
-    - text: Smaller memory use
+    - text: Smaller memory use, because leaf nodes no longer need to store counts
       why: It uses more memory.
-    - text: Real-time updates for free
+    - text: Real-time updates for free, since each new query only touches the nodes on its path
       why: Updating top-k lists is work, so it's done in builds or deltas.
-    - text: Typo tolerance
+    - text: Typo tolerance, since nearby nodes share part of each other's top-k lists
       why: That needs separate techniques (edit-distance matching, alternative spellings).
   explanation: Precomputation trades space and update cost for read speed.
 - kind: fire
   level: advanced
   prompt: How should a new suggestion table be deployed to avoid serving a half-loaded or broken build?
   choices:
-    - text: Write it as a new version, validate it, then atomically switch serving (keeping the old version for rollback)
+    - text: Write it as a new version, validate it, then switch serving atomically, keeping the old one for rollback
       correct: true
-    - text: Overwrite the live table row by row
+    - text: Overwrite the live table row by row, so servers always read the newest suggestions
       why: Users would see a mixture of old and new during the load.
-    - text: Take serving offline during the load
+    - text: Take serving offline during the load, since suggestions are optional for search
       why: That's unnecessary downtime.
-    - text: Load it only into the CDN
+    - text: Load it into the CDN first, then let servers fill from the CDN as they miss
       why: The CDN caches responses. It isn't the store.
   explanation: Versioned builds with atomic switches and instant rollback are the safe deployment pattern for derived datasets.
 - kind: fire

@@ -109,21 +109,21 @@ model: |
 - kind: check
   prompt: A RAG bot answers wrongly, but the right passage was in the top 3 retrieved. Which stage failed?
   choices:
-    - text: Generation; the model didn't use or faithfully follow the passage it was given
+    - text: Generation: the model didn't use or follow the passage it was given
       correct: true
-    - text: Retrieval
+    - text: Retrieval: three passages is too few, so the right one ranked too low
       why: Retrieval did its job here.
-    - text: Ingestion
+    - text: Ingestion: the passage was chunked badly, so it lacked the answer
       why: The passage was indexed and found.
   explanation: Split every failure into retrieval vs generation before fixing anything.
 - kind: check
   prompt: Why prepend the document title and section path to each chunk before embedding it?
   choices:
-    - text: Chunks then make sense on their own, which improves retrieval of passages that rely on context
+    - text: Chunks then make sense on their own, which improves retrieval of passages that need context
       correct: true
-    - text: It reduces storage cost
-      why: It slightly increases it.
-    - text: Embedding models require titles
+    - text: It lets the vector database deduplicate chunks from the same section
+      why: It does nothing for deduplication. It gives each chunk its context.
+    - text: Embedding models weight the start of a chunk most, so the title must come first
       why: They don't.
   explanation: This is the idea behind contextual retrieval.
 - kind: check
@@ -131,9 +131,9 @@ model: |
   choices:
     - text: Put them all in the prompt with prompt caching
       correct: true
-    - text: Fine-tune a model on the manuals
+    - text: Fine-tune a small model on the manuals' content
       why: Fine-tuning is unreliable for facts, and can't cite sources.
-    - text: Build a vector database with HNSW
+    - text: Build a vector database with HNSW and hybrid search
       why: Possible, but unnecessary complexity at this size.
   explanation: Long context plus caching beats building a pipeline for small, stable corpora.
 - kind: fire
@@ -153,7 +153,7 @@ model: |
       correct: true
     - text: Answering from documents that change weekly
       why: That needs retrieval.
-    - text: When answers must cite sources
+    - text: When answers must cite sources, since the model learns where each fact came from
       why: Fine-tuned knowledge can't be cited.
   explanation: Use RAG for knowledge and fine-tuning for behaviour.
 - kind: fire
@@ -161,19 +161,19 @@ model: |
   choices:
     - text: Rewrite the follow-up into a standalone query using the conversation history
       correct: true
-    - text: Increase the chunk size
+    - text: Increase the chunk size so each plan's details sit in one chunk
       why: The query lacks context; chunk size isn't the issue.
-    - text: Use a larger LLM for generation
+    - text: Use a larger LLM for generation that can infer which plan is meant
       why: Retrieval failed before generation.
   explanation: Query rewriting turns conversational fragments into searchable questions.
 - kind: fire
   prompt: Where should per-user document permissions be enforced in RAG?
   choices:
-    - text: In the retrieval query, as filters, so that unauthorised chunks are never retrieved
+    - text: In the retrieval query, as filters, so unauthorised chunks are never retrieved
       correct: true
     - text: In the prompt, by asking the model not to reveal restricted content
       why: Prompts aren't access control.
-    - text: After the answer is generated
+    - text: After the answer is generated, by checking it against the user's role
       why: By then restricted content has already influenced the answer.
   explanation: Treat ACLs as a hard filter in search.
 ```

@@ -106,21 +106,21 @@ debrief: 'CrashLoopBackOff means the container keeps exiting; the reason is in `
   choices:
     - text: It's throttled for the rest of each scheduling period, which shows up as latency
       correct: true
-    - text: It's OOMKilled
+    - text: It's killed and restarted, as with exceeding a memory limit
       why: That's what exceeding the memory limit does.
-    - text: It's moved to another node
+    - text: It's evicted and rescheduled onto a node with more free CPU
       why: Kubernetes doesn't migrate running pods.
-    - text: Nothing; CPU limits are advisory
+    - text: Nothing; CPU limits are advisory unless the node itself is under pressure
       why: They're enforced by the cgroup CFS quota.
   explanation: CPU is compressible, so it's throttled. Memory isn't, so it's killed.
 - kind: check
   prompt: Why is it dangerous for a liveness probe to check the database?
   choices:
-    - text: A database blip fails every pod's liveness check, and Kubernetes restarts the whole fleet at once
+    - text: A database blip fails every pod's liveness check, so Kubernetes restarts the whole fleet
       correct: true
-    - text: Probes can't open network connections
+    - text: Probes can't open connections outside the cluster, so the check always fails
       why: They can; that's the problem here.
-    - text: It makes the pod Guaranteed QoS
+    - text: It makes the pod Guaranteed QoS, which stops it being scaled down later
       why: Probes don't affect QoS.
   explanation: Dependency health belongs in readiness, or nowhere. Liveness should detect a wedged process.
 - kind: check
@@ -128,19 +128,19 @@ debrief: 'CrashLoopBackOff means the container keeps exiting; the reason is in `
   choices:
     - text: The pod's resource requests against the node's unreserved allocatable capacity
       correct: true
-    - text: The node's current actual CPU usage
+    - text: The node's current CPU and memory usage, as reported by the kubelet
       why: Scheduling is based on reservations, not live usage.
-    - text: The pod's limits
+    - text: The pod's limits against the node's total capacity
       why: Limits are enforced at runtime, not used to place pods.
   explanation: That's why requests that are too low lead to overcommitted nodes.
 - kind: fire
   prompt: A pod is stuck in Pending. What's the most likely category of cause?
   choices:
-    - text: It can't be scheduled, for example because no node has enough capacity for its requests, or taints or volumes prevent it
+    - text: It can't be scheduled: no node fits its requests, or taints or volumes rule nodes out
       correct: true
-    - text: The app is crashing on startup
+    - text: The app is crashing on startup before the container is marked running
       why: That's CrashLoopBackOff, after scheduling.
-    - text: The readiness probe is failing
+    - text: The readiness probe is failing, so the pod never leaves Pending
       why: That's a running but not-ready pod.
   explanation: kubectl describe pod shows the scheduler's events.
 - kind: fire
@@ -150,27 +150,27 @@ debrief: 'CrashLoopBackOff means the container keeps exiting; the reason is in `
       correct: true
     - text: Deployment
       why: Deployment pods are interchangeable.
-    - text: DaemonSet
-      why: That runs one pod per node.
+    - text: ReplicaSet with a PVC template
+      why: ReplicaSets have no volume templates or stable pod names.
   explanation: StatefulSets suit ZooKeeper, Kafka and databases.
 - kind: fire
   prompt: How are Kubernetes Secrets protected by default?
   choices:
-    - text: They're base64-encoded; encryption at rest and RBAC must be configured to protect them
+    - text: They're only base64-encoded; encryption at rest and RBAC must be configured
       correct: true
-    - text: They're encrypted with a per-pod key
+    - text: They're encrypted in etcd with a per-namespace key that the API server manages
       why: Not by default.
-    - text: They're stored only in node memory
+    - text: They're stored only in node memory, so they vanish if every node restarts
       why: They're stored in etcd.
   explanation: Base64 is encoding, not encryption.
 - kind: fire
   prompt: What makes a Docker build cache-friendly?
   choices:
-    - text: Copying dependency manifests and installing them before copying the frequently changing source code
+    - text: Copying dependency manifests and installing them before copying the often-changing source
       correct: true
-    - text: Putting everything in one RUN instruction
+    - text: Putting every step in one RUN instruction, so there is only one layer to cache
       why: Then any change invalidates everything.
-    - text: Using the latest tag for the base image
+    - text: Using the latest tag for the base image, so its layers are already on most hosts
       why: That hurts reproducibility, not caching.
   explanation: Each layer is reused until an instruction or its inputs change.
 ```

@@ -32,8 +32,8 @@ prompt: A commit makes the app crash on startup because a new environment variab
 choices:
   - The site is down for the whole ten minutes
   - It rolls back within about 90 seconds and then stays on the old version until a new commit lands
-  - Every poll tries the broken commit again, so the site keeps dropping out for a minute or so, then recovering, every couple of minutes
-  - Docker restarts the crashing container until it works
+  - Every poll retries the broken commit, so the site drops out for a minute or so every couple of minutes
+  - Docker restarts the crashing container until it works, so the site stays down the whole time
 answer: 2
 reveal: |
   The first attempt fails its health check and rolls back. But the deploy only records a commit once it succeeds, so two minutes later `main` still looks new and the deploy tries the same broken image again: swap, 90 seconds unhealthy, roll back. The site flaps until someone fixes the variable or pushes a fix. Remembering the commit that failed, and not retrying it, would turn that into one short blip and an alert. It's a classic retry storm: automatic recovery that repeats the failure.
@@ -97,9 +97,9 @@ The rules against loops matter as much as the fixes. Without them, a restart tha
 - kind: check
   prompt: Why does rolling back on the box take seconds rather than minutes?
   choices:
-    - text: The previous commit's image still exists, so rollback just runs it again with no rebuild
+    - text: The previous commit's image still exists, so rollback reruns it without a rebuild
       correct: true
-    - text: Docker caches the last container's memory
+    - text: Docker keeps the last container paused in memory, so it resumes at once on rollback
       why: Containers are started fresh; the image is what's kept.
     - text: The deploy script reverts the Git commit and rebuilds quickly
       why: Nothing is rebuilt and the commit stays on main.
@@ -107,21 +107,21 @@ The rules against loops matter as much as the fixes. Without them, a restart tha
 - kind: check
   prompt: Why doesn't the box need any open ports for its public sites?
   choices:
-    - text: cloudflared makes an outbound connection to Cloudflare, and requests come back down it
+    - text: cloudflared dials out to Cloudflare, and requests come back down that connection
       correct: true
-    - text: Cloudflare scans for the box's IP and connects on port 443
+    - text: Cloudflare looks up the box's home IP from its DNS record and connects in on port 443
       why: Nothing connects in; the box's IP isn't even in DNS.
-    - text: The router forwards 80 and 443 automatically
+    - text: The router forwards ports 80 and 443 to the box automatically through UPnP
       why: There is no port forwarding at all.
   explanation: A tunnel turns inbound traffic into responses on a connection the box opened.
 - kind: check
   prompt: Every service on the box had a memory cap, yet the box ran out of memory. How?
   choices:
-    - text: Caps protect the others from one service but reserve nothing; the sum of all services can still exceed the machine
+    - text: Caps stop one service starving the others but reserve nothing; together they can exceed the machine
       correct: true
-    - text: systemd ignores MemoryMax for user services
+    - text: systemd ignores MemoryMax for user services unless delegation is enabled for each one
       why: The caps were enforced; they just don't add up to a guarantee.
-    - text: Swap doesn't count toward memory
+    - text: Swap doesn't count toward the caps, so services used far more than their limits
       why: Swap filling up was part of the failure, not a loophole.
   explanation: Limits per service are not a budget for the whole host.
 - kind: fire
@@ -129,17 +129,17 @@ The rules against loops matter as much as the fixes. Without them, a restart tha
   choices:
     - text: Signature, issuer, audience, expiry and email
       correct: true
-    - text: Only that the header is present
+    - text: Only that the header is present and the email matches
       why: Anything that reaches the app without going through the edge could send one.
-    - text: The user's IP address
+    - text: The user's IP address against Cloudflare's ranges
       why: The edge already authenticated the person; the token proves it.
   explanation: Verify the token, not the fact that a header exists.
 - kind: fire
   prompt: How does the reaper react when available memory falls under 1 GiB?
   choices:
-    - text: Idle agent sessions are killed after 1 hour instead of 24
+    - text: Idle agent sessions are killed after 1 hour, not 24
       correct: true
-    - text: It kills every agent at once
+    - text: It kills every agent session at once, idle or not
       why: It only kills idle ones, and at most 8 per pass.
     - text: Nothing changes until the next 15-minute run
       why: That was the old reaper; it now runs every 30 seconds with memory-aware limits.
@@ -147,11 +147,11 @@ The rules against loops matter as much as the fixes. Without them, a restart tha
 - kind: fire
   prompt: Why does the box restore its backup every month?
   choices:
-    - text: A backup is only trusted once it has been restored and its databases checked
+    - text: A backup is only trusted once it's been restored and its databases checked
       correct: true
-    - text: restic deletes snapshots that are never read
+    - text: restic prunes snapshots that haven't been read for a month, so restoring keeps them
       why: Retention is set by the forget policy, not by reads.
-    - text: To keep Google Drive's storage warm
+    - text: To keep Google Drive's storage warm, so a real restore doesn't wait on cold storage
       why: The point is proving recovery works.
   explanation: Restore tests turn "we have backups" into "we can recover".
 - kind: fire
@@ -161,7 +161,7 @@ The rules against loops matter as much as the fixes. Without them, a restart tha
       correct: true
     - text: Restarts it again, as many times as needed
       why: That's the restart loop the rules exist to prevent.
-    - text: Deletes and redeploys the stack
+    - text: Deletes and redeploys the stack from the last good commit
       why: It never takes destructive actions like that.
   explanation: A problem that returns within 24 hours of a fix goes to a human.
 ```

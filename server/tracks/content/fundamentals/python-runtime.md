@@ -102,7 +102,7 @@ Things that still leak in long-running services: ever-growing module-level cache
       correct: true
     - text: Only that request waits; the others continue
       why: That's what await asyncio.sleep(2) would do.
-    - text: Python raises a RuntimeError
+    - text: Python raises a RuntimeError, since blocking calls aren't allowed in coroutines
       why: Nothing stops you calling blocking functions.
   explanation: Blocking calls never yield to the loop. Use await asyncio.sleep, or move blocking work to a thread.
 - kind: check
@@ -130,7 +130,7 @@ Things that still leak in long-running services: ever-growing module-level cache
   choices:
     - text: A generational cycle-detecting garbage collector
       correct: true
-    - text: Reference counting alone
+    - text: Reference counting, with weak references breaking cycles
       why: Cycles never reach a count of zero.
     - text: A copying mark-compact collector like the JVM's
       why: CPython doesn't move objects.
@@ -138,11 +138,11 @@ Things that still leak in long-running services: ever-growing module-level cache
 - kind: fire
   prompt: You fire `asyncio.create_task(send_email())` and never store the result. What's the risk?
   choices:
-    - text: The task can be garbage-collected before it finishes, because the loop keeps only a weak reference
+    - text: The task can be garbage-collected before it ends, as the loop keeps only a weak reference
       correct: true
-    - text: The task runs twice
-      why: It runs at most once.
-    - text: The call blocks until the email is sent
+    - text: The task never starts, because create_task needs to be awaited
+      why: create_task schedules it at once. Awaiting it is optional.
+    - text: The call blocks until the email is sent, since nothing awaits it later
       why: create_task schedules and returns immediately.
   explanation: Keep a strong reference (for example a set of background tasks) until the task is done.
 - kind: fire
@@ -150,9 +150,9 @@ Things that still leak in long-running services: ever-growing module-level cache
   choices:
     - text: tracemalloc
       correct: true
-    - text: cProfile
+    - text: cProfile with --memory
       why: cProfile measures time, not memory.
-    - text: dis
-      why: dis disassembles bytecode.
+    - text: py-spy
+      why: py-spy samples CPU stacks. It doesn't track allocations.
   explanation: Compare tracemalloc snapshots over time to find the growing allocation sites.
 ```

@@ -91,10 +91,10 @@ find:
 ```predict
 prompt: A partition isolates the old leader from the cluster but not from some clients. The cluster promotes a new leader. What must happen to stop both leaders accepting writes?
 choices:
-  - Nothing — the old leader will notice and stop
-  - The old leader must be fenced — its writes rejected by a lease that has expired, a fencing token checked by storage, or forcibly cut off (STONITH)
-  - Clients should pick whichever leader responds faster
-  - Increase the replication factor
+  - Nothing — the old leader sees the new term number on its next heartbeat and steps down
+  - The old leader must be fenced: an expired lease, a fencing token checked by storage or STONITH
+  - Clients should pick whichever leader responds faster, since that one has the healthier network
+  - Raise the replication factor, so the new leader's majority outvotes the old leader's writes
 answer: 1
 reveal: |
   A partitioned leader can't tell "I'm cut off" from "everyone else died", so it may keep accepting writes until something stops it. Fencing does: leader **leases** that expire unless renewed through a majority, **fencing tokens** (monotonic epoch numbers) that storage checks to reject writes from older epochs, or forcibly cutting the old node off ("shoot the other node in the head"). Consensus systems (next lessons) build this in.
@@ -150,13 +150,13 @@ model: |
 - kind: check
   prompt: With asynchronous replication, what can a leader failover lose?
   choices:
-    - text: Writes that were acknowledged to clients but not yet shipped to the promoted replica
+    - text: Writes acknowledged to clients but not yet shipped to the promoted replica
       correct: true
     - text: Nothing — acknowledged writes are always replicated first
       why: That's only true for synchronous or semi-synchronous commits.
-    - text: Only reads
+    - text: Only in-flight reads, which clients simply retry against the new leader
       why: Reads don't change state.
-    - text: The entire database
+    - text: The entire database, if the promoted replica's log is behind the old leader's
       why: Only the unreplicated tail is at risk.
   explanation: Async acks before replication, so the loss window is the replication lag at the moment of the crash.
 - kind: check
@@ -177,23 +177,23 @@ model: |
   choices:
     - text: Two nodes both acting as leader and accepting writes, so the data diverges
       correct: true
-    - text: A replica falling behind the leader
+    - text: A replica falling so far behind the leader that it serves two versions of the data
       why: That's replication lag.
     - text: The database splitting a table into partitions
       why: That's partitioning.
-    - text: Half the replicas being in another region
+    - text: Half the replicas being in another region, so each half votes for a different leader
       why: That's just placement.
   explanation: Split brain usually follows a partition plus failover. Leases, fencing tokens and forced isolation prevent it.
 - kind: check
   prompt: Why are replicas not a substitute for backups?
   choices:
-    - text: Destructive changes such as DROP TABLE or a bad migration replicate to every copy
+    - text: Destructive changes like DROP TABLE or a bad migration replicate to every copy
       correct: true
-    - text: Replicas use a different storage format
+    - text: Replicas use a different storage format that can't be copied back to the primary
       why: Format has nothing to do with it.
-    - text: Replicas can't be read
+    - text: Replicas can't be read while they apply changes, so they can't serve a restore
       why: They can, often.
-    - text: Backups are always faster to restore
+    - text: Backups are always faster to restore than promoting and resyncing a replica
       why: Usually slower. The point is going back in time.
   explanation: Replication protects against losing a machine. Backups and point-in-time recovery protect against losing data to mistakes.
 - kind: fire
@@ -201,11 +201,11 @@ model: |
   choices:
     - text: Each commit adds a round trip to the replica, increasing write latency
       correct: true
-    - text: Reads become stale
+    - text: Reads from the primary become stale while the replica catches up
       why: Reads aren't affected by how commits are acknowledged.
-    - text: Replicas can no longer serve reads
+    - text: The waiting replica can no longer serve reads, since it's busy acknowledging commits
       why: They still can.
-    - text: It loses more data on failover
+    - text: It loses more data on failover, since the replica acknowledges before writing to disk
       why: It loses less — that's the point.
   explanation: Durability across machines costs at least one network round trip per commit. Keep that replica close, in another zone of the same region.
 - kind: fire
@@ -213,24 +213,24 @@ model: |
   choices:
     - text: One edit is silently discarded, based on timestamps that may be skewed
       correct: true
-    - text: Both edits are merged automatically
+    - text: Both edits are merged field by field, so neither change is lost
       why: LWW keeps one and drops the other.
-    - text: The database rejects both
+    - text: The database rejects both edits and asks the users to resolve the conflict
       why: LWW accepts both and keeps one.
-    - text: Edits are always applied in real-time order
+    - text: Edits are applied in real-time order, since both regions sync their clocks over NTP
       why: Clock skew can make the "later" write the earlier one.
   explanation: Multi-leader needs a conflict strategy — CRDTs, application merges, or homing records to one region.
 - kind: fire
   prompt: What does a fencing token do?
   choices:
-    - text: Storage rejects writes carrying an older leadership epoch, so a deposed leader can't corrupt data
+    - text: Storage rejects writes with an older leadership epoch, so a deposed leader can't corrupt data
       correct: true
-    - text: Encrypts replication traffic
+    - text: Encrypts replication traffic, so a replica can verify which leader sent each write
       why: That's TLS, not fencing.
-    - text: Speeds up failover detection
+    - text: Speeds up failover detection by letting replicas compare tokens instead of heartbeats
       why: Detection uses timeouts. Fencing makes a mistaken old leader harmless.
-    - text: Compresses the log
-      why: Unrelated.
+    - text: Marks the point in the log up to which every replica has caught up
+      why: That's a commit index or watermark, not fencing.
   explanation: Monotonic epoch numbers make every write prove it comes from the current leader.
 - kind: fire
   type: multi
@@ -251,13 +251,13 @@ model: |
 - kind: fire
   prompt: A user edits a comment, refreshes, and the comment vanishes, then reappears on the next refresh. What anomaly is this?
   choices:
-    - text: Non-monotonic reads — successive reads hit replicas at different lag
+    - text: Non-monotonic reads: successive reads hit replicas at different lag
       correct: true
-    - text: Write skew
+    - text: Write skew: the edit and an older write each passed a check on stale data
       why: That's a concurrency anomaly between writes.
-    - text: Split brain
+    - text: Split brain: two leaders each hold a different version of the comment
       why: There's only one leader here.
-    - text: Lost update
+    - text: Lost update: a concurrent write overwrote the edit, then the edit was replayed
       why: The data isn't lost. It's just read from replicas at different positions.
   explanation: Pin a session to one replica, or route by log position, so reads never go backwards in time.
 ```

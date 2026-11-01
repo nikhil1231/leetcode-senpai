@@ -92,11 +92,11 @@ Tool descriptions are prompts too. Say when to use each tool and when not to, an
   choices:
     - text: Structured output or tool calling with a schema, validated in code
       correct: true
-    - text: Asking politely for JSON
+    - text: Asking for JSON and showing an example of the exact shape
       why: It usually works, but not always.
     - text: Using a high temperature
       why: That makes format errors more likely.
-    - text: Regular expressions over free text
+    - text: Regular expressions over free text, with a retry when they don't match
       why: Fragile against small wording changes.
   explanation: Constrain the output, then validate it anyway.
 - kind: check
@@ -104,29 +104,29 @@ Tool descriptions are prompts too. Say when to use each tool and when not to, an
   choices:
     - text: The application, after validating the model's proposed call
       correct: true
-    - text: The model, inside the provider's servers
+    - text: The model, inside the provider's servers, which then return the result to you
       why: Except for provider-hosted tools, the model only emits the call.
-    - text: The user's browser
+    - text: The user's browser, which sends the result back to the model
       why: Not unless your app routes it there.
   explanation: Your code is where permissions, validation and side effects are controlled.
 - kind: check
   prompt: Why delimit user-supplied text with tags and label it as data?
   choices:
-    - text: It reduces the chance that instructions inside the text are followed as if they were yours
+    - text: It makes instructions inside the text less likely to be followed as if they were yours
       correct: true
-    - text: Tags make the model faster
+    - text: Tagged text is tokenised separately, which makes the model faster to respond
       why: There's no speed benefit.
-    - text: It guarantees prompt injection can't work
+    - text: It guarantees prompt injection can't work, since tagged text is never treated as instructions
       why: It reduces the risk; it doesn't remove it.
   explanation: Delimiting helps, but treat model output from untrusted input as untrusted too.
 - kind: fire
   prompt: Why store a prompt version with every LLM output you save?
   choices:
-    - text: To know what produced each output, and to regenerate or compare outputs when the prompt changes
+    - text: To know what produced each output, and to regenerate or compare when the prompt changes
       correct: true
-    - text: Providers require it
+    - text: Providers use it to apply the right cache, which cuts the cost of each call
       why: They don't.
-    - text: It improves output quality
+    - text: It improves output quality, since the model sees which version it is answering
       why: It's for traceability.
   explanation: LLM output is derived data. Versioning makes it re-generable.
 - kind: fire
@@ -136,7 +136,7 @@ Tool descriptions are prompts too. Say when to use each tool and when not to, an
       correct: true
     - text: Nothing; examples are ignored if instructions disagree
       why: Examples strongly shape output.
-    - text: The model refuses to answer
+    - text: The model refuses longer questions, treating them as outside the examples' scope
       why: Unlikely.
   explanation: Make examples varied and representative of the cases you care about.
 - kind: fire
@@ -144,19 +144,19 @@ Tool descriptions are prompts too. Say when to use each tool and when not to, an
   choices:
     - text: Retry once with the validation error included, then fall back or fail visibly
       correct: true
-    - text: Retry forever until it passes
+    - text: Retry with a higher temperature until a valid response comes back
       why: Unbounded retries burn money and time.
-    - text: Use whatever fields parsed and guess the rest
+    - text: Use whatever fields parsed and fill the rest with schema defaults
       why: Silent guesses corrupt downstream data.
   explanation: Bounded repair plus a clear fallback.
 - kind: fire
   prompt: You have 30 overlapping tools and the agent keeps picking the wrong one. Best fix?
   choices:
-    - text: Consolidate into fewer distinct tools with clear descriptions of when to use each
+    - text: Consolidate into fewer distinct tools, with clear descriptions of when to use each
       correct: true
-    - text: Raise the temperature
+    - text: Raise the temperature, so the agent explores other tools after a wrong pick
       why: That makes selection noisier.
-    - text: Remove all tool descriptions to save tokens
+    - text: Shorten every tool description to one line, so the model reads them all
       why: Descriptions are how the model chooses.
   explanation: Tool design is prompt design.
 ```

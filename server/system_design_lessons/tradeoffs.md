@@ -166,13 +166,13 @@ model: |
 - kind: check
   prompt: Which explanation of a design choice is strongest?
   choices:
-    - text: The requirement it serves with a number, its cost, the alternative rejected, and the trigger to revisit it
+    - text: The requirement it serves, with a number, its cost, the rejected alternative and when to revisit
       correct: true
-    - text: The technology's name and that it's widely used
+    - text: The technology's name, that it's widely used, and that the team already knows it well
       why: Popularity isn't a reason in your context.
-    - text: '"It scales"'
+    - text: '"It scales", backed by a list of companies that run it in production'
       why: That's unfalsifiable and says nothing about this design.
-    - text: That a big company uses it
+    - text: That a big company runs it at far larger scale, so it will certainly cope with this load
       why: Their requirements aren't yours.
   explanation: Decisions are judged by how well they connect requirements to costs and alternatives, with a clear condition for change.
 - kind: check
@@ -211,24 +211,24 @@ model: |
 - kind: fire
   prompt: An interviewer says "Postgres won't scale for this." What's the best response?
   choices:
-    - text: Compare the estimated load with Postgres's capacity, explain what the alternative would cost (e.g. lost transactions), and state when you'd shard or switch
+    - text: Compare estimated load with Postgres's capacity, say what the alternative costs, and when you'd shard
       correct: true
-    - text: Switch databases immediately
+    - text: Switch to a distributed database immediately, since the interviewer knows the expected scale
       why: That abandons a reasoned choice without analysis.
-    - text: Insist Postgres scales infinitely
+    - text: Insist that Postgres scales fine, since large companies run it successfully
       why: That's false and defensive.
-    - text: Ask the interviewer which database they prefer
+    - text: Ask the interviewer which database they prefer, then redesign the storage layer around it
       why: That hands over the judgement you're meant to show.
   explanation: Pushback is a probe. Answer with numbers, costs and an evolution path.
 - kind: fire
   prompt: A small team building a modest product proposes 14 microservices on day one. What's the main concern?
   choices:
-    - text: Distribution adds network failures, distributed transactions and operational burden with no requirement justifying it
+    - text: Distribution adds network failures, distributed transactions and ops burden that no requirement justifies
       correct: true
-    - text: Microservices can't use databases
+    - text: Microservices can't share databases, so every service needs its own cluster from day one
       why: They can.
-    - text: Fourteen is an unlucky number
-      why: Not an engineering concern.
+    - text: Fourteen services is too few to divide a product cleanly by domain
+      why: The issue is too many services for the team and product, not too few.
     - text: Microservices are always slower to write code in
       why: The issue is operational and correctness cost, not typing speed.
   explanation: Start with a modular monolith and split along proven seams when scaling or team needs demand it.
@@ -248,14 +248,14 @@ model: |
   level: advanced
   prompt: Multi-region would cost $500k/year more, and expected regional downtime costs $300k/year. What's the most reasonable conclusion?
   choices:
-    - text: Pure active-active doesn't pay for itself on these numbers; consider a cheaper warm standby or pilot light that cuts recovery time at lower cost
+    - text: Active-active doesn't pay for itself here; a cheaper warm standby or pilot light cuts recovery time
       correct: true
     - text: Always go multi-region regardless of cost
       why: That ignores the trade-off entirely.
-    - text: Ignore availability
+    - text: Stay single-region and accept the downtime, since availability can't be improved more cheaply
       why: $300k/year of downtime is still real.
-    - text: The numbers don't matter
-      why: They're the basis of the decision.
+    - text: Go multi-region anyway, since availability always matters more than cost
+      why: That ignores the numbers the decision rests on.
   explanation: Quantified trade-offs often point to a middle option rather than either extreme.
 - kind: fire
   type: multi

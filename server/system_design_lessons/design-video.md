@@ -100,9 +100,9 @@ The video is encoded at several **renditions** (240p … 4K, at different bitrat
 ```predict
 prompt: A viewer presses play on a popular video. Where do the bytes come from?
 choices:
-  - The application servers stream the file from the database
-  - The player fetches the manifest and then segments from a nearby CDN edge; on an edge miss, from an origin shield; only rarely from object storage
-  - The creator's device
+  - The application servers stream the file from object storage, so access can be checked
+  - Manifest then segments from a nearby CDN edge; on a miss an origin shield, rarely object storage
+  - The nearest region's object storage bucket, replicated from the original upload
   - Peer-to-peer from other viewers by default
 answer: 1
 reveal: |
@@ -213,13 +213,13 @@ explain: |
 - kind: check
   prompt: Why are videos split into short segments in multiple renditions?
   choices:
-    - text: So the player can switch quality between segments as bandwidth changes, and segments cache well on CDNs
+    - text: So the player can switch quality per segment as bandwidth changes, and CDNs cache them well
       correct: true
-    - text: To reduce storage
+    - text: To reduce storage, since short segments compress better than one long file
       why: Multiple renditions increase storage.
-    - text: Because browsers can't play long files
+    - text: Because browsers can't play files longer than a few minutes without buffering the whole thing
       why: They can, but without adaptation.
-    - text: To make uploads faster
+    - text: To make uploads faster, since each segment is sent by the creator in parallel
       why: Segmentation happens after upload.
   explanation: Adaptive bitrate streaming needs per-segment choices, and static segments are ideal for edge caching.
 - kind: check
@@ -249,10 +249,10 @@ explain: |
       correct: true
     - text: Metadata database queries
       why: That's tiny by comparison.
-    - text: Application server CPU
+    - text: Application servers serving video pages
       why: App servers handle only control-plane requests.
-    - text: DNS lookups
-      why: Negligible.
+    - text: Transcoding CPU for each new upload
+      why: Real, but paid once per upload. Serving bytes to every viewer costs far more.
   explanation: That's why CDN hit ratio, codecs and storage tiering are the main levers.
 - kind: fire
   prompt: A creator's 4 GB upload fails at 70% on a mobile network. What should happen?
@@ -261,46 +261,46 @@ explain: |
       correct: true
     - text: Restart the upload from zero
       why: That wastes 2.8 GB and may never finish on a bad connection.
-    - text: The server waits for the connection to return
+    - text: The server keeps the half-written file open until the connection returns, then continues
       why: Mobile connections change. Resume needs independent parts.
-    - text: Upload through the API servers instead
+    - text: Upload through the API servers instead, which can buffer the file on a stable connection
       why: That makes it worse.
   explanation: Multipart uploads are resumable by design.
 - kind: fire
   prompt: Why should view counts be computed from an event stream rather than an UPDATE per request?
   choices:
-    - text: Popular videos would create hot counter rows, and retries and bots would inflate counts; streams allow dedupe and filtering
+    - text: Popular videos make hot counter rows, and retries and bots inflate counts; streams dedupe and filter
       correct: true
-    - text: UPDATE statements can't increment
+    - text: UPDATE statements can't increment a counter atomically under many concurrent requests at once
       why: They can. Hot rows and fraud are the problem.
-    - text: Streams are always exact
+    - text: Streams are always exact, because each event is processed precisely once
       why: They're eventually consistent. Correctness comes from dedupe rules.
-    - text: To hide counts from creators
+    - text: So counts can be hidden from creators until a video passes a minimum threshold
       why: Counts are shown, just slightly delayed.
   explanation: Aggregate asynchronously with deduplication and anti-abuse filters.
 - kind: fire
   prompt: How do long-tail videos reduce storage cost?
   choices:
-    - text: Lifecycle rules move them to colder storage, and rarely watched renditions are dropped or generated on demand
+    - text: Lifecycle rules move them to colder storage, and rarely watched renditions are dropped or made on demand
       correct: true
-    - text: Delete them after a week
+    - text: Delete them after a week with no views, keeping only the original upload
       why: Creators expect their videos to stay up.
-    - text: Store them in the metadata database
+    - text: Store them in the metadata database, which is cheaper per GB than object storage
       why: That's far more expensive.
-    - text: Keep every rendition on the CDN forever
+    - text: Keep every rendition on the CDN forever, since CDN storage is cheaper than origin storage
       why: CDNs evict unpopular content anyway.
   explanation: Popularity-aware tiering puts expensive storage only where views justify it.
 - kind: fire
   level: advanced
   prompt: A famous creator's premiere will draw millions of viewers at the same minute. What prevents an origin stampede?
   choices:
-    - text: Pre-warming edges with the first segments, an origin shield, and request collapsing for concurrent misses
+    - text: Pre-warm edges with the first segments, use an origin shield, and collapse concurrent misses
       correct: true
-    - text: Larger app servers
+    - text: Larger app servers in front of object storage for the duration of the premiere
       why: App servers don't serve video bytes.
-    - text: Lowering the segment length to 1 second
+    - text: Lowering the segment length to 1 second, so each request to the origin is smaller
       why: That increases request counts.
-    - text: Disabling adaptive bitrate
+    - text: Disabling adaptive bitrate, so every viewer requests the same rendition and caches hit more
       why: Unrelated to origin load.
   explanation: Miss storms are handled in the CDN tier — pre-positioning, shielding and collapsing.
 - kind: fire

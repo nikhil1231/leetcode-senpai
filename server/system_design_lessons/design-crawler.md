@@ -48,9 +48,9 @@ explain: The rates are high but embarrassingly parallel. The constraints that sh
 prompt: The crawler uses one global FIFO queue of URLs, and 2,000 fetchers take the next URL. A popular news site contributes 50,000 queued URLs in a burst. What happens?
 choices:
   - The news site's URLs are spread evenly over the day
-  - Many fetchers hit the same site simultaneously, effectively DDoSing it — and the crawler gets blocked
-  - The FIFO automatically enforces politeness
-  - Nothing — 2,000 fetchers is small
+  - Many fetchers hit the same site at once, effectively DDoSing it, and the crawler gets blocked
+  - The FIFO enforces politeness by itself, since each fetcher takes only one URL at a time
+  - Nothing — 2,000 fetchers is small, and the news site's CDN absorbs the burst of requests easily
 answer: 1
 reveal: |
   A FIFO has no idea which host a URL belongs to. Politeness needs per-host queues and a scheduler that hands a host to a fetcher only once its "next allowed time" has passed — the Mercator design.
@@ -214,13 +214,13 @@ explain: |
 - kind: check
   prompt: Why is a single global FIFO frontier unsuitable?
   choices:
-    - text: It ignores hosts, so many fetchers can hit the same site at once and violate politeness
+    - text: It ignores hosts, so many fetchers can hit one site at once and break politeness
       correct: true
     - text: FIFOs can't hold billions of URLs
       why: Capacity can be solved. The problem is per-host scheduling.
-    - text: It fetches pages in the wrong language
-      why: Unrelated.
-    - text: FIFOs are too slow
+    - text: It can only hold URLs from one host at a time, so other sites wait for the current one
+      why: It holds any URLs. Ignoring which host each belongs to is the problem.
+    - text: FIFOs are too slow once billions of URLs are queued, since each pop scans the whole queue
       why: Speed isn't the issue.
   explanation: Politeness requires per-host queues with timed access.
 - kind: check
@@ -241,13 +241,13 @@ explain: |
 - kind: check
   prompt: What does a Bloom filter false positive mean for a crawler's seen-set?
   choices:
-    - text: An unseen URL is wrongly treated as seen and skipped
+    - text: An unseen URL is treated as seen and skipped
       correct: true
-    - text: A seen URL is fetched again
+    - text: A URL that was already seen gets fetched again on the next pass
       why: That would be a false negative, which Bloom filters never produce.
     - text: The filter crashes
       why: False positives are normal behaviour.
-    - text: The page is stored twice
+    - text: The page is downloaded and stored twice, wasting bandwidth
       why: The URL is skipped, not stored.
   explanation: A small false-positive rate costs a few missed pages and saves enormous amounts of memory.
 - kind: fire
@@ -260,11 +260,11 @@ explain: |
 - kind: fire
   prompt: How do you detect near-duplicate pages, such as the same article with different ads?
   choices:
-    - text: Similarity-preserving fingerprints (e.g. SimHash) compared within a small Hamming distance
+    - text: SimHash-style fingerprints, compared by Hamming distance
       correct: true
-    - text: An exact MD5 of the HTML
+    - text: An exact MD5 of the HTML, stored in the seen-set next to the URL
       why: Any small difference changes the hash completely.
-    - text: Comparing URLs
+    - text: Comparing normalised URLs after stripping tracking parameters
       why: Duplicates often live at different URLs.
     - text: Page size
       why: Far too coarse.
@@ -272,11 +272,11 @@ explain: |
 - kind: fire
   prompt: A site generates infinite calendar URLs. What protects the crawler?
   choices:
-    - text: Depth limits, per-host page budgets, and URL-pattern detection
+    - text: Depth limits, per-host page budgets and URL-pattern detection
       correct: true
-    - text: More fetchers
+    - text: More fetchers, so the calendar pages are exhausted quickly and the crawl moves on
       why: They'd just crawl the trap faster.
-    - text: A larger Bloom filter
+    - text: A larger Bloom filter, so each generated calendar URL is recognised as already seen
       why: Every trap URL is new, so a bigger filter doesn't help.
     - text: Ignoring robots.txt
       why: That's impolite and doesn't stop traps.
@@ -285,13 +285,13 @@ explain: |
   level: advanced
   prompt: Why partition the crawl by hash of the host rather than by hash of the URL?
   choices:
-    - text: Each host's politeness state, connection reuse and DNS/robots caches then live on exactly one node
+    - text: Each host's politeness state, connections and DNS/robots caches live on one node
       correct: true
     - text: Hosts have fewer characters than URLs
       why: Irrelevant.
-    - text: It spreads a single host across many nodes for speed
+    - text: It spreads a single host across many nodes, so big sites are crawled in parallel faster
       why: That's the opposite of polite.
-    - text: URL hashing isn't deterministic
+    - text: URL hashing isn't deterministic across nodes, since each one salts its hash function differently
       why: It is. The issue is coordinating per-host limits.
   explanation: Partitioning by host makes politeness a local decision instead of a distributed coordination problem.
 - kind: fire

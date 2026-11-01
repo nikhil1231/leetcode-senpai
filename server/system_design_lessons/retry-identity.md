@@ -172,9 +172,9 @@ Before adding a key table, see if the operation can be made idempotent by design
 prompt: Your service charges cards through a provider, then records the charge in your database. The process crashes after the provider charges the card but before your database commit. The client retries with the same idempotency key. What prevents a second charge?
 choices:
   - Your idempotency table — the key was stored
-  - Nothing in your system; you need to pass an idempotency key to the provider so *it* recognises the retry
+  - Nothing in your system; you must pass an idempotency key to the provider so it spots the retry
   - The database transaction rolls back the charge
-  - HTTP retries are exactly-once
+  - The provider sees the same card and amount within minutes and declines the second charge
 answer: 1
 reveal: |
   Your key and result were never committed (the crash came first), so your side sees a brand-new request. The external effect already happened, and your transaction can't roll it back. The fix is to pass a deterministic idempotency key to the provider (derived from yours), so the provider returns the original charge. Every boundary with a side effect needs its own deduplication.
@@ -215,11 +215,11 @@ model: |
 - kind: check
   prompt: A POST to create a payment times out. What can the client conclude?
   choices:
-    - text: The payment may or may not have happened — the outcome is unknown
+    - text: The payment may or may not have happened; the outcome is unknown
       correct: true
-    - text: The payment definitely failed
+    - text: The payment failed, since a timeout means the server never sent a response
       why: The request may have succeeded and only the response was lost.
-    - text: The payment definitely succeeded
+    - text: The payment succeeded, since the server only times out after it has done the work
       why: The request may never have arrived.
     - text: The server will roll back any partial work
       why: Committed effects stay committed whether or not the response reaches the client.
@@ -242,13 +242,13 @@ model: |
 - kind: check
   prompt: Two identical requests with the same idempotency key arrive concurrently. What should happen?
   choices:
-    - text: One claims the key through a unique constraint and runs; the other sees "in progress" and gets a 409 (or waits) without running the operation
+    - text: One claims the key via a unique constraint and runs; the other sees "in progress" and gets a 409 or waits
       correct: true
-    - text: Both run, and the second response is discarded
+    - text: Both run, and the database keeps whichever result committed last, discarding the other
       why: Then the effect happens twice.
-    - text: Both check the table first, see no key, and run
+    - text: Each checks the table first; the second sees the first's key and returns its stored result
       why: That's the check-then-act race the unique constraint exists to prevent.
-    - text: The second gets a cached response from a CDN
+    - text: The second gets a cached copy of the first response from the CDN, once the first one completes
       why: CDNs don't cache POSTs or deduplicate application operations.
   explanation: Atomic claiming makes the key a lock on the logical operation. Duplicates then wait or retry until the original finishes.
 - kind: check
@@ -266,13 +266,13 @@ model: |
 - kind: fire
   prompt: The same idempotency key arrives with a different request body. What should the server do?
   choices:
-    - text: Reject it with a 4xx error explaining that the key was reused for a different request
+    - text: Reject it with a 4xx error saying the key was reused for a different request
       correct: true
-    - text: Return the original response
+    - text: Return the original response, since the key identifies the operation, not the body
       why: That tells the client its new request succeeded when it never ran.
     - text: Run the new request and overwrite the stored result
       why: That breaks deduplication for the original request's retries.
-    - text: Ignore the key and process normally
+    - text: Ignore the key and process the new request normally, as a fresh operation
       why: The client asked for deduplication, so silently ignoring the key hides a bug.
   explanation: Store a request fingerprint with the key. A mismatch is a client bug that must surface.
 - kind: fire
@@ -294,9 +294,9 @@ model: |
       correct: true
     - text: To make each retry more likely to succeed on its own
       why: Jitter doesn't change any single attempt's odds. It spreads the load out in time.
-    - text: To reduce the number of attempts
+    - text: To reduce the total number of attempts each client makes before giving up
       why: The attempt count is set separately.
-    - text: To let the server identify duplicates
+    - text: To let the server tell retries apart from new requests by their arrival times
       why: That's what idempotency keys do.
   explanation: Correlated retries create load spikes. Randomised delays decorrelate clients so a recovering service sees smoother traffic.
 - kind: fire
@@ -305,11 +305,11 @@ model: |
   choices:
     - text: Passing a deterministic idempotency key to the provider, so it returns the original charge
       correct: true
-    - text: Your own idempotency table
+    - text: Your own idempotency table, checked before calling the provider again
       why: Your key was never committed, so your side sees a new request.
-    - text: A database rollback
+    - text: A database rollback, which also voids the charge the provider made
       why: Rolling back your database can't undo the provider's charge.
-    - text: Using a longer timeout
+    - text: Using a longer timeout, so the commit finishes before the client gives up
       why: Crashes and lost responses still happen.
   explanation: Each boundary that causes a side effect needs its own deduplication. Derive the downstream key from your own so retries map to the same external operation.
 - kind: fire

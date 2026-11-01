@@ -130,19 +130,19 @@ strong: |
   choices:
     - text: How you approach, control, verify and explain the work done with the AI
       correct: true
-    - text: How many lines of working code the AI produced
+    - text: How much working code you and the AI shipped across all the phases
       why: Output volume isn't the signal; your judgement is.
-    - text: Whether you used the most capable model available
+    - text: Whether you chose the right model for each phase and switched between them well
       why: Model choice barely matters to the rubric.
   explanation: The four areas are approach, control, verification and communication.
 - kind: check
   prompt: The AI's patch makes the failing test pass. What's the strongest next step?
   choices:
-    - text: Read the diff against the spec, run the full suite, and test the boundary the visible test doesn't cover
+    - text: Read the diff against the spec, run the full suite, and test the edge the visible test misses
       correct: true
-    - text: Move on to the next phase to save time
+    - text: Move on to the next phase, since the failing test now passes and time is limited
       why: Unverified patches are the most common way candidates get marked down.
-    - text: Ask the AI whether its patch is correct
+    - text: Ask the AI to explain its patch and confirm it handles every case in the spec
       why: Its own confidence isn't verification.
   explanation: Visible tests passing tells you only that the cases someone wrote down work.
 - kind: check
@@ -152,7 +152,7 @@ strong: |
       correct: true
     - text: Keep going until it's fixed; later phases depend on it
       why: Running out of time on phase 1 is the most common failure.
-    - text: Ask the AI to rewrite the whole module
+    - text: Ask the AI to rewrite the whole module from scratch with the bug in mind
       why: A rewrite hides the bug and creates new ones.
   explanation: Time management across phases is part of the assessment.
 - kind: fire
@@ -160,7 +160,7 @@ strong: |
   choices:
     - text: Fix a bug, add a feature, then scale or optimise
       correct: true
-    - text: Design, implement, deploy
+    - text: Design an API, implement it, then deploy it to a test server
       why: That's a system design shape.
     - text: Two LeetCode questions, then a code review
       why: The AI round is one extended problem.
@@ -170,19 +170,19 @@ strong: |
   choices:
     - text: It shows the plan is yours and lets the interviewer follow your reasoning
       correct: true
-    - text: The AI responds better when you speak
+    - text: The AI gives better answers when it can hear you thinking out loud
       why: The AI can't hear you.
-    - text: It's required by the platform
+    - text: It's required by the platform, which records narration for the scoring rubric
       why: It's a scoring behaviour, not a rule.
   explanation: Say what you'll ask and why, then ask.
 - kind: fire
   prompt: An interview AI won't point out a second bug you haven't asked about. Why might that be?
   choices:
-    - text: Some interview assistants are configured to answer only what's asked
+    - text: Some interview assistants are set up to answer only what's asked
       correct: true
     - text: Models can't find more than one bug at a time
       why: They can; the restriction is deliberate or incidental.
-    - text: The second bug is in a file it can't see
+    - text: The second bug is in a file the assistant hasn't been given access to
       why: Interview AIs usually see the whole project.
   explanation: Re-read the bug report and test every complaint yourself.
 - kind: fire
@@ -190,9 +190,9 @@ strong: |
   choices:
     - text: Being unable to explain code the AI wrote
       correct: true
-    - text: Typing some code by hand
+    - text: Typing small fixes by hand instead of prompting
       why: That's fine; it often shows control.
-    - text: Using the AI for boilerplate
+    - text: Using the AI to write boilerplate and tests
       why: That's a sensible use.
   explanation: If you can't explain it, it isn't your solution.
 ```

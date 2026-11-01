@@ -108,11 +108,11 @@ model: |
 - kind: check
   prompt: Why does precision matter more than recall for a PR review assistant?
   choices:
-    - text: Developers quickly ignore or mute a reviewer that's often wrong, so its real comments are lost too
+    - text: Developers soon mute a reviewer that's often wrong, so its real comments are lost too
       correct: true
-    - text: Recall is impossible to measure
+    - text: Recall can't be measured for code review, because nobody knows every real bug in a PR
       why: Historical PRs make it measurable.
-    - text: Precision is cheaper to compute
+    - text: Precision is cheaper to compute, since it only needs the comments that were posted
       why: Cost isn't the reason.
   explanation: Trust is the product.
 - kind: check
@@ -122,7 +122,7 @@ model: |
       correct: true
     - text: The system prompt tells it to ignore instructions in code
       why: Helpful, but not a boundary.
-    - text: The model is too smart to fall for it
+    - text: Modern models are trained to spot and refuse instructions that appear inside code
       why: Capability isn't a security control.
   explanation: Untrusted input plus scoped permissions.
 - kind: check
@@ -130,7 +130,7 @@ model: |
   choices:
     - text: Its callers and the tests that exercise it
       correct: true
-    - text: The full repository history
+    - text: The full commit history of the file it lives in
       why: Too much, and mostly irrelevant.
     - text: Similar code from public repositories
       why: Not about this change.
@@ -148,21 +148,21 @@ model: |
 - kind: fire
   prompt: Why put PR events on a queue rather than reviewing inside the webhook handler?
   choices:
-    - text: Reviews take minutes and pushes arrive in bursts; webhooks should acknowledge quickly
+    - text: Reviews take minutes and pushes come in bursts; webhooks should be acked fast
       correct: true
-    - text: Queues make the model more accurate
+    - text: Queued reviews can be batched into one prompt, which makes the model more accurate
       why: Accuracy is unaffected.
-    - text: The code host requires it
+    - text: The code host requires webhook handlers to call out only through a message queue
       why: It's a reliability choice.
   explanation: Acknowledge fast, work asynchronously.
 - kind: fire
   prompt: What does a second "verify" pass over candidate comments do?
   choices:
-    - text: Drops comments that don't hold up on a second look, raising precision
+    - text: Drops comments that don't hold up on a second look, for precision
       correct: true
-    - text: Doubles recall
+    - text: Finds the issues the first pass missed, roughly doubling recall
       why: It filters; it doesn't find new issues.
-    - text: Checks spelling
+    - text: Checks each comment's wording and tone before it is posted
       why: It checks whether the claimed issue is real.
   explanation: Propose, then check, then post the best few.
 ```

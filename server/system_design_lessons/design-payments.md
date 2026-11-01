@@ -28,10 +28,10 @@ case: payments
 ```predict
 prompt: The service sends "charge $40" to the processor and the call times out after 30 s. What should it do?
 choices:
-  - Retry the charge immediately with a new request
-  - Mark the payment failed and tell the user to try again
-  - Record the outcome as UNKNOWN, then resolve it by retrying with the same idempotency key, querying the processor, or waiting for the webhook — never by sending a new, unrelated charge
-  - Assume it succeeded and ship the order
+  - Retry the charge immediately with a new request, since the first one most likely never arrived
+  - Mark the payment failed and tell the user to try again with the same card
+  - Record it as UNKNOWN, then resolve it with the same idempotency key, a status query or the webhook
+  - Assume it succeeded and ship the order, then refund later if the settlement disagrees
 answer: 2
 reveal: |
   A timeout is an unknown outcome — the charge may have succeeded. A new charge risks double-charging; declaring failure risks the user paying again elsewhere while the first charge also lands. Resolve it with the **same idempotency key** (the processor returns the original result), a status query, or the asynchronous webhook. Until then, show "processing".
@@ -228,13 +228,13 @@ explain: |
 - kind: check
   prompt: A processor call times out. What's the correct immediate handling?
   choices:
-    - text: Record the payment as UNKNOWN and resolve it with the same idempotency key, a status query, or the webhook
+    - text: Record it as UNKNOWN; resolve with the same idempotency key, a status query or the webhook
       correct: true
-    - text: Send a new charge request
+    - text: Send a new charge request with a fresh key, since the first one probably never arrived
       why: If the first succeeded, the customer pays twice.
-    - text: Mark it failed
+    - text: Mark it failed and ask the user to try paying again
       why: It may have succeeded, so you'd lose track of the money.
-    - text: Mark it succeeded
+    - text: Mark it succeeded, since processors rarely reject a charge after it reaches them
       why: It may have failed, so you'd ship unpaid orders.
   explanation: Unknown outcomes are resolved, never guessed.
 - kind: check
@@ -255,13 +255,13 @@ explain: |
 - kind: check
   prompt: Why persist the AUTHORIZING state before calling the processor?
   choices:
-    - text: So that after a crash the system knows a call may have happened and can resolve it, instead of losing track
+    - text: So after a crash the system knows a call may have happened, and resolves it
       correct: true
-    - text: Processors require it
+    - text: Processors require a stored state ID in every authorisation request
       why: It's your recovery requirement, not theirs.
-    - text: To make the call faster
+    - text: To make the processor call faster, because the payment row is already cached
       why: It adds a write. Correctness is the point.
-    - text: To skip idempotency keys
+    - text: So the state row can replace idempotency keys when the call is retried
       why: Both are needed.
   explanation: Write-ahead state around external calls makes every crash point recoverable.
 - kind: check
@@ -276,9 +276,9 @@ explain: |
   choices:
     - text: As new reversing entries in a new transaction
       correct: true
-    - text: By deleting the original entries
+    - text: By deleting the original entries, so the balance returns to what it was before
       why: That destroys the audit trail.
-    - text: By editing the original amounts to zero
+    - text: By editing the original amounts to zero inside the same transaction as the charge
       why: Same problem — history is lost.
     - text: Only in the processor's records
       why: Your ledger must reflect every movement of money.
@@ -286,11 +286,11 @@ explain: |
 - kind: fire
   prompt: A "payment_captured" webhook arrives twice. What prevents double recording?
   choices:
-    - text: Deduplicating by event ID and applying a conditional transition (AUTHORIZED → CAPTURED only)
+    - text: Dedupe by event ID and apply a conditional transition (AUTHORIZED → CAPTURED)
       correct: true
-    - text: Trusting that providers send each webhook once
+    - text: Trusting the provider, which signs each webhook and sends it exactly once
       why: Providers retry, so duplicates are normal.
-    - text: Responding 500 to the second one
+    - text: Responding 500 to the second one, so the provider marks it as already delivered
       why: That causes more retries.
     - text: Ignoring all webhooks
       why: They carry essential updates such as captures and disputes.
@@ -298,22 +298,22 @@ explain: |
 - kind: fire
   prompt: What does daily reconciliation catch?
   choices:
-    - text: Disagreements between internal records and the processor's settlement report, such as missed webhooks, reversals and amount mismatches
+    - text: Mismatches with the processor's settlement report: missed webhooks, reversals, wrong amounts
       correct: true
-    - text: Slow API responses
+    - text: Slow processor API responses that exceed the payment timeout
       why: That's monitoring.
-    - text: Duplicate user accounts
+    - text: Customers who signed up twice and were charged on both accounts
       why: Unrelated.
-    - text: Nothing, if the code is correct
+    - text: Nothing, provided the webhooks and idempotency keys are implemented correctly from the start
       why: External systems change state on their own, so disagreements still happen.
   explanation: Reconciliation assumes divergence and finds it systematically.
 - kind: fire
   level: advanced
   prompt: Order creation, payment authorisation and inventory reservation must stay consistent across services. What's the standard approach?
   choices:
-    - text: A saga with idempotent steps and compensations (release inventory, void the authorisation, refund) on failure
+    - text: A saga of idempotent steps with compensations (release stock, void, refund) on failure
       correct: true
-    - text: A distributed two-phase commit including the card processor
+    - text: A distributed two-phase commit across the services and the card processor, with one coordinator
       why: Processors don't participate in your 2PC.
     - text: Charge first, create the order later in a batch
       why: That risks charging for orders that are never created.

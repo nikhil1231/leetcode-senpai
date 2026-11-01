@@ -26,9 +26,9 @@ case: jobs
 prompt: The API inserts a job row and then publishes a message to the queue, returning 202 after both. What happens if the process crashes between the INSERT commit and the publish?
 choices:
   - The job is lost forever
-  - The job row exists but nobody will process it — unless dispatch is recoverable (an outbox, or workers that poll the jobs table)
-  - The queue publishes it automatically
-  - The client is told it failed
+  - The job row exists but nobody processes it, unless dispatch is recoverable (an outbox or polling)
+  - The queue publishes it automatically once the database transaction commits
+  - The client is told it failed, retries, and the second attempt creates a duplicate job row
 answer: 1
 reveal: |
   That's the dual-write gap. The promise "won't be silently lost" requires the intent to process to be committed with the job: an outbox row in the same transaction (relayed to the queue), or workers that claim directly from the jobs table. A reconciler for jobs stuck in `queued` is a good safety net either way.
@@ -227,13 +227,13 @@ explain: |
 - kind: check
   prompt: What must be true before the Jobs API returns 202?
   choices:
-    - text: The job and its recoverable dispatch (outbox row, or a pollable queued state) are committed
+    - text: The job and a recoverable dispatch (outbox row or pollable queued state) are committed
       correct: true
-    - text: A worker has started the job
+    - text: A worker has picked up the job and written a started status to the jobs table
       why: Workers can start later. Durability is what the promise needs.
     - text: The output is written
       why: That's completion, not acceptance.
-    - text: The message is in an in-memory queue
+    - text: The message is in an in-memory queue on the API server, ready for the next worker
       why: In-memory queues vanish on restart.
   explanation: "Won't be silently lost" requires durable, recoverable intent before the promise is made.
 - kind: check
@@ -261,23 +261,23 @@ explain: |
 - kind: check
   prompt: The same user resubmits with the same request ID but a different input file. What should happen?
   choices:
-    - text: Reject with 422 because the request ID was reused for a different payload
+    - text: Reject with 422, because the request ID was reused for a different payload
       correct: true
-    - text: Return the original job
+    - text: Return the original job, since the request ID matches an existing submission
       why: That silently ignores the new request.
     - text: Create a second job
       why: That breaks the same-ID-same-job contract.
-    - text: Overwrite the original job's input
+    - text: Overwrite the original job's input with the new file and restart it from the beginning
       why: That corrupts the original request.
   explanation: Store a payload fingerprint with the idempotency key and treat mismatches as client errors.
 - kind: fire
   prompt: A job keeps failing because its input is a corrupt PDF. What should the system do?
   choices:
-    - text: After bounded attempts, set status=failed with a clear error the user can see, and send it to the DLQ for operators
+    - text: After bounded attempts, mark it failed with an error the user can see, and send it to the DLQ
       correct: true
-    - text: Retry forever
+    - text: Retry with exponential backoff until the input eventually parses
       why: The job would show "running" forever and waste capacity.
-    - text: Mark it succeeded with an empty output
+    - text: Mark it succeeded with an empty output so the queue moves on and the user isn't blocked
       why: That's a lie the user discovers later.
     - text: Delete the job silently
       why: That violates "persistent failures must be visible".
@@ -289,19 +289,19 @@ explain: |
       correct: true
     - text: Broker uptime
       why: The broker can be up while workers are stalled.
-    - text: Worker CPU
+    - text: Average worker CPU utilisation across the fleet
       why: Workers stuck on I/O show low CPU.
-    - text: Number of API instances
-      why: Unrelated to processing delay.
+    - text: Number of jobs completed per minute across all workers
+      why: Throughput can look healthy while a backlog builds. The oldest job's age shows the wait.
   explanation: Age measures delay directly. Track outbox lag too, which is invisible otherwise.
 - kind: fire
   prompt: Why might workers claim jobs directly from the jobs table instead of using a queue at this scale?
   choices:
-    - text: At 30 jobs/s, SELECT … FOR UPDATE SKIP LOCKED is simple and removes the database/queue dual write entirely
+    - text: At 30 jobs/s, SELECT … FOR UPDATE SKIP LOCKED is simple and removes the dual write
       correct: true
-    - text: Queues can't handle 30 messages per second
+    - text: Queues can't guarantee ordering at 30 messages per second, and jobs must run in order
       why: They handle far more. This is about simplicity and correctness.
-    - text: Databases are always faster than queues
+    - text: Databases are always faster than queues, because the job row is already in memory
       why: Not in general. It's about removing moving parts.
     - text: It avoids needing idempotency
       why: Crashes still cause redos, so idempotency is still needed.

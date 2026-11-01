@@ -124,10 +124,10 @@ paths:
 ```predict
 prompt: A "drivers near me" query searches only the geohash cell containing the rider, at precision 6 (~1.2 km × 0.6 km). The rider stands 20 m from a cell edge. What goes wrong?
 choices:
-  - Nothing — precision 6 cells are large enough
-  - Drivers just across the edge (possibly closer than most drivers in the home cell) are missed; you must include the neighbouring cells, then filter by distance
-  - The query returns drivers from the whole city
-  - Geohash cells overlap, so the driver appears twice
+  - Nothing — at precision 6 a cell is over a kilometre wide, so 20 m from the edge makes no difference
+  - Drivers just across the edge, perhaps the closest, are missed; query the neighbouring cells too, then filter by distance
+  - The query returns drivers from the whole city, because short prefixes match too many cells
+  - Geohash cells overlap at their edges, so drivers near the boundary appear twice in the results
 answer: 1
 reveal: |
   Cells are hard partitions. Points metres apart can fall in different cells, with different prefixes. Query the home cell plus its 8 neighbours (or an H3 ring), then sort by exact distance. Choosing a precision where one cell is at least the search radius keeps it to a 3×3 block.
@@ -165,25 +165,25 @@ model: |
 - kind: check
   prompt: Why are separate B-tree indexes on latitude and longitude poor for "nearby" queries?
   choices:
-    - text: Each index finds a whole band of latitude or longitude, and their intersection scans far more rows than are nearby
+    - text: Each index matches a whole band of latitude or longitude, so the intersection scans far too many rows
       correct: true
-    - text: B-trees can't store decimal numbers
+    - text: B-trees can't index floating-point values precisely, so nearby points sort unpredictably
       why: They can.
-    - text: Latitude and longitude are always unindexed
-      why: You can index them; it just doesn't help much.
-    - text: Distance can't be computed in SQL
+    - text: The planner can't combine two B-tree indexes, so it ignores both and scans the whole table
+      why: Planners can combine them with a bitmap AND, but each band is still huge.
+    - text: Distance can't be computed in SQL without a spatial extension, so filtering must happen in code
       why: It can. The problem is finding candidates efficiently.
   explanation: Proximity is a 2D question. Cells or R-trees index both dimensions together.
 - kind: check
   prompt: What's the main pitfall of searching only the user's own geohash cell?
   choices:
-    - text: Nearby points just across a cell boundary have different prefixes and are missed
+    - text: Nearby points just across a cell boundary have other prefixes and are missed
       correct: true
-    - text: The query is too slow
+    - text: The prefix query is too slow, since geohash strings can't use a B-tree index
       why: It's fast — and incomplete.
-    - text: Geohash cells overlap
+    - text: Geohash cells overlap at their edges, so points near a boundary come back twice
       why: They partition space without overlap.
-    - text: It returns too many results
+    - text: It returns too many results in dense areas, since every cell is the same size
       why: It returns too few near edges.
   explanation: Query the cell and its neighbours, then filter by exact distance.
 - kind: check
@@ -211,48 +211,48 @@ model: |
   choices:
     - text: A spatial database with an R-tree index (e.g. PostGIS with GiST)
       correct: true
-    - text: A geohash prefix query
+    - text: A geohash prefix query on the address, matched against each zone's cells
       why: Cells approximate polygons and need an exact containment check anyway.
-    - text: A Redis sorted set
+    - text: A Redis geo set holding each zone's centre point, queried with GEOSEARCH
       why: Redis GEO handles points and radius queries, not polygons.
-    - text: A full-text search index
+    - text: A full-text search index over each zone's postcode list
       why: Text indexes don't handle geometry.
   explanation: R-trees index arbitrary shapes by bounding rectangles and support exact containment and intersection queries.
 - kind: fire
   prompt: Why shouldn't driver locations (updated every few seconds) be written to the same disk-based spatial table used for restaurants?
   choices:
-    - text: The update rate is enormous and each value is obsolete within seconds, so an in-memory index with TTLs fits far better
+    - text: Writes are enormous and each value is stale within seconds, so an in-memory index with TTLs fits better
       correct: true
-    - text: Disk-based databases can't store coordinates
-      why: They can.
-    - text: Drivers don't need indexing
+    - text: Disk-based spatial indexes lock the whole table on every update, which blocks restaurant queries
+      why: They don't lock the table. The problem is the write rate for values that expire in seconds.
+    - text: Drivers don't need indexing, because there are far fewer of them than restaurants
       why: They do, for nearby queries — but in memory.
-    - text: PostGIS doesn't support updates
+    - text: PostGIS indexes only support inserts, so each location update would add a new row forever
       why: It supports them, but not at this rate economically.
   explanation: Match the store to the data's lifecycle — ephemeral, high-churn positions belong in memory, with history streamed elsewhere.
 - kind: fire
   prompt: Fixed-precision cells cause some shards to be overloaded in dense city centres. What helps?
   choices:
-    - text: Adaptive cells (quadtrees or finer levels where dense) and sharding hot cities further
+    - text: Adaptive cells (quadtrees or finer levels where dense), and sharding hot cities further
       correct: true
-    - text: Larger cells everywhere
+    - text: Larger cells everywhere, so each shard covers more of the quiet suburbs too
       why: That makes the dense cells even denser.
-    - text: Removing the geo index
+    - text: Replacing the geo index with a per-city list scanned in memory
       why: Then every query scans everything.
-    - text: Querying fewer neighbours
+    - text: Querying fewer neighbouring cells in dense areas, since enough results are found nearby
       why: That misses results without fixing the load.
   explanation: Density varies by orders of magnitude, so spatial partitioning has to adapt to it.
 - kind: fire
   level: advanced
   prompt: A matching service needs at least 10 candidate drivers, but density varies hugely. What search strategy works best?
   choices:
-    - text: Search the rider's cell, then expand to neighbouring rings until enough candidates are found or a maximum radius is hit
+    - text: Search the rider's cell, then expand ring by ring until there are enough candidates or a max radius
       correct: true
-    - text: Always search a fixed 500 m radius
+    - text: Always search a fixed radius, sized per city from its average driver density
       why: In rural areas that finds no one; in a city centre it returns far too many.
-    - text: Search the whole city every time
+    - text: Search the whole city every time and sort all drivers by distance to the rider
       why: That's expensive and slow at scale.
-    - text: Pick 10 random drivers
+    - text: Take the 10 drivers whose last location updates were most recent
       why: They might be miles away.
   explanation: Expanding rings adapt to density automatically, using cheap cell lookups.
 - kind: fire

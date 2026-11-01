@@ -114,8 +114,8 @@ fix: |
 prompt: A load balancer uses consistent hashing on user ID so each user's requests reach the same backend (useful for local caches). One backend dies. What happens to users?
 choices:
   - Every user is reassigned to a new backend, and all local caches go cold
-  - Only that backend's users move — spread across the survivors if virtual nodes are used — while everyone else stays put
-  - Users on the dead backend get errors until it returns
+  - Only that backend's users move — spread across survivors with virtual nodes — everyone else stays
+  - Users on the dead backend get errors until it returns, since their hash still points to it
   - The load balancer switches to round robin
 answer: 1
 reveal: |
@@ -176,7 +176,7 @@ model: |
       correct: true
     - text: All keys are reassigned
       why: Every other key keeps its owner.
-    - text: Keys owned by its counter-clockwise neighbour
+    - text: Its keys and its counter-clockwise neighbour's keys, which are rebalanced between them
       why: That neighbour keeps its keys.
     - text: A random half of all keys
       why: Movement is limited to the removed server's arc.
@@ -197,11 +197,11 @@ model: |
 - kind: check
   prompt: With 128 virtual nodes per server, why must replica selection skip already-chosen servers?
   choices:
-    - text: Consecutive ring positions often belong to the same physical server, so naive walking could place several replicas on one machine
+    - text: Adjacent ring positions often belong to one physical server, so naive walking can stack replicas there
       correct: true
-    - text: Virtual nodes can't store data
+    - text: Virtual nodes can't store data themselves, so a replica placed on one would be lost
       why: Data lives on the physical server behind each virtual node.
-    - text: The ring requires an odd number of replicas
+    - text: The ring requires an odd number of distinct replicas, and skipping keeps that count odd
       why: There's no such requirement.
     - text: Skipping makes lookups faster
       why: It's about fault tolerance, not speed.
@@ -216,23 +216,23 @@ model: |
 - kind: fire
   prompt: What does rendezvous (highest random weight) hashing do?
   choices:
-    - text: For each key, scores every server with hash(key, server) and picks the highest, so only keys whose winner changes move
+    - text: Scores each server by hash(key, server) and picks the top one, so few keys move
       correct: true
-    - text: Places servers on a ring and walks clockwise
+    - text: Places servers on a ring and walks clockwise from the key's hash, weighting by capacity
       why: That's ring-based consistent hashing.
     - text: Uses hash mod N
       why: That's the naive approach.
-    - text: Assigns keys round robin
+    - text: Assigns keys round robin, weighting each server by a random factor chosen at startup
       why: That isn't deterministic per key.
   explanation: HRW gives the same minimal-movement property without a ring, with excellent balance and easy top-k replica selection.
 - kind: fire
   prompt: A viral key overloads its server even though keys are evenly balanced by consistent hashing. Why?
   choices:
-    - text: Each key maps to exactly one server; balancing key counts doesn't balance traffic to one key
+    - text: Each key maps to one server; balancing key counts doesn't balance traffic per key
       correct: true
-    - text: Consistent hashing doesn't work with popular keys
+    - text: Consistent hashing places popular keys unevenly, because their hashes cluster on the ring
       why: It works fine. It just doesn't address per-key load.
-    - text: There are too many virtual nodes
+    - text: There are too many virtual nodes, so the hot key's server owns more of the ring
       why: Virtual nodes don't affect per-key traffic.
     - text: The ring isn't sorted
       why: Unrelated.
@@ -241,13 +241,13 @@ model: |
   level: advanced
   prompt: What problem does "consistent hashing with bounded loads" address?
   choices:
-    - text: It caps any server's load at (1 + ε) times the average by passing extra keys to the next server, limiting imbalance with little extra movement
+    - text: It caps each server at (1 + ε) times the average load, passing overflow keys to the next server
       correct: true
     - text: It removes the need for virtual nodes in all cases
       why: It complements balance techniques by bounding load directly.
-    - text: It guarantees exactly-once delivery
+    - text: It bounds request latency by sending each lookup to the least-loaded replica of the key
       why: Unrelated.
-    - text: It splits hot keys automatically
+    - text: It splits a hot key across several servers once its traffic passes a bound
       why: A single extremely hot key still exceeds one server.
   explanation: Bounded loads trade a bit of movement for a hard cap on per-server load. It's used by some load balancers and pub/sub systems.
 - kind: fire

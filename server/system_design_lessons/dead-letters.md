@@ -66,10 +66,10 @@ When ordering matters (per account, per entity), you can't just skip a failed me
 ```predict
 prompt: A consumer of a 12-partition topic hits a message it can't deserialise and retries it in a loop without committing. What do you see?
 choices:
-  - A single error; everything else continues
-  - Lag on that one partition climbs steadily while the other 11 are fine; consumer health checks still pass
-  - The whole topic stops
-  - Kafka deletes the bad message after three tries
+  - A single error in the logs, after which the consumer skips the message and carries on
+  - Lag on that one partition climbs while the other 11 are fine, and health checks still pass
+  - The whole topic stops, since one consumer group processes all 12 partitions together
+  - Kafka moves the bad message to a dead-letter topic after three failed polls
 answer: 1
 reveal: |
   Kafka has no per-message acknowledgement or automatic dead-lettering — a consumer group's progress per partition is just an offset. If the consumer won't move past offset N, everything after N in that partition waits. That's why Kafka consumers implement their own retry topics and DLQs, and why **per-partition lag** (and its age) is the metric to alert on, not "is the process up".
@@ -202,13 +202,13 @@ model: |
 - kind: check
   prompt: A message fails validation because a required field is missing. What should the consumer do?
   choices:
-    - text: Dead-letter it with the error context so it can be fixed, rather than retrying it repeatedly
+    - text: Dead-letter it with the error context so it can be fixed, instead of retrying
       correct: true
-    - text: Retry it with exponential backoff for an hour
+    - text: Retry it with exponential backoff for an hour, in case the producer resends a fixed copy
       why: The same bytes fail the same way every time.
     - text: Drop it silently
       why: The data is lost and nobody learns about the bug.
-    - text: Stop the consumer until someone fixes it
+    - text: Stop the consumer and page someone, so no later message is processed out of order
       why: That blocks every good message to protect one bad one, unless strict ordering requires it.
   explanation: Permanent failures go to a DLQ quickly. Retries are for things that can heal.
 - kind: check
@@ -229,11 +229,11 @@ model: |
 - kind: check
   prompt: Every message has failed with "connection refused" to the database for 5 minutes. What's the best behaviour?
   choices:
-    - text: Pause or back off consumption (circuit breaker) instead of dead-lettering every message
+    - text: Pause or back off consumption (circuit breaker) rather than dead-letter every message
       correct: true
-    - text: Dead-letter each message after 3 attempts
+    - text: Dead-letter each message after 3 attempts, then redrive the whole DLQ once the database is back
       why: That moves thousands of good messages into the DLQ, all of which then need redriving.
-    - text: Retry each message immediately in a loop
+    - text: Retry each message immediately in a tight loop, so processing resumes the moment it's back
       why: That hammers the recovering database and burns CPU.
     - text: Delete the queue
       why: That loses all pending work.
@@ -248,50 +248,50 @@ model: |
 - kind: fire
   prompt: One malformed message sits at offset 5,200 in a Kafka partition, and the consumer retries it indefinitely without committing. What happens to later messages in that partition?
   choices:
-    - text: They all wait — the partition's progress is stuck at that offset
+    - text: They all wait, because the partition's progress is stuck at that offset
       correct: true
     - text: Kafka skips the bad message automatically after a few tries
       why: Kafka has no per-message failure handling. Progress is just the committed offset.
     - text: Other consumers in the group take over the later messages
       why: A partition is owned by one consumer at a time.
-    - text: The messages are deleted
+    - text: They are deleted once the retention period passes while the consumer is stuck
       why: Retention deletes by age or size, not because a consumer is stuck.
   explanation: Kafka consumers need their own retry topics and DLQs, and alerts on per-partition lag, so one poison message can't stall a partition silently.
 - kind: fire
   prompt: Why route Kafka retries through separate delay topics instead of sleeping in the consumer?
   choices:
-    - text: The main partition keeps flowing while failed messages wait elsewhere for their retry delay
+    - text: The main partition keeps flowing while failed messages wait elsewhere for their delay
       correct: true
-    - text: Retry topics guarantee success on the second attempt
+    - text: Retry topics keep the original offsets, so a retried message is processed exactly once
       why: They only change where and when the message waits.
-    - text: Sleeping isn't possible in Kafka consumers
+    - text: Sleeping isn't possible in Kafka consumers, because the client library has no blocking call
       why: It's possible, which is exactly the trap.
-    - text: Retry topics make messages smaller
+    - text: Retry topics compact old attempts, so each failed message takes less space while it waits
       why: Size doesn't change.
   explanation: Moving failures out of band preserves throughput and avoids blocking ordered partitions on a backoff.
 - kind: fire
   prompt: After fixing a bug, you redrive 50,000 dead-lettered messages, some of which partly succeeded before failing. What must be true?
   choices:
-    - text: Processing is idempotent with the original message identities, and redrive is throttled
+    - text: Processing is idempotent on the original message IDs, and redrive is throttled
       correct: true
-    - text: Messages get new IDs so they're treated as new
+    - text: Messages get new IDs, so the consumer doesn't skip them as already seen
       why: New IDs defeat deduplication and can repeat side effects.
-    - text: Redrive runs at maximum speed to finish quickly
+    - text: Redrive runs at maximum speed, so the backlog clears before new failures can pile up
       why: Unthrottled redrive can overload downstream systems and cause a new incident.
-    - text: The DLQ must be purged first
+    - text: The DLQ must be purged of the partly succeeded messages before the redrive starts
       why: Purging deletes the messages you're trying to recover.
   explanation: Redrive replays work that may have partly happened. Keep the identities, rely on idempotency, and pace it.
 - kind: fire
   level: advanced
   prompt: Per-account ordering matters, and one account's event is poison. How do you keep other accounts flowing without breaking that account's ordering?
   choices:
-    - text: Park the key — dead-letter the bad event and divert that account's later events to a holding queue until it's resolved
+    - text: Park the key: dead-letter the bad event and hold the account's later events until it's fixed
       correct: true
     - text: Skip the bad event and keep processing the account's later events
       why: Later events may depend on the skipped one, which breaks the account's ordering.
-    - text: Stop the whole partition until the event is fixed
+    - text: Stop the whole partition until the event is fixed, since order matters for every account in it
       why: That blocks thousands of unrelated accounts.
-    - text: Reorder the partition
+    - text: Move the bad event to the end of the partition and retry it after the others
       why: You can't reorder a log, and doing so would break the ordering guarantee anyway.
   explanation: Key-level parking isolates the failure to the affected key while preserving its order and letting everyone else proceed.
 - kind: fire

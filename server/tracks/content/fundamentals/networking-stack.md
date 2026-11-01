@@ -84,19 +84,19 @@ explain: Each early step costs at least one round trip on a cold start, which is
 - kind: check
   prompt: Why is a brand-new TCP connection slower than a warm one, even with no packet loss?
   choices:
-    - text: The handshake costs a round trip, and slow start limits how much data the first round trips can carry
+    - text: The handshake costs a round trip, and slow start limits what the first round trips carry
       correct: true
-    - text: New connections use a lower-priority queue
+    - text: New connections use a lower-priority queue in the kernel until they've sent some data
       why: There's no such priority.
-    - text: DNS must be resolved again for every connection
+    - text: DNS must be resolved again for every new connection, adding a lookup each time
       why: DNS results are cached independently of connections.
   explanation: Connection reuse avoids both the handshake and the slow-start ramp-up.
 - kind: check
   prompt: What does a TLS certificate let the client verify?
   choices:
-    - text: That the server holds the private key for a CA-signed certificate valid for this hostname
+    - text: That the server holds the private key of a CA-signed cert for this hostname
       correct: true
-    - text: That the server has no vulnerabilities
+    - text: That the server passed the CA's security audit when the certificate was issued
       why: Certificates say nothing about server security.
     - text: That the client's own identity is known to the server
       why: That's only with mutual TLS.
@@ -106,7 +106,7 @@ explain: Each early step costs at least one round trip on a cold start, which is
   choices:
     - text: One lost packet no longer stalls every multiplexed stream
       correct: true
-    - text: It adds header compression for the first time
+    - text: It adds header compression for the first time, which shrinks every request
       why: HTTP/2 already had HPACK.
     - text: It allows more than one request per connection
       why: HTTP/2 already multiplexes streams.
@@ -114,21 +114,21 @@ explain: Each early step costs at least one round trip on a cold start, which is
 - kind: fire
   prompt: A server shows thousands of sockets in CLOSE_WAIT. Whose bug is it?
   choices:
-    - text: Your application's, because it never closes sockets the peer has already closed
+    - text: Your application's, because it never closes sockets the peer has closed
       correct: true
-    - text: The client's, for closing too early
+    - text: The client's, for closing connections before the server finished responding
       why: Closing is normal; not closing your end is the bug.
-    - text: The kernel's TIME_WAIT settings
+    - text: The kernel's, whose TIME_WAIT settings keep closed sockets around too long
       why: TIME_WAIT is a different state, on the side that closes first.
   explanation: CLOSE_WAIT persists until the local app calls close().
 - kind: fire
   prompt: You're migrating a domain to a new IP next week. What should you do with DNS today?
   choices:
-    - text: Lower the record's TTL well in advance, so the change propagates quickly on the day
+    - text: Lower the record's TTL well ahead, so the change spreads fast on the day
       correct: true
-    - text: Raise the TTL to reduce load during the migration
+    - text: Raise the TTL so resolvers keep the old address cached while the move happens
       why: That makes the cutover take longer.
-    - text: Nothing; DNS changes are instant
+    - text: Nothing; resolvers fetch the new record as soon as it changes
       why: Resolvers cache records for up to the old TTL.
   explanation: Caches honour the TTL that was in effect when they fetched the record.
 - kind: fire
@@ -143,7 +143,7 @@ explain: Each early step costs at least one round trip on a cold start, which is
   choices:
     - text: Reuse connections with a pool and keep-alive
       correct: true
-    - text: Turn off TCP checksums
+    - text: Shorten the server's keep-alive timeout so idle sockets close sooner
       why: Unrelated, and unsafe.
     - text: Increase the server's listen backlog
       why: The client is running out of ephemeral ports, not the server.

@@ -46,10 +46,10 @@ Flipping the order doesn't help: **publish then commit** means a crash (or a fai
 ```predict
 prompt: A teammate suggests publishing to Kafka *inside* the database transaction, just before COMMIT, so "either both happen or neither". What actually happens if the COMMIT then fails?
 choices:
-  - Kafka rolls back the message automatically
-  - The event is already published and consumers may act on an order that was never committed
+  - Kafka rolls back the message automatically when the database connection reports the failure
+  - The event is already published, and consumers may act on an order that was never committed
   - The database waits for Kafka to confirm the commit
-  - It works because both are in the same function
+  - It works, because Kafka holds the message until the producer's transaction completes
 answer: 1
 reveal: |
   The broker has no idea about your database transaction. Once published, the event is visible; a later rollback (constraint violation, deadlock, connection loss) can't recall it. You've swapped "missing event" for "phantom event". Atomicity only exists **inside** one system — so put the publish intent inside the database.
@@ -217,13 +217,13 @@ model: |
 - kind: check
   prompt: A service commits an order and then publishes an event. The process dies between the two. What's the result?
   choices:
-    - text: The order exists, but the event is never published — downstream systems never learn about it
+    - text: The order exists, but the event is never published, so downstream never learns of it
       correct: true
-    - text: The order is rolled back automatically
+    - text: The order is rolled back automatically, because the process died before finishing the request
       why: It already committed.
-    - text: The broker publishes the event later on its own
+    - text: The broker publishes the event later, once the producer reconnects after restart
       why: The broker never received anything.
-    - text: The event is published twice
+    - text: The event is published twice, once before the crash and again after restart
       why: It wasn't published at all.
   explanation: Two writes with no shared transaction leave a crash window. The outbox removes it by making the publish intent part of the database transaction.
 - kind: check
@@ -253,25 +253,25 @@ model: |
 - kind: check
   prompt: Why is publishing to the broker inside the database transaction (before COMMIT) not a fix?
   choices:
-    - text: If the commit then fails, the already-published event describes a change that never happened
+    - text: If the commit then fails, the published event describes a change that never happened
       correct: true
-    - text: It is a fix — both happen in one function
+    - text: It is a fix — the broker joins the database transaction, so they commit together
       why: Being in one function doesn't make two systems atomic.
     - text: Brokers refuse publishes during database transactions
       why: They know nothing about your transaction, and that's the problem.
-    - text: It doubles the database load
+    - text: It holds the transaction open during the publish, which is slow but otherwise correct
       why: The issue is correctness, not load.
   explanation: Atomicity can't span the database and the broker. Put the event in the database and let a relay move it.
 - kind: fire
   prompt: What's the consumer-side counterpart of the outbox?
   choices:
-    - text: An inbox table recording processed event IDs, written in the same transaction as the consumer's effect
+    - text: An inbox table of processed event IDs, written in the same transaction as the consumer's effect
       correct: true
-    - text: A second outbox in the broker
+    - text: A second outbox in the broker, which stores each event until the consumer commits
       why: Brokers don't deduplicate your effects.
-    - text: A longer visibility timeout
+    - text: A longer visibility timeout, so each event is only handed to one consumer at a time
       why: That reduces some redeliveries, but doesn't make duplicates safe.
-    - text: Acking messages before processing
+    - text: Acking messages before processing, so the broker never redelivers them
       why: That risks losing messages and does nothing about duplicates.
   explanation: The inbox makes at-least-once delivery effectively-once for the consumer's own state.
 - kind: fire
@@ -284,24 +284,24 @@ model: |
 - kind: fire
   prompt: What's an advantage of a CDC-based relay over polling the outbox table?
   choices:
-    - text: Lower latency without polling queries, publishing in commit order from the database log
+    - text: Lower latency without polling queries, publishing in commit order from the log
       correct: true
-    - text: Exactly-once delivery to consumers
+    - text: Exactly-once delivery to consumers, because the log position deduplicates every event
       why: CDC is still at-least-once.
-    - text: No need for an outbox table at all, ever
+    - text: No need for an outbox table, since CDC captures the business table changes instead
       why: CDC can read business tables directly, but the outbox gives a deliberate event contract.
-    - text: It works without database log access
+    - text: It works without database log access, reading changes through ordinary queries
       why: It requires log access, such as replication slots or binlog.
   explanation: Tailing the log avoids polling overhead and preserves commit order, at the cost of operating the CDC pipeline.
 - kind: fire
   level: advanced
   prompt: Several relay instances use SELECT … FOR UPDATE SKIP LOCKED on the outbox. What ordering risk does this introduce?
   choices:
-    - text: Two instances can publish events for the same aggregate in a different order than they were committed
+    - text: Two instances can publish one aggregate's events in a different order than they were committed
       correct: true
-    - text: Events are lost
+    - text: Events are lost when a relay crashes holding locked rows, because SKIP LOCKED skips them
       why: Locked rows are skipped, not lost — another instance publishes them.
-    - text: No risk — SKIP LOCKED preserves global order
+    - text: No risk — SKIP LOCKED hands out rows in primary-key order, which preserves global order
       why: It deliberately lets instances process different rows concurrently.
     - text: Rows are published three times
       why: Duplicates come from crashes, not from SKIP LOCKED.

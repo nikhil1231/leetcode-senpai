@@ -86,10 +86,10 @@ steps: |
 ```predict
 prompt: Your service's p50 latency is 30 ms, but users on mobile networks complain the *first* action after opening the app takes over a second. The server logs show 30 ms for that request too. What's the most likely explanation?
 choices:
-  - The server logs are wrong
-  - DNS, TCP and TLS setup on a fresh connection over a high-latency mobile link happen before the server sees the request
+  - The server logs record when the response is sent, not when the request arrived
+  - DNS, TCP and TLS setup on a fresh connection over a slow mobile link come before the server sees it
   - The database is cold for the first request
-  - HTTP is slower than HTTPS
+  - The app's first request waits for its own local cache to load before it is sent
 answer: 1
 reveal: |
   Server-side timing starts when the request arrives. Everything before that — radio wake-up, DNS, TCP and TLS handshakes, each costing one or more mobile RTTs of 100+ ms — is invisible to it. Measure from the client (real-user monitoring), keep connections alive, pre-connect on app start, and terminate TLS close to users.
@@ -211,13 +211,13 @@ model: |
 - kind: check
   prompt: Which component should decide whether user 17 may view order 9001?
   choices:
-    - text: The order service, which owns order data and can check ownership on every request
+    - text: The order service, which owns order data and can check ownership on each request
       correct: true
     - text: The API gateway, because it already validated the user's token
       why: The gateway knows who is calling, but not who owns order 9001. Object-level authorisation needs the resource data.
     - text: The mobile app, by only showing the user's own orders
       why: Clients can be bypassed by calling the API directly.
-    - text: The load balancer, using sticky sessions
+    - text: The load balancer, using sticky sessions tied to each user's login
       why: Routing has nothing to do with permission to access data.
   explanation: Authentication can be centralised. Authorisation on a specific object must happen where the object's ownership is known, on every request.
 - kind: check
@@ -252,37 +252,37 @@ model: |
 - kind: fire
   prompt: Why does terminating TLS at a CDN edge close to users reduce latency for a distant origin, even for uncacheable POST requests?
   choices:
-    - text: The handshake round trips happen over the short user-to-edge path, and the edge reuses a warm connection to the origin
+    - text: Handshakes happen over the short user-to-edge path, and the edge reuses a warm origin connection
       correct: true
-    - text: The CDN caches POST responses
+    - text: The CDN caches POST responses for a few seconds, keyed on the request body
       why: POSTs are generally not cacheable. The gain comes from where the handshakes happen.
     - text: Encryption is skipped between the edge and the origin
       why: The edge-to-origin leg is normally encrypted too. It just uses a long-lived, already-established connection.
-    - text: The CDN compresses the request body
+    - text: The CDN compresses the request body, so fewer bytes cross the long path to the origin
       why: Compression helps bandwidth, not handshake round trips.
   explanation: Connection setup costs round trips. Making those round trips short (to the edge) and reusing a long-lived connection over the long leg removes most of the cold-connection penalty.
 - kind: fire
   prompt: A user-facing endpoint has a 2 s budget. The service calls an optional recommendations service. What timeout policy makes sense for that call?
   choices:
-    - text: A small slice of the budget (e.g. 200 ms) with a fallback that renders without recommendations
+    - text: A small slice of the budget (e.g. 200 ms), with a fallback that renders without them
       correct: true
     - text: The full 2 s, because recommendations improve conversion
       why: That leaves no budget for everything else, and one slow dependency delays the whole page.
-    - text: No timeout, so recommendations always appear
+    - text: No timeout, so recommendations always appear even when that service is slow
       why: Without a timeout, a hung dependency hangs every request that calls it.
-    - text: 5 s with three retries
+    - text: 1 s with three retries, so a slow response usually succeeds on a later attempt
       why: That's longer than the whole budget, and the retries multiply the load on a struggling service.
   explanation: Optional dependencies get small, bounded budgets and a graceful fallback, so their slowness degrades the page rather than failing it.
 - kind: fire
   prompt: Server-side metrics show a p50 of 40 ms, but real-user monitoring shows 900 ms for the first interaction after app launch. What explains the gap?
   choices:
-    - text: Connection setup (DNS, TCP, TLS) over a high-latency mobile network happens before the server sees the request
+    - text: Connection setup (DNS, TCP, TLS) over a slow mobile network happens before the server sees the request
       correct: true
-    - text: The server clock is wrong
+    - text: The server clock drifts, so the timing in server-side metrics is off by several hundred ms
       why: That wouldn't produce a consistent pattern tied to app launch.
-    - text: The database is slower for mobile users
+    - text: Mobile users' first requests miss the database cache, since their data hasn't been loaded yet
       why: The server measures the database time too, and it reports 40 ms.
-    - text: HTTP/2 is slower than HTTP/1.1
+    - text: HTTP/2 multiplexing makes the first request on a connection wait behind the others
       why: HTTP/2 generally reduces connection overhead by multiplexing requests.
   explanation: Server timing starts when the request arrives. Client-side setup costs several mobile round trips. Fix it with connection reuse, pre-connecting and edge termination.
 - kind: fire

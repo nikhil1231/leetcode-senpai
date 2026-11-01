@@ -28,10 +28,10 @@ case: feed
 ```predict
 prompt: What dominates the cost of this system?
 choices:
-  - Storing post text
-  - Feed reads — hundreds of thousands per second, each needing a merged, ranked, hydrated list of posts from many accounts
+  - Storing post text and media for billions of posts, replicated across regions
+  - Feed reads: hundreds of thousands a second, each a merged, ranked, hydrated list
   - User signups
-  - Follow/unfollow operations
+  - Follow/unfollow operations, since each one rewrites the follower's whole timeline
 answer: 1
 reveal: |
   Reads outnumber posts by orders of magnitude, and each read logically merges posts from hundreds of followed accounts. Hence precomputing timelines (fan-out on write) for most accounts — and the celebrity exception. Media bytes dominate *bandwidth*, which is why images go through object storage and a CDN.
@@ -226,13 +226,13 @@ explain: |
 - kind: check
   prompt: Why do feed systems store post IDs, not full posts, in timelines?
   choices:
-    - text: Storage stays small, and edits, deletes and privacy changes apply at hydration time without rewriting millions of timelines
+    - text: Storage stays small, and edits, deletes and privacy changes apply when the feed is hydrated
       correct: true
-    - text: IDs load faster from disk than posts
+    - text: IDs load faster from disk than posts, so the feed renders without needing a second lookup
       why: The bigger win is avoiding copies, not raw speed.
     - text: Posts can't be cached
       why: They're cached separately and hydrated by ID.
-    - text: To avoid needing a posts store
+    - text: To avoid needing a separate posts store, since timelines then hold everything the feed needs
       why: The posts store is the source of truth.
   explanation: Indirection keeps fan-out cheap and makes changes take effect immediately.
 - kind: check
@@ -260,11 +260,11 @@ explain: |
 - kind: check
   prompt: How should a ranked feed be paginated without duplicates or skips?
   choices:
-    - text: Page through a short-lived ranked snapshot of IDs created for the session
+    - text: Page through a short-lived ranked snapshot of IDs made for the session
       correct: true
-    - text: Use OFFSET over a live ranking
+    - text: Use OFFSET over the live ranking, recomputed on each page so scores stay fresh
       why: Scores and new items shift positions between requests.
-    - text: Use created_at cursors
+    - text: Use created_at cursors, which stay stable however the posts are ranked
       why: Ranked order isn't chronological.
     - text: Return everything in one response
       why: That's unbounded and slow.
@@ -272,23 +272,23 @@ explain: |
 - kind: fire
   prompt: A viral post gets 100k likes per minute and its like_count row becomes a hotspot. What's the fix?
   choices:
-    - text: Idempotent like rows plus sharded or stream-aggregated counters displayed with slight lag
+    - text: Idempotent like rows, plus sharded or stream-aggregated counters shown with slight lag
       correct: true
-    - text: Lock the post row for each like
+    - text: Lock the post row for each like, so concurrent increments can never be lost
       why: That's the hotspot.
-    - text: Disable likes on popular posts
-      why: That's a product regression, not a design.
+    - text: Move popular posts to a bigger database server with faster disks
+      why: A bigger server still serialises every like on the same hot row.
     - text: Store likes only in the client
       why: That loses data and allows abuse.
   explanation: Separate the exact per-user fact from the approximate aggregate, and spread the aggregate's writes.
 - kind: fire
   prompt: An author posts, then immediately opens their feed, and the post isn't there yet. Why, and what's the fix?
   choices:
-    - text: Fan-out is asynchronous; merge the author's own recent posts into their feed at read time
+    - text: Fan-out is async; merge the author's own recent posts into their feed at read time
       correct: true
-    - text: The post failed
+    - text: The post failed to save, so the client should retry it with the same idempotency key
       why: It's stored. Fan-out simply hasn't reached the author's timeline yet.
-    - text: Caches are broken
+    - text: The feed cache served an old copy; lower its TTL so new posts appear sooner
       why: This is expected asynchrony, not breakage.
     - text: Wait 10 minutes
       why: Users expect to see their own post immediately.
@@ -296,26 +296,26 @@ explain: |
 - kind: fire
   prompt: A timeline cache shard is lost. How do affected users get feeds?
   choices:
-    - text: Rebuild on demand by pulling recent posts from followed accounts, rank, and repopulate the cache
+    - text: Rebuild on demand from followed accounts' recent posts, rank them, refill the cache
       correct: true
-    - text: They see empty feeds until morning
+    - text: They see empty feeds until the nightly batch job regenerates every timeline
       why: That's an unnecessary outage.
-    - text: Restore timelines from database backups of the cache
+    - text: Restore their timelines from the most recent database backup of that cache shard
       why: Timelines are derived data, rebuilt from the source.
-    - text: Fan out every post ever again
+    - text: Fan out every post from the last year again to the affected users' timelines
       why: That's wildly expensive. Pull for the affected users instead.
   explanation: Derived caches should be rebuildable from sources of truth through a slower path.
 - kind: fire
   level: advanced
   prompt: The ranking service is slow. What should the feed service do?
   choices:
-    - text: Enforce a ranking time budget and fall back to recency ordering when it's exceeded
+    - text: Enforce a ranking time budget and fall back to recency order when it's exceeded
       correct: true
-    - text: Wait for ranking however long it takes
+    - text: Wait for ranking however long it takes, since an unranked feed hurts engagement more
       why: The whole feed's p99 would blow up.
     - text: Return an error
       why: An unranked feed beats no feed.
-    - text: Retry ranking three times
+    - text: Retry ranking up to three times with backoff before returning the feed to the user
       why: That makes latency worse.
   explanation: Optional enrichment needs budgets and graceful fallbacks.
 - kind: fire

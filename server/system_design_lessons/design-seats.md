@@ -133,9 +133,9 @@ find:
 prompt: Alice's confirm succeeds, but the response is lost. Her app retries with the same booking_id. What does the server return?
 choices:
   - 410 — the hold no longer exists because the seat is booked
-  - 200 with the same booking_id — the server sees the seat booked with this booking_id and treats it as a retry
-  - A second booking
-  - 409 Conflict
+  - 200 with the same booking_id — the seat is booked under it, so this is a retry
+  - A second booking, since the retry carries a valid booking_id and a seat number
+  - 409 Conflict, because the seat is already booked and can't be confirmed twice
 answer: 1
 reveal: |
   The confirm UPDATE matches 0 rows (status is already booked), so the handler reads the seat: booked, with booking_id equal to the one in the request, so this is a retry of a completed confirmation and it returns the original result. That meets "retries must not change the result of a completed confirmation".
@@ -228,9 +228,9 @@ explain: |
   choices:
     - text: The primary database, via an atomic conditional update
       correct: true
-    - text: The cached seat map
+    - text: The cached seat map, if it was refreshed in the last few seconds
       why: The map may be up to 10 seconds stale. Only the authority decides.
-    - text: A read replica
+    - text: A read replica, as long as replication lag is under a second
       why: Replicas lag, so they can show a seat as free after it's taken.
     - text: The browser's last fetched map
       why: That's the stalest copy of all.
@@ -253,13 +253,13 @@ explain: |
 - kind: check
   prompt: A confirmation succeeded but its response was lost, and the client retries with the same booking_id. What should happen?
   choices:
-    - text: Return the existing booking, because the seat is booked with that booking_id
+    - text: Return the existing booking, since the seat is booked under that booking_id
       correct: true
     - text: Return 410, because the hold no longer exists
       why: Technically true, but misleading — the user did book it.
-    - text: Book another seat
+    - text: Book the next free seat, since the original hold was used up
       why: That violates the retry requirement.
-    - text: Return 500
+    - text: Return 500, so the client knows to check its booking history
       why: It isn't an error.
   explanation: Client-supplied identities make completed operations recognisable on retry.
 - kind: check
@@ -272,25 +272,25 @@ explain: |
 - kind: fire
   prompt: The expiry sweeper has been down for an hour. What's wrong?
   choices:
-    - text: Only the seat map — expired holds still show as held; claims and confirms remain correct because the predicates check expiry
+    - text: Only the seat map shows expired holds as held; claims and confirms stay correct via the expiry check
       correct: true
-    - text: Expired holds can be confirmed
+    - text: Expired holds can still be confirmed, since nothing has changed their status
       why: The confirm predicate checks hold_expires_at against now().
-    - text: Seats with expired holds can never be claimed
+    - text: Seats with expired holds can't be claimed by anyone until the sweeper releases them
       why: The claim predicate treats expired holds as available.
-    - text: All holds become permanent
+    - text: All holds become permanent, and the event slowly runs out of bookable seats
       why: Expiry is evaluated at decision time.
   explanation: Housekeeping affects presentation. Correctness lives in the transitions.
 - kind: fire
   prompt: Why partition seats by event_id?
   choices:
-    - text: Every hold and confirm touches one event, so operations stay single-partition, and hot events can be isolated
+    - text: Each hold and confirm touches one event, so it stays in one partition and hot events can be isolated
       correct: true
-    - text: To make every event the same size
+    - text: So every partition holds about the same number of seats, which keeps load even
       why: Events vary hugely in size.
-    - text: To allow cross-event transactions
+    - text: So bookings spanning several events can commit together in one transaction
       why: Partitioning by event avoids needing them.
-    - text: Because seat IDs repeat across events
+    - text: Because seat IDs repeat across events, so the partition key must include the event to be unique
       why: The composite key handles that anyway.
   explanation: The shard key follows the unit of contention and transaction — the event.
 - kind: fire
@@ -298,9 +298,9 @@ explain: |
   choices:
     - text: Fail fast with a retry message; never decide holds from replicas or caches
       correct: true
-    - text: Use the replica to grant holds temporarily
+    - text: Grant holds from the replica temporarily, and copy them to the new primary afterwards
       why: Replicas may be stale, risking double holds.
-    - text: Queue them indefinitely
+    - text: Queue them until the new primary is up, however long that takes
       why: Users need prompt feedback, and the queue could grow without bound.
     - text: Grant every hold and reconcile later
       why: That violates the invariant.
@@ -309,13 +309,13 @@ explain: |
   level: advanced
   prompt: Payments are added. Which design keeps the invariant and handles failures?
   choices:
-    - text: A saga — keep the hold, charge with an idempotency key, then confirm; release the hold if the charge fails; refund if confirmation fails after charging
+    - text: A saga: hold, charge with an idempotency key, then confirm; release on charge failure, refund on confirm failure
       correct: true
     - text: Charge the card inside the database transaction that confirms the seat
       why: External calls inside transactions hold locks and can't be rolled back.
-    - text: Confirm first, then charge later in a batch job
+    - text: Confirm the seat first, then charge every booking later in a nightly batch job
       why: That gives away seats without payment, and the batch could fail.
-    - text: Use two-phase commit with the payment provider
+    - text: Two-phase commit across the seat database and the payment provider, so both succeed or neither does
       why: Providers don't participate in your 2PC.
   explanation: Cross-system workflows use sagas with idempotent steps and compensations.
 - kind: fire

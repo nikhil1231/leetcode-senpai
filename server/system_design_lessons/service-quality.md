@@ -41,10 +41,10 @@ takeaway: |
 ```predict
 prompt: A service reports a mean latency of 45 ms and nobody complains in testing. In production, users report occasional 3-second page loads. Each page makes 40 backend calls in parallel. What should you look at first?
 choices:
-  - The mean latency over a longer window
-  - The backend's p99 and p99.9 latency, because with 40 calls per page, rare slow calls hit many pages
-  - CPU usage of the web servers
-  - The number of servers
+  - The mean latency over a longer window, to see whether the 45 ms figure holds during peak hours
+  - The backend's p99 and p99.9 latency: with 40 calls a page, rare slow calls hit many pages
+  - CPU usage of the web servers that assemble the pages from the 40 calls
+  - The network bandwidth between the web servers and the backend
 answer: 1
 reveal: |
   At 40 parallel calls per page, a backend p99 of 3 s means 1 − 0.99⁴⁰ ≈ **33%** of page loads include at least one 3-second call. The mean can look excellent while a third of users suffer. Track percentiles per dependency and the user-facing latency, not averages.
@@ -211,23 +211,23 @@ model: |
   choices:
     - text: About 99.6%
       correct: true
-    - text: 99.9%
+    - text: About 99.9%
       why: Serial dependencies multiply, so the whole is less available than any single part.
-    - text: 99.99%
+    - text: About 99.99%
       why: That would need redundancy, not a chain of dependencies.
-    - text: 96%
+    - text: About 96.0%
       why: That's 99%⁴, not 99.9%⁴.
   explanation: 0.999⁴ ≈ 0.996. Every required dependency lowers availability. Making dependencies optional or asynchronous takes them out of the product.
 - kind: fire
   prompt: What do hedged requests do, and what do they cost?
   choices:
-    - text: Send a duplicate request if the first hasn't answered by about the p95, use whichever returns first; costs a few percent of extra load
+    - text: Send a duplicate if the first hasn't answered by about p95 and use the first reply; costs a few % more load
       correct: true
-    - text: Send every request twice from the start; halves the load
+    - text: Send every request to two replicas from the start and use the first reply; halves the tail
       why: Duplicating everything doubles the load. Hedging duplicates only the slow tail.
-    - text: Cache responses at the edge; costs staleness
+    - text: Cache responses at the edge so slow backends are skipped; costs staleness
       why: That's caching, not hedging.
-    - text: Retry failed requests with backoff; costs latency
+    - text: Retry failed requests with backoff until one succeeds; costs extra latency
       why: Hedging targets slow responses, not failed ones.
   explanation: By duplicating only requests that are already slow, hedging trims the tail cheaply. Requests must be safe to duplicate, i.e. idempotent reads.
 - kind: fire
@@ -239,32 +239,32 @@ model: |
       why: By Little's Law, concurrency = rate × time, and time went up 4×.
     - text: It drops, because slower queries mean fewer queries
       why: The arrival rate is unchanged, so each slower query just holds its connection longer.
-    - text: It doubles
+    - text: It doubles, since only the slow half of queries hold connections longer
       why: Concurrency scales linearly with time in the system. The time went up 4×.
   explanation: Latency and concurrency are coupled. Slowdowns exhaust fixed-size pools, which is why one slow dependency cascades.
 - kind: fire
   prompt: Two replicas of a service each have 99% availability. When does running both give about 99.99%?
   choices:
-    - text: Only if their failures are independent — no shared deploys, hardware, zone or dependencies
+    - text: Only if their failures are independent: no shared deploys, hardware, zone or dependencies
       correct: true
-    - text: Always, because 1 − 0.01² = 0.9999
+    - text: Always, because 1 − 0.01² = 0.9999 whenever either replica can serve the request
       why: The formula assumes independence. Correlated failures make the real number much worse.
     - text: Never, because redundancy doesn't affect availability
       why: Independent redundancy does improve availability dramatically.
-    - text: Only if they run on the same machine
-      why: The same machine is the most correlated failure domain there is.
+    - text: Only if they run behind the same load balancer, which can fail over between them
+      why: A shared load balancer is itself a shared failure. Independence is what matters.
   explanation: Redundancy multiplies failure probabilities only when failures are independent. Spread replicas across failure domains and stagger deploys.
 - kind: fire
   level: advanced
   prompt: Why do SRE practices alert on error-budget burn rate rather than on any error rate above zero?
   choices:
-    - text: Burn rate ties alerts to user impact on the SLO and separates fast outages (page now) from slow leaks (ticket)
+    - text: Burn rate ties alerts to SLO impact and separates fast outages (page) from slow leaks (ticket)
       correct: true
-    - text: Burn rate is cheaper to compute
+    - text: Burn rate is cheaper to compute, since it needs only one number per day
       why: Cost isn't the reason. It's about relevance and urgency.
     - text: Errors below the SLO don't need monitoring at all
       why: They're still tracked; they just shouldn't page someone at 3 a.m.
-    - text: Burn rate ignores outages shorter than a day
+    - text: Burn rate ignores outages shorter than a day, which keeps on-call quieter
       why: Fast-burn alerts with short windows catch outages within minutes.
   explanation: Paging on every blip creates alert fatigue. Multi-window burn-rate alerts page for fast budget consumption and open tickets for slow consumption.
 - kind: fire

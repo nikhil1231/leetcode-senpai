@@ -66,9 +66,9 @@ items:
 prompt: A topic has 8 partitions keyed by `account_id`, and per-account ordering matters. You increase it to 16 partitions to get more throughput. What changes for ordering?
 choices:
   - Nothing — Kafka moves existing data to keep keys in place
-  - New events for many accounts now hash to a different partition than their older events, so during the transition a consumer can process an account's new events before its old ones finish
-  - All ordering is lost forever
-  - Kafka refuses to add partitions to keyed topics
+  - Many accounts' new events hash to a different partition than their old ones, so new events can be processed first
+  - Ordering is lost for every account until the topic is recreated with 16 partitions from scratch
+  - Kafka refuses to add partitions to keyed topics, so you must create a new topic and migrate
 answer: 1
 reveal: |
   `hash(key) % 8` and `hash(key) % 16` disagree for about half the keys, and existing data isn't moved. Until the old partitions are fully consumed, an account can have events in two partitions processed in parallel. Plan partition counts for peak up front (they're cheap-ish), or migrate carefully — drain consumers, or move to a new topic.
@@ -166,23 +166,23 @@ model: |
   choices:
     - text: Order within each partition only — so per key, if events share a key
       correct: true
-    - text: Global order across the whole topic
+    - text: Global order across the whole topic, as long as producers use acks=all
       why: Partitions are independent logs read in parallel.
     - text: No ordering at all
       why: Each partition is strictly ordered by offset.
-    - text: Order by event timestamp
+    - text: Order by event timestamp, as set by the producer when it sends each event
       why: Order follows append order within a partition, not timestamps.
   explanation: Put events that must be ordered under the same key, and therefore in the same partition.
 - kind: check
   prompt: A topic has 8 partitions and a consumer group runs 20 instances. How many instances actually receive events?
   choices:
-    - text: 8 — each partition goes to one consumer, and the other 12 are idle
+    - text: 8 — each partition goes to one consumer, and the other 12 sit idle
       correct: true
-    - text: 20
+    - text: 20 — partitions are shared, so each instance gets a slice of each one
       why: A partition can't be split between consumers in the same group.
-    - text: 1
+    - text: 1 — the group leader receives all events and hands them out to the others
       why: Partitions are spread across the group.
-    - text: 16
+    - text: 16 — each partition is split between two instances, and 4 instances stay idle
       why: There are only 8 partitions to assign.
   explanation: The partition count caps parallelism within a group.
 - kind: check
@@ -208,37 +208,37 @@ model: |
 - kind: fire
   prompt: Auto-commit is enabled on a 1-second timer, and the consumer crashes while processing a batch. What can happen?
   choices:
-    - text: Offsets for unprocessed events may already be committed, so those events are skipped (lost)
+    - text: Offsets for unprocessed events may already be committed, so those events are skipped
       correct: true
-    - text: Everything is redelivered
+    - text: The whole batch is redelivered after restart, since processing never finished
       why: Only events after the last committed offset come back, and auto-commit may already have passed some unprocessed ones.
-    - text: Kafka waits for processing to finish before committing
+    - text: Kafka waits for processing to finish before committing, since auto-commit tracks the poll loop
       why: Auto-commit is timer-based and knows nothing about your processing.
-    - text: Duplicates are impossible
+    - text: Nothing is lost or duplicated, because the offset is only committed on the timer
       why: Duplicates are possible too, for anything processed since the last commit.
   explanation: Commit explicitly after processing for at-least-once, and make processing idempotent.
 - kind: fire
   prompt: What does log compaction keep?
   choices:
-    - text: At least the latest event for every key, removing older events for the same key
+    - text: At least the latest event per key, removing older ones for the same key
       correct: true
-    - text: Only events from the last hour
+    - text: Only events from the last hour, merged into one event per partition
       why: That's time-based retention.
-    - text: The first event for every key
+    - text: The first event for every key, so the original value can always be rebuilt
       why: Compaction keeps the latest value, so the topic reflects current state.
-    - text: Nothing — it deletes the topic
-      why: It removes superseded values, not the topic.
+    - text: Only events newer than the retention period, compressed to save disk space
+      why: That describes retention and compression. Compaction removes superseded values per key.
   explanation: Compacted topics act as changelogs that can rebuild the current state of every key.
 - kind: fire
   prompt: A consumer processes huge batches and keeps getting kicked out of its group, causing endless rebalances. What's the likely cause?
   choices:
-    - text: Processing a poll's batch takes longer than max.poll.interval.ms, so the group considers it dead
+    - text: Processing a batch takes longer than max.poll.interval.ms, so the group thinks it died
       correct: true
-    - text: Too many partitions
+    - text: Too many partitions are assigned to it, so its session.timeout.ms expires on every poll
       why: Partition count doesn't decide the poll interval.
-    - text: Retention is too short
+    - text: Retention is too short, so its committed offsets expire while it processes the batch
       why: Retention isn't related to group membership.
-    - text: The broker is out of disk
+    - text: The broker is out of disk, so it drops the consumer's heartbeats to save space
       why: That causes different errors.
   explanation: Keep poll batches small relative to processing time, or move slow work elsewhere, so consumers stay in the group.
 - kind: fire
@@ -247,9 +247,9 @@ model: |
   choices:
     - text: Adding a new optional field with a default value
       correct: true
-    - text: Renaming an existing field
+    - text: Renaming an existing field, as long as the schema registry records the old name
       why: Old readers lose the field and new readers miss it in old events.
-    - text: Changing a field from int to string
+    - text: Widening a field from int to string, since every int can be written as a string
       why: Type changes break deserialisation.
     - text: Removing a required field
       why: Readers that expect it break.

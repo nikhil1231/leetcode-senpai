@@ -171,9 +171,9 @@ A queue changes **when** work happens, not how much capacity you have. If arriva
 prompt: A report endpoint used to time out at the 30 s gateway limit. The team made it async: 202 plus polling. A week later p50 time-to-report is 4 minutes, up from 25 s. What's the most likely reason?
 choices:
   - Async processing is inherently slower than synchronous
-  - Reports now wait in a queue behind other jobs, and the worker pool is sized below peak arrivals
-  - Polling makes the database slower
-  - 202 responses are delayed by proxies
+  - Reports now wait in a queue behind other jobs, with workers sized below peak arrivals
+  - Clients poll every second, and the status queries slow the database down for everyone
+  - 202 responses are held by proxies until the job completes, adding minutes of delay
 answer: 1
 reveal: |
   Each report still takes about 25 s of work; the rest is **queueing**. Asynchrony lets you accept bursts but doesn't add capacity. Size workers for peak drain, autoscale on queue age, and consider priorities so small reports don't wait behind huge ones.
@@ -223,9 +223,9 @@ model: |
   choices:
     - text: The job and its intent to be processed must be durably recorded
       correct: true
-    - text: The job must be complete
+    - text: The job must be complete, with its output stored
       why: That would be a 200 or 201. 202 explicitly means "accepted, not finished".
-    - text: A worker must have started the job
+    - text: A worker must have picked up the job and acknowledged it
       why: The work can wait in a queue. Acceptance only needs to be durable.
     - text: The message must be in an in-memory queue
       why: In-memory queues vanish when the process restarts.
@@ -258,37 +258,37 @@ model: |
 - kind: check
   prompt: A webhook receiver adds the payment amount to the order on each delivery. Why is that a bug?
   choices:
-    - text: Webhooks are delivered at least once, so a retried delivery adds the amount twice
+    - text: Webhooks are delivered at least once, so a retry adds the amount twice
       correct: true
-    - text: Webhooks are always delivered exactly once
+    - text: Webhooks are delivered exactly once, so a second call means a second payment
       why: Senders retry after timeouts and errors, so duplicates are normal.
-    - text: Webhooks can't carry amounts
-      why: They can. The problem is non-idempotent processing.
-    - text: Addition is too slow
+    - text: Webhook payloads round amounts, so totals drift over many payments
+      why: Amounts are exact. The problem is processing each delivery as new.
+    - text: Addition is too slow under load, so deliveries time out and are retried
       why: Speed isn't the issue.
   explanation: Make receivers idempotent. Deduplicate by event ID with a unique constraint and set state rather than incrementing.
 - kind: fire
   prompt: After an endpoint was made asynchronous, users wait longer for results than before. What's the most likely cause?
   choices:
-    - text: Jobs queue behind each other because worker capacity is below peak arrivals
+    - text: Jobs queue behind each other, as worker capacity is below peak arrivals
       correct: true
-    - text: Asynchronous code always runs slower
+    - text: Asynchronous code runs slower because each job is serialised onto a queue
       why: The work itself takes the same time. The added delay is waiting in the queue.
-    - text: Polling interferes with processing
+    - text: Polling requests compete with workers for the same database connections
       why: Status reads are cheap compared with the work.
-    - text: 202 responses are cached
+    - text: 202 responses are cached by proxies, so clients poll an old status
       why: Caching the acceptance response doesn't delay processing.
   explanation: Asynchrony introduces queueing. Size the worker pool for drain rate, autoscale on oldest-job age, and set user expectations.
 - kind: fire
   prompt: What must a webhook receiver do before trusting a "payment succeeded" event?
   choices:
-    - text: Verify the sender's signature over the raw body (and the timestamp, to stop replays)
+    - text: Verify the sender's signature over the raw body, and the timestamp to stop replays
       correct: true
-    - text: Check that the request came over HTTPS
+    - text: Check that the request came over HTTPS from one of the provider's IP ranges
       why: TLS protects the connection, but anyone can open an HTTPS connection to your endpoint.
-    - text: Check the User-Agent header
+    - text: Check that the User-Agent header matches the provider's documented value
       why: Headers like that are trivially forged.
-    - text: Respond 200 and trust it
+    - text: Respond 200 and trust it, since only the provider knows the webhook URL
       why: That lets anyone mark orders as paid.
   explanation: Public endpoints receive forged requests. HMAC signatures prove the sender and integrity; timestamps limit replay. Then deduplicate by event ID.
 - kind: fire
@@ -301,24 +301,24 @@ model: |
 - kind: fire
   prompt: A worker crashes while a job is in the running state. How does a well-designed system recover?
   choices:
-    - text: The worker's lease on the job expires and another worker reclaims it; the job's outputs are safe to redo
+    - text: The worker's lease expires and another worker reclaims it; the job's outputs are safe to redo
       correct: true
     - text: The job stays running until an engineer intervenes
       why: Without leases and reclaiming, that's exactly the "processing forever" bug.
-    - text: The client must submit a new job
+    - text: The client submits a new job after polling shows no progress for a while
       why: Recovery should be automatic, and a resubmission could duplicate work.
-    - text: The queue deletes the job
+    - text: The queue deletes the job, and the client resubmits it after a timeout
       why: Deleting accepted work breaks the 202 promise.
   explanation: Leases (visibility timeouts) turn worker death into a delay, and idempotent outputs make the retry safe.
 - kind: fire
   level: advanced
   prompt: A job is committed to the database, but the process dies before publishing to the queue. With no outbox, what prevents the job being stuck forever?
   choices:
-    - text: A reconciler or polling worker that finds jobs left in queued too long and republishes or claims them
+    - text: A reconciler or poller that finds jobs stuck in queued and republishes or claims them
       correct: true
     - text: The client's retry with the same idempotency key always republishes
       why: The client may never retry, especially if it did receive the 202.
-    - text: The database automatically notifies the queue
+    - text: The database notifies the queue through a trigger once the commit is durable
       why: Not unless you build exactly that, which is the outbox/CDC pattern.
     - text: Nothing is needed — the queue will eventually find it
       why: The queue never received it.

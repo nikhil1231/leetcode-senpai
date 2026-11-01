@@ -116,10 +116,10 @@ steps: |
 ```predict
 prompt: A shared job queue serves 2,000 customers. One customer bulk-imports 3 million records, enqueueing 3 million jobs in a minute. Other customers report that their jobs, normally done in seconds, now take hours. What's the best fix?
 choices:
-  - Add more workers until the import finishes quickly
-  - Give each tenant its own queue (or a fair scheduler) so workers round-robin across tenants, plus per-tenant rate limits
-  - Make the queue LIFO so new jobs run first
-  - Ask the customer not to import data
+  - Add more workers until the import finishes quickly, then scale back down automatically
+  - Per-tenant queues (or a fair scheduler) so workers round-robin across tenants, plus per-tenant limits
+  - Make the queue LIFO so new jobs from other customers run before the import's backlog
+  - Give the import's jobs a lower priority flag inside the same FIFO queue
 answer: 1
 reveal: |
   In a single FIFO, everyone waits behind the bulk import. Fair scheduling across tenants (per-tenant queues serviced round-robin, or weighted fair queuing) bounds how long small customers wait, regardless of one customer's backlog. Rate limits or bulk lanes contain heavy users. More workers help, but they don't fix the unfairness.
@@ -188,13 +188,13 @@ model: |
 - kind: check
   prompt: Five independent services must each react to every OrderPlaced event at their own pace. Which shape fits?
   choices:
-    - text: Pub/sub fan-out (or a retained log), where each subscriber gets its own copy and progress
+    - text: Pub/sub fan-out (or a retained log): each subscriber has its own copy and progress
       correct: true
-    - text: One work queue shared by all five services
+    - text: One work queue shared by all five services, each taking the messages it needs
       why: Competing consumers means each message goes to only one of them.
-    - text: Synchronous calls from checkout to each service
+    - text: Synchronous calls from checkout to each service, so failures surface immediately
       why: That couples checkout's latency and availability to all five.
-    - text: A database table each service polls and deletes from
+    - text: A database table that each service polls, deleting rows once it has handled them
       why: Deletes by one service would hide the event from the others.
   explanation: Fan-out gives every subscriber an independent copy, so one slow consumer doesn't affect the others or the producer.
 - kind: check
@@ -222,37 +222,37 @@ model: |
 - kind: check
   prompt: One tenant floods a shared FIFO queue and every other tenant's jobs are delayed. What's the structural fix?
   choices:
-    - text: Fair scheduling across tenants (per-tenant queues serviced round-robin) and per-tenant limits
+    - text: Fair scheduling across tenants (per-tenant queues served round-robin) and per-tenant limits
       correct: true
-    - text: A larger FIFO queue
+    - text: A larger FIFO queue with more consumers, sized for the biggest tenant's peak
       why: Everyone still waits behind the flood.
-    - text: Switching to LIFO
+    - text: Switching to LIFO, so newly arriving jobs from other tenants run first
       why: That starves older jobs, including the flood's, and is still unfair.
-    - text: Shorter message TTLs
+    - text: Shorter message TTLs, so the flood expires before it delays other tenants
       why: That drops jobs instead of scheduling them fairly.
   explanation: Fairness has to be designed. A single FIFO serves whoever enqueues most.
 - kind: fire
   prompt: Arrivals are permanently above consumer capacity. What does putting a queue in front achieve?
   choices:
-    - text: The backlog and wait times grow until a limit is hit — capacity must increase or load must be shed
+    - text: The backlog and waits grow until a limit is hit; add capacity or shed load
       correct: true
     - text: The queue eventually catches up on its own
       why: Without spare capacity, it never can.
-    - text: Throughput increases
+    - text: Throughput increases, because consumers can batch the queued messages more efficiently
       why: Queues don't add processing capacity.
-    - text: Latency stays constant
+    - text: Latency stays constant, because the queue absorbs the excess and releases it smoothly
       why: Waiting time grows with the backlog.
   explanation: Queues smooth temporary bursts. Sustained overload needs more capacity, less work, or explicit rejection.
 - kind: fire
   prompt: Why might a consumer prefetch of 1,000 messages cause uneven processing?
   choices:
-    - text: One consumer can hold many messages it can't process quickly, while idle consumers have nothing
+    - text: One consumer can hold many messages it can't process quickly while others sit idle
       correct: true
-    - text: Prefetch makes messages disappear
+    - text: Prefetch makes messages disappear from the queue's depth metric, so autoscaling stops adding consumers
       why: Unacknowledged messages are redelivered if the consumer dies. They don't vanish.
     - text: Brokers reject large prefetch values
       why: They allow them. That's how the problem arises.
-    - text: Prefetch reduces durability
+    - text: Prefetched messages are removed from disk, so a crash loses them and others must redo the work
       why: Durability is a separate concern.
   explanation: Prefetch trades round trips against hoarding. Tune it to the processing time per message and the number of consumers.
 - kind: fire
@@ -260,25 +260,25 @@ model: |
   choices:
     - text: Put urgent mail in a separate queue with dedicated or prioritised consumers
       correct: true
-    - text: Send marketing emails faster
+    - text: Send marketing emails faster by adding consumers until the queue clears
       why: Reset emails still wait in line behind the backlog.
-    - text: Delete the marketing emails
+    - text: Delete the marketing backlog whenever an urgent email is waiting behind it
       why: Those are legitimate jobs too.
-    - text: Use a longer visibility timeout
+    - text: Use a longer visibility timeout so slow marketing sends don't block the queue
       why: Visibility timeouts affect redelivery, not ordering between job types.
   explanation: Separate queues per priority class give predictable latency for urgent work.
 - kind: fire
   level: advanced
   prompt: A new analytics model needs to reprocess the last 14 days of events that other consumers have already handled. Which system makes this straightforward?
   choices:
-    - text: A retained log where the new consumer group starts from an offset 14 days back
+    - text: A retained log, where a new consumer group starts from an offset 14 days back
       correct: true
     - text: A work queue, where acknowledged messages have already been deleted
       why: Once acknowledged, messages are gone from a traditional work queue.
-    - text: Synchronous RPC
+    - text: Synchronous RPC calls that replay each request against the new model
       why: There's nothing to replay.
-    - text: An in-memory queue
-      why: There's no retention.
+    - text: An in-memory queue with a large buffer that keeps two weeks of messages
+      why: Memory isn't durable, and consumed messages are gone.
   explanation: Logs retain events independently of consumption, so new or repaired consumers can replay from any retained offset.
 - kind: fire
   type: numeric

@@ -85,39 +85,39 @@ Glue: **SQS** (queues with at-least-once delivery, visibility timeouts and DLQs;
   choices:
     - text: The request is denied; an explicit deny always wins
       correct: true
-    - text: It's allowed, because one policy allows it
+    - text: It's allowed, because allows from any attached policy are combined with OR
       why: Explicit denies override allows.
-    - text: The most recently attached policy wins
+    - text: The most recently attached policy wins, as later policies override earlier ones
       why: Attachment order doesn't matter.
   explanation: Default deny, explicit allow, and explicit deny overrides everything.
 - kind: check
   prompt: How should an ECS service get credentials to read from S3?
   choices:
-    - text: Through an IAM task role, which provides short-lived credentials automatically
+    - text: Through an IAM task role, which supplies short-lived credentials automatically
       correct: true
-    - text: Access keys stored in environment variables
+    - text: Access keys stored in environment variables in the task definition, rotated every 90 days
       why: Long-lived keys can leak and are hard to rotate.
-    - text: Root account credentials
-      why: Never use root for workloads.
+    - text: An IAM user's access keys, mounted into the container from Secrets Manager
+      why: Still long-lived keys to rotate and leak. Task roles issue short-lived ones.
   explanation: Roles avoid storing secrets at all.
 - kind: check
   prompt: App servers in a private subnet need to call an external payments API. What do they route through?
   choices:
     - text: A NAT gateway in a public subnet
       correct: true
-    - text: The internet gateway directly
+    - text: The internet gateway directly, via the subnet's default route
       why: Instances without public IPs can't use the internet gateway directly.
-    - text: A VPC endpoint
+    - text: A VPC interface endpoint for the payments API
       why: Endpoints reach AWS services, not arbitrary internet APIs.
   explanation: NAT allows outbound connections without allowing inbound ones.
 - kind: fire
   prompt: What's the difference between RDS Multi-AZ and a read replica?
   choices:
-    - text: Multi-AZ is a synchronous standby for failover; a read replica is asynchronous and serves reads
+    - text: Multi-AZ is a synchronous standby for failover; a read replica is async and serves reads
       correct: true
-    - text: They're the same thing under different names
+    - text: Multi-AZ spreads reads across zones; a read replica is a standby that takes over on failure
       why: They serve different purposes.
-    - text: Read replicas are synchronous
+    - text: Read replicas are synchronous and fail over automatically; Multi-AZ just copies backups
       why: They're asynchronous, so reads can be stale.
   explanation: Use Multi-AZ for availability and replicas for read scaling.
 - kind: fire
@@ -134,17 +134,17 @@ Glue: **SQS** (queues with at-least-once delivery, visibility timeouts and DLQs;
       correct: true
     - text: A network ACL
       why: NACLs are stateless and apply per subnet.
-    - text: A route table
-      why: Route tables direct traffic; they don't filter it.
+    - text: An AWS WAF web ACL
+      why: WAF filters HTTP at load balancers and CDNs, not instance traffic.
   explanation: Security groups track connections, so return traffic is allowed automatically.
 - kind: fire
   prompt: A bill shows a surprising "NAT Gateway - data processed" line. What's a typical fix?
   choices:
-    - text: Add VPC gateway endpoints for S3 and DynamoDB so that traffic bypasses the NAT
+    - text: Add VPC gateway endpoints for S3 and DynamoDB, so that traffic skips the NAT
       correct: true
-    - text: Move the database to a public subnet
+    - text: Move the database to a public subnet so its traffic avoids the NAT gateway entirely
       why: That's a security regression.
-    - text: Add a second NAT gateway
+    - text: Add a second NAT gateway in another zone, so traffic is split between them
       why: That adds cost; it doesn't reduce data processed.
   explanation: Gateway endpoints for S3 and DynamoDB are free and keep the traffic private.
 ```

@@ -137,10 +137,10 @@ fix: |
 ```predict
 prompt: A user with 40 million followers deletes a post one minute after publishing it, and the system used fan-out on write with full post bodies copied into timelines. What's the cost of honouring the delete?
 choices:
-  - One database delete
-  - Finding and removing (or rewriting) the copy in up to 40 million timelines — and until that finishes, followers still see the deleted post
-  - Nothing, because deleted posts disappear on their own
-  - Rebuilding the database
+  - One database delete, since every timeline copy references the same post row
+  - Removing or rewriting the copy in up to 40M timelines — and until that's done, followers still see it
+  - Nothing extra, because each copied post carries a TTL and expires from timelines on its own
+  - Rebuilding the timeline cache from the posts table, which takes a few minutes
 answer: 1
 reveal: |
   Copies must be chased down. Storing IDs only and filtering at hydration makes the delete take effect immediately for everyone (the post lookup returns "deleted"), with timeline cleanup done lazily. This is one more reason big accounts are pulled at read time in hybrid designs.
@@ -212,25 +212,25 @@ model: |
 - kind: check
   prompt: Why is fan-out on read expensive for a typical social app?
   choices:
-    - text: Every feed load queries all followed accounts and merges, and reads vastly outnumber writes
+    - text: Every feed load queries all followed accounts and merges, and reads far outnumber writes
       correct: true
-    - text: Posting becomes slow
+    - text: Posting becomes slow, because each new post must be copied into every follower's timeline
       why: Posting is a single write under pull.
-    - text: Timelines take too much storage
+    - text: Timelines take too much storage, because each follower keeps a copy of every post
       why: Pull doesn't store per-user timelines.
-    - text: It can't show celebrity posts
+    - text: It can't show celebrity posts, since their followers' feeds would need too many lookups
       why: It shows them fine. Reads are just costly.
   explanation: Pull moves work to the read path, which is the hot path in social products.
 - kind: fire
   prompt: A celebrity deletes a post that was fanned out (as an ID) to millions of timelines. How does an ID-based design make the delete take effect immediately?
   choices:
-    - text: Hydration looks up each post, sees it's deleted, and drops it; timeline IDs are cleaned up lazily
+    - text: Hydration looks up each post, sees it's deleted and drops it; timeline IDs are cleaned up lazily
       correct: true
-    - text: Every timeline is rewritten synchronously before the delete returns
+    - text: Every follower timeline is rewritten synchronously before the delete is acknowledged
       why: That's slow and unnecessary with ID-only timelines.
-    - text: The delete only applies to new readers
+    - text: The delete only applies to followers who open the app after the fan-out job reruns
       why: Hydration applies it to every reader immediately.
-    - text: Deleted posts can't be removed from feeds
+    - text: Deleted posts stay in feeds until each timeline entry ages out of its cache TTL
       why: They can, through read-time filtering.
   explanation: Indirection through IDs turns a massive fan-out update into a single source-of-truth change.
 - kind: fire
@@ -238,9 +238,9 @@ model: |
   choices:
     - text: Recent posts from followed accounts above the follower threshold
       correct: true
-    - text: All posts from everyone followed
+    - text: All posts from everyone the reader follows, merged by time
       why: That's pure pull.
-    - text: Posts from inactive users
+    - text: Posts from accounts the reader rarely interacts with, which skip fan-out to save writes
       why: Inactivity concerns readers, not authors.
     - text: Only the reader's own posts
       why: Unrelated.
@@ -250,24 +250,24 @@ model: |
   choices:
     - text: Skip fan-out to inactive users and build their timeline on demand when they return
       correct: true
-    - text: Delete their accounts
+    - text: Delete their stored timelines and stop serving their feeds until they reactivate by email
       why: That's not a scaling strategy.
-    - text: Push more posts to them so they come back
+    - text: Fan out to them less often, in a nightly batch, so their timelines are still ready
       why: That's wasted writes.
-    - text: Use a larger cache
+    - text: Move their timelines to a larger, cheaper cache tier so the inserts cost less
       why: That just stores more wasted timelines.
   explanation: Don't precompute what nobody will read. Pull is a fine fallback for rare readers.
 - kind: fire
   level: advanced
   prompt: An account goes private. Precomputed timelines of non-approved followers still contain its post IDs. How should the feed stay correct?
   choices:
-    - text: Enforce visibility at hydration time on every read, and clean up stale IDs asynchronously
+    - text: Enforce visibility at hydration on every read, and clean up stale IDs asynchronously
       correct: true
-    - text: Trust that precomputed timelines are always authorised
+    - text: Trust precomputed timelines, since fan-out checked visibility when each post was written
       why: Relationships and privacy change after fan-out.
     - text: Rebuild every timeline synchronously before saving the privacy change
       why: That's too slow, and read-time checks are needed anyway.
-    - text: Ignore it until the posts age out
+    - text: Leave the IDs until they age out, since followers saw the posts while they were public
       why: That leaks private content.
   explanation: Authorisation must be checked when content is shown, not only when it was fanned out.
 - kind: fire

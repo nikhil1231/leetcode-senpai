@@ -84,10 +84,10 @@ fix: |
 ```predict
 prompt: You asked the AI to fix a flaky date-parsing bug. It replies "Fixed! I ran the tests and they all pass now." In this interview the AI can only chat; it can't execute code. What does that tell you?
 choices:
-  - The fix is verified, so move on
-  - The claim is invented; run the tests yourself before believing any part of the answer
-  - The AI must have hidden tool access
-  - Ask it to run them again to be sure
+  - The fix is verified, so move on to the next phase of the round
+  - The claim is invented; run the tests yourself before trusting the answer
+  - The AI must have hidden tool access that the interview platform provides
+  - Ask it to run them again and paste the output, to be sure
 answer: 1
 reveal: |
   A chat-only assistant can't run anything, so "I ran the tests" is a fluent fabrication. The code may still be right, but the claim is worth nothing. This is the general rule: the AI's report of verification is never verification. Only checks *you* ran count, and in the walkthrough, report only checks you actually executed. Saying "it claimed the tests pass, but it can't run code, so I ran them" is a good moment to narrate.
@@ -113,31 +113,31 @@ model: |
 - kind: check
   prompt: Which prompt gives you the most control in a debugging task?
   choices:
-    - text: '"In retry.py, the loop calls fn one time too few when attempts=3. Change only the range so fn is called exactly attempts times."'
+    - text: '"In retry.py the loop calls fn once too few when attempts=3. Change only the range."'
       correct: true
-    - text: '"The retry tests fail. Fix retry.py."'
+    - text: '"The retry tests fail. Fix retry.py, and make sure all of them pass."'
       why: It works sometimes, but the design decision and the scope are now the AI's.
-    - text: '"Rewrite retry.py to be more robust."'
+    - text: '"Rewrite retry.py to be more robust, handling every edge case you can think of."'
       why: Unbounded; you'll get a large diff that hides the real fix.
   explanation: Name the file, the behaviour and the scope.
 - kind: check
   prompt: The AI fixes a failing test by wrapping the call in try/except and returning an empty list. What's the problem?
   choices:
-    - text: The failure is now silent; the root cause is hidden, not fixed
+    - text: The failure is now silent: the root cause is hidden, not fixed
       correct: true
-    - text: try/except is slow in Python
+    - text: try/except adds overhead to every call, slowing down the hot path
       why: Performance isn't the concern here.
-    - text: Nothing, as long as the tests pass
+    - text: Nothing, as long as the full test suite passes afterwards
       why: Passing tests can hide a swallowed bug.
   explanation: Error-swallowing is one of the most common AI patch failures.
 - kind: check
   prompt: The AI explains an unfamiliar module, and its summary says function A calls B. What should you do before relying on it?
   choices:
-    - text: Check the summary against the code, at least for the parts you'll act on
+    - text: Check the summary against the code, at least what you'll act on
       correct: true
-    - text: Nothing; summaries are reliable
+    - text: Nothing; summaries of code that's in its context are reliable
       why: Confident wrong summaries are common in unfamiliar code.
-    - text: Ask a second model
+    - text: Ask a second model to summarise the module and compare the two
       why: Two models can share the same mistake; the code is the source of truth.
   explanation: Use the AI to read faster, and verify what you act on.
 - kind: fire
@@ -145,7 +145,7 @@ model: |
   choices:
     - text: Special-casing the test
       correct: true
-    - text: Scope creep
+    - text: Scope creep in the patch
       why: That's changing unrelated code.
     - text: Error swallowing
       why: That's hiding failures behind try/except.
@@ -153,9 +153,9 @@ model: |
 - kind: fire
   prompt: After two prompts that haven't helped, what's usually best?
   choices:
-    - text: Stop; revisit the hypothesis or type the small fix yourself
+    - text: Stop; revisit the hypothesis, or type the small fix yourself
       correct: true
-    - text: Ask for a full rewrite
+    - text: Ask for a full rewrite of the function, so the bug can't survive
       why: Rewrites compound the problem.
     - text: Switch to a bigger model and repeat the prompt
       why: The problem is usually the hypothesis or the prompt, not the model.
@@ -163,11 +163,11 @@ model: |
 - kind: fire
   prompt: The AI says it ran the tests. It's a chat-only assistant. What's true?
   choices:
-    - text: The claim is fabricated; only tests you run count as verification
+    - text: The claim is made up; only tests you run count as verification
       correct: true
-    - text: It ran them in its sandbox
+    - text: It ran them in a sandbox the platform gives it behind the chat
       why: A chat-only assistant has no way to execute code.
-    - text: The tests pass if it says so
+    - text: The tests probably pass, since it has seen the code and the tests
       why: Its report of verification is never verification.
   explanation: Report only checks you executed.
 - kind: fire

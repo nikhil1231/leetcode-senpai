@@ -34,10 +34,10 @@ The case: authenticated owners create, update and disable short links; visitors 
 ```predict
 prompt: Which single requirement most constrains the read-path design?
 choices:
-  - 20 writes per second
+  - 20 writes per second, all needing unique short codes
   - '"Changes take effect within 60 seconds everywhere"'
-  - 10 million links
-  - Custom aliases
+  - 10 million links that must stay resolvable for years
+  - Custom aliases chosen by users at creation time
 answer: 1
 reveal: |
   The read rate pushes you towards caching, and the freshness bound limits *how* you cache: every layer — CDN, application cache, browser — must add up to at most 60 seconds of staleness, or be explicitly invalidated. It rules out permanent 301 redirects cached by browsers, and long CDN TTLs without purges. Ten million links and 20 writes/s are, by contrast, small.
@@ -262,13 +262,13 @@ explain: |
 - kind: check
   prompt: Why should the redirect use 302 (or 307) rather than 301?
   choices:
-    - text: Browsers may cache 301s indefinitely, so later updates and disables wouldn't reach those visitors
+    - text: Browsers may cache 301s indefinitely, so later edits and disables never reach them
       correct: true
-    - text: 302 is faster to process
+    - text: 302 is faster for browsers to process, because it skips the permanent-redirect cache lookup
       why: Speed is identical. Cacheability is the difference.
-    - text: 301 isn't supported by browsers
+    - text: 301 isn't followed by mobile browsers when the target is on a different domain
       why: It is supported.
-    - text: 302 is required for HTTPS
+    - text: 302 is required when redirecting from an HTTP short link to an HTTPS target
       why: Both work over HTTPS.
   explanation: Temporary redirects plus explicit Cache-Control keep freshness under your control.
 - kind: check
@@ -294,23 +294,23 @@ explain: |
 - kind: check
   prompt: 10M links at about 500 bytes each. What does the storage estimate imply?
   choices:
-    - text: About 5 GB — one database node with a replica is plenty; no sharding needed
+    - text: About 5 GB: one database node with a replica is plenty, no sharding needed
       correct: true
-    - text: About 5 TB — shard immediately
+    - text: About 5 TB: shard from day one, since one node can't hold it with indexes
       why: That's off by 1,000×.
-    - text: Too much for Postgres
+    - text: About 50 GB: too much for one Postgres node once indexes and replicas are added
       why: It's a small dataset.
-    - text: It must live in Redis only
-      why: Redis is a cache here. The durable source stays in Postgres.
+    - text: About 500 MB: it fits in Redis memory, so a database isn't needed at all
+      why: The estimate is 5 GB, and Redis is a cache here. The durable source stays in Postgres.
   explanation: Estimates justify the simple design and redirect effort to the read path and freshness.
 - kind: fire
   prompt: Click analytics are recorded synchronously in the redirect handler. What's the problem?
   choices:
     - text: Analytics latency and outages become redirect latency and outages
       correct: true
-    - text: Clicks are counted twice
+    - text: Clicks are counted twice, because browsers retry the redirect if analytics is slow
       why: Not inherently.
-    - text: Redirects can't include analytics
+    - text: Redirect responses can't carry analytics data, so the clicks are never recorded
       why: They can, asynchronously.
     - text: The CDN blocks analytics
       why: CDN-cached redirects simply aren't seen by the origin — a separate consideration.
@@ -318,11 +318,11 @@ explain: |
 - kind: fire
   prompt: Why cache "not found" results for unknown codes?
   choices:
-    - text: Bots requesting random codes would otherwise send every request to the database (cache penetration)
+    - text: Bots requesting random codes would otherwise send every request to the database
       correct: true
-    - text: To make 404s faster to render
+    - text: To make 404 pages render faster, since the error template is expensive to build
       why: That's a side benefit. Protecting the database is the point.
-    - text: Because unknown codes become valid automatically
+    - text: Because unknown codes are often created moments later, so caching the miss saves a write
       why: They don't.
     - text: The CDN requires it
       why: It doesn't.
@@ -330,26 +330,26 @@ explain: |
 - kind: fire
   prompt: Redis fails during peak. What protects Postgres from 20,000 lookups per second?
   choices:
-    - text: The CDN absorbs hot links, per-instance caches absorb more, and the primary plus replica are sized to survive the remainder briefly
+    - text: The CDN absorbs hot links, local caches absorb more, and the primary plus replica can take the rest briefly
       correct: true
-    - text: Nothing is needed — Postgres scales infinitely
+    - text: Nothing is needed — Postgres handles 20,000 indexed lookups a second on any node
       why: It has limits.
-    - text: Return errors for all redirects until Redis returns
+    - text: Return errors for all redirects until Redis returns, so Postgres is never overloaded
       why: That's an unnecessary full outage.
-    - text: Switch to 301 redirects
+    - text: Switch to 301 redirects so browsers cache links and stop asking the servers
       why: That breaks freshness and doesn't help immediately.
   explanation: Layered caches and capacity planning for the miss path keep the service up while the cache recovers.
 - kind: fire
   level: advanced
   prompt: An interviewer adds "disables must take effect immediately". What's the best set of changes?
   choices:
-    - text: Purge the CDN and delete the Redis key on disable, prevent refill races (versioned fills or leases), and add a delayed second delete
+    - text: Purge the CDN and Redis on disable, block refill races (versioned fills or leases), then delete again later
       correct: true
-    - text: Set every TTL to 1 second
+    - text: Set every TTL to 1 second, at the CDN and in Redis, so disables apply almost at once
       why: That destroys hit rates and still allows a second of staleness, plus refill races.
-    - text: Remove all caches
+    - text: Remove the CDN and Redis entirely, so every redirect reads the database directly
       why: Then the database takes 20k/s directly.
-    - text: Use 301 redirects
+    - text: Switch to 301 redirects and send a cache-busting header whenever a link is disabled
       why: Permanent redirects are cached longer, not shorter.
   explanation: Immediate disables need reliable invalidation at every layer plus race protection. The TTL remains only a safety net.
 - kind: fire

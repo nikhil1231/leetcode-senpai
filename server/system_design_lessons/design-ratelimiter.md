@@ -28,8 +28,8 @@ case: ratelimiter
 ```predict
 prompt: Each of the 200 gateways enforces "100 req/s per key" with its own in-memory counter, and a client's requests are spread evenly by the load balancer. What does the client effectively get?
 choices:
-  - 100 req/s — the limit is per key
-  - Up to about 20,000 req/s — each gateway allows 100 independently
+  - 100 req/s — the limit is per key, so every gateway counts against the same budget
+  - About 20,000 req/s — each gateway allows 100 independently
   - 0.5 req/s — the limit is divided by the gateways automatically
   - It depends only on the client's IP
 answer: 1
@@ -228,13 +228,13 @@ explain: |
 - kind: check
   prompt: Why are both sliding-window counter keys for one API key forced into the same Redis Cluster slot (e.g. with {key} hash tags)?
   choices:
-    - text: The Lua script must read and update both atomically on a single shard
+    - text: The Lua script must read and update both atomically on one shard
       correct: true
     - text: To save memory
       why: Memory use is the same.
-    - text: Redis requires all keys in one slot
+    - text: Redis Cluster requires every key touched by one client to live in one slot
       why: Only multi-key operations and scripts need it.
-    - text: To make them expire together
+    - text: To make both windows expire together when the API key goes quiet
       why: TTLs are set per key anyway.
   explanation: Multi-key atomic scripts in Redis Cluster need every key in the same hash slot.
 - kind: check
@@ -253,47 +253,47 @@ explain: |
 - kind: check
   prompt: Why should gateways cache rate-limit rules in memory instead of reading them per request?
   choices:
-    - text: Reading a config store 2M times a second adds latency and makes it a single point of failure
+    - text: Reading a config store 2M times a second adds latency and a single point of failure
       correct: true
     - text: Rules never change
       why: They change. Pushing updates keeps the caches fresh.
-    - text: Databases can't store rules
+    - text: Rules are code, so they must be deployed with the gateway binary rather than stored
       why: They can — just don't query them on the hot path.
-    - text: To enforce rules differently on each gateway
+    - text: So each gateway can tune its own copy of the rules to the traffic it happens to see
       why: The goal is consistency across gateways.
   explanation: Hot-path configuration should be local, with push-based updates and polling as a backup.
 - kind: fire
   prompt: What's shadow mode for a new rate limit?
   choices:
-    - text: Evaluating and logging "would reject" decisions without enforcing, to see the impact before turning it on
+    - text: Logging "would reject" decisions without enforcing them, to see the impact first
       correct: true
     - text: Applying the limit only at night
       why: That's scheduling, not shadowing.
-    - text: Hiding the limit from customers
+    - text: Hiding the limit from customers, so they can't tune their clients to sit just under it
       why: Limits should be documented.
-    - text: Running the limiter on replicas
+    - text: Running the limiter on Redis replicas, so the primary's load isn't affected during rollout
       why: Unrelated.
   explanation: Shadowing prevents self-inflicted outages from mistuned limits.
 - kind: fire
   prompt: One API key generates 30% of traffic and overloads its Redis shard. What helps?
   choices:
-    - text: Pre-aggregate the key's increments locally on each gateway, or split its counter across sub-keys
+    - text: Pre-aggregate the key's increments per gateway, or split its counter across sub-keys
       correct: true
-    - text: Add more shards
+    - text: Add more shards, so that key's share of the cluster's load falls to a manageable level
       why: The key still lives on one shard.
     - text: Remove the limit for that key
       why: That removes protection from your biggest consumer.
-    - text: Switch to a fixed window
+    - text: Switch that key to a fixed window, which needs only one counter instead of two
       why: Same hot key, worse accuracy.
   explanation: Hot keys need key-specific handling, trading a little accuracy for spreading load.
 - kind: fire
   prompt: How do most systems enforce a "global" limit across several regions?
   choices:
-    - text: Split the budget into per-region shares based on recent traffic, and rebalance periodically
+    - text: Split the budget into per-region shares by recent traffic, and rebalance periodically
       correct: true
-    - text: A cross-region synchronous counter on every request
+    - text: A cross-region synchronous counter, checked by every gateway before each request
       why: That adds tens of milliseconds and a cross-region dependency to every request.
-    - text: Ignore other regions
+    - text: Enforce the full global limit separately in each region, since traffic rarely overlaps
       why: Each region would allow the full limit.
     - text: Only allow traffic in one region
       why: That defeats multi-region.
@@ -302,13 +302,13 @@ explain: |
   level: advanced
   prompt: Why can the in-process local-fallback mode let a client exceed its limit, and why is that acceptable briefly?
   choices:
-    - text: Each gateway enforces only its share and can't see the others; a small, temporary overshoot is better than an outage or zero protection
+    - text: Each gateway enforces only its share, blind to the others; a brief overshoot beats an outage
       correct: true
-    - text: It can't exceed the limit
+    - text: It can't exceed the limit, since each gateway's share adds up exactly to the total
       why: Uneven traffic can exceed a per-gateway share.
-    - text: Local buckets have no limit
+    - text: Local buckets have no limit, because the rules are only stored in Redis
       why: They do, scaled to a share.
-    - text: It's never acceptable
+    - text: It's never acceptable: the gateway should reject all traffic until Redis recovers
       why: For capacity-protection limits, brief approximation is the standard trade-off.
   explanation: Graceful degradation of accuracy beats either failing open completely or failing closed completely.
 - kind: fire

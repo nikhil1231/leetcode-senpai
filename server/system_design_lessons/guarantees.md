@@ -211,7 +211,7 @@ model: |
       why: That's an SLO. It may be missed by a budgeted amount.
     - text: The system handles 50,000 requests per minute
       why: That's a throughput target.
-    - text: Location updates reach riders within 2 s, p95
+    - text: Location updates always reach riders within 2 s at p95
       why: That's a latency objective with a percentile.
   explanation: An invariant must hold for every operation, including concurrent and retried ones. It needs a correctness mechanism, not just capacity.
 - kind: check
@@ -239,25 +239,25 @@ model: |
 - kind: check
   prompt: In a seat-booking design, why say that browsing may be 10 seconds stale but confirmation must be authoritative?
   choices:
-    - text: It allows heavy caching on the read path while concentrating coordination only on the write that protects the invariant
+    - text: It allows heavy caching for reads while coordination is spent only on the write that protects the invariant
       correct: true
-    - text: It means the system doesn't need a database for browsing
+    - text: It means browsing can be served from a CDN alone, so no database is needed for the read path
       why: Browsing still reads data, possibly from a cache or replica fed by the database.
-    - text: Stale browsing guarantees there will be no double bookings
+    - text: Stale browsing spreads users across seats, which guarantees there will be no double bookings
       why: Staleness has nothing to do with double booking. That's guaranteed at confirmation.
-    - text: It makes the system eventually consistent everywhere
+    - text: It makes the system eventually consistent everywhere, which is simpler to operate at scale
       why: The point is that guarantees differ per operation. Confirmation stays strongly consistent.
   explanation: Per-operation guarantees are how real systems get both scale and correctness. Relax where users can tolerate it; coordinate where an invariant is at stake.
 - kind: fire
   prompt: The interviewer won't give a traffic number. What's the best move?
   choices:
-    - text: Propose a reasonable estimate, state it as an assumption, and note how the design would change at 10× more or less
+    - text: Propose a reasonable estimate, state it as an assumption, and say what changes at 10× more or less
       correct: true
-    - text: Design for a billion requests per second to be safe
+    - text: Design for the largest scale you can imagine, so the system never needs re-architecting
       why: Over-design adds complexity you can't justify, and it hides your judgement.
-    - text: Skip capacity entirely
+    - text: Skip capacity and focus on correctness, since the interviewer clearly doesn't care about it
       why: Without a workload you can't size anything or justify components.
-    - text: Keep asking until they give a number
+    - text: Keep asking until they give a number, since the design depends heavily on it
       why: It wastes time and signals that you can't make assumptions.
   explanation: Making explicit assumptions shows judgement and keeps the conversation moving. Sensitivity ("at 10× this changes") shows depth.
 - kind: fire
@@ -265,11 +265,11 @@ model: |
   choices:
     - text: To get an early warning and time to react before contractual penalties apply
       correct: true
-    - text: Because SLAs aren't measured
+    - text: Because SLAs are measured by customers, who usually report worse numbers than the team sees
       why: SLAs are measured, and breaching them has consequences.
-    - text: To make dashboards look worse
-      why: The point is a safety margin, not looks.
-    - text: Because SLOs only apply to internal users
+    - text: To keep the error budget small so teams release less often and take fewer risks
+      why: The aim is an early warning before the SLA is breached, not slowing releases.
+    - text: Because SLOs only cover internal callers, who need better service than external customers
       why: SLOs describe user-facing service quality too.
   explanation: The gap between SLO and SLA is a buffer. You notice and respond to degradation while there's still room before the contract is breached.
 - kind: fire
@@ -290,26 +290,26 @@ model: |
 - kind: fire
   prompt: How would you enforce "a balance never goes negative" when withdrawals can run concurrently?
   choices:
-    - text: A conditional update (`UPDATE … SET balance = balance - x WHERE id = ? AND balance >= x`) or a check constraint, at the database
+    - text: A conditional update (`… SET balance = balance - x WHERE id = ? AND balance >= x`) or a check constraint
       correct: true
-    - text: Read the balance, check it in application code, then write the new balance
+    - text: Read the balance, check it in application code, then write the new balance in one request
       why: Two concurrent withdrawals can both read the old balance and both pass the check.
-    - text: Show users their balance in the UI before they withdraw
+    - text: Show users their balance in the UI and disable the withdraw button when it is too low
       why: Display has no effect on concurrent writes.
-    - text: Run withdrawals at night
+    - text: Run withdrawals in a nightly batch, one at a time, so they can't overlap
       why: Scheduling doesn't stop concurrency.
   explanation: Invariants under concurrency need the check and the write to be one atomic operation at the source of truth.
 - kind: fire
   level: advanced
   prompt: A team sets an availability SLI as "the health-check endpoint returns 200". What's the main weakness?
   choices:
-    - text: The health check can succeed while real user requests fail, so the SLI doesn't reflect user experience
+    - text: The health check can pass while real user requests fail, so the SLI misses user experience
       correct: true
-    - text: Health checks are too expensive to run
+    - text: Health checks are too expensive to run often enough, since each one queries the database
       why: They're cheap. The problem is what they measure, not what they cost.
-    - text: It will report lower availability than reality
+    - text: It will report lower availability than reality, because health checks time out under load
       why: It usually reports *higher* availability, because it misses real failures.
-    - text: Health checks can't be measured over 30 days
+    - text: Health checks run too rarely to give a meaningful availability figure over a 30-day window
       why: They can. The problem is what they measure.
   explanation: Good SLIs measure real user requests (good events ÷ valid events) near the user. Synthetic checks complement them but miss partial failures, bad data and dependency errors.
 ```

@@ -223,9 +223,9 @@ Modern in-process caches such as Caffeine use **W-TinyLFU**: a small recency win
 ```predict
 prompt: A nightly analytics job iterates over all 5M products, reading each one once through the same LRU cache that serves the website. The site's p99 latency spikes every morning. Why?
 choices:
-  - The analytics job holds locks on the products table
-  - The scan touched millions of one-off keys, evicting the hot working set; the morning traffic misses until it is rebuilt
-  - Redis forgets everything at midnight because TTLs reset daily
+  - The analytics job holds read locks on the products table that block the morning's writes
+  - The scan's one-off keys evicted the hot working set, so morning traffic misses until it rebuilds
+  - Redis forgets everything at midnight because TTLs are counted from the start of each day
   - LRU caches cannot hold more than one million keys
 answer: 1
 reveal: |
@@ -353,13 +353,13 @@ model: |
   level: advanced
   prompt: A nightly batch job reads every one of 5M products once through the same `allkeys-lru` Redis cache used by the website. Each morning the site's p99 latency spikes for an hour. What is the best explanation and fix?
   choices:
-    - text: The scan evicts the hot working set (scan pollution); bypass the cache for the batch job or use an LFU-style policy
+    - text: The scan evicts the hot working set; bypass the cache for the batch or use an LFU-style policy
       correct: true
     - text: Redis is single-threaded, so the batch job blocks it; add more Redis threads
       why: The latency spike persists after the job finishes — that points to lost cache contents, not contention during the job.
     - text: The batch job's reads extend every key's TTL, so stale data is served in the morning
       why: Reads don't extend TTLs in Redis, and staleness wouldn't show up as a latency spike.
-    - text: LRU caches cannot evict efficiently above one million keys
+    - text: LRU bookkeeping can't keep up above a million keys; shard Redis so each node holds fewer
       why: Redis's approximated LRU samples a few keys per eviction, so it scales fine. The problem is *what* it evicts, not how fast.
   explanation: Under LRU a one-pass scan makes millions of cold keys look recently used and pushes out genuinely hot entries. Morning traffic then misses until the working set is rebuilt. Keep batch reads out of the serving cache, or use a frequency-aware policy (LFU, W-TinyLFU) that resists scans.
 - kind: fire
@@ -372,23 +372,23 @@ model: |
 - kind: fire
   prompt: A team switches from cache-aside to write-behind to speed up writes. What new risk must they accept or mitigate?
   choices:
-    - text: Writes acknowledged to clients can be lost if a cache node fails before flushing to the database
+    - text: Acknowledged writes can be lost if a cache node fails before flushing to the database
       correct: true
     - text: Reads become slower because every read now goes to the database
       why: In write-behind, reads are served from the cache. The change affects where writes are acknowledged.
-    - text: The cache can no longer evict keys
+    - text: The cache can no longer evict keys until every pending write has been flushed
       why: Eviction still works, though dirty entries must be flushed before they are evicted.
-    - text: Database writes become synchronous with every request
+    - text: Every request now waits on a database write, so the latency gain disappears
       why: The opposite — write-behind makes database writes asynchronous, which is both its benefit and its risk.
   explanation: Write-behind moves the acknowledgement point into the cache. Unless the cache is itself durable and replicated, a crash between acknowledgement and flush loses data the client believes is saved.
 - kind: fire
   prompt: A scraper requests millions of random, non-existent product IDs. Each request misses the cache and queries the database. What is the most targeted mitigation?
   choices:
-    - text: Cache "not found" results with a short TTL, or check IDs against a Bloom filter of existing products
+    - text: Cache "not found" results with a short TTL, or check IDs with a Bloom filter
       correct: true
-    - text: Increase the TTL on existing products to 24 hours
+    - text: Raise the TTL on existing products to 24 hours so far fewer requests reach the database
       why: Existing products aren't the problem — the missing keys never get cached, so their TTL is irrelevant.
-    - text: Switch the eviction policy to LFU
+    - text: Switch the eviction policy to LFU so popular products stay cached during the scrape
       why: Eviction decides what leaves the cache. These keys never enter it, so the policy doesn't help.
     - text: Add more read replicas so the database can absorb the misses
       why: That buys capacity but leaves an unbounded amplification path open to anyone who can generate IDs.
@@ -397,11 +397,11 @@ model: |
   level: advanced
   prompt: You add a 10-second in-process L1 cache on each of 40 API servers in front of Redis. What is the main new correctness problem?
   choices:
-    - text: An invalidation in Redis doesn't reach the 40 local copies, so servers can serve old values for up to the L1 TTL
+    - text: A Redis invalidation doesn't reach the 40 local copies, stale for up to 10 s
       correct: true
-    - text: Redis will evict more keys because it receives fewer reads
+    - text: Redis evicts more keys, because fewer reads make every key look cold to LRU
       why: Fewer reads means less load on Redis. Eviction depends on memory pressure, not read volume.
-    - text: The L1 cache makes the database the bottleneck
+    - text: Each L1 refill goes to the database directly, so the database becomes the bottleneck
       why: An extra cache layer reduces traffic further down the stack, not more.
     - text: In-process caches cannot use LRU
       why: They can, and libraries like Caffeine use even better admission policies.

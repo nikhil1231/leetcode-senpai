@@ -93,7 +93,7 @@ choices:
   - One transaction blocks until the other finishes, so the rule holds
   - Both see a count of 2, both set themselves off call, and nobody is on call
   - The database detects the conflict because they updated the same row
-  - Snapshot isolation prevents all anomalies
+  - Snapshot isolation prevents this, because each sees a consistent view of the table
 answer: 1
 reveal: |
   Each transaction reads the same snapshot (2 on call) and writes a **different** row (its own). There's no write–write conflict for snapshot isolation to catch, so both commit and the invariant breaks. This is **write skew**. Fixes: `SERIALIZABLE` isolation (Postgres's SSI detects the read–write dependency and aborts one, which the app retries), explicitly locking the rows the decision depends on (`SELECT … FOR UPDATE` on all on-call doctors), or materialising the conflict on a single row (an `on_call_count` row both must update).
@@ -239,23 +239,23 @@ model: |
 - kind: fire
   prompt: A transaction charges a card through an external API, then hits an error and rolls back. What happens to the charge?
   choices:
-    - text: The charge stands — database rollbacks don't undo external side effects
+    - text: The charge stands, since database rollbacks don't undo external side effects
       correct: true
-    - text: The charge is reversed automatically
+    - text: The charge is reversed automatically by the provider after the connection closes
       why: The payment provider knows nothing about your database transaction.
     - text: The charge never happened, because it ran inside a transaction
       why: The API call completed, whatever happens to your transaction afterwards.
-    - text: The database retries the charge
+    - text: The database retries the charge when the transaction is retried
       why: Databases don't retry external calls.
   explanation: Keep external effects out of transactions. Commit intent (e.g. an outbox row), then perform the effect idempotently, with compensations if needed.
 - kind: fire
   prompt: How do you prevent most deadlocks between transactions that update several rows?
   choices:
-    - text: Acquire locks in a consistent order (for example by primary key) and keep transactions short
+    - text: Acquire locks in a consistent order (e.g. by primary key) and keep transactions short
       correct: true
-    - text: Use longer lock timeouts
+    - text: Use longer lock timeouts so transactions wait for each other instead of failing
       why: That only makes deadlocked transactions wait longer before one is aborted.
-    - text: Disable deadlock detection
+    - text: Disable deadlock detection, so no transaction is ever aborted
       why: Then deadlocked transactions would hang forever.
     - text: Run all transactions at Read Uncommitted
       why: Isolation level doesn't stop opposite lock orders. Writes still take locks.
@@ -263,14 +263,14 @@ model: |
 - kind: fire
   prompt: Why should applications using SERIALIZABLE isolation wrap transactions in retry logic?
   choices:
-    - text: The database aborts some transactions with serialisation failures to keep the history serialisable, and they must be re-run
+    - text: The database aborts some transactions with serialisation failures, and they must be re-run
       correct: true
     - text: Serializable transactions never commit the first time
       why: Most commit. Aborts happen under conflicting access patterns.
-    - text: Retries make serializable faster
+    - text: Retries let the database skip locking, which makes SERIALIZABLE faster
       why: Retries are a correctness requirement, not an optimisation.
-    - text: Serializable doesn't support COMMIT
-      why: It does.
+    - text: SERIALIZABLE transactions can't commit while another one is open on the same table
+      why: They can. Conflicts are detected and some transactions are aborted.
   explanation: Optimistic serialisable implementations resolve dangerous interleavings by aborting one transaction. The application re-runs it, now seeing the other's effects.
 - kind: fire
   level: advanced
@@ -278,11 +278,11 @@ model: |
   choices:
     - text: An exclusion constraint on (room_id WITH =, tstzrange(start, end) WITH &&)
       correct: true
-    - text: A unique index on (room_id, start)
+    - text: A unique index on (room_id, start), so two bookings can't begin together
       why: That only stops identical start times. Overlapping ranges with different starts get through.
-    - text: Running the check twice
+    - text: Running the check again just before commit, inside the same transaction
       why: The race still exists between the checks and the inserts.
-    - text: Read Committed isolation
+    - text: Read Committed isolation with SELECT … FOR UPDATE on the existing bookings
       why: This is write skew, which Read Committed doesn't prevent.
   explanation: Exclusion constraints let the database reject overlapping ranges for every concurrent writer, turning write skew into a constraint violation.
 - kind: fire

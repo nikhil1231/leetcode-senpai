@@ -148,10 +148,10 @@ Clients heartbeat every ~30 s; presence entries expire after ~60 s without one. 
 ```predict
 prompt: A 1,000-member group receives 50 messages/s during a live event. With per-user channels, each message is published to every member's channel. What's the delivery load, and what changes for very large channels?
 choices:
-  - 50 deliveries/s — groups are cheap
-  - 50,000 member deliveries/s for this one group; very large channels switch to per-channel subscriptions, where each gateway subscribes once and fans out to its local members
-  - Impossible — groups can't exceed 100 members
-  - The database must store 1,000 copies of each message
+  - 50 deliveries/s — the broker sends one copy per message and every member's client reads it
+  - 50,000 deliveries/s for this group; huge channels switch to one subscription per gateway, fanned out locally
+  - 1,000 deliveries/s — one per member, since messages in a burst are batched together
+  - The database must store 1,000 copies of each message, one per member's inbox, at 50,000 writes/s
 answer: 1
 reveal: |
   Per-user fan-out multiplies by group size. For big groups or channels, publish once per **channel**, and let each gateway holding members subscribe once and deliver to its local sockets, so cross-node traffic scales with the number of gateways, not members. Storage stays one copy per message either way. Members fetch from the conversation's log, not from per-user copies.
@@ -244,9 +244,9 @@ explain: |
   choices:
     - text: A server-assigned per-conversation sequence number
       correct: true
-    - text: The sender device's timestamp
+    - text: The sender device's timestamp, corrected by NTP before sending
       why: Clocks are skewed and can collide.
-    - text: The order in which recipients receive them
+    - text: The order in which each recipient's device receives them over its socket
       why: That varies per recipient.
     - text: Alphabetical order of message IDs
       why: Random IDs carry no order.
@@ -274,62 +274,62 @@ explain: |
 - kind: check
   prompt: Why shouldn't presence updates be broadcast to all of a user's contacts?
   choices:
-    - text: Presence churns constantly and is low value; fan it out only to viewers who currently have that contact on screen
+    - text: Presence churns constantly; send it only to viewers who have that contact on screen
       correct: true
-    - text: Presence is private by law
+    - text: Presence is personal data, so privacy law forbids sharing it with contacts by default
       why: Privacy settings matter, but the scaling issue is the main reason.
     - text: Presence can't be stored
       why: It's stored with TTLs.
-    - text: Contacts don't care
+    - text: Contacts rarely look at presence, so nobody would notice if it were wrong
       why: They care — but only when looking.
   explanation: Treat presence like telemetry. Subscribe on view and throttle updates.
 - kind: fire
   prompt: A sender's ack is lost and the client resends. What prevents a duplicate message?
   choices:
-    - text: The client-generated message_id; the server finds it already stored and returns the original seq
+    - text: The client-generated message_id; the server finds it stored and returns the first seq
       correct: true
-    - text: The server's clock
+    - text: The server's clock: a resend within a second of the original is treated as a duplicate
       why: Clocks don't identify messages.
-    - text: TCP retransmission
+    - text: TCP retransmission, which drops repeated segments on the same connection
       why: The resend uses a new connection.
-    - text: Nothing — duplicates are acceptable in chat
+    - text: Nothing — duplicates are acceptable in chat, since users can delete the extra copy
       why: Duplicate messages are a visible bug.
   explanation: Idempotency keys on sends make retries safe across reconnections.
 - kind: fire
   prompt: A client receives seq 1040, then 1043. What should it do?
   choices:
-    - text: Detect the gap and fetch 1041–1042 from the server before (or while) rendering
+    - text: Detect the gap and fetch 1041–1042 from the server, rendering as they arrive
       correct: true
     - text: Ignore the gap
       why: Messages would be missing.
-    - text: Reorder by local clock
+    - text: Reorder the messages by local clock, since 1041 and 1042 will arrive shortly anyway
       why: Local clocks aren't the ordering source.
-    - text: Clear the conversation
+    - text: Clear the conversation and reload it from scratch to be safe
       why: That throws away valid data.
   explanation: Sequence numbers make missing messages detectable, and resume makes them recoverable.
 - kind: fire
   prompt: Why partition the messages table by (conversation_id, time bucket) rather than conversation_id alone?
   choices:
-    - text: Long-lived busy conversations would otherwise grow one partition without bound
+    - text: Busy long-lived conversations would otherwise grow one partition forever
       correct: true
-    - text: Time buckets make messages smaller
+    - text: Time buckets compress older messages, so each row takes less space on disk
       why: Size per message doesn't change.
     - text: To order by sender
       why: Ordering is by seq within the partition.
-    - text: Cassandra requires two-part keys
+    - text: Cassandra requires two-part partition keys for any table that's queried by time
       why: It doesn't. Partition size management is the reason.
   explanation: Bounded partitions keep reads, compaction and repair efficient. Recent buckets are read first.
 - kind: fire
   level: advanced
   prompt: A 50,000-member channel would require 50,000 per-user publishes per message. What scales better?
   choices:
-    - text: Publish once to a channel topic; each gateway with members subscribes once and delivers to its local sockets
+    - text: Publish once to a channel topic; each gateway with members subscribes and delivers locally
       correct: true
-    - text: Store a copy of each message per member
+    - text: Store a copy of each message per member, so every delivery is a single local read
       why: That multiplies storage and writes.
     - text: Limit channels to 100 members
       why: That's a product limit, not a design.
-    - text: Deliver only via push notifications
+    - text: Deliver only via push notifications, letting Apple and Google handle the fan-out
       why: Push is best-effort and rate-limited.
   explanation: Channel subscriptions make cross-node fan-out proportional to the number of gateways, not members.
 - kind: fire

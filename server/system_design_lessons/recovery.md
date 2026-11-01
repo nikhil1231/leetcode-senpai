@@ -178,12 +178,12 @@ model: |
   choices:
     - text: The maximum acceptable data loss, measured as time before the failure
       correct: true
-    - text: The maximum time to restore service
+    - text: The maximum time to restore service after the failure
       why: That's RTO.
-    - text: Requests per operation
+    - text: How often a recovery procedure is practised, per operator
       why: Unrelated.
-    - text: The backup file size
-      why: Size affects restore time, not the loss window.
+    - text: How long a backup takes to complete, start to finish
+      why: That's operational detail. RPO is how much data you can afford to lose.
   explanation: RPO bounds how far back in time the restored state may be. RTO bounds how long recovery takes.
 - kind: check
   type: multi
@@ -213,13 +213,13 @@ model: |
 - kind: check
   prompt: Why must backups be restored regularly in a test environment?
   choices:
-    - text: Backups fail silently, and only a real restore proves they're usable and tells you the actual RTO
+    - text: Backups fail silently; only a real restore proves they work and shows the real RTO
       correct: true
-    - text: Restores make backups smaller
+    - text: Restores compact the backup chain, so later restores run faster
       why: No effect.
-    - text: Regulations forbid untested backups
+    - text: Regulations require restores to be logged, so auditors can see that backups exist
       why: Some require testing, but the engineering reason is that backups fail silently.
-    - text: It keeps the backup storage warm
+    - text: It keeps the backup storage warm, so a real restore reads from a fast tier
       why: Not a thing.
   explanation: GitLab had five mechanisms and none worked. Testing is the only evidence a backup exists.
 - kind: fire
@@ -236,34 +236,34 @@ model: |
       correct: true
     - text: Backup and restore
       why: The cheapest option, with the slowest recovery.
-    - text: Pilot light
+    - text: Pilot light in a second region
       why: It needs time to scale compute up.
-    - text: Warm standby
+    - text: Warm standby, scaled down
       why: Recovery takes minutes, and it's cheaper than active-active.
   explanation: Active-active already serves from every region, so a regional loss shifts traffic — but multi-region writes need careful data design.
 - kind: fire
   prompt: Why should at least one backup copy be immutable or in a separate account?
   choices:
-    - text: Ransomware or a compromised admin account can't delete or encrypt it along with production
+    - text: Ransomware or a compromised admin can't delete or encrypt it along with production
       correct: true
-    - text: Immutable storage is faster to restore from
+    - text: Immutable storage is faster to restore from, since no locks are needed during reads
       why: Speed isn't the point.
-    - text: It halves storage cost
-      why: Unrelated.
-    - text: It replaces the need for testing
+    - text: Immutable tiers cost less per GB, which halves backup storage cost
+      why: Cost isn't the reason. Protection from deletion is.
+    - text: It replaces the need to test restores, since its contents can't change
       why: You still need to test restores.
   explanation: Attackers increasingly target backups first. Object lock or an air-gapped account preserves a recovery path.
 - kind: fire
   level: advanced
   prompt: After restoring a database to 10:00, which other systems may need reconciling? Select the best answer.
   choices:
-    - text: Caches, search indexes, object storage and downstream consumers that observed changes after 10:00
+    - text: Caches, search indexes, object storage, and consumers that saw later changes
       correct: true
     - text: None — the database is the source of truth, so everything else corrects itself
       why: Caches and consumers keep their own state and won't roll back.
-    - text: Only the load balancer
-      why: Routing isn't affected.
-    - text: Only the backups
+    - text: Only the read replicas, which must be rebuilt from the restored primary
+      why: Replicas follow the primary. Caches, indexes and consumers are what drift.
+    - text: Only the backups taken after 10:00, which must now be deleted
       why: The backups aren't what's out of sync.
   explanation: Restoring one store makes it "older" than its neighbours. Invalidate derived data and replay events idempotently.
 - kind: fire

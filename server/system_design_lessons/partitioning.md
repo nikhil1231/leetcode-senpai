@@ -32,9 +32,9 @@ Most large systems use **many small fixed partitions** (say 1,024) hashed from t
 ```predict
 prompt: An events table is range-partitioned by `created_at`, with one shard per month. Writes are 20,000/s. What happens to the shards?
 choices:
-  - Writes spread evenly across all shards
-  - All writes hit the current month's shard while older shards sit idle — a write hotspot
-  - Reads become impossible
+  - Writes spread evenly across all shards, since timestamps hash to different ranges
+  - All writes hit this month's shard while older ones sit idle: a write hotspot
+  - Reads of recent events must visit every monthly shard to find them
   - Range partitioning automatically switches to hash
 answer: 1
 reveal: |
@@ -168,9 +168,9 @@ model: |
       correct: true
     - text: Inserts spread evenly
       why: Sequential IDs all fall into the newest range.
-    - text: Range queries become impossible
+    - text: Range queries over IDs must now visit every shard, which makes them slow
       why: Range partitioning is good at range queries.
-    - text: IDs start colliding
+    - text: IDs start colliding across shards, since each shard keeps its own counter
       why: The sequence stays unique. The problem is load placement.
   explanation: Monotonic keys and range partitioning concentrate writes. Hash the key, or put a hashed prefix before the time component.
 - kind: check
@@ -198,49 +198,49 @@ model: |
 - kind: check
   prompt: What's the main drawback of answering a query by scatter-gather across 64 shards?
   choices:
-    - text: Latency is set by the slowest shard and cost grows with the shard count
+    - text: Latency is set by the slowest shard, and cost grows with the shard count
       correct: true
-    - text: It returns incorrect results
+    - text: It returns incorrect results when shards answer from snapshots taken at different times
       why: Correctly merged results are accurate. Cost and tail latency are the problem.
-    - text: It only works on hash-partitioned data
+    - text: It only works on hash-partitioned data, since range shards can't be queried in parallel
       why: It works on any partitioning.
-    - text: It locks every shard
+    - text: It locks every shard for the duration of the query, blocking writes everywhere
       why: Reads don't normally lock.
   explanation: Fan-out queries inherit tail latency and multiply load. Keep them off hot paths, or add a global index or another store.
 - kind: fire
   prompt: Why does `hash(key) % N` make adding a shard expensive?
   choices:
-    - text: Changing N remaps most keys to different shards, forcing most data to move
+    - text: Changing N remaps most keys to different shards, so most data must move
       correct: true
-    - text: Hash functions slow down as N grows
+    - text: The hash must be recomputed for every key on every node whenever N changes
       why: Hashing cost doesn't depend on N.
     - text: It only works for N that are powers of two
       why: It works for any N. The remapping is the problem.
-    - text: Modulo is not deterministic
-      why: It's deterministic. That's why keys move when N changes.
+    - text: Modulo spreads keys unevenly unless N is prime, so new shards stay underused
+      why: Any N spreads keys evenly with a good hash. The problem is that changing N moves most keys.
   explanation: Use many fixed logical partitions or consistent hashing, so growth moves only a small fraction of the data.
 - kind: fire
   prompt: What's the trade-off of a global (term-partitioned) secondary index in a sharded database?
   choices:
-    - text: Queries on the indexed attribute hit one partition, but each write must update a remote index partition, often asynchronously
+    - text: Index queries hit one partition, but each write must update a remote index partition, often async
       correct: true
     - text: It makes writes cheaper and reads more expensive
       why: It's the other way round.
     - text: It removes the need for a shard key
       why: The data is still sharded by its primary key.
-    - text: It guarantees the index is always perfectly in sync
+    - text: It keeps the index perfectly in sync, but every read must contact all partitions
       why: Usually it lags slightly, because index updates are asynchronous.
   explanation: Local indexes give cheap writes and scattered reads. Global indexes give targeted reads and costlier, often lagging, writes.
 - kind: fire
   prompt: One tenant is 30% of all traffic and overloads its shard. What's a reasonable fix?
   choices:
-    - text: Move that tenant to a dedicated shard (via a directory) or sub-shard it by a finer key
+    - text: Move that tenant to a dedicated shard (via a directory), or sub-shard it by a finer key
       correct: true
-    - text: Add more shards for all tenants
+    - text: Add more shards for all tenants, so each shard holds fewer of them
       why: The big tenant still lives on one shard.
     - text: Switch to range partitioning by tenant name
       why: That still keeps the tenant on one shard.
-    - text: Shard by country instead
+    - text: Shard by country instead, so the tenant's load spreads across its regions
       why: That's lower cardinality and doesn't isolate the tenant.
   explanation: Skewed tenants need special placement. Directories make per-tenant placement possible.
 - kind: fire
@@ -263,7 +263,7 @@ model: |
       why: The benefit is cheap rebalancing, not query speed.
     - text: It removes the need for a shard key
       why: Keys are still hashed to partitions.
-    - text: It guarantees no hot keys
+    - text: It guarantees no hot keys, since each partition holds only a tiny slice of keys
       why: A hot key is still hot within its partition.
   explanation: Decoupling key → partition (fixed) from partition → node (flexible) makes rebalancing a matter of moving partitions.
 ```
