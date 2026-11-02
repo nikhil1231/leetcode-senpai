@@ -83,6 +83,15 @@
       <div class="sd-actions sd-paper-end">${btn('Finish and mark →', 'finish', '', true)}${btn('Save and leave', 'leave')}${btn('Quit without saving', 'discard')}</div>`;
   }
 
+  function markingHtml() {
+    return `<section class="sd-panel sd-paper-marking" role="status" aria-live="polite" aria-busy="true">
+      <div class="sd-marking-animation" aria-hidden="true"><span class="sd-marking-sheet"><i></i><i></i><i></i></span><span class="sd-marking-orbit"></span></div>
+      <span class="sd-eyebrow">PAPER SUBMITTED</span><h2 id="sd-heading" tabindex="-1">Marking your paper</h2>
+      <p>Checking your answers and preparing your examiner’s report.</p>
+      <p class="sd-muted">Your marks and feedback will appear together when everything is ready.</p>
+    </section>`;
+  }
+
   // ---------- Results ----------
   const STATUS = {covered: ['✓', 'is-right'], partial: ['◐', 'is-partial'], missing: ['○', 'is-missing'], incorrect: ['✗', 'is-wrong']};
   function resultItem(p, i) {
@@ -105,11 +114,12 @@
 
   // ---------- Lifecycle ----------
   function tick() { const now = performance.now(); if (tickAt && document.visibilityState !== 'hidden') elapsed += (now - tickAt) / 1000; tickAt = now; }
-  function stop() { if (timer) tick(); clearInterval(timer); timer = null; tickAt = 0; clearTimeout(poll); poll = null; if (paper?.status === 'sitting') store(); }
+  let pollEpoch = 0, submitting = false;
+  function stop() { pollEpoch++; if (timer) tick(); clearInterval(timer); timer = null; tickAt = 0; clearTimeout(poll); poll = null; if (paper?.status === 'sitting') store(); }
   function store() { try { sessionStorage.setItem('sd-paper-elapsed:' + paper.id, String(Math.floor(elapsed))); } catch (_) { /* optional */ } }
   function startClock() {
     stop();
-    if (!paper || paper.status !== 'sitting' || !document.body.classList.contains('section-design')) return;
+    if (submitting || !paper || paper.status !== 'sitting' || !document.body.classList.contains('section-design')) return;
     tickAt = performance.now();
     timer = setInterval(() => {
       tick(); store();
@@ -120,11 +130,24 @@
   function schedulePoll() {
     clearTimeout(poll);
     if (paper?.status !== 'marking') return;
-    const id = paper.id;
+    const id = paper.id, epoch = pollEpoch;
     poll = setTimeout(async () => {
-      try { const fresh = await call('/papers/' + id); if (paper?.id === id) { paper = fresh; if (paper.status !== 'marking') window.DesignLedger?.invalidate(); window.SystemDesign.repaint(); } }
-      catch (e) { error = e.message; }
-      schedulePoll();
+      try {
+        const fresh = await call('/papers/' + id);
+        if (epoch !== pollEpoch || paper?.id !== id) return;
+        paper = fresh;
+        const el = $('#sd-papers-error'); if (el) el.hidden = true;
+        // Keep the marking card mounted so its animation never restarts.
+        if (paper.status !== 'marking') {
+          error = ''; window.DesignLedger?.invalidate(); window.SystemDesign.repaint();
+          return;
+        }
+      } catch (e) {
+        if (epoch !== pollEpoch) return;
+        const el = $('#sd-papers-error');
+        if (el) { el.textContent = 'Connection interrupted. Retrying marking status…'; el.hidden = false; }
+      }
+      if (epoch === pollEpoch) schedulePoll();
     }, 2500);
   }
   let ongoing = null, resumeRequested = false, ongoingVersion = 0;
@@ -186,10 +209,14 @@
         await flush();
         const missing = paper.items.filter(p => !answered(p.n)).length;
         if (missing && !window.confirm(`${missing} question${missing === 1 ? ' is' : 's are'} unanswered and will score zero. Finish anyway?`)) return;
-        tick(); const doc = await call('/papers/' + paper.id + '/finish', 'POST', {elapsed_sec: Math.floor(elapsed)});
+        tick(); stop(); submitting = true; window.SystemDesign.repaint();
+        const doc = await call('/papers/' + paper.id + '/finish', 'POST', {elapsed_sec: Math.floor(elapsed)});
         stop(); adopt(doc); list = await call('/papers'); window.DesignLedger?.invalidate();
       }
-      if (action === 'retry') adopt(await call('/papers/' + paper.id + '/mark', 'POST', {}));
+      if (action === 'retry') {
+        submitting = true; window.SystemDesign.repaint();
+        adopt(await call('/papers/' + paper.id + '/mark', 'POST', {}));
+      }
       if (action === 'self-mark') {
         const box = node.closest('.sd-self-mark');
         const covered = [...box.querySelectorAll('[data-point]:checked')].map(c => Number(c.dataset.point));
@@ -197,12 +224,12 @@
         window.DesignLedger?.invalidate();
       }
     } catch (e) { error = e.message; }
-    finally { busy = false; window.SystemDesign.repaint(); }
+    finally { busy = false; submitting = false; window.SystemDesign.repaint(); }
   }
 
   function render(cat) {
     catalog = cat;
-    const body = !list ? '<div class="sd-panel">Loading papers…</div>' : paper ? (paper.status === 'sitting' ? sittingHtml() : resultsHtml()) : setupHtml();
+    const body = !list ? '<div class="sd-panel">Loading papers…</div>' : paper ? (submitting || paper.status === 'marking' ? markingHtml() : paper.status === 'sitting' ? sittingHtml() : resultsHtml()) : setupHtml();
     return `<div id="sd-papers-error" class="sd-error" role="alert" ${error ? '' : 'hidden'}>${esc(error)}</div>${body}`;
   }
   let autostart = null;
@@ -251,7 +278,7 @@
         });
       });
     }
-    if (paper && paper.status !== 'sitting') window.DesignLedger?.slip(root.querySelector('[data-paper-slip]'), paper.created_at);
+    if (paper && !submitting && ['marked', 'self_mark'].includes(paper.status)) window.DesignLedger?.slip(root.querySelector('[data-paper-slip]'), paper.created_at);
     startClock(); schedulePoll();
   }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { if (timer) tick(); if (paper?.status === 'sitting') store(); } });

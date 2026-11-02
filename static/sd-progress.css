@@ -159,3 +159,20 @@ a.sd-heat-topic:hover { color:var(--accent); }
 .sd-paper-result p { font-size:13px; line-height:1.7; }
 .sd-examiner-note { border-left:3px solid var(--accent); padding:6px 12px; background:#8ad9c20a; border-radius:0 6px 6px 0; }
 .sd-self-mark { border:1px dashed var(--line); border-radius:8px; padding:12px 14px; margin:12px 0; }
+
+/* The paper stays concealed until the coach finishes the complete report. */
+.sd-paper-marking { text-align:center; padding:56px 24px; margin:24px auto; max-width:620px; }
+.sd-paper-marking h2 { margin:10px 0 12px; font-size:26px; }
+.sd-paper-marking p { max-width:420px; margin:10px auto; color:var(--text-2); line-height:1.7; }
+.sd-paper-marking .sd-muted { color:var(--muted); font-size:13px; }
+.sd-marking-animation { position:relative; display:grid; place-items:center; width:112px; height:112px; margin:0 auto 28px; }
+.sd-marking-sheet { display:flex; flex-direction:column; justify-content:center; gap:9px; width:48px; height:62px; padding:12px; border:1px solid var(--accent); border-radius:8px; background:var(--accent-soft); transform:rotate(-8deg); }
+.sd-marking-sheet i { height:3px; border-radius:4px; background:var(--accent); animation:sd-marking-line 1.8s ease-in-out infinite; transform-origin:left; }
+.sd-marking-sheet i:nth-child(2) { animation-delay:.2s; }
+.sd-marking-sheet i:nth-child(3) { width:65%; animation-delay:.4s; }
+.sd-marking-orbit { position:absolute; inset:0; border:1px solid var(--line); border-top:2px solid var(--accent); border-radius:50%; animation:sd-marking-orbit 3s linear infinite; }
+@keyframes sd-marking-orbit { to { transform:rotate(360deg); } }
+@keyframes sd-marking-line { 0%,100% { opacity:.35; transform:scaleX(.55); } 50% { opacity:1; transform:scaleX(1); } }
+@media (prefers-reduced-motion:reduce) {
+  .sd-marking-sheet i,.sd-marking-orbit { animation:none; }
+}
