@@ -2997,6 +2997,7 @@ async function startApp() {
   // Not awaited: this one leaves the building for leetcode.com, and nothing on
   // the page is waiting on the answer. The pill appears if and when it lands.
   checkLeetCodeAuth();
+  window.DesignPapers?.refreshOngoing();
   await Promise.all([
     loadAppMeta(),
     loadOverview(),

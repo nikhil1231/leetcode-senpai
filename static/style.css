@@ -3026,3 +3026,16 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 @keyframes dictate-fade { 50% { opacity: .35; } }
 @keyframes dictate-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, .35); } 50% { box-shadow: 0 0 0 5px rgba(251, 113, 133, 0); } }
 @media (prefers-reduced-motion: reduce) { .dictate-btn.is-listening, .dictate-btn.is-transcribing { animation: none; } }
+
+/* Keep the ongoing paper reachable across all learning sections. */
+.back-to-paper {
+  border: 1px solid var(--accent); border-radius: 999px;
+  padding: 7px 12px; background: var(--accent-soft); color: var(--accent);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.back-to-paper:hover { background: var(--panel2); }
+body.section-design .topbar-side:has(> .back-to-paper:not(.hidden)),
+body.section-track .topbar-side:has(> .back-to-paper:not(.hidden)) { display: flex !important; }
+body.section-design .topbar-side > #btn-back-to-paper:not(.hidden),
+body.section-track .topbar-side > #btn-back-to-paper:not(.hidden) { display: inline-flex !important; }

@@ -80,7 +80,7 @@
     const total = paper.items.reduce((s, p) => s + p.max, 0), done = paper.items.filter(p => answered(p.n)).length;
     return `<div class="sd-paper-bar"><div><span class="sd-eyebrow">${esc(paper.scope_label.toUpperCase())}</span><strong>${paper.items.length} questions · ${total} marks</strong></div><span id="sd-paper-answered">${done}/${paper.items.length} answered</span><span class="sd-paper-clock" id="sd-paper-clock">${clock(elapsed)} / ${clock(paper.time_limit_sec)}</span>${btn('Finish paper', 'finish', '', true)}</div>
       <div class="sd-paper">${paper.items.map((p, i) => `<article class="sd-paper-q" id="sd-paper-q${p.n}"><header><span class="sd-paper-num">${i + 1}</span><span class="sd-muted">${esc(topicTitle(p.topic))}</span><span class="sd-paper-marks">[${p.max} mark${p.max === 1 ? '' : 's'}]</span></header>${p.title ? `<h4>${inline(p.title)}</h4>` : ''}<div class="sd-q-prompt">${md(p.prompt)}</div>${inputHtml(p)}</article>`).join('')}</div>
-      <div class="sd-actions sd-paper-end">${btn('Finish and mark →', 'finish', '', true)}${btn('Save and leave', 'leave')}</div>`;
+      <div class="sd-actions sd-paper-end">${btn('Finish and mark →', 'finish', '', true)}${btn('Save and leave', 'leave')}${btn('Quit without saving', 'discard')}</div>`;
   }
 
   // ---------- Results ----------
@@ -127,8 +127,25 @@
       schedulePoll();
     }, 2500);
   }
+  let ongoing = null, resumeRequested = false, ongoingVersion = 0;
+  function showOngoing(id) {
+    ongoing = id; ongoingVersion++;
+    $('#btn-back-to-paper')?.classList.toggle('hidden', !id);
+  }
+  async function refreshOngoing() {
+    const version = ongoingVersion;
+    try { const fresh = await call('/papers'); if (version === ongoingVersion) showOngoing(fresh.sitting); }
+    catch (_) { /* Retry on the next visit to papers. */ }
+  }
+  $('#btn-back-to-paper')?.addEventListener('click', () => {
+    if (!ongoing || busy || window.SystemDesign.isBusy()) return;
+    resumeRequested = true;
+    window.AppSections.select('system-design', 'papers');
+  });
   function adopt(doc) {
     paper = doc; answers = {};
+    if (doc.status === 'sitting') showOngoing(doc.id);
+    else if (ongoing === doc.id) showOngoing(null);
     Object.entries(doc.answers || {}).forEach(([n, a]) => { answers[n] = a.value; });
     let saved = 0; try { saved = Number(sessionStorage.getItem('sd-paper-elapsed:' + doc.id)) || 0; } catch (_) { /* optional */ }
     elapsed = doc.status === 'sitting' ? saved : doc.elapsed_sec || 0;
@@ -151,6 +168,16 @@
         startRequest = null; adopt(doc);
       }
       if (action === 'open') adopt(await call('/papers/' + node.dataset.id));
+      if (action === 'discard') {
+        await window.Dictate?.settle();
+        Object.values(saveTimers).forEach(clearTimeout); saveTimers = {};
+        const id = paper.id;
+        await call('/papers/' + id + '/discard', 'POST', {});
+        stop();
+        try { sessionStorage.removeItem('sd-paper-elapsed:' + id); } catch (_) { /* optional */ }
+        paper = null; answers = {}; startRequest = null; showOngoing(null);
+        list = await call('/papers'); showOngoing(list.sitting);
+      }
       if (action === 'leave') { await window.Dictate?.settle(); await flush(); stop(); paper = null; list = await call('/papers'); }
       if (action === 'home') { stop(); paper = null; list = await call('/papers'); }
       if (action === 'mistakes') { stop(); paper = null; busy = false; await window.SystemDesign.openView('mistakes'); return; }
@@ -180,7 +207,14 @@
   }
   let autostart = null;
   async function open() {
-    list = await call('/papers');
+    list = await call('/papers'); showOngoing(list.sitting);
+    if (resumeRequested) {
+      resumeRequested = false;
+      if (list.sitting) adopt(await call('/papers/' + list.sitting));
+      else paper = null;
+      return;
+    }
+    if (paper?.status === 'sitting' && paper.id !== list.sitting) paper = null;
     if (!autostart) return;
     const wanted = autostart; autostart = null;
     if (list.sitting) { adopt(await call('/papers/' + list.sitting)); return; }
@@ -221,5 +255,5 @@
     startClock(); schedulePoll();
   }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { if (timer) tick(); if (paper?.status === 'sitting') store(); } });
-  window.DesignPapers = {render, wire, open, begin, stop, isBusy: () => busy, current: () => paper};
+  window.DesignPapers = {render, wire, open, begin, stop, refreshOngoing, isBusy: () => busy, current: () => paper};
 })();

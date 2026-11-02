@@ -172,3 +172,31 @@ def test_explicit_ranges_mark_one_sided_answers():
     assert papers.mark(fanout, blanks)['marks'] == fanout['max']
     assert papers.mark(fanout, ['20' if x == '18' else x for x in blanks])['marks'] == fanout['max']
     assert papers.mark(fanout, ['90' if x == '98' else x for x in blanks])['marks'] == fanout['max'] - 1
+
+
+def test_discard_erases_draft_without_marks_or_ledger_evidence(client):
+    request_id = rid()
+    paper = post(client, '/papers', request_id=request_id)
+    key = paper['id']
+    post(client, f'/papers/{key}/answer', n=0, value='An unfinished answer')
+    before = client.get('/api/system-design/ledger').json()
+    post(client, f'/papers/{key}/discard')
+    post(client, f'/papers/{key}/discard')  # Safe to retry after a lost response.
+    listing = client.get('/api/system-design/papers').json()
+    assert listing['papers'] == [] and listing['sitting'] is None
+    assert client.get('/api/system-design/ledger').json() == before
+    saved = client.store.get_design_record(key)
+    assert set(saved) == {'id', 'revision', 'kind'}
+    assert client.get(f'/api/system-design/papers/{key}').status_code == 404
+    assert client.post(f'/api/system-design/papers/{key}/answer', json={'n': 0, 'value': 'late'}).status_code == 404
+    assert client.post(f'/api/system-design/papers/{key}/finish', json={}).status_code == 404
+    assert client.post('/api/system-design/papers', json={'request_id': request_id}).status_code == 409
+    assert post(client, '/papers', request_id=rid())['status'] == 'sitting'
+
+
+def test_discard_cannot_remove_a_finished_paper(client):
+    paper = post(client, '/papers', request_id=rid())
+    key = paper['id']
+    post(client, f'/papers/{key}/finish')
+    assert client.post(f'/api/system-design/papers/{key}/discard').status_code == 409
+    assert client.get(f'/api/system-design/papers/{key}').json()['status'] == 'marked'

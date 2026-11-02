@@ -390,6 +390,8 @@ def start_paper(body: Start, store=Depends(store_for)):
     key = 'paper_' + body.request_id
     old = store.get_design_record(key)
     if old:
+        if old.get('kind') == 'discarded_paper':
+            raise HTTPException(409, 'This paper was discarded. Start a new paper.')
         return view(old)
     records = store.list_design_records()
     now = int(time.time())
@@ -417,6 +419,20 @@ def start_paper(body: Start, store=Depends(store_for)):
 @router.get('/papers/{key}')
 def get_paper(key: str, store=Depends(store_for)):
     return view(read(store, key))
+
+
+@router.post('/papers/{key}/discard')
+def discard_paper(key: str, store=Depends(store_for)):
+    old = store.get_design_record(key)
+    if old and old.get('kind') == 'discarded_paper':
+        return {'discarded': key}
+    doc = read(store, key)
+    if doc['status'] != 'sitting':
+        raise HTTPException(409, 'Only a paper in progress can be discarded')
+    # Erase the draft, keeping only a revision guard so a delayed autosave or
+    # retried start request cannot resurrect its answers.
+    put(store, key, {'kind': 'discarded_paper'}, doc['revision'])
+    return {'discarded': key}
 
 
 @router.post('/papers/{key}/answer')
