@@ -3,7 +3,8 @@
 Synchronous and step-driven (`step` = one long poll, the updates it returned, then one scheduling
 tick), so tests drive it with a fake transport and a fixed clock. State is one small document
 (`drip/state`); each card sent is its own document (`drip/card-<n>`). Only the configured chat
-is served; before one is configured, /start replies with the chat id to put in the env.
+is served; before one is configured, /start replies with the chat id to put in the env. A message
+with no question open goes to whoever asked the last card, in character, until the next card.
 """
 import asyncio
 import base64
@@ -374,8 +375,7 @@ class Bot:
         now = self.clock()
         c = self.card(self.state['pending']) if self.state['pending'] is not None else None
         if not c or c['status'] != 'pending':
-            self.say("Nothing's open right now. /next if you fancy one.")
-            return
+            return self.talk(text, now)
         point = self.point(c)
         if not point:
             self.close(c, 'expired', now)
@@ -395,7 +395,23 @@ class Bot:
         self.say(cards.result_text(verdict, grade['feedback'], point))
 
     def grade(self, point, text, ask=None, focus=None):
-        return assess.grade(self.store, point, text, ask, focus)
+        return assess.grade(self.store, point, text, ask, focus, in_story=True)
+
+    def talk(self, text, now):
+        """A message with no question open: carry on the chat with whoever asked the last card, until the
+        next card arrives. The model sees that card's exchange only (assess.chat)."""
+        c = self.card(self.state['n']) if self.state['n'] else None
+        point = self.point(c) if c else None
+        if not point:
+            return self.say("Nothing's open right now. /next if you fancy one.")
+        self.tg.call('sendChatAction', chat_id=self.chat, action='typing')
+        turns, text = c.get('chat') or [], text[:2000]
+        reply = assess.chat(self.store, c, point, turns + [{'role': 'user', 'text': text}])
+        if not reply:
+            return self.say("Nothing's open right now. /next if you fancy one.")
+        c['chat'] = turns + [{'role': 'user', 'text': text, 'at': now}, {'role': 'assistant', 'text': reply, 'at': now}]
+        self.put_card(c)
+        self.say(cards.chat_text(point, reply))
 
     def record(self, c, point, clean, depth, note, now, partial=False):
         kb_api.write_events(self.store, SOURCE, [{'key': f'card-{c["n"]}', 'points': [point['id']], 'clean': clean,

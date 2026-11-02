@@ -9,6 +9,7 @@ import pytest
 from server import config, llm, voice
 from server.drip import assess, bot as drip, cards
 from server.knowledge_base import api as kb_api, catalog as kcat, model as kmodel
+from server.tutor import story
 from tests.fake_store import FakeStore
 
 LON = ZoneInfo('Europe/London')
@@ -109,15 +110,21 @@ def env(monkeypatch):
     grades, env_prompts = [], []
 
     def fake(provider, model, system, prompt, schema, options=None):
-        assert schema is cards.Grade and not llm.forbidden_model(model)
+        assert schema is cards.Grade and not llm.forbidden_model(model) and system == cards.STORY_GRADE_SYSTEM
         assert json.loads(prompt)['ANSWER']
         env_prompts.append(json.loads(prompt))
         return {'content': json.dumps({'missing': '', 'follow_up': '', 'misconception': '', **grades.pop(0)})}
     monkeypatch.setattr(llm, '_raw_generate', fake)
     phrasings = []
 
+    talks = []
+
     def chat(model, messages, options=None):
-        assert not llm.forbidden_model(model) and messages[0]['content'] == assess.PHRASE_SYSTEM
+        assert not llm.forbidden_model(model)
+        if messages[0]['content'].startswith(cards.CHAT_SYSTEM):
+            talks.append(messages)
+            return {'content': f'"Reply {len(talks)}"', 'usage': {}}
+        assert messages[0]['content'] == assess.PHRASE_SYSTEM
         phrasings.append(json.loads(messages[1]['content']))
         return {'content': f'"Quick one from Ripple: {phrasings[-1]["QUESTION"]}"', 'usage': {}}
     monkeypatch.setattr(llm, '_raw_chat', chat)
@@ -125,7 +132,7 @@ def env(monkeypatch):
     kb_api.write_events(store, 'lesson', [{'key': 'all', 'kind': 'exposure', 'points': [p['id'] for p in kcat.active(kcat.CATALOG)]}],
                         T0 - 30 * DAY)
     b = drip.Bot(store, tg=tg, clock=clock, rng=random.Random(3))
-    b.prompts, b.phrasings = env_prompts, phrasings
+    b.prompts, b.phrasings, b.talks = env_prompts, phrasings, talks
     return b, store, tg, clock, grades
 
 
@@ -175,9 +182,7 @@ def test_a_typed_answer_is_graded_and_recorded(env):
     assert m['source'] == 'telegram' and m['quote'] == 'caches just make it faster'
     assert store.get_knowledge('drip', 'card-1')['verdict'] == 'wrong' and b.state['pending'] is None
     assert b.state['offset'] == tg_offset(store)
-    tg.updates = [msg('another answer')]
-    b.step(poll=0)
-    assert "Nothing's open" in tg.last()
+    assert b.prompts[-1]['STORY'] == story.BIBLE['pitch']   # the reply stays inside the story
 
 
 def tg_offset(store):
@@ -605,3 +610,52 @@ def test_only_ideas_met_outside_telegram_are_asked():
         p, reason = cards.pick(c, {}, {}, [], T0, random.Random(), met=met)
         assert p['id'] in known and reason == 'new'
     assert cards.pick(c, {}, {}, [], T0, met=set()) == (None, None)
+
+
+def test_after_an_answer_you_keep_talking_to_whoever_asked_until_the_next_card(env):
+    b, store, tg, clock, grades = env
+    b.send_card(clock.t)
+    grades.append({'verdict': 'right', 'feedback': 'Old exchange.'})
+    tg.updates = [msg('first card answer')]
+    b.step(poll=0)
+    c = b.send_card(clock.t)
+    who = cards.speaker(b.point(c))['name']
+    grades.append({'verdict': 'partly', 'feedback': 'The board goes quiet on the missing bit.'})
+    tg.updates = [msg('my answer')]
+    b.step(poll=0)
+    tg.updates = [msg('wait, why does that matter?')]
+    b.step(poll=0)
+    assert tg.last() == f'<b>{who}:</b> Reply 1' and b.state['pending'] is None
+    sent = b.talks[-1]
+    assert [m['role'] for m in sent] == ['system', 'assistant', 'user', 'assistant', 'user']
+    assert sent[1]['content'] == c['ask'] and sent[2]['content'] == 'my answer' and sent[-1]['content'] == 'wait, why does that matter?'
+    assert not any('first card answer' in m['content'] or 'Old exchange' in m['content'] for m in sent)   # earlier cards stay out
+    for i in range(cards.CHAT_TURNS):
+        tg.updates = [msg(f'more {i}')]
+        b.step(poll=0)
+    sent = b.talks[-1]
+    assert len(sent) == 4 + cards.CHAT_TURNS and sent[-1]['content'] == f'more {cards.CHAT_TURNS - 1}'   # trimmed to the latest turns
+    assert len(store.get_knowledge('drip', f'card-{c["n"]}')['chat']) == 2 * (cards.CHAT_TURNS + 1)   # the full chat is kept
+    n = len(events(store))
+    b.send_card(clock.t)   # a new card ends the chat: the next message answers it
+    grades.append({'verdict': 'right', 'feedback': 'Ship it.'})
+    tg.updates = [msg('an answer to the new one')]
+    b.step(poll=0)
+    assert tg.last().startswith('✅') and len(events(store)) == n + 1 and len(b.talks) == cards.CHAT_TURNS + 1
+
+
+def test_without_the_model_a_message_after_the_answer_gets_the_old_nudge(env, monkeypatch):
+    b, store, tg, clock, grades = env
+    b.send_card(clock.t)
+    tg.updates = [press('reveal:1')]
+    b.step(poll=0)
+    monkeypatch.setattr(config, 'OPENROUTER_API_KEY', '')
+    tg.updates = [msg('hmm')]
+    b.step(poll=0)
+    assert "Nothing's open" in tg.last() and b.talks == []
+
+
+def test_feed_grading_keeps_the_tutor_voice():
+    p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
+    assert 'STORY' not in cards.grade_payload(p, 'x') and cards.grade_payload(p, 'x', in_story=True)['STORY']
+    assert 'tick or a cross' in cards.STORY_GRADE_SYSTEM and 'tick' not in cards.GRADE_SYSTEM

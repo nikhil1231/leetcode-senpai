@@ -2,8 +2,9 @@
 
 `phrase` has the cast member who owns a point write the question as a short chat message from a
 colleague, not a quiz line; without the model the card falls back to the template. Grading is
-shared by the Telegram drip and the walk page. The cheap model compares the answer with the
-point's claim (soft evidence). Right closes an open gap; partly opens a gap on the missing piece
+shared by the Telegram drip and the walk page; on Telegram the reply stays in the story the
+question set up, and `chat` lets the asker carry on talking until the next card. The cheap model
+compares the answer with the point's claim (soft evidence). Right closes an open gap; partly opens a gap on the missing piece
 with a follow-up question; wrong with a stated belief records a misconception. Without the
 model, `grade` returns None and the caller falls back to self-grading.
 """
@@ -57,18 +58,34 @@ def phrase(store, point, reason, ask=None, context=None, recent=()):
     return None
 
 
-def grade(store, point, text, ask=None, focus=None):
-    """-> {verdict, feedback, misconception, missing, follow_up}, or None without the model."""
+def grade(store, point, text, ask=None, focus=None, in_story=False):
+    """-> {verdict, feedback, misconception, missing, follow_up}, or None without the model.
+    `in_story`: the feedback is the asker's next message in the scene (Telegram), not a tutor's note."""
     if not llm.enabled(store.get_settings()):
         return None
     try:
-        raw = llm._raw_generate('openrouter', config.TUTOR_MODEL, cards.GRADE_SYSTEM,
-                                json.dumps(cards.grade_payload(point, text, ask, focus), ensure_ascii=False), cards.Grade,
+        system = cards.STORY_GRADE_SYSTEM if in_story else cards.GRADE_SYSTEM
+        raw = llm._raw_generate('openrouter', config.TUTOR_MODEL, system,
+                                json.dumps(cards.grade_payload(point, text, ask, focus, in_story), ensure_ascii=False), cards.Grade,
                                 options={'effort': 'low', 'max_tokens': 6000, 'timeout': 60, 'metadata': True})   # room to think: verdicts need it
         return cards.Grade.model_validate_json(raw['content']).model_dump()
     except Exception:
         log.warning('Grading failed', exc_info=True)
         return None
+
+
+
+def chat(store, card, point, turns):
+    """The asker's reply to a message after their card was answered, or None without the model."""
+    if not llm.enabled(store.get_settings()):
+        return None
+    try:
+        raw = llm._raw_chat(config.TUTOR_MODEL, cards.chat_messages(card, point, turns),
+                            options={'max_tokens': 500, 'timeout': 45, 'think': False})
+    except Exception as exc:
+        log.warning('Drip chat failed: %s', exc)
+        return None
+    return ' '.join((raw.get('content') or '').split()).strip('"“”') or None
 
 
 def consequences(store, source, key, point, g, text, now, where):
