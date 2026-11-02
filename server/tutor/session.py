@@ -4,7 +4,7 @@ A session is a list of turns (learner text, block results, tutor replies) plus t
 around them: each objective's status, the blocks already shown, the role's private notes, the
 wrong claims recorded so far and a running summary for next time.
 
-Two model calls make a turn, and they do different jobs (PROMPT_VERSION 6):
+Two model calls make a turn, and they do different jobs (PROMPT_VERSION 7):
 - The tutor talks. It gets a system prompt (its role, the lesson, what the learner knows) and the
   conversation as ordinary chat messages, and replies in plain text. It may end a message with
   [[activity bN]] to hand over one of the lesson's activities, and in the role-play modes keep
@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import lessons, story
 
-PROMPT_VERSION = 6
+PROMPT_VERSION = 7
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -184,7 +184,8 @@ What it should leave him able to do (a map for you, not a checklist to read out)
     if session.get('pickup'):
         parts.append(pickup(session['pickup'], mode))
     parts.append(f"""Setting: Ripple, a link shortener growing into a global social product, now at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
-Borrow it for examples now and then; don't narrate.""")
+Borrow it for examples now and then; don't narrate.
+Scale: Ripple's size is {story_state['users']}, and that is the only figure for it. He sees only this conversation, so before any question turns on Ripple's scale, give him the numbers in it. Judge his numbers only against figures stated in this conversation; if he picks his own assumptions, judge whether they are reasonable and consistent, not whether they match figures he was never given.""")
     if blocks_allowed(mode):
         tools = '\n'.join(f'- {t["key"]} ({t["type"]}): {t["about"]}' for t in lessons.tools(lesson) if t['key'] not in session['shown'])
         if tools:

@@ -107,7 +107,7 @@ milestones:
 # Where the story is when you study each area.
 chapters:
   system-design:
-    foundations: Day one. Ripple is three people and a link shortener with a few thousand users. Every promise made now has to be kept at scale.
+    foundations: Early days. Ripple is still a small team and a link shortener, and every promise made now has to be kept at scale.
     apis: Ripple opens its API to partners. Clients you don't control start retrying, paging and hammering endpoints.
     storage: The single Postgres box is filling up, and Sam wants a new feature every week. Each one needs a home for its data.
     caching: A viral link sends traffic up 20 times overnight. The database is sweating, and the cache has quietly become the capacity plan.

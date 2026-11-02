@@ -1,5 +1,6 @@
 """The tutor: story state, prompts, parsing and grounding, and full sessions over HTTP with scripted models."""
 import json
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -68,6 +69,11 @@ def fresh(mode='teach'):
 def system(s, mis=(), memory=None, debrief=False):
     return ses.system(s, L, [], list(mis), memory or {}, story.scale(summary(0)), debrief=debrief)
 
+
+def test_the_tutor_only_judges_numbers_it_has_given():
+    p = ses.system(ses.new('s', L, 'teach', 0), L, [], [], {}, story.scale(summary(3.2)))
+    assert "Ripple's size is 50k users" in p and 'figures he was never given' in p
+    assert not any(re.search(r'\d[\d,.]*k? users|thousands? users', story.chapter(sec, c)) for sec, cs in story.BIBLE['chapters'].items() for c in cs)
 
 def test_quotes_must_come_from_the_learner():
     assert ses.quoted('requests times the miss rate', 'Load is Requests  times the MISS rate!')
