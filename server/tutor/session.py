@@ -4,7 +4,7 @@ A session is a list of turns (learner text, block results, tutor replies) plus t
 around them: each objective's status, the blocks already shown, the role's private notes, the
 wrong claims recorded so far and a running summary for next time.
 
-Two model calls make a turn, and they do different jobs (PROMPT_VERSION 5):
+Two model calls make a turn, and they do different jobs (PROMPT_VERSION 6):
 - The tutor talks. It gets a system prompt (its role, the lesson, what the learner knows) and the
   conversation as ordinary chat messages, and replies in plain text. It may end a message with
   [[activity bN]] to hand over one of the lesson's activities, and in the role-play modes keep
@@ -12,6 +12,9 @@ Two model calls make a turn, and they do different jobs (PROMPT_VERSION 5):
 - The note-taker records. It reads the learner's latest words and returns structured evidence,
   objective progress, misconceptions and a summary. `apply_notes` keeps only what quotes the
   learner's own words, so neither call can invent evidence.
+
+A session started after an outside tutor's handback (handover.py) carries its report as `pickup`
+and continues from it instead of opening the lesson afresh.
 
 Only "teach" teaches; the other modes (Jo, the design review, the incident, the interview) stay in
 role and correct nothing until the debrief, written when the session ends.
@@ -24,7 +27,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import lessons, story
 
-PROMPT_VERSION = 5
+PROMPT_VERSION = 6
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -178,6 +181,8 @@ What it should leave him able to do (a map for you, not a checklist to read out)
     if all(o['status'] == DEMONSTRATED for o in session['objectives']):
         parts.append("He has now shown every objective. Wrap up warmly in a line or two, and suggest he ends the session for the debrief.")
     parts.append('About Nikhil:\n' + '\n'.join(know))
+    if session.get('pickup'):
+        parts.append(pickup(session['pickup'], mode))
     parts.append(f"""Setting: Ripple, a link shortener growing into a global social product, now at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
 Borrow it for examples now and then; don't narrate.""")
     if blocks_allowed(mode):
@@ -193,6 +198,20 @@ Keep anything you must stay consistent about (a planted flaw, an incident's stat
     parts.append(f"""## Lesson notes (private; the ground truth — teach and judge from them, but don't recite them or treat their exact wording as the only right answer)
 {lessons.notes(lesson)}""")
     return '\n\n'.join(parts)
+
+
+PICKUP = """## Picking up from another tutor
+Since his last session with you, Nikhil studied this lesson with an outside tutor. Its report:
+{summary}{next}
+
+This session carries on from there: he has already been through what the report says he covered, so don't start the lesson over."""
+PICKUP_OPENING = """ Opening (this replaces the usual opening): in a line, say you've seen where he got to with the other tutor, then go straight on to the next part of the lesson, ideally where the report suggests. Briefly check a foundation first only if the report says it was shaky."""
+
+
+def pickup(p, mode):
+    """The system prompt's section on an outside tutor's handback, for a session that picks up after it."""
+    text = PICKUP.format(summary=p['summary'], next=f"\n\nWhat it suggested next: {p['next_steps']}" if p.get('next_steps') else '')
+    return text + (PICKUP_OPENING if mode == 'teach' else '')
 
 
 def system(session, lesson, views, misconceptions, memory, story_state, debrief=False):

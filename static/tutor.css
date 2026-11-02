@@ -11,6 +11,13 @@
 .tu-company small { display: block; color: var(--muted); margin-top: 4px; }
 .tu-bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 6px; overflow: hidden; }
 .tu-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+/* What an outside tutor reported, above the tutor card. */
+.tu-outside { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 20px; margin-bottom: 12px; }
+.tu-outside p { margin: 6px 0 0; }
+.tu-outside details { margin-top: 8px; }
+.tu-outside summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+.tu-out-summary { max-width: 72ch; margin-top: 6px; }
+.tu-out-filed a, .tu-out-away a { color: var(--accent); }
 .tu-previously { margin: 12px 0 0; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; }
 .tu-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 14px 0 4px; }
 .tu-mode { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer; }

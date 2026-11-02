@@ -51,6 +51,14 @@ def _tally(views):
             'misconceptions': sum(v['misconceptions'] for v in views)}
 
 
+def lessons(views):
+    """-> {lesson id: {held, tested, total}} for the lesson rows of a course list."""
+    by = {}
+    for v in views:
+        by.setdefault(v['lesson'], []).append(v)
+    return {k: {x: t[x] for x in ('held', 'tested', 'total')} for k, t in ((k, _tally(vs)) for k, vs in by.items())}
+
+
 def section_points(catalog, section):
     return [p for p in cat.active(catalog) if p['section'] == section]
 

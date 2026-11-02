@@ -17,7 +17,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import auth, config, llm
+from .. import auth, config, handback_filing as hf, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel, progress
 from ..store import get_store
 from . import lessons, session as ses, story
@@ -30,6 +30,7 @@ UNAVAILABLE = 'The tutor needs the model, which is not connected. The lesson its
 FAILED = 'The tutor could not answer just now. Your message is saved; try again.'
 DEBRIEF_FAILED = 'The debrief could not be written just now. Your session is saved; try again.'
 SOURCE = 'tutor'
+PICKUP_DAYS = 14   # a new session picks up from an outside tutor's handback this recent
 
 
 def store_for(uid: str = Depends(auth.require_user)):
@@ -114,9 +115,15 @@ def lesson_state(section: str, lesson: str, store=Depends(store_for)):
     l = _lesson(section, lesson)
     mem = store.get_knowledge('tutor_memory', _memory_key(section, lesson)) or {}
     active = store.get_knowledge('tutor_sessions', mem['active']) if mem.get('active') else None
+    outside, elsewhere = hf.lesson_report(store.list_knowledge('study_sessions'), section, lesson)
+    if outside:
+        mo = mem.get('outside') or {}
+        outside['picks_up'] = bool(mo.get('session') in outside['sessions'] and not mo.get('picked_up_by')
+                                   and time.time() - mo['at'] < PICKUP_DAYS * 86400)
+    elsewhere = [{**e, 'lesson_title': (lessons.get(e['section'], e['lesson']) or {}).get('title', e['lesson'])} for e in elsewhere]
     return {'enabled': llm.enabled(store.get_settings()), 'modes': _modes(), 'objectives': l['objectives'],
             'previously': mem.get('summary', ''), 'sessions': mem.get('sessions', 0),
-            'scene': story.chapter(section, l['category']),
+            'scene': story.chapter(section, l['category']), 'outside': outside, 'outside_elsewhere': elsewhere,
             'active': public(active) if active and active['status'] == 'active' else None}
 
 
@@ -137,11 +144,14 @@ async def start(body: Start, store=Depends(store_for)):
         return public(s)
     if not s:
         s = ses.new(body.key, l, body.mode, now)
-        store.create_knowledge('tutor_sessions', body.key, s)
         mk = _memory_key(body.section, body.lesson)
-        mem = store.get_knowledge('tutor_memory', mk) or {}
-        store.put_knowledge('tutor_memory', mk, {**{k: v for k, v in mem.items() if k != '_key'},
-                                                 'active': body.key, 'sessions': mem.get('sessions', 0) + 1, 'last_at': now})
+        mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
+        outside = mem.get('outside')
+        if outside and not outside.get('picked_up_by') and now - outside['at'] < PICKUP_DAYS * 86400:
+            s['pickup'] = {k: outside[k] for k in ('session', 'at', 'summary', 'next_steps')}
+            mem['outside'] = {**outside, 'picked_up_by': body.key}
+        store.create_knowledge('tutor_sessions', body.key, s)
+        store.put_knowledge('tutor_memory', mk, {**mem, 'active': body.key, 'sessions': mem.get('sessions', 0) + 1, 'last_at': now})
     return await _reply(store, s, l)
 
 
@@ -209,6 +219,8 @@ def _remember(store, s, now, event):
     mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
     mem.update(summary=s['summary'] or mem.get('summary', ''), last_at=now,
                active=s['id'] if s['status'] == 'active' else None)
+    if s['summary']:
+        mem['summary_from'] = 'tutor'
     store.put_knowledge('tutor_memory', mk, mem)
     st = {k: v for k, v in (store.get_knowledge('tutor_memory', STORY_KEY) or {}).items() if k != '_key'}
     l = lessons.get(s['section'], s['lesson'])

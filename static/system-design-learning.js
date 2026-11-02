@@ -33,8 +33,17 @@
   }
   function progress(completed,total) {return `<div class="sd-course-bar" role="progressbar" aria-label="Lessons completed" aria-valuenow="${completed}" aria-valuemin="0" aria-valuemax="${total}"><span style="width:${total?100*completed/total:0}%"></span></div>`;}
   const statusText = l => l.status==='completed'?'Completed':l.status==='in_progress'?'In progress':'Not started';
+  // What the knowledge model holds for a lesson, from every source (tutors, ChatGPT, checks); blank until something is tested.
+  function known(l) {
+    const k=catalog.known?.[l.id];
+    return `<span class="sd-known" ${k&&k.tested?`title="Ideas you hold now, of ${k.total}; ${k.tested} tested">${k.held}/${k.total} held`:'>'}</span>`;
+  }
+  function held(c) {
+    const ks=c.lessons.map(l=>catalog.known?.[l.id]).filter(Boolean), n=ks.reduce((a,k)=>a+k.held,0);
+    return ks.some(k=>k.tested)?` · ${n}/${ks.reduce((a,k)=>a+k.total,0)} ideas held`:'';
+  }
   function lessonRow(l,index) {
-    return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}${window.StudyPrompt?.button({section:'system-design',lesson:l.id},l.title)||''}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span><span class="sd-muted">${l.minutes} min</span></a>`;
+    return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}${window.StudyPrompt?.button({section:'system-design',lesson:l.id},l.title)||''}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span>${known(l)}<span class="sd-muted">${l.minutes} min</span></a>`;
   }
   function matches(l) {
     return (!category || l.category===category) && (!search || (l.title+' '+l.objectives.join(' ')).toLowerCase().includes(search.toLowerCase())) &&
@@ -51,7 +60,7 @@
       const numbered=c.lessons.map(l=>({l,n:number++})).filter(({l})=>matches(l));
       if(!numbered.length)return '';
       const current=catalog.course.lessons.find(l=>l.id===catalog.course.next_lesson)?.category;
-      return `<details class="sd-course-category" ${filter!=='all'||category||search||c.id===current?'open':''}><summary><span class="sd-course-stage">${String(i+1).padStart(2,'0')}</span><span><strong>${esc(c.title)}${window.StudyPrompt?.button({section:'system-design',category:c.id},c.title)||''}</strong><small>${esc(c.description)}</small></span><span class="sd-category-total">${c.completed}/${c.total} completed</span>${progress(c.completed,c.total)}</summary><div>${numbered.map(({l,n})=>lessonRow(l,n)).join('')}</div></details>`;
+      return `<details class="sd-course-category" ${filter!=='all'||category||search||c.id===current?'open':''}><summary><span class="sd-course-stage">${String(i+1).padStart(2,'0')}</span><span><strong>${esc(c.title)}${window.StudyPrompt?.button({section:'system-design',category:c.id},c.title)||''}</strong><small>${esc(c.description)}</small></span><span class="sd-category-total">${c.completed}/${c.total} completed${held(c)}</span>${progress(c.completed,c.total)}</summary><div>${numbered.map(({l,n})=>lessonRow(l,n)).join('')}</div></details>`;
     }).join('');
     return html || '<div class="sd-panel">No lessons match these filters. Try another category or show all lessons.</div>';
   }

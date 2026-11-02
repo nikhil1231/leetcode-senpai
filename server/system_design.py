@@ -172,8 +172,16 @@ def catalog(store=Depends(design_store)):
             'sessions': [{k: r[k] for k in ('id', 'case_id', 'mode', 'updated_at', 'elapsed_sec')} for r in sessions[:20]],
             'evidence': evidence(records), 'reviews': list(review_schedule(records).values()),
             'recommendation': recommendation(records, profile['minutes'], int(time.time())),
-            'course': course_summary(records),
+            'course': course_summary(records), 'known': _known(store),
             'storage_scope': hashlib.sha256(store.uid.encode()).hexdigest()[:20]}
+
+
+def _known(store):
+    """What the knowledge model says you hold per lesson, from every source (tutors, outside tutors, checks)."""
+    from .knowledge_base import api as kb_api, model as kmodel, progress as kprogress
+    now = time.time()
+    c, _, states, seen, mis = kb_api.evidence(store, now)
+    return kprogress.lessons(kmodel.views(c, states, seen, mis, now, kprogress.section_points(c, 'system-design')))
 
 
 @router.put('/profile')

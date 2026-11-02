@@ -185,3 +185,9 @@ def test_an_older_question_version_is_not_evidence_for_the_new_one(monkeypatch):
     assert sources.derived(C, {'system-design': []}) == []
     monkeypatch.setattr(sources, 'item_events', lambda section, records: [answer('request-flow-check-1-v2')])
     assert {e['point'] for e in sources.derived(C, {'system-design': []})} == set(C['items']['request-flow-check-1-v2'])
+
+
+def test_lessons_tally_held_tested_and_total_per_lesson():
+    v = lambda lesson, status: {'lesson': lesson, 'status': status, 'r': 1.0 if status != 'unseen' else 0.0, 'depth': None, 'misconceptions': 0}
+    out = progress.lessons([v('a', 'solid'), v('a', 'shaky'), v('a', 'unseen'), v('b', 'unseen')])
+    assert out == {'a': {'held': 1, 'tested': 2, 'total': 3}, 'b': {'held': 0, 'tested': 0, 'total': 1}}

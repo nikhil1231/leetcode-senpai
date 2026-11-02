@@ -69,18 +69,38 @@
 
 
   function entryHtml() {
-    const i = T.info, o = T.overview;
-    if (!i.enabled) return '';
+    const i = T.info, o = T.overview, out = outsideHtml();
+    if (!i.enabled) return out;
     const active = T.session && T.session.status === 'active';
     const go = active ? btn('Continue your session', 'resume', '', true) : btn(T.notes ? 'Learn this with the tutor' : 'Start', 'start', '', true);
-    if (T.notes) return `<section class="tu-entry tu-compact"><span>Rather be taught? The tutor asks the questions and brings in this lesson's activities.</span>${go}</section>`;
+    if (T.notes) return out + `<section class="tu-entry tu-compact"><span>Rather be taught? The tutor asks the questions and brings in this lesson's activities.</span>${go}</section>`;
     const mode = o.modes.find(m => m.id === T.mode);
     const style = active ? '' : `<label class="tu-style">Style <select data-tu-mode aria-label="Session style">${o.modes.map(m => `<option value="${m.id}" ${T.mode === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>`;
-    return `<section class="tu-entry"><span class="sd-eyebrow">LEARN THIS WITH THE TUTOR</span>
-      <p class="tu-scene">${esc(i.scene)}</p>${i.previously ? `<p class="tu-previously"><b>Last time:</b> ${inline(i.previously)}</p>` : ''}
+    const fresh = i.outside?.picks_up && !active;
+    return out + `<section class="tu-entry"><span class="sd-eyebrow">LEARN THIS WITH THE TUTOR</span>
+      <p class="tu-scene">${esc(i.scene)}</p>${fresh ? `<p class="tu-previously">Your next session picks up where you got to with the outside tutor.</p>` : i.previously && i.previously !== i.outside?.summary ? `<p class="tu-previously"><b>Last time:</b> ${inline(i.previously)}</p>` : ''}
       <p class="sd-muted tu-hint">${active ? 'Your session is waiting where you left it.' : esc(mode?.blurb || '')} Talk or type.</p>
       <div class="sd-actions">${go}${active ? btn('End it and get the debrief', 'fresh') : ''}${btn('Read the notes instead', 'notes')}${style}</div>
       ${T.error ? `<p class="tu-error">${esc(T.error)}</p>` : ''}</section>`;
+  }
+
+  // What an outside tutor (ChatGPT over the handover) reported for this lesson, and ideas here it
+  // filed from sessions on other lessons. Shown with or without the model.
+  function outsideHtml() {
+    const x = T.info.outside, away = T.info.outside_elsewhere || [];
+    const link = e => `<a href="#/${e.section}/lesson/${encodeURIComponent(e.lesson)}">${esc(e.lesson_title)}</a> (${e.ideas})`;
+    const also = away.length ? `<p class="sd-muted tu-out-away">Ideas here were also covered in outside sessions on ${away.slice(0, 3).map(link).join(', ')}.</p>` : '';
+    if (!x) return also ? `<section class="tu-outside">${also}</section>` : '';
+    const c = x.counts || {}, f = x.filing || {};
+    const tally = [['right', c.right], ['partial', c.partial], ['wrong', c.wrong], ['explained', x.explained]].filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(' · ') || 'nothing graded';
+    const filing = f.status === 'done' ? (f.elsewhere.length ? `<p class="tu-out-filed">Also filed ${f.elsewhere.reduce((n, e) => n + e.ideas, 0)} ideas in other lessons: ${f.elsewhere.slice(0, 5).map(link).join(', ')}.</p>`
+        : x.topics ? `<p class="sd-muted">Its ${x.topics} other topics added ${f.here} ideas here and none elsewhere.</p>` : '')
+      : f.status === 'pending' ? `<p class="sd-muted">Filing ${x.topics} other topics onto the course…</p>`
+      : f.status ? `<p class="tu-error">${esc(f.retry?.error || 'Filing did not finish.')} ${btn('File them again', 'refile')}</p>` : '';
+    return `<section class="tu-outside"><span class="sd-eyebrow">FROM YOUR OUTSIDE TUTOR · ${esc(new Date(x.at * 1000).toLocaleDateString(undefined, {day: 'numeric', month: 'short'}))}</span>
+      <p><b>${esc(tally)}</b>${x.topics ? ` · ${x.topics} other topic${x.topics === 1 ? '' : 's'}` : ''}</p>${filing}
+      ${x.summary ? `<details><summary>What you covered</summary><div class="tu-out-summary">${md(x.summary)}</div>${x.next_steps ? `<p><b>Next:</b> ${inline(x.next_steps)}</p>` : ''}</details>` : ''}
+      ${x.suggestions.length ? `<details><summary>Its suggestions for this lesson (${x.suggestions.length})</summary><ul>${x.suggestions.map(t => `<li>${inline(t)}</li>`).join('')}</ul></details>` : ''}${also}</section>`;
   }
 
   function panelHtml() {
@@ -127,7 +147,10 @@
   async function act(action) {
     const t = T;
     try {
-      if (action === 'notes') {
+      if (action === 'refile') {
+        await api(`/knowledge/handback/${t.info.outside.filing.retry.session}/file`, 'POST');
+        if (T === t) load();
+      } else if (action === 'notes') {
         t.notes = true; setPreferNotes(true); paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
       } else if (action === 'start') {
         setPreferNotes(false);

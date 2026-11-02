@@ -95,6 +95,17 @@ NOTE "anything we covered that has no P-number"
 - Depth: recognise (I picked it out), recall (I stated it), explain (I explained why), apply (I used it on a scenario)."""
 
 
+def lesson_ideas(vs, ref):
+    """-> lines listing a lesson's ideas by subtopic, each numbered by `ref` and with my status."""
+    subs, lines = {}, []
+    for v in vs:
+        subs.setdefault(v['subtopic'], []).append(v)
+    for sub, group in subs.items():
+        lines.append(f'{sub}:')
+        lines += [f"- {ref(v)}: {v['claim']} [{STATUS_TEXT[_status(v)]}]" for v in group]
+    return lines
+
+
 def knowledge(views, misconceptions, section, category=None, lesson=None, session=None):
     """-> (prompt text, {ref: point id}) for a knowledge-base scope, or None when it holds no points.
 
@@ -123,13 +134,7 @@ def knowledge(views, misconceptions, section, category=None, lesson=None, sessio
         return r
 
     if lesson:
-        subs = {}
-        for v in vs:
-            subs.setdefault(v['subtopic'], []).append(v)
-        lines += ['', 'The ideas in this lesson, by subtopic, with my status on each:']
-        for sub, group in subs.items():
-            lines.append(f'{sub}:')
-            lines += [f"- {ref(v)}: {v['claim']} [{STATUS_TEXT[_status(v)]}]" for v in group]
+        lines += ['', 'The ideas in this lesson, by subtopic, with my status on each:'] + lesson_ideas(vs, ref)
     else:
         groups = {}
         for v in vs:

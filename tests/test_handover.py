@@ -19,19 +19,23 @@ def test_brief_numbers_the_ideas_and_hands_over_where_the_app_tutor_left_off():
                    {'role': 'learner', 'text': 'It goes to the   database'}, {'role': 'tutor', 'say': 'Debrief text', 'debrief': True}]}
     text, refs = ho.brief(VIEWS, MIS, LESSON, {'summary': 'Got misses, TTLs next.'}, session, 'abc234')
     assert refs == {'P1': 'a1', 'P2': 'a2'} and 'P2: claim a2' in text
-    assert 'The lesson in one line: Caches hide latency.' in text
+    assert 'Section: System design > Cat c1\nTopic: Lesson a\nIn one line: Caches hide latency.' in text
+    assert 'Edges:\n- P2: claim a2 [got it wrong last time]' in text and '"Never practised" does not mean' in text
+    assert 'Mistakes I have made that are still open:\n- Edges: I wrongly believed: caches are always fresh' in text
+    assert '1. Diagnose.' in text and 'one question at a time' in text and 'Keep each turn short' not in text
     assert '- Explain a miss (✓ shown)' in text and '- Pick a TTL (○ not yet)' in text
     assert 'Last session on this lesson: Got misses, TTLs next.' in text
     tail = text.split('Where that session stopped')[1]
     assert '- Tutor: What happens on a miss?\n- Me: It goes to the database' in tail and 'Debrief text' not in tail
-    assert tail.split('How this handover')[0].count('- Me: old') == ho.LAST_TURNS - 2  # only the last six turns
-    assert "don't call any tools" in text and 'learning_handback once with session abc234' in text
+    assert tail.split('Keep continuity')[0].count('- Me: old') == ho.LAST_TURNS - 2  # only the last six turns
+    assert "Don't call any tools while we talk" in text and 'learning_handback once with session abc234' in text
     assert 'SENPAI-DEBRIEF' not in text
 
 
 def test_brief_without_any_tutor_history_still_lists_objectives():
-    text, _ = ho.brief(VIEWS, MIS, {**LESSON, 'summary': ''}, {}, None, 'x')
+    text, _ = ho.brief(VIEWS, [], {**LESSON, 'summary': ''}, {}, None, 'x')
     assert '- Explain a miss (○ not yet)' in text and 'Last session' not in text and 'stopped' not in text
+    assert 'My usual tutor has no notes on this lesson yet.' in text and 'In one line' not in text
     assert ho.brief(VIEWS, MIS, {**LESSON, 'id': 'nope'}, {}, None, 'x') is None
 
 
