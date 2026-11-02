@@ -200,7 +200,7 @@ points:
   - The client asks the API for permission; the API authenticates, checks authorisation, quota, size and type, and decides the object key
   - The API signs a URL scoped to one operation and key with a short expiry (and size/type constraints where possible)
   - The client uploads directly to object storage, so the API never handles the bytes
-  - Anyone holding the URL can use it until expiry, so generating it is the authorisation decision; afterwards metadata is updated, ideally from an event plus a reconciler
+  - Anyone holding the URL can use it until expiry, so generating it is the authorisation decision
 model: |
   The client asks the API to start an upload. The API checks who the user is, whether they may upload, their quota and the declared size and type, creates a pending metadata row, and picks a server-generated key. It then signs a URL that permits exactly one PUT (or POST) to that key, for a few minutes, with size and type pinned. The client sends the bytes straight to the object store. Because the URL is a bearer credential — anyone with it can use it — issuing it is the security check: get scope and expiry wrong and it leaks write access. When the object lands, an event (backed by a reconciler) marks the row uploaded and triggers processing.
 ```

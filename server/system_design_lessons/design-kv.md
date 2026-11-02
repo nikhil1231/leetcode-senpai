@@ -176,14 +176,14 @@ strong: |
 ```
 
 ```recall
-prompt: Describe what happens to writes for a key when one of its three replicas is down, and how that replica becomes consistent again.
+prompt: In a three-replica key-value store configured with W=2, describe what happens to writes for a key when one replica is down, and how that replica becomes consistent again.
 points:
   - With W=2, the write succeeds once the two reachable replicas acknowledge it
   - The coordinator (or another node) stores a hint for the down replica (hinted handoff) and delivers it when the replica returns
-  - Reads with R=2 still see the latest value because quorums overlap, and read repair fixes stale replicas encountered during reads
+  - Read repair can copy a newer version to a stale replica when reads encounter divergent versions
   - Background anti-entropy with Merkle trees eventually syncs any remaining differences, even for keys never read
 model: |
-  The coordinator sends the write to all three replicas in parallel. Two acknowledge, which meets W=2, so the client gets success. For the third, which is unreachable, a hint — "this write belongs to replica C" — is stored on another node and replayed when C comes back. Meanwhile quorum reads (R=2) always include at least one replica with the new value, and if a read touches C after it returns but before the hint lands, the coordinator writes the newer version back to it. If hints were lost or expired, periodic anti-entropy compares Merkle trees between replicas and repairs any ranges that differ.
+  The coordinator sends the write to all three replicas in parallel. Two acknowledge, which meets W=2, so the client gets success. For the third, which is unreachable, a hint — "this write belongs to replica C" — is stored on another node and replayed when C comes back. If a read encounters different versions after C returns but before the hint lands, read repair can copy the newer version back to C. If hints were lost or expired, periodic anti-entropy compares Merkle trees between replicas and repairs any ranges that differ.
 ```
 
 ```bug

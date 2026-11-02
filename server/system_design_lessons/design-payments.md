@@ -202,7 +202,7 @@ points:
   - The payment is persisted (state AUTHORIZING) before calling the processor, so the system knows a call may have happened
   - The call carries a deterministic idempotency key tied to that payment, so a retry returns the original result rather than charging again
   - A timeout is treated as UNKNOWN and resolved by retrying with the same key, querying the processor, or applying the webhook — never by a new charge
-  - Webhooks are verified and deduplicated, transitions are conditional, and daily reconciliation catches anything still inconsistent
+  - Recovery updates the existing payment with conditional state transitions, so concurrent recovery attempts cannot create another charge or apply the same result twice
 model: |
   Before calling out, the service writes the payment as AUTHORIZING with a stable key, say p-9. The processor call includes Idempotency-Key p-9. If it times out, the payment becomes UNKNOWN and the user sees "processing". A recovery job then retries with the same key: if the first attempt succeeded, the processor returns that original charge; if it never arrived, it runs now, once. The processor's webhook for p-9 may arrive too; it's verified, deduplicated by event ID, and applied only if the state transition is still valid. Anything that still disagrees shows up in the nightly reconciliation against the processor's settlement report.
 ```

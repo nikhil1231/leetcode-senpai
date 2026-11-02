@@ -11,7 +11,7 @@ from . import llm, voice
 from .system_design_content import SKILLS, CASES, VERSION
 
 log = logging.getLogger(__name__)
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 Skill = Literal['requirements', 'reads', 'capacity', 'retries', 'concurrency', 'operations']
 
 
@@ -156,6 +156,11 @@ async def grade_recall(block, text, settings=None, subject='system design'):
         'For each supplied rubric point, in the given order and with the point text copied '
         'exactly, decide covered, partial, missing or incorrect (stated something false). '
         'Credit equivalent wording and correct alternatives; do not require exact terms. '
+        'Assess only what the question explicitly asks or logically requires to answer it. '
+        'Do not penalise missing mitigations, implementation details, examples or calculations '
+        'that the question did not request. A model answer is illustrative, not extra criteria. '
+        'When the question offers alternatives with the word or, a correct explanation of either '
+        'alternative is sufficient; do not demand both. '
         'Notes are one sentence and specific. Feedback names the single most important gap '
         'or misconception, in under 90 words, and does not restate the model answer verbatim.'
     ) + llm.SPOKEN_ANSWER
@@ -189,7 +194,11 @@ async def examiner_report(items, settings=None):
         'the reasoning that gets to the right answer. Do not merely restate the correct answer. '
         'For blank answers, say what to recall. The summary (under 100 words) names the pattern '
         'across the paper and what an interviewer would notice. Focus lists up to three concrete '
-        'things to study next. Only write notes for the supplied item numbers.'
+        'things to study next. Only write notes for the supplied item numbers. '
+        'Explain deductions only against the actual question and its marking criteria. '
+        'Do not describe unasked mitigations, extra implementation details or broader interview '
+        'advice as missing requirements or reasons for lost marks. Put optional enrichment '
+        'in the study-next list, clearly separate from the reasons for deductions.'
     ) + llm.SPOKEN_ANSWER
     try:
         raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', profile['model'], system,

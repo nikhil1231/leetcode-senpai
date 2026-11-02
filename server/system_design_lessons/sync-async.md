@@ -212,9 +212,8 @@ points:
   - It promises the request is valid and the work will be processed, or will reach a visible failure — not that it's complete
   - The job (and its intent to be processed) must be durably recorded before responding
   - The response returns a job identifier or status URL the client can observe
-  - Retried submissions must not create duplicates (idempotency key tied to the job)
 model: |
-  202 means "valid, recorded, and you'll be able to see how it ends." Before sending it, the API must commit a job record durably — together with whatever guarantees it will be picked up, such as an outbox row or a jobs table workers poll — so a crash right after responding can't lose it. The response includes the job ID or a status URL. Because the client may not receive the 202 and retry, the submission must be idempotent: the same idempotency key returns the same job rather than creating a second one.
+  202 means "valid, recorded, and you'll be able to see how it ends." Before sending it, the API must commit a job record durably — together with whatever guarantees it will be picked up, such as an outbox row or a jobs table workers poll — so a crash right after responding can't lose it. The response includes the job ID or a status URL.
 ```
 
 ```questions

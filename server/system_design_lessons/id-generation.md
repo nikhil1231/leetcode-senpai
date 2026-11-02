@@ -169,7 +169,7 @@ points:
   - A B-tree index keeps keys sorted, so each insert goes to the leaf page where its key belongs
   - Random keys land on random pages across the whole index, so the hot working set is the entire index, causing cache misses and page splits
   - Monotonic or time-ordered keys insert near the right edge, keeping a small set of hot pages in memory
-  - A time-ordered ID such as UUIDv7, ULID or Snowflake keeps decentralised generation and restores locality
+  - Give a concrete locality-preserving alternative, such as an auto-increment integer, UUIDv7, ULID or Snowflake ID
 model: |
   A B-tree places every key in sorted position. With UUIDv4, consecutive inserts land on random leaf pages anywhere in a huge index, so each insert may need a page that isn't in memory and may split a half-full page — the whole index becomes the working set, and write I/O and index size grow. Sequential or time-ordered keys always append near the right edge, so the same few pages stay hot and fill completely. UUIDv7 or ULID (timestamp prefix plus randomness), or a Snowflake ID, keep the benefit of generating IDs without coordination while restoring that locality.
 ```

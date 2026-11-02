@@ -161,14 +161,13 @@ strong: |
 ```
 
 ```recall
-prompt: Explain why a page that calls 50 backend services in parallel can be slow for most users even though each backend is fast for 99% of requests.
+prompt: Explain why a page that waits for 50 backend services in parallel can be slow for many users even though each backend is fast for 99% of requests. Assuming independent call latencies, estimate the fraction of page loads with at least one slow call.
 points:
   - The page waits for the slowest of its parallel calls (latency is the max)
   - The probability that at least one of N calls is slow is 1 − (1 − p)^N, which grows quickly with N
   - With 50 calls and a 1% slow rate, about 40% of page loads include a slow call
-  - Mitigations such as timeouts with fallbacks, hedged requests, fewer calls, or fixing the sources of slowness
 model: |
-  The page can't render until its slowest call returns, so its latency is the maximum of 50 latencies. If each call is slow 1% of the time, the chance that none of the 50 is slow is 0.99⁵⁰ ≈ 60%, so about 40% of page loads hit at least one slow call — the backend's p99 has become a common user experience. Fixes: give each call a timeout and a fallback, hedge the slow tail by resending after the p95, reduce the number of calls per page, and attack the causes of slowness such as GC pauses and cold caches.
+  The page can't render until its slowest call returns, so its latency is the maximum of 50 latencies. If each call is slow 1% of the time, the chance that none of the 50 is slow is 0.99⁵⁰ ≈ 60%, so about 40% of page loads hit at least one slow call — the backend's p99 has become a common user experience.
 ```
 
 ```questions

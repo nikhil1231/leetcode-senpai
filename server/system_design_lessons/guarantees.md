@@ -195,10 +195,9 @@ prompt: What is the difference between an SLO and an invariant? Give one example
 points:
   - An SLO is a measurable target that can be missed by a small, budgeted amount (e.g. 99.9% of payments succeed within 2 s over 30 days)
   - An invariant is a rule that must never be violated (e.g. a payment request is charged at most once)
-  - SLOs are met with capacity, redundancy and operations; invariants need correctness mechanisms such as constraints, idempotency keys and transactions
   - Missing an SLO spends error budget; breaking an invariant corrupts data or money
 model: |
-  An SLO is a statistical target — "99.9% of valid payment requests complete successfully within 2 s, measured over 30 days." Occasional misses are expected and come out of an error budget. An invariant is absolute — "each payment request is charged at most once," or "an account balance never goes below zero." You don't meet invariants with more servers; you meet them with mechanisms that hold under concurrency and failure: idempotency keys with unique constraints, conditional updates, transactions.
+  An SLO is a statistical target — "99.9% of valid payment requests complete successfully within 2 s, measured over 30 days." Occasional misses are expected and come out of an error budget. An invariant is absolute — "each payment request is charged at most once," or "an account balance never goes below zero." Missing the SLO spends error budget; breaking the invariant means an incorrect payment outcome, even if the service was fast and available.
 ```
 
 ```questions

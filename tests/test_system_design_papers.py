@@ -200,3 +200,20 @@ def test_discard_cannot_remove_a_finished_paper(client):
     post(client, f'/papers/{key}/finish')
     assert client.post(f'/api/system-design/papers/{key}/discard').status_code == 409
     assert client.get(f'/api/system-design/papers/{key}').json()['status'] == 'marked'
+
+
+def test_fanout_paper_only_marks_the_explanation_and_probability_it_asks_for(client):
+    paper = post(client, '/papers', request_id=rid(), scope='topic', value='service-quality', length='long')
+    doc = client.store.get_design_record(paper['id'])
+    recall = next(it for it in doc['items'] if it['contract']['type'] == 'recall')
+    block = recall['contract']['b']
+    assert recall['max'] == 3
+    assert 'independent' in block['prompt'] and 'fraction' in block['prompt']
+    assert all('mitigation' not in point.lower() for point in block['points'])
+    assert 'Fixes:' not in block['model']
+    # The scheme the learner receives for self-marking is the corrected scheme too.
+    post(client, f'/papers/{paper["id"]}/answer', n=recall['n'], value='Wait for the slowest call; 1 - 0.99**50 is about 40%.')
+    done = post(client, f'/papers/{paper["id"]}/finish')
+    public = next(it for it in done['items'] if it['n'] == recall['n'])
+    assert public['scheme'] == block['points']
+    assert public['max'] == 3

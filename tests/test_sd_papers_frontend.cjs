@@ -9,7 +9,7 @@ function harness(sitting = 'paper_1', onFinish) {
   let click, routed, paints = 0, nextTimer = 0;
   const timers = new Map();
   const pill = {classList: {toggle(c, on) { on ? classes.add(c) : classes.delete(c); }}, addEventListener(_, fn) { click = fn; }};
-  const window = {H: {$: id => id === '#btn-back-to-paper' ? pill : null, escapeHtml: s => s,
+  const window = {H: {$: id => id === '#btn-back-to-paper' ? pill : null, escapeHtml: s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
     api: async (path, method = 'GET') => {
       requests.push([path, method]);
       if (path.endsWith('/finish') && onFinish) return onFinish();
@@ -103,4 +103,38 @@ test('leaving the paper cancels status polling', async () => {
   h.papers.stop();
   assert.equal(h.pendingTimers(), 0);
   assert.equal(h.paints(), 0);
+});
+
+
+test('marked review separates question, answer, scheme and examiner feedback', async () => {
+  const h = harness(); await h.papers.open(); h.click(); await h.papers.open();
+  Object.assign(h.draft, {
+    status: 'marked', scope: {kind: 'mixed'}, totals: {marks: 1, max: 2, pending: 0, grade: null},
+    items: [{n: 0, max: 2, type: 'question', format: 'multi', prompt: 'Pick the true statements.', label: 'Utilisation'}],
+    results: {'0': {marks: 1, answer_text: 'Variability matters · Waiting is nonlinear', right: 'Headroom matters · Variability matters · Waiting is nonlinear', explanation: 'Queues grow near saturation.', why_wrong: []}},
+    report: {summary: 'Review capacity headroom.', notes: [{n: 0, note: 'You missed the headroom statement.'}]},
+  });
+  const html = h.papers.render({});
+  for (const label of ['Question', 'Your answer', 'Mark scheme', 'Examiner feedback']) {
+    assert.ok(html.includes(`class="sd-result-label">${label}</h4>`));
+  }
+  assert.match(html, /Partial credit/);
+  assert.match(html, /<li>Headroom matters<\/li>/);
+  assert.match(html, /sd-result-explanation"><summary>Why this is the answer/);
+  assert.doesNotMatch(html, /Variability matters · Waiting/);
+});
+
+test('recall review keeps model answer and self-marking usable with explicit rubric status', async () => {
+  const h = harness(); await h.papers.open(); h.click(); await h.papers.open();
+  Object.assign(h.draft, {
+    status: 'self_mark', scope: {kind: 'mixed'}, totals: {marks: 0, max: 1, pending: 1, grade: null},
+    items: [{n: 0, max: 1, type: 'recall', prompt: 'Explain the race.', scheme: ['Atomic checks']}],
+    results: {'0': {marks: null, answer_text: '<script>bad()</script>', right: 'Check atomically.', points: [{point: 'Atomic checks', status: 'missing', note: 'Explain the race.'}], feedback: 'Use a conditional update.'}},
+  });
+  const html = h.papers.render({});
+  assert.match(html, /Read a model answer/);
+  assert.match(html, /sd-rubric-status">missing/);
+  assert.match(html, /Record my marks/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /<script>/);
 });

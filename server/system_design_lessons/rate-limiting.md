@@ -147,8 +147,8 @@ prompt: Explain why a fixed-window rate limiter can allow twice the limit, and h
 points:
   - A fixed window resets its count at clock boundaries
   - A client can send the full limit at the end of one window and again at the start of the next, so 2× the limit within a short span
-  - A sliding-window counter weights the previous window's count by its overlap with the rolling window, approximating a true rolling count
-  - A token bucket bounds bursts by its capacity and the long-run rate by its refill rate, independent of clock boundaries
+  - Describe either a sliding-window counter (overlap-weighted previous and current counts) or a token bucket (capacity and continuous refill); either approach is sufficient
+  - Explain why the chosen approach has no full reset at a clock boundary, so crossing the boundary does not grant two fresh limits
 model: |
   A fixed window counts requests per calendar minute and resets the counter at :00. A client can send 100 requests at 12:00:59 and 100 more at 12:01:00, all allowed, so 200 requests land in two seconds against a "100 per minute" limit. A sliding-window counter keeps the previous and current window counts and estimates the rolling count as previous × (fraction of the previous window still inside the last 60 s) + current, so the boundary trick fails. A token bucket ignores clock windows entirely: bursts can never exceed its capacity, and sustained traffic can't exceed its refill rate.
 ```

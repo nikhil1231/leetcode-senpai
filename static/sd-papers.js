@@ -94,15 +94,27 @@
 
   // ---------- Results ----------
   const STATUS = {covered: ['✓', 'is-right'], partial: ['◐', 'is-partial'], missing: ['○', 'is-missing'], incorrect: ['✗', 'is-wrong']};
+  function resultAnswer(p, text) {
+    if (p.format === 'multi' || p.type === 'faded') {
+      return `<ul class="sd-result-answer-list">${String(text).split(' · ').map(t => `<li>${inline(t)}</li>`).join('')}</ul>`;
+    }
+    return md(text);
+  }
   function resultItem(p, i) {
     const r = paper.results[String(p.n)], note = paper.report?.notes?.find(x => x.n === p.n);
     const cls = r.marks === null ? 'is-pending' : r.marks >= p.max ? 'is-full' : r.marks > 0 ? 'is-part' : 'is-zero';
+    const outcome = r.marks === null ? 'Awaiting marks' : r.marks >= p.max ? 'Full marks' : r.marks > 0 ? 'Partial credit' : 'No marks';
     const self = r.marks === null && paper.status === 'self_mark' && p.type === 'recall';
-    const rubric = r.points ? `<ul class="sd-rubric">${r.points.map(pt => `<li class="${STATUS[pt.status][1]}"><span>${STATUS[pt.status][0]}</span><div><b>${inline(pt.point)}</b>${pt.note ? `<p>${inline(pt.note)}</p>` : ''}</div></li>`).join('')}</ul>${r.feedback ? `<p>${inline(r.feedback)}</p>` : ''}` : '';
+    const rubric = r.points ? `<ul class="sd-rubric">${r.points.map(pt => `<li class="${STATUS[pt.status][1]}"><span aria-hidden="true">${STATUS[pt.status][0]}</span><div><span class="sd-rubric-status">${esc(pt.status)}</span><b>${inline(pt.point)}</b>${pt.note ? `<p>${inline(pt.note)}</p>` : ''}</div></li>`).join('')}</ul>` : '';
+    const scheme = p.type === 'recall' ? `${rubric}<details class="sd-model"><summary>Read a model answer</summary>${md(r.right)}</details>` : resultAnswer(p, r.right);
     const selfHtml = self ? `<div class="sd-self-mark" data-n="${p.n}"><p><b>Mark it yourself:</b> compare with the model answer and tick each point you made.</p><ul class="sd-rubric is-self">${(p.scheme || []).map((pt, k) => `<li><label><input type="checkbox" data-point="${k}"> ${inline(pt)}</label></li>`).join('')}</ul>${btn('Record my marks', 'self-mark', `data-n="${p.n}"`, true)}</div>` : '';
-    return `<details class="sd-paper-result ${cls}" ${r.marks !== null && r.marks >= p.max ? '' : 'open'}><summary><span class="sd-paper-num">${i + 1}</span><span class="sd-paper-label">${inline(p.label || p.title || '')}</span><span class="sd-paper-score">${r.marks === null ? '…' : r.marks}/${p.max}</span></summary>
-      <div class="sd-q-prompt">${md(p.prompt)}</div><p><b>Your answer:</b> ${inline(r.answer_text)}</p>${p.type === 'recall' ? `<details class="sd-model"><summary>Model answer</summary>${md(r.right)}</details>` : `<p><b>Mark scheme:</b> ${inline(r.right)}</p>`}
-      ${note ? `<p class="sd-examiner-note"><b>Examiner:</b> ${inline(note.note)}</p>` : ''}${(r.why_wrong || []).map(w => `<p class="sd-why-wrong">${inline(w)}</p>`).join('')}${rubric}${selfHtml}${r.explanation ? `<details><summary>Explanation</summary>${md(r.explanation)}</details>` : ''}</details>`;
+    const feedback = [note?.note, r.feedback].filter(Boolean);
+    return `<details class="sd-paper-result ${cls}" ${r.marks !== null && r.marks >= p.max ? '' : 'open'}><summary><span class="sd-paper-num">${i + 1}</span><span class="sd-paper-label">${inline(p.label || p.title || '')}</span><span class="sd-paper-outcome">${outcome}</span><span class="sd-paper-score">${r.marks === null ? '…' : r.marks}/${p.max}</span></summary>
+      <div class="sd-result-body"><section class="sd-result-question"><h4 class="sd-result-label">Question</h4><div class="sd-q-prompt">${md(p.prompt)}</div></section>
+      <div class="sd-result-comparison"><section class="sd-result-answer"><h4 class="sd-result-label">Your answer</h4>${resultAnswer(p, r.answer_text)}</section><section class="sd-result-scheme"><h4 class="sd-result-label">Mark scheme</h4>${scheme}</section></div>
+      ${feedback.length ? `<section class="sd-result-feedback"><h4 class="sd-result-label">Examiner feedback</h4>${feedback.map(t => md(t)).join('')}</section>` : ''}
+      ${(r.why_wrong || []).length ? `<section class="sd-result-corrections"><h4 class="sd-result-label">Where you lost marks</h4>${r.why_wrong.map(w => md(w)).join('')}</section>` : ''}${selfHtml}
+      ${r.explanation ? `<details class="sd-result-explanation"><summary>Why this is the answer</summary><div>${md(r.explanation)}</div></details>` : ''}</div></details>`;
   }
   function resultsHtml() {
     const t = paper.totals, g = t.grade, over = paper.elapsed_sec > paper.time_limit_sec;

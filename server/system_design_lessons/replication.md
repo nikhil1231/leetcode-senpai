@@ -141,7 +141,7 @@ points:
   - With async replication the leader acks after its local commit, before followers have the write
   - If the leader crashes before shipping it, the promoted follower doesn't have that write
   - The client was told it committed, so an acknowledged write is lost (up to the replication lag)
-  - Prevent it by acking only after at least one replica has the write (semi-sync/quorum), accepting extra latency, and fence the old leader when it returns
+  - Prevent it by acking only after at least one replica has the write (semi-sync/quorum), accepting extra latency
 model: |
   In asynchronous replication the leader commits locally, replies "committed", and streams the change to followers a moment later. If it crashes in between, the follower that gets promoted never saw the write, so data the client was promised is gone — and when the old leader returns it holds writes the new leader lacks, which must be discarded or reconciled by hand. To prevent it, make the commit wait until at least one other replica (or a majority) has durably received the write. That costs a round trip to the nearest replica, but promotion of an up-to-date replica then loses nothing. Fencing stops the old leader accepting writes after failover.
 ```

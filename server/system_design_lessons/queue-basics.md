@@ -179,7 +179,7 @@ points:
   - It buffers work so producers aren't slowed or failed by consumers during the burst
   - It doesn't add processing capacity — the backlog drains only at completion rate minus arrival rate
   - Sustained arrivals above capacity make the backlog grow without bound, so capacity, shedding or limits are needed
-  - Size consumers for peak arrivals with headroom for draining (Little's Law for concurrency), and monitor oldest-message age
+  - Size consumers for peak arrivals with headroom for draining (Little's Law for concurrency)
 model: |
   A queue lets the producer accept work at burst speed while consumers process at their own rate, so the burst becomes a temporary backlog instead of errors or slow responses. It adds no capacity: the backlog shrinks only at (completion rate − arrival rate), and if arrivals stay above capacity it grows until something gives. So I size consumers from peak arrival rate × processing time (Little's Law), add headroom so backlogs drain in an acceptable time, autoscale on the oldest message's age, and bound the queue or shed load if the backlog would outgrow what users will tolerate.
 ```

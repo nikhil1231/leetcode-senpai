@@ -215,9 +215,9 @@ points:
   - The seat is currently in the held state
   - The hold is this specific hold (hold ID) and belongs to this user
   - The hold hasn't expired, judged by the authoritative database clock
-  - All checks and the state change happen atomically (one conditional update or locked transaction), otherwise the hold can expire or be re-claimed between check and write; retries return the existing booking
+  - All checks and the state change happen atomically (one conditional update or locked transaction), otherwise the hold can expire or be re-claimed between check and write
 model: |
-  Confirmation must verify that the seat is still in the held state, that the hold is the specific hold being confirmed (matching hold ID) and belongs to the requesting user, and that its expiry time is still in the future according to the database's clock. These conditions go in the WHERE clause of the same UPDATE that sets the seat to booked, and the code checks that exactly one row changed. If they're checked in a separate read first, the hold can expire and someone else can claim the seat in between, and the unconditional write would steal their seat. A booking ID supplied by the client lets a retried confirmation recognise it already succeeded.
+  Confirmation must verify that the seat is still in the held state, that the hold is the specific hold being confirmed (matching hold ID) and belongs to the requesting user, and that its expiry time is still in the future according to the database's clock. These conditions go in the WHERE clause of the same UPDATE that sets the seat to booked, and the code checks that exactly one row changed. If they're checked in a separate read first, the hold can expire and someone else can claim the seat in between, and the unconditional write would steal their seat.
 ```
 
 ```questions

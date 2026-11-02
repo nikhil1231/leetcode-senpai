@@ -176,3 +176,34 @@ a.sd-heat-topic:hover { color:var(--accent); }
 @media (prefers-reduced-motion:reduce) {
   .sd-marking-sheet i,.sd-marking-orbit { animation:none; }
 }
+
+/* Marked answers: question, comparison, feedback and teaching notes have distinct roles. */
+.sd-paper-result>summary::before { content:'›'; color:var(--muted); font-size:20px; transition:transform .15s; }
+.sd-paper-result[open]>summary::before { transform:rotate(90deg); }
+.sd-paper-result[open]>summary { border-bottom:1px solid var(--line); }
+.sd-paper-outcome { font-size:11px; color:var(--muted); }
+.sd-result-body { display:grid; gap:20px; padding-top:20px; }
+.sd-paper-result .sd-result-label { margin:0 0 12px; font-size:10px; font-weight:650; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+.sd-result-question .sd-q-prompt { margin:0; }
+.sd-result-comparison { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
+.sd-result-answer,.sd-result-scheme { min-width:0; padding:18px; border:1px solid var(--line); border-radius:8px; overflow-wrap:anywhere; }
+.sd-result-answer { background:var(--bg); }
+.sd-result-scheme { background:color-mix(in srgb,var(--accent) 5%,var(--panel)); border-color:color-mix(in srgb,var(--accent) 28%,var(--line)); }
+.sd-paper-result .sd-result-scheme>.sd-result-label { color:var(--accent); }
+.sd-result-body p { margin:0 0 10px; white-space:pre-wrap; }
+.sd-result-body p:last-child { margin-bottom:0; }
+.sd-result-answer-list { margin:0; padding-left:18px; display:grid; gap:10px; font-size:13px; line-height:1.7; }
+.sd-result-feedback { padding:4px 0 4px 16px; border-left:3px solid var(--accent); }
+.sd-result-corrections { padding:14px 16px; border-radius:8px; background:#e0707a0a; }
+.sd-paper-result .sd-result-corrections>.sd-result-label { color:#f0939b; }
+.sd-result-scheme .sd-rubric { margin-top:0; }
+.sd-rubric-status { display:block; margin-bottom:5px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
+.sd-result-explanation { border-top:1px solid var(--line); padding-top:14px; }
+.sd-result-explanation>summary,.sd-result-scheme .sd-model>summary { color:var(--text-2); cursor:pointer; font-size:12px; }
+.sd-result-explanation>div,.sd-result-scheme .sd-model[open]>summary { margin-top:12px; }
+@media (max-width:760px) {
+  .sd-result-comparison { grid-template-columns:minmax(0,1fr); }
+  .sd-paper-result>summary { gap:8px; flex-wrap:wrap; }
+  .sd-paper-label { flex-basis:60%; }
+  .sd-paper-outcome { margin-left:auto; }
+}
