@@ -925,6 +925,23 @@ def review_mode(review):
     return "full" if q is not None and q <= 3 else "recall"
 
 
+def with_recall_progress(reviews, approach_reviews):
+    """Review cards with recalls done since counted. A recall moves only the
+    approach card, so a recall-mode review card would otherwise keep its old due
+    date and come straight back the next day. A newer approach card's due date
+    stands in for it; the stored cards are not touched."""
+    approach = {a.get("slug"): a for a in approach_reviews or []}
+    out = []
+    for r in reviews:
+        a = approach.get(r.get("slug"))
+        if (a and review_mode(r) == "recall"
+                and (a.get("last_reviewed") or "") > (r.get("last_reviewed") or "")
+                and (a.get("due_date") or "") > (r.get("due_date") or "")):
+            r = {**r, "due_date": a["due_date"]}
+        out.append(r)
+    return out
+
+
 def review_card(review, problem, days_late):
     """One review rendered for the board. Mirrors build_daily_queue's review items
     so the same row renderer handles both."""

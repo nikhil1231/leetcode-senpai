@@ -345,6 +345,12 @@ def _enrichment_map(store):
     return {e["attempt_id"]: e for e in store.list_enrichments()}
 
 
+def _reviews(store):
+    """Review cards as the queue should see them: recalls done since count."""
+    reviews, approach = _gather(store.list_reviews, store.list_approach_reviews)
+    return scheduler.with_recall_progress(reviews, approach)
+
+
 def _gather(*fns):
     """Run independent (blocking Firestore) reads concurrently, preserving order.
 
@@ -494,7 +500,7 @@ def _drill_exclude_slugs(store, queue):
 
 def _build_drills(store, exclude_slugs):
     problems, attempts, reviews, enrichments, settings = _gather(
-        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_problems, store.list_attempts, lambda: _reviews(store),
         store.list_enrichments, store.get_settings)
     return scheduler.build_drill_lane(
         problems, attempts, reviews, settings, enrichments=enrichments,
@@ -543,7 +549,7 @@ def _replace_completed_drill_cache(uid, completed_slug):
     target = max(len(cache.get("drills", [])), DRILL_CACHE_TARGET)
 
     problems, attempts, reviews, enrichments, settings = _gather(
-        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_problems, store.list_attempts, lambda: _reviews(store),
         store.list_enrichments, store.get_settings)
     queue = scheduler.build_daily_queue(
         problems, attempts, reviews, settings, enrichments=enrichments,
@@ -974,7 +980,7 @@ def api_practice_answer(body: PracticeAnswer, uid: str = Depends(auth.require_us
 def api_overview(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     problems, attempts, reviews, settings = _gather(
-        store.list_problems, store.list_attempts, store.list_reviews, store.get_settings)
+        store.list_problems, store.list_attempts, lambda: _reviews(store), store.get_settings)
     ov = scheduler.overview(problems, attempts, reviews)
     ov["newly_mastered"] = gamify.check_mastery_moments(store)
     selected = llm.current_model(settings)
@@ -988,7 +994,7 @@ def api_overview(uid: str = Depends(auth.require_user)):
 def api_today(bg: BackgroundTasks, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     problems, attempts, reviews, enrichments, settings = _gather(
-        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_problems, store.list_attempts, lambda: _reviews(store),
         store.list_enrichments, store.get_settings)
     try:  # Senpai's focus nudges new-problem choice; a missing plan just means no nudge.
         settings = {**settings, "senpai_focus_categories": senpai_service.focus_categories(store)}
@@ -1023,7 +1029,7 @@ def api_review_schedule(uid: str = Depends(auth.require_user)):
     but it makes the board look like it only ever holds five cards.
     """
     store = get_store(uid)
-    problems, reviews = _gather(store.list_problems, store.list_reviews)
+    problems, reviews = _gather(store.list_problems, lambda: _reviews(store))
     segments = scheduler.review_schedule(problems, reviews)
     latest = _latest_recall_by_slug(store)
     out = []
@@ -2065,7 +2071,7 @@ async def api_sprint_start(bg: BackgroundTasks,
                            lc=Depends(auth.leetcode_auth)):
     store = get_store(uid)
     problems, attempts, reviews, enrichments, settings = _gather(
-        store.list_problems, store.list_attempts, store.list_reviews,
+        store.list_problems, store.list_attempts, lambda: _reviews(store),
         store.list_enrichments, store.get_settings)
     sprint_settings = dict(settings)
     if body.limit is not None:
@@ -2593,7 +2599,7 @@ def api_problems(search: str = "", category: str = "", difficulty: str = "",
                  uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     today = _today_iso()
-    reviews = {r["slug"]: r for r in store.list_reviews()}
+    reviews = {r["slug"]: r for r in _reviews(store)}
     counts = {}
     latest = {}
     for a in store.list_attempts():

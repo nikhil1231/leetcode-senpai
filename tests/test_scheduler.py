@@ -1012,3 +1012,22 @@ def test_a_failed_coach_graded_recall_reads_as_low_confidence():
 ])
 def test_self_assessed(attempt, mine):
     assert scheduler.self_assessed(attempt) is mine
+
+
+def test_recall_since_moves_a_recall_mode_review_card():
+    card = {"slug": "a", "due_date": "2026-10-15", "last_reviewed": "2026-10-01",
+            "interval_days": 14, "quality": 5}
+    approach = {"slug": "a", "due_date": "2026-11-10", "last_reviewed": "2026-11-02"}
+    out = scheduler.with_recall_progress([card], [approach])
+    assert out[0]["due_date"] == "2026-11-10"
+    assert card["due_date"] == "2026-10-15"
+
+
+def test_recall_progress_ignores_older_recalls_and_full_cards():
+    card = {"slug": "a", "due_date": "2026-10-15", "last_reviewed": "2026-10-01",
+            "interval_days": 14, "quality": 5}
+    old = {"slug": "a", "due_date": "2026-11-10", "last_reviewed": "2026-09-20"}
+    assert scheduler.with_recall_progress([card], [old])[0]["due_date"] == "2026-10-15"
+    full = {**card, "leech": 1}
+    new = {**old, "last_reviewed": "2026-11-02"}
+    assert scheduler.with_recall_progress([full], [new])[0]["due_date"] == "2026-10-15"
