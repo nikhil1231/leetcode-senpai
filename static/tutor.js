@@ -82,9 +82,10 @@
     const mode = o.modes.find(m => m.id === T.mode);
     const style = active ? '' : `<label class="tu-style">Style <select data-tu-mode aria-label="Session style">${o.modes.map(m => `<option value="${m.id}" ${T.mode === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>`;
     const fresh = i.outside?.picks_up && !active;
+    const nx = !active && i.next ? `<p class="tu-previously"><b>Your tutor suggested next:</b> ${esc(i.next.title)}${i.next.why ? `, to ${esc(i.next.why)}` : ''}. ${btn('Go there →', 'go-next', '', true)}</p>` : '';
     return out + `<section class="tu-entry"><span class="sd-eyebrow">LEARN THIS WITH THE TUTOR</span>
       <p class="tu-scene">${esc(i.scene)}</p>${fresh ? `<p class="tu-previously">Your next session picks up where you got to with the outside tutor.</p>` : i.previously && i.previously !== i.outside?.summary ? `<p class="tu-previously"><b>Last time:</b> ${inline(i.previously)}</p>` : ''}
-      <p class="sd-muted tu-hint">${active ? 'Your session is waiting where you left it.' : esc(mode?.blurb || '')} Talk or type.</p>
+      ${nx}<p class="sd-muted tu-hint">${active ? 'Your session is waiting where you left it.' : esc(mode?.blurb || '')} Talk or type.</p>
       <div class="sd-actions">${go}${active ? btn('End it and get the debrief', 'fresh') : ''}${btn('Read the notes instead', 'notes')}${style}</div>
       ${T.error ? `<p class="tu-error">${esc(T.error)}</p>` : ''}</section>`;
   }
@@ -180,6 +181,10 @@
         t.busy = false; t.pending = null; paint();
       } else if (action === 'retry' && t.pending) {
         send(t.pending, true);
+      } else if (action === 'go-next' && t.info?.next) {
+        const n = t.info.next;
+        queue({section: n.section, lesson: n.lesson});
+        window.AppSections?.select(n.section, 'lesson/' + n.lesson);
       } else if (action === 'again') {
         t.open = false; t.session = null; t.info = await api(`/tutor/lessons/${t.ctx.section}/${t.ctx.lesson.id}`); paint();
       }
@@ -232,7 +237,8 @@
     T.rendered = s.turns.length;
     if (s.status === 'ended' && !chat.querySelector('.tu-wrap')) {
       const retry = s.debrief_due ? btn('Write the debrief', 'end', '', true) : '';
-      chat.insertAdjacentHTML('beforeend', `<div class="tu-wrap"><b>Session ended.</b> ${s.progress.demonstrated} of ${s.progress.total} objectives shown. What you showed is now in your knowledge model.<div class="sd-actions">${retry}${btn('Back to the lesson', 'close', '', !retry)}${btn('Another session', 'again')}</div></div>`);
+      const nx = !retry && T.info?.next;
+      chat.insertAdjacentHTML('beforeend', `<div class="tu-wrap"><b>Session ended.</b> ${s.progress.demonstrated} of ${s.progress.total} objectives shown. What you showed is now in your knowledge model.<div class="sd-actions">${retry}${nx ? btn(`Next: ${nx.title} →`, 'go-next', '', true) : ''}${btn('Back to the lesson', 'close', '', !retry && !nx)}${btn('Another session', 'again')}</div></div>`);
       chat.querySelectorAll('.tu-wrap [data-tu]').forEach(n => n.addEventListener('click', () => act(n.dataset.tu)));
       T.host.querySelector('.tu-compose')?.remove();
       T.host.querySelector('.tu-head [data-tu="end"]')?.remove();

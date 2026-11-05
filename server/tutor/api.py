@@ -178,7 +178,7 @@ def home(store=Depends(store_for)):
     pick = None
     for m in mems:
         s = _live(store, store.get_knowledge('tutor_sessions', m['active'])) if m.get('active') else None
-        if s and s['turns'] and now - s['updated_at'] < 3 * 86400:
+        if s and any(t['role'] == 'learner' for t in s['turns']) and now - s['updated_at'] < 3 * 86400:
             pick = {'kind': 'resume', 'section': s['section'], 'lesson': s['lesson'],
                     'why': 'You left this conversation part-way through; it remembers where you got to.'}
             break
@@ -234,7 +234,28 @@ def lesson_state(section: str, lesson: str, store=Depends(store_for)):
     return {'enabled': llm.enabled(store.get_settings()), 'modes': _modes(store), 'objectives': l['objectives'],
             'previously': mem.get('summary', ''), 'sessions': mem.get('sessions', 0),
             'scene': story.chapter(section, l['category']), 'outside': outside, 'outside_elsewhere': elsewhere,
-            'active': public(active) if active and active['status'] == 'active' else None}
+            'active': public(active) if active and active['status'] == 'active' else None,
+            'next': _next_from(store, section, lesson)}
+
+
+def _last_debrief(store, section, lesson, sid):
+    """For sessions ended before memory kept debriefs: the newest debrief on this lesson, from the session itself."""
+    done = [x for x in store.list_knowledge('tutor_sessions') if x.get('section') == section and x.get('lesson') == lesson
+            and x.get('id') != sid and x.get('turns') and x['turns'][-1].get('debrief')]
+    if not done:
+        return {}
+    x = max(done, key=lambda x: x.get('ended_at') or x.get('updated_at') or 0)
+    return {'debrief': {'text': x['turns'][-1]['say'][:3000], 'at': x.get('ended_at') or x['turns'][-1]['at'],
+                        'session': x['id'], 'turns': len(x['turns'])}}
+
+
+def _next_from(store, section, lesson):
+    """Where the tutor suggested going after this lesson ([[next]]), if somewhere else and still fresh."""
+    n = lm.fresh_next(store.get_knowledge('tutor_memory', LEARNER_KEY) or {}, time.time())
+    if not n or (n['section'], n['lesson']) == (section, lesson):
+        return None
+    title = lessons.titles().get((n['section'], n['lesson']))
+    return title and {'section': n['section'], 'lesson': n['lesson'], 'title': title, 'why': n.get('why', '')}
 
 
 class Start(BaseModel):
@@ -336,11 +357,13 @@ async def end(sid: str, store=Depends(store_for)):
     return public(s)
 
 
-def _remember(store, s, now, event):
+def _remember(store, s, now, event, debrief=''):
     mk = _memory_key(s['section'], s['lesson'])
     mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
     mem.update(summary=s['summary'] or mem.get('summary', ''), last_at=now,
                active=s['id'] if s['status'] == 'active' else None)
+    if debrief:   # the whole session in the tutor's words; the rolling summary only covers its last turns
+        mem['debrief'] = {'text': debrief[:3000], 'at': now, 'session': s['id'], 'turns': len(s['turns'])}
     if s['summary']:
         mem['summary_from'] = 'tutor'
     store.put_knowledge('tutor_memory', mk, mem)
@@ -370,6 +393,8 @@ def _context(store, s, l, now):
     own, prereqs = lessons.points(l['section'], l['id'], c)
     allowed = {p['id'] for p in own + prereqs}
     memory = store.get_knowledge('tutor_memory', _memory_key(l['section'], l['id'])) or {}
+    if not memory.get('debrief'):
+        memory = {**memory, **_last_debrief(store, l['section'], l['id'], s['id'])}
     story_mem = store.get_knowledge('tutor_memory', STORY_KEY) or {}
     return {'views': kmodel.views(c, states, seen, mis, now, own), 'prereq_views': kmodel.views(c, states, seen, mis, now, prereqs),
             'allowed': allowed, 'open': [m for m in mis if m.get('status') == 'open' and m['point'] in allowed
@@ -469,7 +494,7 @@ async def _debrief(store, s, l):
         s.pop('error', None)
         ses.add_debrief(s, text, now)
     store.put_knowledge('tutor_sessions', s['id'], s)
-    _remember(store, s, now, '')
+    _remember(store, s, now, '', debrief=s['turns'][-1]['say'] if text is not None else '')
 
 
 async def _reply(store, s, l):

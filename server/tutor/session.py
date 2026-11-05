@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import lessons, story
 
-PROMPT_VERSION = 8
+PROMPT_VERSION = 9
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -172,6 +172,12 @@ def _claims(views, statuses, limit=25):
     return '\n'.join(f'  - {c}' for c in found) if found else '  (none)'
 
 
+def _ago(seconds):
+    m = max(0, int(seconds // 60))
+    return ('a moment ago' if m < 2 else f'{m} minutes ago' if m < 90 else f'{m // 60} hours ago' if m < 36 * 60
+            else f'{m // 1440} days ago')
+
+
 def context(session, lesson, views, misconceptions, memory, story_state, career=None, profile=None):
     """The session-specific part of the tutor's system prompt. `career`: Senpai's career brief
     ({'text', 'experience'}); `profile`: learner.text() plus this lesson's ideas covered elsewhere and
@@ -182,7 +188,8 @@ def context(session, lesson, views, misconceptions, memory, story_state, career=
     objectives = '\n'.join(f'- {o} ({MARK[session["objectives"][i]["status"]]})' for i, o in enumerate(lesson['objectives']))
     know = [f'- Already holds (skip or touch lightly):\n{_claims(held, ("solid", "learning"))}' if held else '- Nothing in this lesson tested yet.',
             *([f'- Shaky or fading:\n{_claims(shaky, ("shaky", "fading"))}'] if shaky else [])]
-    if memory.get('summary'):
+    last = memory.get('debrief') or {}
+    if memory.get('summary') and not last:
         know.append(f'- Last session on this lesson: {memory["summary"]}')
     slips = [m for m in misconceptions if m.get('status', 'open') == 'open']
     if slips:
@@ -207,6 +214,11 @@ What it should leave him able to do (a map for you, not a checklist to read out)
     if (profile or {}).get('text'):
         parts.append("## Who you're teaching\n" + profile['text'])
     parts.append('About Nikhil and this lesson:\n' + '\n'.join(know))
+    if last.get('text') and last.get('session') != session.get('id'):
+        ago = _ago((session.get('created_at') or last['at']) - last['at'])
+        parts.append(f"## Your last session on this lesson\nIt ended {ago}, {last.get('turns', 0)} messages long. Your debrief at the end:\n"
+                     f"{last['text']}\n\nThis conversation follows on from that one: you both remember it. Don't re-teach what it covered "
+                     "or open as if the lesson were new. If it pointed him somewhere else next, say so and offer to go there.")
     if session.get('carried'):
         c = session['carried']
         parts.append(f"## Carrying on\nYou and he just moved here from {c['from']}, because the conversation was heading this way. "

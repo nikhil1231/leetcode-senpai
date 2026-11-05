@@ -512,3 +512,25 @@ def test_saved_voice_replaces_the_default_everywhere():
     finally:
         voice.apply({})
     assert voice.TUTOR == voice.DEFAULT_TUTOR and voice.live(ts.ROLES['teach']) == ts.ROLES['teach']
+
+
+def test_after_a_debrief_the_next_lesson_is_offered_and_a_new_session_remembers(client):
+    s = start(client)
+    client.replies.append('Good, that settles it. Leader election next, I think.\n[[next system-design/consensus | follow the fencing thread]]')
+    client.notes.append(notes(summary='Only the last few turns.'))
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0001', 'text': 'Readers see the old value until expiry.'}))
+    client.replies.append('**What you did well**: the miss storm.\n\n**Next**: consensus.')
+    ok(client.post(f'/api/tutor/sessions/{s["id"]}/end'))
+    state = ok(client.get('/api/tutor/lessons/system-design/cache-aside'))
+    assert state['next']['lesson'] == 'consensus' and state['next']['title'] and state['next']['why'] == 'follow the fencing thread'
+    assert ok(client.get('/api/tutor/home'))['pick']['kind'] == 'next'
+
+    start(client, key='sess-0002')
+    system = client.chats[-1][0]['content']
+    assert '## Your last session on this lesson' in system and '**What you did well**: the miss storm.' in system
+    assert 'Only the last few turns.' not in system   # the rolling summary gives way to the debrief
+
+
+def test_an_opener_nobody_answered_is_not_resumed_from_home(client):
+    start(client)
+    assert 'part-way through' not in ((ok(client.get('/api/tutor/home'))['pick'] or {}).get('why') or '')

@@ -1233,7 +1233,7 @@
       <div class="settings-field">
         <label for="cfg-senpai-charter">Senpai charter</label>
         <textarea id="cfg-senpai-charter" class="input" rows="5" maxlength="3000">${escapeHtml(c.senpai_charter || "")}</textarea>
-        <p class="help">How you want to be taught. Senpai follows it; what Senpai may change on its own is enforced by the limits below, not by this text.</p>
+        <p class="help">How you want your learning planned: what to prioritise and how hard to push. Senpai follows it; what Senpai may change on its own is enforced by the limits below, not by this text. How the tutor <em>talks</em> (tone, phrases to avoid, no em dashes) is under <a href="#voice-settings" onclick="document.getElementById('voice-settings').scrollIntoView({behavior:'smooth'});return false">Voice</a>.</p>
       </div>
       <div class="settings-row">
         <div class="settings-field"><label for="cfg-senpai-weekly">Learning time / week (min)</label><input id="cfg-senpai-weekly" class="input" type="number" min="30" max="3000" value="${escapeHtml(String(c.senpai_weekly_minutes))}" /></div>
