@@ -393,6 +393,18 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 .sd-quiz-review { border-top:1px solid var(--line); padding:15px 0; font-size:12px; }
 .sd-quickfire-meta { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; margin:20px 0; font-size:12px; color:var(--muted); }
 .sd-fire-question { max-width:850px; margin:0 auto; }
+.sd-fire-stage { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,360px); gap:18px; align-items:stretch; }
+.sd-fire-stage .sd-fire-question { max-width:none; margin:0; display:flex; flex-direction:column; padding:24px 26px; }
+.sd-fire-stage .sd-actions { margin-top:auto; padding-top:14px; }
+.sd-fire-stage .sd-confidence { min-height:30px; }
+.sd-fire-stage .sd-choice { padding:11px 14px; margin:8px 0; line-height:1.6; }
+.sd-fire-side { position:relative; min-height:200px; }
+.sd-fire-side>div { position:absolute; inset:0; overflow:auto; }
+.sd-fire-side .sd-answer-feedback { margin:0; border-radius:0 8px 8px 0; min-height:100%; box-sizing:border-box; }
+.sd-fire-side>div>.sd-muted { border:1px dashed var(--line); border-radius:8px; padding:20px; margin:0; height:100%; box-sizing:border-box; font-size:12px; }
+#tab-design:has(.sd-fire-stage) .sd-page-intro { margin-bottom:12px; }
+#tab-design:has(.sd-fire-stage) .sd-page-intro h2 { margin:6px 0; }
+#tab-design:has(.sd-fire-stage) .sd-quickfire-meta { margin:12px 0; }
 .sd-fire-question h3 { font-size:20px; line-height:1.7; margin:16px 0 24px; font-weight:500; }
 .sd-choice.sd-choice-correct { border-color:var(--accent); background:#8ad9c20c; }
 .sd-fire-controls label { flex:1 1 180px; }
@@ -426,5 +438,8 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
   .sd-model-chip { max-width:210px; font-size:9px; }
   .sd-model-chip[open]>div { position:absolute; right:12px; width:260px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; z-index:80; }
   .sd-fire-question h3 { font-size:17px; }
+  .sd-fire-stage { grid-template-columns:1fr; }
+  .sd-fire-side { min-height:0; }
+  .sd-fire-side>div { position:static; }
 }
 .sd-objective-status { color:var(--muted); font-size:10px; margin-left:6px; white-space:nowrap; }

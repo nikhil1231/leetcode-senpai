@@ -64,19 +64,20 @@
     }).join('');
     return html || '<div class="sd-panel">No lessons match these filters. Try another category or show all lessons.</div>';
   }
-  function feedback(a) {
+  function feedback(a,side) {
     const picked=String(a.answer||'').split(',').filter(Boolean), whys=a.whys||{};
+    const rightWhy=(a.format||'choice')!=='order'?(a.correct_answer.ids||[a.correct_answer.id]).filter(k=>whys[k]).map(k=>whys[k]):[];
     const wrongWhy=(a.format||'choice')!=='order'&&!a.correct?picked.filter(k=>whys[k]&&!(a.correct_answer.ids||[a.correct_answer.id]).includes(k)).map(k=>whys[k]):[];
     const confident=!a.correct&&!a.revealed&&a.confidence==='sure';
-    return `<div class="sd-answer-feedback ${a.correct&&!a.revealed?'is-correct':''}" role="status"><strong>${a.revealed?'Answer revealed':a.correct?'Correct':'Review this distinction'}${a.guessed?' · guessed':''}</strong>${confident?'<p class="sd-confident-miss">You were sure, and it was wrong. These are the mistakes most worth fixing: they come back sooner.</p>':''}${wrongWhy.map(w=>`<p class="sd-why-wrong"><b>Why your choice fails:</b> ${rich(w)}</p>`).join('')}<p>${rich(a.explanation)}</p><p><b>Correct answer:</b> ${rich(a.correct_answer.text)}${a.format==='numeric'&&a.answer?` · you said ${esc(a.answer)} ${esc(a.unit||'')}`:''}</p><p class="sd-muted">${a.revealed?'Revealed answer':a.assisted?'Supported practice':'Independent practice'}${a.guessed?' · comes back sooner':''} · Saved</p></div>`;
+    return `<div class="sd-answer-feedback ${a.correct&&!a.revealed?'is-correct':''}" role="status"><strong>${a.revealed?'Answer revealed':a.correct?'Correct':'Review this distinction'}${a.guessed?' · guessed':''}</strong>${confident?'<p class="sd-confident-miss">You were sure, and it was wrong. These are the mistakes most worth fixing: they come back sooner.</p>':''}${wrongWhy.map(w=>`<p class="sd-why-wrong"><b>Why your choice fails:</b> ${rich(w)}</p>`).join('')}<p>${rich(a.explanation)}</p>${side?rightWhy.map(w=>`<p><b>Why it holds:</b> ${rich(w)}</p>`).join(''):''}<p><b>Correct answer:</b> ${rich(a.correct_answer.text)}${a.format==='numeric'&&a.answer?` · you said ${esc(a.answer)} ${esc(a.unit||'')}`:''}</p><p class="sd-muted">${a.revealed?'Revealed answer':a.assisted?'Supported practice':'Independent practice'}${a.guessed?' · comes back sooner':''} · Saved</p></div>`;
   }
   function confidenceHtml(a) {
     if(a)return '';
     return `<div class="sd-confidence" role="group" aria-label="Confidence"><span>Before you check:</span><button type="button" class="sd-conf ${confidence==='sure'?'is-on':''}" data-conf="sure">I’m sure</button><button type="button" class="sd-conf ${confidence==='unsure'?'is-on':''}" data-conf="unsure">Not sure</button></div>`;
   }
-  function choices(q,a) {
+  function choices(q,a,noWhy) {
     const fmt=q.format||'choice', mine=String(a?.answer??selectedAnswer).split(',').filter(Boolean), right=a?(a.correct_answer.ids||[a.correct_answer.id]):[];
-    const whys=a?.whys||{};
+    const whys=noWhy?{}:a?.whys||{};
     if(fmt==='numeric') return `<div class="sd-numeric"><input class="input" id="sd-numeric-answer" inputmode="decimal" autocomplete="off" placeholder="Your answer" value="${esc(a?.answer??selectedAnswer)}" ${a?'disabled':''}><span>${esc(q.unit||'')}</span></div>${a?`<p class="sd-muted">Accepted within a small tolerance of ${rich(a.correct_answer.text)}.</p>`:''}`;
     if(fmt==='order') {
       const ids=a?String(a.answer||'').split(',').filter(Boolean):(selectedAnswer?selectedAnswer.split(','):q.choices.map(c=>c.id));
@@ -128,7 +129,7 @@
       const placing=round.settings.mode==='placement', area=placing&&catalog.course.categories.find(c=>c.id===round.settings.category);
       return (placing?intro('FIND YOUR LEVEL · '+(area?area.title.toUpperCase():''),`Question ${round.answers.length+(a?0:1)} of ${round.length}`,'One question per lesson you have not been tested on. "Reveal answer" is a fine answer when you do not know: it tells us just as much.')
         :intro('SYSTEM DESIGN QUICKFIRE',round.length?`Question ${round.answers.length+(a?0:1)} of ${round.length}`:'Continuous practice','Choose an answer, understand the explanation, and keep building your instincts.'))+
-        `<div class="sd-quickfire-meta"><span>${esc(l.title)}</span><span>${round.answers.filter(a=>a.correct&&!a.revealed).length} correct / ${round.answers.length} answered</span>${comboHtml()}${btn('Stop round','stop-round')}</div><article class="sd-panel sd-fire-question"><span class="sd-eyebrow">${q.difficulty==='standard'?'ADVANCED':'CORE'} · ${a?'ANSWER SAVED':esc(formatLabel(q))}</span><div class="sd-q-prompt sd-q-big">${B()?B().md(q.prompt):esc(q.prompt)}</div>${choices(q,a)}${confidenceHtml(a)}${a?feedback(a):''}<div class="sd-actions">${a?btn(round.length&&round.answers.length>=round.length?'Finish round →':'Next question →','next-fire','',true):btn('Check answer →','fire-answer','',true)}${!a?btn('Reveal answer','fire-reveal'):a.correct&&!a.guessed?btn('I guessed','guess'):''}${btn('Read the lesson','lesson',`data-id="${q.lesson_id}"`)}</div><p class="sd-muted">Number keys choose · S / U mark sure or unsure · Enter checks or continues · Esc stops.</p></article>`;
+        `<div class="sd-quickfire-meta"><span>${esc(l.title)}</span><span>${round.answers.filter(a=>a.correct&&!a.revealed).length} correct / ${round.answers.length} answered</span>${comboHtml()}${btn('Stop round','stop-round')}</div><div class="sd-fire-stage"><article class="sd-panel sd-fire-question"><span class="sd-eyebrow">${q.difficulty==='standard'?'ADVANCED':'CORE'} · ${a?'ANSWER SAVED':esc(formatLabel(q))}</span><div class="sd-q-prompt sd-q-big">${B()?B().md(q.prompt):esc(q.prompt)}</div>${choices(q,a,true)}${a?`<div class="sd-confidence"><span>Before you checked: ${a.confidence==='sure'?'I’m sure':a.confidence==='unsure'?'Not sure':'no call'}</span></div>`:confidenceHtml(a)}<div class="sd-actions">${a?btn(round.length&&round.answers.length>=round.length?'Finish round →':'Next question →','next-fire','',true):btn('Check answer →','fire-answer','',true)}${!a?btn('Reveal answer','fire-reveal'):a.correct&&!a.guessed?btn('I guessed','guess'):''}${btn('Read the lesson','lesson',`data-id="${q.lesson_id}"`)}</div><p class="sd-muted">Number keys choose · S / U mark sure or unsure · Enter checks or continues · Esc stops.</p></article><aside class="sd-fire-side"><div>${a?feedback(a,true):'<p class="sd-muted">The explanation appears here once you check.</p>'}</div></aside></div>`;
     }
     if(round?.finished) {
       const n=round.answers.length,correct=round.answers.filter(a=>a.correct&&!a.revealed).length;
