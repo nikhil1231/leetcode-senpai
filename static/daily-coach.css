@@ -93,6 +93,13 @@
 .sp-today { padding: 18px 20px; margin-bottom: 20px; border: 1px solid var(--accent-line); border-radius: var(--radius); background: var(--accent-soft); }
 .sp-today-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
 .sp-today h2 { font-size: 16px; margin: 6px 0 0; }
+.sp-brief { padding: 18px 20px; margin-bottom: 14px; border: 1px solid var(--line-hi); border-radius: var(--radius); background: var(--bg-elev); }
+.sp-brief ol { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.sp-brief-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); }
+.sp-brief-item:first-child { border-top: 0; padding-top: 0; }
+.sp-brief-item > div { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.sp-brief-item p { grid-column: 1; margin: 0; font-size: 13px; color: var(--text-2); }
+.sp-brief-item .button { grid-row: 1 / span 2; grid-column: 2; }
 .sp-controls label { min-width: 0; max-width: 100%; }
 .sp-controls select { width: auto; max-width: 100%; }
 @media (max-width: 700px) {
@@ -102,4 +109,6 @@
   .sp-block { grid-template-columns: 1fr; }
   .sp-caps { grid-template-columns: 1fr; }
   .sp-block .button { grid-row: auto; grid-column: 1; justify-self: start; }
+  .sp-brief-item { grid-template-columns: 1fr; }
+  .sp-brief-item .button { grid-row: auto; grid-column: 1; justify-self: start; }
 }

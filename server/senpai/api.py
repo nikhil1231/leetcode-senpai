@@ -114,7 +114,10 @@ async def get_overview(store=Depends(store_for)):
 
 @router.get('/today')
 async def get_today(store=Depends(store_for)):
-    return await asyncio.to_thread(service.today_session, store)
+    def run():
+        b = service.bundle(store)
+        return {**service.today_session(store, b=b), 'brief': service.week_brief(store, b)}
+    return await asyncio.to_thread(run)
 
 
 @router.post('/session')
@@ -211,6 +214,7 @@ async def sync(store=Depends(store_for)):
     if not jobscout.configured():
         raise HTTPException(409, 'Job Scout is not configured on this server (JOB_SCOUT_URL, JOB_SCOUT_TOKEN).')
     record = await asyncio.to_thread(jobscout.sync, store)
+    await asyncio.to_thread(service.follow_career, store)
     return {k: (record or {}).get(k) for k in ('fetched_at', 'error', 'career_target', 'fingerprint')}
 
 

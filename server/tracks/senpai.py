@@ -68,8 +68,14 @@ def material(records_by_track, now):
     for track in ('fundamentals', 'ai'):
         o = courses.overview(track, records_by_track.get(track, []), now)
         nxt = o['next_lesson']
+        cat_of = {l['id']: c['id'] for c in o['course'] for l in c['lessons']}
+        # The first unchecked lesson per category, so a focus or career objective can reach past course order.
+        by_cat = {c['id']: next(({'id': l['id'], 'title': l['title'], 'minutes': l['minutes'], 'category': c['id']}
+                                 for l in c['lessons'] if not l['checked']), None) for c in o['course']}
         out[track] = {'due': o['due'], 'mistakes': len(o['mistakes']['fix']), 'answers': o['answers'],
-                      'next_lesson': nxt and {'id': nxt['id'], 'title': nxt['title'], 'minutes': nxt['minutes']}}
+                      'next_lesson': nxt and {'id': nxt['id'], 'title': nxt['title'], 'minutes': nxt['minutes'],
+                                              'category': cat_of.get(nxt['id'])},
+                      'next_by_category': {k: v for k, v in by_cat.items() if v}}
     recs = records_by_track.get('experience', [])
     o = experience.overview(recs, now)
     prompt = experience.BY_PROMPT[o['next_prompt']]

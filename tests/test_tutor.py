@@ -352,3 +352,46 @@ def test_characters_bring_their_own_personality():
     assert voice.TUTOR in system(ses.new('s', L, 'teach', 0)) and voice.TUTOR in system(fresh('explain'), debrief=True)
     assert voice.persona('marcus').startswith("Marcus, Ripple's CTO and co-founder: ")
     assert voice.lead('jo', 'p1') == voice.lead('jo', 'p1') and voice.lead('jo', 'p1') in voice.member('jo')['leads']
+
+
+# ---- career brief, Defend your CV and a focused session -------------------------------------------
+
+JOB = {'context': {'career_target': {'text': 'AI platform engineer: serving, caching and reliability.'},
+                   'demand': {'cohort': {'roles': 120}, 'tags': [{'tag': 'caching', 'share': 0.3}, {'tag': 'redis', 'share': 0.2}]},
+                   'experience': [{'ref': 'cv.1', 'cited_by_roles': 300,
+                                   'excerpt': 'Ran the Redis cache tier in front of the pricing service.'}]}}
+
+
+def test_the_career_brief_and_cv_reach_the_prompt_only_when_known():
+    from server.senpai import career
+    brief = career.tutor_brief(career.goal({}, JOB), JOB, {}, 'system-design', 'caching')
+    assert 'AI platform engineer' in brief['text'] and '30% of the 120 roles' in brief['text']
+    assert 'Redis cache tier' in brief['text']
+    p = ses.system(ses.new('s', L, 'cv', 0), L, [], [], {}, story.scale(summary(0)), career=brief)
+    assert '## His CV' in p and 'never teach' in p and 'Redis cache tier' in p
+    assert career.tutor_brief('', {}, {}, 'system-design', 'caching')['text'] == ''
+    plain = system(ses.new('s', L, 'teach', 0))
+    assert 'career goal' not in plain and '## His CV' not in plain
+    assert 'How your CV held up' in ses.system(ses.new('s', L, 'cv', 0), L, [], [], {}, story.scale(summary(0)),
+                                                 debrief=True, career=brief)
+
+
+def test_defend_your_cv_needs_a_cv_and_is_remembered(client):
+    modes = {m['id'] for m in ok(client.get('/api/tutor/lessons/system-design/cache-aside'))['modes']}
+    assert 'cv' not in modes
+    r = client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'cache-aside', 'mode': 'cv', 'key': 'sess-cv01'})
+    assert r.status_code == 422
+    client.store.put_senpai('senpai', 'job_context', JOB)
+    assert 'cv' in {m['id'] for m in ok(client.get('/api/tutor/lessons/system-design/cache-aside'))['modes']}
+    s = start(client, key='sess-cv02', mode='cv')
+    assert s['mode'] == 'cv'
+    assert 'Redis cache tier' in client.chats[0][0]['content']
+    assert client.store.get_knowledge('tutor_memory', 'cv')['lesson'] == 'system-design:cache-aside'
+
+
+def test_a_session_opened_for_a_gap_starts_there(client):
+    client.replies.append('Quick one before standup.')
+    ok(client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'cache-aside', 'mode': 'teach',
+                                               'key': 'sess-gap1', 'focus': 'Delete the cache entry rather than set it.'}))
+    p = client.chats[0][0]['content']
+    assert '## Why he opened this session' in p and 'Delete the cache entry rather than set it.' in p

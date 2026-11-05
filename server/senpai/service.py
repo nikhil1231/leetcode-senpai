@@ -13,7 +13,7 @@ import time
 from .. import config, curriculum, learning_sequences, practice, scheduler
 from ..system_design_learning import course_summary
 from ..tracks import senpai as tracks_senpai
-from . import capabilities as caps_mod, demand, interventions, jobscout, policy, sessions, snapshot
+from . import brief as brief_mod, capabilities as caps_mod, career, demand, interventions, jobscout, policy, sessions, snapshot
 
 log = logging.getLogger(__name__)
 
@@ -254,6 +254,31 @@ def request_checkpoint(store, capability_id, days, reason, now=None, source='sen
     return created or item
 
 
+# ---- career ----------------------------------------------------------------------------------
+
+def career_goal(store, settings=None):
+    """The goal Senpai works toward (career.goal): the saved target, Job Scout's, or its search titles."""
+    return career.goal(settings or store.get_settings(), store.get_senpai('senpai', 'job_context') or {})
+
+
+def follow_career(store, now=None, b=None):
+    """Make the plan follow the career target: an objective for it and a gradual shift of time toward
+    what it names. Runs once per target per ISO week; policy decides each change as usual."""
+    now = _now(now)
+    text = career_goal(store)
+    state = store.get_senpai('senpai', STATE) or {}
+    mark = f'{career.objective_id(text)}:{policy.iso_week(now)}'
+    if not text or state.get('career_followed') == mark:
+        return []
+    known = {r['id'] for r in (b or bundle(store, now))['rows']}
+    results = [propose(store, ch, source='career', now=now, known=known, run_key=f'career:{mark}')
+               for ch in career.plan_changes(text, load_plan(store, now), known)]
+    state = store.get_senpai('senpai', STATE) or {}
+    state.pop('_key', None)
+    store.put_senpai('senpai', STATE, {**state, 'career_followed': mark})
+    return results
+
+
 # ---- sessions ---------------------------------------------------------------------------------
 
 def prepare_session(store, now=None, *, budget=None, mode=None, depth=None, objective=None, b=None, save=True):
@@ -324,6 +349,46 @@ def today_session(store, now=None, b=None):
             return cached  # keep a session in progress stable; regenerating would reshuffle it
         cached = prepare_session(store, now, b=b)
     return session_progress(cached, b)
+
+
+def ignored_gaps(store, limit=4):
+    """Open gaps Telegram asked about twice or more without an answer: the tutor's to close now."""
+    from ..drip import cards as drip_cards
+    from ..knowledge_base import catalog as kcat
+    from ..tutor import lessons as tutor_lessons
+    sent = sorted((c for c in store.list_knowledge('drip') if str(c.get('_key', '')).startswith('card-')),
+                  key=lambda c: c.get('n') or 0)[-20:]
+    quiet = drip_cards.ignored_gaps(sent)
+    counts = {}
+    for c in sent:
+        if c.get('gap') in quiet and c.get('status') in ('skipped', 'expired', 'revealed'):
+            counts[c['gap']] = counts.get(c['gap'], 0) + 1
+    out = []
+    for m in sorted(store.list_knowledge('knowledge_misconceptions'), key=lambda m: -(m.get('updated_at') or m.get('created_at') or 0)):
+        if m.get('_key') not in quiet or m.get('status') != 'open':
+            continue
+        pid = kcat.canonical(kcat.CATALOG, m.get('point'))
+        p = kcat.CATALOG['points'].get(pid) if pid else None
+        lesson = p and tutor_lessons.get(p['section'], p['lesson'])
+        if lesson:
+            out.append({'key': m['_key'], 'text': m.get('text', '')[:240], 'section': p['section'], 'lesson': p['lesson'],
+                        'lesson_title': lesson['title'], 'ignored': counts.get(m['_key'], 2)})
+    return out[:limit]
+
+
+def week_brief(store, b, now=None):
+    """This week's few concrete things (brief.py). Never fails the caller."""
+    from .. import llm
+    now = _now(now)
+    try:
+        job = store.get_senpai('senpai', 'job_context') or {}
+        cv_at = [(store.get_knowledge('tutor_memory', 'cv') or {}).get('last_at') or 0]
+        return brief_mod.build(career.goal(b['settings'], job), job, load_plan(store, now), b['rows'],
+                               course_summary(b['design'], now)['lessons'], tracks_senpai.material(b.get('tracks') or {}, now),
+                               b['attempts'], b['problems'], ignored_gaps(store), cv_at, now, llm.enabled(b['settings']))
+    except Exception:
+        log.exception('Weekly brief failed')
+        return {'items': []}
 
 
 # ---- state ------------------------------------------------------------------------------------
@@ -446,8 +511,8 @@ async def weekly(store, now=None, force=False):
     state.pop('_key', None)
     b = await asyncio.to_thread(bundle, store, now)
     known = {r['id'] for r in b['rows']}
+    applied = list(await asyncio.to_thread(follow_career, store, now, b))
     br = demand.brief(job.get('context'), state.get('signals', {}), week, now)
-    applied = []
     for ov in br['overlays']:
         applied.append(await asyncio.to_thread(lambda ov=ov: propose(store, ov, source='weekly', now=now, known=known,
                                                                     run_key='overlay:' + ov['source_ref'])))
@@ -466,7 +531,7 @@ async def weekly(store, now=None, force=False):
               'decisions': [{'decision': r['decision'], 'reasons': r['reasons']} for r in applied],
               'summary': None, 'explanation': [], 'model': None}
     if llm.enabled(b['settings']):
-        payload = {'charter': b['settings'].get('senpai_charter', ''), 'target': b['settings'].get('target_job', ''),
+        payload = {'charter': b['settings'].get('senpai_charter', ''), 'target': career.goal(b['settings'], job),
                    'learning_preferences': {k: b['settings'].get('senpai_' + k) for k in ('weekly_minutes', 'session_minutes', 'depth', 'focus_note')},
                    'plan': plan_summary(plan, now), 'limits': lim,
                    'capabilities': caps_mod.digest(b['rows'], [f['capability_id'] for f in policy.active_focus(plan)]),

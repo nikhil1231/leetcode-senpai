@@ -5,7 +5,8 @@ queue), reserved application checks, recovery lessons, Quickfire, the system-des
 There is no fixed recipe: the budget is split across in-app buckets by the plan's effective allocation, and
 each bucket is filled by priority. Retention checks come first because they are short and time-sensitive;
 a stale or untested capability gets a quick diagnostic before any substantial remedial work; focus
-capabilities and active objectives are preferred. Modes restrict activity types: `mixed` interleaves
+capabilities and active objectives are preferred, and a focus or objective capability with no evidence yet
+(system design or a Fundamentals/AI track category) gets its first open lesson, taught by the tutor. Modes restrict activity types: `mixed` interleaves
 subjects, `retrieval` keeps to recall, `learn` favours explanation, `interview` keeps to independent
 implementation and design under interview conditions.
 """
@@ -30,13 +31,13 @@ def _block(kind, bucket, capability, activity, minutes, title, why, action, prio
 
 
 def candidates(capabilities, queue, sd_summary, quickfire_topics, focus_ids, objective_buckets, depth,
-               llm_enabled, mode, tracks=None):
+               llm_enabled, mode, tracks=None, soft_ids=()):
     caps = {c['id']: c for c in capabilities}
     out = []
-    focus_ids = set(focus_ids)
+    focus_ids, soft_ids = set(focus_ids), set(soft_ids) - set(focus_ids)
 
     def bonus(cid, bucket):
-        return (30 if cid in focus_ids else 0) + (10 if bucket in objective_buckets else 0)
+        return (30 if cid in focus_ids else 15 if cid in soft_ids else 0) + (10 if bucket in objective_buckets else 0)
 
     for c in queue.get('learning_checks', []):
         out.append(_block('application_check', 'dsa', None, 'check', 5, 'Later application check',
@@ -102,6 +103,7 @@ def candidates(capabilities, queue, sd_summary, quickfire_topics, focus_ids, obj
         out.append(_block('sd_lesson', 'system_design', cid, 'explanation', nxt.get('minutes') or 12, nxt['title'],
                           'Next lesson in the system design curriculum, with its recorded checks.',
                           {'type': 'sd_lesson', 'id': nxt['id']}, 45 + bonus(cid, 'system_design')))
+    out += _way_in(caps, lessons, tracks or {}, focus_ids, soft_ids, bonus, llm_enabled)
     out.append(_block('sd_case', 'system_design', None, 'design', 40 if depth == 'deep' else 30,
                       'Design case', 'Apply the material end-to-end under realistic constraints.',
                       {'type': 'sd_cases'}, 30 + (25 if mode == 'interview' or depth == 'deep' else 0)))
@@ -113,13 +115,40 @@ def candidates(capabilities, queue, sd_summary, quickfire_topics, focus_ids, obj
                 b['why'] += ' Interview conditions: plain editor, capped runs, no hints.'
     unique = {}
     for b in out:
-        key = (b['kind'], b['capability_id'], b['title'])
+        key = (b['title'], b['bucket'])   # one block per piece of material, whatever put it forward
         if key not in unique or unique[key]['priority'] < b['priority']:
             unique[key] = b
     return list(unique.values())
 
 
 TRACK_TITLES = {'fundamentals': 'Fundamentals', 'ai': 'AI Engineering'}
+FRESH = ('untested', 'stale')
+
+
+def _way_in(caps, sd_lessons, tracks, focus_ids, soft_ids, bonus, llm_enabled):
+    """A focus (or career objective) capability with no recent evidence: its first open lesson.
+    A focus without a lesson is advice nobody can act on, so this is how focus reaches the session."""
+    out = []
+    for cid in sorted(focus_ids | soft_ids, key=lambda c: (c not in focus_ids, c)):
+        c = caps.get(cid)
+        if not c or c['status'] not in FRESH:
+            continue
+        why = ('In focus' if cid in focus_ids else 'Part of your career target') + (
+            ' with no recorded evidence yet' if c['status'] == 'untested' else ', not practised recently') + ': this lesson is the way in.'
+        tutor = {'tutor': True} if llm_enabled else {}
+        if cid.startswith('sd:'):
+            nxt = next((l for l in sd_lessons.values() if 'sd:' + l['category'] == cid and not l.get('completed')), None)
+            if nxt:
+                out.append(_block('focus_lesson', 'system_design', cid, 'explanation', nxt.get('minutes') or 12, nxt['title'],
+                                  why, {'type': 'sd_lesson', 'id': nxt['id'], **tutor}, 52 + bonus(cid, 'system_design')))
+        elif cid.startswith('track:'):
+            _, track, cat = cid.split(':', 2)
+            n = ((tracks.get(track) or {}).get('next_by_category') or {}).get(cat)
+            if n:
+                out.append(_block('focus_lesson', 'stack', cid, 'explanation', n['minutes'], n['title'], why,
+                                  {'type': 'track', 'track': track, 'view': 'lesson/' + n['id'], **tutor},
+                                  52 + bonus(cid, 'stack')))
+    return out
 
 
 def _track_blocks(tracks, objective_buckets, depth):
@@ -137,7 +166,8 @@ def _track_blocks(tracks, objective_buckets, depth):
                               go(track, 'quickfire'), 62 + bonus))
         if t['next_lesson']:
             n = t['next_lesson']
-            out.append(_block('track_lesson', 'stack', None, 'explanation', n['minutes'], n['title'],
+            cid = f"track:{track}:{n['category']}" if n.get('category') else None
+            out.append(_block('track_lesson', 'stack', cid, 'explanation', n['minutes'], n['title'],
                               f'Next {title} lesson, with a short check at the end.',
                               go(track, 'lesson/' + n['id']), 42 + bonus - (5 if track == 'ai' and t['answers'] else 0)))
     ex = (tracks.get('practical') or {}).get('next')
@@ -171,6 +201,7 @@ def prepare(plan, now, date, capabilities, queue, sd_summary, quickfire_topics, 
     focus_ids = [f['capability_id'] for f in policy.active_focus(plan)]
     objectives = [o for o in plan.get('objectives', []) if o.get('status') == 'active']
     objective_buckets = {o['bucket'] for o in objectives}
+    soft_ids = [c for o in objectives for c in o.get('capability_ids', [])]
     if objective:
         obj = next((o for o in objectives if o['id'] == objective), None)
         if obj:
@@ -180,7 +211,7 @@ def prepare(plan, now, date, capabilities, queue, sd_summary, quickfire_topics, 
             focus_ids = focus_ids + [objective]
     allowed = ACTIVITY_MODES[mode]
     pool = [b for b in candidates(capabilities, queue, sd_summary, quickfire_topics, focus_ids, objective_buckets,
-                                  depth, llm_enabled, mode, tracks) if b['activity'] in allowed]
+                                  depth, llm_enabled, mode, tracks, soft_ids) if b['activity'] in allowed]
     alloc = policy.effective_allocation(plan, now)
     in_app = {b: alloc[b] for b in policy.IN_APP}
     if objective and objective_buckets <= set(policy.IN_APP):
@@ -189,7 +220,13 @@ def prepare(plan, now, date, capabilities, queue, sd_summary, quickfire_topics, 
     share = {b: budget * v / total for b, v in in_app.items()}
     chosen, used = [], {b: 0 for b in policy.IN_APP}
     pool.sort(key=lambda b: (-b['priority'], b['minutes'], b['title']))
+    way_in = next((b for b in pool if b['kind'] == 'focus_lesson' and b['minutes'] <= budget), None)
+    if way_in:  # a focus nobody can act on is no focus: its way in always gets a place
+        chosen.append(way_in)
+        used[way_in['bucket']] += way_in['minutes']
     for b in pool:  # fill each bucket up to its share
+        if b in chosen:
+            continue
         if used[b['bucket']] + b['minutes'] <= share[b['bucket']] + 3:
             chosen.append(b)
             used[b['bucket']] += b['minutes']

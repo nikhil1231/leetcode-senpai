@@ -29,10 +29,22 @@
     } else if (a.type === 'application') window.openLearningApplication(a.id);
     else if (a.type === 'sequence') window.openLearningSequence(a.sequence);
     else if (a.type === 'quickfire') { window.PracticePreset?.({ topic: a.topic }); App.goTab('practice'); }
-    else if (a.type === 'sd_lesson') window.AppSections?.select('system-design', 'lesson/' + a.id);
+    else if (a.type === 'sd_lesson') {
+      if (a.tutor) window.Tutor?.queue({ section: 'system-design', lesson: a.id });
+      window.AppSections?.select('system-design', 'lesson/' + a.id);
+    } else if (a.type === 'tutor') {
+      window.Tutor?.queue({ section: a.section, lesson: a.lesson, mode: a.mode, focus: a.focus });
+      window.AppSections?.select(a.section, 'lesson/' + a.lesson);
+    } else if (a.type === 'session') {
+      act(() => api('/senpai/session', 'POST', { mode: a.mode }), a.mode === 'interview' ? 'Interview session ready' : 'Session ready')
+        .then(() => App.goTab('senpai'));
+    }
     else if (a.type === 'sd_quickfire') window.AppSections?.select('system-design', 'quickfire');
     else if (a.type === 'sd_cases') window.AppSections?.select('system-design', 'cases');
-    else if (a.type === 'track') window.AppSections?.select(a.track, a.view);
+    else if (a.type === 'track') {
+      if (a.tutor && a.view.startsWith('lesson/')) window.Tutor?.queue({ section: a.track, lesson: a.view.slice(7) });
+      window.AppSections?.select(a.track, a.view);
+    }
     else if (a.type === 'teach') { App.goTab('senpai'); setTimeout(() => openTeach(a.capability_id), 50); }
   }
 
@@ -49,6 +61,17 @@
     }));
   }
 
+  // ---- This week: the brief ------------------------------------------------------------------------
+  const briefHtml = (br) => !br?.items?.length ? '' : `<section class="sp-brief"><span class="dc-eyebrow">This week${br.goal ? ' · toward ' + esc(br.goal) : ''}</span>
+      <ol>${br.items.map((it) => `<li class="sp-brief-item"><div><span class="sp-chip">${esc(it.label)}</span><b>${esc(it.title)}</b><span class="sp-min">${it.minutes} min</span></div>
+        <p>${esc(it.why)}</p><button type="button" class="button is-small" data-brief="${esc(it.id)}">${it.kind === 'cv' ? 'Start the interview' : 'Start'}</button></li>`).join('')}</ol></section>`;
+  function bindBrief(root, br) {
+    root.querySelectorAll('[data-brief]').forEach((btn) => btn.addEventListener('click', () => {
+      const it = br.items.find((x) => x.id === btn.dataset.brief);
+      if (it) startBlock(it.action);
+    }));
+  }
+
   // ---- Today card ---------------------------------------------------------------------------------
   async function mountToday() {
     const box = $('#daily-coach-summary');
@@ -57,12 +80,13 @@
       const s = await api('/senpai/today');
       if (!box.isConnected) return;
       const open = s.blocks.filter((b) => !b.done);
-      box.innerHTML = `<section class="sp-today"><div class="sp-today-head"><div><span class="dc-eyebrow">Senpai · today</span>
+      box.innerHTML = `${briefHtml(s.brief)}<section class="sp-today"><div class="sp-today-head"><div><span class="dc-eyebrow">Senpai · today</span>
           <h2>${open.length ? `${open.reduce((n, b) => n + b.minutes, 0)} minutes planned` : (s.blocks.length ? 'Session complete' : 'Nothing prepared')}</h2></div>
           <button class="button is-small is-ghost" type="button" data-open-senpai>Open Senpai</button></div>
         ${open.length ? `<ol class="sp-blocks">${open.slice(0, 3).map(blockHtml).join('')}</ol>${open.length > 3 ? `<p class="help">+${open.length - 3} more in Senpai.</p>` : ''}`
           : `<p class="help">${esc(s.note || 'Everything in today\'s session is done. Prepare another in Senpai if you want more.')}</p>`}</section>`;
       bindBlocks(box, s);
+      bindBrief(box, s.brief);
       box.querySelector('[data-open-senpai]').addEventListener('click', () => App.goTab('senpai'));
     } catch (e) {
       window.DailyCoach?.mountSummary();
@@ -261,11 +285,12 @@
       if (!el.childElementCount) beginRender(el, 'Loading Senpai…');
       const [d, s] = await Promise.all([api('/senpai'), api('/senpai/today')]);
       data = d;
-      el.innerHTML = `${header(d)}${proposalsHtml(d)}<div id="sp-session">${sessionHtml(d, s)}</div>
+      el.innerHTML = `${header(d)}${briefHtml(s.brief)}${proposalsHtml(d)}<div id="sp-session">${sessionHtml(d, s)}</div>
         <div id="sp-teach-host"></div>${questionsHtml(d)}${planHtml(d)}${followHtml(d)}${capsHtml(d)}${jobHtml(d)}${historyHtml(d)}
         <h2 class="sp-section">Daily reviews</h2><div id="senpai-reviews"></div>`;
       drawTeach();
       bindBlocks(el.querySelector('#sp-session'), s);
+      bindBrief(el, s.brief);
       el.querySelectorAll('[data-settings]').forEach((b) => b.addEventListener('click', () => App.goTab('settings')));
       el.querySelector('[data-sync]')?.addEventListener('click', () => act(() => api('/senpai/sync', 'POST'), 'Synced with Job Scout'));
       el.querySelector('[data-weekly]').addEventListener('click', (e) => { e.target.disabled = true; e.target.textContent = 'Reviewing…'; act(() => api('/senpai/weekly', 'POST'), 'Weekly review done'); });

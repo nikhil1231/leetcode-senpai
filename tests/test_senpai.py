@@ -107,8 +107,12 @@ def test_repeated_vacancies_are_not_new_evidence():
     fresh = demand.brief(context(last_seen='2026-10-27'), week1['signals'], '2026-W44', NOW + 7 * DAY)
     assert fresh['signals']['sd:distributed']['weeks'] == 2
     assert demand.focus_candidates(fresh['signals'], 2)[0]['capability_id'] == 'sd:distributed'
-    assert [o['tag'] for o in week1['outside']] == ['kubernetes']   # stack: outside the curriculum, not a gap
-    assert {m['bucket'] for m in week1['mapped']} == {'system_design', 'behavioural'}
+    # Kubernetes has lessons (Fundamentals: Cloud and delivery), so it is curriculum, not outside it.
+    assert [o['tag'] for o in week1['outside']] == []
+    k8s = next(m for m in week1['mapped'] if m['tag'] == 'kubernetes')
+    assert (k8s['bucket'], k8s['capability_id']) == ('stack', 'track:fundamentals:infrastructure')
+    assert demand.classify_tag('typescript') == ('stack', None)   # no lessons: outside the curriculum, not a gap
+    assert {m['bucket'] for m in week1['mapped']} == {'system_design', 'behavioural', 'stack'}
 
 
 def test_imminent_interviews_become_expiring_overlays():
@@ -462,3 +466,131 @@ def test_worker_visits_the_access_user_without_a_target(monkeypatch):
     fake_context(monkeypatch, {**context(), 'career_target': {'text': 'Platform engineer'}})
     asyncio.run(worker.tick(now=NOW))
     assert seen == ['senpai'] and store.get_settings()['target_job'] == 'Platform engineer'
+
+
+# ---- career target, way-in lessons and the weekly brief -------------------------------------------
+
+from server.senpai import brief, career  # noqa: E402
+
+TARGET = ('AI platform engineer (mid/senior, London): model serving and LLM APIs, retrieval and evaluation '
+          'pipelines, agent tooling, cost and reliability, on distributed-systems, Java and Python experience.')
+KNOWN = {'track:ai:production', 'track:ai:models', 'track:ai:retrieval', 'track:ai:evaluation', 'track:ai:agents',
+         'sd:reliability', 'sd:distributed', 'track:fundamentals:languages', 'track:fundamentals:infrastructure'}
+
+
+def test_career_target_names_capabilities_in_order_and_falls_back_to_search_titles():
+    caps = career.target_capabilities(TARGET)
+    assert caps[0] == 'track:ai:production'                 # "AI platform" before "platform", longest phrase wins
+    assert {'track:ai:retrieval', 'track:ai:evaluation', 'track:ai:agents', 'sd:reliability', 'sd:distributed'} <= set(caps)
+    assert len(caps) <= career.MAX_TARGET_CAPS
+    assert career.short_target(TARGET) == 'AI platform engineer'
+    job = {'context': {'career_target': {'text': None, 'target_titles': ['platform engineer', 'ai engineer']}}}
+    assert career.goal({}, job) == 'Roles: platform engineer, ai engineer'   # never silently nothing
+    assert career.goal({'target_job': 'SRE'}, job) == 'SRE'
+    assert career.goal({}, {}) == ''
+
+
+def test_career_target_becomes_an_objective_and_a_gradual_shift_to_the_stack():
+    p = plan()
+    changes = career.plan_changes(TARGET, p, KNOWN)
+    obj = next(c for c in changes if c['kind'] == 'objective_add')
+    assert obj['id'] == career.objective_id(TARGET) and obj['bucket'] == 'stack'
+    assert obj['title'] == 'Interview-ready for AI platform engineer'
+    reb = next(c for c in changes if c['kind'] == 'rebalance')
+    assert reb['target']['stack'] > 0.2 and reb['confidence'] == 'high'
+    decision, _, eff = policy.classify(p, reb, LIM, NOW)
+    assert decision == 'auto'
+    moved = policy.apply(p, eff, NOW)
+    assert 0.05 < moved['allocation']['stack'] <= 0.05 + LIM['max_weekly_shift'] + 1e-6   # damped, capped
+    assert moved['allocation']['dsa'] >= p['protected']['dsa']
+    p2 = policy.apply(p, obj, NOW)
+    again = career.plan_changes(TARGET, p2, KNOWN)
+    assert not any(c['kind'] == 'objective_add' for c in again)               # once per target
+    other = career.plan_changes('Site reliability engineer, on call and observability', p2, KNOWN)
+    assert {'kind': 'objective_remove', 'objective_id': obj['id']}.items() <= next(
+        c for c in other if c['kind'] == 'objective_remove').items()           # a new target retires the old one
+
+
+def test_follow_career_applies_through_policy_once_a_week(monkeypatch):
+    store = FakeStore()
+    store.update_settings({'target_job': TARGET})
+    first = service.follow_career(store, NOW)
+    assert {r['decision'] for r in first} == {'auto'}
+    p = service.load_plan(store, NOW)
+    assert any(o['id'].startswith('career-') for o in p['objectives'])
+    assert p['allocation']['stack'] > 0.05
+    assert service.follow_career(store, NOW + DAY) == []                       # same target, same week
+
+
+def test_untested_focus_and_career_capabilities_get_a_tutor_lesson():
+    p = policy.apply(plan(), {'kind': 'focus_add', 'capability_id': 'sd:caching'}, NOW)
+    p = policy.apply(p, {'kind': 'objective_add', 'id': 'career-x', 'title': 't', 'bucket': 'stack',
+                         'capability_ids': ['track:ai:production']}, NOW)
+    rows = caps() + [{'id': 'track:ai:production', 'bucket': 'stack', 'name': 'AI Engineering: Production AI',
+                      'status': 'untested', 'signals': {}}]
+    sd = {'next_lesson': None, 'lessons': [{'id': 'l1', 'category': 'caching', 'title': 'Cache basics', 'minutes': 12,
+                                            'due': 0, 'mistakes': 0, 'completed': False}]}
+    tracks = {'ai': {'due': 0, 'mistakes': 0, 'answers': 0, 'next_lesson': None,
+                     'next_by_category': {'production': {'id': 'serving', 'title': 'Serving LLMs', 'minutes': 15, 'category': 'production'}}}}
+    pool = sessions.candidates(rows, queue(), sd, set(), ['sd:caching'], {'stack'}, 'balanced', True, 'mixed', tracks,
+                               ['track:ai:production'])
+    ways = {b['action'].get('id') or b['action'].get('view'): b for b in pool if b['kind'] == 'focus_lesson'}
+    assert ways['l1']['action'] == {'type': 'sd_lesson', 'id': 'l1', 'tutor': True}
+    assert ways['lesson/serving']['capability_id'] == 'track:ai:production'
+    assert ways['l1']['priority'] > ways['lesson/serving']['priority']       # focus outranks a career objective
+    s = sessions.prepare(p, NOW, 'd', rows, queue(), sd, set(), budget=90, llm_enabled=True, tracks=tracks)
+    assert any(b['kind'] == 'focus_lesson' for b in s['blocks'])
+
+
+def job_ctx():
+    return {'context': {'career_target': {'text': TARGET},
+                        'demand': {'cohort': {'roles': 187}, 'tags': [
+                            {'tag': 'distributed systems', 'share': 0.65}, {'tag': 'llm', 'share': 0.07}]},
+                        'experience': [{'ref': 'cv.1', 'cited_by_roles': 435, 'excerpt':
+                                        'Goldman Sachs | Middleware - Upgrading our internally managed ZooKeeper platform.'}],
+                        'self_reported_topics': [{'topic': 'ZooKeeper — leader election', 'state': 'Needs work'}]}}
+
+
+def test_weekly_brief_is_concrete_and_says_why():
+    p = policy.apply(plan(), {'kind': 'objective_add', 'id': 'career-x', 'title': 't', 'bucket': 'stack',
+                              'capability_ids': ['track:ai:production', 'sd:distributed']}, NOW)
+    rows = [{'id': 'track:ai:production', 'bucket': 'stack', 'name': 'AI Engineering: Production AI', 'status': 'untested'},
+            {'id': 'sd:distributed', 'bucket': 'system_design', 'name': 'Distributed data', 'status': 'untested'},
+            {'id': 'dsa:interval.merge_boundaries', 'bucket': 'dsa', 'name': 'Intervals', 'status': 'needs_check'}]
+    tracks = {'ai': {'next_by_category': {'production': {'id': 'serving', 'title': 'Serving LLMs', 'minutes': 15}}}}
+    probs = [{'slug': f'p{i}', 'difficulty': 'Medium'} for i in range(8)]
+    solves = [{'slug': f'p{i}', 'kind': 'review', 'solved_at': NOW - i * 3600, 'independence': 'solo', 'solution_grade': {'score': 5}}
+              for i in range(8)]
+    gaps = [{'text': 'What 409 and 412 mean.', 'section': 'system-design', 'lesson': 'api-contracts',
+             'lesson_title': 'Design an API contract', 'ignored': 2}]
+    out = brief.build(TARGET, job_ctx(), p, rows, [], tracks, solves, probs, gaps, [0], NOW, True)
+    kinds = [i['kind'] for i in out['items']]
+    assert kinds == ['target', 'cv', 'gap', 'coding'] and out['goal'] == 'AI platform engineer'
+    target, cv, gap, coding = out['items']
+    assert target['action'] == {'type': 'tutor', 'section': 'ai', 'lesson': 'serving'}
+    assert 'AI platform engineer' in target['why']
+    assert cv['action'] == {'type': 'tutor', 'section': 'system-design', 'lesson': 'consensus', 'mode': 'cv'}
+    assert '435' in cv['why'] and 'leader election' in cv['why']
+    assert gap['action']['focus'] == 'What 409 and 412 mean.'
+    assert coding['action'] == {'type': 'session', 'mode': 'interview'} and 'Intervals' in coding['why']
+    # Recently defended, no model, nothing recorded: the brief shrinks instead of inventing work.
+    quiet = brief.build(TARGET, job_ctx(), p, rows, [], tracks, [], probs, gaps, [NOW - DAY], NOW, False)
+    assert [i['kind'] for i in quiet['items']] == ['target', 'coding']
+    assert quiet['items'][1]['title'] == 'Get the coding reps back in'
+
+
+def test_today_includes_the_brief(client):
+    out = client.get('/api/senpai/today').json()
+    assert 'blocks' in out and 'items' in out['brief']
+
+
+def test_without_any_goal_the_daily_review_says_why_instead_of_skipping_silently(monkeypatch):
+    from server.senpai import daily, worker
+    store = seeded()
+    store.update_settings({'target_job': ''})
+    monkeypatch.setattr(config, 'AUTH_MODE', 'local')
+    monkeypatch.setattr(worker.store_mod, 'get_store', lambda uid: store)
+    monkeypatch.setattr(jobscout, 'configured', lambda: False)
+    asyncio.run(worker.tick(uids=['me'], now=NOW))
+    status = store.get_flags()['daily_coach_status']
+    assert status['state'] == 'off' and status['message'] == daily.NO_GOAL

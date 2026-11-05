@@ -50,6 +50,23 @@ def ignored_gaps(recent_cards):
     return {k for k, n in counts.items() if n >= GAP_IGNORED}
 
 
+UNANSWERED_EASE = 3   # this many unanswered cards in a row: one card a day until one is answered
+EASED_TEXT = ("A few of these have gone unanswered, so I'll ease off to one a day until you answer one. "
+              "Anything that keeps slipping goes to your tutor's list for this week instead.")
+
+
+def unanswered_streak(recent_cards):
+    """Unanswered cards in a row, newest first, ignoring the one still pending."""
+    n = 0
+    for c in recent_cards:
+        if c.get('status') == 'pending':
+            continue
+        if c.get('status') not in ('expired', 'skipped'):
+            break
+        n += 1
+    return n
+
+
 def met(events, own='telegram'):
     """Points with evidence from anywhere but `own`: a lesson, check, quiz, the tutor, the feed."""
     return {e['point'] for e in events if e.get('source') != own}

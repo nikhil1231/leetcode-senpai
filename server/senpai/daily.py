@@ -18,6 +18,9 @@ _locks = {}
 _lock_guard = threading.Lock()
 
 
+NO_GOAL = 'No career target yet: set one in Job Scout (Settings → Career target) and Senpai picks it up on its next sync.'
+
+
 class ReviewUnavailable(Exception):
     """An explicit missing prerequisite, empty day, or model failure."""
 
@@ -171,9 +174,9 @@ def collect_activity(store, date, timezone, now=None):
 
 async def generate(store, date=None, force=False, now=None):
     settings = await asyncio.to_thread(store.get_settings)
-    goal = settings.get('target_job', '').strip()
+    goal = await asyncio.to_thread(service.career_goal, store, settings)
     if not goal:
-        raise ReviewUnavailable('Add your career target (in Job Scout, or in Settings) before generating a review.')
+        raise ReviewUnavailable(NO_GOAL)
     timezone = settings.get('daily_coach_timezone', 'UTC')
     date = date or review_date(settings, now)
     try:
@@ -265,6 +268,6 @@ def senpai_context(store, now=None):
 
 async def run_due(store, now=None):
     settings = await asyncio.to_thread(store.get_settings)
-    if not settings.get('daily_coach_enabled', True) or not settings.get('target_job', '').strip():
+    if not settings.get('daily_coach_enabled', True) or not await asyncio.to_thread(service.career_goal, store, settings):
         return None
     return await generate(store, review_date(settings, now), now=now)

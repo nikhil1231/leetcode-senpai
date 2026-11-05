@@ -43,7 +43,9 @@
     if (!q || q.section !== T.ctx.section || q.lesson !== T.ctx.lesson.id) return;
     queued = null;
     if (!T.info.enabled) return;
-    act(T.session?.status === 'active' ? 'resume' : 'start');
+    if (q.mode && T.info.modes?.some(m => m.id === q.mode)) T.mode = q.mode;
+    T.focus = q.focus || '';
+    act(T.session?.status === 'active' && !q.mode && !q.focus ? 'resume' : 'start');
   }
 
   // Notes stay hidden until chosen when the tutor is on. The lesson body's own display rule beats
@@ -157,7 +159,8 @@
         t.busy = true; t.error = ''; t.open = true;
         t.session = {id: null, mode: t.mode, status: 'active', turns: [], objectives: t.info.objectives.map(() => ({status: 'open'})), progress: {demonstrated: 0, total: t.info.objectives.length}};
         paint(); status(`${cast(firstSpeaker(t.mode))?.name || 'The tutor'} is getting ready…`);
-        const s = await api('/tutor/sessions', 'POST', {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid()});
+        const s = await api('/tutor/sessions', 'POST', {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid(), focus: t.focus || ''});
+        t.focus = '';
         if (T !== t) return;
         t.session = s; t.busy = false; paint();
       } else if (action === 'resume') {
@@ -183,7 +186,7 @@
       if (!t.session?.id) { t.open = false; t.session = null; t.error = e.message; paint(); } else status(e.message, true);
     }
   }
-  const firstSpeaker = mode => ({explain: 'jo', critique: 'marcus', 'war-room': 'priya', interview: 'marcus'}[mode] || 'tutor');
+  const firstSpeaker = mode => ({explain: 'jo', critique: 'marcus', 'war-room': 'priya', interview: 'marcus', cv: 'marcus'}[mode] || 'tutor');
 
   async function send(body, retry = false) {
     const t = T;

@@ -98,7 +98,7 @@
           <button class="button is-ghost" id="dc-refresh" type="button">Refresh</button></div>
         <p class="help">Today produces a labelled partial-day preview; the scheduled review finalises it after the day ends. Regeneration uses the current career target.</p>
         <nav class="dc-history" aria-label="Recent daily reviews">${data.reports.map((r) => `<button type="button" class="button is-small${r.date === selectedDate ? ' is-primary' : ' is-ghost'}" data-review-date="${esc(r.date)}">${esc(r.date)}${r.partial ? ' · preview' : ''}</button>`).join('')}</nav>
-        <p id="dc-status" class="dc-status" role="status" aria-live="polite">${esc(data.status?.state === 'unavailable' ? data.status.message : '')}</p>
+        <p id="dc-status" class="dc-status" role="status" aria-live="polite">${esc(['unavailable', 'off'].includes(data.status?.state) ? data.status.message : '')}</p>
         <div id="dc-report">${report ? reportHtml(report, data.target_job) : '<div class="dc-panel"><h3>No saved review for this day</h3><p>Choose a day with recorded activity and request a review. Empty days do not receive invented advice.</p></div>'}</div>`;
       $('#dc-settings').addEventListener('click', () => App.goTab('settings'));
       $('#dc-refresh').addEventListener('click', () => renderCoach());

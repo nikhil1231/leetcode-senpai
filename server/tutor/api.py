@@ -6,7 +6,8 @@ whose reply failed can be retried with the same key: the stored turn is reused a
 is generated again; a failed note is simply skipped. Ending a session writes its debrief; a
 debrief that failed is written again by ending the session again. Validated evidence and
 misconceptions go to the knowledge base (source "tutor", soft evidence); block answers are
-recorded by the lesson's own activity endpoint, so they stay hard evidence.
+recorded by the lesson's own activity endpoint, so they stay hard evidence. Senpai's career brief
+(goal, market, CV) goes into the prompt; without Job Scout context it is simply left out.
 """
 import asyncio
 import json
@@ -20,12 +21,14 @@ from pydantic import BaseModel, Field
 from .. import auth, config, handback_filing as hf, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel, progress
 from ..store import get_store
+from ..senpai import career as senpai_career
 from . import lessons, session as ses, story
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/tutor', tags=['tutor'])
 KEY = r'^[A-Za-z0-9_-]{6,64}$'
 STORY_KEY = 'story'
+CV_KEY = 'cv'
 UNAVAILABLE = 'The tutor needs the model, which is not connected. The lesson itself still works.'
 FAILED = 'The tutor could not answer just now. Your message is saved; try again.'
 DEBRIEF_FAILED = 'The debrief could not be written just now. Your session is saved; try again.'
@@ -55,8 +58,30 @@ def _session(store, sid):
     return s
 
 
-def _modes():
-    return [{'id': k, 'label': v[0], 'blurb': v[1]} for k, v in ses.MODES.items()]
+def _job(store):
+    try:
+        return store.get_senpai('senpai', 'job_context') or {}
+    except Exception:  # career context is optional
+        return {}
+
+
+def _has_cv(store):
+    return bool(((_job(store).get('context') or {}).get('experience')))
+
+
+def _modes(store=None):
+    cv = store is not None and _has_cv(store)
+    return [{'id': k, 'label': v[0], 'blurb': v[1]} for k, v in ses.MODES.items() if cv or k not in ses.NEEDS_CV]
+
+
+def _career(store, lesson):
+    job = _job(store)
+    try:
+        plan = store.get_senpai('senpai', 'plan') or {}
+    except Exception:
+        plan = {}
+    return senpai_career.tutor_brief(senpai_career.goal(store.get_settings(), job), job, plan,
+                                     lesson['section'], lesson['category'], lesson['id'])
 
 
 def _knowledge(store, now):
@@ -72,7 +97,7 @@ def public(s):
 def overview(store=Depends(store_for)):
     """Whether the tutor is available, its modes, and the company's story so far."""
     _, _, _, _, summary = _knowledge(store, time.time())
-    return {'enabled': llm.enabled(store.get_settings()), 'model': config.TUTOR_MODEL, 'modes': _modes(),
+    return {'enabled': llm.enabled(store.get_settings()), 'model': config.TUTOR_MODEL, 'modes': _modes(store),
             'story': story.public(summary, store.get_knowledge('tutor_memory', STORY_KEY))}
 
 
@@ -121,7 +146,7 @@ def lesson_state(section: str, lesson: str, store=Depends(store_for)):
         outside['picks_up'] = bool(mo.get('session') in outside['sessions'] and not mo.get('picked_up_by')
                                    and time.time() - mo['at'] < PICKUP_DAYS * 86400)
     elsewhere = [{**e, 'lesson_title': (lessons.get(e['section'], e['lesson']) or {}).get('title', e['lesson'])} for e in elsewhere]
-    return {'enabled': llm.enabled(store.get_settings()), 'modes': _modes(), 'objectives': l['objectives'],
+    return {'enabled': llm.enabled(store.get_settings()), 'modes': _modes(store), 'objectives': l['objectives'],
             'previously': mem.get('summary', ''), 'sessions': mem.get('sessions', 0),
             'scene': story.chapter(section, l['category']), 'outside': outside, 'outside_elsewhere': elsewhere,
             'active': public(active) if active and active['status'] == 'active' else None}
@@ -130,8 +155,9 @@ def lesson_state(section: str, lesson: str, store=Depends(store_for)):
 class Start(BaseModel):
     section: Literal['system-design', 'fundamentals', 'ai']
     lesson: str = Field(max_length=80)
-    mode: Literal['teach', 'explain', 'critique', 'war-room', 'interview'] = 'teach'
+    mode: Literal['teach', 'explain', 'critique', 'war-room', 'interview', 'cv'] = 'teach'
     key: str = Field(pattern=KEY, description='Client-made session id: a retried start opens the same session.')
+    focus: str = Field(default='', max_length=300, description='One gap this session is opened to close.')
 
 
 @router.post('/sessions')
@@ -142,8 +168,12 @@ async def start(body: Start, store=Depends(store_for)):
     s = store.get_knowledge('tutor_sessions', body.key)
     if s and any(t['role'] == 'tutor' for t in s['turns']):
         return public(s)
+    if body.mode in ses.NEEDS_CV and not _has_cv(store):
+        raise HTTPException(422, 'Defend your CV needs your CV from Job Scout, which has not synced yet.')
     if not s:
         s = ses.new(body.key, l, body.mode, now)
+        if body.focus.strip():
+            s['focus'] = body.focus.strip()
         mk = _memory_key(body.section, body.lesson)
         mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
         outside = mem.get('outside')
@@ -151,6 +181,8 @@ async def start(body: Start, store=Depends(store_for)):
             s['pickup'] = {k: outside[k] for k in ('session', 'at', 'summary', 'next_steps')}
             mem['outside'] = {**outside, 'picked_up_by': body.key}
         store.create_knowledge('tutor_sessions', body.key, s)
+        if body.mode in ses.NEEDS_CV:   # Senpai's weekly brief stops suggesting it for a while
+            store.put_knowledge('tutor_memory', CV_KEY, {'last_at': now, 'lesson': f'{body.section}:{body.lesson}'})
         store.put_knowledge('tutor_memory', mk, {**mem, 'active': body.key, 'sessions': mem.get('sessions', 0) + 1, 'last_at': now})
     return await _reply(store, s, l)
 
@@ -238,7 +270,8 @@ def _context(store, s, l, now):
     story_mem = store.get_knowledge('tutor_memory', STORY_KEY) or {}
     return {'views': kmodel.views(c, states, seen, mis, now, own), 'prereq_views': kmodel.views(c, states, seen, mis, now, prereqs),
             'allowed': allowed, 'open': [m for m in mis if m.get('status') == 'open' and m['point'] in allowed],
-            'memory': {**memory, 'events': story_mem.get('events', [])}, 'story': story.scale(summary)}
+            'memory': {**memory, 'events': story_mem.get('events', [])}, 'story': story.scale(summary),
+            'career': _career(store, l)}
 
 
 def _count(s, usage):
@@ -248,7 +281,7 @@ def _count(s, usage):
 
 async def _talk(s, l, ctx, debrief=False):
     """The tutor's reply as plain text, or None when the model failed."""
-    system = ses.system(s, l, ctx['views'], ctx['open'], ctx['memory'], ctx['story'], debrief=debrief)
+    system = ses.system(s, l, ctx['views'], ctx['open'], ctx['memory'], ctx['story'], debrief=debrief, career=ctx.get('career'))
     messages = [{'role': 'system', 'content': system}, *ses.messages(s, l, debrief)]
     for _ in range(2):   # a reply with nothing visible (all private notes) gets one more try
         try:

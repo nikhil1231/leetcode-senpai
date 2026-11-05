@@ -102,6 +102,12 @@ class Bot:
                 return
         if self.state['paused']:
             return
+        eased = self.eased()
+        if eased != bool(self.state.get('eased')):
+            self.state.update(eased=eased, next_at=None)   # re-space the day at the new pace
+            if eased:
+                self.say(cards.EASED_TEXT)
+            self.save()
         local = dt.datetime.fromtimestamp(now, self.tz())
         if self.state['next_at'] is None:
             self.state['next_at'] = cards.next_send(local, self.per_day(), config.DRIP_WINDOW, self.rng).timestamp()
@@ -187,9 +193,16 @@ class Bot:
         return cards.clamp_per_day(self.state.get('per_day') or config.DRIP_PER_DAY)
 
     def per_day(self):
-        """Today's pace: the usual one, lighter after a poor night."""
+        """Today's pace: the usual one, lighter after a poor night, and one a day while cards go unanswered."""
+        if self.eased():
+            return 1
         usual = self.usual_per_day()
         return max(1, round(usual * cards.sleep_factor(self.state.get('sleep'))))
+
+    def eased(self):
+        n = self.state.get('n') or 0
+        recent = [self.card(k) or {} for k in range(n, max(0, n - cards.UNANSWERED_EASE - 1), -1)]
+        return cards.unanswered_streak(recent) >= cards.UNANSWERED_EASE
 
     def refresh_sleep(self, now):
         """Last night appears in Sundial once Oura syncs after waking, so from 05:00 look every

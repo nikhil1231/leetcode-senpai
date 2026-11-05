@@ -659,3 +659,27 @@ def test_feed_grading_keeps_the_tutor_voice():
     p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
     assert 'STORY' not in cards.grade_payload(p, 'x') and cards.grade_payload(p, 'x', in_story=True)['STORY']
     assert 'tick or a cross' in cards.STORY_GRADE_SYSTEM and 'tick' not in cards.GRADE_SYSTEM
+
+
+def test_unanswered_streak_counts_from_the_newest_card():
+    assert cards.unanswered_streak([{'status': 'pending'}, {'status': 'expired'}, {'status': 'skipped'},
+                                    {'status': 'answered'}, {'status': 'expired'}]) == 2
+    assert cards.unanswered_streak([{'status': 'answered'}, {'status': 'expired'}]) == 0
+
+
+def test_after_three_unanswered_cards_the_bot_eases_to_one_a_day_and_says_so(env):
+    b, store, tg, clock, grades = env
+    for n in range(1, 4):
+        b.state['n'] = n
+        b.put_card({'n': n, 'point': 'x', 'status': 'expired', 'sent_at': clock.t - 9 * 3600})
+    b.save()
+    assert b.per_day() == 1
+    b.tick()
+    assert b.state['eased'] and any('ease off' in m['text'] for m in tg.sent)
+    sent = len(tg.sent)
+    b.tick()
+    assert len(tg.sent) == sent   # said once
+    b.put_card({'n': 3, 'point': 'x', 'status': 'answered', 'sent_at': clock.t})
+    assert b.per_day() == b.usual_per_day()
+    b.tick()
+    assert not b.state['eased']

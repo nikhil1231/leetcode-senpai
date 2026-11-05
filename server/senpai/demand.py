@@ -1,7 +1,8 @@
 """Turn Job Scout's brief into learning signals. Pure; no I/O.
 
 Job ads name tools and domains, not interview patterns, so demand never ranks DSA topics. It maps tags to
-buckets and to system-design categories; language/tool tags are "outside the curriculum", never gaps.
+buckets, to system-design categories and to the Fundamentals and AI Engineering track categories (career.py);
+only tags with no lessons at all are "outside the curriculum", never gaps.
 A tag becomes a candidate focus only after it stays prominent across weeks *with fresh evidence*
 (new roles or a later last-seen date), so the same vacancies observed again do not count twice.
 Imminent interviews become temporary, expiring overlays whose shape follows the round type.
@@ -35,13 +36,14 @@ PROMINENT_SHARE = 0.15
 
 
 def classify_tag(tag):
+    from .career import TRACK_TAGS
     if tag in SD_TAGS:
         return 'system_design', 'sd:' + SD_TAGS[tag]
     if tag in DSA_TAGS:
         return 'dsa', None
     if tag in BEHAVIOURAL_TAGS:
         return 'behavioural', None
-    return 'stack', None
+    return 'stack', TRACK_TAGS.get(tag)
 
 
 def _ts(text):
@@ -61,7 +63,7 @@ def brief(context, previous_signals, week, now):
         row = {'tag': t['tag'], 'bucket': bucket, 'capability_id': cap, 'roles': t.get('roles', 0),
                'companies': t.get('companies', 0), 'share': t.get('share', 0), 'last_seen': t.get('last_seen')}
         bucket_companies[bucket] = bucket_companies.get(bucket, 0) + row['companies']
-        (outside if bucket == 'stack' else mapped).append(row)
+        (outside if bucket == 'stack' and not cap else mapped).append(row)
     signals = {}
     previous_signals = previous_signals or {}
     for row in mapped:

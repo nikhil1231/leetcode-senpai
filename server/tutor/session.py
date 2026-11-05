@@ -4,7 +4,7 @@ A session is a list of turns (learner text, block results, tutor replies) plus t
 around them: each objective's status, the blocks already shown, the role's private notes, the
 wrong claims recorded so far and a running summary for next time.
 
-Two model calls make a turn, and they do different jobs (PROMPT_VERSION 7):
+Two model calls make a turn, and they do different jobs (PROMPT_VERSION 8):
 - The tutor talks. It gets a system prompt (its role, the lesson, what the learner knows) and the
   conversation as ordinary chat messages, and replies in plain text. It may end a message with
   [[activity bN]] to hand over one of the lesson's activities, and in the role-play modes keep
@@ -13,10 +13,14 @@ Two model calls make a turn, and they do different jobs (PROMPT_VERSION 7):
   objective progress, misconceptions and a summary. `apply_notes` keeps only what quotes the
   learner's own words, so neither call can invent evidence.
 
+The tutor also knows his career goal, why the lesson matters to it and what his CV claims (Senpai's
+career brief), so lessons connect to the job he wants; "cv" mode interviews him on that CV work. A
+session opened to close one gap carries it as `focus` and starts there.
+
 A session started after an outside tutor's handback (handover.py) carries its report as `pickup`
 and continues from it instead of opening the lesson afresh.
 
-Only "teach" teaches; the other modes (Jo, the design review, the incident, the interview) stay in
+Only "teach" teaches; the other modes (Jo, the design review, the incident, the interviews) stay in
 role and correct nothing until the debrief, written when the session ends.
 """
 import re
@@ -27,7 +31,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import lessons, story
 
-PROMPT_VERSION = 7
+PROMPT_VERSION = 8
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -113,6 +117,17 @@ Who you are: {marcus} In the interview chair you keep the energy but drop the te
 - A wrong claim: probe it once, as a real interviewer would ("walk me through how that behaves when…"). If he corrects himself, fine; if not, move on.
 - A stuck candidate: narrow the question as an interviewer would, without giving the answer.
 - One question at a time, under 80 words. Keep interview pace: no more than three or four exchanges on one thing.""".format(marcus=voice.persona('marcus')),
+
+    'cv': """You are Marcus interviewing Nikhil about his own work, as in the "tell me about something you built" part of a real mid/senior loop. His CV claims are below; this lesson's ideas are what you probe them with. You never teach and give no feedback until the debrief.
+
+Who you are: {marcus} In the interview chair you keep the energy but drop the teasing: friendly, curious, hard to bluff.
+
+- Open by picking one claim from his CV below that this lesson's ideas bear on, and ask him to walk you through it: what the system did, his part in it, the scale.
+- Then dig the way a strong interviewer does: why that design and not the obvious alternative; what happens when a node, the network or a dependency fails; what guarantees it gave and how he knows; the numbers; what he'd change now. Steer toward the lesson's ideas through his system, not as quiz questions.
+- Separate what he did from what the team did: if it's unclear, ask.
+- A vague or wrong answer: probe it once, as a real interviewer would ("how does that behave when the leader dies mid-write?"). If he corrects himself, fine; if not, move on.
+- React like an interviewer: "OK", "got it", "interesting, go deeper on…". Never "correct", "exactly" or "not quite"; no hints, no teaching.
+- One question at a time, under 80 words. No more than three or four exchanges on one thing.""".format(marcus=voice.persona('marcus')),
 }
 
 DEBRIEF_EXTRA = {
@@ -121,6 +136,7 @@ DEBRIEF_EXTRA = {
     'critique': '**Flaws still in the design**: any planted flaw (from your private notes) he didn\'t find, with the failure it would cause.',
     'war-room': '**Postmortem**: a short blameless one: impact, root cause, what helped, what to change.',
     'interview': '**How it would land**: with a hiring panel (strong, mixed or weak, for mid and for senior), and the one change that would most raise it.',
+    'cv': '**How your CV held up**: which claims he backed with specifics and which a panel would doubt, and the one detail to prepare before a real loop.',
 }
 
 DEBRIEF = """
@@ -141,7 +157,9 @@ MODES = {
     'critique': ('Spot the flaws', 'Marcus proposes a design with deliberate mistakes. You find and fix them.', 'marcus', False),
     'war-room': ('War room', 'Priya is on the pager with a live incident. You diagnose and fix it.', 'priya', False),
     'interview': ('Interview', 'Marcus interviews you on this topic like a real loop, then gives feedback.', 'marcus', False),
+    'cv': ('Defend your CV', "Marcus digs into your own work through this lesson's ideas, the way interviewers do, then gives feedback.", 'marcus', False),
 }
+NEEDS_CV = {'cv'}
 OPEN, WORKING, DEMONSTRATED = 'open', 'working', 'demonstrated'
 RANK = {OPEN: 0, WORKING: 1, DEMONSTRATED: 2}
 MARK = {OPEN: '○ not yet', WORKING: '◐ partly shown', DEMONSTRATED: '✓ shown'}
@@ -156,8 +174,9 @@ def _claims(views, statuses, limit=25):
     return '\n'.join(f'  - {c}' for c in found) if found else '  (none)'
 
 
-def context(session, lesson, views, misconceptions, memory, story_state):
-    """The session-specific part of the tutor's system prompt."""
+def context(session, lesson, views, misconceptions, memory, story_state, career=None):
+    """The session-specific part of the tutor's system prompt. `career`: Senpai's career brief
+    ({'text', 'experience'}), optional."""
     mode = session['mode']
     held = [v for v in views if v['status'] in ('solid', 'learning')]
     shaky = [v for v in views if v['status'] in ('shaky', 'fading')]
@@ -180,7 +199,14 @@ What it should leave him able to do (a map for you, not a checklist to read out)
 {objectives}"""]
     if all(o['status'] == DEMONSTRATED for o in session['objectives']):
         parts.append("He has now shown every objective. Wrap up warmly in a line or two, and suggest he ends the session for the debrief.")
+    if (career or {}).get('text'):
+        know.append(career['text'])
     parts.append('About Nikhil:\n' + '\n'.join(know))
+    if mode == 'cv' and (career or {}).get('experience'):
+        parts.append('## His CV (claims to probe, not facts you know)\n' + '\n'.join(f'- {e}' for e in career['experience']))
+    if session.get('focus'):
+        parts.append(f"## Why he opened this session\nTo close one gap that hasn't landed yet: {session['focus']}\n"
+                     "Start there (in your own way, through a situation, not by quoting this), make sure it lands, then carry on with the lesson.")
     if session.get('pickup'):
         parts.append(pickup(session['pickup'], mode))
     parts.append(f"""Setting: Ripple, a link shortener growing into a global social product, now at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
@@ -215,8 +241,8 @@ def pickup(p, mode):
     return text + (PICKUP_OPENING if mode == 'teach' else '')
 
 
-def system(session, lesson, views, misconceptions, memory, story_state, debrief=False):
-    text = ROLES[session['mode']] + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state)
+def system(session, lesson, views, misconceptions, memory, story_state, debrief=False, career=None):
+    text = ROLES[session['mode']] + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career)
     if debrief:
         mistakes = '\n'.join(f'- He said "{m["quote"]}": {m["text"]}' for m in session.get('mistakes', [])) or '(none recorded)'
         text += DEBRIEF.format(voice=voice.TUTOR, extra='3. ' + DEBRIEF_EXTRA[session['mode']], mistakes=mistakes)

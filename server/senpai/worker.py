@@ -26,11 +26,19 @@ async def tick(uids=None, now=None):
             await _sync_job_scout(store, now)
             await _weekly(store, now)
             settings = await asyncio.to_thread(store.get_settings)
-            if not settings.get('daily_coach_enabled', True) or not settings.get('target_job', '').strip():
+            if not settings.get('daily_coach_enabled', True):
                 continue
             date = daily_coach.review_date(settings, now)
             old = (await asyncio.to_thread(store.get_flags)).get('daily_coach_status') or {}
             timestamp = int(time.time() if now is None else now)
+            if not await asyncio.to_thread(service.career_goal, store, settings):
+                # Say why instead of skipping silently; written once, not every minute.
+                if old.get('state') != 'off' or old.get('date') != date:
+                    await asyncio.to_thread(store.set_flag, 'daily_coach_status', {
+                        'state': 'off', 'message': daily_coach.NO_GOAL, 'date': date,
+                        'timezone': settings['daily_coach_timezone'], 'target_job': settings['target_job'],
+                        'checked_at': timestamp})
+                continue
             # A no-activity day or provider outage is not a reason to issue a model
             # request every minute. Manual generation remains immediately available.
             if (old.get('date') == date and old.get('timezone') == settings['daily_coach_timezone']
@@ -61,6 +69,10 @@ async def _sync_job_scout(store, now=None):
     last = max(cached.get('fetched_at') or 0, cached.get('error_at') or 0)
     if timestamp - last >= SYNC_EVERY:
         await asyncio.to_thread(jobscout.sync, store, timestamp)
+        try:
+            await asyncio.to_thread(service.follow_career, store, timestamp)
+        except Exception:
+            log.exception('Following the career target failed')
 
 
 async def _weekly(store, now=None):
