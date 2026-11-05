@@ -193,6 +193,8 @@
     // The review board shows every scheduled card, segmented by when it is due,
     // instead of an unexplained top-five. What is actionable is expanded; what is
     // merely coming up is one click away.
+    // A long open segment shows its first few; the rest are one click away (they are in date order).
+    const SEGMENT_SHOWN = 6;
     const segment = (seg) => `
       <details class="q-seg ${SEGMENT_TONE[seg.key] || "is-later"}"${
         SEGMENT_OPEN.has(seg.key) ? " open" : ""}>
@@ -202,7 +204,9 @@
           <span class="q-seg-label">${escapeHtml(seg.label)}</span>
           <span class="q-seg-count">${seg.count}</span>
         </summary>
-        ${list(seg.items.map((it) => item(it, seg.key === "overdue")))}
+        ${list(seg.items.slice(0, SEGMENT_SHOWN).map((it) => item(it, seg.key === "overdue")))}
+        ${seg.items.length > SEGMENT_SHOWN ? `<details class="q-more"><summary>Show ${seg.items.length - SEGMENT_SHOWN} more</summary>
+          ${list(seg.items.slice(SEGMENT_SHOWN).map((it) => item(it, seg.key === "overdue")))}</details>` : ""}
       </details>`;
     // "Reviews due" counts what is actually waiting; future segments are context.
     const waiting = board

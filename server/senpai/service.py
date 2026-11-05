@@ -376,6 +376,24 @@ def ignored_gaps(store, limit=4):
     return out[:limit]
 
 
+SPLIT_LABELS = {'dsa': 'Coding', 'system_design': 'System design', 'stack': 'Role stack', 'behavioural': 'Behavioural'}
+
+
+def time_split(plan, goal, known, now):
+    """The week's time split as it applies now, in minutes, and where it is heading."""
+    alloc, minutes = policy.effective_allocation(plan, now), policy.bucket_minutes(plan, now)
+    order = sorted(policy.BUCKETS, key=lambda k: -alloc[k])
+    note = ''
+    want = career.stack_target(goal, known) if goal else None
+    if want and alloc['stack'] < want - 0.02:
+        note = (f"Role stack (Fundamentals and AI Engineering) is moving toward {round(want * 100)}% for your "
+                f"{career.short_target(goal)} target, at most {round(policy.limits({})['max_weekly_shift'] * 100)} points a week.")
+    if policy.active_overlays(plan, now):
+        note = (note + ' ' if note else '') + 'Includes a temporary priority: ' + policy.active_overlays(plan, now)[0]['label'] + '.'
+    return {'weekly_minutes': plan.get('weekly_minutes'), 'note': note,
+            'buckets': [{'id': k, 'label': SPLIT_LABELS[k], 'share': round(alloc[k], 3), 'minutes': minutes[k]} for k in order]}
+
+
 def week_brief(store, b, now=None):
     """This week's few concrete things (brief.py). Never fails the caller."""
     from .. import llm
@@ -383,9 +401,11 @@ def week_brief(store, b, now=None):
     try:
         job = store.get_senpai('senpai', 'job_context') or {}
         cv_at = [(store.get_knowledge('tutor_memory', 'cv') or {}).get('last_at') or 0]
-        return brief_mod.build(career.goal(b['settings'], job), job, load_plan(store, now), b['rows'],
-                               course_summary(b['design'], now)['lessons'], tracks_senpai.material(b.get('tracks') or {}, now),
-                               b['attempts'], b['problems'], ignored_gaps(store), cv_at, now, llm.enabled(b['settings']))
+        goal, plan = career.goal(b['settings'], job), load_plan(store, now)
+        out = brief_mod.build(goal, job, plan, b['rows'], course_summary(b['design'], now)['lessons'],
+                              tracks_senpai.material(b.get('tracks') or {}, now), b['attempts'], b['problems'],
+                              ignored_gaps(store), cv_at, now, llm.enabled(b['settings']))
+        return {**out, 'split': time_split(plan, goal, {r['id'] for r in b['rows']}, now)}
     except Exception:
         log.exception('Weekly brief failed')
         return {'items': []}

@@ -594,3 +594,13 @@ def test_without_any_goal_the_daily_review_says_why_instead_of_skipping_silently
     asyncio.run(worker.tick(uids=['me'], now=NOW))
     status = store.get_flags()['daily_coach_status']
     assert status['state'] == 'off' and status['message'] == daily.NO_GOAL
+
+
+def test_time_split_shows_minutes_and_where_it_is_heading():
+    p = plan()
+    sp = service.time_split(p, TARGET, KNOWN, NOW)
+    assert [b['id'] for b in sp['buckets']][0] == 'dsa' and sum(b['minutes'] for b in sp['buckets']) in range(418, 423)
+    assert 'moving toward' in sp['note'] and 'AI platform engineer' in sp['note']
+    p['allocation'] = policy._normalise({**p['allocation'], 'stack': 0.4})
+    assert service.time_split(p, TARGET, KNOWN, NOW)['note'] == ''   # arrived: nothing to explain
+    assert service.time_split(plan(), '', KNOWN, NOW)['note'] == ''

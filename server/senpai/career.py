@@ -113,12 +113,20 @@ def plan_changes(text, plan, known):
                     'capability_ids': caps, 'basis': 'career', 'confidence': 'high',
                     'rationale': f'Your career target in Job Scout: {text.strip()[:240]}'})
     stack = buckets.count('stack') / len(buckets)
-    want = round(min(STACK_MAX, STACK_BASE + STACK_SPAN * stack), 3)
+    want = stack_target(text, known)
     if (plan.get('allocation') or {}).get('stack', 0) < want - 0.02:
         out.append({'kind': 'rebalance', 'target': {'stack': want}, 'basis': 'career', 'confidence': 'high',
                     'rationale': f'{round(stack * 100)}% of what your target names ({name}) is role stack: '
                                  'Fundamentals and AI Engineering. Time moves there gradually.'})
     return out
+
+
+def stack_target(text, known=None):
+    """The role-stack share the target asks for: more of it the more of the target is stack."""
+    caps = [c for c in target_capabilities(text) if known is None or c in known]
+    if not caps:
+        return None
+    return round(min(STACK_MAX, STACK_BASE + STACK_SPAN * sum(bucket(c) == 'stack' for c in caps) / len(caps)), 3)
 
 
 def demand_for(cid, mapped):

@@ -94,7 +94,29 @@
 .sp-today-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
 .sp-today h2 { font-size: 16px; margin: 6px 0 0; }
 .sp-brief { padding: 18px 20px; margin-bottom: 14px; border: 1px solid var(--line-hi); border-radius: var(--radius); background: var(--bg-elev); }
-.sp-brief ol { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.sp-home { margin-bottom: 20px; border: 1px solid var(--accent-line); border-radius: var(--radius); background: var(--bg-elev); }
+.sp-home .sp-brief { margin: 0; border: 0; background: none; }
+.sp-home-today { padding: 14px 20px 18px; border-top: 1px solid var(--line); }
+.sp-home-today h3 { font-size: 14px; margin: 0 0 10px; color: var(--text-2); }
+.sp-brief-items { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+.sp-split { margin-top: 12px; }
+.sp-split-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--track); gap: 2px; }
+.sp-split-bar i, .sp-split-legend li > i { display: block; background: var(--muted); }
+.sp-split .is-dsa { background: var(--accent); }
+.sp-split .is-system_design { background: var(--accent-2); }
+.sp-split .is-stack { background: var(--green); }
+.sp-split .is-behavioural { background: var(--amber); }
+.sp-split-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--text-2); }
+.sp-split-legend li { display: flex; align-items: center; gap: 6px; }
+.sp-split-legend li > i { width: 8px; height: 8px; border-radius: 2px; }
+.sp-split-legend span, .sp-split-total { color: var(--muted); }
+.sp-split .help { margin: 6px 0 0; font-size: 12px; }
+.sp-fold > summary { list-style: none; cursor: pointer; }
+.sp-fold > summary::-webkit-details-marker { display: none; }
+.sp-fold > summary h3 { display: inline-flex; gap: 8px; align-items: center; margin: 0; }
+.sp-fold > summary h3::after { content: '▸'; color: var(--muted); font-size: 12px; }
+.sp-fold[open] > summary h3::after { content: '▾'; }
+.sp-fold[open] > summary { margin-bottom: 10px; }
 .sp-brief-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); }
 .sp-brief-item:first-child { border-top: 0; padding-top: 0; }
 .sp-brief-item > div { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }

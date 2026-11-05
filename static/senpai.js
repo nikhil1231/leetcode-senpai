@@ -61,10 +61,17 @@
     }));
   }
 
-  // ---- This week: the brief ------------------------------------------------------------------------
-  const briefHtml = (br) => !br?.items?.length ? '' : `<section class="sp-brief"><span class="dc-eyebrow">This week${br.goal ? ' · toward ' + esc(br.goal) : ''}</span>
-      <ol>${br.items.map((it) => `<li class="sp-brief-item"><div><span class="sp-chip">${esc(it.label)}</span><b>${esc(it.title)}</b><span class="sp-min">${it.minutes} min</span></div>
-        <p>${esc(it.why)}</p><button type="button" class="button is-small" data-brief="${esc(it.id)}">${it.kind === 'cv' ? 'Start the interview' : 'Start'}</button></li>`).join('')}</ol></section>`;
+  // ---- This week: time split and the brief ------------------------------------------------------------
+  const hours = (m) => m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}` : `${m}m`;
+  const splitHtml = (sp) => !sp?.buckets?.length ? '' : `<div class="sp-split" aria-label="This week's time split">
+      <div class="sp-split-bar">${sp.buckets.map((b) => `<i class="is-${b.id}" style="width:${pct(b.share)}" title="${esc(b.label)} ${pct(b.share)}"></i>`).join('')}</div>
+      <ul class="sp-split-legend">${sp.buckets.map((b) => `<li><i class="is-${b.id}"></i>${esc(b.label)} <b>${pct(b.share)}</b> <span>${hours(b.minutes)}</span></li>`).join('')}
+        <li class="sp-split-total">of ${hours(sp.weekly_minutes)} a week</li></ul>
+      ${sp.note ? `<p class="help">${esc(sp.note)}</p>` : ''}</div>`;
+  const briefItems = (br) => !br?.items?.length ? '' : `<ol class="sp-brief-items">${br.items.map((it) => `<li class="sp-brief-item"><div><span class="sp-chip">${esc(it.label)}</span><b>${esc(it.title)}</b><span class="sp-min">${it.minutes} min</span></div>
+        <p>${esc(it.why)}</p><button type="button" class="button is-small" data-brief="${esc(it.id)}">${it.kind === 'cv' ? 'Start the interview' : 'Start'}</button></li>`).join('')}</ol>`;
+  const briefHtml = (br, extra = '') => !br ? '' : `<section class="sp-brief"><div class="sp-today-head"><span class="dc-eyebrow">This week${br.goal ? ' · toward ' + esc(br.goal) : ''}</span>${extra}</div>
+      ${splitHtml(br.split)}${briefItems(br)}</section>`;
   function bindBrief(root, br) {
     root.querySelectorAll('[data-brief]').forEach((btn) => btn.addEventListener('click', () => {
       const it = br.items.find((x) => x.id === btn.dataset.brief);
@@ -80,11 +87,10 @@
       const s = await api('/senpai/today');
       if (!box.isConnected) return;
       const open = s.blocks.filter((b) => !b.done);
-      box.innerHTML = `${briefHtml(s.brief)}<section class="sp-today"><div class="sp-today-head"><div><span class="dc-eyebrow">Senpai · today</span>
-          <h2>${open.length ? `${open.reduce((n, b) => n + b.minutes, 0)} minutes planned` : (s.blocks.length ? 'Session complete' : 'Nothing prepared')}</h2></div>
-          <button class="button is-small is-ghost" type="button" data-open-senpai>Open Senpai</button></div>
+      box.innerHTML = `<section class="sp-home">${briefHtml(s.brief, '<button class="button is-small is-ghost" type="button" data-open-senpai>Open Senpai</button>')}
+        <div class="sp-home-today"><h3>Today · ${open.length ? `${open.reduce((n, b) => n + b.minutes, 0)} minutes planned` : (s.blocks.length ? 'session complete' : 'nothing prepared')}</h3>
         ${open.length ? `<ol class="sp-blocks">${open.slice(0, 3).map(blockHtml).join('')}</ol>${open.length > 3 ? `<p class="help">+${open.length - 3} more in Senpai.</p>` : ''}`
-          : `<p class="help">${esc(s.note || 'Everything in today\'s session is done. Prepare another in Senpai if you want more.')}</p>`}</section>`;
+          : `<p class="help">${esc(s.note || 'Everything in today\'s session is done. Prepare another in Senpai if you want more.')}</p>`}</div></section>`;
       bindBlocks(box, s);
       bindBrief(box, s.brief);
       box.querySelector('[data-open-senpai]').addEventListener('click', () => App.goTab('senpai'));
@@ -100,8 +106,9 @@
     const target = d.settings.target_job;
     const fresh = js.configured ? (js.error ? `Job Scout unreachable (${esc(js.error)}); using the copy from ${when(js.fetched_at)}.`
       : `Synced from Job Scout ${when(js.fetched_at)}.`) : 'Job Scout is not connected on this server; using the target saved here.';
-    return `<header class="dc-hero sp-hero"><span class="dc-eyebrow">Senpai</span><h2>Learn with direction</h2>
-      <p class="dc-goal-copy">${target ? esc(target) : 'No career target yet.'}</p>
+    const short = target ? target.split(/[(:\-–—.;,]/)[0].trim() : '';
+    return `<header class="dc-hero sp-hero"><span class="dc-eyebrow">Senpai · your career target</span><h2>${short ? esc(short) : 'No career target yet'}</h2>
+      ${target && target !== short ? `<p class="help">${esc(target)}</p>` : ''}
       <p class="help">${fresh} ${js.configured ? `<a href="${esc(js.links.settings)}" target="_blank" rel="noopener">Edit target in Job Scout</a>` : ''}
         ${!synced && !js.configured ? '<button type="button" class="button is-ghost is-small" data-settings>Edit in Settings</button>' : ''}</p>
       <div class="dc-actions">${js.configured ? '<button type="button" class="button is-small" data-sync>Sync now</button>' : ''}
@@ -159,7 +166,7 @@
     }).join('');
     const capName = (id) => (d.capabilities.find((c) => c.id === id) || {}).name || id;
     return `<section class="dc-panel"><div class="sp-row"><h3>Plan</h3><span class="help">Revision ${p.revision} · ${p.weekly_minutes} min/week</span></div>
-      <div class="sp-bars">${bars}</div>
+      <details><summary>Time split in detail</summary><div class="sp-bars">${bars}</div></details>
       <p class="help">Senpai moves at most ${pct(d.limits.max_weekly_shift)} of your time per week on its own (learning rate ${d.limits.learning_rate}); larger moves wait for you.</p>
       <h4>Focus <span class="help">(at most ${d.limits.max_focus})</span></h4>
       <div class="sp-chips">${p.focus.length ? p.focus.map((f) => `<span class="sp-chip is-focus" title="${esc(f.reason || '')}">${esc(capName(f.capability_id))}<button type="button" aria-label="Remove focus" data-unfocus="${esc(f.capability_id)}">×</button></span>`).join('') : '<span class="help">No focus yet. Pick one from Capabilities, or let Senpai propose one.</span>'}</div>
@@ -174,26 +181,26 @@
   function questionsHtml(d) {
     const qs = d.state.questions || [];
     if (!qs.length) return '';
-    return `<section class="dc-panel"><h3>Senpai's questions</h3><p class="help">Things the logs can't tell. Your answers inform the next weekly review.</p>${qs.map((q) => `
+    return `<details class="dc-panel sp-fold"><summary><h3>Senpai's questions <span class="sp-chip">${qs.length}</span></h3></summary><p class="help">Things the logs can't tell. Your answers inform the next weekly review.</p>${qs.map((q) => `
       <div class="sp-question"><p>${esc(q.text)}</p><textarea class="input" rows="2" maxlength="1000" data-answer-for="${esc(q.id)}"></textarea>
-      <button type="button" class="button is-small" data-answer="${esc(q.id)}">Answer</button></div>`).join('')}</section>`;
+      <button type="button" class="button is-small" data-answer="${esc(q.id)}">Answer</button></div>`).join('')}</details>`;
   }
 
   function followHtml(d) {
     if (!d.interventions.length) return '';
     const outcome = { pending: 'Waiting for the check date', helped: 'Helped', not_helped: 'Did not help yet', not_tried: 'Not tried', unclear: 'Unclear' };
-    return `<section class="dc-panel"><h3>Advice follow-through</h3><p class="help">Whether advice was tried comes from your recorded practice; whether it helped, from a later independent check. Ineffective advice is revised, not repeated.</p>
+    return `<details class="dc-panel sp-fold"><summary><h3>Advice follow-through <span class="sp-chip">${d.interventions.length}</span></h3></summary><p class="help">Whether advice was tried comes from your recorded practice; whether it helped, from a later independent check. Ineffective advice is revised, not repeated.</p>
       <ul class="sp-list">${d.interventions.map((i) => `<li><b>${esc(i.action)}</b>
         <p class="help">${i.intended_outcome ? 'Aim: ' + esc(i.intended_outcome) + ' · ' : ''}${i.tried_at ? 'tried ' + day(i.tried_at) : 'not tried yet'} · check ${day(i.check_at)} · <span class="sp-chip ${i.outcome === 'helped' ? 'is-good' : i.outcome === 'not_helped' ? 'is-warn' : ''}">${esc(outcome[i.outcome] || i.outcome)}</span></p>
         <div class="dc-actions"><button type="button" class="button is-small${i.response === 'accepted' ? ' is-primary' : ''}" data-respond="accepted" data-id="${esc(i.id)}">I'll try this</button>
-        <button type="button" class="button is-small${i.response === 'dismissed' ? ' is-primary' : ''}" data-respond="dismissed" data-id="${esc(i.id)}">Not useful</button></div></li>`).join('')}</ul></section>`;
+        <button type="button" class="button is-small${i.response === 'dismissed' ? ' is-primary' : ''}" data-respond="dismissed" data-id="${esc(i.id)}">Not useful</button></div></li>`).join('')}</ul></details>`;
   }
 
   function capsHtml(d) {
     const focus = new Set(d.plan_summary.focus.map((f) => f.capability_id));
-    const groups = { dsa: 'Coding (DSA)', system_design: 'System design' };
-    return `<section class="dc-panel"><h3>Capabilities</h3><p class="help">Status describes recorded evidence, not you. "Practised" means problems were solved but the technique was never confirmed. "No evidence yet" and "Not seen recently" are unknowns: Senpai checks before prescribing work. Your CV and job fit never count as evidence here.</p>
-      ${Object.entries(groups).map(([b, label]) => `<h4>${label}</h4><div class="sp-caps">${d.capabilities.filter((c) => c.bucket === b).map((c) => {
+    const groups = { dsa: 'Coding (DSA)', system_design: 'System design', stack: 'Role stack' };
+    const attention = d.capabilities.filter((c) => focus.has(c.id) || c.status === 'needs_check');
+    const card = (c) => {
         const [text, cls] = STATUS[c.status] || [c.status, ''];
         return `<div class="sp-cap" data-cap="${esc(c.id)}"><div><b>${esc(c.name)}</b> <span class="sp-chip ${cls}">${esc(text)}</span>${focus.has(c.id) ? ' <span class="sp-chip is-focus">Focus</span>' : ''}
           <span class="help">last ${day(c.last_at)}</span></div>
@@ -201,7 +208,11 @@
           <button type="button" class="button is-ghost is-small" data-evidence="${esc(c.id)}">Evidence</button>
           <button type="button" class="button is-ghost is-small" data-teach="${esc(c.id)}"${d.model_enabled ? '' : ' disabled title="Teaching needs the model"'}>Teach me</button></div>
           <div class="sp-cap-detail hidden"></div></div>`;
-      }).join('')}</div>`).join('')}</section>`;
+    };
+    return `<section class="dc-panel"><h3>Capabilities</h3><p class="help">In focus, or recent answers needed help. Status describes recorded evidence, not you; your CV and job fit never count as evidence.</p>
+      <div class="sp-caps">${attention.map(card).join('') || '<p class="help">Nothing needs attention.</p>'}</div>
+      <details><summary>All ${d.capabilities.length} capabilities</summary>
+      ${Object.entries(groups).map(([b, label]) => `<h4>${label}</h4><div class="sp-caps">${d.capabilities.filter((c) => c.bucket === b).map(card).join('')}</div>`).join('')}</details></section>`;
   }
 
   function jobHtml(d) {
@@ -213,14 +224,16 @@
       ${iv.length ? `<h4>Upcoming interviews</h4><ul class="sp-list">${iv.map((i) => `<li><b>${esc(i.round_label)}</b> · ${esc(i.company)} · ${esc(new Date(i.starts_at).toLocaleString())}
         ${i.expectations.documented.length ? `<p>Documented: ${i.expectations.documented.map((x) => esc(x.statement)).join('; ')}</p>` : ''}
         ${i.expectations.predicted.length ? `<p class="help">Predicted (AI prep, not documented): ${i.expectations.predicted.flatMap((x) => x.topics).map(esc).join(', ')}</p>` : ''}</li>`).join('')}</ul>` : ''}
-      ${js.demand?.tags?.length ? `<h4>What relevant roles ask for</h4><p class="help">${esc(js.demand.cohort?.roles ?? 0)} roles at ${esc(js.demand.cohort?.companies ?? 0)} companies since ${esc(js.demand.cohort?.since || '')}; reposts count once. Demand, not your ability.</p>
-        <div class="sp-chips">${js.demand.tags.map((t) => `<span class="sp-chip" title="${t.roles} roles, ${t.companies} companies">${esc(t.tag)} · ${t.companies}</span>`).join('')}</div>` : ''}</section>`;
+      ${js.demand?.tags?.length ? `<details><summary>What relevant roles ask for</summary><p class="help">${esc(js.demand.cohort?.roles ?? 0)} roles at ${esc(js.demand.cohort?.companies ?? 0)} companies since ${esc(js.demand.cohort?.since || '')}; reposts count once. Demand, not your ability.</p>
+        <div class="sp-chips">${js.demand.tags.map((t) => `<span class="sp-chip" title="${t.roles} roles, ${t.companies} companies">${esc(t.tag)} · ${t.companies}</span>`).join('')}</div></details>` : ''}</section>`;
   }
 
   function historyHtml(d) {
-    return `<section class="dc-panel"><h3>Decision history</h3><ul class="sp-list sp-history">${d.decisions.map((x) => `<li><span class="sp-chip">${esc(DECISION[x.decision] || x.decision)}</span>
+    const item = (x) => `<li><span class="sp-chip">${esc(DECISION[x.decision] || x.decision)}</span>
       <b>${esc(describe(x.change, d))}</b> <span class="help">${when(x.at)} · ${esc(x.source)}${x.plan_revision_after ? ` · r${x.plan_revision_before}→r${x.plan_revision_after}` : ''}</span>
-      ${x.rationale ? `<p>${esc(x.rationale)}</p>` : ''}${(x.reasons || []).length ? `<p class="help">${esc(x.reasons.join(' '))}</p>` : ''}</li>`).join('') || '<li class="help">Nothing yet.</li>'}</ul>
+      ${x.rationale ? `<p>${esc(x.rationale)}</p>` : ''}${(x.reasons || []).length ? `<p class="help">${esc(x.reasons.join(' '))}</p>` : ''}</li>`;
+    return `<section class="dc-panel"><h3>Recent decisions</h3><ul class="sp-list sp-history">${d.decisions.slice(0, 3).map(item).join('') || '<li class="help">Nothing yet.</li>'}</ul>
+      ${d.decisions.length > 3 ? `<details><summary>${d.decisions.length - 3} earlier</summary><ul class="sp-list sp-history">${d.decisions.slice(3).map(item).join('')}</ul></details>` : ''}
       <details><summary>Snapshot (Markdown)</summary><pre class="sp-snapshot">${esc(d.snapshot_md)}</pre></details></section>`;
   }
 
