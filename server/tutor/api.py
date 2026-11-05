@@ -22,13 +22,15 @@ from .. import auth, config, handback_filing as hf, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel, progress
 from ..store import get_store
 from ..senpai import career as senpai_career
-from . import lessons, session as ses, story
+from . import learner as lm, lessons, session as ses, story
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/tutor', tags=['tutor'])
 KEY = r'^[A-Za-z0-9_-]{6,64}$'
 STORY_KEY = 'story'
 CV_KEY = 'cv'
+LEARNER_KEY = 'learner'
+PARK_DAYS = 7
 UNAVAILABLE = 'The tutor needs the model, which is not connected. The lesson itself still works.'
 FAILED = 'The tutor could not answer just now. Your message is saved; try again.'
 DEBRIEF_FAILED = 'The debrief could not be written just now. Your session is saved; try again.'
@@ -49,6 +51,29 @@ def _lesson(section, key):
     if not l:
         raise HTTPException(404, 'Unknown lesson')
     return l
+
+
+def _live(store, s):
+    """An active session, unless it is only an opener he never answered, written by an older prompt:
+    that one is closed (kept, not deleted) so he starts fresh instead of resuming a stale question."""
+    if not s or s['status'] != 'active':
+        return None
+    if s.get('prompt_version', 0) < ses.PROMPT_VERSION and not any(t['role'] in ('learner', 'block') for t in s['turns']):
+        ses.end(s, time.time())
+        s['ended_by'] = 'superseded'
+        store.put_knowledge('tutor_sessions', s['id'], s)
+        mk = _memory_key(s['section'], s['lesson'])
+        mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
+        changed = mem.get('active') == s['id']
+        if changed:
+            mem['active'] = None
+        if (mem.get('outside') or {}).get('picked_up_by') == s['id']:   # the handback was never really picked up
+            mem['outside'] = {k: v for k, v in mem['outside'].items() if k != 'picked_up_by'}
+            changed = True
+        if changed:
+            store.put_knowledge('tutor_memory', mk, mem)
+        return None
+    return s
 
 
 def _session(store, sid):
@@ -109,6 +134,7 @@ def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Dep
     """
     now = time.time()
     c, events, states, seen, mis = kb_api.evidence(store, now)
+    mis = [m for m in mis if not kb_api.parked(m, now)]
     week_ago, _ = kmodel.replay(events, now - progress.WEEK)
     rep = progress.report(c, states, week_ago, seen, mis, now, section)
     tutor = llm.enabled(store.get_settings())
@@ -118,8 +144,8 @@ def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Dep
     titles = {l['id']: l['title'] for a in rep['areas'] for l in a['lessons']}
     active = None
     for m in mine:
-        s = store.get_knowledge('tutor_sessions', m['active']) if m.get('active') else None
-        if s and s['status'] == 'active':
+        s = _live(store, store.get_knowledge('tutor_sessions', m['active'])) if m.get('active') else None
+        if s:
             active = {'lesson': s['lesson'], 'lesson_title': titles.get(s['lesson'], s['lesson'])}
             break
     last = next((m for m in mine if m.get('summary')), None)
@@ -128,18 +154,77 @@ def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Dep
                   'at': last.get('last_at')} if last else None
     summary = kmodel.summary(c, states, seen, mis, now)
     sc = story.scale(summary)
-    return {**progress.next_step(rep, tutor, active, mine[0]['_key'][len(prefix):] if mine else None),
+    step = progress.next_step(rep, tutor, active, mine[0]['_key'][len(prefix):] if mine else None)
+    nxt = lm.fresh_next(store.get_knowledge('tutor_memory', LEARNER_KEY), now) if tutor else None
+    if nxt and nxt['section'] == section and nxt['lesson'] in titles and step['primary'].get('kind') != 'resume':
+        step = {'primary': {'kind': 'learn', 'lesson': nxt['lesson'], 'title': f"Your tutor suggests {titles[nxt['lesson']]}",
+                            'why': nxt['why'] or 'Where your tutor said to go next.', 'label': 'Go with the tutor', 'tutor': True},
+                'alternatives': ([step['primary']] + step['alternatives'])[:2]}
+    return {**step,
             'tutor': tutor, 'previously': previously,
             'standing': {k: rep[k] for k in ('total', 'tested', 'coverage', 'score', 'level', 'slipping', 'held')}
                         | {'misconceptions': len(rep['misconceptions']), 'week': {k: rep['week'][k] for k in ('gained', 'slipped')}},
             'company': {'name': story.BIBLE['company'], 'label': sc['label'], 'users': sc['users']}}
 
 
+@router.get('/home')
+def home(store=Depends(store_for)):
+    """What the tutor would do with you right now: resume a conversation, its own suggestion for next,
+    the lesson you just studied with your other tutor, or the course's next step. Plus what it remembers."""
+    now, titles = time.time(), lessons.titles()
+    learner = store.get_knowledge('tutor_memory', LEARNER_KEY) or {}
+    mems = sorted((m for m in store.list_knowledge('tutor_memory') if str(m.get('_key', '')).startswith('lesson:')),
+                  key=lambda m: -(m.get('last_at') or 0))
+    pick = None
+    for m in mems:
+        s = _live(store, store.get_knowledge('tutor_sessions', m['active'])) if m.get('active') else None
+        if s and s['turns'] and now - s['updated_at'] < 3 * 86400:
+            pick = {'kind': 'resume', 'section': s['section'], 'lesson': s['lesson'],
+                    'why': 'You left this conversation part-way through; it remembers where you got to.'}
+            break
+    nxt = lm.fresh_next(learner, now)
+    if not pick and nxt and (nxt['section'], nxt['lesson']) in titles:
+        pick = {'kind': 'next', 'section': nxt['section'], 'lesson': nxt['lesson'],
+                'why': nxt['why'] or 'Where your tutor suggested going next.'}
+    if not pick:
+        for m in mems:
+            o = m.get('outside') or {}
+            if o and not o.get('picked_up_by') and now - o.get('at', 0) < PICKUP_DAYS * 86400:
+                _, section, lesson = m['_key'].split(':', 2)
+                pick = {'kind': 'pickup', 'section': section, 'lesson': lesson,
+                        'why': 'You studied this with your other tutor; carry on here, from where it left off.'}
+                break
+    if not pick:
+        step = next_step('system-design', store)['primary']
+        if step.get('lesson'):
+            pick = {'kind': 'resume' if step.get('kind') == 'resume' else 'course', 'section': 'system-design',
+                    'lesson': step['lesson'], 'why': step.get('why', '')}
+    if pick:
+        pick['title'] = titles.get((pick['section'], pick['lesson']), pick['lesson'])
+    return {'enabled': llm.enabled(store.get_settings()), 'pick': pick,
+            'notes': [{'text': n['text'], 'at': n['at']} for n in learner.get('notes', [])],
+            'style': lm.style_notes(store.list_knowledge('study_sessions'), learner)}
+
+
+class Forget(BaseModel):
+    text: str = Field(max_length=300)
+
+
+@router.post('/learner/forget')
+def forget(body: Forget, store=Depends(store_for)):
+    """Drop one note the tutor kept about you."""
+    learner = store.get_knowledge('tutor_memory', LEARNER_KEY) or {}
+    learner.pop('_key', None)
+    learner['notes'] = [n for n in learner.get('notes', []) if n['text'] != body.text]
+    store.put_knowledge('tutor_memory', LEARNER_KEY, learner)
+    return {'notes': learner['notes']}
+
+
 @router.get('/lessons/{section}/{lesson}')
 def lesson_state(section: str, lesson: str, store=Depends(store_for)):
     l = _lesson(section, lesson)
     mem = store.get_knowledge('tutor_memory', _memory_key(section, lesson)) or {}
-    active = store.get_knowledge('tutor_sessions', mem['active']) if mem.get('active') else None
+    active = _live(store, store.get_knowledge('tutor_sessions', mem['active'])) if mem.get('active') else None
     outside, elsewhere = hf.lesson_report(store.list_knowledge('study_sessions'), section, lesson)
     if outside:
         mo = mem.get('outside') or {}
@@ -158,6 +243,7 @@ class Start(BaseModel):
     mode: Literal['teach', 'explain', 'critique', 'war-room', 'interview', 'cv'] = 'teach'
     key: str = Field(pattern=KEY, description='Client-made session id: a retried start opens the same session.')
     focus: str = Field(default='', max_length=300, description='One gap this session is opened to close.')
+    carry: str | None = Field(default=None, pattern=KEY, description='A session the tutor moved from; it ends and its thread carries on here.')
 
 
 @router.post('/sessions')
@@ -174,11 +260,15 @@ async def start(body: Start, store=Depends(store_for)):
         s = ses.new(body.key, l, body.mode, now)
         if body.focus.strip():
             s['focus'] = body.focus.strip()
+        if body.carry:
+            _carry(store, s, body.carry, now)
         mk = _memory_key(body.section, body.lesson)
         mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
         outside = mem.get('outside')
-        if outside and not outside.get('picked_up_by') and now - outside['at'] < PICKUP_DAYS * 86400:
-            s['pickup'] = {k: outside[k] for k in ('session', 'at', 'summary', 'next_steps')}
+        if outside and not outside.get('picked_up_by') and now - outside['at'] < PICKUP_DAYS * 86400 and not s.get('carried'):
+            study = store.get_knowledge('study_sessions', outside['session']) or {}
+            s['pickup'] = {**{k: outside[k] for k in ('session', 'at', 'summary', 'next_steps')},
+                           'notes': [n for n in study.get('notes') or [] if isinstance(n, str)][:10]}
             mem['outside'] = {**outside, 'picked_up_by': body.key}
         store.create_knowledge('tutor_sessions', body.key, s)
         if body.mode in ses.NEEDS_CV:   # Senpai's weekly brief stops suggesting it for a while
@@ -261,17 +351,75 @@ def _remember(store, s, now, event):
     store.put_knowledge('tutor_memory', STORY_KEY, st)
 
 
+def _profile(store, l, summary, events, own, now):
+    """Who he is beyond this lesson (learner.py), the lesson's ideas covered elsewhere, and where the tutor can go."""
+    titles = lessons.titles()
+    learner = store.get_knowledge('tutor_memory', LEARNER_KEY) or {}
+    study = store.list_knowledge('study_sessions')
+    profile = {'style': lm.style_notes(study, learner), 'standing': lm.standing(summary),
+               'lately': lm.other_lessons(store.list_knowledge('tutor_memory'), titles, _memory_key(l['section'], l['id']), now),
+               'outside': lm.outside_reports(study, titles, now)}
+    return {'text': lm.text(profile), 'covered': [p['claim'] for p in lm.covered_elsewhere(events, own, now)],
+            'lessons': lessons.catalogue(exclude=(l['section'], l['id']))}
+
+
 def _context(store, s, l, now):
-    """What both calls need: the lesson's point views, open misconceptions, memory and story."""
-    c, states, seen, mis, summary = _knowledge(store, now)
+    """What both calls need: the lesson's point views, open misconceptions, memory, story and who he is."""
+    c, events, states, seen, mis = kb_api.evidence(store, now)
+    summary = kmodel.summary(c, states, seen, mis, now)
     own, prereqs = lessons.points(l['section'], l['id'], c)
     allowed = {p['id'] for p in own + prereqs}
     memory = store.get_knowledge('tutor_memory', _memory_key(l['section'], l['id'])) or {}
     story_mem = store.get_knowledge('tutor_memory', STORY_KEY) or {}
     return {'views': kmodel.views(c, states, seen, mis, now, own), 'prereq_views': kmodel.views(c, states, seen, mis, now, prereqs),
-            'allowed': allowed, 'open': [m for m in mis if m.get('status') == 'open' and m['point'] in allowed],
+            'allowed': allowed, 'open': [m for m in mis if m.get('status') == 'open' and m['point'] in allowed
+                                         and not kb_api.parked(m, now)],
             'memory': {**memory, 'events': story_mem.get('events', [])}, 'story': story.scale(summary),
-            'career': _career(store, l)}
+            'career': _career(store, l), 'profile': _profile(store, l, summary, events, own, now)}
+
+
+def _carry(store, s, from_sid, now):
+    """Moving lessons mid-conversation: the old session ends quietly and its thread comes along."""
+    old = store.get_knowledge('tutor_sessions', from_sid)
+    if not old:
+        return
+    talk = [t for t in old['turns'] if t['role'] in ('tutor', 'learner') and not t.get('debrief')][-8:]
+    who = lambda t: 'Him' if t['role'] == 'learner' else 'You'  # noqa: E731
+    s['carried'] = {'from': (lessons.get(old['section'], old['lesson']) or {}).get('title', old['lesson']),
+                    'session': from_sid, 'turns': [f"{who(t)}: {(t.get('text') or t.get('say') or '')[:500]}" for t in talk]}
+    if old['status'] == 'active':
+        ses.end(old, now)
+        old['ended_by'] = 'moved ' + s['id']
+        store.put_knowledge('tutor_sessions', from_sid, old)
+        _remember(store, old, now, '')
+
+
+def _act(store, s, l, turn, acts, now):
+    """The tutor's own moves: suggest a lesson to go to, set what's next, call a lesson enough, keep a note."""
+    titles = lessons.titles()
+    if acts['move'] and acts['move'] in titles and acts['move'] != (l['section'], l['id']):
+        turn['move'] = {'section': acts['move'][0], 'lesson': acts['move'][1], 'title': titles[acts['move']]}
+    learner = store.get_knowledge('tutor_memory', LEARNER_KEY) or {}
+    learner.pop('_key', None)
+    before = dict(learner)
+    if acts['next'] and acts['next'][:2] in titles:
+        learner = lm.set_next(learner, acts['next'][0], acts['next'][1], acts['next'][2], now)
+    for n in acts['notes']:
+        learner = lm.add_note(learner, n, now)
+    if learner != before:
+        store.put_knowledge('tutor_memory', LEARNER_KEY, learner)
+    if acts['enough'] and not s.get('enough'):
+        s['enough'] = now
+        _park_lesson_gaps(store, l, now)
+
+
+def _park_lesson_gaps(store, l, now):
+    """A lesson called good enough: its open gaps rest for a week instead of being asked again."""
+    own, prereqs = lessons.points(l['section'], l['id'], kcat.CATALOG)
+    ids = {p['id'] for p in own}
+    for m in store.list_knowledge('knowledge_misconceptions'):
+        if m.get('status') == 'open' and m.get('point') in ids:
+            kb_api.park(store, m['_key'], now + PARK_DAYS * 86400, 'tutor')
 
 
 def _count(s, usage):
@@ -281,7 +429,8 @@ def _count(s, usage):
 
 async def _talk(s, l, ctx, debrief=False):
     """The tutor's reply as plain text, or None when the model failed."""
-    system = ses.system(s, l, ctx['views'], ctx['open'], ctx['memory'], ctx['story'], debrief=debrief, career=ctx.get('career'))
+    system = ses.system(s, l, ctx['views'], ctx['open'], ctx['memory'], ctx['story'], debrief=debrief, career=ctx.get('career'),
+                        profile=ctx.get('profile'))
     messages = [{'role': 'system', 'content': system}, *ses.messages(s, l, debrief)]
     for _ in range(2):   # a reply with nothing visible (all private notes) gets one more try
         try:
@@ -340,6 +489,7 @@ async def _reply(store, s, l):
         writes, event = ses.apply_notes(s, notes, said, blocks, ctx['allowed'], {m['_key'] for m in ctx['open']}, now)
     turn = ses.add_reply(s, text, l, now)
     turn['recorded'] = {k: len(v) for k, v in writes.items()}
+    _act(store, s, l, turn, ses.actions(text), now)
     store.put_knowledge('tutor_sessions', s['id'], s)
     n = len(s['turns'])
     kb_api.write_events(store, SOURCE, [

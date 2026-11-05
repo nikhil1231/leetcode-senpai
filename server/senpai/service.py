@@ -367,6 +367,8 @@ def ignored_gaps(store, limit=4):
     for m in sorted(store.list_knowledge('knowledge_misconceptions'), key=lambda m: -(m.get('updated_at') or m.get('created_at') or 0)):
         if m.get('_key') not in quiet or m.get('status') != 'open':
             continue
+        if m.get('parked_by') == 'tutor' and (m.get('parked_until') or 0) > time.time():
+            continue   # the tutor called that lesson good enough
         pid = kcat.canonical(kcat.CATALOG, m.get('point'))
         p = kcat.CATALOG['points'].get(pid) if pid else None
         lesson = p and tutor_lessons.get(p['section'], p['lesson'])

@@ -45,7 +45,8 @@
     if (!T.info.enabled) return;
     if (q.mode && T.info.modes?.some(m => m.id === q.mode)) T.mode = q.mode;
     T.focus = q.focus || '';
-    act(T.session?.status === 'active' && !q.mode && !q.focus ? 'resume' : 'start');
+    T.carry = q.carry || null;
+    act(T.session?.status === 'active' && !q.mode && !q.focus && !q.carry ? 'resume' : 'start');
   }
 
   // Notes stay hidden until chosen when the tutor is on. The lesson body's own display rule beats
@@ -62,6 +63,8 @@
       if (T !== t) return;
       t.info = info; t.overview = overview;
       if (info.active) t.session = info.active;
+      // A conversation waiting on this lesson opens by itself: the tutor is the default way in.
+      if (info.active && info.enabled && !t.notes && !queued) t.open = true;
     } catch (e) { if (T === t) t.host.innerHTML = ''; return; }
     paint();
     takeQueued();
@@ -159,8 +162,8 @@
         t.busy = true; t.error = ''; t.open = true;
         t.session = {id: null, mode: t.mode, status: 'active', turns: [], objectives: t.info.objectives.map(() => ({status: 'open'})), progress: {demonstrated: 0, total: t.info.objectives.length}};
         paint(); status(`${cast(firstSpeaker(t.mode))?.name || 'The tutor'} is getting ready…`);
-        const s = await api('/tutor/sessions', 'POST', {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid(), focus: t.focus || ''});
-        t.focus = '';
+        const s = await api('/tutor/sessions', 'POST', {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid(), focus: t.focus || '', carry: t.carry || null});
+        t.focus = ''; t.carry = null;
         if (T !== t) return;
         t.session = s; t.busy = false; paint();
       } else if (action === 'resume') {
@@ -254,8 +257,22 @@
       n.className = 'tu-msg tu-them' + (turn.debrief ? ' tu-debrief' : ''); n.dataset.speaker = turn.speaker;
       n.innerHTML = `<div class="tu-who"><span class="tu-avatar" aria-hidden="true">${esc(who.name[0])}</span><b>${esc(who.name)}</b>${who.role ? `<small>${esc(who.role)}</small>` : ''}</div><div class="tu-text sd-md">${md(turn.say)}</div>`;
       if (turn.show_block) n.appendChild(blockNode(turn.show_block, answered.has(turn.show_block)));
+      if (turn.move) n.appendChild(moveNode(turn.move));
     }
     return n;
+  }
+
+  // The tutor suggests carrying the conversation into another lesson: one click, and the thread comes along.
+  function moveNode(m) {
+    const wrap = document.createElement('div');
+    wrap.className = 'tu-move';
+    wrap.innerHTML = btn(`Carry on in ${m.title} →`, 'move', '', true);
+    const from = T.session?.id;
+    wrap.querySelector('button').addEventListener('click', () => {
+      queue({section: m.section, lesson: m.lesson, carry: from});
+      window.AppSections?.select(m.section, 'lesson/' + m.lesson);
+    });
+    return wrap;
   }
 
   // One of the lesson's own activities, live; its answer is recorded like in the lesson and told to the tutor.

@@ -11,7 +11,7 @@
     fundamentals: ['Fundamentals', 'Role stack knowledge'], ai: ['AI Engineering', 'LLMs, RAG, evals and agents'],
     experience: ['Experience', 'Your stories, under questioning'], practical: ['Practical Coding', 'Build, debug and review']};
   const TRACKS = ['fundamentals', 'ai', 'experience', 'practical'];
-  let current = 'leetcode', lastLeetcodeTab = 'today';
+  let current = 'leetcode', lastLeetcodeTab = 'tutor';
   const design = () => current === 'system-design';
   function close(focus = false) {
     menu.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false');

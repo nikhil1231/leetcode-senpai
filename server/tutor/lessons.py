@@ -64,3 +64,16 @@ def points(section, key, catalog=None):
     needed = [c['points'][r] for p in own for r in p['requires'] if r not in ids]
     prereqs = list({p['id']: p for p in needed}.values())
     return own, prereqs
+
+
+def titles():
+    """{(section, lesson id): title} for every lesson the tutor can teach."""
+    out = {('system-design', k): l['title'] for k, l in SD_LESSONS.items()}
+    for section in SECTIONS[1:]:
+        out.update({(section, k): l['title'] for k, l in courses.lessons(section).items()})
+    return out
+
+
+def catalogue(exclude=None):
+    """Every lesson as 'section/lesson: title', one per line, for the tutor's moves."""
+    return '\n'.join(f'{s}/{k}: {t}' for (s, k), t in titles().items() if (s, k) != exclude)

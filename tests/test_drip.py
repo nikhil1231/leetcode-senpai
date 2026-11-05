@@ -683,3 +683,18 @@ def test_after_three_unanswered_cards_the_bot_eases_to_one_a_day_and_says_so(env
     assert b.per_day() == b.usual_per_day()
     b.tick()
     assert not b.state['eased']
+
+
+def test_a_gap_ignored_twice_rests_for_a_week_and_is_not_asked(env):
+    b, store, tg, clock, grades = env
+    point = kcat.active(kcat.CATALOG)[0]['id']
+    kb_api.open_gap(store, 'telegram', 'gap-1', point, 'The general idea.', 'Ask it like this?', 'quote', clock.t - DAY)
+    for n in (1, 2):
+        b.state['n'] = n
+        b.put_card({'n': n, 'point': point, 'gap': 'telegram:gap-1', 'status': 'pending', 'sent_at': clock.t - 4 * 3600})
+        b.close(b.card(n), 'expired', clock.t)
+    gap = store.get_knowledge('knowledge_misconceptions', 'telegram:gap-1')
+    assert gap['status'] == 'open' and gap['parked_by'] == 'telegram'
+    assert gap['parked_until'] >= clock.t + 6 * DAY
+    c = b.send_card(clock.t)
+    assert not c or c.get('gap') != 'telegram:gap-1'

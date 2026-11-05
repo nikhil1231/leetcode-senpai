@@ -37,25 +37,23 @@ HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered b
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
 MAX_MISTAKES = 12
 OPENING = '(Nikhil has opened the lesson and started a session with you.)'
+CARRIED = '(Nikhil followed you to this lesson to carry on.)'
 
-TEACH = """You're a brilliant one-to-one tutor for Nikhil, a software engineer preparing for mid/senior system design and technical interviews. This is one session on one lesson.
+TEACH = """You're Nikhil's tutor. He's a software engineer preparing for mid/senior interviews: system design, backend, and the AI platform work he's aiming for. You've taught him before and will again; this conversation is one of many, and you know him (below).
 
 {voice}
 
-Your craft. Mix these moves, never the same one twice running:
-- Hook: open with a small real situation (at Ripple, or in an interview) and ask what they'd do or think. Not a quiz question.
-- Draw out: find out what they already think before teaching; build on their words ("yes, and the reason that works is…").
-- Explain: when they don't know, give a crisp intuition, analogy or example in a few sentences, then hand it back with an easy question.
-- Stretch: once they've got it, a what-if, an edge case or an interviewer's follow-up.
-- Connect: link it to something they've seen at work or to another topic.
-- Zoom out: every few exchanges, one line on the big idea so far.
-- Activity: hand them one of the lesson's activities when trying beats talking.
+How you teach:
+- Teach first. When an idea is new to him, explain it properly (the intuition, a concrete example, why it matters in real systems) before asking him anything about it. Then check with a question that makes him use the idea, not recite it.
+- To find out where he is, ask open, practical questions that touch several ideas at once, rather than a string of narrow ones.
+- Follow him. A tangent that's worth it is worth taking; if it belongs to another lesson, you can take the conversation there.
+- Know when it's enough. Once he has the gist, say so and move on. Leftover detail goes to review, not into five more questions, and don't come back to the same small point in one session.
+- Not every message needs a question. Sometimes explain, sometimes connect it to his own work, sometimes just react.
+- Judge the idea, not the wording. If his answer shows the idea, it's right; if a sharper version matters for interviews, add it yourself in a sentence and carry on. Never re-ask something he's effectively answered. When he's wrong, say what's off and why it matters, plainly and kindly.
 
-Judging them: your job is to find out whether he understands the idea in general, not whether he can produce one exact formulation. If his answer shows the idea, it's right: say so, and if a sharper version matters for interviews, add it yourself in a sentence ("the crisp way to say that in an interview is…") and move on. Don't make him re-produce it, don't hold him on one point, and never re-ask something he's effectively answered. If he clearly knows an area, say so and skip ahead. Mistakes are interesting, not failures: say kindly and clearly what's off and why it matters, then let him have another go.
+Opening: start from him, not from a quiz. If he's come from another tutor or a recent session, talk about that first, the way someone who read the notes would. Otherwise, a sentence on what this lesson is for and where you'd suggest starting, and let him steer.
 
-Opening: start fresh with a hook about the lesson's big idea. Don't open by reviewing last time or by quoting his old answers back to him.
-
-Shape: short and conversational, usually 2 to 6 sentences; one question at a time; never a lecture or a wall of bullet points. If they're bored, speed up or raise the stakes; if they're lost, slow down and use an example. Across the session, aim to cover what the lesson should leave them able to do, in whatever order the conversation makes natural.""".format(voice=voice.TUTOR)
+Keep messages conversational and usually short, a few sentences. When you're explaining, take the room it needs, but one idea at a time: if it's turning into a lecture, stop and check in.""".format(voice=voice.TUTOR)
 
 ROLES = {
     'teach': TEACH,
@@ -131,7 +129,7 @@ Who you are: {marcus} In the interview chair you keep the energy but drop the te
 }
 
 DEBRIEF_EXTRA = {
-    'teach': '**Still to cover**: the objectives he hasn\'t shown yet, in a line.',
+    'teach': "**Left for later**: in a line, what's still open (it goes to review; this isn't homework).",
     'explain': "**What Jo now believes**: anything Jo took from his explanation that isn't right, in one or two lines.",
     'critique': '**Flaws still in the design**: any planted flaw (from your private notes) he didn\'t find, with the failure it would cause.',
     'war-room': '**Postmortem**: a short blameless one: impact, root cause, what helped, what to change.',
@@ -145,7 +143,7 @@ THE SESSION IS OVER. Step out of any role: you are now Nikhil's tutor, talking t
 1. **What you did well**: one or two specific things.
 2. **What to fix**: each wrong claim below (and any other in the conversation): what he said, in a short quote; what's actually true per the notes; and why it matters. Kind and clear. If nothing was wrong, say so in a line. Never list estimates that were in range.
 {extra}
-4. **Next time**: one or two concrete ideas from the lesson to review.
+4. **Next**: where you'd take him next, in a line. Another lesson is fine.
 
 Wrong claims recorded in this session:
 {mistakes}"""
@@ -174,9 +172,10 @@ def _claims(views, statuses, limit=25):
     return '\n'.join(f'  - {c}' for c in found) if found else '  (none)'
 
 
-def context(session, lesson, views, misconceptions, memory, story_state, career=None):
+def context(session, lesson, views, misconceptions, memory, story_state, career=None, profile=None):
     """The session-specific part of the tutor's system prompt. `career`: Senpai's career brief
-    ({'text', 'experience'}), optional."""
+    ({'text', 'experience'}); `profile`: learner.text() plus this lesson's ideas covered elsewhere and
+    the lesson catalogue for moves ({'text', 'covered', 'lessons'}). Both optional."""
     mode = session['mode']
     held = [v for v in views if v['status'] in ('solid', 'learning')]
     shaky = [v for v in views if v['status'] in ('shaky', 'fading')]
@@ -190,6 +189,10 @@ def context(session, lesson, views, misconceptions, memory, story_state, career=
         know.append("- Background only: ideas he's found slippery before. Don't open with these, don't drill them and don't ask about them "
                     "directly. If the conversation reaches one, make sure the general idea lands (explain it if needed) and move on:\n"
                     + '\n'.join(f'  - {m["text"]}' for m in slips[:4]))
+    covered = (profile or {}).get('covered') or []
+    if covered:
+        know.append("- Covered recently somewhere else (his other tutor, Telegram); don't teach these again unless he asks or "
+                    "an answer shows a hole:\n" + '\n'.join(f'  - {c}' for c in covered[:12]))
     cast = '; '.join(f'{c["name"]} ({c["role"]})' for c in story.cast())
     events = [e['text'] for e in (memory.get('events') or [])][-3:]
     parts = [f"""## This session
@@ -201,7 +204,14 @@ What it should leave him able to do (a map for you, not a checklist to read out)
         parts.append("He has now shown every objective. Wrap up warmly in a line or two, and suggest he ends the session for the debrief.")
     if (career or {}).get('text'):
         know.append(career['text'])
-    parts.append('About Nikhil:\n' + '\n'.join(know))
+    if (profile or {}).get('text'):
+        parts.append("## Who you're teaching\n" + profile['text'])
+    parts.append('About Nikhil and this lesson:\n' + '\n'.join(know))
+    if session.get('carried'):
+        c = session['carried']
+        parts.append(f"## Carrying on\nYou and he just moved here from {c['from']}, because the conversation was heading this way. "
+                     "The last few messages:\n" + '\n'.join(f'{x}' for x in c['turns']) +
+                     "\nPick up the thread naturally; no fresh greeting, no recap of what he just said.")
     if mode == 'cv' and (career or {}).get('experience'):
         parts.append('## His CV (claims to probe, not facts you know)\n' + '\n'.join(f'- {e}' for e in career['experience']))
     if session.get('focus'):
@@ -214,10 +224,9 @@ Borrow it for examples now and then; don't narrate.
 Scale: Ripple's size is {story_state['users']}, and that is the only figure for it. He sees only this conversation, so before any question turns on Ripple's scale, give him the numbers in it. Judge his numbers only against figures stated in this conversation; if he picks his own assumptions, judge whether they are reasonable and consistent, not whether they match figures he was never given.""")
     if blocks_allowed(mode):
         tools = '\n'.join(f'- {t["key"]} ({t["type"]}): {t["about"]}' for t in lessons.tools(lesson) if t['key'] not in session['shown'])
-        if tools:
-            parts.append(f"""## Activities you can hand him
-To give him an interactive activity from the lesson, end your message with one line saying what to do, then [[activity KEY]] on its own line. Use one when doing beats talking, never two in a row; each only once. You'll see how he did.
-{tools}""")
+        parts.append(ACTIONS.format(
+            activities=f"\n\nActivities from this lesson (one line saying what to do, then the marker; never two in a row, each once; you'll see how he did):\n{tools}" if tools else '',
+            lessons=(profile or {}).get('lessons') or '(not available)'))
     else:
         parts.append("""## Private notes
 Keep anything you must stay consistent about (a planted flaw, an incident's state, what he has told you) in a short <private>…</private> block at the end of a message, under 120 words; he never sees it. Everything else in your message is what he sees, so every message must have something for him outside the block. Your notes so far:
@@ -227,22 +236,35 @@ Keep anything you must stay consistent about (a planted flaw, an incident's stat
     return '\n\n'.join(parts)
 
 
-PICKUP = """## Picking up from another tutor
-Since his last session with you, Nikhil studied this lesson with an outside tutor. Its report:
-{summary}{next}
+ACTIONS = """## Things you can do
+Put any of these on its own line at the end of a message when it helps; he never sees the marker itself.
+- [[activity KEY]]: hand him one of this lesson's activities, when doing beats talking.
+- [[move SECTION/LESSON]]: when the conversation is really about another lesson, suggest going there. Say so in your message; he gets a button and you carry on together there.
+- [[next SECTION/LESSON | why]]: what you'd have him do next time. It becomes the first thing he's offered when he comes back.
+- [[enough]]: this lesson is good enough for interviews for now. What's left goes to review instead of being chased. Say so to him too.
+- [[note …]]: something worth remembering about how he learns or what he's after (not a fact about the topic).{activities}
 
-This session carries on from there: he has already been through what the report says he covered, so don't start the lesson over."""
-PICKUP_OPENING = """ Opening (this replaces the usual opening): in a line, say you've seen where he got to with the other tutor, then go straight on to the next part of the lesson, ideally where the report suggests. Briefly check a foundation first only if the report says it was shaky."""
+Lessons you can move to or suggest (SECTION/LESSON: title):
+{lessons}"""
+
+PICKUP = """## He's just come from his other tutor
+Since his last session with you, Nikhil studied this lesson with another tutor (often for an hour or more). Its report:
+{summary}{next}{notes}
+
+He has been through what the report says he covered: don't start the lesson over and don't re-teach it unless he asks."""
+PICKUP_OPENING = """ Open by talking about that session like someone who read the notes: what it covered, what seemed to stick, what was left open, and ask how it went or what he wants from today. Then go where he wants, or offer the natural next step. Check one shaky foundation only if he's up for it."""
 
 
 def pickup(p, mode):
     """The system prompt's section on an outside tutor's handback, for a session that picks up after it."""
-    text = PICKUP.format(summary=p['summary'], next=f"\n\nWhat it suggested next: {p['next_steps']}" if p.get('next_steps') else '')
+    notes = ''.join(f'\n- {n}' for n in p.get('notes') or [])
+    text = PICKUP.format(summary=p['summary'], next=f"\n\nWhat it suggested next: {p['next_steps']}" if p.get('next_steps') else '',
+                         notes=f'\n\nIts notes:{notes}' if notes else '')
     return text + (PICKUP_OPENING if mode == 'teach' else '')
 
 
-def system(session, lesson, views, misconceptions, memory, story_state, debrief=False, career=None):
-    text = ROLES[session['mode']] + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career)
+def system(session, lesson, views, misconceptions, memory, story_state, debrief=False, career=None, profile=None):
+    text = ROLES[session['mode']] + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career, profile)
     if debrief:
         mistakes = '\n'.join(f'- He said "{m["quote"]}": {m["text"]}' for m in session.get('mistakes', [])) or '(none recorded)'
         text += DEBRIEF.format(voice=voice.TUTOR, extra='3. ' + DEBRIEF_EXTRA[session['mode']], mistakes=mistakes)
@@ -257,7 +279,7 @@ def _block_text(t, lesson):
 def messages(session, lesson, debrief=False):
     """The conversation as chat messages: tutor turns are the assistant, the learner is the user."""
     turns = [t for t in session['turns'] if not t.get('debrief')][-HISTORY_TURNS:]
-    out = [{'role': 'user', 'content': OPENING}]
+    out = [{'role': 'user', 'content': CARRIED if session.get('carried') else OPENING}]
     for t in turns:
         if t['role'] == 'tutor':
             text = t['say'] + (f'\n\n[[activity {t["show_block"]}]]' if t.get('show_block') else '')
@@ -267,7 +289,7 @@ def messages(session, lesson, debrief=False):
                 out.append({'role': 'assistant', 'content': text})
         else:
             text = t['text'] if t['role'] == 'learner' else _block_text(t, lesson)
-            if out[-1]['role'] == 'user' and out[-1]['content'] != OPENING:
+            if out[-1]['role'] == 'user' and out[-1]['content'] not in (OPENING, CARRIED):
                 out[-1]['content'] += '\n' + text
             elif out[-1]['role'] == 'user':
                 out.append({'role': 'assistant', 'content': '…'})
@@ -280,6 +302,20 @@ def messages(session, lesson, debrief=False):
 
 
 ACTIVITY = re.compile(r'\[\[\s*activity\s+(b\d{1,3})\s*\]\]', re.I)
+MOVE = re.compile(r'\[\[\s*move\s+([a-z-]+)\s*/\s*([a-z0-9-]+)\s*\]\]', re.I)
+NEXT = re.compile(r'\[\[\s*next\s+([a-z-]+)\s*/\s*([a-z0-9-]+)\s*(?:\|\s*([^\]]*?))?\s*\]\]', re.I)
+ENOUGH = re.compile(r'\[\[\s*enough\s*\]\]', re.I)
+NOTE = re.compile(r'\[\[\s*note\s+([^\]]{3,300}?)\s*\]\]', re.I)
+ANY_MARKER = re.compile(r'\[\[[^\]]*\]\]')
+
+
+def actions(text):
+    """The tutor's actions in a reply (unvalidated): {move, next, enough, notes}."""
+    text = PRIVATE.sub('', text or '')
+    m, n = MOVE.search(text), NEXT.search(text)
+    return {'move': m and (m.group(1).lower(), m.group(2).lower()),
+            'next': n and (n.group(1).lower(), n.group(2).lower(), (n.group(3) or '').strip()),
+            'enough': bool(ENOUGH.search(text)), 'notes': [x.strip() for x in NOTE.findall(text)][:2]}
 PRIVATE = re.compile(r'<private>(.*?)(</private>|$)', re.S | re.I)
 
 
@@ -289,7 +325,7 @@ def parse(text, session, lesson):
     private = '\n'.join(m.group(1).strip() for m in PRIVATE.finditer(text))
     text = PRIVATE.sub('', text)
     keys = [m.group(1).lower() for m in ACTIVITY.finditer(text)]
-    say = ACTIVITY.sub('', text)
+    say = ANY_MARKER.sub('', text)
     say = re.sub(r'^\s*\**(tutor|jo|marcus|priya)(\s*:\s*\**|\**\s*:)\s*', '', say.strip(), flags=re.I)
     allowed = {t['key'] for t in lessons.tools(lesson)} if blocks_allowed(session['mode']) else set()
     show = next((k for k in keys if k in allowed and k not in session['shown']), '')
@@ -311,7 +347,7 @@ def add_reply(session, text, lesson, now):
 
 
 def add_debrief(session, text, now):
-    turn = {'role': 'tutor', 'speaker': 'tutor', 'say': PRIVATE.sub('', ACTIVITY.sub('', text or '')).strip(), 'show_block': '',
+    turn = {'role': 'tutor', 'speaker': 'tutor', 'say': PRIVATE.sub('', ANY_MARKER.sub('', text or '')).strip(), 'show_block': '',
             'at': now, 'debrief': True, 'recorded': {'evidence': 0, 'misconceptions': 0, 'resolved': 0}}
     session['turns'].append(turn)
     session['updated_at'] = now

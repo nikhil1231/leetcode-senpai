@@ -274,6 +274,21 @@ def resolve_open(store, point, now, note, kind=None):
     return keys
 
 
+def parked(m, now):
+    """A gap resting (a lesson called good enough, or Telegram ignored twice): not asked about until then."""
+    return (m.get('parked_until') or 0) > now
+
+
+def park(store, key, until, by):
+    """Rest an open gap until `until`. Additive: the gap stays open and comes back after."""
+    found = store.get_knowledge('knowledge_misconceptions', key)
+    if not found or found.get('status') != 'open':
+        return None
+    doc = {k: v for k, v in found.items() if k != '_key'}
+    doc.update(parked_until=until, parked_by=by)
+    return store.put_knowledge('knowledge_misconceptions', key, doc)
+
+
 def set_misconception(store, key, status, note, now):
     found = next((m for m in store.list_knowledge('knowledge_misconceptions') if m['_key'] == key), None)
     if not found:

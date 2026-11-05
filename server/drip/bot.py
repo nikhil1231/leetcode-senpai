@@ -355,6 +355,7 @@ class Bot:
     def send_card(self, now, app=None):
         self.roll_day(now)
         cat, evs, states, seen, mis = kb_api.evidence(self.store, now)
+        mis = [m for m in mis if not kb_api.parked(m, now)]   # resting gaps are not asked about
         known = cards.met(evs, SOURCE)
         quiet = cards.ignored_gaps([self.card(k) or {} for k in range(self.state['n'], max(0, self.state['n'] - 10), -1)])
         if app:
@@ -440,6 +441,10 @@ class Bot:
         kb_api.write_events(self.store, SOURCE, [{'key': f'card-{c["n"]}-shown', 'kind': 'exposure', 'points': [c['point']]}], now)
         c.update(status=status, closed_at=now)
         self.put_card(c)
+        if c.get('gap'):   # ignored twice: the gap rests for a week, and the weekly brief hands it to the tutor
+            n = self.state['n']
+            if c['gap'] in cards.ignored_gaps([self.card(k) or {} for k in range(n, max(0, n - 10), -1)]):
+                kb_api.park(self.store, c["gap"], now + cards.GAP_REST_DAYS * cards.DAY, "telegram")
         if self.state['pending'] == c['n']:
             self.state['pending'] = None
         self.save()

@@ -28,6 +28,7 @@ EXPIRE = 3 * 3600
 COOLDOWN = 20 * 3600
 GAP_COOLDOWN = 3 * 3600
 GAP_IGNORED = 2
+GAP_REST_DAYS = 7   # an ignored gap rests this long before Telegram may ask again
 PER_DAY_MIN, PER_DAY_MAX = 1, 10
 CHAT_TURNS = 12   # follow-up messages the model sees after a card's answer
 VOICE = {'fact': 'sam', 'principle': 'marcus', 'mechanism': 'jo', 'tradeoff': 'marcus', 'procedure': 'priya'}

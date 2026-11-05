@@ -83,7 +83,7 @@ def test_quotes_must_come_from_the_learner():
 def test_each_mode_has_its_own_role_and_only_teach_teaches():
     prompts = {m: system(ses.new('s', L, m, 0)) for m in ses.MODES}
     assert len(set(prompts.values())) == len(ses.MODES)
-    assert 'enthusiastic' in prompts['teach'] and '[[activity KEY]]' in prompts['teach']
+    assert 'Teach first' in prompts['teach'] and '[[activity KEY]]' in prompts['teach'] and '[[move SECTION/LESSON]]' in prompts['teach']
     assert all('[[activity KEY]]' not in p and '<private>' in p for m, p in prompts.items() if m != 'teach')
     assert 'never teach' in prompts['explain'] and 'believe him' in prompts['explain']
     assert 'THE SESSION IS OVER' not in prompts['explain']
@@ -94,7 +94,7 @@ def test_each_mode_has_its_own_role_and_only_teach_teaches():
 def test_the_tutor_judges_ideas_not_wording_and_gaps_are_background():
     gap = {'_key': 'telegram:c1', 'point': MISS, 'text': 'Load is requests times the miss rate.', 'quote': 'it is the hit rate', 'status': 'open'}
     p = system(fresh(), mis=[gap], memory={'summary': 'Last time: TTLs.'})
-    assert 'understands the idea in general' in p and "Don't open by reviewing last time" in p
+    assert 'Judge the idea, not the wording' in p and 'start from him, not from a quiz' in p
     assert 'Load is requests times the miss rate.' in p and 'it is the hit rate' not in p and "don't drill them" in p
     assert 'Last session on this lesson: Last time: TTLs.' in p
 
@@ -395,3 +395,101 @@ def test_a_session_opened_for_a_gap_starts_there(client):
                                                'key': 'sess-gap1', 'focus': 'Delete the cache entry rather than set it.'}))
     p = client.chats[0][0]['content']
     assert '## Why he opened this session' in p and 'Delete the cache entry rather than set it.' in p
+
+
+# ---- who he is, the tutor's own moves, carrying on, resting gaps, and the Tutor home ---------------
+
+from server.tutor import learner as lm  # noqa: E402
+
+NOW = 1_800_000_000
+STUDY = {'_key': 'abc123', 'last_handback_at': NOW - 3600, 'scope': {'section': 'system-design', 'lesson': 'cache-aside'},
+         'summary': 'An hour on cache stampedes and request coalescing; strong on TTL jitter.',
+         'notes': ['Learner prefers conversational, diagnostic-first teaching rather than repetitive mini-quizzes.',
+                   'Revisit P3: coalescing under a hot key.']}
+
+
+def test_the_profile_carries_style_outside_work_and_what_was_covered_elsewhere():
+    titles = lessons.titles()
+    learner = lm.add_note({}, 'Likes a worked example before any question.', NOW)
+    learner = lm.add_note(learner, 'likes a worked example before any question.', NOW + 1)   # a repeat refreshes
+    assert len(learner['notes']) == 1
+    style = lm.style_notes([STUDY], learner)
+    assert style[0].lower().startswith('likes a worked example') and 'diagnostic-first' in style[1]
+    assert not any(s.startswith('Revisit') for s in style)
+    out = lm.outside_reports([STUDY], titles, NOW)
+    assert out[0]['lesson'] == L['title'] and out[0]['when'] == 'today' and 'Revisit P3' in out[0]['notes'][1]
+    own = [{'id': MISS, 'claim': 'Load is misses.'}, {'id': DELETE, 'claim': 'Delete beats set.'}]
+    events = [{'source': 'personal-mcp', 'at': NOW - 100, 'points': [MISS]}, {'source': 'tutor', 'at': NOW, 'points': [DELETE]}]
+    assert [p['id'] for p in lm.covered_elsewhere(events, own, NOW)] == [MISS]
+    text = lm.text({'style': style, 'outside': out, 'standing': {'strong': ['Caching'], 'thin': [], 'untouched': []}})
+    assert 'How he likes to learn' in text and 'request coalescing' in text and 'strong in Caching' in text
+
+
+def test_actions_are_parsed_and_never_shown():
+    reply = ("That's really a transactions question.\n[[move system-design/transactions]]\n"
+             "[[next system-design/hot-keys | stampedes came up]]\n[[enough]]\n[[note Thinks in failure modes first.]]")
+    a = ses.actions(reply)
+    assert a == {'move': ('system-design', 'transactions'), 'next': ('system-design', 'hot-keys', 'stampedes came up'),
+                 'enough': True, 'notes': ['Thinks in failure modes first.']}
+    say, show, _ = ses.parse(reply, ses.new('s', L, 'teach', 0), L)
+    assert say == "That's really a transactions question." and not show
+
+
+def test_the_tutor_moves_suggests_parks_and_remembers(client):
+    from server.knowledge_base import api as kb_api
+    kb_api.open_gap(client.store, 'telegram', 'card-1', MISS, 'Load is requests times the miss rate.', 'Which rate?', 'hit rate', 1)
+    start(client)
+    client.replies.append("Good, that's the core of it, enough for interviews.\n[[enough]]\n[[move system-design/hot-keys]]\n"
+                          "[[next system-design/hot-keys | stampedes]]\n[[note Answers best when given a concrete system.]]\n[[move system-design/nope]]")
+    s = ok(client.post('/api/tutor/sessions/sess-0001/turns', json={'key': 'turn-0001', 'text': 'Misses drive load.'}))
+    last = s['turns'][-1]
+    assert last['move'] == {'section': 'system-design', 'lesson': 'hot-keys', 'title': lessons.get('system-design', 'hot-keys')['title']}
+    assert '[[' not in last['say']
+    gap = client.store.get_knowledge('knowledge_misconceptions', 'telegram:card-1')
+    assert gap['status'] == 'open' and gap['parked_by'] == 'tutor' and gap['parked_until'] > 1   # rests, never deleted
+    home = ok(client.get('/api/tutor/home'))
+    assert home['pick']['kind'] == 'resume'
+    assert home['notes'][0]['text'] == 'Answers best when given a concrete system.'
+    nxt = ok(client.get('/api/tutor/next?section=system-design'))
+    assert nxt['primary']['kind'] == 'resume'           # a session in progress still comes first
+
+
+def test_moving_carries_the_thread_and_ends_the_old_session_quietly(client):
+    start(client)
+    client.replies.append('Sounds like hot keys.\n[[move system-design/hot-keys]]')
+    ok(client.post('/api/tutor/sessions/sess-0001/turns', json={'key': 'turn-0001', 'text': 'What about one viral link?'}))
+    client.replies.append('So, one key getting hammered.')
+    s = ok(client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'hot-keys', 'mode': 'teach',
+                                                   'key': 'sess-0002', 'carry': 'sess-0001'}))
+    assert s['lesson'] == 'hot-keys'
+    old = client.store.get_knowledge('tutor_sessions', 'sess-0001')
+    assert old['status'] == 'ended' and old['ended_by'] == 'moved sess-0002' and not any(t.get('debrief') for t in old['turns'])
+    p = client.chats[-1][0]['content']
+    assert '## Carrying on' in p and 'Him: What about one viral link?' in p
+    assert client.chats[-1][1]['content'] == ses.CARRIED
+
+
+def test_the_profile_and_full_handback_reach_the_prompt(client):
+    client.store.put_knowledge('study_sessions', 'abc123', STUDY)
+    client.store.put_knowledge('tutor_memory', 'lesson:system-design:cache-aside',
+                               {'outside': {'session': 'abc123', 'at': 9e12, 'summary': STUDY['summary'], 'next_steps': ''}})
+    start(client)
+    p = client.chats[0][0]['content']
+    assert "## Who you're teaching" in p and 'diagnostic-first' in p
+    assert "He's just come from his other tutor" in p and 'Revisit P3: coalescing under a hot key.' in p
+    assert 'system-design/hot-keys:' in p   # the lessons it can move to
+
+
+def test_an_unanswered_opener_from_an_older_prompt_is_replaced_not_resumed(client):
+    s = start(client)
+    old = client.store.get_knowledge('tutor_sessions', s['id'])
+    old['prompt_version'] = ses.PROMPT_VERSION - 1
+    client.store.put_knowledge('tutor_sessions', s['id'], old)
+    mk = 'lesson:system-design:cache-aside'
+    mem = client.store.get_knowledge('tutor_memory', mk)
+    mem['outside'] = {'session': 'abc123', 'at': 9e12, 'summary': 'x', 'next_steps': '', 'picked_up_by': s['id']}
+    client.store.put_knowledge('tutor_memory', mk, mem)
+    info = ok(client.get('/api/tutor/lessons/system-design/cache-aside'))
+    assert info['active'] is None
+    assert client.store.get_knowledge('tutor_sessions', s['id'])['ended_by'] == 'superseded'   # kept, not deleted
+    assert 'picked_up_by' not in client.store.get_knowledge('tutor_memory', mk)['outside']

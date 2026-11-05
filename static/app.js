@@ -304,6 +304,7 @@ function handleAuthFailure(status) {
 // Each tab's topbar heading: the title doubles as "where am I", the subtitle says
 // what the tab is for, so no section needs to re-explain itself.
 const TAB_HEADINGS = {
+  tutor: ["Tutor", "Pick up where you are"],
   today: ["Today", "Your queue for the day"],
   senpai: ["Senpai", "Your learning plan, today's session, and teaching"],
   practice: ["Quickfire", "Quick reps for a few spare minutes. Works offline."],
