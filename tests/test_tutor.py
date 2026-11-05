@@ -493,3 +493,9 @@ def test_an_unanswered_opener_from_an_older_prompt_is_replaced_not_resumed(clien
     assert info['active'] is None
     assert client.store.get_knowledge('tutor_sessions', s['id'])['ended_by'] == 'superseded'   # kept, not deleted
     assert 'picked_up_by' not in client.store.get_knowledge('tutor_memory', mk)['outside']
+
+
+def test_em_dashes_become_commas():
+    from server import voice
+    assert voice.plain('Partners call it — you don\'t control them') == "Partners call it, you don't control them"
+    assert voice.plain('a—b and 3–5 retries') == 'a, b and 3–5 retries'

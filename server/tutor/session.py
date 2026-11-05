@@ -329,7 +329,7 @@ def parse(text, session, lesson):
     say = re.sub(r'^\s*\**(tutor|jo|marcus|priya)(\s*:\s*\**|\**\s*:)\s*', '', say.strip(), flags=re.I)
     allowed = {t['key'] for t in lessons.tools(lesson)} if blocks_allowed(session['mode']) else set()
     show = next((k for k in keys if k in allowed and k not in session['shown']), '')
-    return re.sub(r'\n{3,}', '\n\n', say).strip(), show, private
+    return voice.plain(re.sub(r'\n{3,}', '\n\n', say).strip()), show, private
 
 
 def add_reply(session, text, lesson, now):
@@ -347,7 +347,7 @@ def add_reply(session, text, lesson, now):
 
 
 def add_debrief(session, text, now):
-    turn = {'role': 'tutor', 'speaker': 'tutor', 'say': PRIVATE.sub('', ANY_MARKER.sub('', text or '')).strip(), 'show_block': '',
+    turn = {'role': 'tutor', 'speaker': 'tutor', 'say': voice.plain(PRIVATE.sub('', ANY_MARKER.sub('', text or '')).strip()), 'show_block': '',
             'at': now, 'debrief': True, 'recorded': {'evidence': 0, 'misconceptions': 0, 'resolved': 0}}
     session['turns'].append(turn)
     session['updated_at'] = now
