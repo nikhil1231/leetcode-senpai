@@ -145,6 +145,9 @@ DEFAULT_SETTINGS = {
     # Where target_job came from: "local" (typed here) or "job_scout" (a synced copy).
     "target_job_source": "local",
     "senpai_charter": SENPAI_CHARTER,
+    # The shared teaching voice (server/voice.py); blank uses the built-in one.
+    "voice_tutor": "",
+    "voice_feedback": "",
     "senpai_weekly_minutes": 420,
     "senpai_session_minutes": 60,
     "senpai_mode": "mixed",

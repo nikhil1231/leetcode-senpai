@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import datetime as dt
 import hashlib
+import logging
 import os
 import random
 import re
@@ -28,7 +29,7 @@ from pydantic import BaseModel, Field
 
 from . import (assessment, auth, coach, config, connectivity, enrich, gamify, importer, insights,
                leetcode, llm, mock, neetcode150, packs, plans, poller, practice,
-               practice_offline, practice_queue, recording, scheduler, learning_evidence, curriculum, learning_sequences)
+               practice_offline, practice_queue, recording, scheduler, learning_evidence, curriculum, learning_sequences, voice)
 from . import store as store_mod
 from .store import get_store
 from .system_design import router as system_design_router
@@ -52,7 +53,16 @@ from .senpai import jobscout as senpai_jobscout, service as senpai_service, work
 from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+log = logging.getLogger(__name__)
 STATIC_DIR = os.path.join(ROOT, "static")
+
+
+def _load_voice():
+    """The voice saved in Settings, for every prompt this process builds. Single-user: the owner's."""
+    try:
+        voice.apply(get_store(config.DEV_UID if config.local_mode() else config.ACCESS_UID).get_settings())
+    except Exception:  # the built-in voice stands
+        log.warning("could not load the saved voice", exc_info=True)
 
 
 @contextlib.asynccontextmanager
@@ -68,6 +78,7 @@ async def lifespan(_app):
                          daemon=True).start()
         # Quickfire answers saved while offline in an earlier run.
         _practice_store(config.DEV_UID).flush_in_background()
+    threading.Thread(target=_load_voice, daemon=True).start()
     review_worker = asyncio.create_task(senpai_worker.run())
     drip = asyncio.create_task(drip_bot.run(get_store)) if drip_bot.configured() else None
     try:
@@ -267,6 +278,8 @@ class SettingsUpdate(BaseModel):
     daily_coach_timezone: str | None = None
     daily_coach_time: str | None = None
     senpai_charter: str | None = Field(default=None, max_length=3000)
+    voice_tutor: str | None = Field(default=None, max_length=3000)
+    voice_feedback: str | None = Field(default=None, max_length=3000)
     senpai_weekly_minutes: int | None = Field(default=None, ge=30, le=3000)
     senpai_session_minutes: int | None = Field(default=None, ge=10, le=240)
     senpai_mode: Literal["mixed", "retrieval", "learn", "interview"] | None = None
@@ -2861,6 +2874,10 @@ def api_get_config(uid: str = Depends(auth.require_user)):
         "llm_options": llm.model_options(settings),
         "job_scout_configured": senpai_jobscout.configured(),
         "job_scout_settings_url": senpai_jobscout.public_links()["settings"],
+        "voice_tutor": voice.TUTOR if not settings.get("voice_tutor") else settings["voice_tutor"],
+        "voice_feedback": voice.FEEDBACK if not settings.get("voice_feedback") else settings["voice_feedback"],
+        "voice_defaults": {"tutor": voice.DEFAULT_TUTOR, "feedback": voice.DEFAULT_FEEDBACK},
+        "voice_sample_prompt": voice.SAMPLE,
     }
 
 
@@ -2942,10 +2959,35 @@ def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
     if provider is not None or model is not None:
         updates["llm_provider"] = "openrouter"
         updates["llm_model"] = model or llm.current_model(store.get_settings())["model"]
+    for key, default in (("voice_tutor", voice.DEFAULT_TUTOR), ("voice_feedback", voice.DEFAULT_FEEDBACK)):
+        if key in updates and updates[key].strip() in ("", default):
+            updates[key] = ""   # the built-in voice, so later improvements to it still arrive
     store.update_settings(updates)
     settings = store.get_settings()
+    voice.apply(settings)
     selected = llm.current_model(settings)
     return {**settings, "llm_provider": selected["provider"], "llm_model": selected["model"]}
+
+
+class VoiceSample(BaseModel):
+    text: str = Field(default="", max_length=3000)
+
+
+@app.post("/api/voice/sample")
+def api_voice_sample(body: VoiceSample, uid: str = Depends(auth.require_user)):
+    """One reply from the tutor's model in a voice (blank: the saved one), to the same fixed moment each time."""
+    store = get_store(uid)
+    if not llm.enabled(store.get_settings()):
+        raise HTTPException(409, "The model is not connected.")
+    system = (body.text.strip() or voice.TUTOR) + "\n\nYou're Nikhil's tutor."
+    try:
+        raw = llm._raw_chat(config.TUTOR_MODEL, [{"role": "system", "content": system},
+                                                 {"role": "user", "content": voice.SAMPLE}],
+                            options={"max_tokens": 600, "timeout": 45, "think": False})
+    except Exception as exc:
+        log.warning("voice sample failed: %s", exc)
+        raise HTTPException(502, "The model didn't answer; try again.")
+    return {"prompt": voice.SAMPLE, "text": voice.plain((raw.get("content") or "").strip()), "model": config.TUTOR_MODEL}
 
 
 @app.post("/api/coach/page-chat")

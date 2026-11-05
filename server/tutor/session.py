@@ -264,7 +264,7 @@ def pickup(p, mode):
 
 
 def system(session, lesson, views, misconceptions, memory, story_state, debrief=False, career=None, profile=None):
-    text = ROLES[session['mode']] + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career, profile)
+    text = voice.live(ROLES[session['mode']]) + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career, profile)
     if debrief:
         mistakes = '\n'.join(f'- He said "{m["quote"]}": {m["text"]}' for m in session.get('mistakes', [])) or '(none recorded)'
         text += DEBRIEF.format(voice=voice.TUTOR, extra='3. ' + DEBRIEF_EXTRA[session['mode']], mistakes=mistakes)

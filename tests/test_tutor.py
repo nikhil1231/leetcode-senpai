@@ -495,7 +495,20 @@ def test_an_unanswered_opener_from_an_older_prompt_is_replaced_not_resumed(clien
     assert 'picked_up_by' not in client.store.get_knowledge('tutor_memory', mk)['outside']
 
 
-def test_em_dashes_become_commas():
+def test_em_dashes_become_colons():
     from server import voice
-    assert voice.plain('Partners call it — you don\'t control them') == "Partners call it, you don't control them"
-    assert voice.plain('a—b and 3–5 retries') == 'a, b and 3–5 retries'
+    assert voice.plain('Partners call it — you don\'t control them') == "Partners call it: you don't control them"
+    assert voice.plain('a—b and 3–5 retries') == 'a: b and 3–5 retries'
+
+
+def test_saved_voice_replaces_the_default_everywhere():
+    from server import voice
+    from server.tutor import session as ts
+    try:
+        voice.apply({'voice_tutor': 'Talk like a Yorkshireman.', 'voice_feedback': ''})
+        assert voice.TUTOR == 'Talk like a Yorkshireman.' and voice.FEEDBACK == voice.DEFAULT_FEEDBACK
+        composed = voice.live(ts.ROLES['teach'])
+        assert 'Talk like a Yorkshireman.' in composed and voice.DEFAULT_TUTOR not in composed
+    finally:
+        voice.apply({})
+    assert voice.TUTOR == voice.DEFAULT_TUTOR and voice.live(ts.ROLES['teach']) == ts.ROLES['teach']

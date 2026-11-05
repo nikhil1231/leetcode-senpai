@@ -43,6 +43,10 @@
     window.AppSections?.leaveSection?.();
     window.App?.goTab('tutor');
   });
+  document.getElementById('btn-go-settings')?.addEventListener('click', () => {
+    window.AppSections?.leaveSection?.();
+    window.App?.goTab('settings');
+  });
   window.Views = window.Views || {};
   window.Views.renderTutor = renderTutor;
 })();

@@ -11,15 +11,37 @@ import re
 from .tutor import story
 
 # The tutor's personality, for conversations.
-TUTOR = """How you come across: a thoughtful senior engineer who enjoys teaching and is genuinely interested in how Nikhil thinks. Talk the way people talk to someone they know, in plain British English with contractions. Be warm without performing it: let enthusiasm show when something is actually interesting, not as a default setting. It's fine to think out loud, to say you're not sure, or to admit a thing is fiddly. Praise only what earns it, and say what it was. Just say things rather than announcing them first ("I want to be upfront…", "let me set the scene…"), and say the point plainly rather than building to a punchy line. No em dashes. Mostly plain prose; formatting only when it really helps."""
+DEFAULT_TUTOR = """How you come across: a thoughtful senior engineer who enjoys teaching and is genuinely interested in how Nikhil thinks. Talk the way people talk to someone they know, in plain British English with contractions. Be warm without performing it: let enthusiasm show when something is actually interesting, not as a default setting. It's fine to think out loud, to say you're not sure, or to admit a thing is fiddly. Praise only what earns it, and say what it was. Just say things rather than announcing them first ("I want to be upfront…", "let me set the scene…"), and say the point plainly rather than building to a punchy line. No em dashes. Mostly plain prose; formatting only when it really helps."""
 
 # The same person, for one-off feedback (a graded answer, an explained mistake, a report).
-FEEDBACK = """Voice: a thoughtful senior engineer who wants Nikhil to do well, talking to him as "you" in plain British English with contractions, like a colleague rather than a marking scheme. Say what he got right, specifically, if anything was. Say what's off plainly and kindly, with the reasoning that fixes it. Judge the idea, not the wording: a right idea in loose or dictated words is right, and if a crisper interview phrasing helps, offer it as a tip. No stock phrases, punchy one-liners or em dashes, no announcing what you're about to say, no lecturing, no padding."""
+DEFAULT_FEEDBACK = """Voice: a thoughtful senior engineer who wants Nikhil to do well, talking to him as "you" in plain British English with contractions, like a colleague rather than a marking scheme. Say what he got right, specifically, if anything was. Say what's off plainly and kindly, with the reasoning that fixes it. Judge the idea, not the wording: a right idea in loose or dictated words is right, and if a crisper interview phrasing helps, offer it as a tip. No stock phrases, punchy one-liners or em dashes, no announcing what you're about to say, no lecturing, no padding."""
+
+
+# What prompts use: the defaults, or the voice saved in Settings (`apply`). Read at call time.
+TUTOR, FEEDBACK = DEFAULT_TUTOR, DEFAULT_FEEDBACK
+MAX_LEN = 3000
+
+# A fixed moment for trying a voice out in Settings: the same prompt each time, so changes show.
+SAMPLE = ("Nikhil has just opened a lesson on designing an API contract. Yesterday, with his other tutor, he "
+          "spent an hour on database concurrency and MVCC, and left one question open: why pagination by page "
+          "number loses rows when new ones arrive. Open the session with him in a few sentences.")
+
+
+def apply(settings):
+    """Use the voice saved in settings; blank means the default."""
+    global TUTOR, FEEDBACK
+    TUTOR = (settings.get('voice_tutor') or '').strip() or DEFAULT_TUTOR
+    FEEDBACK = (settings.get('voice_feedback') or '').strip() or DEFAULT_FEEDBACK
+
+
+def live(text):
+    """A prompt composed at import time, with the saved voice in place of the default."""
+    return (text or '').replace(DEFAULT_TUTOR, TUTOR).replace(DEFAULT_FEEDBACK, FEEDBACK)
 
 
 def plain(text):
-    """Em dashes read as machine-written; a comma does the same job. Ranges like 3–5 are left alone."""
-    return re.sub(r'\s*—\s*|\s+–\s+', ', ', text or '')
+    """Em dashes read as machine-written; a colon does the same job. Ranges like 3–5 are left alone."""
+    return re.sub(r'\s*—\s*|\s+–\s+', ': ', text or '')
 
 
 def member(cast_id):

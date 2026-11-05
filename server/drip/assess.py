@@ -64,7 +64,7 @@ def grade(store, point, text, ask=None, focus=None, in_story=False):
     if not llm.enabled(store.get_settings()):
         return None
     try:
-        system = cards.STORY_GRADE_SYSTEM if in_story else cards.GRADE_SYSTEM
+        system = voice.live(cards.STORY_GRADE_SYSTEM if in_story else cards.GRADE_SYSTEM)
         raw = llm._raw_generate('openrouter', config.TUTOR_MODEL, system,
                                 json.dumps(cards.grade_payload(point, text, ask, focus, in_story), ensure_ascii=False), cards.Grade,
                                 options={'effort': 'low', 'max_tokens': 6000, 'timeout': 60, 'metadata': True})   # room to think: verdicts need it

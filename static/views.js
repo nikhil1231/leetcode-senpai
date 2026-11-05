@@ -1261,6 +1261,24 @@
       <div class="buttons"><button class="button is-primary" id="btn-save-learning-coach" type="button">Save Senpai</button></div>
       <p id="learning-coach-settings-status" class="help" role="status" aria-live="polite"></p>
 
+      <div class="section-title" id="voice-settings">Voice</div>
+      <p class="help">How the tutor and every bit of feedback sound. Saved here, it's used from the next message on. Clear a box to go back to the built-in voice.</p>
+      <div class="settings-field">
+        <label for="cfg-voice-tutor">In conversation (the tutor)</label>
+        <textarea id="cfg-voice-tutor" class="input" rows="7" maxlength="3000">${escapeHtml(c.voice_tutor || "")}</textarea>
+      </div>
+      <div class="settings-field">
+        <label for="cfg-voice-feedback">In feedback (graded answers, Telegram, reports)</label>
+        <textarea id="cfg-voice-feedback" class="input" rows="5" maxlength="3000">${escapeHtml(c.voice_feedback || "")}</textarea>
+      </div>
+      <div class="buttons"><button class="button is-primary" id="btn-save-voice" type="button">Update voice</button>
+        <button class="button is-ghost" id="btn-reset-voice" type="button">Built-in voice</button></div>
+      <p id="voice-status" class="help" role="status" aria-live="polite"></p>
+      <div id="voice-sample" class="voice-sample hidden">
+        <p class="voice-sample-prompt"><strong>Sample:</strong> ${escapeHtml(c.voice_sample_prompt || "")}</p>
+        <div class="voice-sample-text"></div>
+      </div>
+
       <div class="section-title">LeetCode account</div>
       <div class="settings-field"><label>Username</label><input id="cfg-username" class="input" value="${escapeHtml(c.username || "")}" /></div>
       <div class="settings-field">
@@ -1347,6 +1365,36 @@
         toast("Senpai saved");
       } catch (e) {
         status.textContent = e.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    const defaults = c.voice_defaults || {};
+    $("#btn-reset-voice").addEventListener("click", () => {
+      $("#cfg-voice-tutor").value = defaults.tutor || "";
+      $("#cfg-voice-feedback").value = defaults.feedback || "";
+      $("#voice-status").textContent = "Built-in voice loaded; Update voice to use it.";
+    });
+    $("#btn-save-voice").addEventListener("click", async () => {
+      const button = $("#btn-save-voice"), status = $("#voice-status");
+      const box = $("#voice-sample"), out = box.querySelector(".voice-sample-text");
+      button.disabled = true;
+      status.textContent = "Saving…";
+      try {
+        const saved = await api("/config", "POST", {
+          voice_tutor: $("#cfg-voice-tutor").value, voice_feedback: $("#cfg-voice-feedback").value });
+        if (!saved.voice_tutor) $("#cfg-voice-tutor").value = defaults.tutor || "";
+        if (!saved.voice_feedback) $("#cfg-voice-feedback").value = defaults.feedback || "";
+        status.textContent = "Saved. Writing a sample in the new voice…";
+        box.classList.remove("hidden");
+        out.textContent = "…";
+        const r = await api("/voice/sample", "POST", {});
+        out.textContent = r.text;
+        status.textContent = `Saved. Sample from ${r.model}:`;
+      } catch (e) {
+        status.textContent = e.message;
+        if (out.textContent === "…") box.classList.add("hidden");
       } finally {
         button.disabled = false;
       }

@@ -3029,3 +3029,14 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 
 .q-more > summary { cursor: pointer; padding: 8px 12px; font-size: 12px; color: var(--muted); }
 .q-more > summary:hover { color: var(--text-2); }
+
+/* Sidebar foot: the model chip with a gear to Settings beside it. */
+.foot-row { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+.foot-row #coach-chip, .foot-row #design-coach-chip { flex: 1; min-width: 0; }
+.go-settings { display: grid; place-items: center; flex: 0 0 auto; width: 34px; margin-left: auto; padding: 0; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--panel); color: var(--muted); cursor: pointer; }
+.go-settings:hover { color: var(--text); border-color: var(--accent-line); }
+.go-settings .nav-icon { width: 16px; height: 16px; }
+.voice-sample { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.voice-sample-prompt { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.voice-sample-text { white-space: pre-wrap; line-height: 1.55; }
