@@ -20,16 +20,19 @@ Every client below sends two headers: `CF-Access-Client-Id` and `CF-Access-Clien
 
 ## iPhone
 
-**Lock screen wallpaper (a new question every two hours, its answer the hour after).**
-Shortcuts → New shortcut "Senpai wallpaper":
+**Lock screen wallpaper (a colourful poster of what you hold worst).** The server makes the
+posters on its own schedule (an infographic per weak lesson, checked by a second model, see
+`server/wall_gen.py`) and changes the one that is up every two hours between 08:30 and 22:30; the
+phone only fetches whichever is up. Import `Senpai wallpaper.shortcut` (it asks for the two token
+values), or build it: Shortcuts → New shortcut "Senpai wallpaper":
 1. Get Contents of URL `https://leetcode.nikhil.ing/api/wall/poster.png`, method GET, with the
-   two headers above. (Default size fits an iPhone 15/16; add `?w=…&h=…` for another screen.
-   The top 30% is left clear for the clock; `&top=0` for a home screen.)
+   two headers above. (Default size fits an iPhone 15/16/17; add `?w=…&h=…` for another screen.)
 2. Set Wallpaper → Lock Screen (turn off "Show Preview" and "Crop to Subject").
 
-Then Automation → Time of Day, one automation per hour you want it to change (for example 08:00,
-10:00 … 22:00, and 09:00, 11:00 … for the answers), each Run Immediately → run "Senpai wallpaper".
-Also handy: Automation → Charger → Is Connected.
+Then Automation → Time of Day, one automation per change (08:31, 10:31, 12:31, 14:31, 16:31, 18:31,
+20:31), each Run Immediately → run "Senpai wallpaper". Also handy: Automation → Charger → Is
+Connected. Every poster made, with its review: `GET /api/wall/posters`; make one now:
+`POST /api/wall/posters`.
 
 **Widget (home screen, lock screen, StandBy).** Install [Scriptable](https://scriptable.app),
 add `ios/senpai-widget.js` as a script, run it once in the app (it asks for the address and the

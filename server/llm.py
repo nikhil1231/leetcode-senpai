@@ -952,6 +952,62 @@ def _raw_chat(model: str, messages: list, *, options=None) -> dict:
     return {"content": content, "model": data.get("model", model), "usage": data.get("usage") or {}}
 
 
+# ---- images ---------------------------------------------------------------------
+# The wall's posters: one model draws, another looks. Both are plain transport choke points
+# that tests replace; callers (server/wall_gen.py) decide what to do when they fail.
+def _post(body, timeout):
+    resp = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=timeout, json=body,
+                      headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "Content-Type": "application/json",
+                               "X-Title": "LeetCode Senpai"})
+    if resp.is_error:
+        log.warning("OpenRouter HTTP %s for %s: %s", resp.status_code, body["model"], resp.text[:500])
+        raise RuntimeError(f"OpenRouter request failed (HTTP {resp.status_code})")
+    data = resp.json()
+    choices = data.get("choices") or []
+    if data.get("error") or not choices:
+        raise RuntimeError("OpenRouter returned no reply")
+    return data, choices[0].get("message") or {}
+
+
+def _raw_image(model: str, prompt: str, aspect: str, edit: Optional[tuple] = None) -> dict:
+    """-> {image: bytes, mime, model, usage}: one picture from an image model. `edit`: (bytes, mime)
+    of a picture to change rather than starting afresh."""
+    import base64
+    if forbidden_model(model):
+        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+    content = prompt
+    if edit:
+        content = [{"type": "text", "text": prompt},
+                   {"type": "image_url", "image_url": {"url": f"data:{edit[1]};base64,{base64.b64encode(edit[0]).decode()}"}}]
+    data, message = _post({"model": model, "messages": [{"role": "user", "content": content}], "stream": False,
+                           "modalities": ["image", "text"], "image_config": {"aspect_ratio": aspect, "image_size": "2K"}},
+                          timeout=240)
+    url = next((i.get("image_url", {}).get("url", "") for i in message.get("images") or []), "")
+    if not url.startswith("data:image/"):
+        raise RuntimeError("The image model returned no picture")
+    head, b64 = url.split(",", 1)
+    return {"image": base64.b64decode(b64), "mime": head[5:].split(";")[0], "model": data.get("model", model),
+            "usage": data.get("usage") or {}}
+
+
+def _raw_look(model: str, system: str, prompt: str, image: bytes, mime: str, schema) -> dict:
+    """A structured verdict on a picture from a vision model -> the parsed, validated dict."""
+    import base64
+    if forbidden_model(model):
+        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+    url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
+    _, message = _post({"model": model, "stream": False, "response_format": _response_format(schema),
+                        "provider": {"require_parameters": True},
+                        "messages": [{"role": "system", "content": system},
+                                     {"role": "user", "content": [{"type": "text", "text": prompt},
+                                                                  {"type": "image_url", "image_url": {"url": url}}]}]},
+                       timeout=120)
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("The reviewer returned nothing")
+    return schema.model_validate(json.loads(content)).model_dump()
+
+
 # ---- speech-to-text ---------------------------------------------------------------
 # Dictation shows the browser's live transcript; this re-transcribes the recorded
 # audio so grading reads what was actually said. One pooled client keeps the TLS

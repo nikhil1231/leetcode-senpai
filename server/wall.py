@@ -1,28 +1,34 @@
 """The wall: bright posters of what you are learning, for any screen you glance at. /wall
 
-A poster is one knowledge point: its question large, its idea revealed a little later. Weak
+A /wall poster is one knowledge point: its question large, its idea revealed a little later. Weak
 points come up more often (open misconceptions, then shaky, fading and unconfirmed ones), and
 ideas from lessons you have started fill the rest. The fading map draws Ripple's architecture,
 each part coloured by how much of that area you currently hold, so it fades as memory does.
 
+The wallpaper (/api/wall/poster.png, for a phone lock screen or a desktop) is different: an
+infographic of a whole lesson you have covered and hold badly, every weak idea on it at once.
+server/wall_gen.py makes them in the background on a cadence (an image model draws, a second
+model reviews) and keeps them; this module decides which lessons need one and which poster is up
+now. The poster changes only in waking hours, so the one up overnight was also up all evening
+and none is seen only asleep. Without a model, or before the first poster, a plain card stands in.
+
 Surfaces: /wall cycles posters full screen (a TV, a projector, a Mac screensaver, a phone on
-StandBy); /wall?print=1 lays six out for a weekly colour print; /api/wall/poster.png draws one
-as a phone or desktop wallpaper, a new question every two hours and its answer in the second
-hour. Showing a poster records nothing unless asked (?log=1), because a screen on the wall is
-not proof anyone looked. Pure: weight, posters, slot, fading_map. I/O: render_png, the router.
+StandBy); /wall?print=1 lays six out for a weekly colour print. Showing a poster records nothing,
+because a screen on the wall is not proof anyone looked. Pure: weight, posters, struggles, brief,
+wake_slot, shelf, current, to_make, fading_map. I/O: render_card, fit_image, the router.
 Intent: docs/plans/ambient-learning.md.
 """
+import asyncio
 import datetime as dt
-import hashlib
 import io
 import os
 import random
 import time
-from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
+from . import config, llm
 from .drip import cards as dcards
 from .knowledge_base import api as kb_api, model as kmodel
 from .tutor import story
@@ -31,7 +37,6 @@ router = APIRouter(prefix='/api/wall', tags=['wall'])
 FONTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts')
 COLOURS = {'fact': '#ffd84d', 'principle': '#ff8fb8', 'mechanism': '#5fe0e8', 'tradeoff': '#ffad5c', 'procedure': '#8ce99a'}
 INK = '#12131a'
-SLOT_HOURS = 2
 
 
 def weight(v, started):
@@ -79,17 +84,97 @@ def posters(views, n, rng=None):
     return out
 
 
-def slot(now_local):
-    """-> (key, reveal): a new point every SLOT_HOURS, its answer shown in the second half."""
-    block = now_local.hour // SLOT_HOURS
-    key = f'{now_local.date().isoformat()}-{block}'
-    return key, (now_local.hour % SLOT_HOURS) >= SLOT_HOURS / 2
+# ---- the wallpaper: which lessons, and which poster is up --------------------------------
+
+def struggle(v):
+    """How much a point you have met needs work; None for one you have not met (never on a poster)."""
+    if v['status'] == 'unseen' and not v['misconceptions']:
+        return None
+    return {'shaky': 5, 'fading': 4, 'learning': 1}.get(v['status'], 0) + 6 * bool(v['misconceptions']) \
+        + 2 * bool(v['unconfirmed'])
 
 
-def slot_poster(views, key):
-    seed = int(hashlib.sha256(key.encode()).hexdigest()[:12], 16)
-    found = posters(views, 1, random.Random(seed))
-    return found[0] if found else None
+def struggles(views, n=6, per=3):
+    """The lessons you have covered and hold worst, weakest first, each with its weakest points
+    you have met (up to `per`: more and the text gets too small to read on a lock screen). -> [{lesson, title, section, score, points}]"""
+    by = {}
+    for v in views:
+        s = struggle(v)
+        if s:
+            by.setdefault(v['lesson'], []).append((s, v))
+    out = []
+    for lesson, items in by.items():
+        items.sort(key=lambda t: -t[0])
+        out.append({'lesson': lesson, 'title': items[0][1]['lesson_title'], 'section': items[0][1]['section'],
+                    'score': sum(s for s, _ in items), 'points': [v['id'] for _, v in items[:per]]})
+    return sorted(out, key=lambda l: (-l['score'], l['lesson']))[:n]
+
+
+def brief(lesson, views, misconceptions):
+    """What one poster teaches: the lesson's weak ideas (claims, the source of truth) and, for
+    points with an open misconception, what went wrong, so the poster can draw the distinction."""
+    by_id = {v['id']: v for v in views}
+    wrong = {}
+    for m in misconceptions:
+        if m.get('status') == 'open' and m.get('text'):
+            wrong.setdefault(m['point'], m['text'])
+    return {'lesson': lesson['lesson'], 'title': lesson['title'], 'section': lesson['section'],
+            'points': list(lesson['points']),
+            'ideas': [{'point': p, 'claim': by_id[p]['claim'], 'kind': by_id[p]['kind'], 'status': by_id[p]['status'],
+                       **({'pitfall': wrong[p]} if p in wrong else {})} for p in lesson['points'] if p in by_id]}
+
+
+def wake_slot(now_local, window, slot_hours):
+    """The number of waking slots since day one: it advances every slot_hours within the waking
+    window ('08:30-22:30') and stands still outside it, so the night keeps the evening's poster."""
+    start, end = dcards.window(window)
+    slot = max(1, round(slot_hours * 60))
+    per_day = max(1, (end - start) // slot)
+    day = now_local.date().toordinal()
+    minute = now_local.hour * 60 + now_local.minute
+    if minute < start:
+        return (day - 1) * per_day + per_day - 1
+    return day * per_day + min(per_day - 1, (minute - start) // slot)
+
+
+def shelf(library, ranked, least=3):
+    """The posters in rotation, weakest lesson first: the newest passing poster of each lesson you
+    still struggle with, then older passing posters (reuse) until there are at least `least`."""
+    good = sorted((p for p in library if p.get('ok')), key=lambda p: -p['created_at'])
+    out, used = [], set()
+    for l in ranked:
+        p = next((p for p in good if p['lesson'] == l['lesson']), None)
+        if p:
+            out.append(p)
+            used.add(p['_key'])
+    for p in good:
+        if len(out) >= least:
+            break
+        if p['_key'] not in used and p['lesson'] not in {q['lesson'] for q in out}:
+            out.append(p)
+            used.add(p['_key'])
+    return out
+
+
+def current(library, ranked, n):
+    """The poster up in waking slot n, or None before there is one."""
+    on = shelf(library, ranked)
+    return on[n % len(on)] if on else None
+
+
+def to_make(ranked, library, now, version, fresh_days=7, retry_hours=20):
+    """The weakest lesson that needs a new poster, or None: one with no passing poster of this
+    prompt version made in the last fresh_days that covers at least half its weak points now.
+    A lesson whose last try failed review waits retry_hours, so one stubborn lesson can't eat the budget."""
+    for l in ranked:
+        mine = [p for p in library if p['lesson'] == l['lesson'] and p.get('version') == version]
+        if any(not p.get('ok') and now - p['created_at'] < retry_hours * 3600 for p in mine):
+            continue
+        fresh = [p for p in mine if p.get('ok') and now - p['created_at'] < fresh_days * 86400
+                 and len(set(p['points']) & set(l['points'])) * 2 >= len(l['points'])]
+        if not fresh:
+            return l
+    return None
 
 
 # Ripple's architecture: system design areas as the parts of one system (x, y, w, h on a 1600x900
@@ -194,43 +279,61 @@ def _fit(draw, text, width, height, start, bold=True, floor=18, lh=1.25):
     return font, _wrap(draw, text, font, width), floor
 
 
-def render_png(p, w, h, reveal, top=0.0):
-    """One poster as a PNG. `top` leaves that share of the height clear (a lock screen's clock)."""
+def render_card(card, w, h, top=0.0):
+    """The stand-in wallpaper (no model, or no poster yet): a lesson's title and its ideas, all
+    shown, on its colour. `top` leaves that share of the height clear (a lock screen's clock)."""
     from PIL import Image, ImageDraw
-    img = Image.new('RGB', (w, h), p['colour'])
+    img = Image.new('RGB', (w, h), card['colour'])
     d = ImageDraw.Draw(img)
     for y0 in range(0, int(h * 0.55), 4):   # a soft light wash at the top, like the feed's cards
-        d.rectangle([0, y0, w, y0 + 4], fill=_mix(p['colour'], '#ffffff', 0.3 * (1 - y0 / (h * 0.55))))
+        d.rectangle([0, y0, w, y0 + 4], fill=_mix(card['colour'], '#ffffff', 0.3 * (1 - y0 / (h * 0.55))))
     m = int(w * 0.08)
     y = int(h * top) + m
     inner = w - 2 * m
     meta = _font(max(18, w // 34), bold=False)
-    d.text((m, y), f'{p["speaker"]} · {p["role"]}', font=meta, fill=_mix(INK, p['colour'], 0.35))
-    y += int(meta.size * 1.9)
-    room = h - y - m - int(meta.size * 2.4)
-    ask_share = 0.45 if reveal else 0.8
-    font, lines, size = _fit(d, p['ask'], inner, room * ask_share, max(30, w // 11))
+    font, lines, size = _fit(d, card['title'], inner, h * 0.16, max(30, w // 12))
     for line in lines:
         d.text((m, y), line, font=font, fill=INK)
         y += int(size * 1.25)
-    if reveal:
-        y += int(size * 0.6)
-        pad = int(m * 0.4)
-        cfont, clines, csize = _fit(d, p['claim'], inner - 2 * pad, h - y - m - int(meta.size * 2.2) - 2 * pad,
-                                    max(24, w // 17), bold=False, lh=1.3)
-        box_h = len(clines) * int(csize * 1.3) + 2 * pad
-        d.rounded_rectangle([m, y, w - m, y + box_h], radius=int(w * 0.035), fill=_mix(p['colour'], '#ffffff', 0.55))
+    y += int(size * 0.5)
+    ideas = card['ideas'] or ['Open a lesson and its ideas appear here.']
+    pad = int(m * 0.35)
+    room = (h - y - m - int(meta.size * 2)) / len(ideas)
+    for text in ideas:
+        cfont, clines, csize = _fit(d, text, inner - 2 * pad, room - 3 * pad, max(22, w // 22), bold=False, lh=1.3)
+        box = len(clines) * int(csize * 1.3) + 2 * pad
+        d.rounded_rectangle([m, y, w - m, y + box], radius=int(w * 0.03), fill=_mix(card['colour'], '#ffffff', 0.55))
         cy = y + pad
         for line in clines:
             d.text((m + pad, cy), line, font=cfont, fill=INK)
             cy += int(csize * 1.3)
-    else:
-        d.text((m, h - m - int(meta.size * 2.6)), 'Think of the answer. It appears next hour.', font=meta,
-               fill=_mix(INK, p['colour'], 0.35))
-    d.text((m, h - m - int(meta.size * 1.3)), p['lesson'], font=meta, fill=_mix(INK, p['colour'], 0.35))
+        y += box + pad
+    d.text((m, h - m - int(meta.size * 1.3)), 'Leetcode Senpai', font=meta, fill=_mix(INK, card['colour'], 0.35))
     out = io.BytesIO()
     img.save(out, 'PNG', optimize=True)
     return out.getvalue()
+
+
+def fit_image(data, w, h):
+    """A stored poster fitted to a w x h screen without cutting anything off: scaled to fit, and
+    the space left over filled by stretching the poster's own edge rows and columns (the prompt
+    keeps its edges plain). The spare height goes on top, where a lock screen's clock sits. -> JPEG."""
+    from PIL import Image
+    src = Image.open(io.BytesIO(data)).convert('RGB')
+    scale = min(w / src.width, h / src.height)
+    sw, sh = max(1, round(src.width * scale)), max(1, round(src.height * scale))
+    src = src.resize((sw, sh), Image.LANCZOS)
+    out = Image.new('RGB', (w, h))
+    x, y = (w - sw) // 2, h - sh
+    out.paste(src, (x, y))
+    if y:
+        out.paste(src.crop((0, 0, sw, 1)).resize((sw, y)), (x, 0))
+    if x:
+        out.paste(out.crop((x, 0, x + 1, h)).resize((x, h)), (0, 0))
+        out.paste(out.crop((x + sw - 1, 0, x + sw, h)).resize((w - x - sw, h)), (x + sw, 0))
+    buf = io.BytesIO()
+    out.save(buf, 'JPEG', quality=90)
+    return buf.getvalue()
 
 
 def _mix(a, b, t):
@@ -256,11 +359,25 @@ def wall(n: int = Query(default=12, ge=1, le=40), who=Depends(kb_api.caller)):
             'company': {'label': sc['label'], 'users': sc['users'], 'pct': summary['pct']}}
 
 
-def _current(uid, now):
+def _wallpaper(uid, now):
+    """-> (poster, None) when one is up, else (None, the lesson card standing in for it, or None)."""
+    from . import wall_gen
     store = kb_api.get_store(uid)
-    _, _, _, _, views = _views(uid, now)
-    key, reveal = slot(dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())))
-    return slot_poster(views, key), reveal
+    _, _, _, mis, views = _views(uid, now)
+    ranked = struggles(views)
+    n = wake_slot(dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())), config.DRIP_WINDOW,
+                  config.WALL_SLOT_HOURS)
+    p = current(store.list_knowledge(wall_gen.POSTERS), ranked, n)
+    if p or not ranked:
+        return p, None
+    b = brief(ranked[n % len(ranked)], views, mis)
+    return None, {'lesson': b['lesson'], 'title': b['title'], 'ideas': [i['claim'] for i in b['ideas']],
+                  'colour': COLOURS.get(b['ideas'][0]['kind'], COLOURS['fact'])}
+
+
+def _public(p):
+    return {**{k: p.get(k) for k in ('lesson', 'title', 'ideas', 'created_at', 'model', 'review', 'ok')},
+            'id': p['_key'], 'image': f'/api/wall/posters/{p["_key"]}.jpg'}
 
 
 @router.get('/topics')
@@ -272,21 +389,50 @@ def watch_topics(n: int = Query(default=4, ge=1, le=12), who=Depends(kb_api.call
 
 @router.get('/now')
 def now_poster(who=Depends(kb_api.caller)):
-    """The poster the wallpaper shows right now, as data (for widgets)."""
-    p, reveal = _current(who['uid'], time.time())
-    return {'poster': p, 'reveal': bool(p) and reveal}
+    """What the wallpaper shows now, as data (for widgets): a poster, or the card standing in."""
+    p, card = _wallpaper(who['uid'], time.time())
+    return {'poster': _public(p) if p else None, 'card': card}
 
 
 @router.get('/poster.png')
 def poster_png(w: int = Query(default=1179, ge=320, le=4000), h: int = Query(default=2556, ge=320, le=4000),
-               side: Literal['auto', 'question', 'answer'] = 'auto', top: float = Query(default=0.3, ge=0, le=0.6),
-               who=Depends(kb_api.caller)):
-    """A wallpaper. iPhone lock screen: the defaults (the top 30% stays clear for the clock).
-    A Mac desktop: w=2560&h=1600&top=0."""
-    p, reveal = _current(who['uid'], time.time())
+               top: float = Query(default=0.3, ge=0, le=0.6), who=Depends(kb_api.caller)):
+    """The wallpaper now. iPhone lock screen: the defaults. A Mac desktop: w=2560&h=1600&top=0.
+    A generated poster comes back as a JPEG; the path keeps its name for the shortcuts using it."""
+    from . import wall_gen
+    p, card = _wallpaper(who['uid'], time.time())
+    img = p and kb_api.get_store(who['uid']).get_knowledge(wall_gen.IMAGES, p['_key'])
+    headers = {'Cache-Control': 'no-store'}
+    if img:
+        return Response(fit_image(img['data'], w, h), media_type='image/jpeg', headers=headers)
+    card = card or {'title': 'Leetcode Senpai', 'ideas': [], 'colour': COLOURS['fact']}
+    return Response(render_card(card, w, h, top), media_type='image/png', headers=headers)
+
+
+@router.get('/posters')
+def list_posters(who=Depends(kb_api.caller)):
+    """Every poster made, newest first, with its review (failed ones too: they never go up)."""
+    from . import wall_gen
+    library = kb_api.get_store(who['uid']).list_knowledge(wall_gen.POSTERS)
+    return {'posters': [_public(p) for p in sorted(library, key=lambda p: -p['created_at'])]}
+
+
+@router.get('/posters/{pid}.jpg')
+def poster_image(pid: str, who=Depends(kb_api.caller)):
+    from . import wall_gen
+    img = kb_api.get_store(who['uid']).get_knowledge(wall_gen.IMAGES, pid)
+    if not img:
+        raise HTTPException(404, 'no such poster')
+    return Response(img['data'], media_type='image/jpeg', headers={'Cache-Control': 'max-age=86400'})
+
+
+@router.post('/posters')
+async def make_poster(lesson: str = Query(default=''), who=Depends(kb_api.caller)):
+    """Make a poster now, outside the cadence: for `lesson`, or the weakest lesson needing one."""
+    from . import wall_gen
+    if not llm.enabled():
+        raise HTTPException(503, 'Posters need a model (OPENROUTER_API_KEY)')
+    p = await asyncio.to_thread(wall_gen.make, kb_api.get_store(who['uid']), time.time(), lesson or None)
     if not p:
-        p = {'kind': 'fact', 'colour': COLOURS['fact'], 'ask': 'Open a lesson and its ideas appear here.',
-             'claim': '', 'lesson': 'Leetcode Senpai', 'speaker': 'Jo', 'role': 'Junior engineer'}
-    reveal = side == 'answer' or (side == 'auto' and reveal and bool(p['claim']))
-    return Response(render_png(p, w, h, reveal, top), media_type='image/png',
-                    headers={'Cache-Control': 'no-store'})
+        raise HTTPException(409, 'No lesson you have covered needs a poster')
+    return _public(p)

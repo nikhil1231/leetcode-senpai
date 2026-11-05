@@ -104,14 +104,25 @@ He looks at his phone screen many times a day, so the phone is the most valuable
 - A "fading map": one big poster of his company's architecture with each part coloured by how
   well he currently holds it, fading as memory decays.
 
-Status: **built; the phone and Mac steps are Nikhil's.** `server/wall.py`.
-- `/api/wall/poster.png` draws a poster with Pillow and a bundled Noto Sans: one weak point,
-  a new one every two hours, its answer shown in the second hour, the top 30% left clear for
-  the lock screen clock (`w`, `h`, `top`, `side` adjust it). An iPhone Shortcut fetches it and
-  sets the wallpaper on Time of Day automations (hourly works; iOS has no "every hour" trigger, so
-  one automation per hour). `clients/mac/senpai-wallpaper` does the Mac desktop hourly (launchd).
+Status: **built; the phone and Mac steps are Nikhil's.** `server/wall.py`, `server/wall_gen.py`.
+- 2026-11-05, redesigned after his feedback ("the question then answer format doesn't make any
+  sense; just have all the info on the poster"; colourful infographic, not a drab question;
+  generated on a backend cadence, not per request). `server/wall_gen.py` makes a poster per
+  lesson he has covered and holds worst (`wall.struggles`: misconceptions, then shaky, fading and
+  unconfirmed points; points never met are left out), its three weakest ideas on it at once. A
+  text model condenses the claims into the poster's words, an image model (Nano Banana 2.1, about
+  $0.06 a try) draws it, and the text model reviews the picture against the claims (spelling,
+  facts, every idea, sensible icons, legibility); a failed try is edited with the notes, up to
+  three times, and only passing posters go up. At most one every 4 hours and 3 a day, and none
+  for a lesson with a fresh poster, so it settles to a few a week; posters are reused. Kept in
+  Firestore (`wall_posters`, `wall_images`). The poster up changes every 2 hours only within the
+  drip's waking window (08:30-22:30), so the night keeps the evening's poster and none is seen
+  only asleep (`wall.wake_slot`). `/api/wall/poster.png` serves it fitted to the screen (spare
+  height on top for the clock); without a model or a poster yet, a plain card of the lesson.
+  The iPhone Shortcut is in `~/Documents/Shortcuts Playground/Senpai wallpaper.shortcut`.
+  `clients/mac/senpai-wallpaper` does the Mac desktop hourly (launchd).
 - `clients/ios/senpai-widget.js` is a Scriptable widget (home screen, lock screen, StandBy) of
-  the same poster (`/api/wall/now`); tapping it opens the feed.
+  the same lesson and ideas (`/api/wall/now`); tapping it opens the feed.
 - The fading map is a slide on `/wall` (see The physical wall): Ripple's architecture, one box
   per system design area, coloured green to red by how well he holds the ideas he has met there
   and faint where he has met few.

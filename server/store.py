@@ -22,6 +22,8 @@ Collections:
   users/{uid}/tutor_sessions/{id}      tutor conversations (raw learner text first, then the reply)
   users/{uid}/tutor_memory/{key}       small per-lesson and story notes the tutor opens with
   users/{uid}/drip/{key}               the Telegram drip: its state, and one document per card sent
+  users/{uid}/wall_posters/{id}        generated wallpaper posters (derived): what each teaches, its review
+  users/{uid}/wall_images/{id}         each poster's JPEG, kept apart so listing posters stays small
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
 import threading
@@ -652,7 +654,7 @@ class FirestoreStore:
     # records once. Misconceptions are updated in place (open → resolved). Tutor sessions
     # are read one at a time (they grow); tutor memory is a handful of small documents.
     KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions', 'tutor_sessions', 'tutor_memory', 'drip',
-                 'study_sessions')
+                 'study_sessions', 'wall_posters', 'wall_images')
 
     def _knowledge(self, coll):
         if coll not in self.KNOWLEDGE:

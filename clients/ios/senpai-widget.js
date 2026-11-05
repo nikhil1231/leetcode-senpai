@@ -1,12 +1,12 @@
 // Senpai poster widget for Scriptable (iOS): home screen, lock screen and StandBy.
-// Shows the poster the wallpaper shows now (GET /api/wall/now): the question, and in the
-// poster's second hour its answer. Tapping it opens the feed. See clients/README.md.
+// Shows what the wallpaper shows now (GET /api/wall/now): the lesson you hold worst and its weak
+// ideas, all of them. Tapping it opens the feed. See clients/README.md.
 //
 // Set these three in Scriptable's Keychain once (run the script in the app; it asks):
 //   senpai_url, senpai_client_id, senpai_client_secret (an Access service token)
 
-const COLOURS = { fact: '#ffd84d', principle: '#ff8fb8', mechanism: '#5fe0e8', tradeoff: '#ffad5c', procedure: '#8ce99a' };
-const INK = new Color('#12131a');
+const BG = new Color('#13224d');
+const ACCENTS = ['#ffd84d', '#5fe0e8', '#ff8fb8', '#8ce99a', '#ffad5c'].map((c) => new Color(c));
 
 async function setting(key, prompt) {
   if (Keychain.contains(key)) return Keychain.get(key);
@@ -31,43 +31,34 @@ async function current(base, id, secret) {
 function widget(data, base) {
   const w = new ListWidget();
   const family = config.widgetFamily || 'medium';
-  const accessory = family.startsWith('accessory');
-  const p = data && data.poster;
+  const shown = data && (data.poster || data.card);
   w.url = `${base}/feed`;
   w.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
-  if (!p) {
+  if (!shown) {
     w.addText(data ? 'Open a lesson to start.' : 'Could not reach Senpai.').font = Font.mediumSystemFont(12);
     return w;
   }
-  if (accessory) {   // lock screen: monochrome, a few words
-    const t = w.addText(data.reveal ? p.claim : p.ask);
+  if (family.startsWith('accessory')) {   // lock screen: monochrome, the lesson's name
+    const t = w.addText(shown.title);
     t.font = Font.semiboldSystemFont(12);
     t.minimumScaleFactor = 0.6;
     return w;
   }
-  w.backgroundColor = new Color(COLOURS[p.kind] || COLOURS.fact);
+  w.backgroundColor = BG;
   w.setPadding(12, 14, 12, 14);
-  const who = w.addText(`${p.speaker} · ${p.tag || p.lesson}`);
-  who.font = Font.mediumSystemFont(10);
-  who.textColor = INK;
-  who.textOpacity = 0.65;
-  w.addSpacer(4);
-  const ask = w.addText(p.ask);
-  ask.font = Font.boldSystemFont(family === 'small' ? 13 : family === 'large' ? 20 : 15);
-  ask.textColor = INK;
-  ask.minimumScaleFactor = 0.55;
-  if (data.reveal && family !== 'small') {
-    w.addSpacer(6);
-    const claim = w.addText(p.claim);
-    claim.font = Font.systemFont(family === 'large' ? 15 : 11);
-    claim.textColor = INK;
-    claim.minimumScaleFactor = 0.6;
-  }
+  const title = w.addText(shown.title);
+  title.font = Font.heavySystemFont(family === 'large' ? 18 : 13);
+  title.textColor = ACCENTS[0];
+  title.minimumScaleFactor = 0.6;
+  const ideas = family === 'small' ? shown.ideas.slice(0, 1) : shown.ideas;
+  ideas.forEach((idea, i) => {
+    w.addSpacer(5);
+    const t = w.addText(idea);
+    t.font = Font.semiboldSystemFont(family === 'large' ? 14 : 10);
+    t.textColor = ACCENTS[(i + 1) % ACCENTS.length];
+    t.minimumScaleFactor = 0.5;
+  });
   w.addSpacer();
-  const foot = w.addText(data.reveal ? p.lesson : 'Answer appears next hour · tap to practise');
-  foot.font = Font.systemFont(9);
-  foot.textColor = INK;
-  foot.textOpacity = 0.55;
   return w;
 }
 

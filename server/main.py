@@ -45,6 +45,7 @@ from .tutor.api import router as tutor_router
 from .drip import bot as drip_bot
 from .feed import router as feed_router
 from .wall import router as wall_router
+from . import wall_gen
 from .drip.api import router as drip_router
 from .podcast import router as podcast_router
 from .study_prompt import router as study_prompt_router
@@ -81,10 +82,12 @@ async def lifespan(_app):
     threading.Thread(target=_load_voice, daemon=True).start()
     review_worker = asyncio.create_task(senpai_worker.run())
     drip = asyncio.create_task(drip_bot.run(get_store)) if drip_bot.configured() else None
+    # Posters cost money, so only the deployed app makes them: a dev server would double up.
+    posters = asyncio.create_task(wall_gen.run(get_store)) if llm.enabled() and not config.local_mode() else None
     try:
         yield
     finally:
-        for task in (review_worker, drip):
+        for task in (review_worker, drip, posters):
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

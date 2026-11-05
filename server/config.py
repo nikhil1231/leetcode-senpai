@@ -98,6 +98,14 @@ SUNDIAL_URL = os.environ.get("SUNDIAL_URL", "").rstrip("/")
 PODCAST_DIR = os.environ.get("PODCAST_DIR", os.path.join(os.path.expanduser("~"), ".cache", "senpai-podcast"))
 PODCAST_VOICES = os.environ.get("PODCAST_VOICES", os.path.join(os.path.expanduser("~"), ".cache", "senpai-voices"))
 PODCAST_TOKEN = os.environ.get("PODCAST_TOKEN", "").strip()
+# The wall's wallpaper posters (server/wall_gen.py): an image model draws an infographic of a lesson
+# you hold badly; WALL_REVIEW_MODEL writes its words and reviews it. A new poster at most every WALL_EVERY_HOURS, WALL_PER_DAY a day
+# (each try about $0.06); the phone's poster changes every WALL_SLOT_HOURS within DRIP_WINDOW.
+WALL_IMAGE_MODEL = os.environ.get("WALL_IMAGE_MODEL", "google/gemini-nano-banana-2.1").strip()
+WALL_REVIEW_MODEL = os.environ.get("WALL_REVIEW_MODEL", "openai/gpt-6.1-terra").strip()
+WALL_EVERY_HOURS = float(os.environ.get("WALL_EVERY_HOURS", "4"))
+WALL_PER_DAY = int(os.environ.get("WALL_PER_DAY", "3"))
+WALL_SLOT_HOURS = float(os.environ.get("WALL_SLOT_HOURS", "2"))
 
 
 # ---- Scheduler ------------------------------------------------------------------
