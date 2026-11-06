@@ -62,7 +62,8 @@ def test_widgets_are_used_by_a_lesson():
 @pytest.mark.skipif(subprocess.run(['which', 'node'], capture_output=True).returncode, reason='node not installed')
 def test_widget_modules_load_and_export_mount():
     """Catches a widget that references something its extraction dropped (a ReferenceError at import)."""
-    files = sorted(glob.glob(os.path.join(STATIC, 'widgets', 'internals', '*.js')))
+    files = sorted(glob.glob(os.path.join(STATIC, 'widgets', '*', '*.js')))
+    files = [f for f in files if '/shared/' not in f]
     script = ("const files=process.argv.slice(1);(async()=>{for(const f of files){const m=await import('file://'+f);"
               "if(typeof m.mount!=='function')throw new Error(f+' has no mount()');}})().catch(e=>{console.error(e.stack);process.exit(1)})")
     r = subprocess.run(['node', '-e', script, *files], capture_output=True, text=True, timeout=60)
@@ -92,3 +93,18 @@ def test_explicit_block_keys_are_validated():
         parse(text.replace('key: b900', 'key: b1'))
     with pytest.raises(LessonError):
         parse(text.replace('key: b901', 'key: b900'))
+
+
+def test_visualise_index_matches_the_shipped_animations():
+    """Every algorithm listed on the Visualise tab has a module to mount, and the data is well formed."""
+    import json
+    index = json.load(open(os.path.join(STATIC, 'widgets', 'dsa', 'index.json'), encoding='utf-8'))
+    ids = [t['id'] for t in index['topics']]
+    assert len(ids) == len(set(ids)) >= 40
+    assert {t['category'] for t in index['topics']} == {c for c, _ in index['categories']}
+    shipped = {os.path.basename(f)[:-3] for f in glob.glob(os.path.join(STATIC, 'widgets', 'dsa', '*.js'))}
+    assert set(ids) == shipped, 'listed without a module, or shipped without being listed'
+    for t in index['topics']:
+        assert t['difficulty'] in ('easy', 'medium', 'hard') and t['title'] and t['concept'] and t['time'] and t['space']
+        assert isinstance(t['pitfalls'], list) and isinstance(t['problems'], list)
+    assert 'widgets/dsa/index.json' in main._VERSIONED_ASSETS

@@ -312,6 +312,7 @@ const TAB_HEADINGS = {
   discover: ["Discover", "Curated packs and highly-rated problems"],
   topics: ["Topics", "Coverage and mastery across the map"],
   insights: ["Insights", "What the data says about your prep"],
+  visualise: ["Visualise", "Watch an algorithm run, step by step"],
   playbook: ["Playbook", "Synthesized cheat sheets per pattern"],
   history: ["History", "Every attempt you have logged"],
   problems: ["Problems", "Your imported library"],

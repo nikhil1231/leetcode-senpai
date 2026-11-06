@@ -3059,7 +3059,7 @@ def _widget_assets():
     """Vendored widget modules, imported on demand by sd-widgets.js with ?v=ASSET_VER."""
     root = os.path.join(STATIC_DIR, "widgets")
     return sorted(os.path.relpath(os.path.join(d, f), STATIC_DIR).replace(os.sep, "/")
-                  for d, _, files in os.walk(root) for f in files if f.endswith(".js"))
+                  for d, _, files in os.walk(root) for f in files if f.endswith((".js", ".json")))
 
 
 _VERSIONED_ASSETS = tuple(dict.fromkeys(_index_assets() + ["vendor/codemirror.js"] + _widget_assets()))
