@@ -654,7 +654,8 @@ class FirestoreStore:
     # records once. Misconceptions are updated in place (open → resolved). Tutor sessions
     # are read one at a time (they grow); tutor memory is a handful of small documents.
     KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions', 'tutor_sessions', 'tutor_memory', 'drip',
-                 'study_sessions', 'wall_posters', 'wall_images')
+                 'study_sessions', 'wall_posters', 'wall_images',
+                 'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews')
 
     def _knowledge(self, coll):
         if coll not in self.KNOWLEDGE:

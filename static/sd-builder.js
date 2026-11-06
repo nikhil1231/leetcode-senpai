@@ -1,95 +1,262 @@
-// Design builder: the old System Design Simulator's main sandbox. Drag components onto a canvas, connect
-// them, set a scale, and get capacity estimates plus a few sanity checks on what you drew. Components and
-// presets come from /simulators/builder.json; the maths is in sd-builder-calc.js (pure). The drawing is
-// kept in this browser's localStorage so it survives a reload; nothing goes to the server.
+// Design builder: drag components onto a canvas, connect them, size each one, and run a simulated day
+// against it. Two modes: the sandbox (scale inputs, sample architectures, the old estimates and checks)
+// and Ripple Ops (sd-game.js), which hands in a scenario, a toolbox and somewhere to save. Components and
+// presets come from /simulators/builder.json, prices from /simulators/economics.json; the maths is pure
+// (sd-builder-calc.js for estimates and checks, sd-sim.js for the day). The sandbox drawing is kept in
+// this browser's localStorage; Ripple Ops saves its own.
 (function () {
   'use strict';
-  const Calc = window.SDBuilderCalc;
+  const Calc = window.SDBuilderCalc, Sim = window.SDSim;
   const esc = s => String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-  const KEY = 'sd-builder-v1', W = 136, H = 62, CANVAS_W = 1500, CANVAS_H = 800;
-  let data = null;
+  const KEY = 'sd-builder-v1', W = 136, H = 62, CANVAS_W = 1600, CANVAS_H = 860;
+  let data = null, econ = null;
+  const getJson = async url => { const r = await fetch(url, { cache: 'no-cache' }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); };
   const loadData = async () => {
-    if (data) return data;
-    const r = await fetch('/simulators/builder.json', { cache: 'no-cache' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return (data = await r.json());
+    if (data && econ) return;
+    [data, econ] = await Promise.all([data || getJson('/simulators/builder.json'), econ || getJson('/simulators/economics.json')]);
   };
-  const fresh = () => ({ nodes: [], edges: [], scale: { dau: '', readQps: '', writeQps: '', storageGb: '' },
+  const fresh = () => ({ nodes: [], edges: [], settings: { regions: 1, crossRegion: 'async' }, scale: { dau: '', readQps: '', writeQps: '', storageGb: '' },
     nfr: { latencyMs: '100', availability: '99.9%', consistency: 'Eventual' }, req: '' });
-  const read = () => { try { const v = JSON.parse(localStorage.getItem(KEY)); return v && Array.isArray(v.nodes) ? { ...fresh(), ...v } : fresh(); } catch { return fresh(); } };
-  const write = s => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* private window: fine */ } };
+  const readLocal = key => { try { const v = JSON.parse(localStorage.getItem(key)); return v && Array.isArray(v.nodes) ? { ...fresh(), ...v } : null; } catch { return null; } };
+  const writeLocal = (key, s) => { try { localStorage.setItem(key, JSON.stringify(s)); } catch { /* private window: fine */ } };
   const num = v => Calc.num(v);
-  const fmt = n => !isFinite(n) ? '0' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n >= 100 ? Math.round(n).toLocaleString('en') : n >= 1 ? n.toFixed(n < 10 ? 1 : 0) : n.toFixed(2);
+  const fmt = n => !isFinite(n) ? '∞' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n >= 100 ? Math.round(n).toLocaleString('en') : n >= 1 ? n.toFixed(n < 10 ? 1 : 0) : n.toFixed(2);
+  const money = n => n >= 1e6 ? '$' + (n / 1e6).toFixed(2) + 'M' : n >= 1e4 ? '$' + Math.round(n / 1e3) + 'k' : '$' + Math.round(n).toLocaleString('en');
+  const ms = v => v >= 30000 ? 'timing out' : v >= 1000 ? (v / 1000).toFixed(1) + ' s' : Math.round(v) + ' ms';
+  const hh = h => String(h).padStart(2, '0') + ':00';
+  const OPT_LABEL = { timeouts: ['Timeouts + circuit breaker', 'Calls to slow dependencies give up after a second and fail fast, so threads stay free.'],
+    canary: ['Canary releases', 'New builds go to a few servers first. Needs monitoring to notice a bad one.'],
+    hotKey: ['Local hot-key cache', 'Callers keep the hottest keys in their own memory, so one key can\'t melt one shard.'],
+    coalesce: ['Coalesce misses', 'Concurrent misses for the same key wait for one refill instead of all hitting the database.'] };
 
   const anchors = n => ({ top: [n.x + W / 2, n.y], right: [n.x + W, n.y + H / 2], bottom: [n.x + W / 2, n.y + H], left: [n.x, n.y + H / 2] });
   function edgePath(a, b) {                                   // nearest pair of sides, joined by a gentle curve
     let best = null;
     for (const [sa, pa] of Object.entries(anchors(a))) for (const [sb, pb] of Object.entries(anchors(b))) {
       const d = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
-      if (!best || d < best.d) best = { d, pa, pb, sa };
+      if (!best || d < best.d) best = { d, pa, pb, sa, sb };
     }
     const [x1, y1] = best.pa, [x2, y2] = best.pb;
     return Math.abs(x2 - x1) >= Math.abs(y2 - y1)
       ? `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}` : `M ${x1} ${y1} C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`;
   }
 
-  function mount(el) {
-    let defs = null, S = read(), sel = null, undo = [], drag = null, link = null, dead = false, saveTimer = null;
+  // ---------- the day report (shared with Ripple Ops) ----------
+  const CAST = { marcus: ['Marcus', 'CTO'], priya: ['Priya', 'SRE'], jo: ['Jo', 'Junior engineer'], sam: ['Sam', 'Product'] };
+  const avatar = who => `<span class="rp-av rp-av-${esc(who)}" aria-hidden="true">${esc((CAST[who] || ['?'])[0][0])}</span>`;
+  function stars(n, of = 3) { return `<span class="rp-stars" aria-label="${n} of ${of} stars">${'★'.repeat(n)}<span>${'★'.repeat(of - n)}</span></span>`; }
+  function reportHtml(res, o = {}) {
+    const s = res.summary, total = res.bill.total || 1;
+    const outcome = { handled: ['Handled', 'ok'], degraded: ['Degraded', 'warn'], outage: ['Outage', 'bad'] };
+    const top = res.bill.items.filter(i => i.usd >= 0.5).slice(0, 8);
+    const label = i => i.id === '_egress' ? 'Bandwidth to users' : i.id === '_xregion' ? 'Cross-region replication' : (o.labelOf?.(i.defId) || i.defId);
+    return `<div class="rp-report">
+      <div class="rp-score">${stars(s.stars)}<div><strong>${['Ripple went down', 'Survived, barely', 'Every target met', 'Every target met, with money to spare'][s.stars]}</strong>
+        <span>${s.availability.toFixed(s.availability >= 99.99 ? 3 : 2)}% available · ${money(res.bill.total)}/month${s.lost >= 1 ? ` · ${fmt(s.lost)} writes lost` : ''}</span></div></div>
+      <ul class="rp-objs">${s.objectives.map(x => `<li class="${x.pass ? 'is-pass' : 'is-fail'}"><span>${x.pass ? '✓' : '✗'}</span><em>${esc(x.label)}</em><b>${esc(x.actual)}</b><small>target ${esc(x.target)}</small></li>`).join('')}</ul>
+      ${res.events.length ? `<h5>Incidents</h5><ul class="rp-evs">${res.events.map(e => `<li class="rp-${outcome[e.outcome][1]}"><b>${hh(e.at)}</b><span>${esc(e.label)}</span><em>${outcome[e.outcome][0]}${e.type !== 'poison-message' ? ` · ${(e.ok * 100).toFixed(1)}% ok` : ''}${e.lost >= 1 ? ` · ${fmt(e.lost)} lost` : ''}</em></li>`).join('')}</ul>` : ''}
+      <h5>The bill</h5><div class="rp-bill">${top.map(i => `<div class="rp-bill-row" title="${esc(i.detail)}"><span>${esc(label(i))}</span><i style="--w:${Math.max(2, Math.round(i.usd / total * 100))}%"></i><b>${money(i.usd)}</b></div>`).join('')}</div>
+      ${res.findings.length ? `<h5>What the team saw</h5><ul class="rp-finds">${res.findings.slice(0, o.maxFindings || 12).map(f => `<li class="rp-f-${esc(f.level)}">${avatar(f.who)}<div><p>${esc(f.text)}</p>${f.concept && o.conceptLink ? o.conceptLink(f.concept) : ''}</div></li>`).join('')}</ul>` : ''}
+    </div>`;
+  }
+
+  function mount(el, opts = {}) {
+    const game = opts.mode === 'game', key = opts.storageKey || KEY;
+    let defs = null, S = null, sel = null, undo = [], drag = null, link = null, dead = false, saveTimer = null;
+    let play = null;           // {res, h, timer} while a simulated day is on screen
     const def = id => defs.find(d => d.id === id) || { label: id, icon: '▫️', border: '#444c56' };
-    const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => write(S), 150); };
-    const snapshot = () => { undo.push(JSON.stringify({ nodes: S.nodes, edges: S.edges })); if (undo.length > 40) undo.shift(); };
-    const touch = () => { save(); paintCanvas(); paintPanel(); };
+    const labelOf = id => def(id).label;
+    const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { writeLocal(key, S); opts.onChange?.(graph()); }, 250); };
+    const snapshot = () => { undo.push(JSON.stringify({ nodes: S.nodes, edges: S.edges, settings: S.settings })); if (undo.length > 60) undo.shift(); };
+    const touch = () => { stopPlay(false); save(); paintCanvas(); paintPanel(); paintBar(); };
     const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     const nodeById = id => S.nodes.find(n => n.id === id);
+    const graph = () => ({ nodes: S.nodes.map(n => ({ id: n.id, defId: n.defId, x: n.x, y: n.y, ...(n.cfg && Object.keys(n.cfg).length ? { cfg: { ...n.cfg } } : {}) })),
+      edges: S.edges.map(e => ({ id: e.id, from: e.from, to: e.to })), settings: { ...S.settings } });
+    const scenario = () => game ? opts.scenario : Sim.fromScale(S.scale, S.nfr);
+    const allowed = d => !opts.toolbox || opts.toolbox.includes(d.id);
 
     el.classList.add('bd');
     el.innerHTML = '<p class="bd-note">Loading the builder…</p>';
 
     function shell() {
       el.innerHTML = `<div class="bd-bar">
-          <select data-preset aria-label="Load a sample architecture"><option value="">Load a sample…</option>${data.presets.map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}</select>
+          ${game ? '' : `<select data-preset aria-label="Load a sample architecture"><option value="">Load a sample…</option>${data.presets.map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}</select>`}
           <button type="button" class="button" data-act="undo">Undo</button><button type="button" class="button" data-act="clear">Clear</button>
-          <button type="button" class="button" data-act="mermaid">Copy as Mermaid</button><span class="bd-status" data-status aria-live="polite"></span></div>
+          <button type="button" class="button" data-act="mermaid">Copy as Mermaid</button>
+          <span class="bd-cost" data-cost title="Fixed monthly prices of what you've drawn. Usage (requests, bandwidth) is added when you run the day."></span>
+          <button type="button" class="button is-primary bd-run" data-act="run">▶ Run the day</button>
+          <span class="bd-status" data-status aria-live="polite"></span></div>
+        <div class="bd-play" data-play hidden></div>
         <div class="bd-grid">
           <aside class="bd-palette" aria-label="Components"><input type="search" class="input" placeholder="Filter components" data-filter aria-label="Filter components"><div class="bd-items" data-items></div></aside>
           <div class="bd-stage" data-stage tabindex="0" aria-label="Design canvas. Select a component and press Delete to remove it."><div class="bd-canvas" data-canvas style="width:${CANVAS_W}px;height:${CANVAS_H}px">
             <svg class="bd-edges" width="${CANVAS_W}" height="${CANVAS_H}"><defs><marker id="bd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z"/></marker></defs><g data-edges></g><path class="bd-preview" data-preview d="" marker-end="url(#bd-arrow)"/></svg>
-            <div data-nodes></div><div class="bd-empty" data-empty><span>🏗️</span><strong>Build your design</strong><p>Drag a component in, or load a sample. Hover a node and drag from a dot to connect it.</p></div></div></div>
+            <div data-nodes></div><div class="bd-empty" data-empty><span>🏗️</span><strong>Build your design</strong><p>Drag a component in${game ? '' : ', or load a sample'}. Hover a node and drag from a dot to connect it. Click a node to size it.</p></div></div></div>
           <aside class="bd-panel" data-panel></aside></div>`;
       paintItems('');
     }
     function paintItems(q) {
-      const t = q.trim().toLowerCase();
-      el.querySelector('[data-items]').innerHTML = defs.filter(d => !t || `${d.label} ${d.description}`.toLowerCase().includes(t)).map(d =>
-        `<button type="button" class="bd-item" draggable="true" data-def="${esc(d.id)}" title="${esc(d.whenToUse)}" style="--b:${esc(d.border)}"><span>${d.icon}</span>${esc(d.label)}</button>`).join('') || '<p class="bd-note">No match.</p>';
+      const t = q.trim().toLowerCase(), list = defs.filter(d => allowed(d) && (!t || `${d.label} ${d.description}`.toLowerCase().includes(t)));
+      const locked = opts.toolbox ? defs.length - defs.filter(allowed).length : 0;
+      el.querySelector('[data-items]').innerHTML = (list.map(d =>
+        `<button type="button" class="bd-item" draggable="true" data-def="${esc(d.id)}" title="${esc(d.whenToUse)}" style="--b:${esc(d.border)}"><span>${d.icon}</span>${esc(d.label)}</button>`).join('') || '<p class="bd-note">No match.</p>')
+        + (locked && !t ? `<p class="bd-locked">🔒 ${locked} more components unlock as Ripple grows.</p>` : '');
     }
 
+    // ---------- canvas ----------
+    function nodeBadge(n) {
+      const c = Sim.config(n, econ), d = econ.components[n.defId] || {};
+      if (!d.tiers || d.role === 'source') return '';
+      const bits = [];
+      if (d.tiers.length > 1) bits.push(c.tier.label.split(' · ')[0].replace(' node', ''));
+      if (c.count > 1) bits.unshift(c.count + '×');
+      if (c.autoscale) bits.push('↗' + c.autoscale);
+      if (c.shards > 1) bits.push(c.shards + ' shards');
+      if (c.replicas) bits.push('+' + c.replicas + ' rep');
+      if (c.azs > 1 && !d.multiAz) bits.push(c.azs + ' AZ');
+      return bits.join(' · ');
+    }
     function paintCanvas() {
-      const nodes = el.querySelector('[data-nodes]');
-      nodes.innerHTML = S.nodes.map(n => { const d = def(n.defId), on = sel?.kind === 'node' && sel.id === n.id;
-        return `<div class="bd-node${on ? ' is-sel' : ''}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px;width:${W}px;height:${H}px;--b:${esc(d.border)}">
-          ${['top', 'right', 'bottom', 'left'].map(s => `<i class="bd-h bd-h-${s}" data-handle="${s}"></i>`).join('')}<span class="bd-icon">${d.icon}</span><span class="bd-label">${esc(d.label)}</span></div>`; }).join('');
+      const nodes = el.querySelector('[data-nodes]'), tick = play ? play.res.ticks[play.h] : null;
+      nodes.innerHTML = S.nodes.map(n => {
+        const d = def(n.defId), on = sel?.kind === 'node' && sel.id === n.id, st = tick?.nodes[n.id];
+        const heat = st ? ` is-${st.status}` : '';
+        return `<div class="bd-node${on ? ' is-sel' : ''}${heat}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px;width:${W}px;height:${H}px;--b:${esc(d.border)}${st ? `;--u:${Math.min(1, st.util)}` : ''}">
+          ${['top', 'right', 'bottom', 'left'].map(s => `<i class="bd-h bd-h-${s}" data-handle="${s}"></i>`).join('')}<span class="bd-icon">${d.icon}</span><span class="bd-label">${esc(d.label)}</span>
+          ${st && n.defId !== 'client' ? `<span class="bd-util">${st.status === 'down' ? 'DOWN' : st.util < 0.01 ? '<1%' : Math.round(st.util * 100) + '%'}</span>` : `<span class="bd-badge">${esc(nodeBadge(n))}</span>`}</div>`;
+      }).join('');
       el.querySelector('[data-edges]').innerHTML = S.edges.map(e => { const a = nodeById(e.from), b = nodeById(e.to); if (!a || !b) return '';
-        const on = sel?.kind === 'edge' && sel.id === e.id, d = edgePath(a, b);
-        return `<g class="bd-edge${on ? ' is-sel' : ''}" data-edge="${esc(e.id)}"><path class="bd-hit" d="${d}"/><path class="bd-line" d="${d}" marker-end="url(#bd-arrow)"/></g>`; }).join('');
+        const on = sel?.kind === 'edge' && sel.id === e.id, d = edgePath(a, b), st = tick?.nodes[e.to], live = st && st.load > 0.01 && tick.nodes[e.from]?.status !== 'down';
+        const w = live ? Math.min(6, 1.4 + Math.log10(1 + st.load) * 0.9) : 0;
+        return `<g class="bd-edge${on ? ' is-sel' : ''}${live ? ' is-live' : ''}${st && (st.status === 'saturated' || st.status === 'down') ? ' is-bad' : ''}" data-edge="${esc(e.id)}"><path class="bd-hit" d="${d}"/><path class="bd-line" d="${d}" marker-end="url(#bd-arrow)"${live ? ` style="stroke-width:${w.toFixed(1)}px"` : ''}/></g>`; }).join('');
       el.querySelector('[data-empty]').hidden = S.nodes.length > 0;
     }
 
+    // ---------- the bar: live cost, and the playback strip ----------
+    function paintBar() {
+      const c = el.querySelector('[data-cost]');
+      if (!c) return;
+      const q = Sim.quickCost(graph(), econ, scenario());
+      c.innerHTML = `<b>${money(q.total)}</b>/month fixed${game && opts.scenario?.slo?.budget ? ` · budget ${money(opts.scenario.slo.budget)}` : ''}`;
+      c.classList.toggle('is-over', !!(game && opts.scenario?.slo?.budget && q.total > opts.scenario.slo.budget));
+    }
+    function paintPlay() {
+      const p = el.querySelector('[data-play]');
+      if (!play) { p.hidden = true; p.innerHTML = ''; return; }
+      const { res, h } = play, t = res.ticks[h], scn = scenario();
+      const user = Object.entries(t.types).filter(([k]) => k !== 'attack');
+      const rps = user.reduce((a, [, v]) => a + v.rps, 0), worst = Math.max(0, ...user.map(([, v]) => v.p99));
+      const evs = (scn.events || []).map(e => ({ ...e, dur: Math.max(1, e.dur || 1) }));
+      const now = evs.filter(e => h >= e.at && h < e.at + e.dur);
+      const say = now.find(e => e.line && e.at === h);
+      p.hidden = false;
+      p.innerHTML = `<div class="bd-play-row"><button type="button" class="button" data-act="play" aria-label="${play.timer ? 'Pause' : 'Play'}">${play.timer ? '⏸' : '▶'}</button>
+          <div class="bd-time"><input type="range" min="0" max="23" step="1" value="${h}" data-hour aria-label="Hour of the simulated day">
+            <div class="bd-marks">${evs.map(e => `<i class="bd-mark" style="left:${e.at / 23 * 100}%;width:${Math.max(1.5, Math.min(e.dur, 24 - e.at) / 23 * 100)}%" title="${esc(e.label || Sim.EVENT_LABEL[e.type])} at ${hh(e.at)}"></i>`).join('')}</div>
+            <div class="bd-ok">${res.ticks.map(x => `<i style="height:${Math.max(2, (1 - x.ok) * 100)}%" class="${x.ok < 0.95 ? 'is-bad' : x.ok < 0.999 ? 'is-warn' : ''}"></i>`).join('')}</div></div>
+          <div class="bd-read"><b>${hh(h)}</b><span>${fmt(rps)} req/s</span><span class="${t.ok < 0.99 ? 'is-bad' : ''}">${(t.ok * 100).toFixed(t.ok > 0.999 ? 2 : 1)}% ok</span><span>p99 ${ms(worst)}</span>${t.retryMult > 1.05 ? `<span class="is-bad">retries ×${t.retryMult.toFixed(1)}</span>` : ''}</div>
+          <button type="button" class="button" data-act="endplay">Back to editing</button></div>
+        ${now.length ? `<div class="bd-now">${now.map(e => `<span class="bd-chip">⚡ ${esc(e.label || Sim.EVENT_LABEL[e.type])}</span>`).join('')}${say ? `<span class="bd-say">${avatar(say.who)}<em>${esc(say.line)}</em></span>` : ''}</div>` : ''}`;
+    }
+    function startPlay(res) {
+      stopPlay(false);
+      play = { res, h: 0, timer: null };
+      sel = null;
+      paintCanvas(); paintPanel(); paintPlay();
+      togglePlay();
+    }
+    function togglePlay() {
+      if (!play) return;
+      if (play.timer) { clearInterval(play.timer); play.timer = null; paintPlay(); return; }
+      if (play.h >= 23) play.h = 0;
+      play.timer = setInterval(() => { if (!play) return; if (play.h >= 23) { clearInterval(play.timer); play.timer = null; paintPlay(); return; } play.h++; paintCanvas(); paintPlay(); }, opts.speedMs || 450);
+      paintPlay();
+    }
+    function stopPlay(repaint = true) {
+      if (!play) return;
+      clearInterval(play.timer); play = null;
+      if (repaint) { paintCanvas(); paintPlay(); paintPanel(); } else paintPlay();
+    }
+    function runDay(extra) {
+      if (!S.nodes.length) return status('Draw something first');
+      const scn = extra ? { ...scenario(), events: [...(scenario().events || []), ...extra] } : scenario();
+      const res = Sim.run(scn, graph(), econ);
+      if (!extra) last = res;
+      startPlay(res);
+      opts.onRun?.(res, graph(), { whatif: !!extra, scenario: scn });
+      return res;
+    }
+    let last = null;
+
+    // ---------- the panel ----------
+    function configHtml(n) {
+      const d = econ.components[n.defId] || {}, c = Sim.config(n, econ), o = new Set(d.opts || []), cfg = n.cfg || {};
+      if (!d.tiers || d.role === 'source') return '';
+      const q = Sim.quickCost({ nodes: [{ id: n.id, defId: n.defId, cfg }], edges: [], settings: S.settings }, econ, scenario());
+      const usd = q.items.find(i => i.id === n.id)?.usd || 0, t = c.tier;
+      const capacity = t.rps && d.role === 'compute' ? `~${fmt(t.rps)} req/s each` : d.role === 'cache' ? `${t.gb} GB · ~${fmt(t.rps)} ops/s per node` : t.reads ? `~${fmt(t.reads)} reads/s · ${fmt(t.writes)} writes/s${t.diskGb ? ` · ${fmt(t.diskGb)} GB disk` : ''}` : t.cores ? `${t.cores} cores each` : t.rps ? `~${fmt(t.rps)}/s` : '';
+      const usage = [t.perMReq && `$${t.perMReq} per million requests`, t.perGb && `$${t.perGb}/GB served`, t.perMRead && `$${t.perMRead}/M reads, $${t.perMWrite}/M writes`, d.perGbMonth && `$${d.perGbMonth}/GB-month stored`].filter(Boolean).join(' · ');
+      const numIn = (k, label, min, max, val, hint) => `<label title="${esc(hint || '')}"><span>${label}</span><input type="number" min="${min}" max="${max}" step="1" data-cfg="${k}" value="${esc(val)}"></label>`;
+      return `<div class="bd-cfg">
+        ${d.tiers.length > 1 ? `<label class="bd-wide"><span>Size</span><select data-cfg="tier">${d.tiers.map(x => `<option value="${esc(x.id)}" ${x.id === t.id ? 'selected' : ''}>${esc(x.label)}${x.usd ? ` · $${x.usd}/mo` : x.perMReq ? ` · $${x.perMReq}/M req` : ''}</option>`).join('')}</select></label>` : ''}
+        <div class="bd-fields">
+          ${o.has('count') ? numIn('count', d.role === 'cache' ? 'Shards' : 'Instances', 1, 500, c.count) : ''}
+          ${o.has('autoscale') ? numIn('autoscale', 'Autoscale up to', 0, 500, cfg.autoscale || '', 'Adds instances when busy, an hour behind the load. Blank: fixed size.') : ''}
+          ${o.has('azs') ? `<label><span>Zones</span><select data-cfg="azs">${[1, 2, 3].map(z => `<option value="${z}" ${z === c.azs ? 'selected' : ''}>${z === 1 ? 'One zone' : z + ' zones'}</option>`).join('')}</select></label>` : ''}
+          ${o.has('replicas') ? numIn('replicas', 'Read replicas', 0, 5, c.replicas) : ''}
+          ${o.has('shards') ? numIn('shards', 'Shards', 1, 64, c.shards) : ''}
+          ${o.has('sync') ? `<label><span>Replica writes</span><select data-cfg="sync"><option value="async" ${c.sync === 'async' ? 'selected' : ''}>Asynchronous</option><option value="sync" ${c.sync === 'sync' ? 'selected' : ''}>Synchronous</option></select></label>` : ''}
+        </div>
+        ${['timeouts', 'canary', 'hotKey', 'coalesce'].filter(k => o.has(k)).map(k => `<label class="bd-toggle" title="${esc(OPT_LABEL[k][1])}"><input type="checkbox" data-cfg="${k}" ${cfg[k] ? 'checked' : ''}><span>${OPT_LABEL[k][0]}</span></label>`).join('')}
+        ${n.defId === 'db-sql' ? '<p class="bd-fine">Zones: 2 or more adds a synchronous standby in another zone (doubles the primary\'s price) for failover without losing writes.</p>' : ''}
+        <div class="bd-row"><span>This component</span><b>${money(usd)}/month${usage ? ' + usage' : ''}</b></div>
+        ${capacity ? `<div class="bd-row"><span>Capacity</span><b>${esc(capacity)}</b></div>` : ''}
+        ${usage ? `<p class="bd-fine">${esc(usage)}</p>` : ''}${d.note ? `<p class="bd-fine">${esc(d.note)}</p>` : ''}</div>`;
+    }
+    function deploymentHtml() {
+      return `<section class="bd-box"><h4>Deployment</h4><div class="bd-fields">
+        <label><span>Regions</span><select data-set="regions">${[1, 2, 3].map(r => `<option value="${r}" ${r === S.settings.regions ? 'selected' : ''}>${r === 1 ? 'One region' : r + ' regions'}</option>`).join('')}</select></label>
+        <label><span>Between regions</span><select data-set="crossRegion" ${S.settings.regions > 1 ? '' : 'disabled'}><option value="async" ${S.settings.crossRegion !== 'sync' ? 'selected' : ''}>Async replication</option><option value="sync" ${S.settings.crossRegion === 'sync' ? 'selected' : ''}>Sync replication</option></select></label></div>
+        <p class="bd-fine">Every region runs a full copy of what you've drawn, and costs that much. Users reach the nearest one only if there's a DNS node with geo routing.</p></section>`;
+    }
     function paintPanel() {
-      const e = Calc.estimate(S.scale), found = Calc.checks({ nodes: S.nodes, edges: S.edges }, S.scale, S.nfr);
-      const d = sel?.kind === 'node' && nodeById(sel.id) ? def(nodeById(sel.id).defId) : null;
+      const panel = el.querySelector('[data-panel]');
+      if (!panel) return;
+      const d = sel?.kind === 'node' && nodeById(sel.id) ? def(nodeById(sel.id).defId) : null, n = d ? nodeById(sel.id) : null;
+      if (play) {
+        const t = play.res.ticks[play.h];
+        const rows = S.nodes.map(x => ({ x, st: t.nodes[x.id] })).filter(r => r.st && (r.st.util > 0.005 || r.st.status === 'down')).sort((a, b) => b.st.util - a.st.util).slice(0, 10);
+        panel.innerHTML = `<section class="bd-box"><h4>${hh(play.h)} · busiest components</h4>${rows.map(r => `<div class="bd-row bd-u-${esc(r.st.status)}"><span>${def(r.x.defId).icon} ${esc(def(r.x.defId).label)}</span><b>${r.st.status === 'down' ? 'down' : Math.round(r.st.util * 100) + '%'}</b></div>`).join('') || '<p class="bd-note">Quiet.</p>'}
+          <h4 style="margin-top:12px">Requests this hour</h4>${Object.entries(t.types).map(([k, v]) => `<div class="bd-row"><span>${esc(Sim.LABEL[k] || k)}</span><b>${fmt(v.rps)}/s · ${(v.ok * 100).toFixed(v.ok > 0.999 ? 2 : 1)}% · ${ms(v.p99)}</b></div>`).join('')}
+          ${Object.values(t.queues).some(q => q.backlog > 1) ? `<h4 style="margin-top:12px">Queues</h4>${Object.entries(t.queues).map(([id, q]) => `<div class="bd-row"><span>${esc(def(nodeById(id)?.defId).label)}${q.stalled ? ' (stalled)' : ''}</span><b>${fmt(q.backlog)} waiting · ${Number.isFinite(q.lagMin) ? Math.round(q.lagMin) + ' min' : '∞'}</b></div>`).join('')}` : ''}</section>
+          ${game ? '' : `<section class="bd-box"><h4>The day</h4>${reportHtml(play.res, { labelOf, maxFindings: 6 })}</section>`}`;
+        return;
+      }
       const field = (k, label, ph) => `<label><span>${label}</span><input type="text" inputmode="decimal" data-scale="${k}" value="${esc(S.scale[k])}" placeholder="${ph}"></label>`;
       const row = (a, b) => `<div class="bd-row"><span>${a}</span><b>${b}</b></div>`;
-      el.querySelector('[data-panel]').innerHTML = `
-        ${d ? `<section class="bd-box"><h4>${d.icon} ${esc(d.label)}</h4><p>${esc(d.description)}</p><p class="bd-when"><strong>Add it when</strong> ${esc(d.whenToUse)}</p><p class="bd-scale"><strong>At scale</strong> ${esc(d.scaleNote)}</p>
+      const nodeBox = d ? `<section class="bd-box"><h4>${d.icon} ${esc(d.label)}</h4>${configHtml(n)}<p>${esc(d.description)}</p><p class="bd-when"><strong>Add it when</strong> ${esc(d.whenToUse)}</p><p class="bd-scale"><strong>At scale</strong> ${esc(d.scaleNote)}</p>
           <button type="button" class="button" data-act="delete">Remove from diagram</button></section>`
-        : sel?.kind === 'edge' ? '<section class="bd-box"><h4>Connection</h4><p>Select it and press Delete, or:</p><button type="button" class="button" data-act="delete">Remove connection</button></section>'
-        : `<section class="bd-box"><h4>How to use</h4><ol class="bd-how"><li>Load a sample, or drag components onto the canvas.</li><li>Hover a node and drag from a dot to another node to connect them.</li><li>Click a node to see what it does and when to add it.</li><li>Set the scale below and read the estimates and checks.</li></ol></section>`}
+        : sel?.kind === 'edge' ? '<section class="bd-box"><h4>Connection</h4><p>Select it and press Delete, or:</p><button type="button" class="button" data-act="delete">Remove connection</button></section>' : '';
+      if (game) {
+        const s = opts.scenario, sc = { dau: String(s.dau) }, checks = Calc.checks({ nodes: S.nodes, edges: S.edges }, sc, { availability: `${s.slo?.availability}%` });
+        const q = Sim.quickCost(graph(), econ, s);
+        panel.innerHTML = `${nodeBox || `<section class="bd-box"><h4>How to build</h4><ol class="bd-how"><li>Drag components in and connect them, client first.</li><li>Click a component to size it: instances, zones, replicas, options.</li><li>Press <b>Run the day</b> to play the scenario against it.</li></ol></section>`}
+          ${deploymentHtml()}
+          <section class="bd-box"><h4>Fixed costs</h4>${q.items.filter(i => i.usd >= 0.5).slice(0, 8).map(i => row(esc(labelOf(i.defId)), money(i.usd))).join('') || '<p class="bd-note">Nothing priced yet.</p>'}${row('<strong>Total</strong>', `<strong>${money(q.total)}</strong>`)}<p class="bd-fine">Plus usage: requests, bandwidth and storage, billed when you run the day.</p></section>
+          ${checks.length ? `<section class="bd-box"><h4>Quick checks</h4><ul class="bd-checks">${checks.map(c => `<li class="bd-${c.level}"><span>${c.level === 'warn' ? '⚠' : c.level === 'good' ? '✓' : '💡'}</span>${esc(c.text)}</li>`).join('')}</ul></section>` : ''}`;
+        return;
+      }
+      const e = Calc.estimate(S.scale), found = Calc.checks({ nodes: S.nodes, edges: S.edges }, S.scale, S.nfr);
+      panel.innerHTML = `
+        ${nodeBox || `<section class="bd-box"><h4>How to use</h4><ol class="bd-how"><li>Load a sample, or drag components onto the canvas.</li><li>Hover a node and drag from a dot to another node to connect them.</li><li>Click a node to size it and see what it costs.</li><li>Set the scale below, then <b>Run the day</b> to watch it cope (or not).</li></ol><p class="bd-fine">Want stakes? Play <b>Ripple Ops</b> from the simulators page: budgets, incidents and the team.</p></section>`}
+        ${last ? `<section class="bd-box"><h4>Last run</h4>${reportHtml(last, { labelOf, maxFindings: 5 })}</section>` : ''}
         <section class="bd-box"><h4>Requirements</h4><textarea rows="3" data-req placeholder="e.g. Users can post, follow, view a feed…">${esc(S.req)}</textarea></section>
         <section class="bd-box"><h4>Scale</h4><div class="bd-fields">${field('dau', 'Daily users', 'e.g. 1000000')}${field('readQps', 'Read QPS', 'auto')}${field('writeQps', 'Write QPS', 'auto')}${field('storageGb', 'Storage (GB)', 'e.g. 500')}</div>
           <div class="bd-fields"><label><span>Latency (ms)</span><input type="text" inputmode="numeric" data-nfr="latencyMs" value="${esc(S.nfr.latencyMs)}"></label>
           <label><span>Availability</span><select data-nfr="availability">${['99%', '99.9%', '99.99%', '99.999%'].map(o => `<option ${o === S.nfr.availability ? 'selected' : ''}>${o}</option>`).join('')}</select></label></div>
           <label class="bd-wide"><span>Consistency</span><select data-nfr="consistency">${['Eventual', 'Strong', 'Read-your-writes', 'Monotonic reads'].map(o => `<option ${o === S.nfr.consistency ? 'selected' : ''}>${o}</option>`).join('')}</select></label></section>
+        ${deploymentHtml()}
         <section class="bd-box bd-est"><h4>Estimates</h4>
           ${row('Reads', `${fmt(e.readQps)}/s avg · ${fmt(e.peakRead)}/s peak`)}${row('Writes', `${fmt(e.writeQps)}/s avg · ${fmt(e.peakWrite)}/s peak`)}
           ${row('Hot cache', `~${fmt(e.hotCacheGb)} GB`)}${row('New data', `~${fmt(e.storageGbPerYear)} GB / year`)}${row('App servers', `~${e.appServers}`)}${row('Read replicas', `~${e.readReplicas}`)}${row('CDN offload', e.cdnOffload)}
@@ -101,7 +268,7 @@
     // ---------- actions ----------
     function addNode(defId, x, y) {
       snapshot();
-      if (x == null) { const i = S.nodes.length; x = 40 + (i % 5) * (W + 40); y = 40 + Math.floor(i / 5) * (H + 50); }
+      if (x == null) { const i = S.nodes.length; x = 40 + (i % 6) * (W + 40); y = 40 + Math.floor(i / 6) * (H + 50); }
       const n = { id: uid('n'), defId, x: Math.max(0, Math.min(CANVAS_W - W, Math.round(x))), y: Math.max(0, Math.min(CANVAS_H - H, Math.round(y))) };
       S.nodes.push(n); sel = { kind: 'node', id: n.id }; touch();
     }
@@ -112,30 +279,51 @@
       else S.edges = S.edges.filter(e => e.id !== sel.id);
       sel = null; touch();
     }
+    function setGraph(g, quiet) {
+      if (!g) return;
+      if (!quiet) snapshot();
+      S.nodes = (g.nodes || []).map(n => ({ ...n, cfg: n.cfg ? { ...n.cfg } : undefined })); S.edges = (g.edges || []).map(e => ({ ...e }));
+      S.settings = { regions: 1, crossRegion: 'async', ...(g.settings || {}) }; sel = null; touch();
+    }
     function loadPreset(id) {
       const p = data.presets.find(x => x.id === id);
       if (!p) return;
-      snapshot();
-      S.nodes = p.nodes.map(n => ({ ...n })); S.edges = p.edges.map(e => ({ ...e })); sel = null;
+      setGraph({ nodes: p.nodes, edges: p.edges });
       const dau = { '1k': '1000', '10k': '10000', '100k': '100000', '1m': '1000000' }[id];
-      if (dau && !S.scale.dau) S.scale.dau = dau;
-      touch();
+      if (dau && !S.scale.dau) { S.scale.dau = dau; touch(); }
     }
     function doUndo() {
       const prev = undo.pop();
       if (!prev) return status('Nothing to undo');
-      const v = JSON.parse(prev); S.nodes = v.nodes; S.edges = v.edges; sel = null; touch();
+      const v = JSON.parse(prev); S.nodes = v.nodes; S.edges = v.edges; S.settings = v.settings || S.settings; sel = null; touch();
     }
     async function copyMermaid() {
       const labels = Object.fromEntries(defs.map(d => [d.id, d.label])), text = Calc.toMermaid({ nodes: S.nodes, edges: S.edges }, labels);
       try { await navigator.clipboard.writeText(text); status('Mermaid copied'); } catch { window.prompt('Copy this Mermaid diagram:', text); }
+    }
+    function setCfg(k, raw, t) {
+      const n = sel?.kind === 'node' && nodeById(sel.id);
+      if (!n) return;
+      snapshot();
+      const cfg = { ...(n.cfg || {}) };
+      if (t.type === 'checkbox') cfg[k] = t.checked;
+      else if (k === 'tier' || k === 'sync') cfg[k] = raw;
+      else { const v = parseInt(raw, 10); if (Number.isFinite(v) && v > 0) cfg[k] = v; else delete cfg[k]; if (k === 'replicas' && raw === '0') cfg[k] = 0; }
+      if (cfg.autoscale && cfg.autoscale <= (cfg.count || 1)) delete cfg.autoscale;
+      n.cfg = cfg;
+      save(); paintCanvas(); paintBar();
+      const keep = t.matches('input[type=number]') ? `[data-cfg="${k}"]` : null, at = keep ? t.value : null;
+      paintPanel();
+      if (keep) { const again = el.querySelector(keep); if (again) { again.focus(); again.value = at; } }
     }
 
     // ---------- pointer handling ----------
     const stage = () => el.querySelector('[data-stage]'), canvas = () => el.querySelector('[data-canvas]');
     const local = ev => { const r = canvas().getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
     const onDown = ev => {
+      if (!ev.target.closest('[data-canvas]')) return;
       const handle = ev.target.closest('[data-handle]'), node = ev.target.closest('.bd-node'), edge = ev.target.closest('[data-edge]');
+      if (play && (handle || node || edge)) stopPlay();
       if (handle && node) {
         ev.preventDefault();
         const n = nodeById(node.dataset.id); link = { from: n.id, side: handle.dataset.handle }; canvas().classList.add('is-linking');
@@ -146,7 +334,7 @@
         paintCanvas(); paintPanel(); stage().focus({ preventScroll: true });
         stage().setPointerCapture?.(ev.pointerId);
       } else if (edge) { sel = { kind: 'edge', id: edge.dataset.edge }; paintCanvas(); paintPanel(); stage().focus({ preventScroll: true }); }
-      else if (ev.target.closest('[data-canvas]')) { sel = null; paintCanvas(); paintPanel(); }
+      else if (!play) { sel = null; paintCanvas(); paintPanel(); }
     };
     const onMove = ev => {
       if (drag) {
@@ -174,26 +362,39 @@
       if (ev.target.closest('input,textarea,select')) return;
       if ((ev.key === 'Delete' || ev.key === 'Backspace') && sel) { ev.preventDefault(); remove(); }
       else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); doUndo(); }
+      else if (play && ev.key === ' ') { ev.preventDefault(); togglePlay(); }
+      else if (play && (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft')) { ev.preventDefault(); play.h = Math.max(0, Math.min(23, play.h + (ev.key === 'ArrowRight' ? 1 : -1))); paintCanvas(); paintPlay(); paintPanel(); }
     };
     const onClick = ev => {
       const item = ev.target.closest('.bd-item'), act = ev.target.closest('[data-act]')?.dataset.act;
       if (item) addNode(item.dataset.def);
       else if (act === 'undo') doUndo(); else if (act === 'delete') remove();
       else if (act === 'mermaid') copyMermaid();
+      else if (act === 'run') runDay();
+      else if (act === 'play') togglePlay();
+      else if (act === 'endplay') stopPlay();
       else if (act === 'clear') { if (!S.nodes.length) return; snapshot(); S.nodes = []; S.edges = []; sel = null; touch(); }
     };
     const onInput = ev => {
       const t = ev.target;
       if (t.dataset.filter !== undefined) paintItems(t.value);
-      else if (t.dataset.scale) { S.scale[t.dataset.scale] = t.value; save(); paintPanelKeepFocus(t); }
-      else if (t.dataset.nfr) { S.nfr[t.dataset.nfr] = t.value; save(); paintPanelKeepFocus(t); }
+      else if (t.dataset.hour !== undefined && play) { play.h = +t.value; if (play.timer) { clearInterval(play.timer); play.timer = null; } paintCanvas(); paintPlay(); paintPanel(); }
+      else if (t.dataset.cfg && t.type === 'number') setCfg(t.dataset.cfg, t.value, t);
+      else if (t.dataset.scale) { S.scale[t.dataset.scale] = t.value; save(); paintPanelKeepFocus(t); paintBar(); }
+      else if (t.dataset.nfr && t.tagName === 'INPUT') { S.nfr[t.dataset.nfr] = t.value; save(); paintPanelKeepFocus(t); }
       else if (t.dataset.req !== undefined) { S.req = t.value; save(); }
     };
     function paintPanelKeepFocus(t) {                         // redraw the estimates without losing the caret
-      const key = t.dataset.scale ? `[data-scale="${t.dataset.scale}"]` : `[data-nfr="${t.dataset.nfr}"]`, at = t.selectionStart;
-      paintPanel(); const again = el.querySelector(key); if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch { /* selects have no caret */ } }
+      const k = t.dataset.scale ? `[data-scale="${t.dataset.scale}"]` : `[data-nfr="${t.dataset.nfr}"]`, at = t.selectionStart;
+      paintPanel(); const again = el.querySelector(k); if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch { /* selects have no caret */ } }
     }
-    const onChange = ev => { if (ev.target.dataset.preset !== undefined && ev.target.value) { loadPreset(ev.target.value); ev.target.value = ''; } };
+    const onChange = ev => {
+      const t = ev.target;
+      if (t.dataset.preset !== undefined && t.value) { loadPreset(t.value); t.value = ''; }
+      else if (t.dataset.cfg && t.type !== 'number') setCfg(t.dataset.cfg, t.value, t);
+      else if (t.dataset.set) { snapshot(); S.settings[t.dataset.set] = t.dataset.set === 'regions' ? +t.value : t.value; touch(); }
+      else if (t.dataset.nfr && t.tagName === 'SELECT') { S.nfr[t.dataset.nfr] = t.value; save(); paintPanel(); }
+    };
     const onDragStart = ev => { const it = ev.target.closest('.bd-item'); if (it) { ev.dataTransfer.setData('text/plain', 'bd:' + it.dataset.def); ev.dataTransfer.effectAllowed = 'copy'; } };
     const onDragOver = ev => { if (ev.target.closest('[data-canvas]')) ev.preventDefault(); };
     const onDrop = ev => {
@@ -202,17 +403,25 @@
       ev.preventDefault(); const [x, y] = local(ev); addNode(t.slice(3), x - W / 2, y - H / 2);
     };
 
-    loadData().then(d => {
+    const ready = loadData().then(() => {
       if (dead) return;
-      defs = d.components; shell(); paintCanvas(); paintPanel();
+      defs = data.components;
+      S = (opts.initial ? { ...fresh(), ...opts.initial, settings: { regions: 1, crossRegion: 'async', ...(opts.initial.settings || {}) } } : null) || readLocal(key) || fresh();
+      if (opts.initial) S.nodes = S.nodes.map(n => ({ ...n }));
+      shell(); paintCanvas(); paintPanel(); paintBar();
       const on = (t, ev, f) => { t.addEventListener(ev, f); offs.push(() => t.removeEventListener(ev, f)); }, offs = [];
       on(el, 'pointerdown', onDown); on(el, 'pointermove', onMove); on(el, 'pointerup', onUp); on(el, 'pointercancel', onUp);
       on(el, 'keydown', onKey); on(el, 'click', onClick); on(el, 'input', onInput); on(el, 'change', onChange);
       on(el, 'dragstart', onDragStart); on(el, 'dragover', onDragOver); on(el, 'drop', onDrop);
       el._bdOffs = offs;
     }).catch(err => { if (!dead) el.innerHTML = `<p class="bd-note">Could not load the builder (${esc(err.message)}).</p>`; });
-    return { destroy() { dead = true; clearTimeout(saveTimer); write(S); (el._bdOffs || []).forEach(f => f()); }, state: () => S };
+    return {
+      ready,
+      destroy() { dead = true; clearTimeout(saveTimer); stopPlay(false); if (S) writeLocal(key, S); (el._bdOffs || []).forEach(f => f()); },
+      state: () => S, graph, setGraph, run: runDay, labelOf, econ: () => econ,
+      flush() { clearTimeout(saveTimer); if (S) { writeLocal(key, S); opts.onChange?.(graph()); } },
+    };
   }
 
-  window.SDBuilder = { mount };
+  window.SDBuilder = { mount, reportHtml, avatar, stars, money, fmt, CAST, load: loadData, data: () => ({ data, econ }) };
 })();

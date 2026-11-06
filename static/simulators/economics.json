@@ -1,0 +1,76 @@
+{
+  "note": "Rough on-demand list prices (USD per month, one region) and per-instance capacities, rounded from the big clouds in 2026. Real bills vary by provider, commitment and region; the point is the order of magnitude and which line dominates.",
+  "network": { "egressPerGb": 0.09, "crossRegionPerGb": 0.02, "farRttMs": 90, "crossRegionRttMs": 80 },
+  "components": {
+    "client": { "role": "source", "kind": "none", "ms": [0, 0] },
+    "dns": { "role": "pass", "kind": "network", "ms": [0, 0], "tiers": [{ "id": "geo", "label": "Managed DNS with geo routing", "usd": 5 }], "note": "Not on the request path after the first lookup. With two or more regions it is what sends users to the nearest healthy one." },
+    "cdn": { "role": "cdn", "kind": "network", "ms": [4, 25], "tiers": [{ "id": "std", "label": "Pay as you go", "usd": 0, "perGb": 0.05, "perMReq": 1.0 }], "note": "Serves cacheable bytes from the edge at a lower price per GB than origin egress. Only helps what is actually cacheable." },
+    "load-balancer": { "role": "pass", "kind": "network", "ms": [0.5, 2], "tiers": [{ "id": "l7", "label": "Managed L7 load balancer", "usd": 25, "perMReq": 0.1 }], "note": "Spreads traffic across instances and stops sending to ones that fail health checks." },
+    "api-gateway": { "role": "pass", "default": "managed", "kind": "managed", "ms": [3, 12], "shed": 0.9, "opts": ["count"], "tiers": [
+      { "id": "managed", "label": "Managed, per request", "usd": 0, "perMReq": 1.0 },
+      { "id": "fleet", "label": "Self-hosted Envoy fleet", "usd": 110, "rps": 6000 }
+    ], "note": "Auth, routing and quotas in one place. Per-request pricing is cheap to start and expensive at scale." },
+    "rate-limiter": { "role": "pass", "kind": "managed", "ms": [0.5, 2], "shed": 0.95, "tiers": [{ "id": "redis", "label": "Token buckets in Redis", "usd": 60, "rps": 60000 }], "note": "Rejects excess early with 429 and Retry-After, so retries and abusive clients don't reach the expensive tiers." },
+    "service-discovery": { "role": "pass", "kind": "managed", "ms": [0, 0.5], "tiers": [{ "id": "std", "label": "Managed registry", "usd": 30 }] },
+    "consistent-hash": { "role": "pass", "kind": "none", "ms": [0, 0.2], "tiers": [{ "id": "lib", "label": "Client-side ring (library)", "usd": 0 }], "note": "When a cache node dies only its share of keys moves. Without it, hash-mod-N remaps almost every key." },
+    "websocket-server": { "role": "compute", "kind": "compute", "ms": [2, 10], "threads": 4000, "opts": ["count", "azs", "autoscale"], "tiers": [
+      { "id": "s", "label": "2 vCPU · 4 GB", "usd": 60, "rps": 3000 },
+      { "id": "m", "label": "4 vCPU · 8 GB", "usd": 120, "rps": 6000 },
+      { "id": "l", "label": "8 vCPU · 16 GB", "usd": 240, "rps": 12000 }
+    ] },
+    "app-server": { "role": "compute", "kind": "compute", "ms": [8, 30], "threads": 256, "opts": ["count", "azs", "autoscale", "timeouts", "canary"], "tiers": [
+      { "id": "s", "label": "2 vCPU · 4 GB", "usd": 60, "rps": 500 },
+      { "id": "m", "label": "4 vCPU · 8 GB", "usd": 120, "rps": 1000 },
+      { "id": "l", "label": "8 vCPU · 16 GB", "usd": 240, "rps": 2000 },
+      { "id": "xl", "label": "16 vCPU · 32 GB", "usd": 480, "rps": 4000 }
+    ] },
+    "worker": { "role": "worker", "kind": "compute", "ms": [0, 0], "opts": ["count", "azs", "autoscale", "timeouts"], "tiers": [
+      { "id": "s", "label": "2 vCPU · 4 GB", "usd": 60, "cores": 2 },
+      { "id": "m", "label": "4 vCPU · 8 GB", "usd": 120, "cores": 4 },
+      { "id": "l", "label": "8 vCPU · 16 GB", "usd": 240, "cores": 8 },
+      { "id": "gpu", "label": "GPU box (transcoding)", "usd": 900, "cores": 48 }
+    ] },
+    "stream-processor": { "role": "worker", "kind": "compute", "ms": [0, 0], "opts": ["count", "azs"], "tiers": [{ "id": "m", "label": "Managed Flink, 8 cores", "usd": 320, "cores": 10 }] },
+    "cache": { "role": "cache", "kind": "storage", "ms": [0.3, 1.5], "opts": ["count", "azs", "hotKey", "coalesce"], "tiers": [
+      { "id": "6", "label": "6 GB node", "usd": 90, "gb": 6, "rps": 100000 },
+      { "id": "13", "label": "13 GB node", "usd": 180, "gb": 13, "rps": 120000 },
+      { "id": "26", "label": "26 GB node", "usd": 350, "gb": 26, "rps": 150000 },
+      { "id": "52", "label": "52 GB node", "usd": 700, "gb": 52, "rps": 180000 }
+    ], "note": "Count is the number of shards. Multi-AZ adds a replica per shard (double the price) so a node loss doesn't empty the cache." },
+    "db-sql": { "role": "store", "kind": "storage", "ms": [2, 9], "perGbMonth": 0.115, "opts": ["azs", "replicas", "shards", "sync"], "tiers": [
+      { "id": "s", "label": "2 vCPU · 8 GB", "usd": 140, "reads": 3000, "writes": 800, "diskGb": 500 },
+      { "id": "m", "label": "4 vCPU · 16 GB", "usd": 280, "reads": 6000, "writes": 1500, "diskGb": 2000 },
+      { "id": "l", "label": "8 vCPU · 64 GB", "usd": 600, "reads": 12000, "writes": 3000, "diskGb": 8000 },
+      { "id": "xl", "label": "32 vCPU · 256 GB", "usd": 2400, "reads": 40000, "writes": 9000, "diskGb": 16000 }
+    ], "note": "Writes only scale with shards. Replicas carry reads. Multi-AZ adds a synchronous standby (doubles the primary's price) for fast failover without data loss." },
+    "db-nosql": { "role": "store", "kind": "storage", "ms": [3, 10], "perGbMonth": 0.25, "multiAz": true, "partition": { "reads": 3000, "writes": 1000 }, "tiers": [
+      { "id": "ondemand", "label": "On-demand capacity", "usd": 0, "perMRead": 0.25, "perMWrite": 1.25 }
+    ], "note": "Scales almost without limit if keys spread evenly, but one partition key tops out around 3,000 reads/s and 1,000 writes/s. Pay per request." },
+    "db-timeseries": { "role": "store", "kind": "storage", "ms": [3, 15], "perGbMonth": 0.05, "opts": ["count"], "tiers": [{ "id": "m", "label": "8 vCPU node", "usd": 320, "reads": 2000, "writes": 60000, "diskGb": 10000 }] },
+    "db-graph": { "role": "store", "kind": "storage", "ms": [4, 20], "perGbMonth": 0.12, "opts": ["count"], "tiers": [{ "id": "m", "label": "8 vCPU · 64 GB", "usd": 650, "reads": 6000, "writes": 1200, "diskGb": 4000 }] },
+    "search-engine": { "role": "store", "default": "m", "kind": "storage", "ms": [10, 60], "perGbMonth": 0.1, "opts": ["count", "azs"], "tiers": [
+      { "id": "m", "label": "4 vCPU · 16 GB node", "usd": 180, "reads": 800, "writes": 3000, "diskGb": 500 },
+      { "id": "l", "label": "8 vCPU · 64 GB node", "usd": 450, "reads": 2000, "writes": 8000, "diskGb": 2000 }
+    ] },
+    "olap": { "role": "store", "kind": "storage", "ms": [50, 800], "perGbMonth": 0.023, "tiers": [{ "id": "wh", "label": "Warehouse (per query + storage)", "usd": 200, "reads": 50, "writes": 200000 }] },
+    "message-queue": { "role": "queue", "default": "managed", "kind": "managed", "ms": [3, 15], "opts": ["count"], "tiers": [
+      { "id": "managed", "label": "Managed queue, per message", "usd": 0, "perMReq": 0.4, "rps": 100000 },
+      { "id": "kafka", "label": "Kafka broker", "usd": 250, "rps": 60000 }
+    ] },
+    "dead-letter-queue": { "role": "dlq", "kind": "managed", "ms": [0, 0], "tiers": [{ "id": "std", "label": "Parking queue", "usd": 1 }] },
+    "object-store": { "role": "store", "kind": "storage", "ms": [15, 90], "perGbMonth": 0.023, "multiAz": true, "tiers": [{ "id": "std", "label": "Standard tier", "usd": 0, "perMRead": 0.4, "perMWrite": 5.0, "reads": 55000, "writes": 35000 }] },
+    "block-storage": { "role": "aux", "kind": "storage", "ms": [0, 0], "tiers": [{ "id": "ssd", "label": "1 TB SSD volume", "usd": 80 }] },
+    "notification-service": { "role": "compute", "kind": "compute", "ms": [5, 20], "threads": 512, "opts": ["count", "azs", "timeouts"], "tiers": [{ "id": "m", "label": "4 vCPU", "usd": 120, "rps": 3000 }] },
+    "email-server": { "role": "compute", "kind": "managed", "ms": [20, 80], "threads": 1000, "tiers": [{ "id": "ses", "label": "Managed email, per message", "usd": 0, "perMReq": 100, "rps": 500 }] },
+    "auth-service": { "role": "compute", "kind": "compute", "ms": [1, 5], "threads": 1024, "opts": ["count", "azs"], "tiers": [{ "id": "m", "label": "4 vCPU", "usd": 120, "rps": 8000 }] },
+    "id-generator": { "role": "compute", "kind": "compute", "ms": [0.2, 1], "threads": 1024, "opts": ["count", "azs"], "tiers": [{ "id": "s", "label": "Snowflake service", "usd": 40, "rps": 50000 }] },
+    "geospatial": { "role": "compute", "kind": "compute", "ms": [3, 15], "threads": 1024, "opts": ["count", "azs"], "tiers": [{ "id": "m", "label": "In-memory geo index, 16 GB", "usd": 220, "rps": 20000 }] },
+    "recommendation": { "role": "compute", "kind": "compute", "ms": [15, 60], "threads": 512, "opts": ["count", "azs"], "tiers": [{ "id": "m", "label": "Model server", "usd": 400, "rps": 1500 }] },
+    "matching-engine": { "role": "compute", "kind": "compute", "ms": [2, 10], "threads": 1024, "opts": ["count", "azs"], "tiers": [{ "id": "m", "label": "8 vCPU, in memory", "usd": 300, "rps": 20000 }] },
+    "payment": { "role": "compute", "kind": "compute", "ms": [10, 40], "threads": 512, "opts": ["count", "azs", "timeouts"], "tiers": [{ "id": "m", "label": "Payment service", "usd": 120, "rps": 1500 }] },
+    "monitoring": { "role": "ops", "kind": "ops", "ms": [0, 0], "tiers": [{ "id": "std", "label": "Metrics, logs and alerts", "usd": 150 }], "note": "Off the request path. Lets you see a bad deploy in minutes, and makes canary releases possible." },
+    "spam-filter": { "role": "compute", "kind": "compute", "ms": [5, 25], "threads": 512, "opts": ["count"], "tiers": [{ "id": "m", "label": "Classifier", "usd": 160, "rps": 4000 }] },
+    "reconciliation": { "role": "ops", "kind": "ops", "ms": [0, 0], "tiers": [{ "id": "std", "label": "Nightly reconciliation job", "usd": 60 }], "note": "Catches payments stuck in an unknown state and fixes them from the provider's records." },
+    "external-service": { "role": "external", "kind": "managed", "ms": [80, 300], "tiers": [{ "id": "api", "label": "Third-party API", "usd": 0, "perMReq": 1 }], "note": "Someone else's service: you pay per call and inherit its latency and outages." }
+  }
+}

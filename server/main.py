@@ -42,6 +42,7 @@ from .activity import router as activity_router
 from .tracks.api import router as tracks_router
 from .knowledge_base.api import router as knowledge_router
 from .tutor.api import router as tutor_router
+from .ripple_ops import router as ripple_router
 from .drip import bot as drip_bot
 from .feed import router as feed_router
 from .wall import router as wall_router
@@ -106,6 +107,7 @@ app.include_router(tracks_router)
 app.include_router(senpai_router)
 app.include_router(knowledge_router)
 app.include_router(tutor_router)
+app.include_router(ripple_router)
 app.include_router(feed_router)
 app.include_router(wall_router)
 app.include_router(drip_router)

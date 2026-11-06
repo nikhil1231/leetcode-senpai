@@ -1,7 +1,8 @@
-// Simulators: every interactive widget in one searchable place. The design builder (a sandbox), 27
+// Simulators: every interactive widget in one searchable place. Ripple Ops (the builder as a game,
+// sd-game.js), the design builder (a sandbox), 27
 // worked system designs (sd-walkthrough.js) and 32 internals simulators (storage engines, consensus,
-// transactions, networking...). Each opens full width with its notes underneath. All data is static
-// files; nothing here touches the server or your practice data.
+// transactions, networking...). Each opens full width with its notes underneath. Ripple Ops keeps its
+// runs on the server; everything else here is static files.
 (function () {
   'use strict';
   const esc = s => String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -17,7 +18,8 @@
     if (items) return;
     const [designs, ints] = await Promise.all([getJson('/walkthrough/index.json'), getJson('/simulators/internals.json')]);
     internals = Object.fromEntries(ints.topics.map(t => [t.id, t]));
-    items = [{ kind: 'builder', id: 'builder', title: 'Design builder', blurb: 'A blank canvas. Drag in components, connect them, set a scale, and get estimates and checks on what you drew.', group: 'build', tag: 'Sandbox' },
+    items = [{ kind: 'game', id: 'ripple', title: 'Ripple Ops: the design game', blurb: 'Take Ripple from a garage to a billion users. Every level is a chapter of the course: a budget, targets and a bad day. Draw and size the system, live through the day, and hear from the team how it went.', group: 'build', tag: 'Game' },
+      { kind: 'builder', id: 'builder', title: 'Design builder', blurb: 'A blank canvas. Drag in components, size them, set a scale, and run a simulated day against what you drew.', group: 'build', tag: 'Sandbox' },
       ...designs.designs.map(d => ({ kind: 'design', id: d.id, title: d.title, blurb: d.problem, group: 'designs', tag: d.category, difficulty: d.difficulty,
         meta: `${d.components} components · ${d.flows.length} flows`, text: d.flows.join(' ') })),
       ...ints.topics.map(t => ({ kind: 'internals', id: t.id, title: t.title, blurb: t.blurb, group: t.category, tag: t.categoryLabel, difficulty: t.difficulty,
@@ -33,7 +35,7 @@
     return hits.map((i, k) => [i, score(i), k]).sort((a, b) => b[1] - a[1] || a[2] - b[2]).map(x => x[0]);   // best match first, otherwise list order
   };
   const pill = d => d ? `<span class="wt-pill wt-${esc(d)}">${esc(d)}</span>` : '';
-  const card = i => `<button type="button" class="sim-card${i.kind === 'builder' ? ' is-featured' : ''}" data-sim-open="${esc(i.kind)}:${esc(i.id)}">
+  const card = i => `<button type="button" class="sim-card${i.kind === 'game' ? ' is-featured' : ''}" data-sim-open="${esc(i.kind)}:${esc(i.id)}">
       <span class="sim-card-top"><strong>${esc(i.title)}</strong>${pill(i.difficulty)}</span><span class="sim-card-blurb">${esc(i.blurb)}</span>
       <span class="sim-card-meta"><span>${esc(i.tag)}</span>${i.meta ? `<span>${esc(i.meta)}</span>` : ''}</span></button>`;
   const grid = () => {
@@ -65,7 +67,7 @@
   function detailHtml(it) {
     const t = it.kind === 'internals' ? internals[it.id] : null;
     return `<div class="sim-detail"><div class="sim-top"><button type="button" class="button" data-sim-back>← All simulators</button>
-      ${it.kind === 'design' ? '' : `<h2>${esc(it.title)} ${pill(it.difficulty)}</h2>`}</div>
+      ${it.kind === 'design' || it.kind === 'game' ? '' : `<h2>${esc(it.title)} ${pill(it.difficulty)}</h2>`}</div>
       <div class="sim-stage" data-sim-stage><p class="wt-note">Loading…</p></div>${t ? internalsInfo(t) : ''}</div>`;
   }
 
@@ -107,7 +109,8 @@
     }
     root.querySelector('[data-sim-back]')?.addEventListener('click', home);
     const stage = root.querySelector('[data-sim-stage]'), mine = token;
-    if (current.kind === 'builder') inst = window.SDBuilder.mount(stage);
+    if (current.kind === 'game') inst = window.RippleOps.mount(stage, { sandbox: () => openItem('builder', 'builder') });
+    else if (current.kind === 'builder') inst = window.SDBuilder.mount(stage);
     else if (current.kind === 'design') inst = window.SDWalkthrough.mount(stage, { design: current.id, back: home });
     else {
       const id = current.id;
@@ -124,5 +127,12 @@
     try { await load(); error = ''; } catch (e) { error = `Could not load the simulators (${e.message}).`; }
   }
 
-  window.DesignSimulators = { render, wire, open, stop, isBusy: () => false };
+  // Open one simulator directly (from a lesson, the home page or Ripple Ops).
+  async function openItem(kind, id) {
+    try { await load(); } catch (e) { error = `Could not load the simulators (${e.message}).`; }
+    current = items?.find(i => i.kind === kind && i.id === id) || null; keep = true;
+    await window.SystemDesign?.openView('simulators');
+  }
+
+  window.DesignSimulators = { render, wire, open, stop, openItem, isBusy: () => false };
 })();

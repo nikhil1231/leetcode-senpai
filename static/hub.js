@@ -31,6 +31,7 @@
       return go(section, 'quickfire');
     }
     if (a.kind === 'view') return go(section, a.view);
+    if (a.kind === 'ripple') return window.RippleOps?.openLevel(a.level);
   }
   function wire(root, section, actions) {
     root.addEventListener('click', e => {
@@ -133,7 +134,10 @@
       row(r.slipping ? `Review ${plural(r.slipping, 'slipping idea')}` : 'Quickfire', r.slipping ? 'Ten questions, the ones you are losing first. About five minutes.' : 'Ten quick questions, weakest first. About five minutes.', 'review', '', !!r.slipping),
       row(`Mistakes book${fix ? ` · ${fix} to fix` : ''}`, 'Every wrong answer waits here until you get it right on a later day.', 'view', 'data-view="mistakes"'),
     ];
+    const ripple = sd ? await api('/ripple').catch(() => null) : null;
     if (sd) rows.push(
+      row(`Ripple Ops${ripple && !ripple.daily?.done ? ' · today\'s incident is waiting' : ripple?.streak ? ` · ${ripple.streak}-day streak` : ''}`,
+        `The design game: size and pay for Ripple's system, then live through the day.${ripple ? ` ${ripple.progress.cleared} of ${ripple.progress.main} chapters cleared.` : ''}`, 'ripple'),
       row('Design a whole system', 'Write a design for a realistic brief, then get it reviewed. Saved designs are here too.', 'view', 'data-view="cases"'),
       row('Past paper', 'A timed paper, marked at the end. The honest benchmark: no help, no tutor.', 'view', 'data-view="papers"'),
       row('Estimation drills', 'Back-of-envelope numbers against the clock.', 'view', 'data-view="drills"'),
@@ -144,7 +148,7 @@
       <div class="hub-rows">${rows.join('')}</div>
       ${untested.length ? `<section class="hub-place"><h3>Find your level</h3><p class="sd-muted">Areas with nothing tested yet. One question per lesson, about five minutes each.</p><div class="hub-chips">${untested.map(a => btn(`${a.title} · ${a.lessons.length}`, 'place', `data-area="${a.id}" data-count="${a.lessons.length}"`)).join('')}</div></section>` : ''}</div>`;
     wire(root, section, {
-      review: () => ({kind: 'review'}), view: n => ({kind: 'view', view: n.dataset.view}),
+      review: () => ({kind: 'review'}), view: n => ({kind: 'view', view: n.dataset.view}), ripple: () => ({kind: 'ripple'}),
       place: n => ({kind: 'placement', area: n.dataset.area, count: +n.dataset.count}),
     });
   }
