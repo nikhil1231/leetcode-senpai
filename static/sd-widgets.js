@@ -26,5 +26,5 @@
     const first = () => { api.touched(); api.metrics({ touched: 1 }); el.removeEventListener('pointerdown', first, true); };
     el.addEventListener('pointerdown', first, true);
     return { destroy() { dead = true; el.removeEventListener('pointerdown', first, true); if (unmount) unmount(); } };
-  }));
+  }, { heavy: true }));
 })();

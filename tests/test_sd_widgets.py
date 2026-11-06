@@ -146,3 +146,12 @@ def test_hub_scripts_are_loaded_in_dependency_order():
                       ('sd-walkthrough.js', 'sd-simulators.js'), ('sd-builder.js', 'sd-simulators.js'), ('sd-sims.js', 'sd-walkthrough.js')]:
         assert pos[dep] < pos[user], f'{dep} must load before {user}'
     assert 'data-design-view="simulators"' in html
+
+
+def test_full_page_simulators_are_folded_until_opened():
+    """Every vendored widget and the walkthrough are flagged heavy; the lesson block folds them, small sims mount at once."""
+    widgets = open(os.path.join(STATIC, 'sd-widgets.js'), encoding='utf-8').read()
+    assert '{ heavy: true }' in widgets
+    assert "}, { heavy: true });" in open(os.path.join(STATIC, 'sd-walkthrough.js'), encoding='utf-8').read()
+    blocks = open(os.path.join(STATIC, 'sd-blocks.js'), encoding='utf-8').read()
+    assert 'isHeavy' in blocks and 'sd-sim-open' in blocks

@@ -214,7 +214,7 @@
   if (window.SDSims) window.SDSims.register('walkthrough', (el, cfg, api) => {
     let touched = false;
     return mount(el, { design: cfg.design, onTouch: () => { if (!touched) { touched = true; api.touched(); api.metrics({ touched: 1 }); } } });
-  });
+  }, { heavy: true });
 
   window.SDWalkthrough = { mount };
 })();

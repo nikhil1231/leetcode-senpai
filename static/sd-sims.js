@@ -596,9 +596,11 @@
     return { destroy() {} };
   };
 
+  const heavy = new Set();
   window.SDSims = {
-    register(name, fn) { registry[name] = fn; },
+    register(name, fn, opts) { registry[name] = fn; if (opts && opts.heavy) heavy.add(name); },
     has: name => !!registry[name],
+    isHeavy: name => heavy.has(name),   // tall full-page widgets: lessons and the tutor show them folded until opened
     mount(name, el, cfg, api) { el.classList.add('sim', 'sim-' + name); return registry[name](el, cfg, api); },
     H: { esc, rng, expo, pct, fnv, fmt, ms, bytes, controls, chart, bars, stats, shell, simple },
   };

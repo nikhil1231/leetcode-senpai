@@ -658,8 +658,11 @@
       });
       if (b.challenges ? met.size === b.challenges.length : touched) ctx.done(b, null);
     };
-    const inst = window.SDSims.mount(b.name, host, b.config || {}, { metrics, touched: () => { touched = true; } });
-    ctx.track(inst);
+    const start = () => ctx.track(window.SDSims.mount(b.name, host, b.config || {}, { metrics, touched: () => { touched = true; } }));
+    if (!window.SDSims.isHeavy?.(b.name)) return start();
+    // Full-page widgets stay folded until asked for, so a lesson (or the tutor's chat) reads straight through.
+    host.innerHTML = `<button type="button" class="sd-sim-open" aria-expanded="false"><strong>Interactive simulator</strong><span>Open it ▾</span></button>`;
+    host.querySelector('.sd-sim-open').addEventListener('click', () => { host.innerHTML = ''; start(); });
   };
 
   // ---------- Assembly ----------
