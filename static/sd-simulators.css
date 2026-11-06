@@ -35,14 +35,14 @@
 .bd-item span { font-size:17px; line-height:1; }
 .bd-stage { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:auto; height:640px; outline:none; }
 .bd-stage:focus-visible { border-color:var(--accent); }
-.bd-canvas { position:relative; background-image:radial-gradient(var(--line) 1px, transparent 1px); background-size:22px 22px; touch-action:none; }
+.bd-canvas { position:relative; background-image:radial-gradient(var(--line) 1px, transparent 1px); background-size:22px 22px; touch-action:pan-x pan-y; }
 .bd-edges { position:absolute; inset:0; pointer-events:none; }
 .bd-line { fill:none; stroke:var(--text-2); stroke-width:1.8; }
 .bd-hit { fill:none; stroke:transparent; stroke-width:16; pointer-events:stroke; cursor:pointer; }
 .bd-edge.is-sel .bd-line { stroke:var(--accent); stroke-width:3; }
 #bd-arrow path { fill:var(--text-2); }
 .bd-preview { fill:none; stroke:var(--accent); stroke-width:2; stroke-dasharray:6 5; }
-.bd-node { position:absolute; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; background:color-mix(in srgb, var(--b) 16%, var(--panel2)); border:2px solid var(--b); border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.45); cursor:grab; user-select:none; }
+.bd-node { position:absolute; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; background:color-mix(in srgb, var(--b) 16%, var(--panel2)); border:2px solid var(--b); border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.45); cursor:grab; user-select:none; touch-action:none; }
 .bd-node.is-sel { box-shadow:0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent), 0 4px 16px rgba(0,0,0,.6); border-color:var(--accent); z-index:5; }
 .bd-icon { font-size:20px; line-height:1; }
 .bd-label { font:600 11.5px var(--font); text-align:center; padding:0 8px; line-height:1.25; }
