@@ -75,6 +75,15 @@ explain: The client is told "done" only after a majority has durably stored the 
 > [!senior] FLP, and why timeouts are unavoidable
 > The FLP result shows that no deterministic algorithm can guarantee consensus in a fully asynchronous network if even one node may crash, because you can't tell a crashed node from a slow one. Practical algorithms stay **safe** always (never two conflicting commits) and are **live** (make progress) only when the network behaves well enough for timeouts to work. That's why bad timeout settings cause election storms, not data corruption.
 
+```sim
+name: bully
+key: b900
+title: Bully election: highest id wins
+intro: Kill the coordinator and watch the survivors elect a new one by id.
+takeaway: |
+  Simple, but it needs reliable failure detection and can elect two leaders across a partition. Raft solves this with terms and majorities.
+```
+
 ## Use a coordination service
 
 You almost never implement Raft or Paxos yourself. Systems like **etcd** (Raft), **ZooKeeper** (Zab) and **Consul** (Raft) provide small, strongly consistent key-value stores with:

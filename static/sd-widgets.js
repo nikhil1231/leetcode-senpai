@@ -10,6 +10,7 @@
     cachestrategies: 'Cache strategies', pubsub: 'Pub/sub', partitioning: 'Partitioning', sqlsharding: 'SQL sharding',
     datamodels: 'Data models', slottedpage: 'Slotted page', rowcol: 'Row versus column', dns: 'DNS',
     tcp: 'TCP versus UDP', tls: 'TLS handshake', http: 'HTTP versions',
+    bully: 'Bully election', phiaccrual: 'Phi-accrual detector', streamwindow: 'Stream windows', encoding: 'Encoding and evolution',
   };
   const esc = s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   Object.keys(WIDGETS).forEach(name => window.SDSims.register(name, (el, cfg, api) => {

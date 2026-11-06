@@ -1147,6 +1147,7 @@
     $$("#tab-problems .recall-start").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, "adhoc", "recall", b.dataset.title, b.dataset.cat)));
     $$("#tab-problems .problem-delete").forEach((b) => b.addEventListener("click", () => openDeleteProblem(b)));
+    window.Visualise?.decorate?.(box);   // "watch it run" buttons, where an animation uses this problem
   }
 
   function bindDeleteProblemModal() {

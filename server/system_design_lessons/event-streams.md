@@ -130,6 +130,15 @@ fix: |
 - **Time or size retention** (e.g. 7 days) keeps events after consumption, so new consumers can start from the beginning and broken consumers can rewind and reprocess.
 - **Log compaction** keeps at least the **latest event per key** indefinitely, removing older values for the same key (a null value is a tombstone). A compacted topic is a changelog: replaying it rebuilds the current state of every key. It's how Kafka Streams state stores and CDC-derived tables are bootstrapped.
 
+```sim
+name: streamwindow
+key: b901
+title: Windows over a stream of events
+intro: Feed events in, some of them late, and compare tumbling, sliding and session windows with a watermark.
+takeaway: |
+  Windows group events by when they happened, not when they arrived. The watermark is your bet on how late data can be, and it decides what you drop or correct.
+```
+
 ## Schemas and evolution
 
 Producers and consumers deploy independently, so event formats must evolve compatibly:
@@ -140,6 +149,15 @@ Producers and consumers deploy independently, so event formats must evolve compa
 
 > [!senior] What Kafka's "exactly-once" actually covers
 > Idempotent producers stop duplicates caused by producer retries. Transactions make "consume from topic A, produce to topic B, commit offsets" atomic, so a stream processor's output reflects each input once. None of that covers side effects *outside* Kafka — a database write or an email — which still need idempotent handling.
+
+```sim
+name: encoding
+key: b902
+title: Schemas and compatibility on the wire
+intro: Encode the same record as JSON, Protobuf and Avro, then change the schema and see who can still read it.
+takeaway: |
+  Compact binary formats save space but need the schema to read. Compatibility rules decide whether producers and consumers can deploy independently.
+```
 
 ```interview
 ask: How would you design an event-streaming platform for order lifecycle events and customer-profile updates that serves multiple downstream systems?

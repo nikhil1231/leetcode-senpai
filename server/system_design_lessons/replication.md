@@ -109,6 +109,15 @@ reveal: |
   A partitioned leader can't tell "I'm cut off" from "everyone else died", so it may keep accepting writes until something stops it. Fencing does: leader **leases** that expire unless renewed through a majority, **fencing tokens** (monotonic epoch numbers) that storage checks to reject writes from older epochs, or forcibly cutting the old node off ("shoot the other node in the head"). Consensus systems (next lessons) build this in.
 ```
 
+```sim
+name: phiaccrual
+key: b902
+title: Deciding a leader is dead
+intro: Stretch the gaps between heartbeats and watch the suspicion level rise instead of flipping at a fixed timeout.
+takeaway: |
+  A fixed timeout either fails over too late or flaps on a slow network. A detector that reports a level of suspicion lets each system choose its own threshold.
+```
+
 ## Multi-leader and leaderless
 
 - **Multi-leader** (e.g. one leader per region): each region accepts writes locally, with low latency and regional autonomy, and replicates asynchronously to the others. The hard part is **conflicts** — two regions edit the same record. Last-write-wins silently drops one; better options are conflict-free data types (CRDTs), application merge logic, or avoiding conflicts by giving each record a home region.

@@ -21,7 +21,7 @@
     if (unmount) { try { unmount(); } catch (e) { console.warn('Could not unmount animation', e); } unmount = null; }
   }
   const matches = t => (!filter.cat || t.category === filter.cat)
-    && (!filter.q || `${t.title} ${t.blurb} ${t.categoryLabel} ${t.problems.join(' ')}`.toLowerCase().includes(filter.q.toLowerCase()));
+    && (!filter.q || `${t.title} ${t.blurb} ${t.categoryLabel} ${t.problems.map(p => p.title).join(' ')}`.toLowerCase().includes(filter.q.toLowerCase()));
   const pill = d => `<span class="vz-pill vz-${esc(d)}">${esc(d)}</span>`;
 
   function list(el) {
@@ -71,7 +71,7 @@
         <section><h3>Concept</h3><p>${esc(t.concept)}</p>
           <p class="vz-cx"><span>Time <code>${esc(t.time)}</code></span><span>Space <code>${esc(t.space)}</code></span></p></section>
         <section><h3>Common pitfalls</h3><ul>${t.pitfalls.map(p => `<li>${esc(p)}</li>`).join('')}</ul></section>
-        ${t.problems.length ? `<section><h3>Practise on LeetCode</h3><ul class="vz-links">${t.problems.map(p => `<li><a href="https://leetcode.com/problemset/?search=${encodeURIComponent(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a></li>`).join('')}</ul></section>` : ''}
+        ${t.problems.length ? `<section><h3>Practise on LeetCode</h3><ul class="vz-links">${t.problems.map(p => `<li><a href="${p.slug ? `https://leetcode.com/problems/${encodeURIComponent(p.slug)}/` : `https://leetcode.com/problemset/?search=${encodeURIComponent(p.title)}`}" target="_blank" rel="noopener noreferrer">${esc(p.title)}</a></li>`).join('')}</ul></section>` : ''}
         ${t.followUps.length ? `<section><h3>Interview follow-ups</h3><ul>${t.followUps.map(p => `<li>${esc(p)}</li>`).join('')}</ul></section>` : ''}
       </div></div>`;
     el.querySelector('.vz-back').addEventListener('click', () => list(el));
@@ -97,7 +97,35 @@
       el.querySelector('#vz-retry').addEventListener('click', render);
       return;
     }
+    if (wanted) { const id = wanted; wanted = null; return open(el, id); }
     list(el);
+  }
+
+  // Jump to one animation from elsewhere (the Problems tab): open the tab, then the topic.
+  let wanted = null;
+  function show(id) {
+    wanted = id;
+    document.querySelector('#tabs li[data-tab="visualise"]')?.click();
+  }
+  // Put a "watch it run" button on each Problems-tab row whose problem an animation uses. The row is
+  // matched on its LeetCode slug; rows are redrawn on every filter, so this is safe to call repeatedly.
+  async function decorate(box) {
+    let d;
+    try { d = await load(); } catch { return; }
+    const by = new Map();
+    d.topics.forEach(t => t.problems.forEach(p => { if (p.slug) (by.get(p.slug) || by.set(p.slug, []).get(p.slug)).push(t); }));
+    box.querySelectorAll('.problem-actions').forEach(a => {
+      const slug = a.querySelector('[data-slug]')?.dataset.slug;
+      const topics = by.get(slug) || [];
+      if (!slug || !topics.length || a.querySelector('.vz-see')) return;
+      topics.slice(0, 2).forEach(t => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'button is-small is-ghost vz-see'; b.dataset.vz = t.id;
+        b.title = `Watch ${t.title} run, step by step`; b.textContent = '▶ ' + t.title;
+        b.addEventListener('click', () => show(t.id));
+        a.append(b);
+      });
+    });
   }
 
   window.Views = window.Views || {};
@@ -107,5 +135,5 @@
   const el = host();
   if (el) new MutationObserver(() => { if (el.classList.contains('hidden') && el.childElementCount) { stop(); el.innerHTML = ''; } })
     .observe(el, { attributes: true, attributeFilter: ['class'] });
-  window.Visualise = { render, stop };
+  window.Visualise = { render, stop, show, decorate };
 })();

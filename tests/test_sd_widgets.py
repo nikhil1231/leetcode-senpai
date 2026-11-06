@@ -98,6 +98,8 @@ def test_explicit_block_keys_are_validated():
 def test_visualise_index_matches_the_shipped_animations():
     """Every algorithm listed on the Visualise tab has a module to mount, and the data is well formed."""
     import json
+    from server import neetcode150
+    neet = {s for s, _ in neetcode150.all_problems()}
     index = json.load(open(os.path.join(STATIC, 'widgets', 'dsa', 'index.json'), encoding='utf-8'))
     ids = [t['id'] for t in index['topics']]
     assert len(ids) == len(set(ids)) >= 40
@@ -107,6 +109,7 @@ def test_visualise_index_matches_the_shipped_animations():
     for t in index['topics']:
         assert t['difficulty'] in ('easy', 'medium', 'hard') and t['title'] and t['concept'] and t['time'] and t['space']
         assert isinstance(t['pitfalls'], list) and isinstance(t['problems'], list)
+        assert all(p['title'] and (p['slug'] is None or p['slug'] in neet) for p in t['problems'])
     assert 'widgets/dsa/index.json' in main._VERSIONED_ASSETS
 
 

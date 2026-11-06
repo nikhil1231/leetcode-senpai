@@ -28,4 +28,5 @@
 .vz-info ul { margin:0; padding-left:18px; display:grid; gap:6px; }
 .vz-cx { display:flex; gap:18px; color:var(--text-2); }
 .vz-links { list-style:none; padding:0 !important; }
+.vz-see { white-space:nowrap; color:var(--accent); }
 @media (max-width: 640px) { .vz-grid { grid-template-columns:1fr; } .vz-stage { min-height:320px; } }
