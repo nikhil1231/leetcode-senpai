@@ -121,3 +121,25 @@ def test_walkthrough_lessons_point_at_real_designs():
             assert design in index, (os.path.basename(path), design)
             assert os.path.exists(os.path.join(STATIC, 'walkthrough', design + '.json'))
     assert len(seen) >= 10 and len(seen) == len(set(seen))
+
+
+def test_simulator_hub_lists_exactly_the_shipped_internals_widgets():
+    import json
+    topics = json.load(open(os.path.join(STATIC, 'simulators', 'internals.json'), encoding='utf-8'))['topics']
+    ids = [t['id'] for t in topics]
+    shipped = {os.path.basename(f)[:-3] for f in glob.glob(os.path.join(STATIC, 'widgets', 'internals', '*.js'))}
+    assert len(ids) == len(set(ids)) == 32 and set(ids) == shipped
+    for t in topics:
+        assert t['title'] and t['blurb'] and t['overview'] and t['howItWorks'] and t['difficulty'] in ('easy', 'medium', 'hard')
+    cats = {t['category'] for t in topics}
+    assert cats == {c for c, _ in json.load(open(os.path.join(STATIC, 'simulators', 'internals.json'), encoding='utf-8'))['categories']}
+
+
+def test_hub_scripts_are_loaded_in_dependency_order():
+    html = open(os.path.join(STATIC, 'index.html'), encoding='utf-8').read()
+    order = [m for m in re.findall(r'<script src="/([\w.-]+)\?v=__ASSET_VER__"', html)]
+    pos = {n: i for i, n in enumerate(order)}
+    for dep, user in [('sd-stress.js', 'sd-walkthrough.js'), ('sd-builder-calc.js', 'sd-builder.js'),
+                      ('sd-walkthrough.js', 'sd-simulators.js'), ('sd-builder.js', 'sd-simulators.js'), ('sd-sims.js', 'sd-walkthrough.js')]:
+        assert pos[dep] < pos[user], f'{dep} must load before {user}'
+    assert 'data-design-view="simulators"' in html

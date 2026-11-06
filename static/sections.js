@@ -4,7 +4,7 @@
   'use strict';
   const { $ } = window.H;
   const trigger = $('#section-trigger'), menu = $('#section-menu');
-  const views = ['home', 'practise', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire', 'papers', 'mistakes', 'drills', 'walkthroughs'];
+  const views = ['home', 'practise', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire', 'papers', 'mistakes', 'drills', 'simulators'];
   // Sub-views light up the sidebar item they live under.
   const UNDER = {lessons: 'curriculum', lesson: 'curriculum', setup: 'practise', workspace: 'practise', exercise: 'practise', skills: 'practise', cases: 'practise', quickfire: 'practise', papers: 'practise', drills: 'practise', mistakes: 'practise', redesign: 'practise'};
   const NAMES = {leetcode: ['Leetcode Senpai', 'Interview prep'], 'system-design': ['System Design', 'Learn and practise'],
@@ -45,7 +45,7 @@
       n.classList.toggle('is-active', selected);
       if (selected) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
     });
-    const titles = {home:'Home', practise:'Practise', curriculum:'Learn', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', walkthroughs:'Walkthroughs', lesson:'Lesson', cases:'Design cases', skills:'Skill drills', lessons:'Learn', progress:'What you know', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
+    const titles = {home:'Home', practise:'Practise', curriculum:'Learn', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', simulators:'Simulators', lesson:'Lesson', cases:'Design cases', skills:'Skill drills', lessons:'Learn', progress:'What you know', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
     $('#page-title').textContent = titles[view] || 'System Design';
     $('#page-sub').textContent = 'System Design';
   }

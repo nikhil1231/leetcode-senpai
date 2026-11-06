@@ -220,7 +220,7 @@
     if (['lessons','curriculum','lesson','quickfire'].includes(screen)) return window.DesignLearning.render(screen,catalog);
     if (screen === 'papers') return window.DesignPapers.render(catalog);
     if (screen === 'drills') return window.DesignDrills.render();
-    if (screen === 'walkthroughs') return window.DesignWalkthroughs.render();
+    if (screen === 'simulators') return window.DesignSimulators.render();
     if (screen === 'redesign') return window.DesignRedesign.render();
     if (screen === 'mistakes') return pageIntro('MISTAKES BOOK','Every miss, in one place.','Wrong, revealed and guessed answers land here. An item clears when you answer it correctly on a later day, so a same-day fix waits for confirmation.') + window.DesignLedger.slot('mistakes');
     return `<div class="hub-slot" data-hub-view="${['practise','progress'].includes(screen)?screen:'home'}"></div>`;
@@ -268,7 +268,7 @@
     window.DesignLearning.wire(root());
     if (screen==='papers') window.DesignPapers.wire(root()); else window.DesignPapers.stop();
     if (screen==='drills') window.DesignDrills.wire(root()); else window.DesignDrills.stop();
-    if (screen==='walkthroughs') window.DesignWalkthroughs.wire(root()); else window.DesignWalkthroughs.stop();
+    if (screen==='simulators') window.DesignSimulators.wire(root()); else window.DesignSimulators.stop();
     if (screen==='redesign') window.DesignRedesign.wire(root()); else window.DesignRedesign.stop();
     window.DesignLedger.mount(root());
     const hub=root().querySelector('.hub-slot');
@@ -390,7 +390,7 @@
     }));
   }
 
-  const VIEWS = ['home','practise','cases','skills','lessons','progress','curriculum','quickfire','papers','mistakes','drills','walkthroughs'];
+  const VIEWS = ['home','practise','cases','skills','lessons','progress','curriculum','quickfire','papers','mistakes','drills','simulators'];
   let loading = null;
   async function renderDesign() {
     active=true;
@@ -440,7 +440,7 @@
         screen=VIEWS.includes(view)?view:'home';
         if(screen==='papers')await window.DesignPapers.open();
         if(screen==='drills')await window.DesignDrills.open();
-        if(screen==='walkthroughs')await window.DesignWalkthroughs.open();
+        if(screen==='simulators')await window.DesignSimulators.open();
         if(navigation!==viewEpoch)return;
       }
       lesson=null;error='';catalog=fresh;paint();
@@ -452,7 +452,7 @@
   function onTab(tab) {
     const wasActive=active;
     if(tab!=='design') {
-      viewEpoch++;stopTimers(); window.DesignLearning.stop(); window.DesignPapers.stop(); window.DesignDrills.stop(); window.DesignWalkthroughs.stop(); active=false; clearTimeout(debounce);
+      viewEpoch++;stopTimers(); window.DesignLearning.stop(); window.DesignPapers.stop(); window.DesignDrills.stop(); window.DesignSimulators.stop(); active=false; clearTimeout(debounce);
       if(session && wasActive) { session.timing_uncertain=true; stash(); if(!busy)saveDraft().catch(()=>{}); }
     } else { active=true; startTimers(); window.DesignLearning.startClock(); }
   }

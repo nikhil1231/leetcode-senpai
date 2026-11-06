@@ -1,0 +1,128 @@
+// Simulators: every interactive widget in one searchable place. The design builder (a sandbox), 27
+// worked system designs (sd-walkthrough.js) and 32 internals simulators (storage engines, consensus,
+// transactions, networking...). Each opens full width with its notes underneath. All data is static
+// files; nothing here touches the server or your practice data.
+(function () {
+  'use strict';
+  const esc = s => String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  const getJson = async url => {
+    const r = await fetch(url, { cache: 'no-cache' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  };
+  let items = null, internals = null, error = '';
+  let query = '', group = '', current = null, keep = false, inst = null, token = 0;
+
+  async function load() {
+    if (items) return;
+    const [designs, ints] = await Promise.all([getJson('/walkthrough/index.json'), getJson('/simulators/internals.json')]);
+    internals = Object.fromEntries(ints.topics.map(t => [t.id, t]));
+    items = [{ kind: 'builder', id: 'builder', title: 'Design builder', blurb: 'A blank canvas. Drag in components, connect them, set a scale, and get estimates and checks on what you drew.', group: 'build', tag: 'Sandbox' },
+      ...designs.designs.map(d => ({ kind: 'design', id: d.id, title: d.title, blurb: d.problem, group: 'designs', tag: d.category, difficulty: d.difficulty,
+        meta: `${d.components} components · ${d.flows.length} flows`, text: d.flows.join(' ') })),
+      ...ints.topics.map(t => ({ kind: 'internals', id: t.id, title: t.title, blurb: t.blurb, group: t.category, tag: t.categoryLabel, difficulty: t.difficulty,
+        meta: `${t.minutes} min`, text: `${t.overview} ${t.pitfalls.join(' ')}` }))];
+    items.groups = [['', 'All'], ['build', 'Builder'], ['designs', 'System designs'], ...ints.categories.map(([id, label]) => [id, label])];
+  }
+
+  const shown = () => {
+    const q = query.trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean);
+    const hits = items.filter(i => (!group || i.group === group) && words.every(w => `${i.title} ${i.blurb} ${i.tag} ${i.text || ''}`.toLowerCase().includes(w)));
+    if (!words.length) return hits;
+    const score = i => words.reduce((n, w) => n + (i.title.toLowerCase().includes(w) ? 4 : 0) + (i.tag.toLowerCase().includes(w) ? 2 : 0) + (i.blurb.toLowerCase().includes(w) ? 1 : 0), 0);
+    return hits.map((i, k) => [i, score(i), k]).sort((a, b) => b[1] - a[1] || a[2] - b[2]).map(x => x[0]);   // best match first, otherwise list order
+  };
+  const pill = d => d ? `<span class="wt-pill wt-${esc(d)}">${esc(d)}</span>` : '';
+  const card = i => `<button type="button" class="sim-card${i.kind === 'builder' ? ' is-featured' : ''}" data-sim-open="${esc(i.kind)}:${esc(i.id)}">
+      <span class="sim-card-top"><strong>${esc(i.title)}</strong>${pill(i.difficulty)}</span><span class="sim-card-blurb">${esc(i.blurb)}</span>
+      <span class="sim-card-meta"><span>${esc(i.tag)}</span>${i.meta ? `<span>${esc(i.meta)}</span>` : ''}</span></button>`;
+  const grid = () => {
+    const list = shown();
+    return `<p class="sim-count" aria-live="polite">${list.length} of ${items.length} simulators</p>` + (list.length
+      ? `<div class="sim-cards">${list.map(card).join('')}</div>` : '<p class="sim-empty">Nothing matches. Try a shorter search, or clear the filter.</p>');
+  };
+
+  function intro() {
+    return `<div class="sd-page-intro"><span class="sd-eyebrow">SIMULATORS</span><h2 id="sd-heading" tabindex="-1">Every simulator, in one place.</h2>
+      <p>Build a design from scratch, step through a classic one and stress it, or open up how storage engines, consensus and the network really work.</p></div>`;
+  }
+  function listHtml() {
+    return `${intro()}<div class="sim-tools"><input type="search" class="input sim-search" data-sim-search placeholder="Search simulators: raft, cache, payment, TLS…" value="${esc(query)}" aria-label="Search simulators">
+      <div class="sim-chips" role="group" aria-label="Filter">${items.groups.map(([id, label]) => `<button type="button" class="sim-chip${group === id ? ' is-on' : ''}" data-sim-group="${esc(id)}">${esc(label)}</button>`).join('')}</div></div>
+      <div data-sim-grid>${grid()}</div>
+      <p class="sim-foot">Looking for algorithm animations? The 46 step-throughs for graphs, trees, DP and more are on the <button type="button" class="sim-link" data-sim-dsa>LeetCode Visualise tab</button>.</p>`;
+  }
+
+  function internalsInfo(t) {
+    const list = a => a.length ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+    return `<div class="vz-info">
+      <section><h3>What it is</h3><p>${esc(t.overview)}</p>${t.time || t.space ? `<p class="vz-cx">${t.time ? `<span>Time <code>${esc(t.time)}</code></span>` : ''}${t.space ? `<span>Space <code>${esc(t.space)}</code></span>` : ''}</p>` : ''}</section>
+      <section><h3>How it works</h3><p>${esc(t.howItWorks)}</p></section>
+      ${t.tradeoffs.length ? `<section><h3>Trade-offs</h3><ul>${t.tradeoffs.map(x => `<li><strong>${esc(x.decision)}.</strong> ${esc(x.rationale)}</li>`).join('')}</ul></section>` : ''}
+      ${t.pitfalls.length ? `<section><h3>Common pitfalls</h3>${list(t.pitfalls)}</section>` : ''}
+      ${t.questions.length ? `<section><h3>Questions to be ready for</h3>${list(t.questions)}</section>` : ''}</div>`;
+  }
+  function detailHtml(it) {
+    const t = it.kind === 'internals' ? internals[it.id] : null;
+    return `<div class="sim-detail"><div class="sim-top"><button type="button" class="button" data-sim-back>← All simulators</button>
+      ${it.kind === 'design' ? '' : `<h2>${esc(it.title)} ${pill(it.difficulty)}</h2>`}</div>
+      <div class="sim-stage" data-sim-stage><p class="wt-note">Loading…</p></div>${t ? internalsInfo(t) : ''}</div>`;
+  }
+
+  function render() {
+    if (error) return `${intro()}<div class="sd-error">${esc(error)}</div><button type="button" class="button" data-sim-retry>Try again</button>`;
+    if (!items) return `${intro()}<p class="wt-note">Loading…</p>`;
+    return current ? detailHtml(current) : listHtml();
+  }
+
+  function stop() {
+    token++;
+    if (inst) { try { inst.destroy ? inst.destroy() : inst(); } catch (e) { console.warn('Could not stop simulator', e); } inst = null; }
+  }
+  const home = () => { current = null; window.SystemDesign?.openView('simulators'); };
+
+  function wire(root) {
+    stop();
+    root.querySelector('[data-sim-retry]')?.addEventListener('click', () => { error = ''; items = null; window.SystemDesign?.openView('simulators'); });
+    if (!items) return;
+    if (!current) {
+      const g = root.querySelector('[data-sim-grid]');
+      root.querySelector('[data-sim-search]')?.addEventListener('input', e => { query = e.target.value; g.innerHTML = grid(); });
+      root.querySelectorAll('[data-sim-group]').forEach(b => b.addEventListener('click', () => {
+        group = b.dataset.simGroup; g.innerHTML = grid();
+        root.querySelectorAll('[data-sim-group]').forEach(x => x.classList.toggle('is-on', x === b));
+      }));
+      root.querySelector('[data-sim-dsa]')?.addEventListener('click', () => {
+        window.AppSections?.select('leetcode');
+        setTimeout(() => document.querySelector('#tabs li[data-tab="visualise"]')?.click(), 0);
+      });
+      g.addEventListener('click', e => {
+        const c = e.target.closest('[data-sim-open]');
+        if (!c) return;
+        const [kind, id] = c.dataset.simOpen.split(':');
+        current = items.find(i => i.kind === kind && i.id === id); keep = true;
+        window.SystemDesign?.openView('simulators');
+      });
+      return;
+    }
+    root.querySelector('[data-sim-back]')?.addEventListener('click', home);
+    const stage = root.querySelector('[data-sim-stage]'), mine = token;
+    if (current.kind === 'builder') inst = window.SDBuilder.mount(stage);
+    else if (current.kind === 'design') inst = window.SDWalkthrough.mount(stage, { design: current.id, back: home });
+    else {
+      const id = current.id;
+      import(`/widgets/internals/${id}.js?v=${window.ASSET_VER || ''}`).then(m => {
+        if (mine !== token) return;
+        stage.innerHTML = ''; inst = m.mount(stage);
+      }).catch(e => { if (mine === token) stage.innerHTML = `<p class="wt-note">Could not load this simulator: ${esc(e.message)}</p>`; });
+    }
+  }
+
+  async function open() {
+    if (!keep) current = null;          // arriving from the menu shows the list; opening a card keeps its choice
+    keep = false;
+    try { await load(); error = ''; } catch (e) { error = `Could not load the simulators (${e.message}).`; }
+  }
+
+  window.DesignSimulators = { render, wire, open, stop, isBusy: () => false };
+})();

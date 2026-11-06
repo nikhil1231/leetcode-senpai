@@ -2,8 +2,8 @@
 // architecture, read each component's trade-offs and failure modes, then push load through it and swap
 // components to see what breaks first. Data lives in /walkthrough/<id>.json (from the old site); the
 // diagram is laid out here from the design's Mermaid graph; the maths is in sd-stress.js (pure).
-// Used three ways: the `walkthrough` lesson simulator (config: {design}), and the System Design
-// "Walkthroughs" view. Nothing here touches the server or your practice data.
+// Used two ways: the `walkthrough` lesson simulator (config: {design}), and the System Design
+// "Simulators" page (sd-simulators.js). Nothing here touches the server or your practice data.
 (function () {
   'use strict';
   const S = window.SDStress;
@@ -15,8 +15,6 @@
     return r.json();
   };
   const designs = {}, loading = {};
-  let index = null;
-  const loadIndex = async () => index || (index = await fetchJson('/walkthrough/index.json'));
   const loadDesign = id => designs[id] ? Promise.resolve(designs[id])
     : loading[id] || (loading[id] = fetchJson(`/walkthrough/${encodeURIComponent(id)}.json`).then(d => (designs[id] = d)).finally(() => { delete loading[id]; }));
 
@@ -201,7 +199,7 @@
       const sat = S.saturationQps({ path: path(), components: comps() });
       if (isFinite(sat.qps)) { const q = 0.6 * sat.qps, mag = 10 ** Math.floor(Math.log10(q)); st.qps = Math.max(10, Math.round(q / mag) * mag); }
       const L = S.layout(S.parseMermaid(d.architecture.mermaid));
-      el.innerHTML = `${back ? `<div class="wt-top"><button type="button" class="button wt-back" data-back>← All designs</button></div>` : ''}
+      el.innerHTML = `${back ? `<div class="wt-top"><button type="button" class="button wt-back" data-back>← All simulators</button></div>` : ''}
         <header class="wt-head"><h2>${esc(d.title)}</h2><span class="wt-pill wt-${esc(d.difficulty)}">${esc(d.difficulty)}</span></header>
         <div class="wt-diagram">${diagramSvg(L)}</div>
         <div class="wt-tabs" role="tablist">${TABS.map(([k, label]) => `<button type="button" role="tab" class="wt-tab" data-tab="${k}">${label}</button>`).join('')}</div>
@@ -218,36 +216,5 @@
     return mount(el, { design: cfg.design, onTouch: () => { if (!touched) { touched = true; api.touched(); api.metrics({ touched: 1 }); } } });
   });
 
-  // ---------- System Design view ----------
-  let player = null, current = null, keep = false, error = '';
-  function intro() {
-    return `<div class="sd-page-intro"><span class="sd-eyebrow">WALKTHROUGHS</span><h2 id="sd-heading" tabindex="-1">See how the classics fit together.</h2>
-      <p>Follow a request through ${index ? index.designs.length : 27} well-known designs, read what each part is for and where it breaks, then push load through it and swap components.</p></div>`;
-  }
-  function render() {
-    if (error) return `${intro()}<div class="sd-error">${esc(error)}</div><button type="button" class="button" data-wt-retry>Try again</button>`;
-    if (!index) return `${intro()}<p class="wt-note">Loading…</p>`;
-    if (current) return '<div id="wt-stage" class="wt-page"></div>';
-    return intro() + index.categories.map(cat => {
-      const list = index.designs.filter(x => x.category === cat);
-      return list.length ? `<section class="wt-group"><h3>${esc(cat)}</h3><div class="wt-cards">${list.map(x => `<button type="button" class="wt-card" data-wt-open="${esc(x.id)}">
-        <span class="wt-card-top"><strong>${esc(x.title)}</strong><span class="wt-pill wt-${esc(x.difficulty)}">${esc(x.difficulty)}</span></span>
-        <span class="wt-card-blurb">${esc(x.problem)}</span><span class="wt-card-meta">${x.components} components · ${x.flows.length} flows · ${x.steps} steps</span></button>`).join('')}</div></section>` : '';
-    }).join('');
-  }
-  function wire(rootEl) {
-    stop();
-    rootEl.querySelectorAll('[data-wt-open]').forEach(b => b.addEventListener('click', () => { current = b.dataset.wtOpen; keep = true; window.SystemDesign?.openView('walkthroughs'); }));
-    rootEl.querySelector('[data-wt-retry]')?.addEventListener('click', () => { error = ''; window.SystemDesign?.openView('walkthroughs'); });
-    const stage = rootEl.querySelector('#wt-stage');
-    if (stage && current) player = mount(stage, { design: current, back: () => { current = null; window.SystemDesign?.openView('walkthroughs'); } });
-  }
-  async function open() {
-    if (!keep) current = null;          // arriving from the menu shows the list; opening a card keeps its choice
-    keep = false;
-    try { await loadIndex(); error = ''; } catch (e) { error = `Could not load the designs (${e.message}).`; }
-  }
-  function stop() { if (player) { player.destroy(); player = null; } }
-  window.DesignWalkthroughs = { render, wire, open, stop, isBusy: () => false };
   window.SDWalkthrough = { mount };
 })();
