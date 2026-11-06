@@ -55,6 +55,15 @@ items:
 > [!senior] Postgres is usually the right first answer
 > A relational database with JSONB columns, partial indexes and time-based partitioning covers a remarkable range of workloads, with constraints and transactions you'll otherwise rebuild in application code. Reach for a specialised store when a specific access pattern or scale clearly demands it — and say which one.
 
+```sim
+name: datamodels
+key: b900
+title: Relational, document and graph models
+intro: Answer the same question in each model and compare what each has to read.
+takeaway: |
+  Each model makes some queries trivial and others painful. Choose by access pattern.
+```
+
 ## Designing for the query: partition and sort keys
 
 Wide-column and key-value stores (Cassandra, DynamoDB, Bigtable) have no joins and little ad hoc querying. You design **one table per query pattern** around two keys:

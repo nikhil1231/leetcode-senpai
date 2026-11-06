@@ -70,6 +70,15 @@ items:
   - {text: 'Render the home feed', bucket: 1, why: 'A feed a few seconds old is fine. Availability wins.'}
 ```
 
+```sim
+name: cap
+key: b900
+title: CAP under a network partition
+intro: Partition the cluster and compare what a consistency-first and an availability-first system can serve.
+takeaway: |
+  During a partition you choose between refusing some requests and risking divergent answers. With no partition you don't have to.
+```
+
 ## Quorums in leaderless systems
 
 Dynamo-style stores (Cassandra, Riak, DynamoDB internally) write to **N** replicas and consider a write successful after **W** acknowledgements. A read asks **R** replicas and returns the newest version among them.
@@ -100,6 +109,15 @@ unit: replicas
 tolerance: 1.01
 steps: |
   Writes need 3 of 5 reachable, so up to 2 can be down. Reads also need 3 of 5, so 2 again. The answer is **2**, with R + W = 6 > 5 so every read overlaps every write. Changing to W = 4, R = 2 keeps the overlap but writes now fail if 2 replicas are down — consistency settings decide *which* operations lose availability.
+```
+
+```sim
+name: merkle
+key: b901
+title: Anti-entropy with Merkle trees
+intro: Make two replicas diverge, then sync them by comparing hashes down the tree.
+takeaway: |
+  Matching root hashes mean identical data. Differences are found by descending only into subtrees whose hashes disagree.
 ```
 
 ## Choosing per operation

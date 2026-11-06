@@ -88,6 +88,15 @@ steps: |
   Future peak = 480 MB/s. 480 ÷ 12 = **40** partitions, so up to 40 consumers can work in parallel. Producer and broker throughput per partition are usually higher than consumer throughput, so consumers set the number. Many teams round up (to 48, say) so that consumer counts divide evenly and there's headroom for skew.
 ```
 
+```sim
+name: pubsub
+key: b900
+title: Pub/sub versus a queue
+intro: Add consumers and groups, then publish messages and see who receives what.
+takeaway: |
+  A queue gives each message to one consumer; pub/sub gives it to every subscriber. Consumer groups combine the two.
+```
+
 ## Consumer groups in motion
 
 - **Lag** — the gap between the latest offset and the group's committed offset, per partition — is the core health metric. Convert it to time ("8 minutes behind") for alerting.

@@ -41,6 +41,15 @@ reveal: |
   With monotonically increasing keys, "now" always lives in one range. Range partitioning by time is great for retention (drop old months cheaply) and time-range queries, but terrible for spreading write load. Common fixes: hash by entity (`device_id`) with time as the sort key within the partition, or a compound key (`hash(device) bucket, time`).
 ```
 
+```sim
+name: partitioning
+key: b900
+title: Hash versus range partitioning
+intro: Insert keys and compare how hash and range partitioning place them, then add a node.
+takeaway: |
+  Hash spreads load evenly but scatters ranges; range keeps scans cheap but creates hot spots.
+```
+
 ## Choosing a shard key
 
 A good shard key:
@@ -60,6 +69,15 @@ items:
   - {text: 'Orders sharded by order status', bucket: 1, why: "A handful of values, a hot 'pending' shard, and orders move shards whenever their status changes."}
   - {text: 'User profiles sharded by user_id', bucket: 0, why: 'High cardinality, stable, and profile reads are by user.'}
   - {text: 'An append-only log sharded by an auto-increment ID using ranges', bucket: 1, why: 'Every new write lands in the last range.'}
+```
+
+```sim
+name: sqlsharding
+key: b901
+title: Sharding strategies and query fan-out
+intro: Run the same queries against federated, horizontally sharded and denormalised layouts.
+takeaway: |
+  The shard key decides which queries touch one shard and which fan out to all of them.
 ```
 
 ## When a query crosses shards

@@ -42,6 +42,15 @@ case: seats
 
 Defaults differ: Postgres and Oracle default to **Read Committed**; MySQL InnoDB defaults to **Repeatable Read** (with different semantics from Postgres's). Always check rather than assume.
 
+```sim
+name: isolation
+key: b900
+title: Isolation levels and anomalies
+intro: Pick an isolation level, then run the classic schedules: dirty read, non-repeatable read, lost update and write skew.
+takeaway: |
+  Each level forbids some anomalies and allows others. Snapshot isolation stops most, but not write skew.
+```
+
 ## Lost update
 
 ```timeline

@@ -63,6 +63,15 @@ takeaway: |
   Routing every read to the leader is correct but discards the replicas. LSN-based routing is correct *and* cheap: only reads that would be stale go to the leader. Time windows ("leader for 1 s after a write") are simple, but break silently when lag spikes past the window.
 ```
 
+```sim
+name: replanomalies
+key: b900
+title: Reading from lagging replicas
+intro: Route reads to replicas with different lag and see which guarantees break.
+takeaway: |
+  Lag alone is harmless. Reads that jump between replicas are what make data appear to go backwards.
+```
+
 ## Failover
 
 When the leader fails, a follower is promoted. Each step hides a trap:
@@ -104,6 +113,15 @@ reveal: |
 
 - **Multi-leader** (e.g. one leader per region): each region accepts writes locally, with low latency and regional autonomy, and replicates asynchronously to the others. The hard part is **conflicts** — two regions edit the same record. Last-write-wins silently drops one; better options are conflict-free data types (CRDTs), application merge logic, or avoiding conflicts by giving each record a home region.
 - **Leaderless** (Dynamo-style: Cassandra, Riak): clients write to and read from several replicas, with quorums deciding success. Covered in the consistency lesson.
+
+```sim
+name: crdt
+key: b901
+title: CRDTs: merging without coordination
+intro: Update replicas independently, then merge them in any order.
+takeaway: |
+  CRDT merges are commutative, associative and idempotent, so replicas converge whatever order updates arrive in.
+```
 
 ```sort
 prompt: Which replication approach fits?

@@ -23,7 +23,8 @@ def test_sections_split_at_headings_and_keep_every_block_once():
         split = adaptive.sections(lesson)
         keys = [k for s in split['sections'] for k in s['blocks']] + split['finale']
         assert sorted(keys) == sorted(b['key'] for b in lesson['blocks'] if b['type'] != 'md'), key
-        assert all(LESSONS[key]['blocks'][int(k[1:])]['type'] in adaptive.FINALE for k in split['finale'])
+        types = {b['key']: b['type'] for b in lesson['blocks'] if b['type'] != 'md'}
+        assert all(types[k] in adaptive.FINALE for k in split['finale'])
 
 
 def test_lead_skips_callouts_tables_code_and_lists():

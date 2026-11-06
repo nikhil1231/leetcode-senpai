@@ -3054,8 +3054,15 @@ def _index_assets():
         return re.findall(r'(?:src|href)="/([^"?]+)\?v=__ASSET_VER__"', fh.read())
 
 
-# codemirror is loaded on demand with window.ASSET_VER, so it is not in index.html.
-_VERSIONED_ASSETS = tuple(dict.fromkeys(_index_assets() + ["vendor/codemirror.js"]))
+# codemirror and the widgets load on demand with window.ASSET_VER, so they are not in index.html.
+def _widget_assets():
+    """Vendored widget modules, imported on demand by sd-widgets.js with ?v=ASSET_VER."""
+    root = os.path.join(STATIC_DIR, "widgets")
+    return sorted(os.path.relpath(os.path.join(d, f), STATIC_DIR).replace(os.sep, "/")
+                  for d, _, files in os.walk(root) for f in files if f.endswith(".js"))
+
+
+_VERSIONED_ASSETS = tuple(dict.fromkeys(_index_assets() + ["vendor/codemirror.js"] + _widget_assets()))
 _CODE_UPDATED_DIRS = ("server", "static")
 _CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
 

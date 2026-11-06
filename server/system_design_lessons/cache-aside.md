@@ -161,6 +161,15 @@ explain: |
   Strategies differ in *where acknowledgement happens* and *which copy is fresh*. Ask: if the cache node vanished right now, what would be lost, and what would merely be slow?
 ```
 
+```sim
+name: cachestrategies
+key: b900
+title: Four cache write strategies side by side
+intro: Run the same reads and writes through cache-aside, write-through, write-behind and refresh-ahead.
+takeaway: |
+  Each strategy moves the cost somewhere else: write-through pays on every write, write-behind risks losing data, refresh-ahead spends reads to hide latency.
+```
+
 ## Hit rate, working set and sizing
 
 The **working set** is the data actively read within the window your TTL covers. Size the cache for the working set, not the dataset. Skew is your friend: under Zipf-like access, caching the top 10–20% of keys often captures 80–95% of reads.

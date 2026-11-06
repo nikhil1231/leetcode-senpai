@@ -25,6 +25,15 @@ Every serious database writes changes to an append-only **write-ahead log (WAL)*
 
 Sequential appends are fast — even on SSDs they beat scattered random writes — and batching many commits into one flush (**group commit**) lets a database sustain thousands of durable commits per second. The log also feeds replication and change-data-capture.
 
+```sim
+name: wal
+key: b900
+title: Write-ahead logging and crash recovery
+intro: Run transactions, flush pages and crash the database at awkward moments, then watch recovery replay the log.
+takeaway: |
+  Commit only needs the log flushed; data pages can lag behind. After a crash, redo repeats history from the log and undo rolls back what never committed.
+```
+
 ## B-trees: update in place
 
 A B-tree engine (Postgres, MySQL InnoDB, SQL Server) stores rows and indexes in fixed-size pages and **modifies pages in place**, logging each change to the WAL first.
@@ -32,6 +41,24 @@ A B-tree engine (Postgres, MySQL InnoDB, SQL Server) stores rows and indexes in 
 - **Reads:** one root-to-leaf path, about 3–4 pages, mostly cached. Predictable.
 - **Writes:** a small change rewrites a whole page (later, at checkpoint), plus the WAL record, plus every affected index — real write amplification, and random I/O.
 - **Space:** pages run partly empty after splits; MVCC engines like Postgres also keep dead row versions until vacuum.
+
+```sim
+name: btree
+key: b901
+title: B-tree inserts and page splits
+intro: Insert keys and watch full pages split and the tree grow upward.
+takeaway: |
+  Every insert touches one root-to-leaf path. When a page overflows it splits and pushes a key to its parent, so the tree stays balanced and shallow.
+```
+
+```sim
+name: slottedpage
+key: b902
+title: Inside a database page
+intro: Insert, delete and update variable-size records and watch the page fragment, then compact.
+takeaway: |
+  Slots let records move within a page without changing their addresses; deleted space is reclaimed by compaction.
+```
 
 ## LSM trees: append, then merge
 
@@ -105,6 +132,15 @@ steps: |
 **Row-oriented** storage keeps each row's columns together: perfect for "fetch order 42 with all its fields" and for small transactional writes (OLTP).
 
 **Column-oriented** storage (ClickHouse, BigQuery, Snowflake, Redshift, Parquet files) stores each column separately: an analytical query that sums one column over a billion rows reads just that column, which compresses extremely well because the values are similar. Writes of individual rows are expensive, so data arrives in batches.
+
+```sim
+name: rowcol
+key: b903
+title: Row versus column layout
+intro: Run the same query against a row store and a column store and compare the bytes read.
+takeaway: |
+  Analytic queries touch few columns of many rows, which is exactly what column layout makes cheap.
+```
 
 ```predict
 prompt: A query computes `SELECT region, sum(amount) FROM orders WHERE created_at >= '2026-01-01' GROUP BY region` over 2 billion rows with 40 columns. Roughly how much less data does a column store read than a row store?

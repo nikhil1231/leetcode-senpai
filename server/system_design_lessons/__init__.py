@@ -49,6 +49,7 @@ REQUIRED = {
     'arch': ['nodes', 'edges'],
     'interview': ['say', 'followups', 'weak', 'strong'],
 }
+EXPLICIT_KEY = re.compile(r'^b[1-9]\d{2}$')  # three digits, so never a positional key
 FRONT = ['id', 'category', 'skill', 'title', 'minutes', 'summary', 'objectives', 'sources']
 SKILLS = {'requirements', 'reads', 'capacity', 'retries', 'concurrency', 'operations'}
 FORMATS = {'choice', 'multi', 'numeric', 'order'}
@@ -238,6 +239,10 @@ def parse(text, name='lesson', skills=None):
     if meta['skill'] not in (SKILLS if skills is None else skills):
         raise LessonError(f'{name}: unknown skill {meta["skill"]}')
     blocks, questions, pos = [], None, 0
+    # Keys are positional (b0, b1, ...) and stored with progress and knowledge links, so inserting a block
+    # must not renumber the rest. A block with an explicit `key: b9NN` is skipped when numbering, and
+    # prose it splits still counts as one block, so existing lessons keep their keys.
+    auto, last_auto_md, taken = 0, False, set()
     for m in FENCE.finditer(body):
         lang = m.group(1)
         if lang not in REQUIRED and lang != 'questions':
@@ -245,6 +250,8 @@ def parse(text, name='lesson', skills=None):
         prose = body[pos:m.start()].strip()
         if prose:
             blocks.append({'type': 'md', 'text': prose})
+            if not last_auto_md:
+                auto, last_auto_md = auto + 1, True
         pos = m.end()
         try:
             data = yaml.safe_load(_prose(m.group(2)))
@@ -254,7 +261,15 @@ def parse(text, name='lesson', skills=None):
             questions = data
             continue
         _check_block(meta['id'], lang, data, len(blocks))
-        blocks.append({'type': lang, 'key': f'b{len(blocks)}', **data})
+        explicit = data.pop('key', None)
+        if explicit is None:
+            key, auto, last_auto_md = f'b{auto}', auto + 1, False
+        elif isinstance(explicit, str) and EXPLICIT_KEY.match(explicit) and explicit not in taken:
+            key = explicit
+        else:
+            raise LessonError(f'{name}: block key {explicit!r} must be unique and look like b900 (b100-b999)')
+        taken.add(key)
+        blocks.append({'type': lang, 'key': key, **data})
     tail = body[pos:].strip()
     if tail:
         blocks.append({'type': 'md', 'text': tail})

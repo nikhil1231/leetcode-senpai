@@ -22,6 +22,15 @@ The browser asks a **recursive resolver** (your ISP, 1.1.1.1 or 8.8.8.8). On a c
 
 TTLs cut both ways. A long TTL means fewer lookups, but a failover or migration takes up to that long to reach everyone (and some clients ignore TTLs). Lower the TTL **days before** a planned migration. DNS-based load balancing is coarse: clients cache records and pick addresses unevenly.
 
+```sim
+name: dns
+key: b900
+title: Resolving a name
+intro: Walk a lookup from the client to the authoritative server, with and without cached answers.
+takeaway: |
+  Caching at every hop is why most lookups are fast, and why changes propagate slowly.
+```
+
 ## TCP
 
 TCP gives an ordered, reliable byte stream over an unreliable network:
@@ -31,6 +40,15 @@ TCP gives an ordered, reliable byte stream over an unreliable network:
 - **Congestion control**: a new connection starts with a small congestion window (**slow start**, about 10 segments, roughly 14 KB) and roughly doubles it each round trip until it sees loss. So a new connection is slow for its first few round trips, which is why connection reuse and keep-alive matter so much.
 - **Head-of-line blocking**: one lost packet holds up everything behind it in the stream until it's retransmitted.
 - **TIME_WAIT**: the side that closes first keeps the connection's 4-tuple reserved for about 2 × MSL (60 s on Linux), so stray packets can't corrupt a new connection. A client opening and closing thousands of short connections to one backend can **exhaust ephemeral ports**. The fix is pooling and keep-alive, not kernel tricks.
+
+```sim
+name: tcp
+key: b901
+title: TCP versus UDP
+intro: Send data over a lossy link with TCP and with UDP.
+takeaway: |
+  TCP trades latency for ordering and reliability; UDP leaves both to you.
+```
 
 ## TLS
 
@@ -46,6 +64,15 @@ unit: ms
 tolerance: 0.01
 steps: |
   The TCP handshake takes **1 RTT** (SYN → SYN-ACK; the client's ACK can carry data). The TLS 1.3 handshake takes **1 RTT** (ClientHello with key share → ServerHello and certificate). So the request goes out after 2 RTTs = **160 ms**, and the response takes at least one more RTT, so 240 ms to the first byte. With TLS 1.2 it would be 3 RTTs before the request. With HTTP/3 (QUIC), transport and crypto share one handshake, so it's 1 RTT. With a reused connection, it's 0. This is why CDNs (shorter RTT) and keep-alive (no handshake) are the biggest latency wins.
+```
+
+```sim
+name: tls
+key: b902
+title: TLS handshake round trips
+intro: Compare TLS 1.2, 1.3 and a resumed 1.3 connection.
+takeaway: |
+  Fewer round trips before the first byte: TLS 1.3 needs one, a resumed session none.
 ```
 
 ## HTTP versions
@@ -70,6 +97,15 @@ items:
   - The browser sends the HTTP GET request with Host and cookies
   - The server (or CDN edge) responds, and the browser parses HTML and requests subresources over the same connection
 explain: Each early step costs at least one round trip on a cold start, which is why DNS prefetching, CDNs, connection reuse and TLS 1.3 all exist.
+```
+
+```sim
+name: http
+key: b903
+title: HTTP/1.1, HTTP/2 and HTTP/3 under packet loss
+intro: Load six resources over each version while raising packet loss.
+takeaway: |
+  One lost packet blocks everything behind it on HTTP/2 over TCP. HTTP/3 over QUIC isolates streams.
 ```
 
 ## Debugging the network
