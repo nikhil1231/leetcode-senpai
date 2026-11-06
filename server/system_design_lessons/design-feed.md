@@ -177,6 +177,16 @@ items:
 explain: Real products followed roughly this path. Each step answered a measured pain — read cost, celebrity write storms, engagement — rather than being designed in up front.
 ```
 
+```sim
+name: walkthrough
+key: b910
+title: Walk through the reference design
+config: {design: news-feed}
+intro: Step a request through a worked design, open any component for its trade-offs and failure modes, then raise the load and swap parts to see what gives out first.
+takeaway: |
+  A design is a set of trade-offs you can defend, so try the stress test: find the component that saturates first, swap it for an alternative, and say what you gained and what it cost.
+```
+
 ```interview
 ask: How would you design a social news feed serving 100,000 feed loads per second at peak, supporting posts, ranking, pagination, likes and images reliably?
 say: |

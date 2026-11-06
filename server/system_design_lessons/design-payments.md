@@ -179,6 +179,16 @@ paths:
       - [recon, db, 'Nightly: match the processor settlement file against payments and the ledger; flag mismatches']
 ```
 
+```sim
+name: walkthrough
+key: b910
+title: Walk through the reference design
+config: {design: payment-system}
+intro: Step a request through a worked design, open any component for its trade-offs and failure modes, then raise the load and swap parts to see what gives out first.
+takeaway: |
+  A design is a set of trade-offs you can defend, so try the stress test: find the component that saturates first, swap it for an alternative, and say what you gained and what it cost.
+```
+
 ```interview
 ask: How would you design a payment system that prevents duplicate charges and keeps financial records accurate when processors time out or notifications arrive late?
 say: |

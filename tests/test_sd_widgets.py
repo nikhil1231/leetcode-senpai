@@ -16,7 +16,7 @@ LESSON_DIRS = [os.path.join(os.path.dirname(main.__file__), 'system_design_lesso
 
 def registered():
     names = set()
-    for f in glob.glob(os.path.join(STATIC, 'sd-sims*.js')):
+    for f in glob.glob(os.path.join(STATIC, 'sd-sims*.js')) + [os.path.join(STATIC, 'sd-walkthrough.js')]:
         text = open(f, encoding='utf-8').read()
         names |= set(re.findall(r"\b(?:reg|register)\('([a-z0-9-]+)'", text)) | set(re.findall(r"\bregistry\.([a-z0-9]+)\s*=", text))
     widgets = open(os.path.join(STATIC, 'sd-widgets.js'), encoding='utf-8').read()
@@ -108,3 +108,16 @@ def test_visualise_index_matches_the_shipped_animations():
         assert t['difficulty'] in ('easy', 'medium', 'hard') and t['title'] and t['concept'] and t['time'] and t['space']
         assert isinstance(t['pitfalls'], list) and isinstance(t['problems'], list)
     assert 'widgets/dsa/index.json' in main._VERSIONED_ASSETS
+
+
+def test_walkthrough_lessons_point_at_real_designs():
+    import json
+    index = {d['id'] for d in json.load(open(os.path.join(STATIC, 'walkthrough', 'index.json'), encoding='utf-8'))['designs']}
+    seen = []
+    for path in lesson_files():
+        text = open(path, encoding='utf-8').read()
+        for design in re.findall(r'^name: walkthrough\n(?:.*\n)*?config: \{design: ([a-z0-9-]+)\}', text, re.M):
+            seen.append(design)
+            assert design in index, (os.path.basename(path), design)
+            assert os.path.exists(os.path.join(STATIC, 'walkthrough', design + '.json'))
+    assert len(seen) >= 10 and len(seen) == len(set(seen))

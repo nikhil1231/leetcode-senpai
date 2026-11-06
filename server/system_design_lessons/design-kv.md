@@ -158,6 +158,16 @@ explain: |
   **Line 2** may pick virtual nodes on the same physical machine (or zone), so "3 replicas" can be one server. Skip duplicate hosts and zones. **Line 4** writes sequentially, so latency is the sum of three round trips and one slow replica blocks the rest. Write to all replicas in parallel and return when W acks arrive. **Line 7** reports success after a single ack whatever the requested consistency, so a QUORUM write isn't a quorum and an immediate QUORUM read can miss it. Return once W acks are in, and store hints for unreachable replicas.
 ```
 
+```sim
+name: walkthrough
+key: b910
+title: Walk through the reference design
+config: {design: kv-store}
+intro: Step a request through a worked design, open any component for its trade-offs and failure modes, then raise the load and swap parts to see what gives out first.
+takeaway: |
+  A design is a set of trade-offs you can defend, so try the stress test: find the component that saturates first, swap it for an alternative, and say what you gained and what it cost.
+```
+
 ```interview
 ask: How would you design a distributed key-value store for 100 TB of data, covering scalability, availability, consistency and failure recovery?
 say: |

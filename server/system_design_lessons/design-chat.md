@@ -193,6 +193,16 @@ items:
 explain: Sync is pull-based and sequence-driven, so it's correct regardless of which live deliveries or push notifications were missed.
 ```
 
+```sim
+name: walkthrough
+key: b910
+title: Walk through the reference design
+config: {design: whatsapp}
+intro: Step a request through a worked design, open any component for its trade-offs and failure modes, then raise the load and swap parts to see what gives out first.
+takeaway: |
+  A design is a set of trade-offs you can defend, so try the stress test: find the component that saturates first, swap it for an alternative, and say what you gained and what it cost.
+```
+
 ```interview
 ask: How would you design a chat system supporting 150 million concurrent connections, including message delivery, ordering, reconnection, delivery receipts, presence and large groups?
 say: |

@@ -158,6 +158,16 @@ steps: |
   1 page per 2 s = 43,200 pages/day. 3,000,000 ÷ 43,200 ≈ **69 days**. Politeness, not fetcher capacity, bounds per-site freshness, so prioritisation within a site (recrawl changed and important pages, using sitemaps' `lastmod`) matters as much as global scale.
 ```
 
+```sim
+name: walkthrough
+key: b910
+title: Walk through the reference design
+config: {design: web-crawler}
+intro: Step a request through a worked design, open any component for its trade-offs and failure modes, then raise the load and swap parts to see what gives out first.
+takeaway: |
+  A design is a set of trade-offs you can defend, so try the stress test: find the component that saturates first, swap it for an alternative, and say what you gained and what it cost.
+```
+
 ```interview
 ask: How would you design a web crawler that fetches one billion pages per day?
 say: |

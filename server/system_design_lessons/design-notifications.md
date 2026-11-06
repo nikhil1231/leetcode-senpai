@@ -161,6 +161,16 @@ explain: |
   **Line 4** sends synchronously to providers inside the API call, with no preference, quiet-hour or opt-out check, no rate limiting, and no idempotency — a caller retry after a timeout sends everything again, and a slow provider makes the API slow. **Line 5** records the notification only after sending, so a crash in between leaves no record to retry or deduplicate from. Persist with the idempotency key first, return 202, and let the queued pipeline apply preferences and send with per-provider limits.
 ```
 
+```sim
+name: walkthrough
+key: b910
+title: Walk through the reference design
+config: {design: notification-system}
+intro: Step a request through a worked design, open any component for its trade-offs and failure modes, then raise the load and swap parts to see what gives out first.
+takeaway: |
+  A design is a set of trade-offs you can defend, so try the stress test: find the component that saturates first, swap it for an alternative, and say what you gained and what it cost.
+```
+
 ```interview
 ask: How would you design a notification service that supports transactional alerts and bulk campaigns across multiple channels?
 say: |

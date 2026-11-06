@@ -172,6 +172,16 @@ steps:
 | Hot key overloads a shard | Pre-aggregate locally or split the key's counter |
 | Bad rule deployed | Shadow mode first; rules are versioned and can be rolled back instantly |
 
+```sim
+name: walkthrough
+key: b910
+title: Walk through the reference design
+config: {design: rate-limiter}
+intro: Step a request through a worked design, open any component for its trade-offs and failure modes, then raise the load and swap parts to see what gives out first.
+takeaway: |
+  A design is a set of trade-offs you can defend, so try the stress test: find the component that saturates first, swap it for an alternative, and say what you gained and what it cost.
+```
+
 ```interview
 ask: How would you design a distributed rate limiter for a high-throughput, multi-region API platform?
 say: |

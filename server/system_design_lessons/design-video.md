@@ -164,6 +164,16 @@ fix: |
       return {"manifest": cdn.sign(f"videos/{video_id}/master.m3u8", expires_in=3600)}
 ```
 
+```sim
+name: walkthrough
+key: b910
+title: Walk through the reference design
+config: {design: video-streaming}
+intro: Step a request through a worked design, open any component for its trade-offs and failure modes, then raise the load and swap parts to see what gives out first.
+takeaway: |
+  A design is a set of trade-offs you can defend, so try the stress test: find the component that saturates first, swap it for an alternative, and say what you gained and what it cost.
+```
+
 ```interview
 ask: How would you design a large-scale video upload and streaming platform, covering upload, processing, playback, operating costs and view counting?
 say: |
