@@ -97,8 +97,10 @@
     }
     function trafficHtml(l) {
       const T = l.traffic || {}, parts = [];
-      for (const t of Sim().USER) if (T[t]?.perUser) parts.push(`${T[t].perUser.toLocaleString('en')} ${(Sim().LABEL[t] || t).toLowerCase()} per user a day`);
-      return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> daily users · ${parts.join(' · ')} · evening peak about ${T.peak || 2}× the average${l.far?.share ? ` · ${Math.round(l.far.share * 100)}% of users an ocean away` : ''}${l.data?.gb ? ` · ${B().fmt(l.data.gb)} GB of data` : ''}${l.data?.mediaGb ? ` and ${B().fmt(l.data.mediaGb)} GB of media` : ''}</p>`;
+      const size = kb => kb >= 1000 ? `${B().fmt(kb / 1000)} MB` : `${B().fmt(kb)} KB`;
+      for (const t of Sim().USER) if (T[t]?.perUser) { const kb = T[t].kb ?? Sim().KB[t];
+        parts.push(`${T[t].perUser.toLocaleString('en')} ${(Sim().LABEL[t] || t).toLowerCase()} per user a day${kb ? ` (~${size(kb)} each)` : ''}`); }
+      return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> daily users · ${parts.join(' · ')} · evening peak about ${T.peak || 2}× the average${l.far?.share ? ` · ${Math.round(l.far.share * 100)}% of users an ocean away` : ''}${l.data?.gb ? ` · ${B().fmt(l.data.gb)} GB already stored` : ''}${l.data?.mediaGb ? ` plus ${B().fmt(l.data.mediaGb)} GB of media` : ''}</p>`;
     }
     function stepsHtml() {
       const s = [['brief', 'Brief'], ['estimate', 'Estimate'], ['build', 'Build & run']];
@@ -165,7 +167,7 @@
     function levelHtml(l) {
       return `<div class="rp rp-level">
         ${err ? `<div class="sd-error" role="alert">${esc(err)}</div>` : ''}
-        <div class="rp-head"><button type="button" class="button" data-hub>← Ripple Ops</button>
+        <div class="rp-head"><button type="button" class="rp-crumb" data-hub>← Ripple Ops</button>
           <div class="rp-title"><span class="sd-eyebrow">${esc(CHAPTERS[l.chapter] || l.chapter || '')} · ${esc(l.tier || '')} · ${esc(l.users || '')}${l.daily ? ' · DAILY' : ''}</span><h2 id="sd-heading" tabindex="-1">${esc(l.title)}</h2><p>${esc(l.kicker)}</p></div>
           ${stepsHtml()}</div>
         ${step === 'brief' ? briefHtml(l) : step === 'estimate' ? estimateHtml(l) : buildHtml(l)}

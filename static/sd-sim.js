@@ -864,7 +864,7 @@
   }
   const hasJobs = s => ['read', 'write', 'upload'].some(t => (s.traffic?.[t]?.jobs || []).length);
 
-  const api = { VERSION, HOURS, USER, LABEL, EVENT_LABEL, ESTIMATES, config, prepare, run, cost, quickCost, normalize, fromScale, truth, grade, daily, curve, modsAt, fmtN };
+  const api = { VERSION, HOURS, USER, LABEL, KB, EVENT_LABEL, ESTIMATES, config, prepare, run, cost, quickCost, normalize, fromScale, truth, grade, daily, curve, modsAt, fmtN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SDSim = api;
 })(typeof window !== 'undefined' ? window : globalThis);
