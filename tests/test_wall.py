@@ -114,10 +114,14 @@ def test_fit_image_fills_the_screen_without_cropping():
     from PIL import Image
     import io
     buf = io.BytesIO()
-    Image.new('RGB', (90, 160), '#3366ff').save(buf, 'JPEG')
+    img = Image.new('RGB', (90, 160), '#3366ff')
+    img.paste(Image.new('RGB', (90, 10), '#ff3333'), (0, 0))
+    img.save(buf, 'JPEG')
     out = Image.open(io.BytesIO(wall.fit_image(buf.getvalue(), 300, 650)))
     assert out.size == (300, 650)
-    r, g, b = out.getpixel((150, 10))   # the padding on top continues the poster's own edge
+    r, g, b = out.getpixel((150, 5))    # the poster starts at the very top
+    assert r > 200 and b < 100
+    r, g, b = out.getpixel((150, 640))  # the padding below continues the poster's own edge
     assert b > 200 and r < 100
 
 

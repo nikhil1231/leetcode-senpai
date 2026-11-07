@@ -325,17 +325,18 @@ def render_card(card, w, h, top=0.0):
 def fit_image(data, w, h):
     """A stored poster fitted to a w x h screen without cutting anything off: scaled to fit, and
     the space left over filled by stretching the poster's own edge rows and columns (the prompt
-    keeps its edges plain). The spare height goes on top, where a lock screen's clock sits. -> JPEG."""
+    keeps its edges plain). The poster starts at the very top (a lock screen's clock is translucent);
+    the spare height goes below. -> JPEG."""
     from PIL import Image
     src = Image.open(io.BytesIO(data)).convert('RGB')
     scale = min(w / src.width, h / src.height)
     sw, sh = max(1, round(src.width * scale)), max(1, round(src.height * scale))
     src = src.resize((sw, sh), Image.LANCZOS)
     out = Image.new('RGB', (w, h))
-    x, y = (w - sw) // 2, h - sh
-    out.paste(src, (x, y))
-    if y:
-        out.paste(src.crop((0, 0, sw, 1)).resize((sw, y)), (x, 0))
+    x, y = (w - sw) // 2, sh
+    out.paste(src, (x, 0))
+    if h > y:
+        out.paste(src.crop((0, sh - 1, sw, sh)).resize((sw, h - y)), (x, y))
     if x:
         out.paste(out.crop((x, 0, x + 1, h)).resize((x, h)), (0, 0))
         out.paste(out.crop((x + sw - 1, 0, x + sw, h)).resize((w - x - sw, h)), (x + sw, 0))

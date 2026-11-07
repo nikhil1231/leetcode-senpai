@@ -26,8 +26,11 @@ from .knowledge_base import api as kb_api, model as kmodel
 
 log = logging.getLogger(__name__)
 POSTERS, IMAGES = 'wall_posters', 'wall_images'
-PROMPT_VERSION = 'wall-5'   # wall-5: the whole screen (the clock is translucent), a calmer style
-KEPT = ('wall-4', PROMPT_VERSION)
+PROMPT_VERSION = 'wall-6'   # wall-6: the whole screen (the clock is translucent), bright modern palette
+KEPT = ('wall-4', 'wall-5', PROMPT_VERSION)
+# The panels' colours, in order (a bright modern infographic: warm to cool on a light background).
+PALETTE = (('tangerine', '#FFA41B'), ('vermilion', '#FF5A1F'), ('raspberry pink', '#F2316F'), ('sky cyan', '#1FB5F2'),
+           ('periwinkle violet', '#8C7BF2'), ('emerald teal', '#14C79A'), ('lime green', '#8EE66B'))
 ATTEMPTS = 3
 WIDTH = 1179            # stored width: an iPhone's; wall.fit_image fits other screens
 MAX_BYTES = 900_000     # a Firestore document holds 1 MiB
@@ -51,7 +54,7 @@ class PosterReview(BaseModel):
     all_ideas_present: bool = Field(description="every idea given appears on the poster")
     diagrams_make_sense: bool = Field(description="every icon and diagram illustrates its idea correctly; no nonsense labels, arrows or pairings")
     legible: bool = Field(description="all text is large and contrasted enough to read on a phone lock screen")
-    tasteful: bool = Field(description="looks professionally designed: a calm, coherent palette, clean typography, consistent icons; nothing garish, cluttered or clip-art")
+    tasteful: bool = Field(description="looks professionally designed: bright but coherent colours, clean typography, consistent icons; nothing cluttered, glossy or clip-art")
     score: int = Field(description="1 unusable … 10 a poster you would gladly look at every day: clear, refined, correct")
     issues: list[str] = Field(description="each problem found, naming exactly where it is and what to change; empty when there are none")
     verdict: Literal["pass", "redraw"]
@@ -74,16 +77,17 @@ def copy_prompt(b):
 
 
 def image_prompt(b, copy):
-    panels = '\n'.join(f'Panel {i}. Heading: "{p["heading"]}". Text: "{p["line"]}". Illustration: {p["visual"]}.'
+    panels = '\n'.join(f'Panel {i} ({PALETTE[(i - 1) % len(PALETTE)][0]}, {PALETTE[(i - 1) % len(PALETTE)][1]}). '
+                       f'Heading: "{p["heading"]}". Text: "{p["line"]}". Illustration: {p["visual"]}.'
                        for i, p in enumerate(copy['panels'], 1))
     return f"""Design a vertical 9:16 infographic poster: the phone lock screen wallpaper of a software engineer revising for interviews.
 Headline: "{copy['headline']}"
 {panels}
-Write exactly the quoted text above and nothing else: no extra captions, footnotes or labels, and no text inside the icons. Every word spelled exactly as given.
-Style: a refined modern editorial poster, the quality of a design studio's print, not a slide or clip-art. A calm, coherent palette: a deep or soft background with two or three harmonious accent colours used sparingly. One clean geometric sans-serif typeface with a clear hierarchy: a confident headline, medium headings, comfortable body text, generous spacing. One minimal icon per panel, all in the same line or flat style (no diagrams, flows, arrows or code). Plenty of whitespace and a strong grid; panels aligned, not boxed in heavy cards.
-Avoid: neon or rainbow colours, glossy, 3D or drop-shadow effects, stickers, badges, emoji, confetti, starbursts, ribbons and decorative clutter.
-Use the whole canvas, top to bottom: a translucent clock is drawn over the upper part, so content may sit there, but put the headline below the top 12%. All text large enough to read on a phone lock screen.
-The background must run seamlessly to every edge: one plain colour or a subtle smooth gradient, no border, frame or band. Margins of 5% on the sides and bottom. No watermark, signature, logos or fake phone UI."""
+Write exactly the quoted text above and nothing else: no extra captions, footnotes or labels, no colour names or codes, and no text inside the icons. Every word spelled exactly as given.
+Style: a bright, modern flat infographic, the quality of a design studio's print. A light off-white background (#F7F7F9). Each panel is a solid block of its own vivid colour given above, exactly that colour, with white text on it (dark charcoal text on tangerine and lime green, for contrast); the panels run warm to cool down the poster like a spectrum. Each panel's icon is a clean line icon in the panel's colour inside a white circle, all icons in the same style (no diagrams, flows, arrows or code). The headline in dark charcoal (#22232B), with a thin rule or small accent in the first panel's colour. One clean geometric sans-serif typeface with a clear hierarchy: a bold headline, bold headings, comfortable body text. A strong grid, panels aligned and evenly spaced.
+Avoid: glossy, 3D, bevels or heavy drop shadows, stickers, badges, emoji, confetti, starbursts, ribbons and decorative clutter.
+Use the whole canvas from the very top edge to the bottom: there is no area to keep clear. All text large enough to read on a phone lock screen.
+The background must run seamlessly to every edge: no border, frame or band. Margins of 5% on the sides. No watermark, signature, logos or fake phone UI."""
 
 
 def fix_prompt(issues):
@@ -94,8 +98,8 @@ def fix_prompt(issues):
 
 REVIEW_SYSTEM = ("You review generated study posters before they become someone's phone wallpaper. Be strict: "
                  "a misspelled, repeated or garbled word, a wrong or distorted fact, a missing idea, a diagram "
-                 "that does not make sense, or text too small to read on a phone each means verdict 'redraw'; a garish, "
-                 "cluttered or clip-art look scores 6 or less. Judge facts only against the ideas given: a faithful shortening is fine; flag a "
+                 "that does not make sense, or text too small to read on a phone each means verdict 'redraw'; bright colours are wanted, but a "
+                 "cluttered, glossy or clip-art look scores 6 or less. Judge facts only against the ideas given: a faithful shortening is fine; flag a "
                  "statement only if it is wrong or misleading.")
 
 

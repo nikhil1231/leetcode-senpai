@@ -32,7 +32,8 @@ def test_prompts_carry_the_claims_and_keep_notes_off_the_poster():
     cp = wall_gen.copy_prompt(BRIEF)
     assert 'volatile gives visibility' in cp and 'thought volatile made count++ safe' in cp and 'without mentioning' in cp
     ip = wall_gen.image_prompt(BRIEF, COPY)
-    assert '"Visibility, not atomicity."' in ip and 'Panel 2' in ip and 'thought volatile' not in ip and 'top 6%' not in ip and 'translucent clock' in ip
+    assert '"Visibility, not atomicity."' in ip and 'Panel 2' in ip and 'thought volatile' not in ip and 'top 6%' not in ip and 'no area to keep clear' in ip
+    assert '#FFA41B' in ip and '#FF5A1F' in ip   # panel 1 and 2 take the palette in order
     fp = wall_gen.fix_prompt(['Panel 1: fix the typo'])
     assert 'Panel 1: fix the typo' in fp and 'Never write these notes' in fp
     rp = wall_gen.review_prompt(BRIEF, COPY)
