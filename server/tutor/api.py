@@ -22,7 +22,7 @@ from .. import auth, config, handback_filing as hf, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel, progress
 from ..store import get_store
 from ..senpai import career as senpai_career
-from . import learner as lm, lessons, session as ses, story
+from . import learner as lm, lessons, rig, session as ses, story
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/tutor', tags=['tutor'])
@@ -58,7 +58,7 @@ def _live(store, s):
     that one is closed (kept, not deleted) so he starts fresh instead of resuming a stale question."""
     if not s or s['status'] != 'active':
         return None
-    if s.get('prompt_version', 0) < ses.PROMPT_VERSION and not any(t['role'] in ('learner', 'block') for t in s['turns']):
+    if s.get('prompt_version', 0) < ses.PROMPT_VERSION and not any(t['role'] in ('learner', 'block', 'run') for t in s['turns']):
         ses.end(s, time.time())
         s['ended_by'] = 'superseded'
         store.put_knowledge('tutor_sessions', s['id'], s)
@@ -303,10 +303,53 @@ class BlockResult(BaseModel):
     correct: bool
 
 
+class Objective(BaseModel):
+    label: str = Field(max_length=120)
+    target: str = Field(max_length=40)
+    actual: str = Field(max_length=40)
+    # 'pass' is a keyword, so it arrives under an alias
+    met: bool = Field(alias='pass')
+
+
+class Outcome(BaseModel):
+    label: str = Field(max_length=80)
+    at: int = Field(ge=0, le=23)
+    outcome: Literal['handled', 'degraded', 'outage']
+
+
+class Node(BaseModel):
+    id: str = Field(max_length=60)
+    defId: str = Field(max_length=40)
+    cfg: dict | None = None
+
+
+class Edge(BaseModel):
+    model_config = {'populate_by_name': True}
+    source: str = Field(alias='from', max_length=60)
+    to: str = Field(max_length=60)
+
+
+class Graph(BaseModel):
+    nodes: list[Node] = Field(max_length=60)
+    edges: list[Edge] = Field(max_length=120)
+
+
+class RunResult(BaseModel):
+    """A simulated day he ran on a design the tutor handed over (the browser's summary of it)."""
+    turn: int = Field(ge=0, le=500)
+    availability: float = Field(ge=0, le=100)
+    cost: float = Field(ge=0, le=1e10)
+    objectives: list[Objective] = Field(default_factory=list, max_length=8)
+    events: list[Outcome] = Field(default_factory=list, max_length=6)
+    findings: list[str] = Field(default_factory=list, max_length=6)
+    graph: Graph
+
+
 class Turn(BaseModel):
     key: str = Field(pattern=KEY)
     text: str = Field(default='', max_length=4000)
     block: BlockResult | None = None
+    run: RunResult | None = None
 
 
 @router.get('/sessions/{sid}')
@@ -327,13 +370,17 @@ async def turn(sid: str, body: Turn, store=Depends(store_for)):
     else:
         if len(s['turns']) >= ses.MAX_TURNS:
             raise HTTPException(409, 'This session is long enough. End it and start a fresh one.')
-        if not body.text.strip() and not body.block:
+        if not body.text.strip() and not body.block and not body.run:
             raise HTTPException(422, 'Say something or answer a block.')
+        design = _design(s, body.run) if body.run else None
         if body.block and body.block.key not in {t['key'] for t in lessons.tools(l)}:
             raise HTTPException(422, 'That block is not in this lesson.')
         now = time.time()
         if body.block:
             s['turns'].append({'role': 'block', 'block': body.block.key, 'correct': body.block.correct, 'key': body.key, 'at': now})
+        if design:
+            s['turns'].append({'role': 'run', 'design': body.run.turn, 'key': body.key, 'at': now, 'availability': body.run.availability,
+                               'text': rig.result_text(_run_summary(body.run, design))})
         if body.text.strip():
             s['turns'].append({'role': 'learner', 'text': body.text.strip(), 'key': body.key, 'at': now})
         s['updated_at'] = now
@@ -341,6 +388,21 @@ async def turn(sid: str, body: Turn, store=Depends(store_for)):
     if not llm.enabled(store.get_settings()):
         raise HTTPException(503, UNAVAILABLE)
     return await _reply(store, s, l)
+
+
+def _design(s, run):
+    """The design a run belongs to: a tutor turn in this session that handed one over."""
+    t = s['turns'][run.turn] if run.turn < len(s['turns']) else None
+    if not t or t['role'] != 'tutor' or not t.get('designs'):
+        raise HTTPException(422, 'That run is not for a design from this session.')
+    return t['designs'][0]
+
+
+def _run_summary(run, design):
+    after = {'nodes': [n.model_dump() for n in run.graph.nodes], 'edges': [{'from': e.source, 'to': e.to} for e in run.graph.edges]}
+    return {'title': design['title'], 'availability': run.availability, 'cost': run.cost, 'changes': rig.changes(design['graph'], after),
+            'objectives': [{'label': o.label, 'target': o.target, 'actual': o.actual, 'pass': o.met} for o in run.objectives],
+            'events': [o.model_dump() for o in run.events], 'findings': [f[:300] for f in run.findings]}
 
 
 @router.post('/sessions/{sid}/end')
@@ -464,7 +526,7 @@ async def _talk(s, l, ctx, debrief=False):
             log.warning('Tutor reply failed: %s', type(exc).__name__)
             return None
         _count(s, raw.get('usage') or {})
-        if ses.parse(raw['content'], s, l)[0] or ses.drawn(raw['content'], s):
+        if ses.parse(raw['content'], s, l)[0] or ses.drawn(raw['content'], s) or ses.handed(raw['content'], s):
             return raw['content']
     log.warning('Tutor reply had nothing to show')
     return None

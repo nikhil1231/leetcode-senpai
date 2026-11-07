@@ -547,3 +547,38 @@ def test_the_tutor_draws_on_the_whiteboard_and_remembers_it(client):
     client.replies.append('Now add a lock.')
     ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0002', 'text': 'OK'}))
     assert any('```diagram' in m['content'] and 'The miss storm' in m['content'] for m in client.chats[-1] if m['role'] == 'assistant')
+
+
+DESIGN = """Run it and tell me what the database does at seven.
+```design
+title: Redirects behind a cache
+users: 2000000
+traffic: {read: {perUser: 150, cacheable: 0.9}, write: {perUser: 3}}
+nodes: [{id: app, kind: app-server, size: m, instances: 4}, {id: cache, kind: redis}, {id: db, kind: db-sql}]
+edges: [[client, app], [app, cache], [app, db]]
+incidents: [{type: cache-flush, at: 19}]
+```"""
+
+
+def test_the_tutor_hands_over_a_design_and_reads_the_run(client):
+    s = start(client)
+    client.replies.append(DESIGN)
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0001', 'text': 'Show me.'}))
+    at = len(s['turns']) - 1
+    [d] = s['turns'][at]['designs']
+    assert '```' not in s['turns'][at]['say'] and d['scenario']['events'][0]['type'] == 'cache-flush'
+    assert '## Simulator' in client.chats[-1][0]['content']
+    run = {'turn': at, 'availability': 41.07, 'cost': 5848.0,
+           'objectives': [{'label': 'Availability over the day', 'target': '99.9%', 'actual': '41.07%', 'pass': False}],
+           'events': [{'label': 'Cache flushed', 'at': 19, 'outcome': 'outage'}], 'findings': ['Every miss hit the database at once.'],
+           'graph': {'nodes': [{'id': n['id'], 'defId': n['defId'], **({'cfg': n['cfg']} if n.get('cfg') else {})} for n in d['graph']['nodes']]
+                     + [{'id': 'w2', 'defId': 'app-server'}], 'edges': [{'from': e['from'], 'to': e['to']} for e in d['graph']['edges']]}}
+    client.replies.append('There it is: 41%. Why did the database fall over?')
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0002', 'run': run}))
+    seen = client.chats[-1][-1]['content']
+    assert seen.startswith('(I ran "Redirects behind a cache"') and '41.07%' in seen and 'Cache flushed at 19:00: outage' in seen
+    assert '+1 app-server' in seen and 'Every miss hit the database' in seen
+    assert [t['role'] for t in s['turns'][-2:]] == ['run', 'tutor']
+    assert '```design' in next(m['content'] for m in client.chats[-1] if m['role'] == 'assistant' and 'Run it' in m['content'])
+    bad = dict(run, turn=0)   # the opener handed over nothing
+    assert client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0003', 'run': bad}).status_code == 422

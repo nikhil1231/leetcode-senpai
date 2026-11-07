@@ -10,7 +10,8 @@ Two model calls make a turn, and they do different jobs (PROMPT_VERSION 8):
   [[activity bN]] to hand over one of the lesson's activities, and in the role-play modes keep
   private notes in <private>…</private>; both are stripped before the learner sees the reply.
   In teach, critique and the war room it may draw on a whiteboard (```diagram blocks, board.py),
-  shown as diagrams under its message and replayed to it as it wrote them.
+  shown as diagrams under its message and replayed to it as it wrote them. It may also hand over a
+  ```design to run in the design simulator (rig.py); the run comes back as a "run" turn.
 - The note-taker records. It reads the learner's latest words and returns structured evidence,
   objective progress, misconceptions and a summary. `apply_notes` keeps only what quotes the
   learner's own words, so neither call can invent evidence.
@@ -31,7 +32,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .. import llm, voice
-from . import board, lessons, story
+from . import board, lessons, rig, story
 
 PROMPT_VERSION = 10
 MAX_TURNS = 120
@@ -251,6 +252,7 @@ Scale: Ripple's size is {story_state['users']}, and that is the only figure for 
             lessons=(profile or {}).get('lessons') or '(not available)'))
     if board_allowed(mode):
         parts.append(board.guide())
+        parts.append(rig.guide())
     if not blocks_allowed(mode):
         parts.append("""## Private notes
 Keep anything you must stay consistent about (a planted flaw, an incident's state, what he has told you) in a short <private>…</private> block at the end of a message, under 120 words; he never sees it. Everything else in your message is what he sees, so every message must have something for him outside the block. Your notes so far:
@@ -296,6 +298,8 @@ def system(session, lesson, views, misconceptions, memory, story_state, debrief=
 
 
 def _block_text(t, lesson):
+    if t['role'] == 'run':
+        return t['text']
     about = next((x['about'] for x in lessons.tools(lesson) if x['key'] == t['block']), t['block'])
     return f'(I did the activity "{about}" and got it {"right" if t["correct"] else "wrong"}.)'
 
@@ -306,7 +310,7 @@ def messages(session, lesson, debrief=False):
     out = [{'role': 'user', 'content': CARRIED if session.get('carried') else OPENING}]
     for t in turns:
         if t['role'] == 'tutor':
-            text = '\n\n'.join([t['say'], *(board.source(b) for b in t.get('boards') or [])]) + (f'\n\n[[activity {t["show_block"]}]]' if t.get('show_block') else '')
+            text = '\n\n'.join([t['say'], *(board.source(b) for b in t.get('boards') or []), *(rig.source(d) for d in t.get('designs') or [])]) + (f'\n\n[[activity {t["show_block"]}]]' if t.get('show_block') else '')
             if out[-1]['role'] == 'assistant':
                 out[-1]['content'] += '\n\n' + text
             else:
@@ -347,7 +351,7 @@ def parse(text, session, lesson):
     """-> (say, block key or '', private notes or ''). Unknown, repeated or disallowed blocks are dropped."""
     text = text or ''
     private = '\n'.join(m.group(1).strip() for m in PRIVATE.finditer(text))
-    text = board.extract(PRIVATE.sub('', text))[0]
+    text = rig.extract(board.extract(PRIVATE.sub('', text))[0])[0]
     keys = [m.group(1).lower() for m in ACTIVITY.finditer(text)]
     say = ANY_MARKER.sub('', text)
     say = re.sub(r'^\s*\**(tutor|jo|marcus|priya)(\s*:\s*\**|\**\s*:)\s*', '', say.strip(), flags=re.I)
@@ -364,6 +368,9 @@ def add_reply(session, text, lesson, now):
     boards = drawn(text, session)
     if boards:
         turn['boards'] = boards
+    designs = handed(text, session)
+    if designs:
+        turn['designs'] = designs
     session['turns'].append(turn)
     if show:
         session['shown'].append(show)
@@ -378,8 +385,13 @@ def drawn(text, session):
     return board.extract(PRIVATE.sub('', text or ''))[1] if board_allowed(session['mode']) else []
 
 
+def handed(text, session):
+    """Designs handed over for the simulator, in the same modes as the whiteboard."""
+    return rig.extract(PRIVATE.sub('', text or ''))[1] if board_allowed(session['mode']) else []
+
+
 def add_debrief(session, text, now):
-    say = board.extract(PRIVATE.sub('', ANY_MARKER.sub('', text or '')))[0]
+    say = rig.extract(board.extract(PRIVATE.sub('', ANY_MARKER.sub('', text or '')))[0])[0]
     turn = {'role': 'tutor', 'speaker': 'tutor', 'say': voice.plain(re.sub(r'\n{3,}', '\n\n', say).strip()), 'show_block': '',
             'at': now, 'debrief': True, 'recorded': {'evidence': 0, 'misconceptions': 0, 'resolved': 0}}
     boards = drawn(text, session)
@@ -454,7 +466,7 @@ def notes_payload(session, lesson, views, prereq_views, misconceptions):
 def _turn_for_notes(t, lesson):
     if t['role'] == 'tutor':
         return {'role': t['speaker'], 'text': t['say'][:1200]}
-    if t['role'] == 'block':
+    if t['role'] in ('block', 'run'):
         return {'role': 'learner', 'text': _block_text(t, lesson)}
     return {'role': 'learner', 'text': t['text']}
 
@@ -477,7 +489,7 @@ def latest_learner(session):
             break
         if t['role'] == 'learner':
             words.append(t['text'])
-        elif t['role'] == 'block':
+        elif t['role'] in ('block', 'run'):
             blocks.append(t)
     return ' '.join(reversed(words)), list(reversed(blocks))
 
@@ -486,7 +498,7 @@ def apply_notes(session, notes, said, blocks, allowed_points, open_keys, now):
     """Keep what is grounded in the learner's words. -> ({evidence, misconceptions, resolved}, story_event).
 
     `said` and `blocks` are the learner's latest words and block results (taken before the reply)."""
-    block_ok = any(b['correct'] for b in blocks)
+    block_ok = any(b.get('correct') for b in blocks)
     for m in notes['objectives']:
         i = m['objective']
         if not 0 <= i < len(session['objectives']):
@@ -521,7 +533,7 @@ def new(sid, lesson, mode, now):
 
 def needs_debrief(session):
     """An ended session the learner took part in, still without its debrief."""
-    return (session['status'] == 'ended' and any(t['role'] in ('learner', 'block') for t in session['turns'])
+    return (session['status'] == 'ended' and any(t['role'] in ('learner', 'block', 'run') for t in session['turns'])
             and not any(t.get('debrief') for t in session['turns']))
 
 

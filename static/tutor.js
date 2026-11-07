@@ -3,7 +3,8 @@
 // session replaces the lesson body with a chat, the lesson's objectives as a checklist and, in
 // "Teach me", the lesson's own activities brought in by the tutor. Activity answers are recorded
 // exactly as in the lesson. In teach, critique and the war room the tutor can also draw on a
-// whiteboard: diagrams under its message (server/tutor/board.py). Ending a session brings a
+// whiteboard (diagrams under its message, server/tutor/board.py) and hand over a design to run in
+// the design simulator, whose result goes back to it (server/tutor/rig.py). Ending a session brings a
 // debrief from the tutor: the only teaching in the role-play modes. Home can queue a session,
 // which starts as soon as the lesson opens. Without the model there is no card and the lesson
 // works as usual.
@@ -260,11 +261,15 @@
       n.className = 'tu-msg tu-me'; n.innerHTML = `<div class="tu-text">${esc(turn.text)}</div>`;
     } else if (turn.role === 'block') {
       n.className = 'tu-note'; n.textContent = turn.correct ? 'You got the activity right.' : 'You missed the activity.';
+    } else if (turn.role === 'run') {
+      n.className = 'tu-note'; n.textContent = `You ran the design in the simulator: ${Number(turn.availability || 0).toFixed(2)}% availability.`;
     } else {
       const who = turn.debrief ? {name: 'Tutor', role: 'Debrief'} : turn.speaker === 'tutor' ? {name: 'Tutor', role: ''} : (cast(turn.speaker) || {name: turn.speaker, role: ''});
       n.className = 'tu-msg tu-them' + (turn.debrief ? ' tu-debrief' : ''); n.dataset.speaker = turn.speaker;
       n.innerHTML = `<div class="tu-who"><span class="tu-avatar" aria-hidden="true">${esc(who.name[0])}</span><b>${esc(who.name)}</b>${who.role ? `<small>${esc(who.role)}</small>` : ''}</div><div class="tu-text sd-md">${md(turn.say)}</div>`;
-      (turn.boards || []).forEach((d, i) => n.appendChild(boardNode(d, `wb${T.session?.turns.indexOf(turn)}-${i}`)));
+      const at = T.session?.turns.indexOf(turn);
+      (turn.boards || []).forEach((d, i) => n.appendChild(boardNode(d, `wb${at}-${i}`)));
+      (turn.designs || []).forEach(d => n.appendChild(designNode(d, at)));
       if (turn.show_block) n.appendChild(blockNode(turn.show_block, answered.has(turn.show_block)));
       if (turn.move) n.appendChild(moveNode(turn.move));
     }
@@ -293,6 +298,43 @@
     const b = {...d, key: String(key).replace(/[^\w-]/g, '')};
     wrap.innerHTML = B().renderBlock(b);
     B().wire(wrap, {blocks: [b]}, {saved: {}, save() {}, done() {}});
+    return wrap;
+  }
+
+  // A design the tutor handed over for the simulator: folded until opened, then the design builder
+  // with the tutor's traffic and incidents. He can change it, run the day, and send the run back.
+  function designNode(d, at) {
+    const wrap = document.createElement('div');
+    wrap.className = 'tu-block tu-design';
+    const incidents = (d.scenario.events || []).map(e => `${window.SDSim?.EVENT_LABEL?.[e.type] || e.type} at ${String(e.at).padStart(2, '0')}:00`);
+    wrap.innerHTML = `<button type="button" class="sd-sim-open" aria-expanded="false"><strong>Simulator: ${esc(d.title)}</strong><span>Open it ▾</span></button>
+      <p class="sd-muted tu-design-sub">${d.graph.nodes.length} components${incidents.length ? ' · ' + esc(incidents.join(', ')) : ''}${d.note ? ' · ' + esc(d.note) : ''}</p>`;
+    wrap.querySelector('.sd-sim-open').addEventListener('click', () => {
+      if (!window.SDBuilder) { wrap.querySelector('.tu-design-sub').textContent = 'The simulator is not loaded on this page.'; return; }
+      const t = T, stage = document.createElement('div'), bar = document.createElement('div');
+      bar.className = 'tu-design-bar';
+      wrap.innerHTML = `<p class="tu-design-head"><b>${esc(d.title)}</b>${incidents.length ? ` <span class="sd-muted">· ${esc(incidents.join(', '))}</span>` : ''}</p>`;
+      wrap.append(stage, bar);
+      const scenario = {...d.scenario, id: `tutor-${t.session?.id}-${at}`};
+      let last = null;
+      const builder = window.SDBuilder.mount(stage, {mode: 'game', scenario, initial: d.graph, storageKey: `tutor-design-${t.session?.id}-${at}`,
+        onRun(res, graph, info) {
+          if (info?.whatif) return;
+          last = {res, graph};
+          const live = T === t && t.session?.status === 'active';
+          bar.innerHTML = `<span>${res.summary.availability.toFixed(2)}% available · ${window.SDBuilder.money(res.bill.total)}/month</span>${live ? btn('Send this run to the tutor', 'send-run', '', true) : ''}`;
+          bar.querySelector('[data-tu="send-run"]')?.addEventListener('click', () => {
+            const {res: r, graph: g} = last;
+            bar.innerHTML = '<span class="sd-muted">Sent.</span>';
+            send({run: {turn: at, availability: r.summary.availability, cost: r.bill.total,
+              objectives: r.summary.objectives.slice(0, 8).map(o => ({label: o.label, target: o.target, actual: o.actual, pass: !!o.pass})),
+              events: (r.events || []).slice(0, 6).map(e => ({label: e.label, at: e.at, outcome: e.outcome})),
+              findings: (r.findings || []).filter(f => f.level === 'bad' || f.level === 'warn').slice(0, 6).map(f => String(f.text).slice(0, 300)),
+              graph: {nodes: g.nodes.map(n => ({id: n.id, defId: n.defId, ...(n.cfg ? {cfg: n.cfg} : {})})), edges: g.edges.map(e => ({from: e.from, to: e.to}))}}});
+          });
+        }});
+      wrap._handle = builder;
+    });
     return wrap;
   }
 

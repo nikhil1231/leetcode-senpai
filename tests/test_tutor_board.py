@@ -83,3 +83,41 @@ def test_diagrams_replay_in_the_chat_and_private_notes_never_draw():
 
 def test_the_guide_reaches_drawing_modes_only():
     assert '```diagram' in board.guide() and 'model' in board.guide()
+
+
+# ---- designs for the simulator (rig.py) ----
+from server.tutor import rig
+
+
+def test_a_design_becomes_a_builder_graph_and_scenario():
+    _, [d] = rig.extract('```design\nlevel: garage\nnodes: [{id: app, kind: app, size: s, instances: 2, zones: 9, bogus: 1}, {id: db, kind: postgres, size: huge}]\n'
+                         'edges: [[client, app], [app, db], [app, nowhere]]\nincidents: [{type: db-failover, at: 30}, {type: meteor}]\n```')
+    g = d['graph']
+    assert [n['defId'] for n in g['nodes']] == ['client', 'app-server', 'db-sql']        # a client is added
+    app, db = g['nodes'][1], g['nodes'][2]
+    assert app['cfg'] == {'tier': 's', 'count': 2, 'azs': 9} and 'cfg' not in db             # the sim clamps zones; unknown tiers go
+    assert [(e['from'], e['to']) for e in g['edges']] == [('client', 'app'), ('app', 'db')]
+    assert d['level'] == 'garage' and d['scenario']['dau'] == 2000 and d['scenario']['slo']['budget'] == 300
+    assert d['scenario']['events'] == [{'id': 'tutor-0', 'type': 'db-failover', 'at': 23, 'dur': 1, 'params': {}}]
+    assert all(n['x'] >= rig.LEFT and n['y'] >= rig.TOP for n in g['nodes'])
+    again = rig.extract(rig.source(d))[1][0]
+    assert again['graph']['edges'] == g['edges'] and again['scenario']['events'][0]['type'] == 'db-failover'
+
+
+def test_designs_without_a_connection_or_known_parts_are_dropped():
+    assert rig.extract('```design\nnodes: [teapot, kettle]\n```')[1] == []
+    assert rig.extract('```design\nnodes: [app]\n```')[1] == []
+
+
+def test_what_he_changed_is_summarised_for_the_tutor():
+    before = {'nodes': [{'id': 'a', 'defId': 'app-server'}, {'id': 'd', 'defId': 'db-sql'}], 'edges': [{'from': 'a', 'to': 'd'}]}
+    after = {'nodes': [{'id': 'a', 'defId': 'app-server', 'cfg': {'count': 6}}, {'id': 'd', 'defId': 'db-sql'}, {'id': 'c', 'defId': 'cache'}],
+             'edges': [{'from': 'a', 'to': 'd'}, {'from': 'a', 'to': 'c'}]}
+    text = rig.changes(before, after)
+    assert '+1 cache' in text and 'app-server settings {"count":6}' in text and '1 connections changed' in text
+    assert rig.changes(before, before) == ''
+
+
+def test_the_simulator_guide_names_real_components_and_incidents():
+    g = rig.guide()
+    assert 'app-server' in g and 'cache-flush' in g and 'garage' in g and 'not correctness' in g

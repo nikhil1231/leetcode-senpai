@@ -93,3 +93,9 @@
 .go-tutor .nav-icon { width: 18px; height: 18px; }
 body:not(.section-design):not(.section-track) .go-tutor { display: none; }   /* the Tutor tab is right there in the main nav */
 @media (max-width: 900px) { .go-tutor span { display: none; } .go-tutor { width: auto; } }
+
+/* A design handed over for the simulator: folded, then the builder full width under the message. */
+.tu-design { margin-top: 10px; }
+.tu-design-sub { margin: 6px 2px 0; font-size: 12.5px; }
+.tu-design-head { margin: 0 0 8px; }
+.tu-design-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 13px; }
