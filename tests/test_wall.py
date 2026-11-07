@@ -90,15 +90,24 @@ def test_shelf_puts_the_weakest_lessons_posters_first_and_reuses_old_ones():
 def test_to_make_picks_the_weakest_lesson_without_a_fresh_poster():
     now = 100 * DAY
     ranked = [{'lesson': 'a', 'points': ['a1', 'a2']}, {'lesson': 'b', 'points': ['b1']}]
-    assert wall.to_make(ranked, [], now, 'v')['lesson'] == 'a'
+    assert wall.to_make(ranked, [], now, ('v',))['lesson'] == 'a'
     fresh_a = poster_doc('a', 'a', now - DAY, points=['a1'])
-    assert wall.to_make(ranked, [fresh_a], now, 'v')['lesson'] == 'b'
-    assert wall.to_make(ranked, [poster_doc('a', 'a', now - 8 * DAY, points=['a1'])], now, 'v')['lesson'] == 'a'
-    assert wall.to_make(ranked, [poster_doc('a', 'a', now - DAY, points=['zz'])], now, 'v')['lesson'] == 'a'  # moved on
-    assert wall.to_make(ranked, [poster_doc('a', 'a', now - DAY, points=['a1'], version='old')], now, 'v')['lesson'] == 'a'
+    assert wall.to_make(ranked, [fresh_a], now, ('v',))['lesson'] == 'b'
+    assert wall.to_make(ranked, [poster_doc('a', 'a', now - 8 * DAY, points=['a1'])], now, ('v',))['lesson'] == 'a'
+    assert wall.to_make(ranked, [poster_doc('a', 'a', now - DAY, points=['zz'])], now, ('v',))['lesson'] == 'a'  # moved on
+    assert wall.to_make(ranked, [poster_doc('a', 'a', now - DAY, points=['a1'], version='old')], now, ('v',))['lesson'] == 'a'
     failed_a = poster_doc('x', 'a', now - 3600, ok=False)
-    assert wall.to_make(ranked, [failed_a], now, 'v')['lesson'] == 'b'   # a failing lesson waits its turn
-    assert wall.to_make(ranked, [fresh_a, poster_doc('b', 'b', now - DAY, points=['b1'])], now, 'v') is None
+    assert wall.to_make(ranked, [failed_a], now, ('v',))['lesson'] == 'b'   # a failing lesson waits its turn
+    assert wall.to_make(ranked, [fresh_a, poster_doc('b', 'b', now - DAY, points=['b1'])], now, ('v',)) is None
+    assert wall.to_make(ranked, [poster_doc('a', 'a', now - DAY, points=['a1'], version='old')], now, ('old', 'v'))['lesson'] == 'b'
+
+
+def test_stalest_picks_the_lesson_with_the_oldest_poster():
+    ranked = [{'lesson': 'a'}, {'lesson': 'b'}, {'lesson': 'c'}]
+    library = [poster_doc('a', 'a', 5), poster_doc('b', 'b', 2), poster_doc('c', 'c', 9), poster_doc('x', 'c', 1, ok=False)]
+    assert wall.stalest(ranked, library)['lesson'] == 'b'
+    assert wall.stalest(ranked, library[:1])['lesson'] == 'b'      # none at all comes first, weakest first
+    assert wall.stalest([], library) is None
 
 
 def test_fit_image_fills_the_screen_without_cropping():
@@ -149,6 +158,7 @@ def test_endpoints(client):
     assert r.status_code == 200 and r.headers['content-type'] == 'image/png' and r.headers['cache-control'] == 'no-store'
     assert client.get('/api/wall/now').json() == {'poster': None, 'card': None}   # nothing covered yet
     assert client.post('/api/wall/posters').status_code == 503                    # no model: nothing is made
+    assert client.post('/api/wall/poster.png').status_code == 503
     page = client.get('/wall')
     assert page.status_code == 200 and '/api/wall' in page.text
 

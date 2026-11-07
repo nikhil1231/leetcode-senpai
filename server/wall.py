@@ -15,7 +15,7 @@ and none is seen only asleep. Without a model, or before the first poster, a pla
 Surfaces: /wall cycles posters full screen (a TV, a projector, a Mac screensaver, a phone on
 StandBy); /wall?print=1 lays six out for a weekly colour print. Showing a poster records nothing,
 because a screen on the wall is not proof anyone looked. Pure: weight, posters, struggles, brief,
-wake_slot, shelf, current, to_make, fading_map. I/O: render_card, fit_image, the router.
+wake_slot, shelf, current, to_make, stalest, fading_map. I/O: render_card, fit_image, the router.
 Intent: docs/plans/ambient-learning.md.
 """
 import asyncio
@@ -162,12 +162,12 @@ def current(library, ranked, n):
     return on[n % len(on)] if on else None
 
 
-def to_make(ranked, library, now, version, fresh_days=7, retry_hours=20):
-    """The weakest lesson that needs a new poster, or None: one with no passing poster of this
-    prompt version made in the last fresh_days that covers at least half its weak points now.
+def to_make(ranked, library, now, versions, fresh_days=7, retry_hours=20):
+    """The weakest lesson that needs a new poster, or None: one with no passing poster of these
+    prompt versions made in the last fresh_days that covers at least half its weak points now.
     A lesson whose last try failed review waits retry_hours, so one stubborn lesson can't eat the budget."""
     for l in ranked:
-        mine = [p for p in library if p['lesson'] == l['lesson'] and p.get('version') == version]
+        mine = [p for p in library if p['lesson'] == l['lesson'] and p.get('version') in versions]
         if any(not p.get('ok') and now - p['created_at'] < retry_hours * 3600 for p in mine):
             continue
         fresh = [p for p in mine if p.get('ok') and now - p['created_at'] < fresh_days * 86400
@@ -175,6 +175,14 @@ def to_make(ranked, library, now, version, fresh_days=7, retry_hours=20):
         if not fresh:
             return l
     return None
+
+
+def stalest(ranked, library):
+    """The lesson you struggle with whose newest passing poster is oldest (none at all first;
+    ties go to the weaker lesson), or None when you struggle with nothing."""
+    def newest(l):
+        return max((p['created_at'] for p in library if p['lesson'] == l['lesson'] and p.get('ok')), default=0)
+    return min(ranked, key=newest) if ranked else None
 
 
 # Ripple's architecture: system design areas as the parts of one system (x, y, w, h on a 1600x900
@@ -407,6 +415,31 @@ def poster_png(w: int = Query(default=1179, ge=320, le=4000), h: int = Query(def
         return Response(fit_image(img['data'], w, h), media_type='image/jpeg', headers=headers)
     card = card or {'title': 'Leetcode Senpai', 'ideas': [], 'colour': COLOURS['fact']}
     return Response(render_card(card, w, h, top), media_type='image/png', headers=headers)
+
+
+@router.post('/poster.png')
+async def new_poster_png(w: int = Query(default=1179, ge=320, le=4000), h: int = Query(default=2556, ge=320, le=4000),
+                         who=Depends(kb_api.caller)):
+    """A new poster made now, outside the cadence, fitted like GET's: for the weakest lesson needing
+    one, else the one whose poster is oldest. Slow (up to three draws and reviews). A try that fails
+    review never comes back: you get the poster up now instead, marked X-Wall-Poster: failed-review."""
+    from . import wall_gen
+    if not llm.enabled():
+        raise HTTPException(503, 'Posters need a model (OPENROUTER_API_KEY)')
+    store = kb_api.get_store(who['uid'])
+    p = await asyncio.to_thread(wall_gen.make, store, time.time(), None, True)
+    if not p:
+        raise HTTPException(409, 'No lesson you have covered needs a poster')
+    if not p.get('ok'):
+        up, _ = _wallpaper(who['uid'], time.time())
+        img = up and store.get_knowledge(wall_gen.IMAGES, up['_key'])
+        if not img:
+            raise HTTPException(502, 'The new poster failed review and none is up yet')
+        return Response(fit_image(img['data'], w, h), media_type='image/jpeg',
+                        headers={'Cache-Control': 'no-store', 'X-Wall-Poster': 'failed-review'})
+    img = store.get_knowledge(wall_gen.IMAGES, p['_key'])
+    return Response(fit_image(img['data'], w, h), media_type='image/jpeg',
+                    headers={'Cache-Control': 'no-store', 'X-Wall-Poster': p['_key']})
 
 
 @router.get('/posters')

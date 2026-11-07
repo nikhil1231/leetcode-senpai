@@ -8,8 +8,8 @@ truth) into the poster's few words, the image model draws them, and the text mod
 picture against the claims and the words for spelling, facts, sensible diagrams and legibility.
 A failed try goes back to the image model as an edit with the reviewer's notes, up to ATTEMPTS.
 Posters are derived: kept in Firestore (wall_posters, the JPEG in wall_images) and stamped with
-PROMPT_VERSION so a new prompt remakes them. Without a model nothing is made and the wall shows
-its plain card. Pure: copy_prompt, image_prompt, fix_prompt, review_prompt, passed, due. I/O: the rest.
+PROMPT_VERSION; posters of the KEPT versions still count as current, so a new prompt applies to new
+posters without remaking the old ones. Without a model nothing is made and the wall shows its plain card. Pure: copy_prompt, image_prompt, fix_prompt, review_prompt, passed, due. I/O: the rest.
 """
 import asyncio
 import io
@@ -26,7 +26,8 @@ from .knowledge_base import api as kb_api, model as kmodel
 
 log = logging.getLogger(__name__)
 POSTERS, IMAGES = 'wall_posters', 'wall_images'
-PROMPT_VERSION = 'wall-4'
+PROMPT_VERSION = 'wall-5'   # wall-5: the whole screen (the clock is translucent), a calmer style
+KEPT = ('wall-4', PROMPT_VERSION)
 ATTEMPTS = 3
 WIDTH = 1179            # stored width: an iPhone's; wall.fit_image fits other screens
 MAX_BYTES = 900_000     # a Firestore document holds 1 MiB
@@ -48,10 +49,10 @@ class PosterReview(BaseModel):
     text_correct: bool = Field(description="every word on the poster is spelled correctly; no garbled, repeated, invented or half-formed text")
     facts_correct: bool = Field(description="everything the poster states agrees with the ideas given; nothing wrong or misleading added")
     all_ideas_present: bool = Field(description="every idea given appears on the poster")
-    clock_area_clear: bool = Field(description="the top 6% of the poster has no text or important elements")
     diagrams_make_sense: bool = Field(description="every icon and diagram illustrates its idea correctly; no nonsense labels, arrows or pairings")
     legible: bool = Field(description="all text is large and contrasted enough to read on a phone lock screen")
-    score: int = Field(description="1 unusable … 10 a poster you would gladly look at every day: clear, colourful, correct")
+    tasteful: bool = Field(description="looks professionally designed: a calm, coherent palette, clean typography, consistent icons; nothing garish, cluttered or clip-art")
+    score: int = Field(description="1 unusable … 10 a poster you would gladly look at every day: clear, refined, correct")
     issues: list[str] = Field(description="each problem found, naming exactly where it is and what to change; empty when there are none")
     verdict: Literal["pass", "redraw"]
 
@@ -79,8 +80,10 @@ def image_prompt(b, copy):
 Headline: "{copy['headline']}"
 {panels}
 Write exactly the quoted text above and nothing else: no extra captions, footnotes or labels, and no text inside the icons. Every word spelled exactly as given.
-Style: bold, joyful editorial infographic. Vivid saturated colours, a different accent colour per numbered panel, one simple flat icon per panel (no diagrams, flows, arrows or code), a big punchy headline. All text large: easy to read on a phone lock screen.
-The background must run seamlessly to every edge: one plain colour or a smooth gradient, no border, frame or band. Keep the top 6% plain background. Margins of 6% on the sides and bottom. No watermark, signature, logos or fake phone UI."""
+Style: a refined modern editorial poster, the quality of a design studio's print, not a slide or clip-art. A calm, coherent palette: a deep or soft background with two or three harmonious accent colours used sparingly. One clean geometric sans-serif typeface with a clear hierarchy: a confident headline, medium headings, comfortable body text, generous spacing. One minimal icon per panel, all in the same line or flat style (no diagrams, flows, arrows or code). Plenty of whitespace and a strong grid; panels aligned, not boxed in heavy cards.
+Avoid: neon or rainbow colours, glossy, 3D or drop-shadow effects, stickers, badges, emoji, confetti, starbursts, ribbons and decorative clutter.
+Use the whole canvas, top to bottom: a translucent clock is drawn over the upper part, so content may sit there, but put the headline below the top 12%. All text large enough to read on a phone lock screen.
+The background must run seamlessly to every edge: one plain colour or a subtle smooth gradient, no border, frame or band. Margins of 5% on the sides and bottom. No watermark, signature, logos or fake phone UI."""
 
 
 def fix_prompt(issues):
@@ -91,8 +94,8 @@ def fix_prompt(issues):
 
 REVIEW_SYSTEM = ("You review generated study posters before they become someone's phone wallpaper. Be strict: "
                  "a misspelled, repeated or garbled word, a wrong or distorted fact, a missing idea, a diagram "
-                 "that does not make sense, text too small to read on a phone, or text in the top 6% each means "
-                 "verdict 'redraw'. Judge facts only against the ideas given: a faithful shortening is fine; flag a "
+                 "that does not make sense, or text too small to read on a phone each means verdict 'redraw'; a garish, "
+                 "cluttered or clip-art look scores 6 or less. Judge facts only against the ideas given: a faithful shortening is fine; flag a "
                  "statement only if it is wrong or misleading.")
 
 
@@ -104,11 +107,11 @@ def review_prompt(b, copy):
 
 
 def passed(r):
-    """Spelling, facts, every idea and sensible diagrams are musts; legibility and the clock area are
-    musts too unless the reviewer still scores it 8+ (a small caption is no reason to redraw)."""
+    """Spelling, facts, every idea and sensible diagrams are musts; legibility and taste are musts
+    too unless the reviewer still scores it 8+ (a small caption is no reason to redraw)."""
     musts = ('text_correct', 'facts_correct', 'all_ideas_present', 'diagrams_make_sense')
     return all(r[k] for k in musts) and (r['score'] >= 8 or (
-        r['verdict'] == 'pass' and r['score'] >= 7 and r['legible'] and r['clock_area_clear']))
+        r['verdict'] == 'pass' and r['score'] >= 7 and r['legible'] and r.get('tasteful', True)))
 
 
 def _jpeg(data):
@@ -143,13 +146,14 @@ def _copy(b):
                                                for i, idea in enumerate(b['ideas'], 1)]}
 
 
-def make(store, now, lesson=None):
-    """Write, draw, review and keep one poster: for `lesson`, else the weakest lesson needing one.
+def make(store, now, lesson=None, force=False):
+    """Write, draw, review and keep one poster: for `lesson`, else the weakest lesson needing one
+    (with `force`, else the lesson whose poster is oldest).
     -> the kept poster (passing, or the best failed try, which never goes up), or None."""
     views, mis, ranked = _state(store, now)
     library = store.list_knowledge(POSTERS)
     target = next((l for l in ranked if l['lesson'] == lesson), None) if lesson else \
-        wall.to_make(ranked, library, now, PROMPT_VERSION)
+        wall.to_make(ranked, library, now, KEPT) or (wall.stalest(ranked, library) if force else None)
     if not target:
         return None
     b = wall.brief(target, views, mis)

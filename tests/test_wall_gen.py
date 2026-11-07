@@ -22,7 +22,7 @@ COPY = {'headline': 'Java concurrency', 'panels': [{'heading': 'Volatile', 'line
 
 
 def review(ok=True, score=9, **kw):
-    r = {'text_correct': ok, 'facts_correct': True, 'all_ideas_present': True, 'clock_area_clear': True,
+    r = {'text_correct': ok, 'facts_correct': True, 'all_ideas_present': True, 'tasteful': True,
          'diagrams_make_sense': True, 'legible': True, 'score': score, 'issues': [] if ok else ['Panel 1: "atomicty" is misspelled.'],
          'verdict': 'pass' if ok else 'redraw'}
     return {**r, **kw}
@@ -32,7 +32,7 @@ def test_prompts_carry_the_claims_and_keep_notes_off_the_poster():
     cp = wall_gen.copy_prompt(BRIEF)
     assert 'volatile gives visibility' in cp and 'thought volatile made count++ safe' in cp and 'without mentioning' in cp
     ip = wall_gen.image_prompt(BRIEF, COPY)
-    assert '"Visibility, not atomicity."' in ip and 'Panel 2' in ip and 'thought volatile' not in ip and 'top 6%' in ip
+    assert '"Visibility, not atomicity."' in ip and 'Panel 2' in ip and 'thought volatile' not in ip and 'top 6%' not in ip and 'translucent clock' in ip
     fp = wall_gen.fix_prompt(['Panel 1: fix the typo'])
     assert 'Panel 1: fix the typo' in fp and 'Never write these notes' in fp
     rp = wall_gen.review_prompt(BRIEF, COPY)
@@ -128,3 +128,8 @@ def test_the_phone_gets_the_stored_poster(client, models, monkeypatch):
     assert r.headers['content-type'] == 'image/jpeg' and Image.open(io.BytesIO(r.content)).size == (400, 900)
     assert c.get(made['image']).status_code == 200 and c.get('/api/wall/posters/nope.jpg').status_code == 404
     assert [p['id'] for p in c.get('/api/wall/posters').json()['posters']] == [made['id']]
+    models['reviews'].append(review())
+    r = c.post('/api/wall/poster.png', params={'w': 400, 'h': 900})       # forced: a new one though none is due
+    assert r.status_code == 200 and r.headers['content-type'] == 'image/jpeg' and r.headers['x-wall-poster'] != made['id']
+    assert Image.open(io.BytesIO(r.content)).size == (400, 900)
+    assert len(c.get('/api/wall/posters').json()['posters']) == 2
