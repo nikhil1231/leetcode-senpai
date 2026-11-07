@@ -18,8 +18,8 @@ test('estimates fall back to 10 reads and 1 write per user per day, and honour o
  assert.equal(C.estimate({dau:'abc',readQps:'-5'}).readQps,0);
 });
 test('every shipped preset is a valid graph over known components',()=>{
- assert.equal(data.components.length,35);assert.equal(data.presets.length,4);
- const known=new Set(data.components.map(c=>c.id));assert.equal(known.size,35);
+ assert.equal(data.components.filter(c=>!c.ai).length,35);assert.equal(data.components.filter(c=>c.ai).length,10);assert.equal(data.presets.length,4);
+ const known=new Set(data.components.filter(c=>!c.ai).map(c=>c.id));assert.equal(new Set(data.components.map(c=>c.id)).size,45);   // presets use design parts only
  for(const p of data.presets){
   const nodes=new Set(p.nodes.map(n=>n.id));assert.equal(nodes.size,p.nodes.length,p.id);
   for(const n of p.nodes)assert.ok(known.has(n.defId),`${p.id}: ${n.defId}`);

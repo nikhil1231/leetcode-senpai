@@ -189,3 +189,4 @@
 
 @media (max-width: 1000px) { .rp-hero, .rp-brief, .rp-res-grid { grid-template-columns:1fr; } .rp-head { grid-template-columns:1fr; } }
 @media (max-width: 560px) { .rp-stats { grid-template-columns:1fr 1fr; } .rp-recent li { grid-template-columns:52px minmax(0,1fr); } .rp-recent time { display:none; } }
+.rp-mix { list-style:none; padding:0; margin:6px 0 0; display:grid; gap:3px; font-size:12px; } .rp-mix li { display:flex; gap:8px; } .rp-mix b { font-family:var(--font-mono); min-width:36px; }

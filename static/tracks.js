@@ -226,6 +226,12 @@
       });
       ctx.onLeave(() => handle.destroy());
       window.NightShift?.chips(ctx.root.querySelector('.tr-practice-slot'), ctx.track, lesson.id);
+      if (ctx.track === 'ai') window.RippleOps?.levelsFor(lesson.id).then(ls => {   // the Ripple Assist chapters that use this lesson
+        const slot = ctx.root.querySelector('.tr-practice-slot');
+        if (!ls.length || !slot?.isConnected || ctx.stale()) return;
+        slot.innerHTML = `<div class="rp-practice"><b>Put it to work in Ripple Assist:</b>${ls.map(l => `<button type="button" class="rp-chip" data-ripple="${esc(l.id)}">${esc(l.title)}</button>`).join('')}</div>`;
+        slot.onclick = e => { const b = e.target.closest('[data-ripple]'); if (b) window.RippleOps.openLevel(b.dataset.ripple); };
+      }).catch(() => {});
       window.Tutor?.mount(ctx.root.querySelector('.tr-tutor-slot'), {
         section: ctx.track, lesson, layout: ctx.root.querySelector('.sd-rich-layout'),
         recall: (block, text) => ctx.call(`/lessons/${lesson.id}/recall`, 'POST', { block: block.key, text }),

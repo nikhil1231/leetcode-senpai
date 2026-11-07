@@ -143,13 +143,14 @@
       row('Estimation drills', 'Back-of-envelope numbers against the clock.', 'view', 'data-view="drills"'),
       row('Skill drills', 'One focused design decision, two to five minutes.', 'view', 'data-view="skills"'),
       row('Custom Quickfire', 'Choose the area, topic, difficulty and length yourself.', 'view', 'data-view="quickfire"'));
-    if (section === 'ai') rows.push(row('The AI-assisted coding round', 'Practise the round where you pair with an AI on real code.', 'view', 'data-view="round"'));
+    if (section === 'ai') rows.push(row('The AI-assisted coding round', 'Practise the round where you pair with an AI on real code.', 'view', 'data-view="round"'),
+      row('Ripple Assist', 'The AI chapters of Ripple Ops: build a support assistant from models, retrieval, routing, guardrails and evals, then live through its day.', 'ripple', 'data-level="assist-launch"'));
     if (section === 'fundamentals') rows.splice(2, 0, row('Night Shift', "The on-call game: you're paged at Ripple. Read the box, act, and say what really broke.", 'view', 'data-view="nightshift"'));
     root.innerHTML = `<div class="hub"><div class="sd-page-intro hub-intro"><span class="sd-eyebrow">PRACTISE</span><h2 id="sd-heading" tabindex="-1">Practise</h2><p>Home already picks the most useful thing. This is everything, when you want to choose.</p></div>
       <div class="hub-rows">${rows.join('')}</div>
       ${untested.length ? `<section class="hub-place"><h3>Find your level</h3><p class="sd-muted">Areas with nothing tested yet. One question per lesson, about five minutes each.</p><div class="hub-chips">${untested.map(a => btn(`${a.title} · ${a.lessons.length}`, 'place', `data-area="${a.id}" data-count="${a.lessons.length}"`)).join('')}</div></section>` : ''}</div>`;
     wire(root, section, {
-      review: () => ({kind: 'review'}), view: n => ({kind: 'view', view: n.dataset.view}), ripple: () => ({kind: 'ripple'}),
+      review: () => ({kind: 'review'}), view: n => ({kind: 'view', view: n.dataset.view}), ripple: n => ({kind: 'ripple', level: n.dataset.level}),
       place: n => ({kind: 'placement', area: n.dataset.area, count: +n.dataset.count}),
     });
   }

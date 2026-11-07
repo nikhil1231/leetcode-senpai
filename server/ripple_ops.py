@@ -161,8 +161,14 @@ def level_text(l):
              f"Goal: {l.get('goal', '')}",
              f"Targets: availability {slo.get('availability', 99.9)}%" + ''.join(f", {k} p99 ≤ {v} ms" for k, v in (slo.get('p99') or {}).items())
              + (f", budget ${slo['budget']:,}/month" if slo.get('budget') else '') + (', no lost writes' if slo.get('noLoss') else '')
-             + (f", background work within {slo['lagMin']} min" if slo.get('lagMin') is not None else ''),
+             + (f", background work within {slo['lagMin']} min" if slo.get('lagMin') is not None else '')
+             + (f", {slo.get('quality')}% of questions answered correctly, p95 ≤ {slo.get('p95', 8000) / 1000:.1f} s" if l.get('ai') else '')
+             + (', no harmful actions' if l.get('ai') and slo.get('safety') is not None else ''),
              'Incidents: ' + ('; '.join(f"{e.get('label', e['type'])} at {e.get('at', 0):02d}:00" for e in l.get('events') or []) or 'none')]
+    if l.get('ai'):
+        mix = (l['ai'].get('mix') or {})
+        lines.insert(2, 'An AI support assistant (Ripple Assist), simulated by ai-sim.js: ' + ', '.join(f'{round(v * 100)}% {k}' for k, v in mix.items() if v)
+                     + '. Components are models, retrieval, routing, guardrails, tools and evals; cost is mostly tokens.')
     return '\n'.join(lines)
 
 

@@ -4,7 +4,8 @@
 // post-mortem. Runs, drafts and progress live on the server (/api/ripple); a run is evidence for the
 // knowledge model, and failures open gaps the tutor will ask about. The model plays the cast for
 // debriefs, design reviews (with what-if incidents run against your design), mock interviews and new
-// levels; without it the game still works.
+// levels; without it the game still works. The Ripple Assist chapters (chapter "assist") are AI
+// systems run by ai-sim.js through the same builder.
 (function () {
   'use strict';
   const esc = s => String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -13,8 +14,9 @@
   const B = () => window.SDBuilder, Sim = () => window.SDSim;
   const hh = h => String(h).padStart(2, '0') + ':00';
   const CHAPTERS = { foundations: 'Foundations', apis: 'APIs', caching: 'Caching', queues: 'Queues', storage: 'Storage', reliability: 'Reliability',
-    distributed: 'Distributed', specialised: 'Specialised', casebook: 'Casebook', generated: 'Generated' };
-  const UNITS = { peakReadRps: 'req/s', peakWriteRps: 'req/s', storageGbYear: 'GB', egressTbMonth: 'TB', cacheGb: 'GB' };
+    distributed: 'Distributed', specialised: 'Specialised', casebook: 'Casebook', assist: 'Ripple Assist', generated: 'Generated' };
+  const UNITS = { peakReadRps: 'req/s', peakWriteRps: 'req/s', storageGbYear: 'GB', egressTbMonth: 'TB', cacheGb: 'GB',
+    questionsPerDay: 'a day', peakQps: 'per second', tokensPerQuestion: 'tokens', largeModelMonthUsd: '$ a month' };
   const MIC = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v2.5"/></svg>';
   let camp = null, sims = null, pending = null;
   const readLocal = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
@@ -52,7 +54,7 @@
         <span class="rp-card-foot">${open ? (p ? `${p.attempts} run${p.attempts === 1 ? '' : 's'}${p.best_cost != null ? ` · best ${B().money(p.best_cost)}/mo` : ''}` : 'Not played yet') : `Survive “${esc(after?.title || '')}” to unlock`}</span></button>`;
     }
     function hubHtml() {
-      const p = ov.progress, co = ov.company, main = levels().filter(l => !l.side), side = levels().filter(l => l.side);
+      const p = ov.progress, co = ov.company, main = levels().filter(l => !l.side), side = levels().filter(l => l.side && l.chapter !== 'assist'), assist = levels().filter(l => l.chapter === 'assist');
       const d = dailyScenario(), done = ov.daily?.done;
       const twist = d?.events.at(-1);
       const conceptOpts = Object.entries(camp.concepts).map(([k, c]) => `<option value="${esc(k)}">${esc(c.label)}</option>`).join('');
@@ -67,6 +69,7 @@
           <div class="rp-daily-act">${done ? `<span>Done today ${B().stars(ov.daily.best || 0)}</span>` : ''}<button type="button" class="button ${done ? '' : 'is-primary'}" data-daily>${done ? 'Play again' : 'Play today\'s incident'}</button></div></section>` : ''}
         <section class="rp-sec"><h3>The campaign</h3><p class="rp-sub">Ripple grows a tier each level. Each one is a chapter of the course with a budget, targets and a bad day.</p>
           <div class="rp-cards">${main.map(levelCard).join('')}</div></section>
+        ${assist.length ? `<section class="rp-sec"><h3>Ripple Assist: the AI chapters</h3><p class="rp-sub">Ripple ships an AI support assistant. Models, retrieval, routing, guardrails, tools and evals instead of servers and databases, against quality, latency, safety and a token bill. They open once you've survived “${esc(byId('async-work')?.title || '')}”, one after another.</p><div class="rp-cards">${assist.map(levelCard).join('')}</div></section>` : ''}
         <section class="rp-sec"><h3>Side quests</h3><p class="rp-sub">Ripple's partnerships, from the casebook. They open once you've survived “${esc(byId('async-work')?.title || '')}”.</p><div class="rp-cards">${side.map(levelCard).join('')}</div></section>
         <section class="rp-sec"><h3>New incidents</h3><p class="rp-sub">Priya writes you a fresh level, aimed at what your last runs got wrong unless you pick a topic.</p>
           ${ov.enabled ? `<div class="rp-gen"><select data-gen-focus aria-label="Topic"><option value="">My weak spots</option>${conceptOpts}</select>
@@ -86,10 +89,15 @@
     const conceptChip = c => {
       const k = camp.concepts[c];
       if (!k) return '';
-      return `<span class="rp-learn"><button type="button" class="rp-chip" data-lesson="${esc(k.lesson)}" title="Open the lesson">📖 ${esc(k.label)}</button>${k.sim && sims[k.sim] ? `<button type="button" class="rp-chip is-sim" data-sim="${esc(k.sim)}" title="Open the simulator">🧪 ${esc(sims[k.sim].title.replace('&amp;', '&'))}</button>` : ''}</span>`;
+      return `<span class="rp-learn"><button type="button" class="rp-chip" data-lesson="${esc(k.lesson)}"${k.section ? ` data-section="${esc(k.section)}"` : ''} title="Open the lesson">📖 ${esc(k.label)}</button>${k.sim && sims[k.sim] ? `<button type="button" class="rp-chip is-sim" data-sim="${esc(k.sim)}" title="Open the simulator">🧪 ${esc(sims[k.sim].title.replace('&amp;', '&'))}</button>` : ''}</span>`;
     };
     function targetsHtml(l) {
-      const s = l.slo || {}, rows = [[`${s.availability ?? 99.9}%`, 'available over the day']];
+      const s = l.slo || {}, rows = [[`${s.availability ?? 99.9}%`, l.ai ? 'of questions answered without an error' : 'available over the day']];
+      if (l.ai) {
+        rows.unshift([`≥ ${s.quality}%`, 'answered correctly']);
+        rows.push([`≤ ${(s.p95 / 1000).toFixed(1)} s`, 'p95 to a full answer']);
+        if (s.safety != null) rows.push(['0', 'harmful actions']);
+      }
       for (const [t, v] of Object.entries(s.p99 || {})) rows.push([`≤ ${v} ms`, `p99 for ${(Sim().LABEL[t] || t).toLowerCase()}`]);
       if (s.budget) rows.push([B().money(s.budget), 'a month, at most']);
       if (s.lagMin != null) rows.push([`≤ ${s.lagMin} min`, 'behind on background work']);
@@ -97,6 +105,11 @@
       return `<ul class="rp-targets">${rows.map(([a, b]) => `<li><b>${esc(a)}</b><span>${esc(b)}</span></li>`).join('')}</ul>`;
     }
     function trafficHtml(l) {
+      if (l.ai) {
+        const A = window.AISim.normalize(l), mix = Object.entries(A.ai.mix).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+        return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> users · ${l.traffic.ask.perUser} questions per user a day · evening peak about ${l.traffic.peak || 1.8}× the average · prompts about ${A.ai.promptTokens.toLocaleString('en')} tokens plus ${A.ai.topK} retrieved passages of ${A.ai.chunkTokens}, answers about ${A.ai.outTokens} tokens</p>
+          <ul class="rp-mix">${mix.map(([k, v]) => `<li><b>${Math.round(v * 100)}%</b><span>${esc(window.AISim.KIND_LABEL[k])}</span></li>`).join('')}</ul>`;
+      }
       const T = l.traffic || {}, parts = [];
       const size = kb => kb >= 1000 ? `${B().fmt(kb / 1000)} MB` : `${B().fmt(kb)} KB`;
       for (const t of Sim().USER) if (T[t]?.perUser) { const kb = T[t].kb ?? Sim().KB[t];
@@ -126,6 +139,7 @@
         <div class="rp-go"><button type="button" class="button" data-check>Check my numbers</button><button type="button" class="button is-primary" data-step="build">Build it →</button></div></div>`;
     }
     function workingText(l) {
+      if (l.ai) return 'Working: questions a day = users × questions per user. Peak per second = that ÷ 86,400 × the peak multiple. Tokens per question = the prompt plus top-k × passage size, plus the answer. The large model costs $3 per million tokens in and $15 per million out, so a month is questions × 30 × (tokens in × 3 + tokens out × 15) ÷ 1,000,000.';
       const T = l.traffic, peak = Math.max(...Sim().curve(Sim().normalize(l)));
       const reads = ['read', 'media', 'search', 'geo'].filter(t => T[t]?.perUser).map(t => T[t].perUser), writes = ['write', 'upload', 'realtime', 'payment', 'locate'].filter(t => T[t]?.perUser).map(t => T[t].perUser);
       return `Working: ${Number(l.dau).toLocaleString('en')} users × ${reads.reduce((a, b) => a + b, 0)} reads a day ÷ 86,400 s × ${peak.toFixed(1)} at peak; writes the same way with ${writes.reduce((a, b) => a + b, 0)} a day. Storage is writes a day × their size × 365. Bandwidth is every response's size, summed over a month.`;
@@ -144,7 +158,7 @@
     }
     function resultsHtml(l) {
       if (!res) return '';
-      const s = res.summary, prog = posted?.progress, nextL = levels().find(x => x.after === l.id && !x.side && (prog || ov.progress).unlocked.includes(x.id));
+      const s = res.summary, prog = posted?.progress, nextL = levels().find(x => x.after === l.id && (!x.side || x.chapter === l.chapter) && (prog || ov.progress).unlocked.includes(x.id));
       const showRef = l.solution && (s.stars >= 2 || attempts >= 2);
       return `<h3>How the day went</h3>
         ${posted?.first_clear ? `<div class="rp-banner">🎉 Chapter cleared. Ripple made it through “${esc(l.title)}”, and the team will remember it.</div>` : ''}
@@ -367,6 +381,7 @@
         try { const s = await call('/generate', 'POST', { focus: el.querySelector('[data-gen-focus]')?.value || '', size: el.querySelector('[data-gen-size]')?.value || 'scale-up' }); genState = ''; await refresh(); s.generated = true; await openLevel(s); }
         catch (e) { genState = e.message === 'auth' ? '' : `Couldn't write one just now (${e.message}).`; paint(); }
       }
+      else if (d.lesson && d.section) { stopBuilder(); window.AppSections?.select(d.section, 'lesson/' + d.lesson); }
       else if (d.lesson) { stopBuilder(); window.SystemDesign?.openView('lesson/' + d.lesson); }
       else if (d.sim) { stopBuilder(); window.DesignSimulators?.openItem('internals', d.sim); }
       else if (d.check !== undefined) { graded = Sim().grade(L, est, L.estimate); paint(); }
@@ -430,7 +445,14 @@
   }
 
   // Lessons and the home page link straight into a level.
-  function openLevel(id) { pending = id; window.DesignSimulators?.openItem('game', 'ripple'); }
+  function openLevel(id) {
+    pending = id;
+    // From another section (the AI course), switch to System Design first: Ripple Ops lives in its simulators view.
+    if (window.AppSections?.current?.() && window.AppSections.current() !== 'system-design') {
+      window.AppSections.select('system-design', 'simulators');
+      setTimeout(() => window.DesignSimulators?.openItem('game', 'ripple'), 0);
+    } else window.DesignSimulators?.openItem('game', 'ripple');
+  }
   async function levelsFor(lesson) {
     try { await loadStatic(); } catch { return []; }
     return camp.levels.filter(l => (l.lessons || []).includes(lesson)).map(l => ({ id: l.id, title: l.title, tier: l.tier, side: !!l.side }));

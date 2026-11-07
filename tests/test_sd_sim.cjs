@@ -148,10 +148,11 @@ test('the daily incident is the same all day, differs between days, and adds one
 test('every shipped level is well formed and linked to real lessons, points and simulators',()=>{
  const known=new Set(builder.components.map(c=>c.id)),ids=new Set(camp.levels.map(l=>l.id));
  const sims=new Set(internals.topics.map(t=>t.id));
- const pointsDir=path.join(root,'server/knowledge_base/points/system-design'),lessonsDir=path.join(root,'server/system_design_lessons');
- const points=new Set(fs.readdirSync(pointsDir).flatMap(f=>[...fs.readFileSync(path.join(pointsDir,f),'utf8').matchAll(/^- id: (\S+)/gm)].map(m=>m[1])));
+ const pointsDir=s=>path.join(root,'server/knowledge_base/points',s),lessonsDir=path.join(root,'server/system_design_lessons');
+ const lessonFile=(section,id)=>section==='ai'?path.join(root,'server/tracks/content/ai',id+'.md'):path.join(lessonsDir,id+'.md');
+ const points=new Set(['system-design','ai'].flatMap(sec=>fs.readdirSync(pointsDir(sec)).flatMap(f=>[...fs.readFileSync(path.join(pointsDir(sec),f),'utf8').matchAll(/^- id: (\S+)/gm)].map(m=>m[1]))));
  for(const [k,c] of Object.entries(camp.concepts)){
-  assert.ok(fs.existsSync(path.join(lessonsDir,c.lesson+'.md')),`${k}: lesson ${c.lesson}`);
+  assert.ok(fs.existsSync(lessonFile(c.section,c.lesson)),`${k}: lesson ${c.lesson}`);
   for(const p of c.points)assert.ok(points.has(p),`${k}: point ${p}`);
   if(c.sim)assert.ok(sims.has(c.sim),`${k}: sim ${c.sim}`);
  }
@@ -159,7 +160,7 @@ test('every shipped level is well formed and linked to real lessons, points and 
   assert.ok(l.title&&l.goal&&l.brief.length&&l.hints.length===3&&l.debrief,l.id);
   assert.ok(!l.after||ids.has(l.after),l.id);
   for(const c of l.concepts)assert.ok(camp.concepts[c],`${l.id}: concept ${c}`);
-  for(const s of l.lessons)assert.ok(fs.existsSync(path.join(lessonsDir,s+'.md')),`${l.id}: lesson ${s}`);
+  for(const s of l.lessons)assert.ok(fs.existsSync(lessonFile(l.ai?'ai':'system-design',s)),`${l.id}: lesson ${s}`);
   for(const s of l.sims)assert.ok(sims.has(s),`${l.id}: sim ${s}`);
   for(const k of l.estimate)assert.ok(S.ESTIMATES[k],`${l.id}: estimate ${k}`);
   for(const gr of [l.start,l.solution]){

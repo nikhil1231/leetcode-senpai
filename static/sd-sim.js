@@ -9,9 +9,11 @@
 (function (root) {
   'use strict';
   const Stress = typeof module !== 'undefined' && module.exports ? require('./sd-stress.js') : root.SDStress;
+  // Ripple Assist levels (scenario.ai) run on their own engine (ai-sim.js), which returns the same shape.
+  const AI = () => (typeof module !== 'undefined' && module.exports ? require('./ai-sim.js') : root.AISim);
   const VERSION = 1, HOURS = 24, TIMEOUT = 30000, DAY = 86400;
   const USER = ['read', 'write', 'media', 'upload', 'search', 'realtime', 'geo', 'locate', 'payment'];
-  const LABEL = { read: 'Reads', write: 'Writes', media: 'Media views', upload: 'Uploads', search: 'Searches', realtime: 'Live messages',
+  const LABEL = { ask: 'Questions', read: 'Reads', write: 'Writes', media: 'Media views', upload: 'Uploads', search: 'Searches', realtime: 'Live messages',
     geo: 'Nearby lookups', locate: 'Location updates', payment: 'Payments', attack: 'Attack traffic' };
   const DBS = new Set(['db-sql', 'db-nosql', 'db-graph', 'db-timeseries']);
   const READISH = new Set(['read', 'attack', 'search', 'geo', 'media']);
@@ -20,7 +22,9 @@
   const SHAPE = [0.32, 0.25, 0.2, 0.18, 0.2, 0.28, 0.45, 0.7, 0.92, 1.02, 1.08, 1.12, 1.18, 1.15, 1.1, 1.1, 1.15, 1.25, 1.4, 1.55, 1.6, 1.45, 1.05, 0.62];
   const EVENT_LABEL = { surge: 'Traffic surge', 'hot-key': 'Hot key', 'cache-flush': 'Cache flushed', 'cache-node': 'Cache node lost', 'az-outage': 'Zone outage',
     'region-outage': 'Region outage', 'db-failover': 'Database primary dies', 'bad-deploy': 'Bad deploy', 'slow-dependency': 'Slow third party',
-    'poison-message': 'Poison message', ddos: 'DDoS attack', 'partner-burst': 'Partner bulk import' };
+    'poison-message': 'Poison message', ddos: 'DDoS attack', 'partner-burst': 'Partner bulk import',
+    'model-update': 'Provider silently updates the model', 'rate-limit': 'Provider throttles the model', 'provider-outage': 'Model provider outage',
+    'injection-campaign': 'Injection campaign', 'doc-change': 'Refund policy changed' };
 
   const clamp = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
   const mean = a => (Number(a[0]) + Number(a[1])) / 2;
@@ -522,6 +526,7 @@
 
   // ---------- one day ----------
   function run(scn0, graph, econ, opts = {}) {
+    if (scn0 && scn0.ai) return AI().run(scn0, graph, econ);
     const scn = normalize(scn0), m = prepare(graph, econ), base = baseRps(scn), shape = curve(scn);
     const clients = m.ids.filter(id => m.nodes[id].role === 'source');
     const ticks = [], usage = {}, counts = {}, countSum = {}, backlog = {};
@@ -659,6 +664,7 @@
   }
   // The bill without running a day: fixed prices only, for the live readout while drawing.
   function quickCost(graph, econ, scn) {
+    if (scn && scn.ai) return AI().quickCost(graph, econ);
     const m = prepare(graph, econ);
     return cost(m, normalize(scn || {}), {}, {});
   }
@@ -828,6 +834,11 @@
   }
   // The numbers an interviewer expects you to work out first, computed from the scenario itself.
   function truth(s0) {
+    if (s0 && s0.ai) {
+      const a = AI().normalize(s0), q = a.dau * a.traffic.ask.perUser, peak = Math.max(...AI().curve(a)), ctx = a.ai.topK * a.ai.chunkTokens;
+      const tin = a.ai.promptTokens + ctx, tout = a.ai.outTokens;
+      return { questionsPerDay: q, peakQps: q / DAY * peak, tokensPerQuestion: tin + tout, largeModelMonthUsd: q * 30 * (tin * 3 + tout * 15) / 1e6 };
+    }
     const s = normalize(s0), T = s.traffic, peak = Math.max(...curve(s));
     const avg = t => s.dau * (T[t]?.perUser || 0) / DAY;
     const out = { peakReadRps: (avg('read') + avg('media') + avg('search') + avg('geo')) * peak, peakWriteRps: (avg('write') + avg('upload') + avg('realtime') + avg('payment') + avg('locate')) * peak,
@@ -836,7 +847,8 @@
       cacheGb: T.read?.workingSetGb || 0 };
     return out;
   }
-  const ESTIMATES = { peakReadRps: 'Peak reads per second', peakWriteRps: 'Peak writes per second', storageGbYear: 'New data per year (GB)', egressTbMonth: 'Bandwidth to users per month (TB)', cacheGb: 'Cache size for the hot set (GB)' };
+  const ESTIMATES = { questionsPerDay: 'Questions per day', peakQps: 'Questions per second at peak', tokensPerQuestion: 'Tokens per question (in + out)',
+    largeModelMonthUsd: 'Monthly bill if the large model answers everything ($)', peakReadRps: 'Peak reads per second', peakWriteRps: 'Peak writes per second', storageGbYear: 'New data per year (GB)', egressTbMonth: 'Bandwidth to users per month (TB)', cacheGb: 'Cache size for the hot set (GB)' };
   function grade(s, answers = {}, keys = Object.keys(ESTIMATES)) {
     const t = truth(s);
     return keys.filter(k => t[k] > 0).map(k => {
@@ -854,7 +866,7 @@
     { type: 'slow-dependency', params: { ms: 5000, err: 0.3 }, dur: 2 }, { type: 'poison-message', dur: 1 }, { type: 'ddos', params: { mult: 15 }, dur: 1 }, { type: 'cache-node', dur: 1 }];
   // One unlocked scenario a day with a twist: an extra incident at a random hour, the same for the whole day.
   function daily(scenarios, date, unlocked) {
-    const pool = scenarios.filter(s => !unlocked || unlocked.includes(s.id));
+    const pool = scenarios.filter(s => !s.ai && (!unlocked || unlocked.includes(s.id)));
     if (!pool.length) return null;
     const h = hash('ripple-' + date), base = pool[h % pool.length];
     const fit = DAILY_EVENTS.filter(e => (e.type !== 'poison-message' || hasJobs(base)) && (e.type !== 'slow-dependency' || base.traffic?.payment || base.traffic?.write?.jobs?.some(j => j.kind === 'notify')));

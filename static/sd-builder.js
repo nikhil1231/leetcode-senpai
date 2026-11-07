@@ -27,7 +27,12 @@
   const OPT_LABEL = { timeouts: ['Timeouts + circuit breaker', 'Calls to slow dependencies give up after a second and fail fast, so threads stay free.'],
     canary: ['Canary releases', 'New builds go to a few servers first. Needs monitoring to notice a bad one.'],
     hotKey: ['Local hot-key cache', 'Callers keep the hottest keys in their own memory, so one key can\'t melt one shard.'],
-    coalesce: ['Coalesce misses', 'Concurrent misses for the same key wait for one refill instead of all hitting the database.'] };
+    coalesce: ['Coalesce misses', 'Concurrent misses for the same key wait for one refill instead of all hitting the database.'],
+    grounded: ['Grounded answers', 'Answer only from the retrieved passages, and say "I don\'t know" when they don\'t contain the answer.'],
+    cachePrefix: ['Prompt caching', 'The fixed system prompt and tool definitions are cached by the provider: about 90% off those tokens, and a faster first token.'],
+    fresh: ['Keep it fresh', 'Re-ingest pages when they change and delete removed ones, instead of a nightly rebuild.'],
+    confirm: ['Confirm actions', 'Refunds, cancellations and anything irreversible need the user (or an agent) to confirm first.'],
+    scoped: ['Scope to the user', 'Tools only act on the signed-in user\'s own records, whatever the model asks for.'] };
 
   const anchors = n => ({ top: [n.x + W / 2, n.y], right: [n.x + W, n.y + H / 2], bottom: [n.x + W / 2, n.y + H], left: [n.x, n.y + H / 2] });
   function edgePath(a, b) {                                   // nearest pair of sides, joined by a gentle curve
@@ -74,7 +79,7 @@
     const graph = () => ({ nodes: S.nodes.map(n => ({ id: n.id, defId: n.defId, x: n.x, y: n.y, ...(n.cfg && Object.keys(n.cfg).length ? { cfg: { ...n.cfg } } : {}) })),
       edges: S.edges.map(e => ({ id: e.id, from: e.from, to: e.to })), settings: { ...S.settings } });
     const scenario = () => game ? opts.scenario : Sim.fromScale(S.scale, S.nfr);
-    const allowed = d => !opts.toolbox || opts.toolbox.includes(d.id);
+    const allowed = d => (!opts.toolbox || opts.toolbox.includes(d.id)) && (!d.ai || !!scenario()?.ai);   // AI parts belong to Ripple Assist levels
 
     el.classList.add('bd');
     el.innerHTML = '<p class="bd-note">Loading the builder…</p>';
@@ -98,7 +103,7 @@
     }
     function paintItems(q) {
       const t = q.trim().toLowerCase(), list = defs.filter(d => allowed(d) && (!t || `${d.label} ${d.description}`.toLowerCase().includes(t)));
-      const locked = opts.toolbox ? defs.length - defs.filter(allowed).length : 0;
+      const locked = opts.toolbox ? defs.filter(d => !d.ai === !scenario()?.ai).length - defs.filter(allowed).length : 0;
       el.querySelector('[data-items]').innerHTML = (list.map(d =>
         `<button type="button" class="bd-item" draggable="true" data-def="${esc(d.id)}" title="${esc(d.whenToUse)}" style="--b:${esc(d.border)}"><span>${d.icon}</span>${esc(d.label)}</button>`).join('') || '<p class="bd-note">No match.</p>')
         + (locked && !t ? `<p class="bd-locked">🔒 ${locked} more components unlock as Ripple grows.</p>` : '');
@@ -115,6 +120,7 @@
       if (c.shards > 1) bits.push(c.shards + ' shards');
       if (c.replicas) bits.push('+' + c.replicas + ' rep');
       if (c.azs > 1 && !d.multiAz) bits.push(c.azs + ' AZ');
+      for (const [k, short] of [['grounded', 'grounded'], ['cachePrefix', 'cached prefix'], ['fresh', 'fresh'], ['confirm', 'confirms'], ['scoped', 'scoped']]) if (n.cfg?.[k]) bits.push(short);
       return bits.join(' · ');
     }
     function paintCanvas() {
@@ -208,7 +214,7 @@
           ${o.has('shards') ? numIn('shards', 'Shards', 1, 64, c.shards) : ''}
           ${o.has('sync') ? `<label><span>Replica writes</span><select data-cfg="sync"><option value="async" ${c.sync === 'async' ? 'selected' : ''}>Asynchronous</option><option value="sync" ${c.sync === 'sync' ? 'selected' : ''}>Synchronous</option></select></label>` : ''}
         </div>
-        ${['timeouts', 'canary', 'hotKey', 'coalesce'].filter(k => o.has(k)).map(k => `<label class="bd-toggle" title="${esc(OPT_LABEL[k][1])}"><input type="checkbox" data-cfg="${k}" ${cfg[k] ? 'checked' : ''}><span>${OPT_LABEL[k][0]}</span></label>`).join('')}
+        ${['timeouts', 'canary', 'hotKey', 'coalesce', 'grounded', 'cachePrefix', 'fresh', 'confirm', 'scoped'].filter(k => o.has(k)).map(k => `<label class="bd-toggle" title="${esc(OPT_LABEL[k][1])}"><input type="checkbox" data-cfg="${k}" ${cfg[k] ? 'checked' : ''}><span>${OPT_LABEL[k][0]}</span></label>`).join('')}
         ${n.defId === 'db-sql' ? '<p class="bd-fine">Zones: 2 or more adds a synchronous standby in another zone (doubles the primary\'s price) for failover without losing writes.</p>' : ''}
         <div class="bd-row"><span>This component</span><b>${money(usd)}/month${usage ? ' + usage' : ''}</b></div>
         ${capacity ? `<div class="bd-row"><span>Capacity</span><b>${esc(capacity)}</b></div>` : ''}
@@ -239,7 +245,7 @@
           <button type="button" class="button" data-act="delete">Remove from diagram</button></section>`
         : sel?.kind === 'edge' ? '<section class="bd-box"><h4>Connection</h4><p>Select it and press Delete, or:</p><button type="button" class="button" data-act="delete">Remove connection</button></section>' : '';
       if (game) {
-        const s = opts.scenario, sc = { dau: String(s.dau) }, checks = Calc.checks({ nodes: S.nodes, edges: S.edges }, sc, { availability: `${s.slo?.availability}%` });
+        const s = opts.scenario, sc = { dau: String(s.dau) }, checks = s.ai ? [] : Calc.checks({ nodes: S.nodes, edges: S.edges }, sc, { availability: `${s.slo?.availability}%` });
         const q = Sim.quickCost(graph(), econ, s);
         panel.innerHTML = `${nodeBox || `<section class="bd-box"><h4>How to build</h4><ol class="bd-how"><li>Drag components in and connect them, client first.</li><li>Click a component to size it: instances, zones, replicas, options.</li><li>Press <b>Run the day</b> to play the scenario against it.</li></ol></section>`}
           ${deploymentHtml()}
