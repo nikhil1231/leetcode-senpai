@@ -62,6 +62,8 @@
       const scr = $('[data-screen]'); scr.scrollTop = scr.scrollHeight;
       const msgs = $('[data-msgs]'); msgs.scrollTop = msgs.scrollHeight;
     };
+    // Handed over (too long without it stable): straight to the result, no review questions.
+    const after = () => { paint(); if (s.handedOver && !$('.ns-result')) finish(); };
     const review = () => {
       const q = (kind, Q) => `<section class="sd-panel ns-q" data-q="${kind}"><span class="sd-eyebrow">${kind === 'diagnosis' ? 'ROOT CAUSE' : 'LASTING FIX'}</span><h3>${esc(Q.prompt)}</h3>
         <div class="sd-predict-choices">${Q.choices.map((c, i) => `<button type="button" class="sd-option" data-t="answer" data-kind="${kind}" data-i="${i}"><span class="sd-option-key">${String.fromCharCode(65 + i)}</span><span>${esc(c)}</span></button>`).join('')}</div><div class="ns-explain" hidden></div></section>`;
@@ -70,10 +72,11 @@
       paint();
     };
     const finish = async () => {
-      s = E().close(s, L); paint();
+      if (!s.result) s = E().close(s, L);
+      paint();
       const r = s.result;
       const slot = document.createElement('section'); slot.className = 'sd-panel ns-result';
-      slot.innerHTML = `<span class="sd-eyebrow">SHIFT OVER</span><h3>${stars(r.stars)} ${r.stars === 3 ? 'Textbook.' : r.stars === 2 ? 'Fixed, and you know why.' : r.stars === 1 ? 'Stable, for now.' : ''}</h3>
+      slot.innerHTML = `<span class="sd-eyebrow">SHIFT OVER</span><h3>${stars(r.stars)} ${r.handedOver ? 'Handed over.' : r.stars === 3 ? 'Textbook.' : r.stars === 2 ? 'Fixed, and you know why.' : r.stars === 1 ? 'Stable, for now.' : ''}</h3>
         <div class="sim-stats"><div><b>${r.minutes} min</b><span>to stable (par ${L.par})</span></div><div><b>${r.impact.toLocaleString('en')}</b><span>${esc(L.impact.unit)}</span></div><div><b>${r.commands}</b><span>commands run</span></div><div class="${r.risky ? 'is-bad' : ''}"><b>${r.risky}</b><span>risky moves</span></div></div>
         ${r.notes.length ? `<ul class="sim-notes">${r.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}<p>${esc(L.debrief)}</p>
         <div class="ns-pm" data-pm><p class="sd-muted">Writing the post-mortem…</p></div>
@@ -91,8 +94,8 @@
     wireActions(ctx.root, {
       back: () => ctx.go('nightshift'), again: () => { s = E().start(L); chat = []; $('[data-review]').innerHTML = ''; paint(); window.scrollTo?.(0, 0); },
       lesson: n => ctx.go('lesson/' + n.dataset.id),
-      cmd: n => { s = E().run(s, L, n.dataset.id); paint(); },
-      act: n => { s = E().act(s, L, n.dataset.id); paint(); },
+      cmd: n => { s = E().run(s, L, n.dataset.id); after(); },
+      act: n => { s = E().act(s, L, n.dataset.id); after(); },
       hint: () => { const before = s.hints; s = E().hint(s, L); if (s.hints === before) toast("Priya's out of hints. Look at what you've run so far."); paint(); },
       resolve: () => review(),
       answer: n => {
@@ -110,14 +113,14 @@
       if (!line || s.closed || busy) return;
       input.value = '';
       const known = L.commands.find(c => c.cmd.split(/\s+/).slice(0, 3).join(' ') === line.split(/\s+/).slice(0, 3).join(' ') || c.cmd === line);
-      if (known) { s = E().run(s, L, known.id); paint(); return; }
-      if (!ov.enabled) { s = E().freeform(s, L, line, `${line.split(/\s+/)[0]}: not available in this drill. Try one of the commands listed below.`); paint(); return; }
+      if (known) { s = E().run(s, L, known.id); after(); return; }
+      if (!ov.enabled) { s = E().freeform(s, L, line, `${line.split(/\s+/)[0]}: not available in this drill. Try one of the commands listed below.`); after(); return; }
       busy = true; paint();
       try {
         const r = await call('/shell', 'POST', { level: L.id, command: line, stable: !!s.stable, log: s.log.slice(-40).map(x => ({ kind: x.kind, at: x.at || 0, who: x.who || '', cmd: x.cmd || '', out: String(x.out || '').slice(0, 3900), label: x.label || '', text: String(x.text || '').slice(0, 1100) })) });
         s = E().freeform(s, L, line, r.out);
       } catch (err) { toast(err.message, 'error'); }
-      busy = false; paint();
+      busy = false; after();
     });
     $('[data-ask]')?.addEventListener('submit', async e => {
       e.preventDefault();

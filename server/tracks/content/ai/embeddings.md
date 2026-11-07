@@ -55,8 +55,8 @@ key: b910
 title: Searching a layered graph
 intro: '400 vectors, flattened to two dimensions so you can see them. The search starts in the sparse top layer and greedily works down.'
 challenges:
-  - {text: 'Get recall@10 to 90% or better', metric: recall, op: '>=', value: 0.9}
-  - {text: 'Keep 90% recall while computing under a quarter of the distances', metric: evals, op: '<', value: 100, and: [{metric: recall, op: '>=', value: 0.9}]}
+  - {text: 'Find a query or setting where recall@10 drops below 100%', metric: recall, op: '<', value: 1}
+  - {text: 'Get every true neighbour (100% recall) while computing fewer than a third of the distances', metric: evals, op: '<', value: 130, and: [{metric: recall, op: '>=', value: 1}]}
 takeaway: |
   Approximate search trades a little recall for a lot of speed, and ef_search is the dial at query time. Exact search is fine until it isn't: at millions of vectors you need an index, and you should measure its recall.
 ```

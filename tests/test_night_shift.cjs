@@ -41,3 +41,12 @@ test('the timeline speaks while it burns, and hints come from Priya',()=>{
  assert.ok(s.log.some(x=>x.kind==='chat'&&x.who===L.timeline[0].who));
  s=E.hint(s,L); assert.equal(s.hints,1); assert.ok(s.log.at(-1).hint);
 });
+test('a shift that runs far past par is handed over with no stars',()=>{
+ for(const L of levels){
+  let s=E.start(L); const none=L.actions.find(a=>a.effect==='none'||a.effect==='worse');
+  for(let i=0;i<200&&!s.closed;i++) s=E.run(s,L,L.commands[i%L.commands.length].id);
+  assert.ok(s.closed&&s.handedOver&&s.result.stars===0&&s.minute>=E.limit(L),L.id);
+  assert.equal(E.run(s,L,L.commands[0].id),s,'nothing runs after the handover');
+  if(none) assert.equal(E.act(s,L,none.id),s);
+ }
+});

@@ -353,8 +353,8 @@
    "lesson": "embeddings",
    "lessonTitle": "Embeddings and vector search",
    "challenges": [
-    "Get recall@10 to 90% or better",
-    "Keep 90% recall while computing under a quarter of the distances"
+    "Find a query or setting where recall@10 drops below 100%",
+    "Get every true neighbour (100% recall) while computing fewer than a third of the distances"
    ]
   },
   {

@@ -25,8 +25,16 @@
       (level.timeline || []).forEach((m, k) => {
         if (!s.said.includes(k) && m.at <= s.minute && !s.stable) { s.said.push(k); s.log.push({ kind: 'chat', at: s.minute, who: m.who, text: m.text }); }
       });
+      // A shift doesn't last forever: well past par, the incident is handed to someone else.
+      if (!s.stable && s.minute >= limit(level)) {
+        s.closed = true; s.handedOver = true;
+        s.log.push({ kind: 'sys', at: s.minute, text: `${s.minute} minutes in and still firing: Priya takes over the incident, and you hand over what you know.` });
+        s.result = score(s, level);
+        return;
+      }
     }
   }
+  const limit = level => level.limit || Math.max(40, level.par * 5);
 
   function run(s0, level, id) {
     const c = level.commands.find(x => x.id === id);
@@ -96,6 +104,8 @@
     if (stars && diagnosis && fix && lasting) stars = 2;
     if (stars === 2 && quick && !s.risky.length && s.hints <= 1 && !s.relapsed) stars = 3;
     const notes = [];
+    if (s.handedOver) return { stars: 0, diagnosis: false, fix: false, lasting: false, minutes: s.minute, impact: Math.round(s.impact), risky: s.risky.length, hints: s.hints, commands: s.ran.length,
+      handedOver: true, notes: [`Handed over after ${s.minute} minutes without it being stable (par ${level.par}). The cause: ${level.diagnosis.choices[level.diagnosis.answer]}`] };
     if (!lasting) notes.push("You closed it on a temporary fix: it will page someone again.");
     if (s.risky.length) notes.push('A risky move: it worked, at the cost of an outage or lost work.');
     if (!quick) notes.push(`Stable after ${mitigated} minutes (par ${level.par}).`);
@@ -115,7 +125,7 @@
     return close(s, level);
   }
 
-  const api = { start, run, freeform, act, hint, answer, close, score, solve };
+  const api = { start, run, freeform, act, hint, answer, close, score, solve, limit };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.NightShiftEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);

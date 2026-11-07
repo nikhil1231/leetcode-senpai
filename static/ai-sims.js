@@ -117,10 +117,10 @@
 
   // ---------- HNSW ----------
   reg('hnsw', (el, cfg, api) => {
-    const st = { ef: 10, M: 6, qx: 0.42, qy: 0.58 };
+    const st = { ef: 10, M: 3, qx: 0.42, qy: 0.58 };
     let g = M.buildHnsw(M.points(400, 2), st.M, 3);
     const { ctl, out } = shell(el);
-    controls(ctl, [{ key: 'ef', label: 'ef_search (candidate list)', min: 1, max: 100 }, { key: 'M', label: 'M (links per node)', min: 2, max: 16 }, { key: 'move', label: 'Move the query', type: 'button' }], st,
+    controls(ctl, [{ key: 'ef', label: 'ef_search (candidates kept, at least k = 10)', min: 10, max: 100 }, { key: 'M', label: 'M (links per node)', min: 2, max: 16 }, { key: 'move', label: 'Move the query', type: 'button' }], st,
       (k, isAction) => { api.touched(); if (k === 'M') g = M.buildHnsw(M.points(400, 2), st.M, 3); if (isAction) { st.qx = 0.1 + Math.random() * 0.8; st.qy = 0.1 + Math.random() * 0.8; } paint(); });
     let best = { recall: 0, evals: 0 };
     const paint = () => {

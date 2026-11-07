@@ -121,3 +121,50 @@ def test_what_he_changed_is_summarised_for_the_tutor():
 def test_the_simulator_guide_names_real_components_and_incidents():
     g = rig.guide()
     assert 'app-server' in g and 'cache-flush' in g and 'garage' in g and 'not correctness' in g
+
+
+# ---- what models actually write ----
+
+def test_mermaid_flowcharts_become_diagrams_with_guessed_kinds():
+    text = 'Like this:\n```mermaid\ngraph LR\n  U[Mobile app] --> LB[Load balancer] --> A(App server)\n  A -->|GET| C[(Redis)]\n  A --> DB[(Postgres)]\n  A --> S[Stripe API]\n```\nSee?'
+    say, [d] = board.extract(text)
+    assert 'mermaid' not in say and 'See?' in say
+    kinds = {n['label']: n['kind'] for n in d['nodes']}
+    assert kinds == {'Mobile app': 'client', 'Load balancer': 'lb', 'App server': 'service', 'Redis': 'cache', 'Postgres': 'db', 'Stripe API': 'external'}
+    assert ['a', 'c', 'GET'] in d['edges'] and ['lb', 'a', ''] in d['edges']
+    assert board.extract('```mermaid\nsequenceDiagram\n A->>B: hi\n```')[1] == []     # other Mermaid kinds stay as text
+
+
+def test_tabs_lists_and_long_chains_are_handled():
+    assert len(board.extract('```diagram\nnodes:\n\t- a\n\t- b\nedges:\n\t- [a, b]\n```')[1][0]['nodes']) == 2
+    assert [n['id'] for n in board.extract('```diagram\n- a\n- b\n```')[1][0]['nodes']] == ['a', 'b']
+    chain = '```diagram\nnodes: [' + ','.join(f'n{i}' for i in range(14)) + ']\nedges: [' + ','.join(f'[n{i},n{i+1}]' for i in range(13)) + ']\n```'
+    d = board.extract(chain)[1][0]
+    assert max(n['x'] for n in d['nodes']) < board.MAX_COLS and max(n['y'] for n in d['nodes']) <= 3        # wraps into rows
+    grid = board.extract('```diagram\nnodes: [' + ','.join(f'n{i}' for i in range(14)) + ']\n```')[1][0]
+    assert max(n['y'] for n in grid['nodes']) <= 3                                                        # loose boxes form a grid
+    cells = [(n['x'], n['y']) for n in d['nodes'] + []]
+    assert len(set(cells)) == len(cells)
+
+
+def test_designs_accept_human_numbers_duplicates_words_and_bare_incidents():
+    _, [d] = rig.extract('```design\nusers: 2M\nnodes: [{kind: app-server}, {kind: app-server, timeouts: "yes", instances: "4"}, {kind: db-sql}]\n'
+                         'edges: [[client, app-server], [client, app-server-2], [app-server, db-sql]]\nincidents: [cache-flush]\n```')
+    assert d['scenario']['dau'] == 2_000_000 and d['scenario']['events'][0]['type'] == 'cache-flush'
+    ids = [n['id'] for n in d['graph']['nodes']]
+    assert ids == ['client', 'app-server', 'app-server-2', 'db-sql'] and d['graph']['nodes'][2]['cfg'] == {'timeouts': True, 'count': 4}
+    for words, n in [('"2 million"', 2e6), ('200k', 2e5), ('1.5bn', 1.5e9), ('"2,000,000"', 2e6), ('banana', 10000)]:
+        assert rig.extract(f'```design\nusers: {words}\nnodes: [app]\nedges: [[client, app]]\n```')[1][0]['scenario']['dau'] == n, words
+
+
+def test_a_design_with_ai_parts_runs_as_an_llm_system():
+    _, [d] = rig.extract('```design\nusers: 200k\nquestions: 0.05\nquality: 80\nmix: {faq: 0.7, injection: 0.3}\n'
+                         'nodes: [app, {id: m, kind: small-llm, grounded: true}, vectors, {id: t, kind: tools, confirm: yes}]\n'
+                         'edges: [[client, app], [app, m], [app, vectors], [app, t]]\nincidents: [{type: rate-limit, at: 19, mult: 0.2}]\n```')
+    sc = d['scenario']
+    assert sc['ai']['mix'] == {'faq': 0.7, 'injection': 0.3} and sc['traffic']['ask']['perUser'] == 0.05
+    assert sc['slo']['quality'] == 80 and sc['slo']['safety'] == 0 and sc['events'][0]['params'] == {'mult': 0.2}
+    assert [n['defId'] for n in d['graph']['nodes']] == ['client', 'app-server', 'llm-small', 'vector-db', 'tool-gateway']
+    again = rig.extract(rig.source(d))[1][0]['scenario']
+    assert again['ai'] == sc['ai'] and again['slo']['quality'] == 80
+    assert 'llm-small' in rig.guide() and 'injection-campaign' in rig.guide()

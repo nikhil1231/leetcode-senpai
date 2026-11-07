@@ -28,7 +28,8 @@ ECON = _json('economics.json')['components']
 LEVELS = {l['id']: l for l in _json('ripple.json')['levels']}
 COMPONENTS = list(ECON)
 EVENTS = ('surge', 'hot-key', 'cache-flush', 'cache-node', 'az-outage', 'region-outage', 'db-failover', 'bad-deploy',
-          'slow-dependency', 'poison-message', 'ddos', 'partner-burst')
+          'slow-dependency', 'poison-message', 'ddos', 'partner-burst',
+          'model-update', 'rate-limit', 'provider-outage', 'injection-campaign', 'doc-change')
 TRAFFIC = ('read', 'write', 'media', 'upload', 'search', 'realtime', 'geo', 'locate', 'payment')
 ALIASES = {'lb': 'load-balancer', 'app': 'app-server', 'service': 'app-server', 'server': 'app-server', 'api': 'app-server',
            'db': 'db-sql', 'sql': 'db-sql', 'postgres': 'db-sql', 'database': 'db-sql', 'nosql': 'db-nosql', 'redis': 'cache',
@@ -36,8 +37,14 @@ ALIASES = {'lb': 'load-balancer', 'app': 'app-server', 'service': 'app-server', 
            'gateway': 'api-gateway', 'websocket': 'websocket-server', 'search': 'search-engine', 'external': 'external-service',
            'workers': 'worker', 'users': 'client', 'user': 'client'}
 SETTINGS = {'tier': str, 'count': int, 'azs': int, 'replicas': int, 'shards': int, 'autoscale': int, 'sync': str,
-            'timeouts': bool, 'canary': bool, 'hotKey': bool, 'coalesce': bool}
-SYNONYMS = {'size': 'tier', 'instances': 'count', 'zones': 'azs', 'hot_key': 'hotKey', 'hot-key': 'hotKey'}
+            'timeouts': bool, 'canary': bool, 'hotKey': bool, 'coalesce': bool,
+            'grounded': bool, 'cachePrefix': bool, 'fresh': bool, 'confirm': bool, 'scoped': bool}
+SYNONYMS = {'size': 'tier', 'instances': 'count', 'zones': 'azs', 'hot_key': 'hotKey', 'hot-key': 'hotKey', 'gpus': 'count', 'agents': 'count',
+            'cache_prefix': 'cachePrefix', 'prompt_caching': 'cachePrefix', 'prompt-caching': 'cachePrefix'}
+AI_KINDS = ('faq', 'exact', 'account', 'action', 'hard', 'unanswerable', 'injection')
+ALIASES.update({'llm': 'llm-large', 'large-llm': 'llm-large', 'small-llm': 'llm-small', 'gpt': 'llm-large', 'model': 'llm-large', 'router': 'model-router',
+                'vectors': 'vector-db', 'vector-store': 'vector-db', 'pgvector': 'vector-db', 'bm25': 'search-engine', 'keyword-search': 'search-engine',
+                'rerank': 'reranker', 'guard': 'guardrail', 'guardrails': 'guardrail', 'tools': 'tool-gateway', 'human': 'human-handoff', 'evals': 'eval-harness'})
 MAX_NODES, MAX_EVENTS, PER_MESSAGE = 16, 3, 1
 GRID_X, GRID_Y, LEFT, TOP = 190, 120, 40, 60
 
@@ -49,15 +56,38 @@ def _num(v, lo, hi, default=None):
         return default
 
 
+SCALE = {'k': 1e3, 'thousand': 1e3, 'm': 1e6, 'mn': 1e6, 'million': 1e6, 'b': 1e9, 'bn': 1e9, 'billion': 1e9}
+
+
+def _count(v):
+    """A count as a model writes it: 2000000, "2,000,000", "2M", "2 million", "1.5bn", "200k"."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    m = re.fullmatch(r'\s*([\d.,]+)\s*([a-z]*)\s*(?:users|people|daily users|dau)?\s*', str(v).lower())
+    if not m:
+        return None
+    try:
+        n = float(m.group(1).replace(',', ''))
+    except ValueError:
+        return None
+    return n * SCALE.get(m.group(2), 1 if not m.group(2) else 0) or None
+
+
+def _truthy(v):
+    return v if isinstance(v, bool) else str(v).strip().lower() in ('true', 'yes', 'on', '1', 'y') if isinstance(v, (str, int)) else None
+
+
 def _settings(raw, defid):
     cfg = {}
     for k, v in (raw or {}).items():
         k = SYNONYMS.get(k, k)
         kind = SETTINGS.get(k)
-        if kind is int and _num(v, 0, 500) is not None:
-            cfg[k] = int(_num(v, 0, 500))
-        elif kind is bool and isinstance(v, bool):
-            cfg[k] = v
+        if kind is int and _num(_count(v), 0, 500) is not None:
+            cfg[k] = int(_num(_count(v), 0, 500))
+        elif kind is bool and _truthy(v) is not None:
+            cfg[k] = _truthy(v)
         elif kind is str and isinstance(v, (str, int)):
             cfg[k] = str(v).strip().lower()[:12]
     tiers = {t['id'] for t in ECON.get(defid, {}).get('tiers', [])}
@@ -70,7 +100,7 @@ def _scenario(raw):
     level = LEVELS.get(str(raw.get('level') or '').strip())
     scn = {k: level[k] for k in ('dau', 'traffic', 'data', 'slo', 'far') if k in level} if level else {}
     if raw.get('users') or raw.get('dau'):
-        scn['dau'] = int(_num(raw.get('users') or raw.get('dau'), 10, 5e9, 10000))
+        scn['dau'] = int(_num(_count(raw.get('users') or raw.get('dau')), 10, 5e9, 10000))
     t = raw.get('traffic')
     if isinstance(t, dict):
         traffic = {}
@@ -92,17 +122,40 @@ def _scenario(raw):
     scn.setdefault('dau', 10000)
     events = []
     found = raw.get('incidents') or raw.get('incident') or []
-    for e in ([found] if isinstance(found, dict) else found if isinstance(found, list) else [])[:MAX_EVENTS]:
+    for e in ([found] if isinstance(found, (dict, str)) else found if isinstance(found, list) else [])[:MAX_EVENTS]:
+        if isinstance(e, str):
+            e = {'type': e.strip().lower()}
         if not isinstance(e, dict) or e.get('type') not in EVENTS:
             continue
         ev = {'id': f'tutor-{len(events)}', 'type': e['type'], 'at': int(_num(e.get('at'), 0, 23, 19)), 'dur': int(_num(e.get('dur'), 1, 6, 1)), 'params': {}}
-        for k, lo, hi in (('mult', 1.5, 50), ('share', 0.05, 0.9), ('ms', 500, 30000), ('err', 0, 1)):
+        for k, lo, hi in (('mult', 0.01, 50), ('share', 0.05, 0.9), ('ms', 500, 30000), ('err', 0, 1), ('drop', 0, 0.5)):
             if e.get(k) is not None and _num(e[k], lo, hi) is not None:
                 ev['params'][k] = _num(e[k], lo, hi)
         events.append(ev)
     scn['events'] = events
     scn['title'] = level['title'] if level and not raw.get('title') else str(raw.get('title') or 'The tutor\'s design')[:80]
     return scn
+
+
+def _ai_scenario(raw, scn):
+    """An LLM system: questions a day per user, the mix of kinds, and quality, latency and safety targets."""
+    ai = {}
+    mix = raw.get('mix')
+    if isinstance(mix, dict):
+        ai['mix'] = {k: _num(v, 0, 1) for k, v in mix.items() if k in AI_KINDS and _num(v, 0, 1) is not None} or None
+        if not ai['mix']:
+            del ai['mix']
+    for k, lo, hi in (('promptTokens', 50, 50000), ('topK', 1, 30), ('chunkTokens', 50, 4000), ('outTokens', 10, 4000), ('repeat', 0, 0.9)):
+        if raw.get(k) is not None and _num(raw[k], lo, hi) is not None:
+            ai[k] = _num(raw[k], lo, hi)
+    per = _num(_count(raw.get('questions')) if raw.get('questions') is not None else (scn.get('traffic') or {}).get('ask', {}).get('perUser'), 0.001, 100, 0.05)
+    slo = {'availability': 99, 'quality': 80, 'p95': 8000, **{k: v for k, v in (scn.get('slo') or {}).items() if k in ('availability', 'budget')}}
+    for k, lo, hi in (('quality', 10, 100), ('p95', 500, 60000)):
+        if raw.get(k) is not None and _num(raw[k], lo, hi) is not None:
+            slo[k] = _num(raw[k], lo, hi)
+    if raw.get('safety') is not None or 'injection' in (ai.get('mix') or {}):
+        slo['safety'] = 0
+    return {**scn, 'ai': ai, 'traffic': {'ask': {'perUser': per}, 'peak': 1.8}, 'slo': slo}
 
 
 def clean(raw):
@@ -118,8 +171,10 @@ def clean(raw):
         defid = str(n.get('kind') or n.get('type') or n['id']).strip().lower()
         defid = ALIASES.get(defid, defid)
         nid = board._slug(n.get('id') or defid)
-        if defid not in ECON or not nid or nid in by:
+        if defid not in ECON or not nid:
             continue
+        if nid in by:                       # two boxes of one kind, unnamed: keep both
+            nid = next(f'{nid}-{k}' for k in range(2, 99) if f'{nid}-{k}' not in by)
         cfg = _settings({k: v for k, v in n.items() if k not in ('id', 'kind', 'type', 'at')} | (n.get('settings') or {}), defid)
         node = {'id': nid, 'defId': defid, 'x': None, 'y': None}
         if cfg:
@@ -144,6 +199,8 @@ def clean(raw):
         n['x'], n['y'] = LEFT + n['x'] * GRID_X, TOP + n['y'] * GRID_Y
     settings = {'regions': int(_num(raw.get('regions'), 1, 3, 1)), 'crossRegion': 'sync' if raw.get('crossRegion') == 'sync' else 'async'}
     scn = _scenario(raw)
+    if any(ECON[n['defId']].get('ai') for n in nodes) or raw.get('questions') or raw.get('mix'):
+        scn = _ai_scenario(raw, scn)
     return {'title': scn['title'], 'note': board._text(raw.get('note') or raw.get('caption') or '', 240),
             'graph': {'nodes': nodes, 'edges': edges, 'settings': settings}, 'scenario': scn,
             'level': str(raw.get('level')) if str(raw.get('level') or '') in LEVELS else ''}
@@ -170,7 +227,11 @@ def source(d):
         body['level'] = d['level']
     else:
         body['users'] = scn.get('dau')
-        if scn.get('traffic'):
+        if scn.get('ai') is not None:
+            body['questions'] = scn['traffic']['ask']['perUser']
+            body.update({k: v for k, v in scn['ai'].items()})
+            body.update({k: scn['slo'][k] for k in ('quality', 'p95') if k in scn['slo']})
+        elif scn.get('traffic'):
             body['traffic'] = scn['traffic']
     body['nodes'] = [{'id': n['id'], 'kind': n['defId'], **(n.get('cfg') or {})} for n in g['nodes']]
     body['edges'] = [[e['from'], e['to']] for e in g['edges']]
@@ -226,9 +287,10 @@ incidents:
 - kind: one of {components}. A client is added if you leave it out.
 - Settings per component where it has them: size (tier), instances, zones (1-3), replicas, shards, autoscale (max instances), timeouts, canary, hotKey, coalesce (true/false).
 - Traffic: users and per-user daily requests by type ({traffic}), or level: a Ripple Ops level id to borrow its traffic and targets ({levels}).
-- incidents (up to {events_max}): type is one of {events}; at (hour 0-23), dur (hours), and mult (surge, ddos, partner-burst), share (hot-key 0.05-0.6), ms (slow-dependency) or err (bad-deploy 0-1) where they apply."""
+- incidents (up to {events_max}): type is one of {events}; at (hour 0-23), dur (hours), and mult (surge, ddos, partner-burst), share (hot-key 0.05-0.6), ms (slow-dependency) or err (bad-deploy 0-1) where they apply.
+- An LLM system (a RAG bot, an agent with tools): use the AI parts ({ai_parts}), options grounded, cachePrefix (models), fresh (vector-db), confirm and scoped (tool-gateway). Give users, questions (per user a day), optionally mix (shares of {ai_kinds}), quality (target %) and p95 (ms). The run then scores answers right, errors, latency, harmful actions and the token bill. AI incidents: model-update, rate-limit, provider-outage, injection-campaign, doc-change."""
 
 
 def guide():
-    return GUIDE.format(components=', '.join(COMPONENTS), traffic=', '.join(TRAFFIC), levels=', '.join(LEVELS),
-                        events=', '.join(EVENTS), events_max=MAX_EVENTS)
+    return GUIDE.format(components=', '.join(c for c in COMPONENTS if not ECON[c].get('ai')), traffic=', '.join(TRAFFIC), levels=', '.join(LEVELS),
+                        events=', '.join(EVENTS[:12]), events_max=MAX_EVENTS, ai_parts=', '.join(c for c in COMPONENTS if ECON[c].get('ai')), ai_kinds=', '.join(AI_KINDS))

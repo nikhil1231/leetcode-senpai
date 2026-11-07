@@ -85,3 +85,10 @@ test('MCP: a session starts with initialize and the initialized notification; ea
  assert.equal(M.mcpAttacks({registry:true,pin:true,confirmWrites:true,audience:true}).harms,0);
  assert.equal(M.mcpAttacks({registry:true,confirmWrites:true,audience:true}).rows.find(r=>r.id==='rugpull').blocked,false);
 });
+test('eval noise stays defined when the cheaper model is actually better, and stays fast on big sets',()=>{
+ for(const paired of [true,false]){ const e=M.evalStats({n:400,a:0.8,b:0.9,paired,sims:200}); assert.ok(Number.isFinite(e.ci)&&e.ci>0&&e.diffs.every(Number.isFinite)); }
+ const t=Date.now(); const big=M.evalStats({n:5000,sims:600}); assert.ok(Date.now()-t<100&&Math.abs(big.meanDiff+0.02)<0.005);
+});
+test('HNSW always returns k results, even with a tiny ef or M, because the graph is built connected',()=>{
+ for(const Mm of [2,3,6]) for(const ef of [1,5,10]){ const g=M.buildHnsw(M.points(400,2),Mm,3); const r=M.hnswSearch(g,[0.3,0.7],10,ef); assert.equal(r.result.length,10,`M=${Mm} ef=${ef}`); assert.ok(r.recall>=0.8); }
+});

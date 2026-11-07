@@ -184,15 +184,20 @@
   function buildHnsw(pts, M = 6, seed = 3) {
     const r = rng(seed), mL = 1 / Math.log(M), levels = pts.map(() => Math.min(3, Math.floor(-Math.log(1 - r()) * mL)));
     const top = Math.max(...levels), layers = [];
+    // Built by insertion, as HNSW is: each point links to its nearest among the points already in the
+    // layer, so early points get long links and the graph stays connected even with a small M.
     for (let l = 0; l <= top; l++) {
-      const ids = pts.map((_, i) => i).filter(i => levels[i] >= l), links = {};
-      for (const i of ids) links[i] = ids.filter(j => j !== i).sort((a, b) => d2(pts[i], pts[a]) - d2(pts[i], pts[b])).slice(0, l ? Math.max(2, M / 2) : M);
-      for (const i of ids) for (const j of links[i]) if (!links[j].includes(i)) links[j] = [...links[j], i];   // keep links two-way
+      const ids = pts.map((_, i) => i).filter(i => levels[i] >= l), links = {}, m = l ? Math.max(2, Math.round(M / 2)) : M;
+      ids.forEach((i, k) => {
+        links[i] = ids.slice(0, k).sort((a, b) => d2(pts[i], pts[a]) - d2(pts[i], pts[b])).slice(0, m);
+        for (const j of links[i]) links[j].push(i);
+      });
       layers.push({ ids, links });
     }
     return { pts, layers, entry: layers[top].ids[0], top };
   }
-  function hnswSearch(g, q, k = 10, ef = 16) {
+  function hnswSearch(g, q, k = 10, ef0 = 16) {
+    const ef = Math.max(ef0, k);          // the candidate list is never shorter than the answer
     let cur = g.entry, evals = 0;
     const visitedPath = [];
     const dist = i => { evals++; return d2(g.pts[i], q); };
@@ -268,17 +273,18 @@
   function evalStats(p) {
     const P = { n: 400, a: 0.86, b: 0.84, paired: true, sims: 2000, seed: 5, ...p };
     const r = rng(P.seed), diffs = [];
-    const onlyB = 0.04, onlyA = onlyB + (P.a - P.b), both = P.a - onlyA;
+    const onlyA = 0.04 + Math.max(0, P.a - P.b), onlyB = 0.04 + Math.max(0, P.b - P.a);   // disagreements; the gap between them is the true difference
+    const se = P.paired ? Math.sqrt((onlyA + onlyB - (P.a - P.b) ** 2) / P.n) : Math.sqrt((P.a * (1 - P.a) + P.b * (1 - P.b)) / P.n);
+    const exact = P.n * P.sims <= 2e5;   // big sets: the normal approximation is indistinguishable and keeps the slider instant
     for (let s = 0; s < P.sims; s++) {
+      if (!exact) { diffs.push(P.b - P.a + gauss(r) * se); continue; }
       let d = 0;
       for (let i = 0; i < P.n; i++) {
         if (P.paired) { const u = r(); if (u < onlyA) d--; else if (u < onlyA + onlyB) d++; }
         else d += (r() < P.b) - (r() < P.a);
-        void both;
       }
       diffs.push(d / P.n);
     }
-    const se = P.paired ? Math.sqrt((onlyA + onlyB - (P.a - P.b) ** 2) / P.n) : Math.sqrt((P.a * (1 - P.a) + P.b * (1 - P.b)) / P.n);
     const meanDiff = diffs.reduce((x, y) => x + y, 0) / diffs.length;
     return { diffs, ci: 1.96 * se, meanDiff, flipped: diffs.filter(d => d >= 0).length / diffs.length, real: Math.abs(P.b - P.a) > 1.96 * se, params: P };
   }
