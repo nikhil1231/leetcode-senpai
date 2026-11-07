@@ -89,6 +89,18 @@ nodes:
 debrief: For an assistant that interrupts people, precision is the product. Label real output, fix scope and context, and limit volume before reaching for a bigger model.
 ```
 
+```sim
+name: threshold
+key: b910
+title: Precision, recall and when to stay quiet
+intro: 'Each candidate comment gets a confidence score. Choose where the bot starts posting.'
+challenges:
+  - {text: 'Keep precision at 70% or more', metric: precision, op: '>=', value: 0.7}
+  - {text: 'Catch half the real issues with precision still at 70%+', metric: recall, op: '>=', value: 0.5, and: [{metric: precision, op: '>=', value: 0.7}]}
+takeaway: |
+  A reviewer that cries wolf gets muted, so favour precision and post less. Measure it on historical PRs, then online through how often developers act on or dismiss comments.
+```
+
 ## 4. Rollout
 
 Shadow mode first: generate reviews for a few volunteer repos without posting, and have their engineers rate them. Then post as a single summary comment, then inline comments, with per-repo opt-out and a feedback button on every comment. Expand when acceptance and false-positive rates hold.

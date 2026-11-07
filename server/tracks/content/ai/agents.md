@@ -52,6 +52,19 @@ What makes it production-ready:
 - **Stopping**: a clear definition of done, and a way for the model to say "I can't do this" or ask a human.
 - **Observability**: log every step (prompt, tool call, arguments, result, tokens, latency) as a trace. Debugging an agent without traces is guesswork.
 
+```sim
+name: agentloop
+key: b910
+title: A thousand runs of the same task
+intro: 'A task needs a few tool calls; some calls fail and an agent wastes some steps. Compare structures and controls.'
+challenges:
+  - {text: 'Watch runs crash when tool errors aren''t returned to the model', metric: crashed, op: '>', value: 0.3}
+  - {text: 'Get an agent to finish 95% of tasks', metric: success, op: '>=', value: 0.95, and: [{metric: structure, op: '==', value: 'agent'}]}
+  - {text: 'Do it cheaper with a fixed workflow', metric: cost, op: '<', value: 0.04, and: [{metric: success, op: '>=', value: 0.95}, {metric: structure, op: '==', value: 'workflow'}]}
+takeaway: |
+  Use the simplest structure that works: a workflow when the steps are known, an agent when they aren't. Give agents budgets, return tool errors as information, and keep context bounded, because cost grows with every step.
+```
+
 ## Context over long tasks
 
 Every step adds to the context, which costs tokens and dilutes attention. Techniques: truncate or summarise old tool results, keep a structured scratchpad or plan file the agent updates, store large outputs outside the context and return a short reference, and delegate sub-tasks to **sub-agents** with fresh contexts that return only a summary.

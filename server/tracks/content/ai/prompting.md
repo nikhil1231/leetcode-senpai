@@ -63,6 +63,18 @@ fix: |
       return ROUTES.get(category, ROUTES["other"])
 ```
 
+```sim
+name: structured
+key: b910
+title: Getting JSON you can trust
+intro: 'Two thousand records extracted by a model. Change how you ask for JSON and what you do with the answer.'
+challenges:
+  - {text: 'Let bad records through by not validating', metric: silent, op: '>', value: 0.05}
+  - {text: 'Get to 99.5% valid records', metric: success, op: '>=', value: 0.995, and: [{metric: validate, op: '==', value: 1}]}
+takeaway: |
+  Ask for structure (JSON mode or, better, schema-constrained decoding), validate in code anyway, and retry with the validation error. Constrained decoding fixes the format, not the content, and it can't fix a response cut off by max_tokens.
+```
+
 ## Tool calling
 
 The application sends the model a list of tools (name, description, JSON schema for the arguments). The model can reply with a **tool call** instead of text. **Your code** executes it, appends the result to the conversation, and calls the model again. The model never executes anything itself.
@@ -79,6 +91,19 @@ explain: The model only proposes calls. Validation, permissions and side effects
 ```
 
 Tool descriptions are prompts too. Say when to use each tool and when not to, and give arguments clear names and enums. Keep the set of tools small and distinct, because overlapping tools confuse selection.
+
+```sim
+name: toolcall
+key: b911
+title: One round of tool use, message by message
+intro: 'The model asks for get_weather. Choose what your app does with the request, and see the messages that follow.'
+challenges:
+  - {text: 'Complete the round properly', metric: ok, op: '==', value: 1}
+  - {text: 'Break the conversation by not returning a tool result', metric: skip, op: '==', value: 1}
+  - {text: 'See a tool result hijack the answer', metric: inject, op: '==', value: 1}
+takeaway: |
+  The model only asks; your code validates, runs and answers every tool request, matching ids, before anything else. Return failures as errors the model can act on, and treat tool results as untrusted text.
+```
 
 ## Prompts are code
 

@@ -60,6 +60,18 @@ reveal: |
   Aggregates hide concentrated regressions. The 1-point drop might be spread thinly as noise, or it might be refunds going from 95% to 60% while easy categories improve. With 400 cases, one point is four cases, so read them. Also compare cost and latency: if the cheap model is 5× cheaper and the failures are minor style issues, shipping may be right. If they're all in a high-stakes category, it isn't. Decide on the breakdown, not the headline.
 ```
 
+```sim
+name: evalstats
+key: b910
+title: Is that 2-point drop real?
+intro: 'A cheaper model is truly 2 points worse. How often would your eval notice?'
+challenges:
+  - {text: 'See the cheaper model look as good in over 20% of runs', metric: flipped, op: '>', value: 0.2}
+  - {text: 'Make the 2-point difference clearly measurable', metric: real, op: '==', value: 1, and: [{metric: flipped, op: '<', value: 0.05}]}
+takeaway: |
+  An eval is a sample, so its score has error bars. Compare models on the same cases (paired), report intervals, and size the set for the smallest difference you care about.
+```
+
 ## Common pitfalls
 
 - **Overfitting to the eval set**: tuning prompts until a small set passes. Keep a held-out set.

@@ -24,7 +24,7 @@ def test_every_course_simulator_is_embedded_once_and_listed():
     assert len(listed) == len(set(listed)), 'a simulator is embedded in two lessons'
     assert set(listed) == shipped, f'registered but not in a lesson: {shipped - set(listed)}; in a lesson but not registered: {set(listed) - shipped}'
     for item in build.build()['items']:
-        assert item['title'] and item['blurb'] or item['id'] == 'migration'
+        assert item['title'] and item['blurb'], item['id']
         assert item['challenges'] and item['notes'], item['id']
 
 

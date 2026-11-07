@@ -320,7 +320,7 @@
     const paint = () => {
       const r = M.migrate(plan);
       if (r.broken) seen.broke = 1; if (r.clean) seen.clean = 1;
-      box.innerHTML = `<p class="sim-note">Rename <code>users.fullname</code> to <code>full_name</code> while the app keeps running. Each deploy is rolling, so the old and new versions run side by side for a while. Pick the steps in order.</p>
+      box.innerHTML = `<p class="sim-note">Each deploy is rolling, so the old and new versions run side by side for a while.</p>
         <div class="sim-actions">${order.map(id => `<button type="button" class="button" data-do="${id}" ${plan.includes(id) ? 'disabled' : ''}>${esc(M.MIGRATION_STEPS[id].label)}</button>`).join('')}</div>
         <ol class="fs-steps">${r.steps.map(x => `<li class="is-${x.problems.length ? 'bad' : 'ok'}"><b>${esc(x.label)}</b><span>columns: ${esc(Object.entries(x.schema).map(([c, v]) => c + (v === 'empty' ? ' (empty)' : '')).join(', '))} · running: ${esc(x.running.join(' + '))}</span>${x.problems.map(p => `<em>${esc(p)}</em>`).join('')}</li>`).join('')}</ol>
         ${r.done ? verdictBox({ ok: !r.broken, text: r.broken ? 'Renamed, but users saw errors or missing data on the way. Each step must work with both versions that run during it.' : 'Renamed with no downtime: expand (add, dual-write, backfill), switch reads, then contract.' }) : ''}

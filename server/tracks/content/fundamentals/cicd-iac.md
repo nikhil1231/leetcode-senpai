@@ -65,6 +65,7 @@ explain: At every step, the code running in production and the version before it
 name: migration
 key: b911
 title: Rename a column without downtime
+intro: 'Rename users.fullname to full_name while the app keeps serving traffic. Pick the steps in order.'
 challenges:
   - {text: 'Rename it in one step and break the running version', metric: broke, op: '==', value: 1}
   - {text: 'Finish the rename with no step breaking either version', metric: clean, op: '==', value: 1}

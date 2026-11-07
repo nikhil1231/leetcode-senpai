@@ -39,6 +39,18 @@ steps: |
 - **Streaming**: show tokens as they arrive. It doesn't reduce total time, but it improves perceived latency.
 - **Parallelise** independent calls, and **batch** offline work (nightly enrichment, evals) through batch APIs.
 
+```sim
+name: llmbill
+key: b910
+title: Cutting the monthly bill
+intro: 'The lesson''s feature: 200,000 requests a day at 3,000 tokens in and 300 out.'
+challenges:
+  - {text: 'Cut the bill by half', metric: saving, op: '>=', value: 0.5}
+  - {text: 'Cut it by 80%', metric: saving, op: '>=', value: 0.8}
+takeaway: |
+  Caching a stable prefix, routing easy requests to a small model, capping output and batching offline work each compound. Do the arithmetic per request before choosing a model.
+```
+
 ## Reliability
 
 LLM APIs are a remote dependency with rate limits (requests and tokens per minute), occasional overload errors, and long-tail latency.
@@ -69,6 +81,18 @@ Self-hosting open-weight models can cut cost at high, steady volume, keep data i
 - **Continuous batching**: new requests join the batch between decode steps, instead of waiting for the whole batch to finish. This greatly improves throughput.
 - **Quantisation** stores weights in 8 or 4 bits instead of 16, cutting memory and often raising speed, with some quality loss. Measure it on your evals.
 - Throughput vs latency: bigger batches mean more tokens per second per GPU, but slower responses for each user.
+
+```sim
+name: gpuserve
+key: b911
+title: What fits on a GPU
+intro: 'Self-host a model on 80 GB GPUs: weights, KV cache, batching and load.'
+challenges:
+  - {text: 'Find a model that doesn''t fit at all', metric: fits, op: '==', value: 0}
+  - {text: 'Serve the 70B model to 4 requests a second with first tokens under 2 s', metric: ttft, op: '<', value: 2, and: [{metric: fits, op: '==', value: 1}, {metric: rho, op: '<', value: 1}]}
+takeaway: |
+  Weights decide whether it fits; the KV cache decides how many conversations run at once; memory bandwidth decides tokens per second. Continuous batching and quantisation are why self-hosting can pay, at enough volume.
+```
 
 ```questions
 - kind: check

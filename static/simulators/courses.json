@@ -246,7 +246,7 @@
   {
    "id": "migration",
    "title": "Rename a column without downtime",
-   "blurb": "",
+   "blurb": "Rename users.fullname to full_name while the app keeps serving traffic. Pick the steps in order.",
    "notes": "Expand (add the new column, write both, backfill), switch reads, then contract (drop the old one), each step deployed on its own. Every step must work with both app versions that run during it.",
    "category": "fundamentals",
    "categoryLabel": "Fundamentals",
@@ -283,6 +283,192 @@
    "challenges": [
     "Run out of memory with the fixed rule",
     "Survive the day"
+   ]
+  },
+  {
+   "id": "llmcall",
+   "title": "Where the time and money go in one call",
+   "blurb": "Count tokens in a few kinds of text, then change the prompt, the output and caching and watch the timeline.",
+   "notes": "Latency is roughly time to first token plus output tokens divided by decode speed, so output length is the big lever. Caching a stable prefix cuts prefill time and input cost; streaming changes when words appear, not when the answer is done.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "llm-basics",
+   "lessonTitle": "How LLMs behave - tokens, context and sampling",
+   "challenges": [
+    "Make a call take over 10 seconds with a short prompt",
+    "Get the first words on screen within half a second of a long call",
+    "Cut the time to first token with prompt caching"
+   ]
+  },
+  {
+   "id": "sampling",
+   "title": "Temperature, top-k and top-p on one distribution",
+   "blurb": "The bars are the probabilities of the next token. Change the settings, then sample twenty times.",
+   "notes": "Temperature reshapes the whole distribution; top-k and top-p remove its tail. Use a low temperature where there's one right answer (labels, extraction, code) and more where variety is the point.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "llm-basics",
+   "lessonTitle": "How LLMs behave - tokens, context and sampling",
+   "challenges": [
+    "Get twenty different-looking cat names",
+    "Get the same label twenty times out of twenty"
+   ]
+  },
+  {
+   "id": "structured",
+   "title": "Getting JSON you can trust",
+   "blurb": "Two thousand records extracted by a model. Change how you ask for JSON and what you do with the answer.",
+   "notes": "Ask for structure (JSON mode or, better, schema-constrained decoding), validate in code anyway, and retry with the validation error. Constrained decoding fixes the format, not the content, and it can't fix a response cut off by max_tokens.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "prompting",
+   "lessonTitle": "Prompting, structured output and tool calls",
+   "challenges": [
+    "Let bad records through by not validating",
+    "Get to 99.5% valid records"
+   ]
+  },
+  {
+   "id": "toolcall",
+   "title": "One round of tool use, message by message",
+   "blurb": "The model asks for get_weather. Choose what your app does with the request, and see the messages that follow.",
+   "notes": "The model only asks; your code validates, runs and answers every tool request, matching ids, before anything else. Return failures as errors the model can act on, and treat tool results as untrusted text.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "prompting",
+   "lessonTitle": "Prompting, structured output and tool calls",
+   "challenges": [
+    "Complete the round properly",
+    "Break the conversation by not returning a tool result",
+    "See a tool result hijack the answer"
+   ]
+  },
+  {
+   "id": "hnsw",
+   "title": "Searching a layered graph",
+   "blurb": "400 vectors, flattened to two dimensions so you can see them. The search starts in the sparse top layer and greedily works down.",
+   "notes": "Approximate search trades a little recall for a lot of speed, and ef_search is the dial at query time. Exact search is fine until it isn't: at millions of vectors you need an index, and you should measure its recall.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "embeddings",
+   "lessonTitle": "Embeddings and vector search",
+   "challenges": [
+    "Get recall@10 to 90% or better",
+    "Keep 90% recall while computing under a quarter of the distances"
+   ]
+  },
+  {
+   "id": "hybrid",
+   "title": "Keywords, vectors, and both",
+   "blurb": "Four help-centre queries, each with one right page. Try each search method on each query.",
+   "notes": "Embeddings match meaning and blur exact tokens; BM25 matches tokens and misses paraphrase. Fuse both (reciprocal rank fusion is simple and robust), then re-rank the top few dozen.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "embeddings",
+   "lessonTitle": "Embeddings and vector search",
+   "challenges": [
+    "Find a query that vector search gets wrong",
+    "Get all four right"
+   ]
+  },
+  {
+   "id": "ragpipe",
+   "title": "Seven questions, seven ways to fail",
+   "blurb": "A support bot over a help centre. Each question breaks at a different stage of the pipeline until you add the piece it needs.",
+   "notes": "Quality comes from retrieval more than from the prompt: chunking, freshness, query rewriting, hybrid search, permission filters, re-ranking, then a grounded prompt that can say \"I don't know\". Diagnose a bad answer to the stage that caused it.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "rag",
+   "lessonTitle": "Retrieval-augmented generation",
+   "challenges": [
+    "Find the data leak and stop it",
+    "Answer all seven well",
+    "Answer all seven with under 4,000 tokens of context"
+   ]
+  },
+  {
+   "id": "evalstats",
+   "title": "Is that 2-point drop real?",
+   "blurb": "A cheaper model is truly 2 points worse. How often would your eval notice?",
+   "notes": "An eval is a sample, so its score has error bars. Compare models on the same cases (paired), report intervals, and size the set for the smallest difference you care about.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "evals",
+   "lessonTitle": "Evals - measuring LLM quality",
+   "challenges": [
+    "See the cheaper model look as good in over 20% of runs",
+    "Make the 2-point difference clearly measurable"
+   ]
+  },
+  {
+   "id": "agentloop",
+   "title": "A thousand runs of the same task",
+   "blurb": "A task needs a few tool calls; some calls fail and an agent wastes some steps. Compare structures and controls.",
+   "notes": "Use the simplest structure that works: a workflow when the steps are known, an agent when they aren't. Give agents budgets, return tool errors as information, and keep context bounded, because cost grows with every step.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "agents",
+   "lessonTitle": "Agents - tool loops, planning and control",
+   "challenges": [
+    "Watch runs crash when tool errors aren't returned to the model",
+    "Get an agent to finish 95% of tasks",
+    "Do it cheaper with a fixed workflow"
+   ]
+  },
+  {
+   "id": "llmbill",
+   "title": "Cutting the monthly bill",
+   "blurb": "The lesson's feature: 200,000 requests a day at 3,000 tokens in and 300 out.",
+   "notes": "Caching a stable prefix, routing easy requests to a small model, capping output and batching offline work each compound. Do the arithmetic per request before choosing a model.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "serving",
+   "lessonTitle": "Serving LLMs - latency, cost and reliability",
+   "challenges": [
+    "Cut the bill by half",
+    "Cut it by 80%"
+   ]
+  },
+  {
+   "id": "gpuserve",
+   "title": "What fits on a GPU",
+   "blurb": "Self-host a model on 80 GB GPUs: weights, KV cache, batching and load.",
+   "notes": "Weights decide whether it fits; the KV cache decides how many conversations run at once; memory bandwidth decides tokens per second. Continuous batching and quantisation are why self-hosting can pay, at enough volume.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "serving",
+   "lessonTitle": "Serving LLMs - latency, cost and reliability",
+   "challenges": [
+    "Find a model that doesn't fit at all",
+    "Serve the 70B model to 4 requests a second with first tokens under 2 s"
+   ]
+  },
+  {
+   "id": "injection",
+   "title": "Assume the model is fooled",
+   "blurb": "An assistant with email, browsing and file tools meets six attacks. The model follows every one of them; your design decides what happens next.",
+   "notes": "Prompt injection can't be fully prevented, so design for a model that will sometimes be fooled: least privilege, allowlists, human confirmation for irreversible actions, and no untrusted way out (links, images, emails).",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "guardrails",
+   "lessonTitle": "Safety, prompt injection and guardrails",
+   "challenges": [
+    "Stop every attack",
+    "Stop every attack with little friction"
+   ]
+  },
+  {
+   "id": "threshold",
+   "title": "Precision, recall and when to stay quiet",
+   "blurb": "Each candidate comment gets a confidence score. Choose where the bot starts posting.",
+   "notes": "A reviewer that cries wolf gets muted, so favour precision and post less. Measure it on historical PRs, then online through how often developers act on or dismiss comments.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "design-review-assistant",
+   "lessonTitle": "AI system design: a pull-request review assistant",
+   "challenges": [
+    "Keep precision at 70% or more",
+    "Catch half the real issues with precision still at 70%+"
    ]
   }
  ]

@@ -39,6 +39,19 @@ steps: |
   Total ≈ TTFT + output / decode speed = 0.5 + 400 / 80 = 0.5 + 5 = **5.5 s**. The 6,000-token prompt only affects the 0.5 s of prefill. The 400 output tokens cost ten times as much time. Streaming makes it *feel* faster, because the first words appear at 0.5 s. If you need it actually faster, cap the output, ask for a terser format, or use a smaller model.
 ```
 
+```sim
+name: llmcall
+key: b910
+title: Where the time and money go in one call
+intro: 'Count tokens in a few kinds of text, then change the prompt, the output and caching and watch the timeline.'
+challenges:
+  - {text: 'Make a call take over 10 seconds with a short prompt', metric: total, op: '>', value: 10, and: [{metric: output, op: '>=', value: 800}]}
+  - {text: 'Get the first words on screen within half a second of a long call', metric: firstSeen, op: '<', value: 0.5, and: [{metric: total, op: '>', value: 3}]}
+  - {text: 'Cut the time to first token with prompt caching', metric: cached, op: '>=', value: 0.5}
+takeaway: |
+  Latency is roughly time to first token plus output tokens divided by decode speed, so output length is the big lever. Caching a stable prefix cuts prefill time and input cost; streaming changes when words appear, not when the answer is done.
+```
+
 ## Context windows
 
 The **context window** is the maximum number of tokens (prompt plus output) the model can attend to in one call. Nothing persists between calls: "memory" in chat apps means resending history, summarising it, or retrieving it. Long contexts cost more, add latency, and models use them unevenly. Information buried in the middle of a long context can be used less reliably than material at the start or end. Put instructions and the most relevant material where they'll be noticed, and retrieve rather than dumping everything in.
@@ -60,6 +73,18 @@ items:
   - {text: 'Classify support tickets into 8 categories', bucket: 0, why: 'Classification wants consistency.'}
   - {text: 'Write varied synthetic user questions for an eval set', bucket: 1, why: 'Low temperature would produce near-duplicates.'}
   - {text: 'Generate a SQL query from a question', bucket: 0, why: 'Code generation benefits from determinism; sample several only if you can verify them.'}
+```
+
+```sim
+name: sampling
+key: b911
+title: Temperature, top-k and top-p on one distribution
+intro: 'The bars are the probabilities of the next token. Change the settings, then sample twenty times.'
+challenges:
+  - {text: 'Get twenty different-looking cat names', metric: varied, op: '==', value: 1}
+  - {text: 'Get the same label twenty times out of twenty', metric: labelSame, op: '==', value: 1}
+takeaway: |
+  Temperature reshapes the whole distribution; top-k and top-p remove its tail. Use a low temperature where there's one right answer (labels, extraction, code) and more where variety is the point.
 ```
 
 ## Why models hallucinate

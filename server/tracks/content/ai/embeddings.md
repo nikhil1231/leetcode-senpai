@@ -49,6 +49,18 @@ reveal: |
   "E-4021" and "E-4012" mean almost the same thing to an embedding model: "some error code". Exact tokens such as IDs, SKUs, error codes and names are what **keyword search (BM25)** is good at. The standard fix is **hybrid search**: run BM25 and vector search, merge the results (for example with reciprocal rank fusion), then optionally re-rank the top candidates with a cross-encoder.
 ```
 
+```sim
+name: hnsw
+key: b910
+title: Searching a layered graph
+intro: '400 vectors, flattened to two dimensions so you can see them. The search starts in the sparse top layer and greedily works down.'
+challenges:
+  - {text: 'Get recall@10 to 90% or better', metric: recall, op: '>=', value: 0.9}
+  - {text: 'Keep 90% recall while computing under a quarter of the distances', metric: evals, op: '<', value: 100, and: [{metric: recall, op: '>=', value: 0.9}]}
+takeaway: |
+  Approximate search trades a little recall for a lot of speed, and ef_search is the dial at query time. Exact search is fine until it isn't: at millions of vectors you need an index, and you should measure its recall.
+```
+
 ## Hybrid search and re-ranking
 
 - **BM25** (keyword) is good at exact terms, rare words and identifiers. Vectors are good at paraphrases and synonyms. Use both, and merge with **reciprocal rank fusion**: each document scores the sum of 1/(k + rank) across result lists, which avoids comparing incompatible scores.
@@ -64,6 +76,18 @@ items:
   - {text: 'A customer''s order number', bucket: 0, why: 'Exact match.'}
   - {text: '"app keeps logging me out"', bucket: 1, why: 'Semantic match to session-expiry articles.'}
   - {text: 'A rare product name, "Zephyrine"', bucket: 0, why: 'Rare tokens that the embedding model may never have seen.'}
+```
+
+```sim
+name: hybrid
+key: b911
+title: Keywords, vectors, and both
+intro: 'Four help-centre queries, each with one right page. Try each search method on each query.'
+challenges:
+  - {text: 'Find a query that vector search gets wrong', metric: right, op: '<', value: 4, and: [{metric: method, op: '==', value: 'vector'}]}
+  - {text: 'Get all four right', metric: right, op: '==', value: 4}
+takeaway: |
+  Embeddings match meaning and blur exact tokens; BM25 matches tokens and misses paraphrase. Fuse both (reciprocal rank fusion is simple and robust), then re-rank the top few dozen.
 ```
 
 ```questions

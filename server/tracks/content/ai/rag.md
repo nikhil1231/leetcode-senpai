@@ -79,6 +79,19 @@ nodes:
 debrief: Most RAG failures are retrieval failures. Inspect what was retrieved before tuning the prompt, and turn every incident into an eval case.
 ```
 
+```sim
+name: ragpipe
+key: b910
+title: Seven questions, seven ways to fail
+intro: 'A support bot over a help centre. Each question breaks at a different stage of the pipeline until you add the piece it needs.'
+challenges:
+  - {text: 'Find the data leak and stop it', metric: leaks, op: '==', value: 0, and: [{metric: right, op: '>=', value: 3}]}
+  - {text: 'Answer all seven well', metric: right, op: '==', value: 7}
+  - {text: 'Answer all seven with under 4,000 tokens of context', metric: ctx, op: '<', value: 4000, and: [{metric: right, op: '==', value: 7}]}
+takeaway: |
+  Quality comes from retrieval more than from the prompt: chunking, freshness, query rewriting, hybrid search, permission filters, re-ranking, then a grounded prompt that can say "I don't know". Diagnose a bad answer to the stage that caused it.
+```
+
 ## Evaluating RAG
 
 Measure the two halves separately:
