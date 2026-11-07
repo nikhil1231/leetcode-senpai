@@ -119,14 +119,14 @@ def test_fit_image_fills_the_screen_without_cropping():
     import io
     buf = io.BytesIO()
     img = Image.new('RGB', (90, 160), '#3366ff')
-    img.paste(Image.new('RGB', (90, 10), '#ff3333'), (0, 0))
+    img.paste(Image.new('RGB', (90, 10), '#ff3333'), (0, 0))       # a red top edge
+    img.paste(Image.new('RGB', (90, 10), '#33cc33'), (0, 150))     # a green bottom edge
     img.save(buf, 'JPEG')
     out = Image.open(io.BytesIO(wall.fit_image(buf.getvalue(), 300, 650)))
     assert out.size == (300, 650)
-    r, g, b = out.getpixel((150, 5))    # the poster starts at the very top
-    assert r > 200 and b < 100
-    r, g, b = out.getpixel((150, 640))  # the padding below continues the poster's own edge
-    assert b > 200 and r < 100
+    colour = lambda y: max(zip(out.getpixel((150, y)), 'rgb'))[1]
+    # 300x533 centred in 650: 58px above continue the red top edge, 59px below the green bottom edge
+    assert [colour(y) for y in (5, 50, 120, 400, 600, 645)] == ['r', 'r', 'b', 'b', 'g', 'g']
 
 
 def test_fading_map_scores_what_you_have_met():
