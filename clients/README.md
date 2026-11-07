@@ -33,7 +33,8 @@ Then Automation → Time of Day, one automation per change (08:31, 10:31, 12:31,
 20:31), each Run Immediately → run "Senpai wallpaper". Also handy: Automation → Charger → Is
 Connected. Every poster made, with its review: `GET /api/wall/posters`; make one now:
 `POST /api/wall/posters`. For a "new wallpaper" shortcut, use the same step 1 with method POST:
-`POST /api/wall/poster.png` makes a new poster on the spot and returns it, fitted like GET's. It
+`POST /api/wall/poster.png` makes a new poster on the spot and returns it, fitted like GET's; it
+stays the one GET returns for the next WALL_SLOT_HOURS (2h), then the rotation resumes. It
 takes up to a few minutes (raise the shortcut's timeout); if every try fails review you get the
 poster up now instead, with header `X-Wall-Poster: failed-review`.
 

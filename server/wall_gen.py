@@ -171,9 +171,10 @@ def _copy(b):
                                                 'visual': 'a simple icon'} for idea in b['ideas']]}
 
 
-def make(store, now, lesson=None, force=False):
+def make(store, now, lesson=None, force=False, pin=False):
     """Write, draw, review and keep one poster: for `lesson`, else the weakest lesson needing one
-    (with `force`, else the lesson whose poster is oldest).
+    (with `force`, else the lesson whose poster is oldest). `pin`: asked for by hand, so it goes up
+    now if it passes (wall.current).
     -> the kept poster (passing, or the best failed try, which never goes up), or None."""
     views, mis, ranked = _state(store, now)
     library = store.list_knowledge(POSTERS)
@@ -215,7 +216,7 @@ def make(store, now, lesson=None, force=False):
         'lesson': b['lesson'], 'title': b['title'], 'section': b['section'], 'points': b['points'],
         'ideas': [i['claim'] for i in b['ideas']], 'copy': copy, 'created_at': now, 'version': PROMPT_VERSION,
         'ok': ok, 'review': review, 'attempts': attempt, 'model': model, 'reviewer': config.WALL_REVIEW_MODEL,
-        'cost': round(spent, 4), 'bytes': len(data)})
+        'cost': round(spent, 4), 'bytes': len(data), 'pinned_at': now if pin else None})
 
 
 def due(library, now, every_hours, per_day):

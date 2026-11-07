@@ -139,3 +139,4 @@ def test_the_phone_gets_the_stored_poster(client, models, monkeypatch):
     assert r.status_code == 200 and r.headers['content-type'] == 'image/jpeg' and r.headers['x-wall-poster'] != made['id']
     assert Image.open(io.BytesIO(r.content)).size == (400, 900)
     assert len(c.get('/api/wall/posters').json()['posters']) == 2
+    assert c.get('/api/wall/now').json()['poster']['id'] == r.headers['x-wall-poster']   # and it is up now

@@ -156,8 +156,12 @@ def shelf(library, ranked, least=3):
     return out
 
 
-def current(library, ranked, n):
-    """The poster up in waking slot n, or None before there is one."""
+def current(library, ranked, n, now=0, hold=0):
+    """The poster up in waking slot n, or None before there is one. A passing poster made by hand
+    (pinned_at) in the last `hold` seconds goes up ahead of the rotation, the newest first."""
+    pinned = [p for p in library if p.get('ok') and p.get('pinned_at') and now - p['pinned_at'] < hold]
+    if pinned:
+        return max(pinned, key=lambda p: p['pinned_at'])
     on = shelf(library, ranked)
     return on[n % len(on)] if on else None
 
@@ -376,7 +380,7 @@ def _wallpaper(uid, now):
     ranked = struggles(views)
     n = wake_slot(dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())), config.DRIP_WINDOW,
                   config.WALL_SLOT_HOURS)
-    p = current(store.list_knowledge(wall_gen.POSTERS), ranked, n)
+    p = current(store.list_knowledge(wall_gen.POSTERS), ranked, n, now, config.WALL_SLOT_HOURS * 3600)
     if p or not ranked:
         return p, None
     b = brief(ranked[n % len(ranked)], views, mis)
@@ -422,13 +426,14 @@ def poster_png(w: int = Query(default=1179, ge=320, le=4000), h: int = Query(def
 async def new_poster_png(w: int = Query(default=1179, ge=320, le=4000), h: int = Query(default=2556, ge=320, le=4000),
                          who=Depends(kb_api.caller)):
     """A new poster made now, outside the cadence, fitted like GET's: for the weakest lesson needing
-    one, else the one whose poster is oldest. Slow (up to three draws and reviews). A try that fails
+    one, else the one whose poster is oldest; it stays up for WALL_SLOT_HOURS, so GET returns it too.
+    Slow (up to three draws and reviews). A try that fails
     review never comes back: you get the poster up now instead, marked X-Wall-Poster: failed-review."""
     from . import wall_gen
     if not llm.enabled():
         raise HTTPException(503, 'Posters need a model (OPENROUTER_API_KEY)')
     store = kb_api.get_store(who['uid'])
-    p = await asyncio.to_thread(wall_gen.make, store, time.time(), None, True)
+    p = await asyncio.to_thread(wall_gen.make, store, time.time(), None, True, True)
     if not p:
         raise HTTPException(409, 'No lesson you have covered needs a poster')
     if not p.get('ok'):
@@ -462,11 +467,12 @@ def poster_image(pid: str, who=Depends(kb_api.caller)):
 
 @router.post('/posters')
 async def make_poster(lesson: str = Query(default=''), who=Depends(kb_api.caller)):
-    """Make a poster now, outside the cadence: for `lesson`, or the weakest lesson needing one."""
+    """Make a poster now, outside the cadence: for `lesson`, or the weakest lesson needing one. If it
+    passes review it is the wallpaper for the next WALL_SLOT_HOURS."""
     from . import wall_gen
     if not llm.enabled():
         raise HTTPException(503, 'Posters need a model (OPENROUTER_API_KEY)')
-    p = await asyncio.to_thread(wall_gen.make, kb_api.get_store(who['uid']), time.time(), lesson or None)
+    p = await asyncio.to_thread(wall_gen.make, kb_api.get_store(who['uid']), time.time(), lesson or None, False, True)
     if not p:
         raise HTTPException(409, 'No lesson you have covered needs a poster')
     return _public(p)
