@@ -52,6 +52,19 @@ find:
     B computed its new balance from a value that A had already changed, and wrote an absolute value over A's update. The correct result is 20. Fix it with a relative, guarded update (`SET balance = balance - 50 WHERE balance >= 50`), with `SELECT ... FOR UPDATE` in step 2 (B would wait for A, then read 70), or with a version check.
 ```
 
+```sim
+name: mvcc
+key: b910
+title: Two sessions, one row
+intro: 'Run statements in two sessions, one at a time. The table shows every row version and which session can see it.'
+challenges:
+  - {text: 'Lose an update: two +10s that leave the balance at 110', metric: lostUpdate, op: '==', value: 1}
+  - {text: 'Get REPEATABLE READ to refuse a concurrent update', metric: serialization, op: '==', value: 1}
+  - {text: 'Run VACUUM and watch dead versions go', metric: vacuumed, op: '>=', value: 1}
+takeaway: |
+  An UPDATE writes a new row version; readers keep seeing the version their snapshot allows, so they never block writers. A lost update comes from reading in one statement and writing what you read in another: use `SET balance = balance + 10`, `SELECT … FOR UPDATE`, or REPEATABLE READ with a retry.
+```
+
 ## Locks that cause outages
 
 - **Row locks** come from `UPDATE`, `DELETE` and `SELECT ... FOR UPDATE`. `FOR UPDATE SKIP LOCKED` turns a table into a work queue: each worker takes rows nobody else holds.
@@ -86,6 +99,18 @@ nodes:
     text: 'Traffic recovers immediately. The re-run adds the constraint as NOT VALID (brief lock), then VALIDATE CONSTRAINT checks existing rows under a weaker lock.'
     verdict: good
 debrief: Set `lock_timeout` on every migration, split long operations into low-lock steps (NOT VALID then VALIDATE, CREATE INDEX CONCURRENTLY), and keep long analytical queries off the primary.
+```
+
+```sim
+name: lockqueue
+key: b911
+title: The migration that queued every query
+intro: 'A report query is running when a migration asks for an ACCESS EXCLUSIVE lock.'
+challenges:
+  - {text: 'Watch the connection pool fill up behind the ALTER', metric: saturated, op: '==', value: 1}
+  - {text: 'Set a lock_timeout short enough that no request fails', metric: errors, op: '==', value: 0, and: [{metric: lockTimeout, op: '>', value: 0}]}
+takeaway: |
+  Lock requests queue in order, so an ALTER waiting behind one long query blocks every query that arrives after it. Use `lock_timeout` (and retries) on migrations, and keep long transactions off the primary.
 ```
 
 ## Vacuum, wraparound and connections

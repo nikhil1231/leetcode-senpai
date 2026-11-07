@@ -28,6 +28,19 @@ Signals are how the system asks a process to do something:
 
 **PID 1 in a container is special.** The kernel doesn't apply default signal actions to PID 1, so an app that doesn't install a SIGTERM handler simply ignores it and gets SIGKILLed after the grace period. And a shell running as PID 1 (`CMD npm start` through `sh -c`) may not forward signals to the app. Use exec-form `CMD ["node", "server.js"]`, or a tiny init such as `tini` (`docker run --init`).
 
+```sim
+name: pid1
+key: b910
+title: PID 1, signals and zombies in a container
+intro: 'Choose how the container starts, then stop it, or make the app leave an orphan behind.'
+challenges:
+  - {text: 'Stop the container and lose in-flight requests to SIGKILL', metric: killed, op: '==', value: 1}
+  - {text: 'Make a zombie that PID 1 never reaps', metric: zombie, op: '==', value: 1}
+  - {text: 'Find a setup that stops cleanly (exit 0)', metric: graceful, op: '==', value: 1}
+takeaway: |
+  PID 1 must forward signals and reap orphans, and the kernel gives it no default signal actions. Use exec-form CMD with a SIGTERM handler, or `docker run --init` (tini) to get both jobs done for you.
+```
+
 ## Memory
 
 Each process sees its own **virtual address space**. The numbers in `top` and `ps` mean different things:
@@ -50,11 +63,35 @@ reveal: |
   137 = 128 + 9: the process received SIGKILL. With no Java OOM error, the JVM never ran out of *heap*; the kernel killed the whole process for exceeding the cgroup limit. The heap alone can use the full 2 GiB, and the JVM needs a few hundred MB more outside it. Set the heap to about 70-75% of the limit (`-XX:MaxRAMPercentage=75`) and check `kubectl describe pod` for `OOMKilled`. A failing liveness probe also kills with SIGKILL after SIGTERM, but the pod events would say so.
 ```
 
+```sim
+name: jvmmem
+key: b911
+title: A JVM inside a 2 GiB pod
+intro: 'The bar is the process''s memory against the cgroup limit (the red line).'
+challenges:
+  - {text: 'Get the pod OOMKilled at full load', metric: oom, op: '==', value: 1}
+  - {text: 'Size the heap so it survives full load with at least 100 MiB to spare', metric: headroom, op: '>=', value: 100, and: [{metric: load, op: '>=', value: 1}]}
+takeaway: |
+  Heap is only part of a JVM's footprint: metaspace, thread stacks, direct buffers and the code cache all count against the cgroup. Size the heap as a percentage of the limit (`MaxRAMPercentage` around 70-75%) and leave room for the rest.
+```
+
 ## File descriptors
 
 Everything open (files, sockets, pipes) is a **file descriptor**, and each process has a limit (`ulimit -n`, often 1024 by default; check `/proc/<pid>/limits`). "Too many open files" (EMFILE) usually means a leak: sockets or files opened and never closed, or HTTP clients created per request. Count them with `ls /proc/<pid>/fd | wc -l` or `lsof -p <pid>`. A count that keeps climbing is a leak. A count that's high but stable means you need a higher limit.
 
 A deleted file that's still open keeps its disk space, so `df` says the disk is full while `du` can't find the space. `lsof | grep deleted` shows the culprit. Restart it, or truncate through `/proc/<pid>/fd/<n>`.
+
+```sim
+name: fdleak
+key: b912
+title: A descriptor leak
+intro: 'A few requests forget to close a socket. Watch the open descriptor count against `ulimit -n`.'
+challenges:
+  - {text: 'See the process hit the limit within half an hour', metric: emfileAt, op: '<', value: 30}
+  - {text: 'Fix it so the count stays flat', metric: pooled, op: '==', value: 1}
+takeaway: |
+  A climbing count is a leak; a high flat one is a limit to raise. Raising the limit on a leak only moves the outage.
+```
 
 ## Reading a slow box
 

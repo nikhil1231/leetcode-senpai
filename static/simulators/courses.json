@@ -1,0 +1,289 @@
+{
+ "categories": [
+  [
+   "fundamentals",
+   "Fundamentals"
+  ],
+  [
+   "ai",
+   "AI engineering"
+  ]
+ ],
+ "items": [
+  {
+   "id": "interleave",
+   "title": "Step two threads yourself",
+   "blurb": "Pick the next line for each thread yourself, or let a random schedule do it. Shared memory is in the middle.",
+   "notes": "Visibility, atomicity and ordering are three separate failures. `count++` is three steps, so it needs atomicity (a lock or an atomic). Double-checked locking needs ordering: without `volatile` the write of `instance` may become visible before the constructor's writes. A plain stop flag needs visibility: nothing forces the loop to re-read it.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "java-concurrency",
+   "lessonTitle": "Java concurrency and the memory model",
+   "challenges": [
+    "Lose an increment: get count to finish below 4 with a plain int",
+    "Catch double-checked locking handing out a half-built object",
+    "Fix the counter with synchronized or AtomicInteger and run it to 4"
+   ]
+  },
+  {
+   "id": "threadpool",
+   "title": "Size a ThreadPoolExecutor",
+   "blurb": "Tasks arrive steadily, then four times as fast for ten seconds. Change the pool and its queue and watch threads, queue and latency.",
+   "notes": "The executor queues first and grows second, so with an unbounded queue `maximumPoolSize` is dead config and the queue absorbs the overload as latency. Bound the queue, pick a rejection policy on purpose, and treat CallerRunsPolicy as back-pressure: the submitter slows down.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "java-concurrency",
+   "lessonTitle": "Java concurrency and the memory model",
+   "challenges": [
+    "With the unbounded queue, see that the pool never grows past core",
+    "Make the pool grow beyond core (it needs a bounded queue)",
+    "Use CallerRunsPolicy to push back instead of rejecting"
+   ]
+  },
+  {
+   "id": "gil",
+   "title": "Threads, processes and asyncio on the same work",
+   "blurb": "Each row is one task over time: running, waiting for the GIL, waiting on I/O, or queued.",
+   "notes": "The GIL lets one thread run Python bytecode at a time, so threads overlap waiting, not computing. CPU-bound work needs processes (or a free-threaded build), at the cost of start-up and pickling. asyncio overlaps I/O on one thread, but a coroutine that computes holds everyone else up.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "python-runtime",
+   "lessonTitle": "How Python runs - the GIL, asyncio and memory",
+   "challenges": [
+    "Run the CPU-bound work on threads and see almost no speed-up",
+    "Get at least a 3× speed-up on the CPU-bound work",
+    "Show that threads are fine for I/O-bound work"
+   ]
+  },
+  {
+   "id": "eventloop",
+   "title": "One blocking call on the event loop",
+   "blurb": "An asyncio service gets a request every 40 ms. At one second, one handler does something slow. Watch everyone else.",
+   "notes": "The loop is a single thread: a synchronous call inside a coroutine blocks every request, not just its own. Await non-blocking versions, or offload blocking and CPU work with `asyncio.to_thread` or a process pool.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "python-runtime",
+   "lessonTitle": "How Python runs - the GIL, asyncio and memory",
+   "challenges": [
+    "Freeze the service with a blocking call",
+    "Do the same slow work without hurting anyone else"
+   ]
+  },
+  {
+   "id": "pid1",
+   "title": "PID 1, signals and zombies in a container",
+   "blurb": "Choose how the container starts, then stop it, or make the app leave an orphan behind.",
+   "notes": "PID 1 must forward signals and reap orphans, and the kernel gives it no default signal actions. Use exec-form CMD with a SIGTERM handler, or `docker run --init` (tini) to get both jobs done for you.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "linux-processes",
+   "lessonTitle": "Linux processes, memory and files",
+   "challenges": [
+    "Stop the container and lose in-flight requests to SIGKILL",
+    "Make a zombie that PID 1 never reaps",
+    "Find a setup that stops cleanly (exit 0)"
+   ]
+  },
+  {
+   "id": "jvmmem",
+   "title": "A JVM inside a 2 GiB pod",
+   "blurb": "The bar is the process's memory against the cgroup limit (the red line).",
+   "notes": "Heap is only part of a JVM's footprint: metaspace, thread stacks, direct buffers and the code cache all count against the cgroup. Size the heap as a percentage of the limit (`MaxRAMPercentage` around 70-75%) and leave room for the rest.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "linux-processes",
+   "lessonTitle": "Linux processes, memory and files",
+   "challenges": [
+    "Get the pod OOMKilled at full load",
+    "Size the heap so it survives full load with at least 100 MiB to spare"
+   ]
+  },
+  {
+   "id": "fdleak",
+   "title": "A descriptor leak",
+   "blurb": "A few requests forget to close a socket. Watch the open descriptor count against `ulimit -n`.",
+   "notes": "A climbing count is a leak; a high flat one is a limit to raise. Raising the limit on a leak only moves the outage.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "linux-processes",
+   "lessonTitle": "Linux processes, memory and files",
+   "challenges": [
+    "See the process hit the limit within half an hour",
+    "Fix it so the count stays flat"
+   ]
+  },
+  {
+   "id": "slowstart",
+   "title": "Slow start, round by round",
+   "blurb": "How many round trips does a response take on a new connection?",
+   "notes": "Most web responses are latency-bound: a new TCP connection needs handshakes plus several slow-start round trips. Keep-alive and connection pooling are the cheapest speed-up there is.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "networking-stack",
+   "lessonTitle": "What happens on the wire - DNS, TCP, TLS and HTTP",
+   "challenges": [
+    "Download 500 KB on a new connection",
+    "Make the same download faster without changing the size"
+   ]
+  },
+  {
+   "id": "hol",
+   "title": "One lost packet, three protocols",
+   "blurb": "A page of small resources over a lossy link. Bars are when each resource finished; amber ones were held up by a loss.",
+   "notes": "HTTP/2 fixed HTTP/1.1's queueing with streams, but on one TCP connection a lost packet still blocks everything behind it. QUIC moves loss recovery into each stream, and does the handshake in one round trip.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "networking-stack",
+   "lessonTitle": "What happens on the wire - DNS, TCP, TLS and HTTP",
+   "challenges": [
+    "Lose packets on HTTP/2 and see more resources delayed than packets lost",
+    "Try the same loss on HTTP/3"
+   ]
+  },
+  {
+   "id": "mvcc",
+   "title": "Two sessions, one row",
+   "blurb": "Run statements in two sessions, one at a time. The table shows every row version and which session can see it.",
+   "notes": "An UPDATE writes a new row version; readers keep seeing the version their snapshot allows, so they never block writers. A lost update comes from reading in one statement and writing what you read in another: use `SET balance = balance + 10`, `SELECT … FOR UPDATE`, or REPEATABLE READ with a retry.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "postgres-internals",
+   "lessonTitle": "Postgres internals - MVCC, isolation, locks and vacuum",
+   "challenges": [
+    "Lose an update: two +10s that leave the balance at 110",
+    "Get REPEATABLE READ to refuse a concurrent update",
+    "Run VACUUM and watch dead versions go"
+   ]
+  },
+  {
+   "id": "lockqueue",
+   "title": "The migration that queued every query",
+   "blurb": "A report query is running when a migration asks for an ACCESS EXCLUSIVE lock.",
+   "notes": "Lock requests queue in order, so an ALTER waiting behind one long query blocks every query that arrives after it. Use `lock_timeout` (and retries) on migrations, and keep long transactions off the primary.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "postgres-internals",
+   "lessonTitle": "Postgres internals - MVCC, isolation, locks and vacuum",
+   "challenges": [
+    "Watch the connection pool fill up behind the ALTER",
+    "Set a lock_timeout short enough that no request fails"
+   ]
+  },
+  {
+   "id": "scheduler",
+   "title": "Requests, limits and QoS on three nodes",
+   "blurb": "web is a latency-sensitive service; batch pods run with no requests at all.",
+   "notes": "Requests decide placement, limits decide what happens at runtime. Under memory pressure the kubelet evicts BestEffort pods first, then Burstable ones using more than they asked for. A CPU limit shows up as latency, not errors.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "kubernetes",
+   "lessonTitle": "Containers and Kubernetes",
+   "challenges": [
+    "Leave a pod Pending",
+    "Get a web pod CPU-throttled",
+    "Get pods evicted under memory pressure"
+   ]
+  },
+  {
+   "id": "rollout",
+   "title": "The reconcile loop and a rollout",
+   "blurb": "A Deployment of four pods. Delete pods, push images and watch the controller close the gap.",
+   "notes": "Controllers don't follow scripts; they compare desired and actual state on every pass. A rollout with maxUnavailable 0 removes old pods only after new ones are Ready, so a broken image stalls instead of taking the service down, as long as readiness actually means ready.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "kubernetes",
+   "lessonTitle": "Containers and Kubernetes",
+   "challenges": [
+    "Delete a pod and watch it come back",
+    "Push a broken image and see the rollout stall in CrashLoopBackOff",
+    "Recover with kubectl rollout undo"
+   ]
+  },
+  {
+   "id": "iam",
+   "title": "How AWS decides",
+   "blurb": "Pick a request and the policies in play. The trail says which rule decided.",
+   "notes": "Explicit Deny always wins; without an Allow the answer is Deny. Boundaries and SCPs never grant anything, they only cap what policies can grant.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "aws-core",
+   "lessonTitle": "Cloud building blocks on AWS",
+   "challenges": [
+    "See an explicit Deny beat an Allow",
+    "Hit an implicit deny",
+    "See a permissions boundary cap an identity policy"
+   ]
+  },
+  {
+   "id": "vpc",
+   "title": "Follow a packet through the VPC",
+   "blurb": "Five flows: three should work and two should be blocked. Break things and see exactly where each packet stops.",
+   "notes": "Public subnets route 0.0.0.0/0 to the internet gateway; private ones route it to a NAT gateway in a public subnet. Security groups reference each other (app allows the load balancer's group, the database allows the app's), so nothing is open to the world except the load balancer.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "aws-core",
+   "lessonTitle": "Cloud building blocks on AWS",
+   "challenges": [
+    "Break outbound calls from the private subnet",
+    "Expose something to the internet that shouldn't be",
+    "Get all five flows right again"
+   ]
+  },
+  {
+   "id": "deploys",
+   "title": "A bad build under each strategy",
+   "blurb": "The new build fails some requests. Compare how much traffic sees it and how many requests fail.",
+   "notes": "Every strategy runs two versions for a while; what differs is how many users meet a bad one and how fast you can undo it. Canaries need automated analysis to be worth it; feature flags turn off in seconds.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "cicd-iac",
+   "lessonTitle": "CI/CD, deployment strategies and infrastructure as code",
+   "challenges": [
+    "Get more than half the traffic onto the bad build",
+    "Keep failed requests under 50"
+   ]
+  },
+  {
+   "id": "migration",
+   "title": "Rename a column without downtime",
+   "blurb": "",
+   "notes": "Expand (add the new column, write both, backfill), switch reads, then contract (drop the old one), each step deployed on its own. Every step must work with both app versions that run during it.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "cicd-iac",
+   "lessonTitle": "CI/CD, deployment strategies and infrastructure as code",
+   "challenges": [
+    "Rename it in one step and break the running version",
+    "Finish the rename with no step breaking either version"
+   ]
+  },
+  {
+   "id": "pulldeploy",
+   "title": "The broken commit that kept coming back",
+   "blurb": "Thirty minutes of the box's deploy timer after a commit that crashes on start.",
+   "notes": "Automatic recovery that repeats the failure is a retry storm. Remember what failed and stop retrying it until something changes.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "home-lab",
+   "lessonTitle": "Case study: your own box",
+   "challenges": [
+    "See the site flap while the broken commit is retried",
+    "Stop the retry storm"
+   ]
+  },
+  {
+   "id": "reaper",
+   "title": "A day on an 8 GB box",
+   "blurb": "Agent sessions open through the day, work for a while, then sit idle. At 18:00 a batch of sessions opens at once.",
+   "notes": "The scarcer the resource, the less you keep around, with a bound on how much you do at once and a pass frequent enough to catch demand that grows between runs.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "home-lab",
+   "lessonTitle": "Case study: your own box",
+   "challenges": [
+    "Run out of memory with the fixed rule",
+    "Survive the day"
+   ]
+  }
+ ]
+}

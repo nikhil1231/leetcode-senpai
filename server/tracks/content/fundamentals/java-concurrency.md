@@ -67,6 +67,19 @@ explain: |
   **Line 2**: double-checked locking needs `instance` to be **volatile**. Without it, another thread can see a non-null reference to a `Registry` whose constructor writes aren't visible yet: the reference assignment can be reordered before the object is fully initialised. **Line 3**: a plain `HashMap` mutated by many threads can lose entries or corrupt its buckets. Use `ConcurrentHashMap`. Simpler still: the holder idiom (`private static class Holder { static final Registry I = new Registry(); }`), which class initialisation makes lazy and thread-safe for free.
 ```
 
+```sim
+name: interleave
+key: b910
+title: Step two threads yourself
+intro: 'Pick the next line for each thread yourself, or let a random schedule do it. Shared memory is in the middle.'
+challenges:
+  - {text: 'Lose an increment: get count to finish below 4 with a plain int', metric: lost, op: '==', value: 1}
+  - {text: 'Catch double-checked locking handing out a half-built object', metric: halfBuilt, op: '==', value: 1}
+  - {text: 'Fix the counter with synchronized or AtomicInteger and run it to 4', metric: fixedCounter, op: '==', value: 1}
+takeaway: |
+  Visibility, atomicity and ordering are three separate failures. `count++` is three steps, so it needs atomicity (a lock or an atomic). Double-checked locking needs ordering: without `volatile` the write of `instance` may become visible before the constructor's writes. A plain stop flag needs visibility: nothing forces the loop to re-read it.
+```
+
 ## Locks, atomics and concurrent collections
 
 - **`synchronized`**: simple, reentrant, released automatically. Good default.
@@ -93,6 +106,19 @@ choices:
 answer: 1
 reveal: |
   The executor creates threads beyond the core size only when the queue rejects an offer, and an unbounded queue never does. So you get 4 threads, an ever-growing backlog, rising latency, and eventually `OutOfMemoryError`. `Executors.newFixedThreadPool` is built exactly like this. Use a bounded `ArrayBlockingQueue` with a rejection policy, or a semaphore in front of the pool.
+```
+
+```sim
+name: threadpool
+key: b911
+title: Size a ThreadPoolExecutor
+intro: 'Tasks arrive steadily, then four times as fast for ten seconds. Change the pool and its queue and watch threads, queue and latency.'
+challenges:
+  - {text: 'With the unbounded queue, see that the pool never grows past core', metric: unbounded, op: '==', value: 1}
+  - {text: 'Make the pool grow beyond core (it needs a bounded queue)', metric: maxThreads, op: '>', value: 4}
+  - {text: 'Use CallerRunsPolicy to push back instead of rejecting', metric: callerRan, op: '>', value: 0}
+takeaway: |
+  The executor queues first and grows second, so with an unbounded queue `maximumPoolSize` is dead config and the queue absorbs the overload as latency. Bound the queue, pick a rejection policy on purpose, and treat CallerRunsPolicy as back-pressure: the submitter slows down.
 ```
 
 ## CompletableFuture and virtual threads

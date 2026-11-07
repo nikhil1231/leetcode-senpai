@@ -16,7 +16,7 @@ LESSON_DIRS = [os.path.join(os.path.dirname(main.__file__), 'system_design_lesso
 
 def registered():
     names = set()
-    for f in glob.glob(os.path.join(STATIC, 'sd-sims*.js')) + [os.path.join(STATIC, 'sd-walkthrough.js')]:
+    for f in glob.glob(os.path.join(STATIC, 'sd-sims*.js')) + glob.glob(os.path.join(STATIC, '*-sims.js')) + [os.path.join(STATIC, 'sd-walkthrough.js')]:
         text = open(f, encoding='utf-8').read()
         names |= set(re.findall(r"\b(?:reg|register)\('([a-z0-9-]+)'", text)) | set(re.findall(r"\bregistry\.([a-z0-9]+)\s*=", text))
     widgets = open(os.path.join(STATIC, 'sd-widgets.js'), encoding='utf-8').read()

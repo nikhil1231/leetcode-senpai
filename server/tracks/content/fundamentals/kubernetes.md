@@ -53,6 +53,19 @@ Core objects:
 - Many teams set memory request = limit, and set a CPU request **without** a CPU limit, to avoid throttling latency-sensitive services.
 - QoS classes decide eviction order under node pressure: **Guaranteed** (requests = limits for every resource), **Burstable**, **BestEffort** (no requests), which is evicted first.
 
+```sim
+name: scheduler
+key: b910
+title: Requests, limits and QoS on three nodes
+intro: 'web is a latency-sensitive service; batch pods run with no requests at all.'
+challenges:
+  - {text: 'Leave a pod Pending', metric: pending, op: '>', value: 0}
+  - {text: 'Get a web pod CPU-throttled', metric: throttled, op: '>', value: 0}
+  - {text: 'Get pods evicted under memory pressure', metric: evicted, op: '>', value: 0}
+takeaway: |
+  Requests decide placement, limits decide what happens at runtime. Under memory pressure the kubelet evicts BestEffort pods first, then Burstable ones using more than they asked for. A CPU limit shows up as latency, not errors.
+```
+
 ## Probes
 
 ```sort
@@ -67,6 +80,19 @@ items:
 ```
 
 The classic outage: a **liveness probe that checks dependencies**. The database has a blip, every pod's liveness check fails, and Kubernetes restarts the whole fleet at once, turning a blip into an outage. Liveness should only ask "is this process wedged?"
+
+```sim
+name: rollout
+key: b911
+title: The reconcile loop and a rollout
+intro: 'A Deployment of four pods. Delete pods, push images and watch the controller close the gap.'
+challenges:
+  - {text: 'Delete a pod and watch it come back', metric: healed, op: '==', value: 1}
+  - {text: 'Push a broken image and see the rollout stall in CrashLoopBackOff', metric: crashloop, op: '==', value: 1}
+  - {text: 'Recover with kubectl rollout undo', metric: recovered, op: '==', value: 1}
+takeaway: |
+  Controllers don't follow scripts; they compare desired and actual state on every pass. A rollout with maxUnavailable 0 removes old pods only after new ones are Ready, so a broken image stalls instead of taking the service down, as long as readiness actually means ready.
+```
 
 ## Rollouts and scaling
 

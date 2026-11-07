@@ -35,6 +35,18 @@ sources:
 
 In every strategy, two versions coexist for a while, so **every change must be backward-compatible across one version step**: API fields, message formats, and especially database schema.
 
+```sim
+name: deploys
+key: b910
+title: A bad build under each strategy
+intro: 'The new build fails some requests. Compare how much traffic sees it and how many requests fail.'
+challenges:
+  - {text: 'Get more than half the traffic onto the bad build', metric: exposed, op: '>', value: 50}
+  - {text: 'Keep failed requests under 50', metric: failed, op: '<', value: 50}
+takeaway: |
+  Every strategy runs two versions for a while; what differs is how many users meet a bad one and how fast you can undo it. Canaries need automated analysis to be worth it; feature flags turn off in seconds.
+```
+
 ## Expand and contract
 
 ```order
@@ -47,6 +59,17 @@ items:
   - Deploy code that stops writing fullname
   - Drop the fullname column (contract)
 explain: At every step, the code running in production and the version before it both work against the current schema, so any deploy can be rolled back. Renaming in place breaks whichever version isn't expecting it.
+```
+
+```sim
+name: migration
+key: b911
+title: Rename a column without downtime
+challenges:
+  - {text: 'Rename it in one step and break the running version', metric: broke, op: '==', value: 1}
+  - {text: 'Finish the rename with no step breaking either version', metric: clean, op: '==', value: 1}
+takeaway: |
+  Expand (add the new column, write both, backfill), switch reads, then contract (drop the old one), each step deployed on its own. Every step must work with both app versions that run during it.
 ```
 
 ## Terraform

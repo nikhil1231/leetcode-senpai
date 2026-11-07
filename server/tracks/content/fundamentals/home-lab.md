@@ -39,6 +39,18 @@ reveal: |
   The first attempt fails its health check and rolls back. But the deploy only records a commit once it succeeds, so two minutes later `main` still looks new and the deploy tries the same broken image again: swap, 90 seconds unhealthy, roll back. The site flaps until someone fixes the variable or pushes a fix. Remembering the commit that failed, and not retrying it, would turn that into one short blip and an alert. It's a classic retry storm: automatic recovery that repeats the failure.
 ```
 
+```sim
+name: pulldeploy
+key: b910
+title: The broken commit that kept coming back
+intro: 'Thirty minutes of the box''s deploy timer after a commit that crashes on start.'
+challenges:
+  - {text: 'See the site flap while the broken commit is retried', metric: flaps, op: '>', value: 3}
+  - {text: 'Stop the retry storm', metric: flaps, op: '==', value: 1}
+takeaway: |
+  Automatic recovery that repeats the failure is a retry storm. Remember what failed and stop retrying it until something changes.
+```
+
 ## Publishing without open ports
 
 The router has **no port forwarding**. A `cloudflared` container makes an **outbound** connection to Cloudflare and keeps it open. Requests for `leetcode.nikhil.ing` arrive at Cloudflare's edge and travel down that tunnel to the container by name on a shared Docker network (`http://leetcode-senpai:8080`). Nothing on the internet can connect to the box directly, and the home IP address never appears in DNS.
@@ -73,6 +85,18 @@ items:
   - high (1 hour)
   - critical (15 minutes)
 explain: Each step down in available memory shortens how long an idle session may live. Swap 90% full pushes the box to "high" early, because a full swap means the next spike has nowhere to go.
+```
+
+```sim
+name: reaper
+key: b911
+title: A day on an 8 GB box
+intro: 'Agent sessions open through the day, work for a while, then sit idle. At 18:00 a batch of sessions opens at once.'
+challenges:
+  - {text: 'Run out of memory with the fixed rule', metric: crashed, op: '==', value: 1, and: [{metric: rule, op: '==', value: 'fixed'}]}
+  - {text: 'Survive the day', metric: crashed, op: '==', value: 0, and: [{metric: rule, op: '==', value: 'adaptive'}]}
+takeaway: |
+  The scarcer the resource, the less you keep around, with a bound on how much you do at once and a pass frequent enough to catch demand that grows between runs.
 ```
 
 ## Backups you have actually restored

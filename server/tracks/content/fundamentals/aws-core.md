@@ -25,6 +25,19 @@ Every API call is authenticated (who are you?) and authorised by **policies**: J
 - **Least privilege**: grant specific actions on specific ARNs, not `s3:*` on `*`.
 - Leaked long-lived keys in Git are one of the most common real breaches. Bots scan public repos within minutes.
 
+```sim
+name: iam
+key: b910
+title: How AWS decides
+intro: 'Pick a request and the policies in play. The trail says which rule decided.'
+challenges:
+  - {text: 'See an explicit Deny beat an Allow', metric: explicit, op: '==', value: 1}
+  - {text: 'Hit an implicit deny', metric: implicit, op: '==', value: 1}
+  - {text: 'See a permissions boundary cap an identity policy', metric: boundary, op: '==', value: 1}
+takeaway: |
+  Explicit Deny always wins; without an Allow the answer is Deny. Boundaries and SCPs never grant anything, they only cap what policies can grant.
+```
+
 ## Networking: the VPC
 
 A **VPC** is your private network, split into **subnets**, each in one availability zone.
@@ -49,6 +62,19 @@ edges:
   - [app, s3, endpoint]
   - [app, nat, 'outbound APIs']
 caption: Only the load balancer is reachable from the internet. Each tier's security group admits traffic only from the tier in front of it, and the database runs a synchronous standby in a second AZ.
+```
+
+```sim
+name: vpc
+key: b911
+title: Follow a packet through the VPC
+intro: 'Five flows: three should work and two should be blocked. Break things and see exactly where each packet stops.'
+challenges:
+  - {text: 'Break outbound calls from the private subnet', metric: right, op: '<', value: 5}
+  - {text: 'Expose something to the internet that shouldn''t be', metric: exposed, op: '==', value: 1}
+  - {text: 'Get all five flows right again', metric: right, op: '==', value: 5}
+takeaway: |
+  Public subnets route 0.0.0.0/0 to the internet gateway; private ones route it to a NAT gateway in a public subnet. Security groups reference each other (app allows the load balancer's group, the database allows the app's), so nothing is open to the world except the load balancer.
 ```
 
 ## Compute and storage choices

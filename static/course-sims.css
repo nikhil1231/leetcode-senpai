@@ -1,0 +1,59 @@
+/* Fundamentals and AI simulators (fund-sims.js, ai-sims.js): pieces the shared sim styles don't have. */
+.fs-threads { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin-bottom:10px; }
+.fs-thread { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px 12px; min-width:0; }
+.fs-thread h5 { margin:0 0 6px; font-size:12.5px; display:flex; gap:8px; align-items:baseline; }
+.fs-thread h5 small { font-weight:400; color:var(--muted); font-size:11px; }
+.fs-code { list-style:none; margin:0 0 8px; padding:0; font:11.5px/1.7 var(--font-mono); color:var(--text-2); }
+.fs-code li { padding:0 6px; border-left:2px solid transparent; white-space:pre-wrap; word-break:break-word; }
+.fs-code li.is-done { color:var(--muted); }
+.fs-code li.is-pc { border-left-color:var(--accent); background:var(--accent-soft); color:var(--text); }
+.fs-local { font:11px var(--font-mono); color:var(--muted); margin:0 0 8px; word-break:break-word; }
+.fs-mem { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font:12px var(--font-mono); background:var(--panel2); border:1px dashed var(--line); border-radius:8px; padding:8px 12px; margin-bottom:10px; }
+.fs-mem b { color:var(--accent); font-weight:600; }
+.fs-verdict { border-radius:8px; padding:9px 12px; font-size:13px; line-height:1.5; margin:0 0 10px; border:1px solid; }
+.fs-verdict.is-ok { border-color:#35d39a55; background:#35d39a12; } .fs-verdict.is-bad { border-color:#fb718555; background:#fb718512; }
+.fs-bad { color:#fb7185; }
+.fs-sql { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; } .fs-sql .button { font-size:11.5px; padding:5px 8px; }
+.fs-table { width:100%; border-collapse:collapse; font:12px var(--font-mono); margin:0 0 10px; }
+.fs-table th, .fs-table td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); }
+.fs-table th { font:600 10.5px var(--font); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.fs-table tr.is-dead td { color:var(--muted); text-decoration:line-through; }
+.fs-gantt { display:grid; gap:4px; margin:4px 0 10px; }
+.fs-lane { display:grid; grid-template-columns:56px minmax(0,1fr); gap:8px; align-items:center; font:11px var(--font-mono); color:var(--muted); }
+.fs-lane svg { width:100%; height:12px; background:var(--panel3); border-radius:3px; }
+.fs-run { fill:#8ad9c2; background:#8ad9c2; } .fs-wait { fill:#fb718566; background:#fb718566; } .fs-io { fill:#7cb7ff77; background:#7cb7ff77; }
+.fs-queued { fill:#46525c; background:#46525c; } .fs-start { fill:#f5b544aa; background:#f5b544aa; }
+.fs-gantt-key { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:11px; color:var(--text-2); margin:6px 0 4px; }
+.fs-gantt-key span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:-1px; background:inherit; }
+.fs-gantt-key span { background:none !important; }
+.fs-gantt-key .fs-run::before { background:#8ad9c2; } .fs-gantt-key .fs-wait::before { background:#fb718566; } .fs-gantt-key .fs-io::before { background:#7cb7ff77; }
+.fs-gantt-key .fs-queued::before { background:#46525c; } .fs-gantt-key .fs-start::before { background:#f5b544aa; }
+.fs-tree { list-style:none; margin:0 0 10px; padding:10px 12px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; font:12px/1.9 var(--font-mono); }
+.fs-proc { padding-left:calc(var(--d) * 22px); }
+.fs-proc b { color:var(--accent); margin-right:6px; }
+.fs-proc.is-zombie { color:#fb7185; } .fs-proc.is-gone { color:var(--muted); text-decoration:line-through; }
+.fs-proc em { font-style:normal; font-size:11px; margin-left:6px; }
+.fs-stack { position:relative; display:flex; height:26px; border-radius:6px; overflow:visible; background:var(--panel3); margin:4px 0 6px; }
+.fs-stack i { display:block; height:100%; }
+.fs-stack em { position:absolute; top:-5px; bottom:-5px; width:2px; background:#fb7185; }
+.fs-m-heap { background:#8ad9c2; } .fs-m-meta { background:#7cb7ff; } .fs-m-stack { background:#a78bfa; } .fs-m-direct { background:#f5b544; } .fs-m-other { background:#5fd1e8; } .fs-m-cache { background:repeating-linear-gradient(45deg,#46525c,#46525c 4px,#2c353d 4px,#2c353d 8px); }
+.fs-gantt-key .fs-m-heap::before { background:#8ad9c2; } .fs-gantt-key .fs-m-meta::before { background:#7cb7ff; } .fs-gantt-key .fs-m-stack::before { background:#a78bfa; }
+.fs-gantt-key .fs-m-direct::before { background:#f5b544; } .fs-gantt-key .fs-m-other::before { background:#5fd1e8; } .fs-gantt-key .fs-m-cache::before { background:#46525c; } .fs-gantt-key .fs-limit::before { background:#fb7185; width:3px; }
+.fs-pods { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; }
+.fs-pod { display:grid; font:11px/1.4 var(--font-mono); padding:6px 9px; border-radius:7px; border:1px solid var(--line); background:var(--panel2); min-width:96px; }
+.fs-pod b { font-size:11.5px; }
+.fs-pod.is-run { border-color:#35d39a66; } .fs-pod.is-start { border-color:#f5b54488; } .fs-pod.is-crash { border-color:#fb7185aa; color:#fb7185; }
+.fs-nodes { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
+.fs-node { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:8px 10px; min-width:0; }
+.fs-node h5 { margin:0 0 4px; font-size:12px; } .fs-node .sim-bar-row { grid-template-columns:96px minmax(0,1fr) auto; }
+.fs-flow { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-bottom:8px; background:var(--panel2); }
+.fs-flow > b { font-size:12.5px; } .fs-flow > span { float:right; font-size:12px; }
+.fs-flow.is-ok > span { color:#35d39a; } .fs-flow.is-bad { border-color:#fb718566; } .fs-flow.is-bad > span { color:#fb7185; }
+.fs-flow ol { margin:6px 0 0; padding-left:18px; font-size:12px; color:var(--text-2); line-height:1.6; }
+.fs-decision { font:700 22px var(--font-mono); margin:0 0 6px; } .fs-decision.is-ok { color:#35d39a; } .fs-decision.is-bad { color:#fb7185; }
+.fs-steps { padding-left:20px; margin:8px 0 10px; display:grid; gap:6px; font-size:12.5px; }
+.fs-steps li span { display:block; font:11px var(--font-mono); color:var(--muted); }
+.fs-steps li em { display:block; font-style:normal; color:#fb7185; font-size:12px; }
+.fs-steps li.is-ok::marker { color:#35d39a; } .fs-steps li.is-bad::marker { color:#fb7185; }
+.fs-uptime { display:flex; gap:1px; height:18px; margin:4px 0 10px; } .fs-uptime i { flex:1; border-radius:2px; } .fs-uptime .is-up { background:#35d39a99; } .fs-uptime .is-down { background:#fb7185; }
+@media (max-width: 700px) { .fs-flow > span { float:none; display:block; } }

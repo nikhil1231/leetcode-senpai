@@ -50,6 +50,18 @@ takeaway: |
   TCP trades latency for ordering and reliability; UDP leaves both to you.
 ```
 
+```sim
+name: slowstart
+key: b904
+title: Slow start, round by round
+intro: 'How many round trips does a response take on a new connection?'
+challenges:
+  - {text: 'Download 500 KB on a new connection', metric: rtts, op: '>=', value: 5}
+  - {text: 'Make the same download faster without changing the size', metric: reused, op: '==', value: 1}
+takeaway: |
+  Most web responses are latency-bound: a new TCP connection needs handshakes plus several slow-start round trips. Keep-alive and connection pooling are the cheapest speed-up there is.
+```
+
 ## TLS
 
 TLS gives **confidentiality** (encryption), **integrity** (tamper detection), and **authentication** of the server: the server proves it holds the private key for a certificate that a trusted CA has signed for that hostname. The client checks the chain of trust, the validity dates, and that the hostname matches the certificate's SAN.
@@ -106,6 +118,18 @@ title: HTTP/1.1, HTTP/2 and HTTP/3 under packet loss
 intro: Load six resources over each version while raising packet loss.
 takeaway: |
   One lost packet blocks everything behind it on HTTP/2 over TCP. HTTP/3 over QUIC isolates streams.
+```
+
+```sim
+name: hol
+key: b905
+title: One lost packet, three protocols
+intro: 'A page of small resources over a lossy link. Bars are when each resource finished; amber ones were held up by a loss.'
+challenges:
+  - {text: 'Lose packets on HTTP/2 and see more resources delayed than packets lost', metric: stalled, op: '>', value: 2, and: [{metric: proto, op: '==', value: 'h2'}]}
+  - {text: 'Try the same loss on HTTP/3', metric: proto, op: '==', value: 'h3', and: [{metric: loss, op: '>', value: 0}]}
+takeaway: |
+  HTTP/2 fixed HTTP/1.1's queueing with streams, but on one TCP connection a lost packet still blocks everything behind it. QUIC moves loss recovery into each stream, and does the handshake in one round trip.
 ```
 
 ## Debugging the network

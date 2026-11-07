@@ -1,8 +1,9 @@
 // Simulators: every interactive widget in one searchable place. Ripple Ops (the builder as a game,
-// sd-game.js), the design builder (a sandbox), 27
-// worked system designs (sd-walkthrough.js) and 32 internals simulators (storage engines, consensus,
-// transactions, networking...). Each opens full width with its notes underneath. Ripple Ops keeps its
-// runs on the server; everything else here is static files.
+// sd-game.js), the design builder (a sandbox), 27 worked system designs (sd-walkthrough.js), 32
+// internals simulators (storage engines, consensus, transactions, networking...) and the Fundamentals
+// and AI course simulators (fund-sims.js, ai-sims.js; listed in simulators/courses.json). Each opens
+// full width with its notes underneath. Ripple Ops keeps its runs on the server; everything else here
+// is static files.
 (function () {
   'use strict';
   const esc = s => String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -11,20 +12,22 @@
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   };
-  let items = null, internals = null, error = '';
+  let items = null, internals = null, course = null, error = '';
   let query = '', group = '', current = null, keep = false, inst = null, token = 0;
 
   async function load() {
     if (items) return;
-    const [designs, ints] = await Promise.all([getJson('/walkthrough/index.json'), getJson('/simulators/internals.json')]);
+    const [designs, ints, crs] = await Promise.all([getJson('/walkthrough/index.json'), getJson('/simulators/internals.json'), getJson('/simulators/courses.json')]);
     internals = Object.fromEntries(ints.topics.map(t => [t.id, t]));
+    course = Object.fromEntries(crs.items.map(t => [t.id, t]));
     items = [{ kind: 'game', id: 'ripple', title: 'Ripple Ops: the design game', blurb: 'Take Ripple from a garage to a billion users. Every level is a chapter of the course: a budget, targets and a bad day. Draw and size the system, live through the day, and hear from the team how it went.', group: 'build', tag: 'Game' },
       { kind: 'builder', id: 'builder', title: 'Design builder', blurb: 'A blank canvas. Drag in components, size them, set a scale, and run a simulated day against what you drew.', group: 'build', tag: 'Sandbox' },
       ...designs.designs.map(d => ({ kind: 'design', id: d.id, title: d.title, blurb: d.problem, group: 'designs', tag: d.category, difficulty: d.difficulty,
         meta: `${d.components} components · ${d.flows.length} flows`, text: d.flows.join(' ') })),
       ...ints.topics.map(t => ({ kind: 'internals', id: t.id, title: t.title, blurb: t.blurb, group: t.category, tag: t.categoryLabel, difficulty: t.difficulty,
-        meta: `${t.minutes} min`, text: `${t.overview} ${t.pitfalls.join(' ')}` }))];
-    items.groups = [['', 'All'], ['build', 'Builder'], ['designs', 'System designs'], ...ints.categories.map(([id, label]) => [id, label])];
+        meta: `${t.minutes} min`, text: `${t.overview} ${t.pitfalls.join(' ')}` })),
+      ...crs.items.map(t => ({ kind: 'course', id: t.id, title: t.title, blurb: t.blurb, group: t.category, tag: t.categoryLabel, meta: t.lessonTitle, text: `${t.notes} ${t.challenges.join(' ')}` }))];
+    items.groups = [['', 'All'], ['build', 'Builder'], ['designs', 'System designs'], ...ints.categories.map(([id, label]) => [id, label]), ...crs.categories];
   }
 
   const shown = () => {
@@ -64,11 +67,18 @@
       ${t.pitfalls.length ? `<section><h3>Common pitfalls</h3>${list(t.pitfalls)}</section>` : ''}
       ${t.questions.length ? `<section><h3>Questions to be ready for</h3>${list(t.questions)}</section>` : ''}</div>`;
   }
+  function courseInfo(t) {
+    const section = t.category === 'ai' ? 'ai' : 'fundamentals';
+    return `<div class="vz-info">${t.notes ? `<section><h3>What to notice</h3>${window.SDBlocks ? `<div class="sd-md">${window.SDBlocks.md(t.notes)}</div>` : `<p>${esc(t.notes)}</p>`}</section>` : ''}
+      ${t.challenges.length ? `<section><h3>Try this</h3><ul>${t.challenges.map(c => `<li>${esc(c)}</li>`).join('')}</ul></section>` : ''}
+      <section><h3>The lesson</h3><p><a href="#/${section}/lesson/${encodeURIComponent(t.lesson)}">${esc(t.lessonTitle)} →</a></p></section></div>`;
+  }
   function detailHtml(it) {
     const t = it.kind === 'internals' ? internals[it.id] : null;
+    const c = it.kind === 'course' ? course[it.id] : null;
     return `<div class="sim-detail"><div class="sim-top"><button type="button" class="button" data-sim-back>← All simulators</button>
       ${it.kind === 'design' || it.kind === 'game' ? '' : `<h2>${esc(it.title)} ${pill(it.difficulty)}</h2>`}</div>
-      <div class="sim-stage" data-sim-stage><p class="wt-note">Loading…</p></div>${t ? internalsInfo(t) : ''}</div>`;
+      ${c && c.blurb ? `<p class="sim-note">${esc(c.blurb)}</p>` : ''}<div class="sim-stage" data-sim-stage><p class="wt-note">Loading…</p></div>${t ? internalsInfo(t) : ''}${c ? courseInfo(c) : ''}</div>`;
   }
 
   function render() {
@@ -112,7 +122,11 @@
     if (current.kind === 'game') inst = window.RippleOps.mount(stage, { sandbox: () => openItem('builder', 'builder') });
     else if (current.kind === 'builder') inst = window.SDBuilder.mount(stage);
     else if (current.kind === 'design') inst = window.SDWalkthrough.mount(stage, { design: current.id, back: home });
-    else {
+    else if (current.kind === 'course') {
+      if (!window.SDSims?.has(current.id)) { stage.innerHTML = '<p class="wt-note">This simulator is not loaded on this page.</p>'; return; }
+      stage.innerHTML = '';
+      inst = window.SDSims.mount(current.id, stage, {}, { metrics() {}, touched() {} });
+    } else {
       const id = current.id;
       import(`/widgets/internals/${id}.js?v=${window.ASSET_VER || ''}`).then(m => {
         if (mine !== token) return;

@@ -39,6 +39,19 @@ items:
   - {text: 'Running a Monte Carlo simulation in plain Python loops', bucket: 1, why: 'Pure-Python CPU work wants processes, or vectorising with NumPy.'}
 ```
 
+```sim
+name: gil
+key: b910
+title: Threads, processes and asyncio on the same work
+intro: 'Each row is one task over time: running, waiting for the GIL, waiting on I/O, or queued.'
+challenges:
+  - {text: 'Run the CPU-bound work on threads and see almost no speed-up', metric: speedup, op: '<', value: 1.3, and: [{metric: workload, op: '==', value: 'cpu'}, {metric: model, op: '==', value: 'threads'}]}
+  - {text: 'Get at least a 3× speed-up on the CPU-bound work', metric: speedup, op: '>=', value: 3, and: [{metric: workload, op: '==', value: 'cpu'}]}
+  - {text: 'Show that threads are fine for I/O-bound work', metric: speedup, op: '>=', value: 5, and: [{metric: workload, op: '==', value: 'io'}, {metric: model, op: '==', value: 'threads'}]}
+takeaway: |
+  The GIL lets one thread run Python bytecode at a time, so threads overlap waiting, not computing. CPU-bound work needs processes (or a free-threaded build), at the cost of start-up and pickling. asyncio overlaps I/O on one thread, but a coroutine that computes holds everyone else up.
+```
+
 ## asyncio
 
 `asyncio` runs coroutines on a single-threaded **event loop**. A coroutine runs until it reaches an `await` that would block, then the loop runs something else. That makes it cheap (thousands of concurrent connections, no thread stacks), but the model is cooperative: **any code that blocks without awaiting freezes every request on that loop.**
@@ -67,6 +80,18 @@ code: |
 bug: [4, 6]
 explain: |
   **Line 4**: `requests.get` is synchronous, so it blocks the event loop for the whole HTTP call, and no other request makes progress. Use `httpx.AsyncClient` and `await` it. **Line 6**: 300 ms of CPU work on the loop thread blocks it too. Offload it with `await asyncio.to_thread(build_summary, rows, prices)` (or a process pool if it's heavy and pure Python). Alternatively, declare the endpoint with plain `def`, and FastAPI runs it in a thread pool, which suits blocking code.
+```
+
+```sim
+name: eventloop
+key: b911
+title: One blocking call on the event loop
+intro: 'An asyncio service gets a request every 40 ms. At one second, one handler does something slow. Watch everyone else.'
+challenges:
+  - {text: 'Freeze the service with a blocking call', metric: slow, op: '>', value: 10}
+  - {text: 'Do the same slow work without hurting anyone else', metric: slow, op: '==', value: 0, and: [{metric: blocked, op: '==', value: 0}, {metric: kind, op: '==', value: 'thread'}]}
+takeaway: |
+  The loop is a single thread: a synchronous call inside a coroutine blocks every request, not just its own. Await non-blocking versions, or offload blocking and CPU work with `asyncio.to_thread` or a process pool.
 ```
 
 ## Memory
