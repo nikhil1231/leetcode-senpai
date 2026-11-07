@@ -17,8 +17,11 @@ BRIEF = {'lesson': 'jc', 'title': 'Java concurrency', 'section': 'fundamentals',
          'ideas': [{'point': 'p1', 'claim': 'volatile gives visibility, not atomicity.', 'kind': 'fact', 'status': 'shaky',
                     'pitfall': 'thought volatile made count++ safe'},
                    {'point': 'p2', 'claim': 'Take two locks in a fixed global order.', 'kind': 'procedure', 'status': 'fading'}]}
-COPY = {'headline': 'Java concurrency', 'panels': [{'heading': 'Volatile', 'line': 'Visibility, not atomicity.', 'visual': 'an eye'},
-                                                   {'heading': 'Lock order', 'line': 'Fixed global order.', 'visual': 'two padlocks'}]}
+COPY = {'headline': 'Java concurrency', 'panels': [
+    {'takeaway': 'Visibility, not atomicity.', 'figure': '', 'figure_label': '', 'detail': 'count++ still loses updates.',
+     'visual': 'an eye'},
+    {'takeaway': 'Take locks in one global order.', 'figure': '2', 'figure_label': 'locks, one order', 'detail': 'It prevents deadlock.',
+     'visual': 'two padlocks'}]}
 
 
 def review(ok=True, score=9, **kw):
@@ -36,8 +39,10 @@ def test_prompts_carry_the_claims_and_keep_notes_off_the_poster():
     assert '#FFA41B' in ip and '#FF5A1F' in ip   # panel 1 and 2 take the palette in order
     fp = wall_gen.fix_prompt(['Panel 1: fix the typo'])
     assert 'Panel 1: fix the typo' in fp and 'Never write these notes' in fp
+    assert 'Icon: an eye' in ip and 'Big figure: "2"' in ip and 'two padlocks' not in ip   # a figure stands in for the icon
+    assert '(tangerine #FFA41B, charcoal text)' in ip and '(vermilion #FF5A1F, white text)' in ip
     rp = wall_gen.review_prompt(BRIEF, COPY)
-    assert 'Take two locks' in rp and 'Lock order' in rp
+    assert 'Take two locks' in rp and 'one global order' in rp and 'two padlocks' not in rp and 'never ask' not in rp
 
 
 def test_passing_needs_correct_words_facts_and_diagrams():

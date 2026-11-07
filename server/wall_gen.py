@@ -26,11 +26,13 @@ from .knowledge_base import api as kb_api, model as kmodel
 
 log = logging.getLogger(__name__)
 POSTERS, IMAGES = 'wall_posters', 'wall_images'
-PROMPT_VERSION = 'wall-6'   # wall-6: the whole screen (the clock is translucent), bright modern palette
-KEPT = ('wall-4', 'wall-5', PROMPT_VERSION)
-# The panels' colours, in order (a bright modern infographic: warm to cool on a light background).
-PALETTE = (('tangerine', '#FFA41B'), ('vermilion', '#FF5A1F'), ('raspberry pink', '#F2316F'), ('sky cyan', '#1FB5F2'),
-           ('periwinkle violet', '#8C7BF2'), ('emerald teal', '#14C79A'), ('lime green', '#8EE66B'))
+PROMPT_VERSION = 'wall-7'   # wall-7: glanceable copy (a takeaway, a detail, a big figure), text colour per panel
+KEPT = ('wall-4', 'wall-5', 'wall-6', PROMPT_VERSION)
+# The panels' colours, in order (a bright modern infographic: warm to cool on a light background), each
+# with the text colour that reads on it.
+PALETTE = (('tangerine', '#FFA41B', 'charcoal'), ('vermilion', '#FF5A1F', 'white'), ('raspberry pink', '#F2316F', 'white'),
+           ('sky cyan', '#1FB5F2', 'charcoal'), ('periwinkle violet', '#8C7BF2', 'white'),
+           ('emerald teal', '#14C79A', 'charcoal'), ('lime green', '#8EE66B', 'charcoal'))
 ATTEMPTS = 3
 WIDTH = 1179            # stored width: an iPhone's; wall.fit_image fits other screens
 MAX_BYTES = 900_000     # a Firestore document holds 1 MiB
@@ -38,20 +40,27 @@ CHECK_EVERY = 30 * 60
 
 
 class Panel(BaseModel):
-    heading: str = Field(description="two to five words")
-    line: str = Field(description="the idea itself, at most 22 words, every fact of the claim that matters kept")
-    visual: str = Field(description="one simple concrete icon for the idea (an object, not a diagram, flow or code), at most 8 words")
+    takeaway: str = Field(description="the idea itself as one plain statement, at most 8 words, that teaches on its own "
+                                      "at a glance; not a topic label like 'Measure availability'")
+    figure: str = Field(description="the one number worth remembering, at most 6 characters (like '63%' or '3x'), "
+                                    "or '' when the claim has none")
+    figure_label: str = Field(description="what the figure means, at most 6 words (like 'slow at 100 calls'); '' with no figure")
+    detail: str = Field(description="plain words, at most 12, adding the conditions and facts the takeaway leaves out; "
+                                    "no formulas, symbols or slashes")
+    visual: str = Field(description="one simple icon for the idea, described by its shape so it cannot be misread: "
+                                    "'two padlocks', 'a stack of boxes overflowing', not a programming term like 'map' "
+                                    "or 'queue'; no text, numbers or letters in it; at most 6 words")
 
 
 class PosterCopy(BaseModel):
-    headline: str = Field(description="the poster's headline, at most six words")
+    headline: str = Field(description="the lesson's topic, at most four words, shown small")
     panels: list[Panel]
 
 
 class PosterReview(BaseModel):
     text_correct: bool = Field(description="every word on the poster is spelled correctly; no garbled, repeated, invented or half-formed text")
-    facts_correct: bool = Field(description="everything the poster states agrees with the ideas given; nothing wrong or misleading added")
-    all_ideas_present: bool = Field(description="every idea given appears on the poster")
+    facts_correct: bool = Field(description="nothing the poster states is wrong or misleading against the ideas given; leaving a detail out is fine")
+    all_ideas_present: bool = Field(description="every panel asked for appears, with its takeaway; a panel may leave out details of its claim")
     diagrams_make_sense: bool = Field(description="every icon and diagram illustrates its idea correctly; no nonsense labels, arrows or pairings")
     legible: bool = Field(description="all text is large and contrasted enough to read on a phone lock screen")
     tasteful: bool = Field(description="looks professionally designed: bright but coherent colours, clean typography, consistent icons; nothing cluttered, glossy or clip-art")
@@ -60,9 +69,13 @@ class PosterReview(BaseModel):
     verdict: Literal["pass", "redraw"]
 
 
-COPY_SYSTEM = ("You write the words for a study poster that becomes a phone wallpaper: as few words as possible, "
-               "every one exact. Never add a fact the claims do not state, and never drop a number or condition "
-               "the claim depends on.")
+COPY_SYSTEM = ("You write the words for a study poster that becomes a phone lock screen. It is read in a two-second "
+               "glance, so each panel's takeaway must carry the idea by itself, in plain everyday words; the detail "
+               "is read only on a longer look. Prefer the memorable consequence over the definition. Write numbers "
+               "in words a person would say (\"63% at 100 calls\", not \"N=100: 63%\"); keep the engineer's own terms "
+               "(p99, not \"ninety-ninth percentile\"). A takeaway is a complete, natural sentence a senior engineer "
+               "would say, often advice (\"Count failed requests, not uptime pings\"). Numbers always as digits, with % for percentages. Never add a fact the claims "
+               "do not state, and never contradict one.")
 
 
 def copy_prompt(b):
@@ -77,14 +90,17 @@ def copy_prompt(b):
 
 
 def image_prompt(b, copy):
-    panels = '\n'.join(f'Panel {i} ({PALETTE[(i - 1) % len(PALETTE)][0]}, {PALETTE[(i - 1) % len(PALETTE)][1]}). '
-                       f'Heading: "{p["heading"]}". Text: "{p["line"]}". Illustration: {p["visual"]}.'
-                       for i, p in enumerate(copy['panels'], 1))
+    def panel(i, p):
+        name, hex_, ink = PALETTE[(i - 1) % len(PALETTE)]
+        mark = (f'Big figure: "{p["figure"]}" with the small label "{p["figure_label"]}" under it.' if p.get('figure')
+                else f'Icon: {p["visual"]}.')
+        return f'Panel {i} ({name} {hex_}, {ink} text). Takeaway: "{p["takeaway"]}". Detail: "{p["detail"]}". {mark}'
+    panels = '\n'.join(panel(i, p) for i, p in enumerate(copy['panels'], 1))
     return f"""Design a vertical 9:16 infographic poster: the phone lock screen wallpaper of a software engineer revising for interviews.
-Headline: "{copy['headline']}"
+Topic label: "{copy['headline']}"
 {panels}
 Write exactly the quoted text above and nothing else: no extra captions, footnotes or labels, no colour names or codes, and no text inside the icons. Every word spelled exactly as given.
-Style: a bright, modern flat infographic, the quality of a design studio's print. A light off-white background (#F7F7F9). Each panel is a solid block of its own vivid colour given above, exactly that colour, with white text on it (dark charcoal text on tangerine and lime green, for contrast); the panels run warm to cool down the poster like a spectrum. Each panel's icon is a clean line icon in the panel's colour inside a white circle, all icons in the same style (no diagrams, flows, arrows or code). The headline in dark charcoal (#22232B), with a thin rule or small accent in the first panel's colour. One clean geometric sans-serif typeface with a clear hierarchy: a bold headline, bold headings, comfortable body text. A strong grid, panels aligned and evenly spaced.
+Style: a bright, modern flat infographic, the quality of a design studio's print. A light off-white background (#F7F7F9). Each panel is a solid block of its own vivid colour given above, exactly that colour, with all its text in the text colour given (white, or dark charcoal #22232B); the panels run warm to cool down the poster like a spectrum. Hierarchy, so the poster teaches in a two-second glance: in each panel the takeaway is the biggest, boldest text on the whole poster; the detail is a smaller medium-weight line under it; a big figure, when given, sits at the panel's right side as a very large bold number with its small label beneath, in place of an icon. Otherwise the panel's icon is a clean line icon in the panel's colour inside a white circle at its right, all icons in the same style (no diagrams, flows, arrows or code). The topic label is small, uppercase and letter-spaced in dark charcoal (#22232B) at the very top, with a short thin rule in the first panel's colour. One clean geometric sans-serif typeface. A strong grid: the panels fill the poster's height, aligned and evenly spaced.
 Avoid: glossy, 3D, bevels or heavy drop shadows, stickers, badges, emoji, confetti, starbursts, ribbons and decorative clutter.
 Use the whole canvas from the very top edge to the bottom: there is no area to keep clear. All text large enough to read on a phone lock screen.
 The background must run seamlessly to every edge: no border, frame or band. Margins of 5% on the sides. No watermark, signature, logos or fake phone UI."""
@@ -96,17 +112,22 @@ def fix_prompt(issues):
             '\n'.join(f'- {x}' for x in issues))
 
 
-REVIEW_SYSTEM = ("You review generated study posters before they become someone's phone wallpaper. Be strict: "
-                 "a misspelled, repeated or garbled word, a wrong or distorted fact, a missing idea, a diagram "
-                 "that does not make sense, or text too small to read on a phone each means verdict 'redraw'; bright colours are wanted, but a "
-                 "cluttered, glossy or clip-art look scores 6 or less. Judge facts only against the ideas given: a faithful shortening is fine; flag a "
-                 "statement only if it is wrong or misleading.")
+REVIEW_SYSTEM = ("You review generated study posters before they become someone's phone lock screen, read in a "
+                 "two-second glance. By design each panel shows one big takeaway and a short detail line, so it "
+                 "deliberately leaves out parts of the full claim (formulas, secondary numbers, caveats): never ask "
+                 "for them back, and never ask for more text. Be strict about what is shown: a misspelled, repeated "
+                 "or garbled word, a wrong or misleading statement, a missing panel, an icon that does not fit, or "
+                 "text too small to read on a phone each means verdict 'redraw'. A panel with a big figure shows it "
+                 "in place of an icon. Bright colours are wanted, but a cluttered, glossy or clip-art look scores 6 "
+                 "or less, and so does a poster whose takeaways are not its most prominent text.")
 
 
 def review_prompt(b, copy):
     ideas = '\n'.join(f"{i}. {idea['claim']}" for i, idea in enumerate(b['ideas'], 1))
-    words = json.dumps(copy, ensure_ascii=False) if copy else '(none given)'
-    return (f"Poster topic: {b['title']}\nThe ideas it must teach, correctly:\n{ideas}\n\n"
+    shown = copy and {**copy, 'panels': [{k: v for k, v in p.items() if v and not (k == 'visual' and p.get('figure'))}
+                                         for p in copy['panels']]}
+    words = json.dumps(shown, ensure_ascii=False) if shown else '(none given)'
+    return (f"Poster topic: {b['title']}\nThe full ideas behind it (the poster shortens them):\n{ideas}\n\n"
             f"The text it was asked to show, word for word: {words}\n\nReview the attached poster.")
 
 
@@ -146,8 +167,8 @@ def _copy(b):
             return copy
     except Exception:
         log.warning('Wall poster copy for %s failed', b['lesson'], exc_info=True)
-    return {'headline': b['title'], 'panels': [{'heading': f'Idea {i}', 'line': idea['claim'], 'visual': 'a simple icon'}
-                                               for i, idea in enumerate(b['ideas'], 1)]}
+    return {'headline': b['title'], 'panels': [{'takeaway': idea['claim'], 'figure': '', 'figure_label': '', 'detail': '',
+                                                'visual': 'a simple icon'} for idea in b['ideas']]}
 
 
 def make(store, now, lesson=None, force=False):
