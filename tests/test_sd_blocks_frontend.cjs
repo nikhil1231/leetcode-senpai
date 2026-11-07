@@ -38,3 +38,12 @@ test('every block type renders without throwing and escapes authored text',()=>{
  assert.equal((html.match(/class="sd-block /g)||[]).length,12);
  assert.deepEqual([...B.outline({blocks})],['Heading']);
 });
+test('a whiteboard diagram shows states and a question box, without the wiring game or quiz',()=>{
+ const B=load();
+ const html=B.renderBlock({type:'arch',board:true,key:'wb1-0',title:'Read path',ask:'cache',
+  nodes:[{id:'app',label:'<b>App</b>',kind:'service',x:0,y:0},{id:'cache',label:'Redis',kind:'cache',x:1,y:0},{id:'db',label:'DB',kind:'db',x:1,y:1,state:'down'},{id:'m',label:'LLM',kind:'model',x:2,y:0}],
+  edges:[['app','cache','GET'],['app','db',''],['cache','m','']],paths:[{label:'Miss',steps:[['app','cache','miss']]}]});
+ assert.match(html,/Whiteboard/);assert.match(html,/is-state-down/);assert.match(html,/sd-arch-legend/);
+ assert.match(html,/is-missing/);assert.doesNotMatch(html,/Wire it yourself/);assert.doesNotMatch(html,/sd-predict-choices/);
+ assert.doesNotMatch(html,/<b>App/);assert.match(html,/▶ Miss/);
+});

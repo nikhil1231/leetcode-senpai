@@ -88,11 +88,11 @@
 
   // ---------- Shared pieces ----------
   const KICKER = { predict: 'Predict first', timeline: 'Step through it', sim: 'Experiment', sort: 'Sort it out', order: 'Put it in order',
-    calc: 'Estimate', bug: 'Spot the bug', critique: 'Critique a design', faded: 'Fill the gaps', recall: 'Explain it yourself', incident: 'On-call drill', arch: 'Architecture', interview: 'In the interview' };
+    calc: 'Estimate', bug: 'Spot the bug', critique: 'Critique a design', faded: 'Fill the gaps', recall: 'Explain it yourself', incident: 'On-call drill', arch: 'Architecture', board: 'Whiteboard', interview: 'In the interview' };
   const button = (text, act, extra = '', primary = false) => `<button type="button" class="button ${primary ? 'is-primary' : ''}" data-b="${act}" ${extra}>${esc(text)}</button>`;
   const doneTag = '<span class="sd-block-done" hidden>✓ Done</span>';
   function frame(b, inner, title) {
-    return `<section class="sd-block sd-block-${b.type}${b.style ? ' is-' + esc(b.style) : ''}" data-block="${b.key}"><header class="sd-block-head"><span class="sd-kicker">${KICKER[b.style] || KICKER[b.type]}</span>${title ? `<h4>${inline(title)}</h4>` : ''}${doneTag}</header>${inner}</section>`;
+    return `<section class="sd-block sd-block-${b.type}${b.style ? ' is-' + esc(b.style) : ''}" data-block="${b.key}"><header class="sd-block-head"><span class="sd-kicker">${KICKER[b.style] || (b.board ? KICKER.board : KICKER[b.type])}</span>${title ? `<h4>${inline(title)}</h4>` : ''}${doneTag}</header>${inner}</section>`;
   }
   const verdictOf = ok => ok ? '<b class="sd-ok">Correct.</b> ' : '<b class="sd-bad">Not quite.</b> ';
   const fmtNum = n => Math.abs(n) >= 100 ? Math.round(n).toLocaleString() : String(Math.round(n * 100) / 100);
@@ -394,6 +394,11 @@
     worker: '<circle cx="0" cy="0" r="4"/><path d="M0-9v3M0 6v3M-9 0h3M6 0h3M-6-6l2 2M4 4l2 2M-6 6l2-2M4-4l2-2"/>',
     external: '<path d="M-8 -8h10v4M-8 -8v16h16v-10"/><path d="M0 0l8-8M3 -8h5v5"/>',
     stream: '<path d="M-10 -5h20M-10 0h20M-10 5h20"/>',
+    model: '<path d="M0 -9l2.5 6.5L9 0l-6.5 2.5L0 9l-2.5-6.5L-9 0l6.5-2.5z"/>',
+    tool: '<path d="M4-9a5 5 0 0 0-5 7l-7 7 3 3 7-7a5 5 0 0 0 7-5l-3 3-3-1-1-3z"/>',
+    vector: '<circle cx="-5" cy="4" r="2"/><circle cx="4" cy="-5" r="2"/><circle cx="5" cy="5" r="2"/><path d="M-5 4L4-5M4-5l1 10"/>',
+    process: '<rect x="-9" y="-8" width="18" height="16" rx="2"/><path d="M-6-3l3 3-3 3M0 4h6"/>',
+    user: '<circle cx="0" cy="-4" r="4"/><path d="M-8 9c0-5 3.5-7 8-7s8 2 8 7"/>',
   };
   R.arch = b => {
     const nodes = b.nodes, W_ = 230, H_ = 96;
@@ -412,14 +417,16 @@
       return `<g class="sd-arch-edge" data-edge="${esc(a)}>${esc(c)}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-end="url(#sd-arrow-${b.key})"/></g>`;
     }).join('');
     const boxes = nodes.map(n => {
-      const p = pos(n), hidden = b.missing === n.id, h = half(n);
-      return `<g class="sd-arch-node is-${esc(n.kind || 'service')} ${hidden ? 'is-missing' : ''}" data-node="${esc(n.id)}" transform="translate(${p.x},${p.y})"><rect x="${-h}" y="-26" width="${2 * h}" height="52" rx="8"/><g class="sd-arch-icon" transform="translate(${-h + 20},0)">${hidden ? '<text x="0" y="5" text-anchor="middle" class="sd-arch-q">?</text>' : KIND_ICON[n.kind || 'service'] || KIND_ICON.service}</g><text class="sd-arch-label" x="${-h + 36}" y="${n.note ? -2 : 4}">${hidden ? 'Missing piece' : esc(n.label)}</text>${n.note && !hidden ? `<text class="sd-arch-note" x="${-h + 36}" y="12">${esc(n.note)}</text>` : ''}</g>`;
+      const p = pos(n), hidden = b.missing === n.id || b.ask === n.id, h = half(n);
+      return `<g class="sd-arch-node is-${esc(n.kind || 'service')} ${hidden ? 'is-missing' : ''}${n.state ? ' is-state-' + esc(n.state) : ''}" data-node="${esc(n.id)}" transform="translate(${p.x},${p.y})"><rect x="${-h}" y="-26" width="${2 * h}" height="52" rx="8"/><g class="sd-arch-icon" transform="translate(${-h + 20},0)">${hidden ? '<text x="0" y="5" text-anchor="middle" class="sd-arch-q">?</text>' : KIND_ICON[n.kind || 'service'] || KIND_ICON.service}</g><text class="sd-arch-label" x="${-h + 36}" y="${n.note ? -2 : 4}">${hidden ? 'Missing piece' : esc(n.label)}</text>${n.note && !hidden ? `<text class="sd-arch-note" x="${-h + 36}" y="12">${esc(n.note)}</text>` : ''}</g>`;
     }).join('');
     const svg = `<div class="sd-arch-wrap"><svg class="sd-arch" style="max-width:${(cols * W_ + 40) * 1.1}px" viewBox="0 0 ${cols * W_ + 40} ${rows * H_ + 20}" role="img" aria-label="${esc(b.title || 'Architecture diagram')}"><defs><marker id="sd-arrow-${b.key}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>${edges}${boxes}${labels.join('')}</svg></div>`;
     const paths = b.paths ? `<div class="sd-arch-paths">${b.paths.map((p, i) => button('▶ ' + p.label, 'path', `data-i="${i}"`)).join('')}</div><div class="sd-arch-caption" aria-live="polite"></div>` : '';
     const quiz = b.missing ? `<div class="sd-prompt">${md(b.prompt || 'Which component belongs in the missing box?')}</div><div class="sd-predict-choices">${b.choices.map((c, i) => `<button type="button" class="sd-option" data-b="pick" data-i="${i}"><span class="sd-option-key">${String.fromCharCode(65 + i)}</span><span>${inline(c)}</span></button>`).join('')}</div><div class="sd-reveal" hidden></div>` : '';
-    const build = !b.missing && b.edges.length >= 3 ? `<div class="sd-arch-build">${button('Wire it yourself first', 'build')}<span class="sd-arch-build-status sd-muted" aria-live="polite"></span>${button('Show all connections', 'giveup', 'hidden')}</div>` : '';
-    return frame(b, `${b.caption ? `<div class="sd-prompt">${md(b.caption)}</div>` : ''}${build}${svg}${paths}${quiz}`, b.title);
+    const build = !b.missing && !b.board && b.edges.length >= 3 ? `<div class="sd-arch-build">${button('Wire it yourself first', 'build')}<span class="sd-arch-build-status sd-muted" aria-live="polite"></span>${button('Show all connections', 'giveup', 'hidden')}</div>` : '';
+    const legend = [['hot', 'struggling'], ['down', 'failed'], ['new', 'new']].filter(([st]) => nodes.some(n => n.state === st))
+      .map(([st, l]) => `<span class="sd-arch-key is-state-${st}">${l}</span>`).join('');
+    return frame(b, `${b.caption ? `<div class="sd-prompt">${md(b.caption)}</div>` : ''}${build}${svg}${legend ? `<div class="sd-arch-legend">${legend}</div>` : ''}${paths}${quiz}`, b.title);
   };
   W.arch = (el, b, ctx) => {
     let timer = null;

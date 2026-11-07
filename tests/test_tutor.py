@@ -534,3 +534,16 @@ def test_after_a_debrief_the_next_lesson_is_offered_and_a_new_session_remembers(
 def test_an_opener_nobody_answered_is_not_resumed_from_home(client):
     start(client)
     assert 'part-way through' not in ((ok(client.get('/api/tutor/home'))['pick'] or {}).get('why') or '')
+
+
+def test_the_tutor_draws_on_the_whiteboard_and_remembers_it(client):
+    s = start(client)
+    client.replies.append('```diagram\ntitle: The miss storm\nnodes: [{id: app, kind: service}, {id: cache, kind: cache, state: down}, {id: db, kind: db, state: hot}]\n'
+                          'edges: [[app, cache], [app, db, every read]]\n```')
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0001', 'text': 'Draw it?'}))
+    turn = s['turns'][-1]
+    assert turn['say'] == '' and turn['boards'][0]['title'] == 'The miss storm'   # a drawing alone is a visible reply
+    assert '## Whiteboard' in client.chats[-1][0]['content']
+    client.replies.append('Now add a lock.')
+    ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0002', 'text': 'OK'}))
+    assert any('```diagram' in m['content'] and 'The miss storm' in m['content'] for m in client.chats[-1] if m['role'] == 'assistant')

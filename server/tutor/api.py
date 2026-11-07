@@ -464,7 +464,7 @@ async def _talk(s, l, ctx, debrief=False):
             log.warning('Tutor reply failed: %s', type(exc).__name__)
             return None
         _count(s, raw.get('usage') or {})
-        if ses.parse(raw['content'], s, l)[0]:
+        if ses.parse(raw['content'], s, l)[0] or ses.drawn(raw['content'], s):
             return raw['content']
     log.warning('Tutor reply had nothing to show')
     return None

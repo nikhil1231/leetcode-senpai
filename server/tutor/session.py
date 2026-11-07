@@ -9,6 +9,8 @@ Two model calls make a turn, and they do different jobs (PROMPT_VERSION 8):
   conversation as ordinary chat messages, and replies in plain text. It may end a message with
   [[activity bN]] to hand over one of the lesson's activities, and in the role-play modes keep
   private notes in <private>…</private>; both are stripped before the learner sees the reply.
+  In teach, critique and the war room it may draw on a whiteboard (```diagram blocks, board.py),
+  shown as diagrams under its message and replayed to it as it wrote them.
 - The note-taker records. It reads the learner's latest words and returns structured evidence,
   objective progress, misconceptions and a summary. `apply_notes` keeps only what quotes the
   learner's own words, so neither call can invent evidence.
@@ -29,9 +31,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .. import llm, voice
-from . import lessons, story
+from . import board, lessons, story
 
-PROMPT_VERSION = 9
+PROMPT_VERSION = 10
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -87,8 +89,9 @@ During the review:
 - He names a planted flaw and why it fails: concede it like a good CTO ("fair, that'd bite us") and ask how he'd fix it. A working fix: accept it and move on. A fix that doesn't work: ask what happens under the failure you planted.
 - He criticises something that's actually fine, or proposes a fix that's wrong per the notes: defend the design with a concrete reason (cost, numbers, how it behaves). Don't fold because he sounds confident.
 - He's stuck for two messages: give a scenario, not an answer ("Black Friday hits this path at 10×. Walk me through it."). Never name the flaw or the concept.
-- No lectures, no diagrams, never confirm a flaw he hasn't found. Keep track of found and unfound flaws in your <private> notes.
-- When every flaw is found and fixed, or he has clearly run out, say so in a line; the debrief covers the rest.""".format(marcus=voice.persona('marcus')),
+- No lectures, never confirm a flaw he hasn't found. Keep track of found and unfound flaws in your <private> notes.
+- When every flaw is found and fixed, or he has clearly run out, say so in a line; the debrief covers the rest.
+- You may sketch the design on the whiteboard as you present it, the way you would at a real review. Draw it plainly: no state or note that points at a flaw.""".format(marcus=voice.persona('marcus')),
 
     'war-room': """You are Priya, Ripple's SRE, running a live incident. Its root cause is something this lesson teaches about. Nikhil is the incident lead: he diagnoses, mitigates and fixes it. You never teach.
 
@@ -104,7 +107,7 @@ Running it:
 - Actions have consequences: a sound mitigation helps (say how the graphs move); a wrong one does nothing or makes it worse, as it would in reality. Blind guessing lets time pass and the incident grow. Sam or Marcus may chime in for one line, written as "**Sam:** …" (users, support tickets, what customers see) or "**Marcus:** …" (how long, what it costs).
 - A wrong diagnosis isn't corrected: carry out the lead's call and report what happens.
 - Mitigation isn't the end: once things are stable, ask for the root cause and the lasting fix.
-- Under 100 words a message. No lectures, no diagrams. Your personality shows in the odd dry aside (one short line, not every message), never at the cost of the incident.""".format(priya=voice.persona('priya'), sam=voice.persona('sam'), marcus=voice.persona('marcus')),
+- Under 100 words a message, not counting a whiteboard. No lectures. You may draw the system's layout on the whiteboard (what talks to what), marking a state only on what he has checked and seen. Your personality shows in the odd dry aside (one short line, not every message), never at the cost of the incident.""".format(priya=voice.persona('priya'), sam=voice.persona('sam'), marcus=voice.persona('marcus')),
 
     'interview': """You are Marcus interviewing Nikhil on this lesson's topic, as in a real mid/senior system design or technical interview. You never teach and give no feedback until the debrief.
 
@@ -163,8 +166,15 @@ RANK = {OPEN: 0, WORKING: 1, DEMONSTRATED: 2}
 MARK = {OPEN: '○ not yet', WORKING: '◐ partly shown', DEMONSTRATED: '✓ shown'}
 
 
+BOARD_MODES = {'teach', 'critique', 'war-room'}
+
+
 def blocks_allowed(mode):
     return MODES[mode][3]
+
+
+def board_allowed(mode):
+    return mode in BOARD_MODES
 
 
 def _claims(views, statuses, limit=25):
@@ -239,7 +249,9 @@ Scale: Ripple's size is {story_state['users']}, and that is the only figure for 
         parts.append(ACTIONS.format(
             activities=f"\n\nActivities from this lesson (one line saying what to do, then the marker; never two in a row, each once; you'll see how he did):\n{tools}" if tools else '',
             lessons=(profile or {}).get('lessons') or '(not available)'))
-    else:
+    if board_allowed(mode):
+        parts.append(board.guide())
+    if not blocks_allowed(mode):
         parts.append("""## Private notes
 Keep anything you must stay consistent about (a planted flaw, an incident's state, what he has told you) in a short <private>…</private> block at the end of a message, under 120 words; he never sees it. Everything else in your message is what he sees, so every message must have something for him outside the block. Your notes so far:
 """ + (session.get('notes') or '(none yet)'))
@@ -294,7 +306,7 @@ def messages(session, lesson, debrief=False):
     out = [{'role': 'user', 'content': CARRIED if session.get('carried') else OPENING}]
     for t in turns:
         if t['role'] == 'tutor':
-            text = t['say'] + (f'\n\n[[activity {t["show_block"]}]]' if t.get('show_block') else '')
+            text = '\n\n'.join([t['say'], *(board.source(b) for b in t.get('boards') or [])]) + (f'\n\n[[activity {t["show_block"]}]]' if t.get('show_block') else '')
             if out[-1]['role'] == 'assistant':
                 out[-1]['content'] += '\n\n' + text
             else:
@@ -335,7 +347,7 @@ def parse(text, session, lesson):
     """-> (say, block key or '', private notes or ''). Unknown, repeated or disallowed blocks are dropped."""
     text = text or ''
     private = '\n'.join(m.group(1).strip() for m in PRIVATE.finditer(text))
-    text = PRIVATE.sub('', text)
+    text = board.extract(PRIVATE.sub('', text))[0]
     keys = [m.group(1).lower() for m in ACTIVITY.finditer(text)]
     say = ANY_MARKER.sub('', text)
     say = re.sub(r'^\s*\**(tutor|jo|marcus|priya)(\s*:\s*\**|\**\s*:)\s*', '', say.strip(), flags=re.I)
@@ -349,6 +361,9 @@ def add_reply(session, text, lesson, now):
     say, show, private = parse(text, session, lesson)
     turn = {'role': 'tutor', 'speaker': MODES[session['mode']][2], 'say': say, 'show_block': show, 'at': now,
             'recorded': {'evidence': 0, 'misconceptions': 0, 'resolved': 0}}
+    boards = drawn(text, session)
+    if boards:
+        turn['boards'] = boards
     session['turns'].append(turn)
     if show:
         session['shown'].append(show)
@@ -358,9 +373,18 @@ def add_reply(session, text, lesson, now):
     return turn
 
 
+def drawn(text, session):
+    """The whiteboard diagrams in a reply, in modes that may draw (private notes never reach the board)."""
+    return board.extract(PRIVATE.sub('', text or ''))[1] if board_allowed(session['mode']) else []
+
+
 def add_debrief(session, text, now):
-    turn = {'role': 'tutor', 'speaker': 'tutor', 'say': voice.plain(PRIVATE.sub('', ANY_MARKER.sub('', text or '')).strip()), 'show_block': '',
+    say = board.extract(PRIVATE.sub('', ANY_MARKER.sub('', text or '')))[0]
+    turn = {'role': 'tutor', 'speaker': 'tutor', 'say': voice.plain(re.sub(r'\n{3,}', '\n\n', say).strip()), 'show_block': '',
             'at': now, 'debrief': True, 'recorded': {'evidence': 0, 'misconceptions': 0, 'resolved': 0}}
+    boards = drawn(text, session)
+    if boards:
+        turn['boards'] = boards
     session['turns'].append(turn)
     session['updated_at'] = now
     return turn

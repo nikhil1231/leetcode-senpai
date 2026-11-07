@@ -2,9 +2,11 @@
 // a choice: learn it with the tutor, or read the notes (the choice of notes is remembered). A
 // session replaces the lesson body with a chat, the lesson's objectives as a checklist and, in
 // "Teach me", the lesson's own activities brought in by the tutor. Activity answers are recorded
-// exactly as in the lesson. Ending a session brings a debrief from the tutor: the only teaching in
-// the role-play modes. Home can queue a session, which starts as soon as the lesson opens.
-// Without the model there is no card and the lesson works as usual.
+// exactly as in the lesson. In teach, critique and the war room the tutor can also draw on a
+// whiteboard: diagrams under its message (server/tutor/board.py). Ending a session brings a
+// debrief from the tutor: the only teaching in the role-play modes. Home can queue a session,
+// which starts as soon as the lesson opens. Without the model there is no card and the lesson
+// works as usual.
 (function () {
   'use strict';
   const {api, escapeHtml: esc} = window.H;
@@ -262,6 +264,7 @@
       const who = turn.debrief ? {name: 'Tutor', role: 'Debrief'} : turn.speaker === 'tutor' ? {name: 'Tutor', role: ''} : (cast(turn.speaker) || {name: turn.speaker, role: ''});
       n.className = 'tu-msg tu-them' + (turn.debrief ? ' tu-debrief' : ''); n.dataset.speaker = turn.speaker;
       n.innerHTML = `<div class="tu-who"><span class="tu-avatar" aria-hidden="true">${esc(who.name[0])}</span><b>${esc(who.name)}</b>${who.role ? `<small>${esc(who.role)}</small>` : ''}</div><div class="tu-text sd-md">${md(turn.say)}</div>`;
+      (turn.boards || []).forEach((d, i) => n.appendChild(boardNode(d, `wb${T.session?.turns.indexOf(turn)}-${i}`)));
       if (turn.show_block) n.appendChild(blockNode(turn.show_block, answered.has(turn.show_block)));
       if (turn.move) n.appendChild(moveNode(turn.move));
     }
@@ -278,6 +281,18 @@
       queue({section: m.section, lesson: m.lesson, carry: from});
       window.AppSections?.select(m.section, 'lesson/' + m.lesson);
     });
+    return wrap;
+  }
+
+  // A diagram the tutor drew on the whiteboard: drawn like a lesson's architecture block, with its
+  // request paths playable. Nothing is recorded from it.
+  function boardNode(d, key) {
+    const wrap = document.createElement('div');
+    wrap.className = 'tu-block tu-board';
+    if (!B()) return wrap;
+    const b = {...d, key: String(key).replace(/[^\w-]/g, '')};
+    wrap.innerHTML = B().renderBlock(b);
+    B().wire(wrap, {blocks: [b]}, {saved: {}, save() {}, done() {}});
     return wrap;
   }
 

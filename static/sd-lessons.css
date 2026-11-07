@@ -158,6 +158,15 @@
 .sd-arch-label { fill:var(--text); font:600 12px var(--font); }
 .sd-arch-note { fill:var(--muted); font:10px var(--font); }
 .sd-arch-node.is-missing rect { stroke:#f5b544; stroke-dasharray:5 4; fill:#f5b5440d; }
+.sd-arch-node.is-model .sd-arch-icon,.sd-arch-node.is-vector .sd-arch-icon { stroke:#c084fc; }
+.sd-arch-node.is-tool .sd-arch-icon,.sd-arch-node.is-process .sd-arch-icon,.sd-arch-node.is-user .sd-arch-icon { stroke:#5eead4; }
+.sd-arch-node.is-state-hot rect { stroke:#f5b544; stroke-width:2.2; fill:#f5b54414; }
+.sd-arch-node.is-state-down rect { stroke:#fb7185; stroke-width:2.2; stroke-dasharray:4 3; fill:#fb718514; }
+.sd-arch-node.is-state-down text { opacity:.7; }
+.sd-arch-node.is-state-new rect { stroke:#35d39a; stroke-width:2.2; }
+.sd-arch-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin:6px 0 0; }
+.sd-arch-key::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px; border:2px solid; }
+.sd-arch-key.is-state-hot::before { border-color:#f5b544; } .sd-arch-key.is-state-down::before { border-color:#fb7185; border-style:dashed; } .sd-arch-key.is-state-new::before { border-color:#35d39a; }
 .sd-arch-q { fill:#f5b544; stroke:none; font:700 18px var(--font); }
 .sd-arch-edge line { stroke:#4f5d68; stroke-width:1.4; transition:stroke .3s; }
 .sd-arch-elabel { fill:var(--muted); font:10px var(--font-mono); paint-order:stroke; stroke:var(--panel); stroke-width:4px; stroke-linejoin:round; }
