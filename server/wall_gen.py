@@ -37,6 +37,7 @@ ATTEMPTS = 3
 WIDTH = 1179            # stored width: an iPhone's; wall.fit_image fits other screens
 MAX_BYTES = 900_000     # a Firestore document holds 1 MiB
 CHECK_EVERY = 30 * 60
+ASPECT = '9:16'          # the image model's tallest usable shape (it refuses 9:21; 1:4 is far too narrow)
 
 
 class Panel(BaseModel):
@@ -189,9 +190,9 @@ def make(store, now, lesson=None, force=False, pin=False):
         try:
             if last:
                 pic = llm._raw_image(config.WALL_IMAGE_MODEL, fix_prompt(last[1]['issues'] or ['Redraw it more carefully.']),
-                                     '9:16', edit=(last[0], 'image/jpeg'))
+                                     ASPECT, edit=(last[0], 'image/jpeg'))
             else:
-                pic = llm._raw_image(config.WALL_IMAGE_MODEL, image_prompt(b, copy), '9:16')
+                pic = llm._raw_image(config.WALL_IMAGE_MODEL, image_prompt(b, copy), ASPECT)
             spent += float(pic['usage'].get('cost') or 0)
             data = _jpeg(pic['image'])
             review = llm._raw_look(config.WALL_REVIEW_MODEL, REVIEW_SYSTEM, review_prompt(b, copy), data, 'image/jpeg',

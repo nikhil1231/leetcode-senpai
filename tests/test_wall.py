@@ -125,8 +125,9 @@ def test_fit_image_fills_the_screen_without_cropping():
     out = Image.open(io.BytesIO(wall.fit_image(buf.getvalue(), 300, 650)))
     assert out.size == (300, 650)
     colour = lambda y: max(zip(out.getpixel((150, y)), 'rgb'))[1]
-    # 300x533 centred in 650: 58px above continue the red top edge, 59px below the green bottom edge
-    assert [colour(y) for y in (5, 50, 120, 400, 600, 645)] == ['r', 'r', 'b', 'b', 'g', 'g']
+    # 300x533 in 650, a little above centre: 58 - 21 = 37px above continue its red top edge, the rest below its green one
+    assert [colour(y) for y in (5, 30, 100, 400, 580, 645)] == ['r', 'r', 'b', 'b', 'g', 'g']
+    assert colour(60) == 'r' and colour(80) == 'b'      # its red band (33px) ends at 70: the poster starts at 37
 
 
 def test_fading_map_scores_what_you_have_met():

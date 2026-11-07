@@ -39,6 +39,7 @@ log = logging.getLogger(__name__)
 FONTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts')
 COLOURS = {'fact': '#ffd84d', 'principle': '#ff8fb8', 'mechanism': '#5fe0e8', 'tradeoff': '#ffad5c', 'procedure': '#8ce99a'}
 INK = '#12131a'
+LIFT = 0.032      # the height of a poster's title and its rule, on an iPhone
 
 
 def weight(v, started):
@@ -331,15 +332,15 @@ def render_card(card, w, h, top=0.0):
 def fit_image(data, w, h):
     """A stored poster fitted to a w x h screen without cutting anything off: scaled to fit, and
     the space left over filled by stretching the poster's own edge rows and columns (the prompt
-    keeps its edges plain). The poster is centred: a 9:16 poster on a taller phone gets half the spare
-    height above (clear of the notch) and half below. -> JPEG."""
+    keeps its edges plain). A 9:16 poster on a taller phone sits a little above centre (LIFT of the
+    screen's height), so its title lands between the notch and the clock's date line. -> JPEG."""
     from PIL import Image
     src = Image.open(io.BytesIO(data)).convert('RGB')
     scale = min(w / src.width, h / src.height)
     sw, sh = max(1, round(src.width * scale)), max(1, round(src.height * scale))
     src = src.resize((sw, sh), Image.LANCZOS)
     out = Image.new('RGB', (w, h))
-    x, y = (w - sw) // 2, (h - sh) // 2
+    x, y = (w - sw) // 2, max(0, (h - sh) // 2 - round(h * LIFT))
     out.paste(src, (x, y))
     if y:
         out.paste(src.crop((0, 0, sw, 1)).resize((sw, y)), (x, 0))
