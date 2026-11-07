@@ -1,7 +1,8 @@
 // AI engineering simulators: sampling, one LLM call's latency and cost, the monthly bill, tool calling
 // message by message, structured output, hybrid search, an HNSW graph, a RAG pipeline that fails at a
-// stage, eval noise, a precision/recall threshold, an agent loop, serving on a GPU and a prompt
-// injection sandbox. Models are pure (ai-models.js); this file draws them with the shared helpers.
+// stage, eval noise, a precision/recall threshold, an agent loop, serving on a GPU, an MCP session
+// and its attacks, and a prompt injection sandbox. Models are pure (ai-models.js); this file draws
+// them with the shared helpers.
 (function () {
   'use strict';
   if (!window.SDSims || !window.AIModels) return;
@@ -210,6 +211,38 @@
           + bars([{ label: 'Weights', value: r.weights, text: Math.round(r.weights) + ' GB' }, { label: 'KV cache in use', value: r.batch * s.ctx * M.MODELS[s.model].kvMb / 1024, text: `${r.batch} × ${fmt(s.ctx)} tokens` }, { label: 'GPU memory', value: r.mem, text: r.mem + ' GB', cls: 'is-idle' }], r.mem)
           + `<p class="sim-note">Decoding is memory-bound: each step reads every weight once, whatever the batch, so batching many users is nearly free until the KV cache fills memory. Quantising shrinks the weights and leaves room for more conversations; long contexts eat it.</p>` };
     }));
+
+  // ---------- MCP: the session and the attacks ----------
+  reg('mcp', (el, cfg, api) => {
+    const st = { view: 'wire', transport: 'stdio', registry: false, pin: false, fullDescriptions: false, confirmWrites: false, audience: false, sandbox: false, oneServerPerTask: false };
+    let at = 0, maxStep = 0; const transports = new Set();
+    const { ctl, out } = shell(el);
+    const defs = () => [{ key: 'view', label: 'Show', type: 'select', options: [['wire', 'The protocol, message by message'], ['attacks', 'The attacks, and your defences']] },
+      ...(st.view === 'wire' ? [{ key: 'transport', label: 'Transport', type: 'select', options: [['stdio', 'stdio (a local process)'], ['http', 'Streamable HTTP (remote, OAuth)']] }]
+        : [{ key: 'registry', label: 'Only vetted servers from an internal registry, pinned', type: 'toggle' }, { key: 'pin', label: 'Pin approved tool definitions; re-ask on change', type: 'toggle' },
+          { key: 'fullDescriptions', label: 'Show full tool descriptions on install', type: 'toggle' }, { key: 'confirmWrites', label: 'Human approval for write tools', type: 'toggle' },
+          { key: 'audience', label: 'Remote servers check token audience; no passthrough', type: 'toggle' }, { key: 'sandbox', label: 'Run local servers in a container', type: 'toggle' },
+          { key: 'oneServerPerTask', label: 'Connect only the servers a task needs', type: 'toggle' }])];
+    const paintCtl = () => controls(ctl, defs(), st, k => { if (k === 'transport') { at = 0; } api.touched(); if (k === 'view') paintCtl(); paint(); });
+    const paint = () => {
+      let harms = null;
+      if (st.view === 'wire') {
+        const steps = M.mcpSession(st.transport);
+        transports.add(st.transport); maxStep = Math.max(maxStep, at + 1);
+        out.innerHTML = `<div class="ai-tool">${steps.slice(0, at + 1).map((x, i) => `<div class="ai-msg is-${x.dir === '→' ? 'app' : x.dir === '←' ? 'user' : x.dir === 'model' ? 'model' : 'api'}${i === at ? ' is-ok' : ''}"><b>${x.dir === '→' ? 'Client → server' : x.dir === '←' ? 'Server → client' : x.dir === 'model' ? 'Inside the host' : 'Connect'}</b>${x.http ? `<pre>${esc(x.http)}</pre>` : ''}<pre>${esc(typeof x.msg === 'string' ? x.msg : JSON.stringify(x.msg, null, 1))}</pre><p>${esc(x.note)}</p></div>`).join('')}</div>
+          <div class="sim-actions"><button type="button" class="button is-primary" data-do="next" ${at >= steps.length - 1 ? 'disabled' : ''}>Next message (${at + 1}/${steps.length})</button><button type="button" class="button" data-do="all">Show all</button><button type="button" class="button" data-do="reset">From the start</button></div>`;
+      } else {
+        const r = M.mcpAttacks(st); harms = r.harms;
+        out.innerHTML = stats([{ label: 'Attacks that did harm', value: `${r.harms} of ${r.rows.length}`, tone: r.harms ? 'bad' : 'ok' }])
+          + r.rows.map(x => `<div class="fs-flow is-${x.blocked ? 'ok' : 'bad'}"><b>${esc(x.label)}</b><span>${x.blocked ? '✓ stopped' : '✗ ' + esc(x.harm)}</span>${x.blocked ? `<ol>${x.by.map(b => `<li>${esc(b)}</li>`).join('')}</ol>` : ''}</div>`).join('')
+          + '<p class="sim-note">MCP itself checks none of this: it carries descriptions and results to the model faithfully, whoever wrote them. The defences live in the host (what can be installed, what changed, what needs approval) and in each server (audience checks, its own credentials).</p>';
+      }
+      api.metrics({ steps: maxStep, transports: transports.size, ...(harms != null ? { harms } : {}) });
+    };
+    on(el, act => { api.touched(); const n = M.mcpSession(st.transport).length; if (act === 'next') at = Math.min(n - 1, at + 1); if (act === 'all') at = n - 1; if (act === 'reset') at = 0; paint(); });
+    paintCtl(); paint();
+    return { destroy() {} };
+  });
 
   // ---------- Prompt injection ----------
   reg('injection', (el, cfg, api) => simple(el, cfg, api, { classifier: false, sendTool: 'any', confirmSend: false, browse: 'any', images: 'any', deleteTool: true, confirmDelete: false, piiFilter: false, leastData: false },

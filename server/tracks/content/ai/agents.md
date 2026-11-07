@@ -69,7 +69,7 @@ takeaway: |
 
 Every step adds to the context, which costs tokens and dilutes attention. Techniques: truncate or summarise old tool results, keep a structured scratchpad or plan file the agent updates, store large outputs outside the context and return a short reference, and delegate sub-tasks to **sub-agents** with fresh contexts that return only a summary.
 
-**Model Context Protocol (MCP)** standardises how applications expose tools and resources to models. It's a common interface, but it doesn't change the safety rules below.
+**Model Context Protocol (MCP)** standardises how applications expose tools, resources and prompts to models, so an integration written once works in every AI app. It's a common interface, but it doesn't change the safety rules below: a server's descriptions and results are untrusted input. The next lesson, [MCP servers](#/ai/lesson/mcp), covers the protocol, transports, OAuth and the attacks specific to it.
 
 ## Permissions and safety
 

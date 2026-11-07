@@ -1,0 +1,300 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: mcp
+source_hash: aafd9a51e8c5d10b
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-07'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.mcp.mcp-m-plus-n
+  subtopic: Why a protocol
+  kind: principle
+  claim: 'MCP turns M applications times N integrations into M plus N: each system is wrapped once as an MCP server and works in every application that speaks the protocol, much as LSP did for editors and languages.'
+  prompt: What problem does MCP solve that per-application function calling does not?
+  objectives:
+  - 0
+  requires:
+  - ai.prompting.tool-calling-loop
+- id: ai.mcp.mcp-not-a-safety-layer
+  subtopic: Why a protocol
+  kind: principle
+  claim: MCP standardises how tools are discovered, described, called and authorised; it has no sandbox and does not make a tool safe to give a model.
+  prompt: Does adopting MCP make an agent's tools safe? Why or why not?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - ai.mcp.mcp-m-plus-n
+  same_as: ai.agents.mcp-interface-only
+- id: ai.mcp.when-plain-function-calling
+  subtopic: Why a protocol
+  kind: tradeoff
+  claim: For one application with a few tools of its own, plain function calling is simpler; MCP pays off when tools are shared across apps or teams, users bring their own integrations, or a vendor ships one integration for every AI client.
+  prompt: When is plain function calling a better choice than building an MCP server?
+  objectives:
+  - 0
+  requires:
+  - ai.mcp.mcp-m-plus-n
+- id: ai.mcp.host-client-server-roles
+  subtopic: Hosts, clients and servers
+  kind: mechanism
+  claim: The host is the AI application that runs the model and owns consent; it runs one MCP client per server, and each server exposes capabilities, locally as a process or remotely as a web service.
+  prompt: What are the host, client and server roles in MCP?
+  objectives:
+  - 0
+  requires:
+  - ai.mcp.mcp-m-plus-n
+- id: ai.mcp.servers-isolated-host-in-charge
+  subtopic: Hosts, clients and servers
+  kind: principle
+  claim: Each client talks to exactly one server, so servers are isolated from each other and see the conversation only when the host sends it; the host decides which servers connect and which calls need approval.
+  prompt: Who decides which tool calls run, and can one MCP server see another's traffic?
+  objectives:
+  - 0
+  requires:
+  - ai.mcp.host-client-server-roles
+  - ai.prompting.app-executes-tools
+- id: ai.mcp.tools-resources-prompts-control
+  subtopic: The primitives
+  kind: fact
+  claim: Servers offer tools (model-controlled functions with JSON Schema arguments), resources (application-controlled, read-only context addressed by URI) and prompts (user-controlled templates, often slash commands).
+  prompt: What are MCP's three server primitives, and who controls each?
+  objectives:
+  - 1
+  requires:
+  - ai.mcp.host-client-server-roles
+- id: ai.mcp.sampling-roots-elicitation
+  subtopic: The primitives
+  kind: fact
+  claim: Clients can offer servers sampling (asking the host's model for a completion, which the user can review), roots (the directories or URIs to work within) and elicitation (asking the user for input mid-task).
+  prompt: What can an MCP client offer back to a server?
+  objectives:
+  - 1
+  requires:
+  - ai.mcp.host-client-server-roles
+- id: ai.mcp.initialize-capability-negotiation
+  subtopic: A session on the wire
+  kind: mechanism
+  claim: A session starts with the client's initialize request (protocol version, capabilities, client info), the server's reply with its own version and capabilities, then the client's notifications/initialized; after that each side uses only features the other offered.
+  prompt: How does an MCP session start?
+  objectives:
+  - 1
+  requires:
+  - ai.mcp.host-client-server-roles
+- id: ai.mcp.mcp-json-rpc
+  subtopic: A session on the wire
+  kind: fact
+  claim: 'MCP messages are JSON-RPC 2.0: requests carry an id that the response echoes, and notifications have no id and get no reply.'
+  prompt: What message format does MCP use, and how do requests differ from notifications?
+  objectives:
+  - 1
+- id: ai.mcp.tools-list-and-call
+  subtopic: A session on the wire
+  kind: mechanism
+  claim: tools/list returns each tool's name, description and inputSchema (optionally an outputSchema), paginated by cursor; tools/call sends a name and arguments and gets back content, optional structuredContent, and isError when the tool failed.
+  prompt: How are tools discovered and called in MCP, and how is a failure reported?
+  objectives:
+  - 1
+  requires:
+  - ai.mcp.initialize-capability-negotiation
+  - ai.prompting.tool-calling-loop
+  - ai.agents.tool-errors-as-observations
+- id: ai.mcp.list-changed-notifications
+  subtopic: A session on the wire
+  kind: mechanism
+  claim: A server whose tools change sends notifications/tools/list_changed and the client lists again; resources can be subscribed to, and long calls can report progress and be cancelled.
+  prompt: How does a client learn that a server's tools have changed?
+  objectives:
+  - 1
+  requires:
+  - ai.mcp.tools-list-and-call
+- id: ai.mcp.stdio-vs-streamable-http
+  subtopic: Transports
+  kind: tradeoff
+  claim: stdio runs the server as a subprocess exchanging newline-delimited JSON, suited to local tools; Streamable HTTP is one endpoint that takes POSTed messages and may answer with an SSE stream, with a session id header, suited to shared and remote services.
+  prompt: When would you use stdio and when Streamable HTTP for an MCP server?
+  objectives:
+  - 2
+  requires:
+  - ai.mcp.host-client-server-roles
+- id: ai.mcp.local-servers-are-code
+  subtopic: Transports
+  kind: principle
+  claim: A local stdio server is arbitrary code running with the user's permissions and environment, so install only trusted servers pinned to a version, ideally sandboxed.
+  prompt: What is the main risk of installing a local MCP server?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - ai.mcp.stdio-vs-streamable-http
+- id: ai.mcp.remote-mcp-oauth-flow
+  subtopic: Authorising a remote server
+  kind: procedure
+  claim: 'A remote MCP server is an OAuth 2.1 resource server: an unauthenticated call gets 401 pointing at its protected resource metadata, the client runs OAuth with PKCE asking for a token for that resource, and sends it as a bearer token on every request.'
+  prompt: How does a client get authorised to use a remote MCP server?
+  objectives:
+  - 2
+  requires:
+  - ai.mcp.stdio-vs-streamable-http
+- id: ai.mcp.validate-token-audience
+  subtopic: Authorising a remote server
+  kind: principle
+  claim: A server must check that a token was issued for it (its audience), plus expiry and scopes, not just that the signature is valid, so tokens for other services can't be replayed against it.
+  prompt: Why isn't a valid signature enough for an MCP server to accept a token?
+  objectives:
+  - 2
+  requires:
+  - ai.mcp.remote-mcp-oauth-flow
+- id: ai.mcp.no-token-passthrough
+  subtopic: Authorising a remote server
+  kind: principle
+  claim: An MCP server must not forward its clients' tokens to upstream APIs; it calls them with its own credentials, because passthrough breaks the audience check, audit trails and rate limits and makes it a confused deputy.
+  prompt: What is token passthrough and why is it forbidden?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - ai.mcp.validate-token-audience
+- id: ai.mcp.least-privilege-per-user-scopes
+  subtopic: Authorising a remote server
+  kind: principle
+  claim: 'Scopes set the blast radius: request the least the tools need and prefer per-user tokens to one shared service account, so a server can''t do more than the person using it could.'
+  prompt: How should scopes and credentials be chosen for an MCP server that acts on users' behalf?
+  objectives:
+  - 2
+  - 3
+  requires:
+  - ai.mcp.remote-mcp-oauth-flow
+- id: ai.mcp.few-task-level-tools
+  subtopic: Designing a server models use well
+  kind: principle
+  claim: Expose a few task-level tools (find_customer_orders) rather than one tool per API endpoint, because every definition is sent with every request and many similar tools cost context and make the model choose worse.
+  prompt: Why prefer a few task-level tools over wrapping every API endpoint?
+  objectives:
+  - 3
+- id: ai.mcp.tool-definitions-cost-context
+  subtopic: Designing a server models use well
+  kind: mechanism
+  claim: Tool definitions live in the context on every turn, so connecting many servers (say 140 tools) adds tens of thousands of tokens, slowing and confusing the agent; connect only what a task needs, namespace tools, or load definitions on demand.
+  prompt: Why does connecting many MCP servers make an agent slower and less accurate?
+  objectives:
+  - 3
+  requires:
+  - ai.mcp.tools-list-and-call
+  - ai.agents.context-growth-problem
+- id: ai.mcp.tool-descriptions-are-prompts
+  subtopic: Designing a server models use well
+  kind: procedure
+  claim: 'Write tool descriptions for the model: what the tool is for, when to use it rather than a neighbour, what each argument means, with examples, under unambiguous and namespaced names.'
+  prompt: What makes a good MCP tool description?
+  objectives:
+  - 3
+  same_as: ai.prompting.tool-descriptions-are-prompts
+- id: ai.mcp.small-results-teaching-errors
+  subtopic: Designing a server models use well
+  kind: principle
+  claim: Return small, readable, paginated results rather than raw API dumps, and failures as isError results that say how to recover, so the model can continue.
+  prompt: How should an MCP tool shape its results and errors?
+  objectives:
+  - 3
+  requires:
+  - ai.agents.tool-errors-as-observations
+- id: ai.mcp.idempotent-writes-split-reads
+  subtopic: Designing a server models use well
+  kind: principle
+  claim: Models retry, so make write tools idempotent (with an idempotency key) and keep read and write tools separate so a host can auto-approve reads and confirm writes.
+  prompt: Why separate read and write tools and make writes idempotent?
+  objectives:
+  - 3
+  requires:
+  - ai.agents.idempotent-scoped-tools
+  - ai.agents.human-approval-irreversible
+- id: ai.mcp.tool-poisoning
+  subtopic: 'Security: every server is untrusted input'
+  kind: mechanism
+  claim: Tool poisoning hides instructions in a tool's description, which the model reads in full while the user sees a summary, for example telling it to pass a private key as an argument.
+  prompt: What is tool poisoning in MCP?
+  objectives:
+  - 3
+  requires:
+  - ai.mcp.tools-list-and-call
+  - ai.agents.prompt-injection-untrusted-content
+- id: ai.mcp.rug-pull-pin-definitions
+  subtopic: 'Security: every server is untrusted input'
+  kind: mechanism
+  claim: In a rug pull, an approved server later changes its tool definitions; hosts defend by pinning approved definitions (a hash), showing the diff and asking again when they change.
+  prompt: What is an MCP rug pull and how does a host defend against it?
+  objectives:
+  - 3
+  requires:
+  - ai.mcp.tool-poisoning
+  - ai.mcp.list-changed-notifications
+- id: ai.mcp.cross-server-shadowing
+  subtopic: 'Security: every server is untrusted input'
+  kind: mechanism
+  claim: Shadowing is one server's description giving instructions about another server's tools, such as copying every email to an attacker; connect only the servers a task needs and confirm writes.
+  prompt: What is cross-server tool shadowing?
+  objectives:
+  - 3
+  requires:
+  - ai.mcp.tool-poisoning
+- id: ai.mcp.mcp-results-are-injection
+  subtopic: 'Security: every server is untrusted input'
+  kind: principle
+  claim: Content a tool returns, such as an issue body or web page, can carry instructions, so MCP results are an ordinary prompt-injection channel and irreversible actions need human approval.
+  prompt: Why are MCP tool results a security risk?
+  objectives:
+  - 3
+  requires:
+  - ai.agents.prompt-injection-untrusted-content
+- id: ai.mcp.mcp-defences-per-server
+  subtopic: 'Security: every server is untrusted input'
+  kind: procedure
+  claim: Defend MCP use with a registry of vetted, pinned servers, least-privilege scopes, approval for writes, full and diffed descriptions, sandboxed local servers, call logging, and never combining private data, untrusted content and a way out without a human.
+  prompt: What controls would you put around an organisation's agents using MCP servers?
+  objectives:
+  - 3
+  requires:
+  - ai.mcp.tool-poisoning
+  - ai.mcp.no-token-passthrough
+  - ai.agents.human-approval-irreversible
+items:
+  mcp-check-1-v2:
+  - ai.mcp.mcp-m-plus-n
+  - ai.mcp.mcp-not-a-safety-layer
+  mcp-check-2-v2:
+  - ai.mcp.tools-resources-prompts-control
+  mcp-check-3-v2:
+  - ai.mcp.validate-token-audience
+  - ai.mcp.no-token-passthrough
+  mcp-check-4-v2:
+  - ai.mcp.rug-pull-pin-definitions
+  mcp-fire-1-v2:
+  - ai.mcp.stdio-vs-streamable-http
+  mcp-fire-2-v2:
+  - ai.mcp.sampling-roots-elicitation
+  mcp-fire-3-v2:
+  - ai.mcp.few-task-level-tools
+  - ai.mcp.tool-definitions-cost-context
+  mcp-fire-4-v2:
+  - ai.mcp.initialize-capability-negotiation
+  mcp:b11:
+  - ai.mcp.mcp-defences-per-server
+  - ai.mcp.no-token-passthrough
+  - ai.mcp.tool-poisoning
+  mcp:b3:
+  - ai.mcp.tools-resources-prompts-control
+  mcp:b5:
+  - ai.mcp.initialize-capability-negotiation
+  - ai.mcp.tools-list-and-call
+  mcp:b7:
+  - ai.mcp.validate-token-audience
+  - ai.mcp.no-token-passthrough
+  - ai.mcp.small-results-teaching-errors
+  mcp:b9:
+  - ai.mcp.tool-definitions-cost-context
+  - ai.mcp.few-task-level-tools

@@ -416,6 +416,21 @@
    ]
   },
   {
+   "id": "mcp",
+   "title": "An MCP session, message by message",
+   "blurb": "Step through a session between a host and a GitHub server, over either transport. Then switch to the attacks and see which defences stop each one.",
+   "notes": "The protocol is small: initialise and agree capabilities, list, call, get told about changes. What matters in production is around it: the transport and its authorisation, and treating every description and result a server sends as untrusted input.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "mcp",
+   "lessonTitle": "MCP servers - one tool interface for every model",
+   "challenges": [
+    "Step through a whole session, from initialize to a tool result",
+    "Compare the two transports",
+    "Stop every attack"
+   ]
+  },
+  {
    "id": "llmbill",
    "title": "Cutting the monthly bill",
    "blurb": "The lesson's feature: 200,000 requests a day at 3,000 tokens in and 300 out.",

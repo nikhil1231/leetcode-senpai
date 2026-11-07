@@ -78,3 +78,10 @@ test('injection: with a fooled model every attack lands until capabilities are l
  assert.equal(M.injection({sendTool:'allowlist',images:'trusted',confirmDelete:true,leastData:true}).harms,0);
  assert.equal(M.injection({classifier:true}).harms,M.ATTACKS.length-1);
 });
+test('MCP: a session starts with initialize and the initialized notification; each attack needs its own defence',()=>{
+ for(const t of ['stdio','http']){ const s=M.mcpSession(t); assert.equal(s[1].msg.method,'initialize'); assert.equal(s[3].msg.method,'notifications/initialized'); assert.ok(s.some(x=>x.msg.method==='tools/call')); }
+ assert.ok(M.mcpSession('http')[0].note.includes('PKCE'));
+ assert.equal(M.mcpAttacks({}).harms,M.MCP_ATTACKS.length);
+ assert.equal(M.mcpAttacks({registry:true,pin:true,confirmWrites:true,audience:true}).harms,0);
+ assert.equal(M.mcpAttacks({registry:true,confirmWrites:true,audience:true}).rows.find(r=>r.id==='rugpull').blocked,false);
+});

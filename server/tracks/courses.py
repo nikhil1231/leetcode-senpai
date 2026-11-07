@@ -34,7 +34,7 @@ COURSES = {
             ('models', 'How LLMs behave', 'Tokens, context, sampling, prompting and structured output.'),
             ('retrieval', 'Retrieval and RAG', 'Embeddings, vector search and grounded answers.'),
             ('evaluation', 'Evals', 'Measuring quality so changes are decisions, not vibes.'),
-            ('agents', 'Agents and tools', 'Tool calling, loops, and keeping agents on a leash.'),
+            ('agents', 'Agents and tools', 'Tool calling, loops, MCP servers, and keeping agents on a leash.'),
             ('production', 'Production AI', 'Latency, cost, serving, safety and an AI system design case.'),
         ],
         'order': {
@@ -42,7 +42,7 @@ COURSES = {
             'models': ['llm-basics', 'prompting'],
             'retrieval': ['embeddings', 'rag'],
             'evaluation': ['evals'],
-            'agents': ['agents'],
+            'agents': ['agents', 'mcp'],
             'production': ['serving', 'guardrails', 'design-support-assistant', 'design-review-assistant'],
         },
         # The rounds of a typical AI engineering loop, and what in the app prepares you for each.
@@ -52,7 +52,7 @@ COURSES = {
             ('practical', 'LLM practical coding', 'Small production pieces around a model: retries with backoff, rate limits, chunking, retrieval.',
              ['prompting', 'embeddings'], ['retry-backoff', 'rate-limiter', 'ai-pair-chunker']),
             ('depth', 'LLM and RAG depth', 'Tokens and sampling, RAG vs fine-tuning, embeddings, evals and agents, explained and defended.',
-             ['llm-basics', 'prompting', 'embeddings', 'rag', 'evals', 'agents'], []),
+             ['llm-basics', 'prompting', 'embeddings', 'rag', 'evals', 'agents', 'mcp'], []),
             ('design', 'AI system design', 'An open prompt (support bot, review assistant, agent) covering retrieval, evals, failure modes, cost and safety.',
              ['rag', 'evals', 'serving', 'guardrails', 'design-support-assistant', 'design-review-assistant'], []),
             ('workflow', 'How you use AI', '"How do you use AI in your work?" and project deep dives on what you shipped.',
