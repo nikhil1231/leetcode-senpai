@@ -21,11 +21,12 @@ Intent: docs/plans/ambient-learning.md.
 import asyncio
 import datetime as dt
 import io
+import logging
 import os
 import random
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from . import config, llm
@@ -34,6 +35,7 @@ from .knowledge_base import api as kb_api, model as kmodel
 from .tutor import story
 
 router = APIRouter(prefix='/api/wall', tags=['wall'])
+log = logging.getLogger(__name__)
 FONTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts')
 COLOURS = {'fact': '#ffd84d', 'principle': '#ff8fb8', 'mechanism': '#5fe0e8', 'tradeoff': '#ffad5c', 'procedure': '#8ce99a'}
 INK = '#12131a'
@@ -422,30 +424,34 @@ def poster_png(w: int = Query(default=1179, ge=320, le=4000), h: int = Query(def
     return Response(render_card(card, w, h, top), media_type='image/png', headers=headers)
 
 
-@router.post('/poster.png')
-async def new_poster_png(w: int = Query(default=1179, ge=320, le=4000), h: int = Query(default=2556, ge=320, le=4000),
-                         who=Depends(kb_api.caller)):
-    """A new poster made now, outside the cadence, fitted like GET's: for the weakest lesson needing
-    one, else the one whose poster is oldest; it stays up for WALL_SLOT_HOURS, so GET returns it too.
-    Slow (up to three draws and reviews). A try that fails
-    review never comes back: you get the poster up now instead, marked X-Wall-Poster: failed-review."""
-    from . import wall_gen
+@router.post('/poster.png', status_code=202)
+def new_poster_png(background: BackgroundTasks, who=Depends(kb_api.caller)):
+    """Start a new poster, outside the cadence, and answer at once: for the weakest lesson needing one,
+    else the one whose poster is oldest. It takes a few minutes (up to three draws and reviews); if it
+    passes review, GET /poster.png returns it for WALL_SLOT_HOURS. One at a time: asking again while
+    one is being made starts nothing."""
     if not llm.enabled():
         raise HTTPException(503, 'Posters need a model (OPENROUTER_API_KEY)')
-    store = kb_api.get_store(who['uid'])
-    p = await asyncio.to_thread(wall_gen.make, store, time.time(), None, True, True)
-    if not p:
-        raise HTTPException(409, 'No lesson you have covered needs a poster')
-    if not p.get('ok'):
-        up, _ = _wallpaper(who['uid'], time.time())
-        img = up and store.get_knowledge(wall_gen.IMAGES, up['_key'])
-        if not img:
-            raise HTTPException(502, 'The new poster failed review and none is up yet')
-        return Response(fit_image(img['data'], w, h), media_type='image/jpeg',
-                        headers={'Cache-Control': 'no-store', 'X-Wall-Poster': 'failed-review'})
-    img = store.get_knowledge(wall_gen.IMAGES, p['_key'])
-    return Response(fit_image(img['data'], w, h), media_type='image/jpeg',
-                    headers={'Cache-Control': 'no-store', 'X-Wall-Poster': p['_key']})
+    uid = who['uid']
+    if uid in _making:
+        return {'started': False, 'making': True}
+    _making.add(uid)
+    background.add_task(_make_pinned, uid)
+    return {'started': True, 'making': True}
+
+
+_making = set()
+
+
+def _make_pinned(uid):
+    from . import wall_gen
+    try:
+        p = wall_gen.make(kb_api.get_store(uid), time.time(), None, True, True)
+        log.info('Requested wall poster: %s', p and (p['_key'], 'ok' if p.get('ok') else 'failed review'))
+    except Exception:
+        log.warning('Requested wall poster failed', exc_info=True)
+    finally:
+        _making.discard(uid)
 
 
 @router.get('/posters')

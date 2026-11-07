@@ -135,8 +135,10 @@ def test_the_phone_gets_the_stored_poster(client, models, monkeypatch):
     assert c.get(made['image']).status_code == 200 and c.get('/api/wall/posters/nope.jpg').status_code == 404
     assert [p['id'] for p in c.get('/api/wall/posters').json()['posters']] == [made['id']]
     models['reviews'].append(review())
-    r = c.post('/api/wall/poster.png', params={'w': 400, 'h': 900})       # forced: a new one though none is due
-    assert r.status_code == 200 and r.headers['content-type'] == 'image/jpeg' and r.headers['x-wall-poster'] != made['id']
-    assert Image.open(io.BytesIO(r.content)).size == (400, 900)
-    assert len(c.get('/api/wall/posters').json()['posters']) == 2
-    assert c.get('/api/wall/now').json()['poster']['id'] == r.headers['x-wall-poster']   # and it is up now
+    r = c.post('/api/wall/poster.png')       # forced: a new one though none is due, made in the background
+    assert r.status_code == 202 and r.json()['started']
+    ids = [p['id'] for p in c.get('/api/wall/posters').json()['posters']]
+    assert len(ids) == 2 and c.get('/api/wall/now').json()['poster']['id'] == ids[0] != made['id']   # and it is up now
+    wall._making.add('me')
+    assert c.post('/api/wall/poster.png').json()['started'] is False      # one at a time
+    wall._making.clear()

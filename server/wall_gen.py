@@ -216,7 +216,7 @@ def make(store, now, lesson=None, force=False, pin=False):
         'lesson': b['lesson'], 'title': b['title'], 'section': b['section'], 'points': b['points'],
         'ideas': [i['claim'] for i in b['ideas']], 'copy': copy, 'created_at': now, 'version': PROMPT_VERSION,
         'ok': ok, 'review': review, 'attempts': attempt, 'model': model, 'reviewer': config.WALL_REVIEW_MODEL,
-        'cost': round(spent, 4), 'bytes': len(data), 'pinned_at': now if pin else None})
+        'cost': round(spent, 4), 'bytes': len(data), 'pinned_at': time.time() if pin else None})   # from when it is ready
 
 
 def due(library, now, every_hours, per_day):
