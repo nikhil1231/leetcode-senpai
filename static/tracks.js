@@ -17,10 +17,10 @@
   // Extra prep for an interview round that lives in another section.
   const ROUND_LINKS = { workflow: [['experience', 'dives', 'Deep dives on your CV']] };
   const NOTES = { course: 'Read it once.<br>Recall it often.<br>Explain it simply.', experience: 'Specific.<br>Measured.<br>In the first person.', practical: 'Run the tests.<br>Change one thing.<br>Say what you see.' };
-  const VIEW_TITLES = { home: 'Home', practise: 'Practise', progress: 'What you know', placement: 'Find your level', lessons: 'Learn', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round' };
+  const VIEW_TITLES = { home: 'Home', practise: 'Practise', progress: 'What you know', placement: 'Find your level', lessons: 'Learn', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round', nightshift: 'Night Shift' };
   const ACTIVE = { lesson: 'lessons', story: 'stories', dive: 'dives', claim: 'dives', exercise: 'home' };
   // Course tracks: practice views sit under Practise.
-  const COURSE_ACTIVE = { lesson: 'lessons', quickfire: 'practise', mistakes: 'practise', placement: 'practise', round: 'practise', exercise: 'practise' };
+  const COURSE_ACTIVE = { lesson: 'lessons', quickfire: 'practise', mistakes: 'practise', placement: 'practise', round: 'practise', exercise: 'practise', nightshift: 'practise' };
   const registry = { course: {} };
   let current = { track: null, view: 'home', arg: null, seq: 0 };
   const cleanups = [];
@@ -203,7 +203,7 @@
     ctx.root.innerHTML = `<div class="sd-breadcrumb">${btn('← Lessons', 'go', 'data-view="lessons"')}<span>/ ${esc(flat[idx]?.cat || '')}</span></div>
       <div class="sd-page-intro sd-rich-intro"><span class="sd-eyebrow">LESSON ${idx + 1} OF ${flat.length} · ${lesson.minutes} MIN · ${lesson.interactive} ACTIVITIES</span><h2 tabindex="-1">${esc(lesson.title)}</h2><p>${inline(lesson.summary)}</p></div><div class="tr-tutor-slot"></div>
       <div class="sd-rich-layout"><article class="sd-rich"><div class="sd-goals"><b>By the end you can</b><ul>${lesson.objectives.map(o => `<li>${inline(o)}</li>`).join('')}</ul></div>
-        <div class="tr-blocks"></div>
+        <div class="tr-blocks"></div><div class="tr-practice-slot"></div>
         <section class="sd-panel tr-check"><span class="sd-eyebrow">LESSON CHECK · ${checks.length} QUESTIONS</span><h3>Check what stuck</h3><p class="sd-muted">Answer without scrolling back. These come back in Quickfire as they fade.</p><div class="tr-check-slot">${btn('Start the check', 'check-start', '', true)}</div></section>
         <footer class="sd-lesson-foot"><details><summary>Further reading</summary><ul>${lesson.sources.map(([t, u]) => `<li><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a></li>`).join('')}</ul></details>
         <div class="sd-actions">${next ? btn('Next lesson: ' + esc(next.title) + ' →', 'lesson', `data-id="${next.id}"`) : btn('Back to the overview', 'go', 'data-view="home"')}</div></footer></article>
@@ -225,6 +225,7 @@
         },
       });
       ctx.onLeave(() => handle.destroy());
+      window.NightShift?.chips(ctx.root.querySelector('.tr-practice-slot'), ctx.track, lesson.id);
       window.Tutor?.mount(ctx.root.querySelector('.tr-tutor-slot'), {
         section: ctx.track, lesson, layout: ctx.root.querySelector('.sd-rich-layout'),
         recall: (block, text) => ctx.call(`/lessons/${lesson.id}/recall`, 'POST', { block: block.key, text }),

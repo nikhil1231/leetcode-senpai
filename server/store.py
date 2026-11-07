@@ -655,7 +655,8 @@ class FirestoreStore:
     # are read one at a time (they grow); tutor memory is a handful of small documents.
     KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions', 'tutor_sessions', 'tutor_memory', 'drip',
                  'study_sessions', 'wall_posters', 'wall_images',
-                 'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews')
+                 'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews',
+                 'nightshift_runs')
 
     def _knowledge(self, coll):
         if coll not in self.KNOWLEDGE:

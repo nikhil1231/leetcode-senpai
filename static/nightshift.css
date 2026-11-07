@@ -1,0 +1,51 @@
+/* Night Shift (nightshift.js): the incident channel, a terminal, and the status and actions rail. */
+.ns-levels { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+.ns-stars { color:#f5b544; letter-spacing:2px; }
+.ns-grid { display:grid; grid-template-columns:minmax(220px,1fr) minmax(0,2fr) minmax(200px,0.9fr); gap:12px; align-items:start; margin-top:8px; }
+.ns-channel, .ns-term, .ns-side { background:var(--panel); border:1px solid var(--line); border-radius:10px; min-width:0; }
+.ns-channel { display:flex; flex-direction:column; max-height:78vh; }
+.ns-channel header { display:flex; justify-content:space-between; align-items:center; padding:9px 12px; border-bottom:1px solid var(--line); font-size:13px; }
+.ns-clock { font:600 13px var(--font-mono); color:#f5b544; }
+.ns-msgs { overflow:auto; padding:10px 12px; display:grid; gap:10px; align-content:start; flex:1; }
+.ns-page { border:1px solid #fb718566; background:#fb71850f; border-radius:8px; padding:8px 10px; }
+.ns-page b { font:600 11px var(--font-mono); color:#fb7185; letter-spacing:.05em; }
+.ns-page pre { margin:4px 0 0; white-space:pre-wrap; font:11.5px/1.5 var(--font-mono); color:var(--text); }
+.ns-msg b { font-size:12.5px; } .ns-msg small { color:var(--muted); font-size:11px; margin-left:6px; }
+.ns-msg p { margin:2px 0 0; font-size:13px; line-height:1.5; color:var(--text-2); }
+.ns-msg.is-hint p { color:var(--text); border-left:2px solid var(--accent); padding-left:8px; }
+.ns-sys { font-size:12.5px; color:#fb7185; border-left:2px solid #fb7185; padding-left:8px; }
+.ns-ask { border-top:1px solid var(--line); padding:8px 10px; display:grid; gap:6px; }
+.ns-ask form { display:flex; gap:6px; } .ns-ask .input { flex:1; min-width:0; }
+.ns-term { display:flex; flex-direction:column; background:#0b0f13; }
+.ns-screen { font:12px/1.55 var(--font-mono); color:#c9d4dc; padding:12px; height:46vh; min-height:280px; overflow:auto; border-bottom:1px solid #1c242c; }
+.ns-screen pre { margin:2px 0 10px; white-space:pre-wrap; word-break:break-word; color:#aeb9c2; }
+.ns-line { color:#e6edf3; } .ns-ps { color:#35d39a; } .ns-line em { color:#76838e; font-style:normal; font-size:11px; }
+.ns-act { margin:6px 0 12px; padding:6px 10px; border-left:3px solid #7cb7ff; background:#7cb7ff12; }
+.ns-act b { color:#e6edf3; font-weight:600; } .ns-act p { margin:3px 0 0; color:#aeb9c2; font-family:var(--font); font-size:12.5px; }
+.ns-act.is-fix { border-left-color:#35d39a; } .ns-act.is-temp { border-left-color:#f5b544; } .ns-act.is-worse, .ns-act.is-outage { border-left-color:#fb7185; }
+.ns-hint { color:#76838e; font-family:var(--font); }
+.ns-cmds { padding:8px 10px; display:grid; gap:6px; max-height:28vh; overflow:auto; }
+.ns-group { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.ns-group > span { font:600 10px var(--font); text-transform:uppercase; letter-spacing:.08em; color:#76838e; width:64px; }
+.ns-cmd { font:11.5px var(--font-mono); background:#131a20; color:#c9d4dc; border:1px solid #232d36; border-radius:6px; padding:4px 8px; cursor:pointer; text-align:left; max-width:100%; }
+.ns-cmd:hover:not(:disabled) { border-color:var(--accent); } .ns-cmd.is-ran { color:#76838e; } .ns-cmd:disabled { opacity:.5; cursor:default; }
+.ns-prompt { display:flex; gap:8px; align-items:center; padding:8px 12px; border-top:1px solid #1c242c; font:13px var(--font-mono); color:#35d39a; }
+.ns-prompt input { flex:1; min-width:0; background:transparent; border:0; outline:none; color:#e6edf3; font:13px var(--font-mono); }
+.ns-side { padding:10px 12px; }
+.ns-side h4 { margin:12px 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+.ns-light { font:700 13px var(--font-mono); letter-spacing:.08em; padding:6px 10px; border-radius:6px; text-align:center; }
+.ns-light.is-bad { background:#fb71851f; color:#fb7185; animation:ns-pulse 1.4s ease-in-out infinite; } .ns-light.is-warn { background:#f5b5441f; color:#f5b544; } .ns-light.is-ok { background:#35d39a1f; color:#35d39a; }
+@keyframes ns-pulse { 50% { opacity:.55; } }
+@media (prefers-reduced-motion: reduce) { .ns-light.is-bad { animation:none; } }
+.ns-figs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+.ns-figs b { display:block; font:600 16px var(--font-mono); } .ns-figs span { font-size:10.5px; color:var(--muted); line-height:1.3; display:block; }
+.ns-actions { display:grid; gap:6px; }
+.ns-action { text-align:left; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 9px; font:12.5px var(--font); cursor:pointer; }
+.ns-action small { display:block; color:var(--muted); font-size:10.5px; margin-top:2px; }
+.ns-action:hover:not(:disabled) { border-color:var(--accent); } .ns-action.is-done { border-style:dashed; } .ns-action:disabled { opacity:.55; cursor:default; }
+.ns-q { margin-top:14px; } .ns-q h3 { margin:4px 0 10px; font-size:16px; }
+.ns-q .sd-option.is-right { border-color:#35d39a; } .ns-q .sd-option.is-wrong { border-color:#fb7185; }
+.ns-explain p { font-size:13px; line-height:1.6; margin:10px 0 0; }
+.ns-result { margin-top:14px; } .ns-result h3 { margin:4px 0 10px; }
+.ns-pm { margin:10px 0; }
+@media (max-width: 1000px) { .ns-grid { grid-template-columns:1fr; } .ns-channel { max-height:none; } .ns-msgs { max-height:40vh; } .ns-screen { height:44vh; } }
