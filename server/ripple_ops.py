@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CAMPAIGN_PATH = os.path.join(HERE, '..', 'static', 'simulators', 'ripple.json')
 SOURCE = 'ripple'
 RUNS, DRAFTS, GENERATED, REVIEWS = 'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews'
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 KEY = r'^[A-Za-z0-9_-]{1,80}$'
 UNAVAILABLE = 'This needs the model, which is not connected. The simulator itself still works.'
 FAILED = 'The model could not answer just now. Try again in a moment.'
@@ -166,6 +166,20 @@ def level_text(l):
     return '\n'.join(lines)
 
 
+def reasoning_text(notes, timeline, limit=40):
+    """His reasoning, and when he said each part: what he added, and the design at that moment when it had changed."""
+    entries = [e for e in (timeline or []) if (e.get('said') or '').strip()][-limit:]
+    if not entries:
+        return (notes or '').strip() or 'None written.'
+    t0, out = entries[0].get('at') or 0, []
+    for e in entries:
+        m, s = divmod(max(0, int((e.get('at') or 0) - t0)), 60)
+        out.append(f"[+{m}:{s:02d}]{' (reworded)' if e.get('revised') else ''} \"{e['said'].strip()}\"")
+        if e.get('graph'):
+            out.append('  Design then:\n' + '\n'.join('  ' + l for l in graph_text(e['graph']).split('\n')))
+    return f"Final notes:\n{(notes or '').strip() or '(empty)'}\n\nAs he said it, with the design at that moment:\n" + '\n'.join(out)
+
+
 def run_text(run):
     if not run:
         return 'No simulation run yet.'
@@ -231,6 +245,13 @@ class BillItem(BaseModel):
     detail: str = Field(default='', max_length=200)
 
 
+class Said(BaseModel):
+    at: float
+    said: str = Field(max_length=2000)
+    revised: bool = False
+    graph: Optional[dict] = None
+
+
 class RunIn(BaseModel):
     key: str = Field(pattern=KEY, description='Idempotency key from the browser: a retried post stores once.')
     level: str = Field(max_length=80)
@@ -247,12 +268,14 @@ class RunIn(BaseModel):
     bill: list[BillItem] = Field(default_factory=list, max_length=60)
     estimates: list[Estimate] = Field(default_factory=list, max_length=8)
     graph: dict
-    notes: str = Field(default='', max_length=4000)
+    notes: str = Field(default='', max_length=20000)
+    timeline: list[Said] = Field(default_factory=list, max_length=40)
 
 
 class DraftIn(BaseModel):
     graph: dict
-    notes: str = Field(default='', max_length=4000)
+    notes: str = Field(default='', max_length=20000)
+    timeline: list[Said] = Field(default_factory=list, max_length=40)
 
 
 class Debrief(BaseModel):
@@ -275,6 +298,8 @@ class ReviewIn(BaseModel):
     run: Optional[dict] = None
     messages: list[Msg] = Field(default_factory=list, max_length=80)
     scenario: Optional[dict] = None
+    notes: str = Field(default='', max_length=20000)
+    timeline: list[Said] = Field(default_factory=list, max_length=40)
 
 
 class Evaluation(BaseModel):
@@ -483,9 +508,10 @@ def get_draft(level: str, store=Depends(store_for)):
 
 @router.put('/drafts/{level}')
 def put_draft(level: str, body: DraftIn, store=Depends(store_for)):
-    if len(json.dumps(body.graph)) > 200_000:
+    if len(json.dumps(body.graph)) > 200_000 or len(json.dumps([t.model_dump() for t in body.timeline])) > 400_000:
         raise HTTPException(413, 'That design is too big to save')
-    return store.put_knowledge(DRAFTS, level[:80], {'graph': body.graph, 'notes': body.notes, 'at': time.time()})
+    return store.put_knowledge(DRAFTS, level[:80], {'graph': body.graph, 'notes': body.notes,
+                                                    'timeline': [t.model_dump() for t in body.timeline], 'at': time.time()})
 
 
 @router.post('/runs/{rid}/debrief')
@@ -506,7 +532,7 @@ async def debrief(rid: str, store=Depends(store_for)):
               "why that line of the bill is big) so he learns the concept, not just the fix. If he beat the level, say what was good and "
               "push on cost or a trade-off. Don't hand him a complete design.")
     prompt = json.dumps({'level': level_text(level), 'design': graph_text(r.get('graph')), 'result': run_text(r),
-                         'his_notes': r.get('notes') or '', 'estimates': r.get('estimates') or [],
+                         'his_reasoning': reasoning_text(r.get('notes'), r.get('timeline')), 'estimates': r.get('estimates') or [],
                          'earlier_attempts': [{'stars': h.get('stars'), 'cost': round(h.get('cost') or 0)} for h in history],
                          'concepts': {k: v['label'] for k, v in CONCEPTS.items()}}, ensure_ascii=False)
     try:
@@ -569,6 +595,8 @@ async def review(body: ReviewIn, store=Depends(store_for)):
     tmpl = REVIEW if body.mode == 'review' else INTERVIEW
     system = tmpl.format(who='Marcus, Ripple\'s CTO' if body.mode == 'review' else '', persona=voice.persona('marcus') if body.mode == 'review' else '',
                          level=level_text(level), design=graph_text(body.graph), run=run_text(body.run), events=', '.join(EVENT_TYPES))
+    if body.notes.strip():
+        system += '\n\nHis own reasoning, written or spoken while he designed (use it: probe what he claims, notice what he skipped):\n' + reasoning_text(body.notes, [t.model_dump() for t in body.timeline])
     msgs = [{'role': 'system', 'content': system}]
     for m in body.messages[-40:]:
         if m.role == 'note':
@@ -599,6 +627,7 @@ async def end_interview(body: ReviewIn, store=Depends(store_for)):
               "addressed to Nikhil. Judge requirements, estimation, design, depth, failure handling and trade-offs from the transcript and his final design. "
               "Be specific and honest; quote what he said where it helps.")
     prompt = json.dumps({'scenario': level_text(level), 'final_design': graph_text(body.graph), 'last_run': run_text(body.run), 'transcript': transcript,
+                         'his_reasoning': reasoning_text(body.notes, [t.model_dump() for t in body.timeline]),
                          'concepts': {k: v['label'] for k, v in CONCEPTS.items()}}, ensure_ascii=False)
     try:
         raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_NOTES_MODEL, system, prompt, Evaluation,

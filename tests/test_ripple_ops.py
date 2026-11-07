@@ -107,6 +107,16 @@ def test_designs_and_runs_read_as_short_text():
     assert 'budget $3,500/month' in ro.level_text(ro.LEVELS['viral-link'])
 
 
+def test_reasoning_reads_as_what_he_said_when_with_the_design_then():
+    g = {'nodes': [{'id': 'n1', 'defId': 'client'}, {'id': 'n2', 'defId': 'app-server'}], 'edges': [{'from': 'n1', 'to': 'n2'}]}
+    tl = [{'at': 1000, 'said': 'One server is enough at 2k users.', 'graph': g},
+          {'at': 1095, 'said': 'Adding a database.', 'revised': True, 'graph': None}, {'at': 1100, 'said': '  '}]
+    t = ro.reasoning_text('One server. Adding a database.', tl)
+    assert t.startswith('Final notes:\nOne server.') and '[+0:00] "One server is enough' in t and 'n1->n2' in t
+    assert '[+1:35] (reworded) "Adding a database."' in t and t.count('Design then') == 1
+    assert ro.reasoning_text('just notes', []) == 'just notes' and ro.reasoning_text('', None) == 'None written.'
+
+
 # ---- HTTP ------------------------------------------------------------------------------
 
 @pytest.fixture
@@ -166,9 +176,9 @@ def test_whatif_and_daily_runs_are_kept_but_not_progress_or_evidence(client):
 def test_drafts_round_trip(client):
     assert client.get('/api/ripple/drafts/garage').json()['graph'] is None
     g = {'nodes': [{'id': 'n1', 'defId': 'client'}], 'edges': []}
-    client.put('/api/ripple/drafts/garage', json={'graph': g, 'notes': 'small boxes'})
+    client.put('/api/ripple/drafts/garage', json={'graph': g, 'notes': 'small boxes', 'timeline': [{'at': 5, 'said': 'small boxes', 'graph': g}]})
     d = client.get('/api/ripple/drafts/garage').json()
-    assert d['graph'] == g and d['notes'] == 'small boxes'
+    assert d['graph'] == g and d['notes'] == 'small boxes' and d['timeline'][0]['said'] == 'small boxes'
 
 
 def test_the_debrief_is_written_once_and_kept_with_the_run(client):
@@ -186,12 +196,12 @@ def test_the_review_passes_the_design_and_returns_a_whatif(client):
     r = client.post('/api/ripple/review', json={'level': 'pager', 'graph': run()['graph'], 'messages': []}).json()
     assert r['reply'] == 'You think that survives a zone outage?' and r['whatif']['type'] == 'az-outage'
     system = client.chats[0][0]['content']
-    assert "Priya's worst day" in system and 'n2: app-server' in system and 'Marcus' in system
+    assert "Priya's worst day" in system and 'n2: app-server' in system and 'Marcus' in system and 'His own reasoning' not in system
     client.replies.append('Fine.')
-    client.post('/api/ripple/review', json={'level': 'pager', 'graph': run()['graph'], 'mode': 'interview',
+    client.post('/api/ripple/review', json={'level': 'pager', 'graph': run()['graph'], 'mode': 'interview', 'notes': 'Two zones for safety.',
                                            'messages': [{'role': 'assistant', 'text': 'Q'}, {'role': 'note', 'text': 'Zone outage: handled'}, {'role': 'user', 'text': 'A'}]})
     sent = client.chats[1]
-    assert 'system design interview' in sent[0]['content'] and sent[2]['content'] == '(Note from the app: Zone outage: handled)'
+    assert 'system design interview' in sent[0]['content'] and 'Two zones for safety.' in sent[0]['content'] and sent[2]['content'] == '(Note from the app: Zone outage: handled)'
 
 
 def test_ending_an_interview_scores_it_and_records_soft_evidence(client):

@@ -147,8 +147,19 @@
 .rp-tools { display:flex; flex-wrap:wrap; gap:6px; }
 .rp-hints { display:grid; gap:6px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
 .rp-hints p { margin:0; font-size:13px; line-height:1.5; }
-.rp-notes summary { cursor:pointer; color:var(--text-2); font-size:12.5px; }
-.rp-notes textarea { width:100%; margin-top:6px; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; font:13px var(--font); resize:vertical; box-sizing:border-box; }
+.rp-notes { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:6px 10px; }
+.rp-notes summary { cursor:pointer; color:var(--text-2); font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; min-height:30px; }
+.rp-notes summary::before { content:'▸'; color:var(--muted); transition:transform .15s; } .rp-notes[open] summary::before { transform:rotate(90deg); }
+.rp-notes summary::-webkit-details-marker { display:none; } .rp-notes summary { list-style:none; }
+.rp-notes textarea { width:100%; margin:4px 0 4px; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 40px 8px 8px; font:13px var(--font); line-height:1.5; resize:vertical; box-sizing:border-box; }
+.rp-notes-mic { display:grid; place-items:center; width:28px; height:28px; border:1px solid var(--line); border-radius:8px; background:var(--panel2); color:var(--muted); cursor:pointer; padding:0; }
+.rp-notes-mic svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
+.rp-notes-mic:hover { color:var(--text); background:var(--panel3); }
+.rp-notes[open] .rp-notes-mic, .rp-notes:not(:has(.dictate-btn)) .rp-notes-mic { display:none; }
+.rp-notes-live { display:none; font-size:12px; font-weight:500; color:var(--red); }
+.rp-notes:not([open]):has(.dictate-btn.is-listening) .rp-notes-live { display:inline; }
+.rp-notes:has(.dictate-btn.is-listening) .rp-notes-mic { color:var(--red); border-color:rgba(251,113,133,.5); background:rgba(251,113,133,.14); animation:dictate-pulse 1.4s ease-in-out infinite; }
+.rp-notes:has(.dictate-btn.is-transcribing) .rp-notes-mic { color:var(--accent); animation:dictate-fade 1s ease-in-out infinite; }
 .rp-results:empty { display:none; }
 .rp-results { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); padding:16px; display:grid; gap:10px; }
 .rp-results h3 { margin:0; font-size:17px; }

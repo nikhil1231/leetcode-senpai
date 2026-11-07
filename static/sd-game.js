@@ -15,6 +15,7 @@
   const CHAPTERS = { foundations: 'Foundations', apis: 'APIs', caching: 'Caching', queues: 'Queues', storage: 'Storage', reliability: 'Reliability',
     distributed: 'Distributed', specialised: 'Specialised', casebook: 'Casebook', generated: 'Generated' };
   const UNITS = { peakReadRps: 'req/s', peakWriteRps: 'req/s', storageGbYear: 'GB', egressTbMonth: 'TB', cacheGb: 'GB' };
+  const MIC = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v2.5"/></svg>';
   let camp = null, sims = null, pending = null;
   const readLocal = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
   const writeLocal = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* fine */ } };
@@ -27,7 +28,7 @@
 
   function mount(el, o = {}) {
     let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '';
-    let est = {}, graded = null, notes = '', hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
+    let est = {}, graded = null, notes = '', notesOpen = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
     const levels = () => camp.levels;
     const byId = id => levels().find(l => l.id === id);
     el.classList.add('rp-root');
@@ -137,7 +138,7 @@
           ${ov.enabled ? `<button type="button" class="button" data-ai-hint>🫖 Ask Priya</button><button type="button" class="button" data-chat="review">🗣 Review with Marcus</button><button type="button" class="button" data-chat="interview">🎤 Mock interview</button>` : ''}
           <button type="button" class="button" data-step="brief">Brief</button></div></div>
         ${h.length || aiHint ? `<div class="rp-hints">${h.map((x, i) => `<p><b>Hint ${i + 1}.</b> ${esc(x)}</p>`).join('')}${aiHint ? `<div class="rp-msg">${B().avatar('priya')}<div><b>Priya</b><p>${esc(aiHint)}</p></div></div>` : ''}</div>` : ''}
-        <details class="rp-notes" ${notes ? 'open' : ''}><summary>Your reasoning (Marcus and the debrief read this)</summary><textarea data-notes rows="3" placeholder="Why this many servers? Why this database? What happens when a zone dies?">${esc(notes)}</textarea></details>
+        <details class="rp-notes" ${notesOpen ?? notes ? 'open' : ''}><summary><span>Your reasoning (Marcus and the debrief read this)</span><button type="button" class="rp-notes-mic" data-notes-mic title="Talk it through: the words are written down, even folded away" aria-label="Dictate your reasoning">${MIC}</button><span class="rp-notes-live">Listening</span></summary><textarea data-notes data-dictate rows="3" placeholder="Why this many servers? Why this database? What happens when a zone dies? Press the mic and talk it through.">${esc(notes)}</textarea></details>
         <div class="rp-stage" data-stage></div>
         <section class="rp-results" data-results>${resultsHtml(l)}</section></div>`;
     }
@@ -197,7 +198,7 @@
       if (text) chat.messages.push({ role: 'user', text });
       chat.busy = true; chat.error = ''; paintChat();
       try {
-        const r = await call('/review', 'POST', { level: L.base || L.id, mode: chat.mode, graph: builder?.graph() || {}, run: runPayload(), messages: chat.messages, scenario: L.generated || L.daily ? L : null });
+        const r = await call('/review', 'POST', { level: L.base || L.id, mode: chat.mode, graph: builder?.graph() || {}, run: runPayload(), messages: chat.messages, scenario: L.generated || L.daily ? L : null, ...reasoning() });
         if (dead || !chat) return;
         chat.messages.push({ role: 'assistant', text: r.reply });
         if (r.whatif) whatIf(r.whatif);
@@ -217,7 +218,7 @@
     async function chatEnd() {
       if (!chat || chat.busy) return;
       chat.busy = true; chat.error = ''; paintChat();
-      try { chat.eval = await call('/review/end', 'POST', { level: L.base || L.id, mode: 'interview', graph: builder?.graph() || {}, run: runPayload(), messages: chat.messages, scenario: L.generated || L.daily ? L : null }); }
+      try { chat.eval = await call('/review/end', 'POST', { level: L.base || L.id, mode: 'interview', graph: builder?.graph() || {}, run: runPayload(), messages: chat.messages, scenario: L.generated || L.daily ? L : null, ...reasoning() }); }
       catch (e) { if (chat) chat.error = e.message; }
       if (chat) { chat.busy = false; paintChat(); }
     }
@@ -255,7 +256,7 @@
         findings: r.findings.slice(0, 60).map(f => ({ id: f.id.slice(0, 120), level: f.level, concept: f.concept || '', text: f.text.slice(0, 600), who: f.who || '' })),
         bill: r.bill.items.slice(0, 60).map(i => ({ id: i.id, defId: i.defId, usd: i.usd, detail: (i.detail || '').slice(0, 200) })),
         estimates: flags.whatif || !graded ? [] : graded.filter(g => g.answer != null).map(g => ({ key: g.key, answer: g.answer, truth: g.truth, verdict: g.verdict })),
-        graph: builder.graph(), notes };
+        graph: builder.graph(), ...reasoning() };
       try { return await call('/runs', 'POST', body); } catch (e) { if (e.message !== 'auth') err = `This run wasn't saved (${e.message}).`; return null; }
     }
     async function onRun(r, g, info) {
@@ -277,6 +278,22 @@
     }
     function paintResults() { const r = el.querySelector('[data-results]'); if (r && L) r.innerHTML = resultsHtml(L); }
 
+    // ---------- reasoning, time-linked to the design ----------
+    // Each pause in what he writes or says becomes an entry: the words added and, when it changed, the design at that moment.
+    const slim = g => g && { nodes: (g.nodes || []).map(n => ({ id: n.id, defId: n.defId, cfg: n.cfg })), edges: (g.edges || []).map(e => ({ from: e.from, to: e.to })), settings: g.settings };
+    function logNotes() {
+      clearTimeout(logTimer); logTimer = null;
+      if (notes === logged) return;
+      let i = 0; while (i < notes.length && i < logged.length && notes[i] === logged[i]) i++;
+      const revised = i < logged.length, said = notes.slice(i).trim();
+      logged = notes;
+      if (!said) return;
+      const g = slim(builder?.graph()), sig = g ? JSON.stringify(g) : '';
+      timeline = [...timeline, { at: Date.now() / 1000, said: said.slice(0, 2000), revised, graph: sig && sig !== lastSig ? g : null }].slice(-40);
+      if (sig) lastSig = sig;
+    }
+    const reasoning = () => { logNotes(); return { notes, timeline }; };
+
     // ---------- drafts ----------
     const draftKey = l => `rp-draft-${l.id}`;
     async function initialGraph(l) {
@@ -284,7 +301,7 @@
       let server = null;
       try { server = (await call(`/drafts/${encodeURIComponent(l.id)}`)); } catch { /* offline: local copy */ }
       const pick = [server, local].filter(x => x?.graph?.nodes?.length).sort((a, b) => (b.at || 0) - (a.at || 0))[0];
-      if (pick) { notes = pick.notes || notes; return pick.graph; }
+      if (pick) { notes = pick.notes || notes; logged = notes; timeline = Array.isArray(pick.timeline) ? pick.timeline : []; return pick.graph; }
       if (l.startFrom) {                                      // carry your own design forward from the level before
         let prev = readLocal(draftKey({ id: l.startFrom }));
         try { const s = await call(`/drafts/${encodeURIComponent(l.startFrom)}`); if (s?.graph?.nodes?.length && (!prev || (s.at || 0) > (prev.at || 0))) prev = s; } catch { /* fine */ }
@@ -294,17 +311,17 @@
     }
     function saveDraft(g) {
       if (!L) return;
-      const doc = { graph: g, notes, at: Date.now() / 1000 };
+      const doc = { graph: g, notes, timeline, at: Date.now() / 1000 };
       writeLocal(draftKey(L), doc);
       clearTimeout(draftTimer);
-      draftTimer = setTimeout(() => call(`/drafts/${encodeURIComponent(L.id)}`, 'PUT', { graph: g, notes }).catch(() => {}), 1500);
+      draftTimer = setTimeout(() => call(`/drafts/${encodeURIComponent(L.id)}`, 'PUT', { graph: g, notes, timeline }).catch(() => {}), 1500);
     }
 
     // ---------- navigation ----------
     async function openLevel(l) {
       stopBuilder();
       L = l; step = readLocal(`rp-step-${l.id}`) || 'brief'; res = null; posted = null; debrief = null; dbState = ''; graded = null; est = readLocal(`rp-est-${l.id}`) || {};
-      hints = 0; aiHint = ''; chat = null; notes = ''; attempts = ov.progress.levels[l.base || l.id]?.attempts || 0;
+      hints = 0; aiHint = ''; chat = null; notes = ''; notesOpen = null; timeline = []; logged = ''; lastSig = ''; clearTimeout(logTimer); attempts = ov.progress.levels[l.base || l.id]?.attempts || 0;
       view = 'level';
       await paint();
     }
@@ -318,6 +335,8 @@
       if (!stage || !L) return;
       const initial = await initialGraph(L);
       if (dead || !el.contains(stage)) return;
+      const ta = el.querySelector('[data-notes]');
+      if (ta && !ta.value && notes) { ta.value = notes; if (notesOpen == null) ta.closest('details').open = true; }
       const scn = L;
       builder = B().mount(stage, { mode: 'game', scenario: scn, toolbox: L.toolbox, storageKey: `rp-canvas-${L.id}`, initial, onChange: saveDraft, onRun });
       await builder.ready;
@@ -358,6 +377,7 @@
         catch (e) { aiHint = `(Priya couldn't look just now: ${e.message})`; }
         rerenderStrip();
       }
+      else if (d.notesMic !== undefined) { ev.preventDefault(); el.querySelector('.rp-notes .dictate-btn')?.click(); }
       else if (d.chat) openChat(d.chat);
       else if (d.chatClose !== undefined) { keepChat(); chat = null; clearInterval(clock); paintChat(); }
       else if (d.chatEnd !== undefined) await chatEnd().then(keepChat);
@@ -377,7 +397,10 @@
     const onInput = ev => {
       const t = ev.target;
       if (t.dataset.est) { est[t.dataset.est] = t.value; writeLocal(`rp-est-${L.id}`, est); }
-      else if (t.dataset.notes !== undefined) { notes = t.value; if (builder) saveDraft(builder.graph()); }
+      else if (t.dataset.notes !== undefined) {
+        notes = t.value; clearTimeout(logTimer); logTimer = setTimeout(() => { logNotes(); if (builder) saveDraft(builder.graph()); }, 3000);
+        if (builder) saveDraft(builder.graph());
+      }
     };
     const onSubmit = ev => {
       if (!ev.target.matches('[data-chat-form]')) return;
@@ -391,6 +414,8 @@
       if (ev.target.matches('[data-chat-text]') && ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ev.target.form?.requestSubmit(); }
       if (ev.target.matches('[data-est]') && ev.key === 'Enter') { ev.preventDefault(); graded = Sim().grade(L, est, L.estimate); paint(); }
     };
+    const onToggle = ev => { if (ev.target.matches?.('.rp-notes')) notesOpen = ev.target.open; };
+    el.addEventListener('toggle', onToggle, true);
     el.addEventListener('click', onClick); el.addEventListener('input', onInput); el.addEventListener('submit', onSubmit); el.addEventListener('keydown', onKey);
 
     (async () => {
@@ -401,7 +426,7 @@
       if (want && byId(want) && unlocked(want)) await openLevel(byId(want)); else paint();
     })();
 
-    return { destroy() { dead = true; stopBuilder(); clearTimeout(draftTimer); el.removeEventListener('click', onClick); el.removeEventListener('input', onInput); el.removeEventListener('submit', onSubmit); el.removeEventListener('keydown', onKey); } };
+    return { destroy() { dead = true; stopBuilder(); clearTimeout(draftTimer); clearTimeout(logTimer); el.removeEventListener('toggle', onToggle, true); el.removeEventListener('click', onClick); el.removeEventListener('input', onInput); el.removeEventListener('submit', onSubmit); el.removeEventListener('keydown', onKey); } };
   }
 
   // Lessons and the home page link straight into a level.
