@@ -1,0 +1,133 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: llmops
+source_hash: 2f070ed838649718
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.llmops.release-is-configuration
+  subtopic: A release is a configuration
+  kind: principle
+  claim: Prompts, model version, parameters, tools, retrieval and guardrail settings are versioned together as one immutable configuration whose ID is recorded with every output.
+  prompt: What is versioned together in an AI release?
+  objectives:
+  - 0
+  requires:
+  - ai.prompting.version-prompts-with-outputs
+- id: ai.llmops.config-via-flags-with-gate
+  subtopic: A release is a configuration
+  kind: tradeoff
+  claim: Shipping configurations through flags allows 1% rollouts and instant rollback, but they still need review and the eval gate.
+  prompt: What does shipping prompts through feature flags gain and still require?
+  objectives:
+  - 0
+- id: ai.llmops.release-path-stages
+  subtopic: The release path
+  kind: procedure
+  claim: 'Release path: offline eval gate per category, shadow on live traffic, canary with rollback triggers, ramp in steps, keep the old configuration ready.'
+  prompt: What are the stages of releasing an AI configuration?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.ci-regression-suite
+- id: ai.llmops.shadow-traffic
+  subtopic: The release path
+  kind: mechanism
+  claim: Shadow traffic runs the new configuration on real inputs without showing users, usually sampled because it doubles model calls.
+  prompt: What does shadow traffic do?
+  objectives:
+  - 1
+- id: ai.llmops.rollback-triggers
+  subtopic: The release path
+  kind: principle
+  claim: 'Good rollback triggers are fast signals compared against control: error and refusal rates, p95 latency, cost per request and validated judge pass rates.'
+  prompt: What makes a good automatic rollback trigger?
+  objectives:
+  - 1
+- id: ai.llmops.traces-with-spans
+  subtopic: 'Observability: traces, not logs'
+  kind: mechanism
+  claim: A trace is one tree per request with a span per step (router, retrieval, tool and model calls) holding inputs, outputs, timings, tokens and cost.
+  prompt: What is a trace and a span?
+  objectives:
+  - 2
+  requires:
+  - ai.agents.trace-every-step
+- id: ai.llmops.otel-genai-conventions
+  subtopic: 'Observability: traces, not logs'
+  kind: fact
+  claim: The OpenTelemetry GenAI semantic conventions standardise span attributes such as gen_ai.request.model and gen_ai.usage.input_tokens.
+  prompt: What standardises LLM trace attributes?
+  objectives:
+  - 2
+- id: ai.llmops.redact-and-retain
+  subtopic: 'Observability: traces, not logs'
+  kind: principle
+  claim: Redact PII before storing traces and set retention limits, as prompts and outputs hold some of the most sensitive data.
+  prompt: What must happen to prompts and outputs before storing traces?
+  objectives:
+  - 2
+  requires:
+  - ai.guardrails.limit-sensitive-logging
+- id: ai.llmops.error-budget-arithmetic
+  subtopic: SLOs and error budgets
+  kind: procedure
+  claim: 'Error budget = (1 − SLO) × window: 99.5% over 30 days allows 216 minutes; 99.9% allows 43.2.'
+  prompt: How do you compute an error budget?
+  objectives:
+  - 3
+- id: ai.llmops.quality-as-sli
+  subtopic: SLOs and error budgets
+  kind: principle
+  claim: Track the pass rate of validated judges on sampled traffic as a service level indicator, since latency and availability can be perfect while quality falls.
+  prompt: Why add quality as a service level indicator?
+  objectives:
+  - 3
+  requires:
+  - ai.evals-practice.validate-judge-on-held-out
+- id: ai.llmops.three-kinds-of-drift
+  subtopic: Drift
+  kind: fact
+  claim: Drift comes from inputs (new topics), data (stale retrieval sources) and models (provider updates behind unpinned aliases).
+  prompt: What kinds of drift affect an AI feature?
+  objectives:
+  - 3
+- id: ai.llmops.daily-canary-eval
+  subtopic: Drift
+  kind: procedure
+  claim: Pin versions and run a small daily eval against production configurations so silent model changes show up on a chart.
+  prompt: How do you detect a provider silently changing a model?
+  objectives:
+  - 3
+  requires:
+  - ai.prompting.pin-model-versions
+items:
+  llmops-check-1-v2:
+  - ai.llmops.release-is-configuration
+  llmops-check-2-v2:
+  - ai.llmops.shadow-traffic
+  llmops-check-3-v2:
+  - ai.llmops.error-budget-arithmetic
+  llmops-fire-1-v2:
+  - ai.llmops.traces-with-spans
+  llmops-fire-2-v2:
+  - ai.llmops.daily-canary-eval
+  llmops-fire-3-v2:
+  - ai.llmops.rollback-triggers
+  llmops-fire-4-v2:
+  - ai.llmops.redact-and-retain
+  llmops:b1:
+  - ai.llmops.release-path-stages
+  llmops:b3:
+  - ai.llmops.rollback-triggers
+  llmops:b5:
+  - ai.llmops.error-budget-arithmetic
+  llmops:b7:
+  - ai.llmops.release-is-configuration
+  - ai.llmops.release-path-stages
+  - ai.llmops.rollback-triggers

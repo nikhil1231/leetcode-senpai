@@ -1,0 +1,137 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: fine-tuning
+source_hash: 688c813273d21161
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.fine-tuning.sft-quality-over-quantity
+  subtopic: What fine-tuning is for
+  kind: principle
+  claim: Supervised fine-tuning on hundreds to a few thousand high-quality input and output pairs teaches format, style or a narrow task; sloppy examples do harm.
+  prompt: How much and what kind of data does supervised fine-tuning need?
+  objectives:
+  - 0
+  requires:
+  - ai.rag.finetune-vs-rag
+- id: ai.fine-tuning.preference-tuning-dpo
+  subtopic: What fine-tuning is for
+  kind: mechanism
+  claim: Preference tuning learns from better and worse answers; RLHF trains a reward model, while DPO learns from the pairs directly.
+  prompt: How do RLHF and DPO differ?
+  objectives:
+  - 0
+- id: ai.fine-tuning.verifiable-reward-tuning
+  subtopic: What fine-tuning is for
+  kind: mechanism
+  claim: Reinforcement fine-tuning with verifiable rewards trains on the model's own attempts scored by code, such as passing tests or matching answers.
+  prompt: What is reinforcement fine-tuning with verifiable rewards?
+  objectives:
+  - 0
+- id: ai.fine-tuning.full-ft-16-bytes-per-param
+  subtopic: Full fine-tuning and its memory bill
+  kind: fact
+  claim: 'Full fine-tuning with mixed precision and Adam needs about 16 bytes per parameter before activations: 128 GB for an 8B model.'
+  prompt: How much memory does full fine-tuning need per parameter?
+  objectives:
+  - 1
+- id: ai.fine-tuning.lora-low-rank-adapters
+  subtopic: LoRA and QLoRA
+  kind: mechanism
+  claim: LoRA freezes the base weights and trains two thin matrices beside chosen weight matrices; rank 16 on a 4,096 × 4,096 matrix adds about 0.78% of its parameters.
+  prompt: How does LoRA work, and how small is it?
+  objectives:
+  - 1
+- id: ai.fine-tuning.qlora-4bit-base
+  subtopic: LoRA and QLoRA
+  kind: mechanism
+  claim: QLoRA trains LoRA adapters on a 4-bit frozen base, fitting 7 to 8B models on a 24 GB card; the paper tuned 65B on one 48 GB GPU.
+  prompt: What does QLoRA add to LoRA?
+  objectives:
+  - 1
+  requires:
+  - ai.fine-tuning.lora-low-rank-adapters
+  - ai.serving.quantisation-tradeoff
+- id: ai.fine-tuning.lora-rank-tradeoff
+  subtopic: LoRA and QLoRA
+  kind: tradeoff
+  claim: Higher LoRA ranks can learn more but cost more and overfit small datasets; 8 to 64 is typical.
+  prompt: What does LoRA rank trade off?
+  objectives:
+  - 1
+  requires:
+  - ai.fine-tuning.lora-low-rank-adapters
+- id: ai.fine-tuning.data-parallel-all-reduce
+  subtopic: Training across many GPUs
+  kind: mechanism
+  claim: Data parallelism keeps a full copy per GPU, trains on different batch slices and averages gradients with an all-reduce each step.
+  prompt: How does data parallelism train across GPUs?
+  objectives:
+  - 2
+- id: ai.fine-tuning.fsdp-zero-sharding
+  subtopic: Training across many GPUs
+  kind: mechanism
+  claim: FSDP and ZeRO shard weights, gradients and optimiser state across GPUs and gather each layer only while computing it.
+  prompt: How do FSDP and ZeRO reduce memory per GPU?
+  objectives:
+  - 2
+  requires:
+  - ai.fine-tuning.data-parallel-all-reduce
+  - ai.fine-tuning.full-ft-16-bytes-per-param
+- id: ai.fine-tuning.checkpoint-regularly
+  subtopic: Training across many GPUs
+  kind: principle
+  claim: Checkpoint model and optimiser state regularly, because failures and preemptions during multi-day runs are expected.
+  prompt: Why checkpoint training runs?
+  objectives:
+  - 2
+- id: ai.fine-tuning.multi-lora-serving
+  subtopic: Serving fine-tunes
+  kind: mechanism
+  claim: Multi-LoRA serving keeps one base model in memory and applies a per-request adapter, so many fine-tunes share one deployment.
+  prompt: How can many fine-tunes be served cheaply?
+  objectives:
+  - 3
+  requires:
+  - ai.fine-tuning.lora-low-rank-adapters
+- id: ai.fine-tuning.eval-against-base-and-regressions
+  subtopic: Evaluate against the base
+  kind: procedure
+  claim: A fine-tune must beat the well-prompted base model on your evals and be checked for catastrophic forgetting, safety regressions and overfitting.
+  prompt: How do you evaluate a fine-tune?
+  objectives:
+  - 3
+  requires:
+  - ai.evals.always-have-baseline
+items:
+  fine-tuning-check-1-v2:
+  - ai.fine-tuning.sft-quality-over-quantity
+  fine-tuning-check-2-v2:
+  - ai.fine-tuning.preference-tuning-dpo
+  fine-tuning-check-3-v2:
+  - ai.fine-tuning.fsdp-zero-sharding
+  fine-tuning-check-4-v2:
+  - ai.fine-tuning.full-ft-16-bytes-per-param
+  fine-tuning-fire-1-v2:
+  - ai.fine-tuning.multi-lora-serving
+  fine-tuning-fire-2-v2:
+  - ai.fine-tuning.checkpoint-regularly
+  fine-tuning-fire-3-v2:
+  - ai.fine-tuning.eval-against-base-and-regressions
+  fine-tuning:b1:
+  - ai.fine-tuning.full-ft-16-bytes-per-param
+  fine-tuning:b3:
+  - ai.fine-tuning.lora-low-rank-adapters
+  fine-tuning:b5:
+  - ai.fine-tuning.data-parallel-all-reduce
+  - ai.fine-tuning.fsdp-zero-sharding
+  - ai.fine-tuning.checkpoint-regularly
+  fine-tuning:b7:
+  - ai.fine-tuning.sft-quality-over-quantity
+  - ai.fine-tuning.eval-against-base-and-regressions
+  - ai.fine-tuning.lora-low-rank-adapters

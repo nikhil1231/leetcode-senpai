@@ -1,0 +1,175 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: inference-engines
+source_hash: 2e675a398635339a
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.inference-engines.ttft-tpot-definitions
+  subtopic: The numbers engines are judged by
+  kind: fact
+  claim: TTFT is queueing plus prefill until the first token; TPOT (or ITL) is the gap between later tokens, with 30 to 50 ms feeling like fast reading.
+  prompt: What are TTFT and TPOT?
+  objectives:
+  - 0
+- id: ai.inference-engines.end-to-end-latency-formula
+  subtopic: The numbers engines are judged by
+  kind: procedure
+  claim: End-to-end latency ≈ TTFT + TPOT × (output tokens − 1); 0.4 s + 40 ms × 300 is 12.4 s.
+  prompt: How do you estimate a request's end-to-end latency?
+  objectives:
+  - 0
+  requires:
+  - ai.llm-basics.latency-formula
+  - ai.inference-engines.ttft-tpot-definitions
+- id: ai.inference-engines.goodput
+  subtopic: The numbers engines are judged by
+  kind: fact
+  claim: Goodput counts only throughput from requests that met their latency targets; bigger batches can raise throughput and lower goodput.
+  prompt: What does goodput measure?
+  objectives:
+  - 0
+  requires:
+  - ai.inference-engines.ttft-tpot-definitions
+- id: ai.inference-engines.continuous-batching
+  subtopic: Continuous batching
+  kind: mechanism
+  claim: Continuous (iteration-level) batching reschedules every decode step, so finished requests leave and new ones join without waiting for the batch.
+  prompt: What is continuous batching?
+  objectives:
+  - 1
+  same_as: ai.serving.continuous-batching
+- id: ai.inference-engines.paged-attention
+  subtopic: 'PagedAttention: the KV cache in pages'
+  kind: mechanism
+  claim: PagedAttention stores the KV cache in small fixed blocks mapped per request, like virtual memory pages, cutting waste to a few percent and allowing shared prefixes.
+  prompt: How does PagedAttention fit more requests on a GPU?
+  objectives:
+  - 1
+  requires:
+  - ai.gpu-onramp.kv-cache-per-conversation
+- id: ai.inference-engines.preemption-signals-overload
+  subtopic: 'PagedAttention: the KV cache in pages'
+  kind: principle
+  claim: When KV memory runs out, the engine preempts requests and recomputes or swaps them later; frequent preemption means the batch is too big.
+  prompt: What does frequent preemption in a serving engine indicate?
+  objectives:
+  - 1
+  - 3
+- id: ai.inference-engines.prefix-caching
+  subtopic: Prefix caching and chunked prefill
+  kind: mechanism
+  claim: Prefix caching keeps KV blocks for shared prompt prefixes and skips their prefill; routing same-prefix requests to the same replica raises hits.
+  prompt: What does prefix caching save, and how do you make it hit?
+  objectives:
+  - 1
+  requires:
+  - ai.llm-basics.prompt-caching
+- id: ai.inference-engines.chunked-prefill
+  subtopic: Prefix caching and chunked prefill
+  kind: mechanism
+  claim: Chunked prefill splits long prompts into chunks interleaved with decode steps, so other users' streaming doesn't stall.
+  prompt: What problem does chunked prefill solve?
+  objectives:
+  - 1
+- id: ai.inference-engines.disaggregated-prefill-decode
+  subtopic: Prefix caching and chunked prefill
+  kind: tradeoff
+  claim: Some deployments run prefill and decode on separate GPU pools and transfer the KV cache, sizing each for its compute- or memory-bound job.
+  prompt: Why separate prefill and decode onto different GPUs?
+  objectives:
+  - 1
+- id: ai.inference-engines.speculative-decoding
+  subtopic: Speculative decoding
+  kind: mechanism
+  claim: Speculative decoding has a draft model propose several tokens that the big model verifies in one pass, keeping its exact output distribution.
+  prompt: How does speculative decoding speed up generation without changing output?
+  objectives:
+  - 2
+  requires:
+  - ai.gpu-onramp.decode-memory-bound
+- id: ai.inference-engines.speculative-needs-spare-compute
+  subtopic: Speculative decoding
+  kind: tradeoff
+  claim: Speculative decoding helps most at small batch sizes with predictable text, and little or not at all when big batches leave no spare arithmetic.
+  prompt: When does speculative decoding help least?
+  objectives:
+  - 2
+- id: ai.inference-engines.tensor-vs-pipeline-parallel
+  subtopic: Making big models fit
+  kind: tradeoff
+  claim: Tensor parallelism splits each layer across GPUs needing fast links within a machine; pipeline parallelism puts layers on different GPUs or machines with less communication but more latency.
+  prompt: How do tensor and pipeline parallelism differ?
+  objectives:
+  - 2
+- id: ai.inference-engines.quantisation-formats
+  subtopic: Making big models fit
+  kind: fact
+  claim: Common serving formats are FP8 (near-lossless on recent GPUs), INT8, 4-bit weight-only AWQ and GPTQ, and llama.cpp's GGUF; the KV cache can be quantised too.
+  prompt: What quantisation formats do serving engines use?
+  objectives:
+  - 2
+- id: ai.inference-engines.kv-bytes-per-token-formula
+  subtopic: Sizing the KV cache
+  kind: procedure
+  claim: KV bytes per token = 2 × layers × KV heads × head dimension × bytes per number; Llama 3 70B in 16-bit is about 320 KB per token.
+  prompt: How do you compute the KV cache size per token?
+  objectives:
+  - 3
+  requires:
+  - ai.gpu-onramp.kv-cache-per-conversation
+- id: ai.inference-engines.concurrency-from-kv-memory
+  subtopic: Sizing the KV cache
+  kind: procedure
+  claim: 'Concurrent requests ≈ free KV memory ÷ (bytes per token × tokens per request): 80 GB at 320 KB per token holds about 60 requests of 4,096 tokens.'
+  prompt: How many requests can a deployment hold at once?
+  objectives:
+  - 3
+  requires:
+  - ai.inference-engines.kv-bytes-per-token-formula
+- id: ai.inference-engines.serving-engines-landscape
+  subtopic: The engines
+  kind: fact
+  claim: vLLM created PagedAttention and is the most widely used open engine; SGLang excels at prefix caching; TensorRT-LLM is NVIDIA's compiled engine; llama.cpp and Ollama run models locally.
+  prompt: What are the main LLM serving engines and their strengths?
+  objectives:
+  - 1
+items:
+  inference-engines-check-1-v2:
+  - ai.inference-engines.goodput
+  inference-engines-check-2-v2:
+  - ai.inference-engines.paged-attention
+  inference-engines-check-3-v2:
+  - ai.inference-engines.speculative-decoding
+  inference-engines-check-4-v2:
+  - ai.inference-engines.kv-bytes-per-token-formula
+  inference-engines-fire-1-v2:
+  - ai.inference-engines.tensor-vs-pipeline-parallel
+  inference-engines-fire-2-v2:
+  - ai.inference-engines.prefix-caching
+  inference-engines-fire-3-v2:
+  - ai.inference-engines.chunked-prefill
+  inference-engines-fire-4-v2:
+  - ai.inference-engines.continuous-batching
+  inference-engines:b1:
+  - ai.inference-engines.end-to-end-latency-formula
+  - ai.inference-engines.ttft-tpot-definitions
+  inference-engines:b3:
+  - ai.inference-engines.continuous-batching
+  - ai.inference-engines.paged-attention
+  - ai.inference-engines.prefix-caching
+  inference-engines:b5:
+  - ai.inference-engines.speculative-needs-spare-compute
+  - ai.inference-engines.speculative-decoding
+  inference-engines:b7:
+  - ai.inference-engines.concurrency-from-kv-memory
+  - ai.inference-engines.kv-bytes-per-token-formula
+  inference-engines:b9:
+  - ai.inference-engines.ttft-tpot-definitions
+  - ai.inference-engines.goodput
+  - ai.inference-engines.preemption-signals-overload

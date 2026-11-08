@@ -184,7 +184,7 @@ def test_vague_prompts():
 def test_ai_overview_maps_the_interview_loop():
     o = courses.overview('ai', [], 0, {'ai-pair-rooms': {'title': 'Rooms', 'minutes': 45, 'status': 'solid'},
                                        'ai-pair-chunker': {'title': 'Chunker', 'minutes': 45, 'status': 'unseen'}})
-    assert o['course'][0]['id'] == 'assisted' and o['next_lesson']['id'] == 'ai-coding-round'
+    assert o['course'][0]['id'] == 'models' and o['next_lesson']['id'] == 'llm-basics'
     first = o['rounds'][0]
     assert first['id'] == 'assisted' and [e['id'] for e in first['exercises']] == ['ai-pair-rooms', 'ai-pair-chunker']
     assert first['held'] == 1 and first['items'] > 2
@@ -192,6 +192,32 @@ def test_ai_overview_maps_the_interview_loop():
     assert known <= set(courses.lessons('ai'))
     assert {e for spec in courses.COURSES['ai']['rounds'] for e in spec[4]} <= set(practical.EXERCISES)
     assert courses.overview('fundamentals', [], 0)['rounds'] == []
+    assert not {k for spec in courses.COURSES['ai']['rounds'] for k in spec[3]} & courses.deep('ai')
+
+
+def lesson_record(lesson_id, at, checked=True):
+    return {'kind': 'lesson', 'lesson_id': lesson_id, 'opened_at': at, 'checked_at': at if checked else None,
+            'activities': {}, 'at': at}
+
+
+def test_deep_dive_lessons_wait_until_opened():
+    deep = courses.deep('ai')
+    assert deep and courses.asleep('ai', []) == deep
+    core = [k for k in courses.lessons('ai') if k not in deep]
+    all_core_checked = [lesson_record(k, DAY) for k in core]
+    o = courses.overview('ai', all_core_checked, 2 * DAY)
+    assert o['next_lesson'] is None                      # the deep-dive is never picked for you
+    assert [c['id'] for c in o['course'] if c['deep']] == ['inference', 'platform']
+    assert o['total'] == sum(1 for i in courses.items('ai') if i['topic'] not in deep)
+    q = courses.next_question('ai', [], 0)
+    assert q['lesson_id'] not in deep
+    assert courses.next_question('ai', [], 0, lesson='gpu-onramp')['lesson_id'] == 'gpu-onramp'
+    assert courses.placement_question('ai', [])['lesson_id'] not in deep
+    assert courses.placement_question('ai', [], category='inference')['lesson_id'] == 'gpu-onramp'
+    opened = [lesson_record('gpu-onramp', DAY, checked=False)]
+    assert 'gpu-onramp' not in courses.asleep('ai', opened)
+    o = courses.overview('ai', opened, 2 * DAY)
+    assert o['total'] == sum(1 for i in courses.items('ai') if i['topic'] not in deep or i['topic'] == 'gpu-onramp')
 
 
 # ---- HTTP ------------------------------------------------------------------------------

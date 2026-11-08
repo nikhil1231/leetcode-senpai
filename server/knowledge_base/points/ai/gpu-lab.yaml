@@ -1,0 +1,109 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: gpu-lab
+source_hash: 7ce90d05408b4e75
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.gpu-lab.vllm-needs-linux
+  subtopic: Set-up (about 10 minutes)
+  kind: fact
+  claim: vLLM runs on Linux, which on Windows means WSL2 with the CUDA driver for WSL; Ollama and llama.cpp run natively on Windows and macOS.
+  prompt: What do you need to run vLLM on a Windows machine?
+  objectives:
+  - 0
+- id: ai.gpu-lab.predict-ceiling-before-measuring
+  subtopic: 'Step 1: predict, then measure decode'
+  kind: procedure
+  claim: Predict the decode ceiling as bandwidth ÷ model file size before measuring (448 GB/s ÷ 4.9 GB ≈ 91 tokens/s on an RTX 3070) and expect 60 to 75% of it.
+  prompt: How do you predict a local model's decode speed?
+  objectives:
+  - 0
+  requires:
+  - ai.gpu-onramp.decode-ceiling-formula
+- id: ai.gpu-lab.llama-bench-pp-tg
+  subtopic: 'Step 1: predict, then measure decode'
+  kind: fact
+  claim: llama-bench reports pp512 (prompt processing speed) and tg128 (text generation speed); -ngl 99 puts every layer on the GPU.
+  prompt: What do pp512, tg128 and -ngl mean in llama.cpp?
+  objectives:
+  - 1
+- id: ai.gpu-lab.prefill-faster-than-decode-measured
+  subtopic: 'Step 1: predict, then measure decode'
+  kind: principle
+  claim: Measured prompt processing runs many times faster than generation, because prefill is compute-bound and parallel.
+  prompt: Why is pp much higher than tg in a benchmark?
+  objectives:
+  - 1
+  requires:
+  - ai.gpu-onramp.prefill-compute-bound
+- id: ai.gpu-lab.ttft-grows-with-prompt
+  subtopic: 'Step 2: prompt length and time to first token'
+  kind: principle
+  claim: Time to first token grows with prompt length, while decode speed barely changes at first.
+  prompt: How does a longer prompt affect time to first token and decode speed?
+  objectives:
+  - 1
+- id: ai.gpu-lab.offload-cliff
+  subtopic: 'Step 3: the model that doesn''t fit'
+  kind: mechanism
+  claim: A model that doesn't fit in VRAM has layers offloaded to much slower CPU memory, and decode collapses to a fraction of the speed.
+  prompt: What happens when a model doesn't fit in GPU memory?
+  objectives:
+  - 2
+  requires:
+  - ai.gpu-onramp.weights-must-fit-in-vram
+- id: ai.gpu-lab.context-reserves-kv-memory
+  subtopic: 'Step 4: the KV cache eats memory'
+  kind: mechanism
+  claim: Raising the server's context size reserves KV cache memory up front, so GPU memory jumps before any prompt is sent.
+  prompt: Why does GPU memory rise when you increase the context size?
+  objectives:
+  - 2
+  requires:
+  - ai.gpu-onramp.kv-cache-per-conversation
+- id: ai.gpu-lab.concurrency-throughput-tradeoff
+  subtopic: 'Step 5: concurrency (optional, 15 minutes)'
+  kind: principle
+  claim: With more concurrent requests, total throughput rises while each user's tokens per second falls.
+  prompt: What happens to throughput and per-user speed as concurrency rises?
+  objectives:
+  - 3
+  requires:
+  - ai.gpu-onramp.batching-shares-weight-reads
+- id: ai.gpu-lab.lab-story-structure
+  subtopic: Tell it as a story
+  kind: procedure
+  claim: Tell a serving story with the hardware and model, the bandwidth prediction against measured prefill and decode, what broke speed (offload, KV cache), and what batching did.
+  prompt: What goes into a story about serving a model yourself?
+  objectives:
+  - 3
+items:
+  gpu-lab-check-1-v2:
+  - ai.gpu-lab.llama-bench-pp-tg
+  gpu-lab-check-2-v2:
+  - ai.gpu-lab.offload-cliff
+  gpu-lab-check-3-v2:
+  - ai.gpu-lab.predict-ceiling-before-measuring
+  gpu-lab-fire-1-v2:
+  - ai.gpu-lab.context-reserves-kv-memory
+  gpu-lab-fire-2-v2:
+  - ai.gpu-lab.concurrency-throughput-tradeoff
+  gpu-lab-fire-3-v2:
+  - ai.gpu-lab.llama-bench-pp-tg
+  gpu-lab:b1:
+  - ai.gpu-lab.predict-ceiling-before-measuring
+  gpu-lab:b3:
+  - ai.gpu-lab.offload-cliff
+  gpu-lab:b5:
+  - ai.gpu-lab.offload-cliff
+  - ai.gpu-lab.concurrency-throughput-tradeoff
+  - ai.gpu-lab.ttft-grows-with-prompt
+  gpu-lab:b7:
+  - ai.gpu-lab.lab-story-structure
+  - ai.gpu-lab.prefill-faster-than-decode-measured

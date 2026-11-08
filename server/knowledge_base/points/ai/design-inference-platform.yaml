@@ -1,0 +1,119 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: design-inference-platform
+source_hash: 57f28dd8112de609
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.design-inference-platform.ask-why-self-host
+  subtopic: 1. Clarify
+  kind: principle
+  claim: 'Start an inference platform design by asking why self-host: data residency, team fine-tunes or cost at volume, or else rent tokens.'
+  prompt: What should you ask first when designing an inference platform?
+  objectives:
+  - 0
+  - 3
+- id: ai.design-inference-platform.pool-by-model-not-team
+  subtopic: 2. Architecture
+  kind: tradeoff
+  claim: Pool GPUs by model shared across teams for utilisation, with isolation from quotas, priorities and per-tenant limits, and dedicated pools only when required.
+  prompt: Why pool GPUs by model rather than by team?
+  objectives:
+  - 1
+  - 3
+- id: ai.design-inference-platform.model-aware-routing
+  subtopic: 2. Architecture
+  kind: mechanism
+  claim: A model router picks replicas by prefix-cache affinity, load (queue depth, KV usage) and loaded adapter, not round-robin.
+  prompt: How should an inference router choose a replica?
+  objectives:
+  - 1
+  requires:
+  - ai.inference-engines.prefix-caching
+- id: ai.design-inference-platform.adapters-on-shared-bases
+  subtopic: 2. Architecture
+  kind: principle
+  claim: Serve team fine-tunes as LoRA adapters on shared base models instead of full copies.
+  prompt: How should a platform serve many teams' fine-tunes?
+  objectives:
+  - 1
+  requires:
+  - ai.fine-tuning.multi-lora-serving
+- id: ai.design-inference-platform.batch-fills-idle-capacity
+  subtopic: 2. Architecture
+  kind: mechanism
+  claim: A queue admits low-priority, checkpointing batch work onto idle capacity and preempts it when interactive load rises.
+  prompt: How does a platform keep GPU utilisation high without hurting latency?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - ai.gpu-kubernetes.team-quotas-and-preemption
+- id: ai.design-inference-platform.policy-decides-overflow
+  subtopic: 2. Architecture
+  kind: principle
+  claim: Overflow to an external API only for non-confidential traffic; confidential traffic queues with back-pressure.
+  prompt: Where does confidential traffic go when pools are full?
+  objectives:
+  - 1
+- id: ai.design-inference-platform.gpu-capacity-arithmetic
+  subtopic: 3. Capacity, operations and cost
+  kind: procedure
+  claim: 'GPUs = peak output tokens/s ÷ per-replica tokens/s at the latency target × headroom, rounded up to replicas × GPUs per replica: 30,000 ÷ 2,000 × 1.3 → 20 replicas, 40 GPUs.'
+  prompt: How do you size a model pool's GPUs?
+  objectives:
+  - 2
+  requires:
+  - ai.inference-engines.goodput
+- id: ai.design-inference-platform.size-from-goodput
+  subtopic: 3. Capacity, operations and cost
+  kind: principle
+  claim: Per-replica capacity must come from load tests at the latency target (goodput), not the engine's maximum throughput.
+  prompt: Where does the per-replica throughput figure come from?
+  objectives:
+  - 2
+  requires:
+  - ai.inference-engines.goodput
+- id: ai.design-inference-platform.honest-self-host-cost
+  subtopic: 3. Capacity, operations and cost
+  kind: tradeoff
+  claim: 'Compare self-hosting with renting tokens honestly: GPU-hours at real utilisation plus the team''s time against a provider''s per-token price on equal evals.'
+  prompt: When should a platform stop self-hosting a model?
+  objectives:
+  - 3
+  requires:
+  - ai.choosing-models.api-vs-open-weights
+- id: ai.design-inference-platform.migrate-by-alias
+  subtopic: 4. Rollout
+  kind: procedure
+  claim: Roll out one model to a few teams first, then add pools, adapters and the batch tier, migrating teams alias by alias so each switch can roll back.
+  prompt: How do you roll out an inference platform?
+  objectives:
+  - 1
+items:
+  design-inference-platform-check-1-v2:
+  - ai.design-inference-platform.pool-by-model-not-team
+  design-inference-platform-check-2-v2:
+  - ai.design-inference-platform.size-from-goodput
+  design-inference-platform-check-3-v2:
+  - ai.design-inference-platform.adapters-on-shared-bases
+  design-inference-platform-fire-1-v2:
+  - ai.design-inference-platform.model-aware-routing
+  design-inference-platform-fire-2-v2:
+  - ai.design-inference-platform.policy-decides-overflow
+  design-inference-platform-fire-3-v2:
+  - ai.design-inference-platform.batch-fills-idle-capacity
+  design-inference-platform-fire-4-v2:
+  - ai.design-inference-platform.gpu-capacity-arithmetic
+  design-inference-platform:b3:
+  - ai.design-inference-platform.gpu-capacity-arithmetic
+  - ai.design-inference-platform.size-from-goodput
+  design-inference-platform:b6:
+  - ai.design-inference-platform.pool-by-model-not-team
+  - ai.design-inference-platform.model-aware-routing
+  - ai.design-inference-platform.batch-fills-idle-capacity

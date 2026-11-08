@@ -87,7 +87,7 @@ def views(catalog, states, seen, misconceptions, now, points=None):
         if m.get('status') == 'open':
             open_by.setdefault(m['point'], []).append(m)
     return [view(p, states.get(p['id']), seen.get(p['id']), open_by.get(p['id'], []), now)
-            for p in (cat.active(catalog) if points is None else points)]
+            for p in (cat.awake(catalog, states, seen) if points is None else points)]
 
 
 def _node(vs):
@@ -139,7 +139,7 @@ def pick(catalog, states, seen, misconceptions, now, n=10, mode='review', sectio
     open_points = {m['point'] for m in misconceptions if m.get('status') == 'open'}
     exclude = set(exclude)
     ranked = []
-    for p in cat.active(catalog):
+    for p in (cat.active(catalog) if lesson else cat.awake(catalog, states, seen)):
         if (section and p['section'] != section) or (category and p['category'] != category) \
                 or (lesson and p['lesson'] != lesson) or (kinds and p['kind'] not in kinds) or p['id'] in exclude:
             continue

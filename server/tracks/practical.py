@@ -29,9 +29,11 @@ CATEGORIES = [
     ('debug', 'Debug', 'Failing tests and a bug report: find the root causes and fix them.'),
     ('review', 'Review', 'Review a pull request the way a senior engineer would.'),
     ('assisted', 'AI-assisted', 'Fix, extend and scale unfamiliar code with an AI pair, marked on how you drive it.'),
+    ('llm', 'LLM features', 'Build the code around a model, against a scripted fake: validated output, hybrid retrieval, an eval harness, an agent loop.'),
 ]
 ORDER = ['lru-ttl-cache', 'rate-limiter', 'kv-transactions', 'order-pricing', 'retry-backoff', 'log-stats',
-         'review-webhook', 'review-cache', 'ai-pair-rooms', 'ai-pair-chunker']
+         'review-webhook', 'review-cache', 'ai-pair-rooms', 'ai-pair-chunker',
+         'llm-structured-output', 'llm-hybrid-retrieval', 'llm-eval-harness', 'llm-agent-loop']
 PASS_RUBRIC = 0.75
 MAX_FILE = 60_000
 MAX_CHAT = 80  # messages per attempt

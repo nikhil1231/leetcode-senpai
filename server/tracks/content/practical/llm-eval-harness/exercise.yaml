@@ -1,0 +1,40 @@
+id: llm-eval-harness
+title: 'LLM feature: an eval harness that catches regressions'
+category: llm
+minutes: 40
+level: core
+language: python
+brief: |
+  A ticket router labels support tickets with one of five queues. The team wants to ship prompt v2 because "it scores higher overall". Build the harness in `harness.py` that would tell them whether that's safe, using the data in `data.py`: 40 labelled cases, the outputs of prompt v1 and v2, and a judge's verdicts next to a support lead's labels.
+
+  Implement:
+
+  - `score(case, output)`: `True` when the output names the expected queue. Normalise case and surrounding whitespace, accept a `Queue:` prefix, and ignore a trailing full stop. Anything else, including a missing output (`None`), is a fail.
+  - `run(cases, outputs)` → a `Report` with the overall pass rate, a pass rate per category, and the ids of failing cases. A case with no output counts as a fail.
+  - `compare(base, new, max_drop=0.05)` → a dict with `regressed`: the categories whose pass rate fell by more than `max_drop`, sorted; and `newly_failing`: the case ids that pass in `base` but fail in `new`, sorted.
+  - `judge_rates(human, judge)` → `{"tpr": ..., "tnr": ...}`. Both map case ids to `"pass"` or `"fail"`. A *positive* is a failure: TPR is the share of human-labelled failures the judge also fails, and TNR the share of human-labelled passes it also passes. Use only ids both sides labelled. A rate with nothing to divide by is `None`.
+  - `corrected_fail_rate(flagged, tpr, tnr)`: the judge-corrected estimate (flagged + tnr − 1) / (tpr + tnr − 1), clamped to between 0 and 1. Return `None` if the judge is no better than chance (tpr + tnr ≤ 1).
+
+  Then answer for yourself: should v2 ship?
+files: [harness.py]
+readonly: [data.py, test_harness.py]
+tests: [test_harness.py]
+checks: [check_harness.py]
+rubric:
+  - Results are broken down per category, and the comparison is made per category, not only on the aggregate
+  - Missing outputs and odd formats are handled explicitly as fails, never as crashes or silent passes
+  - The judge is measured with TPR and TNR against human labels, not with accuracy
+  - The corrected rate refuses to answer for a judge no better than chance
+  - You can say, with numbers, whether v2 should ship and what you'd look at next
+hints:
+  - What happens to `output.strip()` when the output is `None`?
+  - Work out v1 and v2 per category before writing compare. Which category moved most?
+  - "TPR's denominator is the number of failures according to the human, not the judge."
+discussion: |
+  **Should v2 ship?** Overall it scores higher, 85% against 82.5%, but the `refunds` queue falls from 100% to 50%. Refund tickets routed to the wrong queue are exactly the ones that cost money and trust. Aggregates hide concentrated regressions, which is why every comparison is per category and why newly failing cases get read one by one.
+
+  **The judge**: accuracy would look fine because most cases pass. TPR (does it catch real failures?) and TNR (does it leave good outputs alone?) say whether its flags mean anything, and the corrected rate turns its raw flag rate into an estimate of the true one.
+
+  **What the hidden checks try**: a `None` output, a category present in only one report, a judge with no human-labelled failures to measure (TPR is `None`, not a crash or 0), a chance-level judge, and clamping.
+
+  **Follow-ups**: how many cases do you need to trust a 5-point drop in a category? Few per category here, so you'd read them and add more. How would this run in CI? On every prompt or model change, failing the build on a regression in any category, with the report posted on the pull request.

@@ -8,7 +8,7 @@
   const { esc, md, btn, when, wireActions } = T;
   const toast = (m, k) => window.H.toast?.(m, k);
   const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-  const CAT = { build: 'BUILD', extend: 'EXTEND', debug: 'DEBUG', review: 'REVIEW', assisted: 'AI-ASSISTED' };
+  const CAT = { build: 'BUILD', extend: 'EXTEND', debug: 'DEBUG', review: 'REVIEW', assisted: 'AI-ASSISTED', llm: 'LLM FEATURE' };
   const AREAS = [['approach', 'Approach', 'Read the code and reproduce the bug before you prompt.'],
     ['control', 'Control', 'Give the AI small, specific tasks. The design decisions stay yours.'],
     ['verification', 'Verification', 'Read every line it writes, and test the edges the visible tests miss.'],

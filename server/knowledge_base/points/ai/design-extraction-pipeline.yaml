@@ -1,0 +1,143 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: design-extraction-pipeline
+source_hash: 00271471e1fd6713
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.design-extraction-pipeline.must-be-exact-fields
+  subtopic: 1. Clarify
+  kind: procedure
+  claim: Clarify which extracted fields must be exact (amounts, bank details, invoice numbers) and which can be approximate, since that sets checking and review.
+  prompt: Which question about fields shapes an extraction design most?
+  objectives:
+  - 0
+- id: ai.design-extraction-pipeline.straight-through-processing
+  subtopic: 1. Clarify
+  kind: fact
+  claim: The headline metric is the straight-through processing rate (documents posted with no human touch) at an error rate the business signs off.
+  prompt: What's the headline metric for a document extraction pipeline?
+  objectives:
+  - 0
+  - 2
+- id: ai.design-extraction-pipeline.idempotent-by-content-hash
+  subtopic: 2. Architecture
+  kind: mechanism
+  claim: Store files and key jobs by content hash so retries and re-sent emails never create duplicates, and flag duplicate invoice numbers per supplier.
+  prompt: How does an extraction pipeline avoid processing a document twice?
+  objectives:
+  - 1
+  - 3
+- id: ai.design-extraction-pipeline.text-layer-before-vision
+  subtopic: 2. Architecture
+  kind: tradeoff
+  claim: Use a digital PDF's text layer when it exists (cheap and exact) and OCR or a vision model only for scans and photos.
+  prompt: When do you send page images to a model instead of text?
+  objectives:
+  - 1
+  - 3
+  requires:
+  - ai.rag.parsing-quality
+- id: ai.design-extraction-pipeline.extract-with-evidence
+  subtopic: 2. Architecture
+  kind: principle
+  claim: Ask for each extracted value with the source text it came from, so code can confirm it appears in the document and reviewers find it fast.
+  prompt: Why extract evidence alongside each value?
+  objectives:
+  - 1
+- id: ai.design-extraction-pipeline.validate-in-code
+  subtopic: 2. Architecture
+  kind: principle
+  claim: Validate extracted data in code (arithmetic, dates, checksums, master data, matching bank details) rather than asking the model to double-check.
+  prompt: Where should extracted values be validated?
+  objectives:
+  - 1
+  requires:
+  - ai.prompting.validate-in-code
+- id: ai.design-extraction-pipeline.route-by-risk-to-review
+  subtopic: 2. Architecture
+  kind: procedure
+  claim: Auto-post only documents that pass every rule; send failures, missing must-be-exact fields and unknown suppliers to a review queue with the failing check highlighted.
+  prompt: How does a pipeline decide what needs human review?
+  objectives:
+  - 1
+  requires:
+  - ai.design-extraction-pipeline.validate-in-code
+- id: ai.design-extraction-pipeline.bank-detail-changes-to-humans
+  subtopic: 2. Architecture
+  kind: principle
+  claim: A change of supplier bank details always goes to a person who verifies through a known contact, as it's a classic fraud pattern.
+  prompt: What happens when an invoice shows new bank details?
+  objectives:
+  - 1
+- id: ai.design-extraction-pipeline.history-as-labels
+  subtopic: 3. Quality, cost and operations
+  kind: principle
+  claim: Documents keyed by hand in the past are a free labelled eval set; measure accuracy per field, broken down by type and supplier.
+  prompt: Where do an extraction pipeline's first eval labels come from?
+  objectives:
+  - 2
+  requires:
+  - ai.evals.eval-input-sources
+- id: ai.design-extraction-pipeline.audit-auto-posted-sample
+  subtopic: 3. Quality, cost and operations
+  kind: procedure
+  claim: Audit a random sample of auto-posted documents regularly, because errors that pass validation are otherwise invisible.
+  prompt: Why review a sample of auto-posted documents?
+  objectives:
+  - 2
+- id: ai.design-extraction-pipeline.batch-api-for-pipelines
+  subtopic: 3. Quality, cost and operations
+  kind: tradeoff
+  claim: When results within hours are fine, use the batch API at about half price with a small model, escalating only failures to a larger one.
+  prompt: How do you cut the model cost of a batch extraction pipeline?
+  objectives:
+  - 3
+  requires:
+  - ai.serving.caching-and-batch-discounts
+- id: ai.design-extraction-pipeline.extraction-cost-arithmetic
+  subtopic: 3. Quality, cost and operations
+  kind: procedure
+  claim: Cost = documents × (pages × tokens per page × input price + output tokens × output price); 2M three-page documents on a small model is about $3,500 a month, $1,750 batched.
+  prompt: How do you estimate a monthly extraction bill?
+  objectives:
+  - 3
+  requires:
+  - ai.serving.cost-per-request-formula
+- id: ai.design-extraction-pipeline.shadow-then-safest-slice
+  subtopic: 4. Rollout
+  kind: procedure
+  claim: Roll out in shadow beside the manual team, then auto-post the safest slice (known suppliers, digital PDFs, all rules passing) and widen as measured accuracy allows.
+  prompt: How do you roll out an extraction pipeline?
+  objectives:
+  - 2
+items:
+  design-extraction-pipeline-check-1-v2:
+  - ai.design-extraction-pipeline.extract-with-evidence
+  design-extraction-pipeline-check-2-v2:
+  - ai.design-extraction-pipeline.straight-through-processing
+  design-extraction-pipeline-check-3-v2:
+  - ai.design-extraction-pipeline.idempotent-by-content-hash
+  design-extraction-pipeline-fire-1-v2:
+  - ai.design-extraction-pipeline.history-as-labels
+  design-extraction-pipeline-fire-2-v2:
+  - ai.design-extraction-pipeline.bank-detail-changes-to-humans
+  design-extraction-pipeline-fire-3-v2:
+  - ai.design-extraction-pipeline.batch-api-for-pipelines
+  design-extraction-pipeline-fire-4-v2:
+  - ai.design-extraction-pipeline.audit-auto-posted-sample
+  design-extraction-pipeline:b3:
+  - ai.design-extraction-pipeline.validate-in-code
+  - ai.design-extraction-pipeline.route-by-risk-to-review
+  design-extraction-pipeline:b5:
+  - ai.design-extraction-pipeline.extraction-cost-arithmetic
+  - ai.design-extraction-pipeline.batch-api-for-pipelines
+  design-extraction-pipeline:b8:
+  - ai.design-extraction-pipeline.route-by-risk-to-review
+  - ai.design-extraction-pipeline.validate-in-code
+  - ai.design-extraction-pipeline.audit-auto-posted-sample

@@ -1,0 +1,38 @@
+id: llm-structured-output
+title: 'LLM feature: validated structured output'
+category: llm
+minutes: 30
+level: core
+language: python
+brief: |
+  The invoice pipeline asks a model for JSON and trusts whatever comes back. Last week a reply wrapped in a code fence crashed the worker, "gbp" was posted as a currency, and an invoice whose line items didn't add up was paid. Make `extract_invoice(text, model)` in `extract.py` safe. `model` is a callable: `model(prompt) -> str`. Tests use the scripted fake in `fake_llm.py`, so no real model is called.
+
+  It must:
+
+  - put the document inside `<document>…</document>` tags in the prompt, labelled as data, not instructions;
+  - pull the JSON object out of the reply, even inside a ```json fence or after a line of prose;
+  - validate and normalise: `supplier` and `invoice_number` are non-empty strings; `currency` is one of GBP, EUR or USD after trimming and upper-casing; `total` is a positive number (a string such as `"1,240.50"` is accepted and converted; booleans are not numbers); `line_items` is a non-empty list of `{description, amount}`, and the amounts sum to the total within 0.01;
+  - on any failure, **retry once** with a repair prompt that includes the validation errors, so the model knows what to fix;
+  - if the second reply also fails, return status `"review"` with the errors and no data. Never fill in defaults.
+
+  It returns a `Result(status, data, errors, attempts)`. Run the tests, then think about which inputs the tests don't try.
+files: [extract.py]
+readonly: [fake_llm.py, test_extract.py]
+tests: [test_extract.py]
+checks: [check_extract.py]
+rubric:
+  - The model's reply is treated as untrusted text and validated in code, not trusted because the prompt asked for JSON
+  - Validation errors name the field and the problem, and are sent back in a single repair attempt
+  - After the repair fails, the result goes to review with no guessed or default values
+  - Normalisation (currency case, numeric strings) is explicit and narrow, not a lenient parse of anything
+  - You added at least one test of your own for an input the given tests don't cover
+hints:
+  - "What does `isinstance(True, int)` return in Python?"
+  - Find the first `{` and the last `}` in the reply before calling `json.loads`.
+  - Collect every error before deciding; the repair prompt is more useful with all of them.
+discussion: |
+  **The shape of the fix**: build the prompt with the document delimited as data, call the model, extract the JSON object, validate into a list of errors, and either return `ok` or repair once. A bounded repair (one retry, with the errors) fixes most format slips cheaply. Unbounded retries burn money, and a model that fails twice on the same document is telling you the document needs a person.
+
+  **What the hidden checks try**: a boolean total (`True` passes `isinstance(x, int)`), a reply with no JSON at all, a missing field named in the errors, a repair that succeeds (status `ok`, two attempts), and a guarantee that the model is never called a third time.
+
+  **Follow-ups an interviewer might ask**: why not use the provider's structured output mode? You should where it exists, because constrained decoding removes most format failures, but you still validate business rules (the arithmetic, the currency list) in code. Where do failed documents go? A review queue, with the errors shown to the reviewer, and the case added to the eval set. Why not ask the model to "double-check the total"? Because code can check arithmetic exactly, and the model can only promise to.

@@ -1,0 +1,124 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: ai-product
+source_hash: fb2435d98fcd1d60
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.ai-product.scope-the-job-first
+  subtopic: Scope before you design
+  kind: procedure
+  claim: Before designing an AI feature, establish the job, today's way and baseline, the cost of a wrong answer, the data and its access rules, and one measurable success metric.
+  prompt: What do you find out before designing an AI feature?
+  objectives:
+  - 0
+- id: ai.ai-product.baseline-is-first-eval-set
+  subtopic: Scope before you design
+  kind: principle
+  claim: The current manual process is your baseline and often your first eval set.
+  prompt: Why ask how the task is done today?
+  objectives:
+  - 0
+- id: ai.ai-product.check-ai-is-needed
+  subtopic: Scope before you design
+  kind: principle
+  claim: If the answer is a lookup, a filter or a fixed rule, ship that instead of an LLM feature; it's cheaper, faster and always right.
+  prompt: When should you not build an LLM feature?
+  objectives:
+  - 0
+- id: ai.ai-product.autonomy-levels
+  subtopic: Autonomy follows the cost of a mistake
+  kind: fact
+  claim: Autonomy levels run from suggest, to draft for approval, to act with undo, to act alone.
+  prompt: What are the levels of autonomy for an AI feature?
+  objectives:
+  - 1
+- id: ai.ai-product.autonomy-from-error-cost
+  subtopic: Autonomy follows the cost of a mistake
+  kind: principle
+  claim: Pick the lowest autonomy that delivers the value, set by the cost and reversibility of a mistake, and raise it as evals and real use earn trust.
+  prompt: How do you choose how much autonomy an AI feature gets?
+  objectives:
+  - 1
+  requires:
+  - ai.ai-product.autonomy-levels
+- id: ai.ai-product.stream-and-show-progress
+  subtopic: Design for latency and for being wrong
+  kind: procedure
+  claim: Stream text so first words appear within a second, show progress for agents, and move tasks over about 30 seconds to background jobs that notify.
+  prompt: How do you design for AI latency?
+  objectives:
+  - 2
+  requires:
+  - ai.serving.streaming-perceived-latency
+- id: ai.ai-product.sources-make-checking-cheap
+  subtopic: Design for latency and for being wrong
+  kind: principle
+  claim: Citations that open the source passage turn 'trust me' into 'check me', and checking must be cheap or people skip it.
+  prompt: Why show sources in an AI feature?
+  objectives:
+  - 2
+  requires:
+  - ai.rag.grounded-prompt
+- id: ai.ai-product.avoid-fake-confidence
+  subtopic: Design for latency and for being wrong
+  kind: principle
+  claim: Prefer an honest 'not found' with a route to a human over fake-precise confidence numbers, which are rarely calibrated.
+  prompt: Should an assistant show a percentage confidence?
+  objectives:
+  - 2
+- id: ai.ai-product.fail-gracefully
+  subtopic: Design for latency and for being wrong
+  kind: principle
+  claim: The AI part must never take the core product down; if the model is slow or down, the page still works, says so plainly, and offers a manual path.
+  prompt: What should happen when the model is unavailable?
+  objectives:
+  - 2
+  requires:
+  - ai.serving.fallbacks-graceful-degradation
+- id: ai.ai-product.implicit-feedback-beats-ratings
+  subtopic: Feedback that flows back into evals
+  kind: principle
+  claim: Explicit ratings are rare and self-selected; implicit signals such as edits, copies, retries, abandonment and escalation are measured on every response.
+  prompt: Which feedback signals best measure an AI feature's quality?
+  objectives:
+  - 3
+  requires:
+  - ai.evals.online-production-signals
+- id: ai.ai-product.feedback-with-trace-id
+  subtopic: Feedback that flows back into evals
+  kind: procedure
+  claim: Log every feedback signal with the trace ID of its response, so it can be pulled into error analysis and the eval set with full context.
+  prompt: Why log feedback with the trace ID?
+  objectives:
+  - 3
+  requires:
+  - ai.evals.failures-become-eval-cases
+items:
+  ai-product-check-1-v2:
+  - ai.ai-product.scope-the-job-first
+  ai-product-check-2-v2:
+  - ai.ai-product.implicit-feedback-beats-ratings
+  ai-product-check-3-v2:
+  - ai.ai-product.autonomy-from-error-cost
+  ai-product-fire-1-v2:
+  - ai.ai-product.feedback-with-trace-id
+  ai-product-fire-2-v2:
+  - ai.ai-product.avoid-fake-confidence
+  ai-product-fire-3-v2:
+  - ai.ai-product.stream-and-show-progress
+  ai-product-fire-4-v2:
+  - ai.ai-product.check-ai-is-needed
+  ai-product:b1:
+  - ai.ai-product.scope-the-job-first
+  - ai.ai-product.check-ai-is-needed
+  ai-product:b3:
+  - ai.ai-product.autonomy-levels
+  - ai.ai-product.autonomy-from-error-cost
+  ai-product:b5:
+  - ai.ai-product.implicit-feedback-beats-ratings

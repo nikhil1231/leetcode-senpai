@@ -1,0 +1,38 @@
+id: llm-hybrid-retrieval
+title: 'LLM feature: hybrid retrieval with permissions'
+category: llm
+minutes: 40
+level: core
+language: python
+brief: |
+  The support bot's retrieval uses vector search alone. It can't find exact error codes, and last week it showed an internal runbook to a customer. Build hybrid retrieval in `retrieval.py`. A toy embedder (`embed.py`) and a small help-centre corpus with labelled questions (`corpus.py`) are provided, so everything runs offline.
+
+  Implement:
+
+  - `bm25(query, docs, k1=1.5, b=0.75)` → `{doc_id: score}` using `tokenize` from `embed.py`. Use idf = ln((N − n + 0.5) / (n + 0.5) + 1), where N is the number of docs and n the number containing the term. Documents with no matching terms score 0.
+  - `vector(query, docs, embed)` → `{doc_id: cosine similarity}`.
+  - `rrf(rankings, k=60)`: reciprocal rank fusion. Each ranking is a list of doc ids, best first. A doc's score is the sum of 1 / (k + rank) over the rankings it appears in, with rank starting at 1. Return ids best first, ties broken by id.
+  - `search(query, docs, embed, groups, top_k=5)`: a doc is visible if its `acl` is empty (public) or shares a group with `groups`. Rank the **visible** docs by BM25 and by vector similarity (dropping docs that score 0 on BM25 from the BM25 ranking), fuse with RRF, and return the top `top_k` ids.
+  - `recall_at_k(results, relevant, k)` and `mrr(results, relevant)`: averaged over queries. `results` maps a query to its ranked ids; `relevant` maps it to the set of relevant ids. MRR uses the rank of the first relevant result (0 if none).
+
+  Then look at `check_corpus()` in the tests: on the labelled questions, hybrid should beat vector-only on recall@1 and MRR. Vector search finds the right area, but exact codes decide which doc comes first.
+files: [retrieval.py]
+readonly: [embed.py, corpus.py, test_retrieval.py]
+tests: [test_retrieval.py]
+checks: [check_retrieval.py]
+rubric:
+  - BM25 follows the given formula, including length normalisation, and is checked against a hand-worked case
+  - Permissions are applied before ranking and top-k, never by filtering the final results
+  - Fusion uses ranks, not raw scores, so BM25 and cosine scales don't need to match
+  - Ties and empty inputs give deterministic, sensible results
+  - You compared hybrid against vector-only with the metrics, rather than assuming it is better
+hints:
+  - A doc that scores zero on BM25 shouldn't get a BM25 rank at all.
+  - If you take the top 5 and then remove forbidden docs, how many results does a customer get?
+  - "RRF with k = 60: rank 1 contributes 1/61, rank 2 contributes 1/62."
+discussion: |
+  **Why hybrid**: embeddings match meaning ("can't sign in" finds "login problems") but blur exact identifiers. BM25 matches exact terms like `ERR-4021` but misses paraphrases. Fusing ranks gets both. RRF is popular because it needs no score calibration: a cosine of 0.8 and a BM25 of 7.3 can't be added, but ranks can.
+
+  **The permission bug**: filtering after taking the top k leaks nothing but returns too few results, often none, to users with narrow access. Filtering in Python after retrieval is also how leaks happen when someone later adds caching or logging in between. Filter inside the search, before ranking. In a real system that's a metadata filter in the index query.
+
+  **Follow-ups**: how would you add a re-ranker? Take the top 50 from fusion and re-score with a cross-encoder, keeping the top 5. How do you choose k for RRF? 60 is the paper's default and rarely matters much. How do you know hybrid helps on your data? Exactly what you did: recall@k and MRR on labelled queries, before and after.

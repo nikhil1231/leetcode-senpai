@@ -39,12 +39,12 @@ def lessons(section):
     """Course-ordered {lesson id: {title, category, objectives, prerequisite, path}}."""
     if section == 'system-design':
         return {k: {'title': l['title'], 'category': l['category'], 'objectives': list(l.get('objectives') or []),
-                    'prerequisite': l.get('prerequisite'), 'path': os.path.join(SD_HERE, k + '.md')}
+                    'prerequisite': l.get('prerequisite'), 'path': os.path.join(SD_HERE, k + '.md'), 'deep': False}
                 for k, l in SD_LESSONS.items()}
-    out, prev = {}, None
+    out, prev, deep = {}, None, courses.deep(section)
     for k, l in courses.lessons(section).items():
         out[k] = {'title': l['title'], 'category': l['category'], 'objectives': list(l.get('objectives') or []),
-                  'prerequisite': prev, 'path': os.path.join(courses.HERE, section, k + '.md')}
+                  'prerequisite': prev, 'path': os.path.join(courses.HERE, section, k + '.md'), 'deep': k in deep}
         prev = k
     return out
 
@@ -132,7 +132,8 @@ def load(folder=HERE):
                     'lesson': lesson_id, 'lesson_title': lesson['title'], 'subtopic': p['subtopic'].strip(),
                     'kind': p['kind'], 'claim': p['claim'].strip(), 'prompt': p['prompt'].strip(),
                     'objectives': list(p.get('objectives') or []), 'requires': list(p.get('requires') or []),
-                    'same_as': p.get('same_as') or None, 'retired': bool(p.get('retired')), 'order': len(points)}
+                    'same_as': p.get('same_as') or None, 'retired': bool(p.get('retired')), 'order': len(points),
+                    'deep': bool(lesson.get('deep'))}
             for item, pids in (doc.get('items') or {}).items():
                 raw_items[item] = (where, pids)
         if PRACTICE in files:
@@ -192,6 +193,23 @@ def canonical(catalog, pid):
 def active(catalog):
     """Points that count: not retired, not an alias. In course order."""
     return [p for p in catalog['points'].values() if not p['retired'] and p['id'] not in catalog['aliases']]
+
+
+def asleep(catalog, states, seen):
+    """Optional deep-dive lessons with no evidence or exposure yet. Their points count once you open one."""
+    deep, woken = set(), set()
+    for p in active(catalog):
+        if p.get('deep'):
+            deep.add(p['lesson'])
+            if p['id'] in states or p['id'] in seen:
+                woken.add(p['lesson'])
+    return deep - woken
+
+
+def awake(catalog, states, seen):
+    """Active points, less those of deep-dive lessons not opened yet."""
+    hidden = asleep(catalog, states, seen)
+    return [p for p in active(catalog) if p['lesson'] not in hidden]
 
 
 CATALOG = load()

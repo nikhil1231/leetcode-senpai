@@ -1,7 +1,7 @@
 ---
 id: design-support-assistant
-category: production
-skill: production
+category: design
+skill: design
 title: 'AI system design: a customer support assistant'
 minutes: 20
 summary: The most common AI system design question puts everything together. Design an assistant that answers customer questions from help docs and account data, and can take a few actions (refund status, cancel a subscription), with escalation to humans. A strong answer clarifies scope and success metrics, designs retrieval and tools, puts authorisation in code, treats evals and observability as first-class, and states cost and latency budgets, fallbacks and a rollout plan.

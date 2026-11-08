@@ -129,3 +129,6 @@ chapters:
     evaluation: The AI features need numbers, not vibes, before anyone trusts them.
     agents: Sam wants an assistant that takes actions for users, not just answers.
     production: The AI features have real traffic, real costs and real attackers.
+    design: Sam asks you to design Ripple's next AI system on the whiteboard, start to finish.
+    inference: Ripple considers running its own models, and someone has to understand the GPUs.
+    platform: Every Ripple team now wants models, and they need one platform to share.

@@ -1,0 +1,174 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: evals-practice
+source_hash: eafcfe9c79b33c46
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.evals-practice.error-analysis-loop
+  subtopic: Error analysis comes first
+  kind: procedure
+  claim: 'Error analysis: sample 50 to 100 real traces, note the first thing that went wrong in each, group the notes into failure modes, count them, and fix or build an evaluator for the top one.'
+  prompt: What are the steps of error analysis?
+  objectives:
+  - 0
+  requires:
+  - ai.evals.read-outputs-error-analysis
+- id: ai.evals-practice.note-the-first-error
+  subtopic: Error analysis comes first
+  kind: principle
+  claim: In each failing trace note the first error, because later errors often cascade from it.
+  prompt: Which error do you record for a failing trace, and why?
+  objectives:
+  - 0
+- id: ai.evals-practice.one-expert-owns-labels
+  subtopic: Error analysis comes first
+  kind: principle
+  claim: One domain expert should own the labels, since committees blur the criteria.
+  prompt: Who should label traces for evals?
+  objectives:
+  - 0
+  - 1
+- id: ai.evals-practice.evaluator-only-for-recurring
+  subtopic: Error analysis comes first
+  kind: tradeoff
+  claim: Fix obvious one-off failures directly; build evaluators for failure modes that are frequent or costly and likely to come back.
+  prompt: When does a failure mode deserve its own evaluator?
+  objectives:
+  - 0
+- id: ai.evals-practice.code-checks-before-judges
+  subtopic: 'Evaluators: code first, then judges'
+  kind: principle
+  claim: Use code-based assertions for mechanical failures and a binary LLM judge per failure mode only where judgement is needed.
+  prompt: When do you use a code check and when an LLM judge?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.deterministic-scorers-first
+  - ai.evals.judge-for-rubric-criteria
+- id: ai.evals-practice.validate-judge-on-held-out
+  subtopic: 'Evaluators: code first, then judges'
+  kind: procedure
+  claim: Validate a judge against 100 to 200 expert labels split into few-shot examples, a dev set and a held-out test set you look at once.
+  prompt: How do you validate an LLM judge?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.calibrate-judge-with-humans
+- id: ai.evals-practice.tpr-tnr-not-accuracy
+  subtopic: 'Evaluators: code first, then judges'
+  kind: principle
+  claim: Measure a judge by TPR (failures it catches) and TNR (passes it confirms), because with rare failures an always-pass judge is accurate and useless.
+  prompt: Why measure a judge with TPR and TNR rather than accuracy?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.calibrate-judge-with-humans
+- id: ai.evals-practice.correct-judge-rate
+  subtopic: 'Evaluators: code first, then judges'
+  kind: procedure
+  claim: Correct a judge's flag rate with true rate = (flagged + TNR − 1) / (TPR + TNR − 1); 22% flagged with TPR 0.75 and TNR 0.9 means about 18.5%.
+  prompt: How do you turn a judge's raw flag rate into an estimate of the true failure rate?
+  objectives:
+  - 1
+  requires:
+  - ai.evals-practice.tpr-tnr-not-accuracy
+- id: ai.evals-practice.unvalidated-judge-verbosity
+  subtopic: 'Evaluators: code first, then judges'
+  kind: mechanism
+  claim: An unvalidated generic quality judge can reward length (verbosity bias), so scores rise while experts see worse answers.
+  prompt: Why can a generic quality judge's score rise while answers get worse?
+  objectives:
+  - 1
+  requires:
+  - ai.evals.judge-verbosity-self-preference
+- id: ai.evals-practice.agent-outcome-checks
+  subtopic: Evaluating agents
+  kind: principle
+  claim: Check an agent's outcome in the real state of the world (database, ticket, files), not its own claim of what it did.
+  prompt: How should an eval check that an agent did what it says?
+  objectives:
+  - 2
+- id: ai.evals-practice.agent-trajectory-checks
+  subtopic: Evaluating agents
+  kind: principle
+  claim: Trajectory checks catch wrong tools, needless steps and unsafe actions even when the final state is right.
+  prompt: What do trajectory checks catch that outcome checks miss?
+  objectives:
+  - 2
+  same_as: ai.evals.agent-trajectory-evals
+- id: ai.evals-practice.pass-k-vs-pass-hat-k
+  subtopic: Evaluating agents
+  kind: fact
+  claim: 'pass@k means at least one success in k runs; pass^k means success on every run, and is what customers experience: 90% per run gives about 73% pass^3.'
+  prompt: What's the difference between pass@k and pass^k?
+  objectives:
+  - 2
+  requires:
+  - ai.evals-practice.agent-outcome-checks
+- id: ai.evals-practice.structured-synthetic-data
+  subtopic: Datasets that stay honest
+  kind: procedure
+  claim: Generate synthetic inputs from combinations of defined dimensions (user type, intent, difficulty) rather than asking a model for a list, then discard unrealistic ones.
+  prompt: How do you generate useful synthetic eval inputs?
+  objectives:
+  - 3
+  requires:
+  - ai.evals.synthetic-only-data-pitfall
+- id: ai.evals-practice.datasets-real-held-out-versioned
+  subtopic: Datasets that stay honest
+  kind: principle
+  claim: Keep eval datasets honest with sampled real traffic, a held-out set left untouched while tuning, and versions tied to the prompt and model.
+  prompt: What keeps an eval dataset honest?
+  objectives:
+  - 3
+  requires:
+  - ai.evals.overfitting-held-out-set
+- id: ai.evals-practice.guardrail-vs-evaluator
+  subtopic: Datasets that stay honest
+  kind: tradeoff
+  claim: A guardrail runs inline on every request and must be fast; an evaluator measures, often offline or on samples, and can be slow and thorough.
+  prompt: How does a guardrail differ from an evaluator?
+  objectives:
+  - 3
+items:
+  evals-practice-check-1-v2:
+  - ai.evals-practice.tpr-tnr-not-accuracy
+  evals-practice-check-2-v2:
+  - ai.evals-practice.note-the-first-error
+  evals-practice-check-3-v2:
+  - ai.evals-practice.agent-outcome-checks
+  evals-practice-check-4-v2:
+  - ai.evals-practice.pass-k-vs-pass-hat-k
+  evals-practice-fire-1-v2:
+  - ai.evals-practice.one-expert-owns-labels
+  evals-practice-fire-2-v2:
+  - ai.evals-practice.structured-synthetic-data
+  evals-practice-fire-3-v2:
+  - ai.evals-practice.guardrail-vs-evaluator
+  evals-practice-fire-4-v2:
+  - ai.evals-practice.evaluator-only-for-recurring
+  evals-practice:b1:
+  - ai.evals-practice.error-analysis-loop
+  - ai.evals-practice.note-the-first-error
+  evals-practice:b3:
+  - ai.evals-practice.correct-judge-rate
+  - ai.evals-practice.tpr-tnr-not-accuracy
+  evals-practice:b4:
+  - ai.evals-practice.unvalidated-judge-verbosity
+  - ai.evals-practice.validate-judge-on-held-out
+  evals-practice:b6:
+  - ai.evals-practice.pass-k-vs-pass-hat-k
+  evals-practice:b7:
+  - ai.evals-practice.agent-outcome-checks
+  - ai.evals-practice.agent-trajectory-checks
+  - ai.evals-practice.pass-k-vs-pass-hat-k
+  evals-practice:b9:
+  - ai.evals-practice.validate-judge-on-held-out
+  - ai.evals-practice.tpr-tnr-not-accuracy
+  - ai.evals-practice.code-checks-before-judges

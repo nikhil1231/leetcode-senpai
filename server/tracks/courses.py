@@ -30,31 +30,41 @@ COURSES = {
     },
     'ai': {
         'categories': [
-            ('assisted', 'AI-assisted coding', 'The round where you fix, extend and scale code with an AI pair, and are marked on how you drive it.'),
-            ('models', 'How LLMs behave', 'Tokens, context, sampling, prompting and structured output.'),
+            ('models', 'How LLMs behave', 'Tokens, context, sampling, prompting, structured output and choosing a model.'),
             ('retrieval', 'Retrieval and RAG', 'Embeddings, vector search and grounded answers.'),
             ('evaluation', 'Evals', 'Measuring quality so changes are decisions, not vibes.'),
             ('agents', 'Agents and tools', 'Tool calling, loops, MCP servers, and keeping agents on a leash.'),
-            ('production', 'Production AI', 'Latency, cost, serving, safety and an AI system design case.'),
+            ('production', 'Production AI', 'Latency, cost, safety, and AI features people trust.'),
+            ('design', 'AI system design', 'Whole designs, decision by decision: assistants, reviewers, pipelines and agents.'),
+            ('assisted', 'AI-assisted coding', 'The round where you fix, extend and scale code with an AI pair, and are marked on how you drive it.'),
+            ('inference', 'Under the hood: inference', 'Optional. What a GPU does with your prompt, how serving engines work, and a lab on your own card.'),
+            ('platform', 'Under the hood: AI platforms', 'Optional. Running models for a whole company: GPUs on Kubernetes, gateways, LLMOps and fine-tuning.'),
         ],
         'order': {
-            'assisted': ['ai-coding-round', 'ai-debugging', 'ai-workflow'],
-            'models': ['llm-basics', 'prompting'],
+            'models': ['llm-basics', 'prompting', 'choosing-models'],
             'retrieval': ['embeddings', 'rag'],
-            'evaluation': ['evals'],
+            'evaluation': ['evals', 'evals-practice'],
             'agents': ['agents', 'mcp'],
-            'production': ['serving', 'guardrails', 'design-support-assistant', 'design-review-assistant'],
+            'production': ['serving', 'guardrails', 'ai-product'],
+            'design': ['design-support-assistant', 'design-review-assistant', 'design-extraction-pipeline', 'design-research-agent'],
+            'assisted': ['ai-coding-round', 'ai-debugging', 'ai-workflow'],
+            'inference': ['gpu-onramp', 'inference-engines', 'gpu-lab'],
+            'platform': ['gpu-kubernetes', 'llm-gateway', 'llmops', 'fine-tuning', 'design-inference-platform'],
         },
+        # Optional depth: never picked for you, and counted nowhere until you open one of its lessons.
+        'deep': ['inference', 'platform'],
         # The rounds of a typical AI engineering loop, and what in the app prepares you for each.
         'rounds': [
             ('assisted', 'AI-assisted coding', 'Fix, extend and scale unfamiliar code with an AI pair. Scored on approach, control, verification and communication.',
              ['ai-coding-round', 'ai-debugging'], ['ai-pair-rooms', 'ai-pair-chunker']),
-            ('practical', 'LLM practical coding', 'Small production pieces around a model: retries with backoff, rate limits, chunking, retrieval.',
-             ['prompting', 'embeddings'], ['retry-backoff', 'rate-limiter', 'ai-pair-chunker']),
-            ('depth', 'LLM and RAG depth', 'Tokens and sampling, RAG vs fine-tuning, embeddings, evals and agents, explained and defended.',
-             ['llm-basics', 'prompting', 'embeddings', 'rag', 'evals', 'agents', 'mcp'], []),
-            ('design', 'AI system design', 'An open prompt (support bot, review assistant, agent) covering retrieval, evals, failure modes, cost and safety.',
-             ['rag', 'evals', 'serving', 'guardrails', 'design-support-assistant', 'design-review-assistant'], []),
+            ('practical', 'LLM practical coding', 'Build the pieces around a model: an eval harness, hybrid retrieval, an agent loop with budgets, validated structured output.',
+             ['prompting', 'rag', 'evals-practice', 'agents'], ['llm-structured-output', 'llm-hybrid-retrieval', 'llm-eval-harness', 'llm-agent-loop']),
+            ('depth', 'LLM and RAG depth', 'Tokens and sampling, choosing a model, RAG vs fine-tuning, embeddings, evals and agents, explained and defended.',
+             ['llm-basics', 'prompting', 'choosing-models', 'embeddings', 'rag', 'evals', 'evals-practice', 'agents', 'mcp'], []),
+            ('design', 'AI system design', 'An open prompt (support bot, review assistant, extraction pipeline, research agent) covering retrieval, evals, failure modes, cost and safety.',
+             ['serving', 'guardrails', 'design-support-assistant', 'design-review-assistant', 'design-extraction-pipeline', 'design-research-agent'], []),
+            ('product', 'Scoping with a customer', 'Some loops role-play a customer with a vague AI idea. Find the job, the success metric and the risks before proposing anything.',
+             ['ai-product', 'choosing-models'], []),
             ('workflow', 'How you use AI', '"How do you use AI in your work?" and project deep dives on what you shipped.',
              ['ai-workflow'], []),
         ],
@@ -94,6 +104,18 @@ def lessons(track):
 
 def questions(track):
     return CONTENT[track][1]
+
+
+def deep(track):
+    """Lessons in the track's optional deep-dive categories."""
+    cats = set(COURSES[track].get('deep', ()))
+    return {k for k, l in lessons(track).items() if l['category'] in cats}
+
+
+def asleep(track, records):
+    """Deep-dive lessons not opened yet: they stay out of picks, totals and placement until you choose one."""
+    opened = {r.get('lesson_id') for r in records if r.get('kind') in ('lesson', 'answer')}
+    return deep(track) - opened
 
 
 def items(track):
@@ -148,10 +170,12 @@ def public_lesson(track, key, record=None):
 def next_question(track, records, now, exclude=(), lesson=None):
     """Quickfire order: wrong last time, then fading, then new questions from opened lessons, then new.
 
-    Within a tier, course order. `exclude` keeps a session from repeating itself.
+    Within a tier, course order. `exclude` keeps a session from repeating itself. Unopened
+    deep-dive lessons are left out unless asked for by name.
     """
+    hidden = asleep(track, records) if lesson is None else set()
     pool = [q for q in questions(track).values()
-            if q['id'] not in exclude and (lesson is None or q['lesson_id'] == lesson)]
+            if q['id'] not in exclude and (lesson is None or q['lesson_id'] == lesson) and q['lesson_id'] not in hidden]
     if not pool:
         return None
     states = knowledge.replay(events(track, records), now)
@@ -173,11 +197,13 @@ def next_question(track, records, now, exclude=(), lesson=None):
 
 def placement_question(track, records, exclude=(), category=None):
     """The first question, in course order, from a lesson of `category` with no answers yet and none
-    asked this round (`exclude`). Quickfire questions first. None when every lesson has one."""
+    asked this round (`exclude`). Quickfire questions first. None when every lesson has one.
+    Deep-dive lessons are placed only when their category is asked for."""
     qs = questions(track)
     tested = {r['lesson_id'] for r in records if r.get('kind') == 'answer'} | {qs[q]['lesson_id'] for q in exclude if q in qs}
     order = {key: i for i, key in enumerate(lessons(track))}
-    pool = [q for q in qs.values() if q['lesson_id'] not in tested
+    skip = deep(track) if category is None else set()
+    pool = [q for q in qs.values() if q['lesson_id'] not in tested and q['lesson_id'] not in skip
             and (category is None or lessons(track)[q['lesson_id']]['category'] == category)]
     return min(pool, key=lambda q: (order[q['lesson_id']], q['kind'] != 'quickfire', q['id'])) if pool else None
 
@@ -215,9 +241,12 @@ def rounds(track, course, exercises=None):
 
 
 def overview(track, records, now, exercises=None):
+    """Knowledge and the next lesson cover the core course plus any deep-dive lesson you have opened."""
     evs = events(track, records)
-    its = items(track)
+    hidden = asleep(track, records)
+    its = [i for i in items(track) if i['topic'] not in hidden]
     s = knowledge.summary(its, evs, now)
+    deep_cats = set(COURSES[track].get('deep', ()))
     progress = {r['lesson_id']: r for r in records if r.get('kind') == 'lesson'}
     item_status = {}
     for v in s['items']:
@@ -229,18 +258,18 @@ def overview(track, records, now, exercises=None):
             if lesson['category'] != cid:
                 continue
             rec = progress.get(key, {})
-            statuses = item_status.get(key, [])
+            statuses = item_status.get(key) or ['unseen'] * sum(i['topic'] == key for i in items(track))
             rows.append({'id': key, 'title': lesson['title'], 'minutes': lesson['minutes'], 'summary': lesson['summary'],
                          'interactive': lesson['interactive'], 'opened': bool(rec), 'checked': bool(rec.get('checked_at')),
                          'activities_done': sum(1 for a in (rec.get('activities') or {}).values() if a.get('done')),
                          'items': len(statuses), 'solid': statuses.count('solid'),
                          'held': sum(1 for x in statuses if x in ('solid', 'learning'))})
-        course.append({'id': cid, 'title': title, 'blurb': blurb, 'lessons': rows})
+        course.append({'id': cid, 'title': title, 'blurb': blurb, 'deep': cid in deep_cats, 'lessons': rows})
     titles = {k: l['title'] for k, l in lessons(track).items()}
     for group in s['mistakes'].values():
         for v in group:
             v['topic_title'] = titles.get(v['topic'], v['topic'])
-    nxt = next((l for c in course for l in c['lessons'] if not l['checked']), None)
+    nxt = next((l for c in course if not c['deep'] for l in c['lessons'] if not l['checked']), None)
     return {'knowledge': s['knowledge'], 'total': s['total'], 'pct': s['pct'], 'counts': s['counts'],
             'due': s['due'], 'mistakes': s['mistakes'], 'history': s['history'], 'daily': s['daily'],
             'heatmap': heatmap(track, s['items']), 'course': course, 'next_lesson': nxt,

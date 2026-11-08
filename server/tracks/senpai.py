@@ -13,7 +13,8 @@ STALE_DAYS = 21
 def _ledger(track, records, now):
     kind = TRACKS[track]['kind']
     if kind == 'course':
-        return courses.items(track), courses.events(track, records)
+        hidden = courses.asleep(track, records)
+        return [i for i in courses.items(track) if i['topic'] not in hidden], courses.events(track, records)
     if kind == 'experience':
         return experience.ITEMS, experience.events(records)
     return practical.ITEMS, practical.events(records)
@@ -71,7 +72,7 @@ def material(records_by_track, now):
         cat_of = {l['id']: c['id'] for c in o['course'] for l in c['lessons']}
         # The first unchecked lesson per category, so a focus or career objective can reach past course order.
         by_cat = {c['id']: next(({'id': l['id'], 'title': l['title'], 'minutes': l['minutes'], 'category': c['id']}
-                                 for l in c['lessons'] if not l['checked']), None) for c in o['course']}
+                                 for l in c['lessons'] if not l['checked']), None) for c in o['course'] if not c['deep']}
         out[track] = {'due': o['due'], 'mistakes': len(o['mistakes']['fix']), 'answers': o['answers'],
                       'next_lesson': nxt and {'id': nxt['id'], 'title': nxt['title'], 'minutes': nxt['minutes'],
                                               'category': cat_of.get(nxt['id'])},

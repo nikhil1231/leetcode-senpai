@@ -1,0 +1,124 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: gpu-kubernetes
+source_hash: 897606b8c7c2ef92
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.gpu-kubernetes.gpu-extended-resource
+  subtopic: How a pod gets a GPU
+  kind: mechanism
+  claim: A device plugin advertises GPUs as the extended resource nvidia.com/gpu, which pods request in whole units with no overcommit or fractions.
+  prompt: How does a pod request a GPU in Kubernetes?
+  objectives:
+  - 0
+- id: ai.gpu-kubernetes.gpu-operator
+  subtopic: How a pod gets a GPU
+  kind: fact
+  claim: The NVIDIA GPU Operator manages drivers, the container toolkit, device plugin, GPU Feature Discovery labels, the DCGM metrics exporter and MIG configuration.
+  prompt: What does the NVIDIA GPU Operator install?
+  objectives:
+  - 0
+- id: ai.gpu-kubernetes.taint-gpu-node-pools
+  subtopic: How a pod gets a GPU
+  kind: principle
+  claim: Taint GPU node pools so only pods that tolerate the taint (GPU workloads) land on expensive GPU nodes.
+  prompt: Why taint GPU nodes?
+  objectives:
+  - 0
+- id: ai.gpu-kubernetes.mig-partitions
+  subtopic: Sharing a GPU
+  kind: fact
+  claim: MIG splits an A100 or H100 into up to seven hardware instances with isolated memory and compute, in fixed sizes.
+  prompt: What is MIG?
+  objectives:
+  - 1
+  requires:
+  - ai.gpu-kubernetes.gpu-extended-resource
+- id: ai.gpu-kubernetes.time-slicing-no-isolation
+  subtopic: Sharing a GPU
+  kind: tradeoff
+  claim: Time-slicing advertises one GPU as several with no memory isolation and unpredictable latency, so it suits dev and trusted bursty work, not tenants.
+  prompt: When is time-slicing a GPU appropriate?
+  objectives:
+  - 1
+- id: ai.gpu-kubernetes.gang-scheduling
+  subtopic: Scheduling a shared GPU cluster
+  kind: mechanism
+  claim: Gang scheduling (Kueue, Volcano) admits a multi-pod job only when all its pods can run, avoiding deadlock between partially placed jobs.
+  prompt: What problem does gang scheduling solve?
+  objectives:
+  - 2
+- id: ai.gpu-kubernetes.team-quotas-and-preemption
+  subtopic: Scheduling a shared GPU cluster
+  kind: principle
+  claim: Shared GPU clusters use per-team quotas with borrowing, and priorities where inference outranks batch, with preemptible work checkpointing.
+  prompt: How are GPUs shared fairly between teams?
+  objectives:
+  - 2
+- id: ai.gpu-kubernetes.cpu-is-wrong-scaling-signal
+  subtopic: Autoscaling inference
+  kind: principle
+  claim: CPU utilisation and DCGM GPU utilisation are poor autoscaling signals for LLM servers; scale on waiting requests, KV cache usage or latency against target.
+  prompt: What should an LLM inference service autoscale on?
+  objectives:
+  - 3
+  requires:
+  - ai.gpu-onramp.decode-memory-bound
+- id: ai.gpu-kubernetes.warm-minimum-replicas
+  subtopic: Autoscaling inference
+  kind: principle
+  claim: Keep a warm minimum of replicas for interactive models, since scale-to-zero exposes users to multi-minute cold starts.
+  prompt: Why keep minimum replicas for interactive models?
+  objectives:
+  - 3
+- id: ai.gpu-kubernetes.cold-start-components
+  subtopic: Cold starts
+  kind: fact
+  claim: A cold start includes node provisioning, a 10 to 20 GB image pull, loading weights (140 GB for a 70B BF16 model) and warm-up.
+  prompt: What makes up a GPU inference cold start?
+  objectives:
+  - 3
+- id: ai.gpu-kubernetes.cold-start-fixes
+  subtopic: Cold starts
+  kind: procedure
+  claim: Cut cold starts with warm replicas, pre-pulled images, weights cached on node-local NVMe, streaming loaders, spare capacity and smaller formats.
+  prompt: How do you shorten GPU cold starts?
+  objectives:
+  - 3
+  requires:
+  - ai.gpu-kubernetes.cold-start-components
+items:
+  gpu-kubernetes-check-1-v2:
+  - ai.gpu-kubernetes.taint-gpu-node-pools
+  gpu-kubernetes-check-2-v2:
+  - ai.gpu-kubernetes.gang-scheduling
+  gpu-kubernetes-check-3-v2:
+  - ai.gpu-kubernetes.time-slicing-no-isolation
+  gpu-kubernetes-fire-1-v2:
+  - ai.gpu-kubernetes.cpu-is-wrong-scaling-signal
+  gpu-kubernetes-fire-2-v2:
+  - ai.gpu-kubernetes.gpu-operator
+  gpu-kubernetes-fire-3-v2:
+  - ai.gpu-kubernetes.cold-start-fixes
+  - ai.gpu-kubernetes.warm-minimum-replicas
+  gpu-kubernetes-fire-4-v2:
+  - ai.gpu-kubernetes.mig-partitions
+  gpu-kubernetes:b1:
+  - ai.gpu-kubernetes.mig-partitions
+  - ai.gpu-kubernetes.time-slicing-no-isolation
+  gpu-kubernetes:b3:
+  - ai.gpu-kubernetes.cpu-is-wrong-scaling-signal
+  - ai.gpu-kubernetes.warm-minimum-replicas
+  - ai.gpu-kubernetes.taint-gpu-node-pools
+  gpu-kubernetes:b5:
+  - ai.gpu-kubernetes.cold-start-components
+  - ai.gpu-kubernetes.cold-start-fixes
+  gpu-kubernetes:b7:
+  - ai.gpu-kubernetes.cpu-is-wrong-scaling-signal
+  - ai.gpu-kubernetes.cold-start-fixes

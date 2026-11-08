@@ -1,0 +1,153 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: gpu-onramp
+source_hash: 3673074bb2606c19
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.gpu-onramp.bytes-per-parameter
+  subtopic: The model is a file of numbers
+  kind: fact
+  claim: Weights take 2 bytes per parameter in FP16 or BF16, 1 byte in FP8 or INT8, and half a byte in 4-bit.
+  prompt: How many bytes per parameter do BF16, FP8 and 4-bit take?
+  objectives:
+  - 0
+- id: ai.gpu-onramp.weights-memory-arithmetic
+  subtopic: The model is a file of numbers
+  kind: procedure
+  claim: 'Weight memory is parameters times bytes per parameter: 70B in BF16 is 140 GB, more than one 80 GB GPU; 8B in BF16 is 16 GB.'
+  prompt: How do you work out the GPU memory a model's weights need?
+  objectives:
+  - 0
+  requires:
+  - ai.gpu-onramp.bytes-per-parameter
+- id: ai.gpu-onramp.weights-must-fit-in-vram
+  subtopic: The model is a file of numbers
+  kind: principle
+  claim: To generate quickly, the weights must sit in the GPU's own fast memory (VRAM or HBM).
+  prompt: Where must a model's weights be to generate text quickly?
+  objectives:
+  - 0
+- id: ai.gpu-onramp.compute-vs-memory-bound
+  subtopic: 'Two limits: arithmetic and memory speed'
+  kind: mechanism
+  claim: A GPU is limited by arithmetic speed or memory bandwidth; work with lots of arithmetic per byte read is compute-bound, work that reads a lot and computes little is memory-bound.
+  prompt: What's the difference between compute-bound and memory-bound work?
+  objectives:
+  - 1
+- id: ai.gpu-onramp.gpu-bandwidth-figures
+  subtopic: 'Two limits: arithmetic and memory speed'
+  kind: fact
+  claim: An H100 reads memory at about 3.35 TB/s and does about 1,000 trillion 16-bit operations a second; an RTX 3070 reads 448 GB/s.
+  prompt: Roughly how fast do an H100 and an RTX 3070 read memory?
+  objectives:
+  - 1
+- id: ai.gpu-onramp.prefill-compute-bound
+  subtopic: Reading the prompt vs writing the answer
+  kind: mechanism
+  claim: Prefill processes all prompt tokens in parallel, reusing each weight for many tokens, so it is compute-bound and sets the time to first token.
+  prompt: Why is prefill compute-bound?
+  objectives:
+  - 1
+  requires:
+  - ai.llm-basics.prefill-phase
+  - ai.gpu-onramp.compute-vs-memory-bound
+- id: ai.gpu-onramp.decode-memory-bound
+  subtopic: Reading the prompt vs writing the answer
+  kind: mechanism
+  claim: Each decode step reads every weight to produce one token per conversation, so decode is memory-bound.
+  prompt: Why is decode memory-bound?
+  objectives:
+  - 1
+  requires:
+  - ai.llm-basics.decode-phase
+  - ai.gpu-onramp.compute-vs-memory-bound
+- id: ai.gpu-onramp.decode-ceiling-formula
+  subtopic: Reading the prompt vs writing the answer
+  kind: procedure
+  claim: 'A single user''s decode ceiling is memory bandwidth divided by model size in bytes: 3,350 GB/s over 16 GB is about 209 tokens per second.'
+  prompt: How do you estimate one user's maximum decode speed?
+  objectives:
+  - 1
+  requires:
+  - ai.gpu-onramp.decode-memory-bound
+- id: ai.gpu-onramp.batching-shares-weight-reads
+  subtopic: 'Batching: why serving is cheap'
+  kind: mechanism
+  claim: Batching uses one read of the weights to produce the next token for many conversations, raising throughput many times while each user slows somewhat.
+  prompt: How does batching make serving cheaper?
+  objectives:
+  - 2
+  requires:
+  - ai.gpu-onramp.decode-memory-bound
+- id: ai.gpu-onramp.why-output-costs-more
+  subtopic: 'Batching: why serving is cheap'
+  kind: principle
+  claim: Output tokens cost more than input because each is a sequential decode step holding a batch slot, while input is processed in parallel.
+  prompt: Why do output tokens cost more than input tokens?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-basics.output-pricing-higher
+  - ai.gpu-onramp.batching-shares-weight-reads
+- id: ai.gpu-onramp.kv-cache-per-conversation
+  subtopic: 'The KV cache: memory per conversation'
+  kind: mechanism
+  claim: The KV cache stores keys and values for every token of every conversation in the batch, about 128 KB per token for an 8B model, so 8,000 tokens is about 1 GB.
+  prompt: What is the KV cache and how big does it get?
+  objectives:
+  - 3
+- id: ai.gpu-onramp.kv-cache-limits-concurrency
+  subtopic: 'The KV cache: memory per conversation'
+  kind: principle
+  claim: The KV cache, not the shared weights, usually limits how many conversations fit on a GPU.
+  prompt: What usually limits how many users a GPU can serve at once?
+  objectives:
+  - 3
+  same_as: ai.serving.kv-cache-limits-concurrency
+- id: ai.gpu-onramp.quantisation-tradeoff
+  subtopic: 'Quantisation: fewer bits per number'
+  kind: tradeoff
+  claim: Quantisation stores weights in 8 or 4 bits, halving or quartering memory and speeding up memory-bound decode, at some quality cost to measure on evals.
+  prompt: What does quantisation trade?
+  objectives:
+  - 0
+  - 1
+  same_as: ai.serving.quantisation-tradeoff
+items:
+  gpu-onramp-check-1-v2:
+  - ai.gpu-onramp.why-output-costs-more
+  gpu-onramp-check-2-v2:
+  - ai.gpu-onramp.weights-memory-arithmetic
+  - ai.gpu-onramp.bytes-per-parameter
+  gpu-onramp-check-3-v2:
+  - ai.gpu-onramp.decode-ceiling-formula
+  gpu-onramp-check-4-v2:
+  - ai.gpu-onramp.kv-cache-limits-concurrency
+  gpu-onramp-fire-1-v2:
+  - ai.gpu-onramp.prefill-compute-bound
+  gpu-onramp-fire-2-v2:
+  - ai.gpu-onramp.batching-shares-weight-reads
+  gpu-onramp-fire-3-v2:
+  - ai.gpu-onramp.quantisation-tradeoff
+  gpu-onramp:b1:
+  - ai.gpu-onramp.weights-memory-arithmetic
+  - ai.gpu-onramp.bytes-per-parameter
+  gpu-onramp:b3:
+  - ai.gpu-onramp.decode-ceiling-formula
+  - ai.gpu-onramp.decode-memory-bound
+  gpu-onramp:b5:
+  - ai.gpu-onramp.batching-shares-weight-reads
+  gpu-onramp:b7:
+  - ai.gpu-onramp.compute-vs-memory-bound
+  - ai.gpu-onramp.prefill-compute-bound
+  - ai.gpu-onramp.decode-memory-bound
+  gpu-onramp:b8:
+  - ai.gpu-onramp.weights-must-fit-in-vram
+  - ai.gpu-onramp.kv-cache-per-conversation
+  - ai.gpu-onramp.batching-shares-weight-reads

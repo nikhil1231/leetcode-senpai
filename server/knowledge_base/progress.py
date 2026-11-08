@@ -65,7 +65,8 @@ def section_points(catalog, section):
 
 def report(catalog, states, week_ago, seen, misconceptions, now, section, trend=()):
     """Totals, areas (with lessons) in course order, this week's changes and open misconceptions."""
-    points = section_points(catalog, section)
+    hidden = cat.asleep(catalog, states, seen)
+    points = [p for p in section_points(catalog, section) if p['lesson'] not in hidden]
     vs = model.views(catalog, states, seen, misconceptions, now, points)
     by_id = {v['id']: v for v in vs}
     areas = {}

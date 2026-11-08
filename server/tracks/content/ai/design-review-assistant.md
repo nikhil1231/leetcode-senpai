@@ -1,7 +1,7 @@
 ---
 id: design-review-assistant
-category: production
-skill: production
+category: design
+skill: design
 title: 'AI system design: a pull-request review assistant'
 minutes: 18
 summary: '"Design an AI that reviews pull requests" is a common AI system design question, and it tests different instincts from a chatbot. A noisy reviewer gets ignored, so precision matters more than recall. Context assembly (the diff, the files it touches, callers, conventions) decides quality. The code under review is untrusted input that can carry prompt injection. Cost scales with diff size, so you need budgets and triage. A strong answer defines success as comments developers act on, evaluates against real historical review comments, and rolls out quietly before it posts anything.'

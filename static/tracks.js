@@ -188,15 +188,20 @@
   C.lessons = async ctx => {
     const d = await ctx.call('');
     if (ctx.stale()) return;
-    ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">${d.course.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><h2>The course, in order.</h2><p>Home picks the next lesson for you; open any lesson here when you want to choose.</p></div>${loopHtml(d.rounds)}
-      ${d.course.map(c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`).join('')}`;
+    const catHtml = c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`;
+    const core = d.course.filter(c => !c.deep), deep = d.course.filter(c => c.deep);
+    const deepOpen = deep.some(c => c.lessons.some(l => l.opened));
+    ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">${core.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><h2>The course, in order.</h2><p>Home picks the next lesson for you; open any lesson here when you want to choose.</p></div>${loopHtml(d.rounds)}
+      ${core.map(catHtml).join('')}
+      ${deep.length ? `<details class="tr-deep"${deepOpen ? ' open' : ''}><summary><span class="sd-eyebrow">GOING DEEPER · OPTIONAL · ${deep.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><b>What happens under the hood</b><span class="sd-muted">Not needed for the course or its interviews, and never picked for you. A lesson here starts counting towards what you know once you open it.</span></summary>${deep.map(catHtml).join('')}</details>` : ''}`;
     wireActions(ctx.root, { go: n => ctx.go(n.dataset.view), lesson: n => ctx.go('lesson/' + n.dataset.id), exercise: n => ctx.go('exercise/' + n.dataset.id),
       section: n => window.AppSections.select(n.dataset.section, n.dataset.view) });
   };
   C.lesson = async ctx => {
     const [lesson, overview] = await Promise.all([ctx.call('/lessons/' + ctx.arg), ctx.call('')]);
     if (ctx.stale()) return;
-    const flat = overview.course.flatMap(c => c.lessons.map(l => ({ ...l, cat: c.title })));
+    const isDeep = overview.course.some(c => c.deep && c.lessons.some(l => l.id === lesson.id));
+    const flat = overview.course.filter(c => !!c.deep === isDeep).flatMap(c => c.lessons.map(l => ({ ...l, cat: c.title })));
     const idx = flat.findIndex(l => l.id === lesson.id), next = flat[idx + 1];
     let done = Object.values(lesson.state.activities || {}).filter(a => a.done).length;
     const checks = lesson.checks;

@@ -1,0 +1,150 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: choosing-models
+source_hash: 6a5ec6af5a2c31d7
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.choosing-models.cheapest-model-that-passes
+  subtopic: Size is a cost and latency decision
+  kind: principle
+  claim: Choose per task the cheapest model that passes your evals for that task, not one model for the whole product.
+  prompt: What rule picks the model for a task?
+  objectives:
+  - 0
+- id: ai.choosing-models.model-tier-price-gap
+  subtopic: Size is a cost and latency decision
+  kind: fact
+  claim: Within a provider's family the largest model often costs 10 to 30 times more per token than the smallest, and the small one answers several times faster.
+  prompt: Roughly how much more per token does a frontier model cost than its small sibling?
+  objectives:
+  - 0
+- id: ai.choosing-models.small-models-narrow-tasks
+  subtopic: Size is a cost and latency decision
+  kind: tradeoff
+  claim: Small models suit narrow, well-specified, high-volume work such as classification, extraction, routing and simple tool calls; large models earn their price on open-ended reasoning, messy context and multi-step agents.
+  prompt: Which kinds of task suit a small model, and which need a large one?
+  objectives:
+  - 0
+- id: ai.choosing-models.reasoning-models-think-first
+  subtopic: Reasoning models
+  kind: mechanism
+  claim: A reasoning model generates hidden thinking tokens before answering; they are billed, usually at the output rate, and add latency, and most APIs let you set a budget or effort level.
+  prompt: What does a reasoning model do differently, and what does it cost?
+  objectives:
+  - 1
+- id: ai.choosing-models.when-thinking-helps
+  subtopic: Reasoning models
+  kind: tradeoff
+  claim: Thinking helps multi-step maths, tricky code, planning and judging subtle cases, and helps least on extraction, classification, short chat and tight latency budgets.
+  prompt: Which tasks gain from a reasoning model, and which don't?
+  objectives:
+  - 1
+- id: ai.choosing-models.thinking-cost-arithmetic
+  subtopic: Reasoning models
+  kind: procedure
+  claim: Thinking cost per request is thinking tokens times the output price; 2,000 thinking tokens at $15 per million add $0.03 a request, $3,000 a day at 100,000 requests.
+  prompt: How do you estimate what turning on thinking adds to a daily bill?
+  objectives:
+  - 1
+  requires:
+  - ai.choosing-models.reasoning-models-think-first
+- id: ai.choosing-models.no-step-by-step-for-reasoners
+  subtopic: Reasoning models
+  kind: principle
+  claim: Reasoning models don't need 'think step by step'; give them the goal, constraints and output format, as long instructions on how to think can make them worse.
+  prompt: How should you prompt a reasoning model?
+  objectives:
+  - 1
+- id: ai.choosing-models.own-evals-over-leaderboards
+  subtopic: Your evals, not the leaderboard
+  kind: principle
+  claim: Public benchmarks only place a model in a tier; they leak into training data, saturate and test other tasks, so decide between candidates on your own eval set.
+  prompt: Why shouldn't a leaderboard decide which model you use?
+  objectives:
+  - 0
+  - 3
+- id: ai.choosing-models.compare-quality-cost-latency
+  subtopic: Your evals, not the leaderboard
+  kind: procedure
+  claim: Shortlist two or three models and compare quality per category, cost per request and p95 latency side by side on your eval set.
+  prompt: What do you compare when choosing between candidate models?
+  objectives:
+  - 0
+- id: ai.choosing-models.api-vs-open-weights
+  subtopic: API or open weights
+  kind: tradeoff
+  claim: API models give frontier quality with no idle cost or GPUs to run; self-hosted open weights give data control, pinned weights and fine-tuning, and are cheaper only at high, steady volume.
+  prompt: When is hosting open-weight models worth it over an API?
+  objectives:
+  - 2
+- id: ai.choosing-models.adaptation-ladder-order
+  subtopic: The adaptation ladder
+  kind: procedure
+  claim: 'Climb one rung at a time, measuring each: clearer prompt, a few varied examples, retrieval or tools, fine-tuning, then training your own model.'
+  prompt: In what order do you try to make a model good enough at a task?
+  objectives:
+  - 3
+- id: ai.choosing-models.fine-tune-behaviour-not-facts
+  subtopic: The adaptation ladder
+  kind: principle
+  claim: Fine-tuning teaches behaviour such as format, tone and narrow skills, but is poor at adding facts that change, which can't be cited and go stale.
+  prompt: What can fine-tuning teach well, and what can't it?
+  objectives:
+  - 3
+- id: ai.choosing-models.distillation
+  subtopic: The adaptation ladder
+  kind: mechanism
+  claim: Distillation fine-tunes a small model on a large model's outputs so it does one job nearly as well, much cheaper and faster.
+  prompt: What is distillation?
+  objectives:
+  - 3
+- id: ai.choosing-models.pin-model-versions
+  subtopic: A model is a dependency
+  kind: principle
+  claim: Pin exact model versions; an alias like 'latest' lets the provider change your product's behaviour without warning.
+  prompt: Why pin model versions?
+  objectives:
+  - 3
+  same_as: ai.prompting.pin-model-versions
+- id: ai.choosing-models.upgrades-are-migrations
+  subtopic: A model is a dependency
+  kind: procedure
+  claim: 'Treat a model upgrade or retirement as a migration: run the eval suite per category, read new failures, adjust prompts, with the model ID in config and a tested fallback.'
+  prompt: How should a model upgrade or retirement be handled?
+  objectives:
+  - 3
+items:
+  choosing-models-check-1-v2:
+  - ai.choosing-models.when-thinking-helps
+  choosing-models-check-2-v2:
+  - ai.choosing-models.fine-tune-behaviour-not-facts
+  choosing-models-check-3-v2:
+  - ai.choosing-models.upgrades-are-migrations
+  choosing-models-fire-1-v2:
+  - ai.choosing-models.reasoning-models-think-first
+  choosing-models-fire-2-v2:
+  - ai.choosing-models.api-vs-open-weights
+  choosing-models-fire-3-v2:
+  - ai.choosing-models.distillation
+  choosing-models-fire-4-v2:
+  - ai.choosing-models.own-evals-over-leaderboards
+  choosing-models:b1:
+  - ai.choosing-models.thinking-cost-arithmetic
+  - ai.choosing-models.reasoning-models-think-first
+  choosing-models:b2:
+  - ai.choosing-models.when-thinking-helps
+  choosing-models:b4:
+  - ai.choosing-models.own-evals-over-leaderboards
+  - ai.choosing-models.compare-quality-cost-latency
+  choosing-models:b6:
+  - ai.choosing-models.adaptation-ladder-order
+  choosing-models:b8:
+  - ai.choosing-models.cheapest-model-that-passes
+  - ai.choosing-models.compare-quality-cost-latency
+  - ai.choosing-models.pin-model-versions

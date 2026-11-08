@@ -1,0 +1,125 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: llm-gateway
+source_hash: 4c1c3f33a5003f35
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-08'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.llm-gateway.gateway-centralises
+  subtopic: Why one front door
+  kind: fact
+  claim: An LLM gateway gives teams one API, holds provider keys, routes model aliases, handles retries and fallbacks, enforces quotas and policy, attributes cost and traces every call.
+  prompt: What does an LLM gateway centralise?
+  objectives:
+  - 0
+- id: ai.llm-gateway.virtual-keys
+  subtopic: Why one front door
+  kind: principle
+  claim: Teams get virtual keys the gateway can scope, rotate and revoke, while real provider keys stay in one place.
+  prompt: Why give teams virtual keys?
+  objectives:
+  - 0
+- id: ai.llm-gateway.model-aliases
+  subtopic: Routing, fallbacks and streaming
+  kind: mechanism
+  claim: Model aliases map a name like chat-large to a provider, version and region, so routing changes without code changes.
+  prompt: What do model aliases in a gateway do?
+  objectives:
+  - 1
+- id: ai.llm-gateway.fallback-before-first-token
+  subtopic: Routing, fallbacks and streaming
+  kind: principle
+  claim: Fall back to another provider only before streaming starts; after tokens have streamed, end the stream cleanly rather than stitching answers.
+  prompt: When may a gateway fall back to another provider?
+  objectives:
+  - 1
+  requires:
+  - ai.serving.fallbacks-graceful-degradation
+- id: ai.llm-gateway.fallbacks-need-evals
+  subtopic: Routing, fallbacks and streaming
+  kind: principle
+  claim: Fallback routes use a different model, so they need their own evals or they succeed with unmeasured, worse answers.
+  prompt: Why test fallback routes with evals?
+  objectives:
+  - 1
+- id: ai.llm-gateway.stream-and-cancel
+  subtopic: Routing, fallbacks and streaming
+  kind: procedure
+  claim: A gateway passes server-sent events through unbuffered and cancels the upstream call when the client disconnects.
+  prompt: How should a gateway handle streaming and disconnects?
+  objectives:
+  - 1
+- id: ai.llm-gateway.token-quotas-reserve-reconcile
+  subtopic: Quotas in tokens, not just requests
+  kind: procedure
+  claim: Enforce per-team token quotas by estimating input, reserving input plus max_tokens, calling, then reconciling with actual usage.
+  prompt: How does a gateway enforce token quotas?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-basics.everything-metered-in-tokens
+- id: ai.llm-gateway.quota-request-arithmetic
+  subtopic: Quotas in tokens, not just requests
+  kind: procedure
+  claim: Requests a quota allows ≈ tokens per minute ÷ (input + reserved output tokens); 2M TPM at 3,500 tokens each is about 571 a minute.
+  prompt: How many requests per minute does a token quota allow?
+  objectives:
+  - 2
+  requires:
+  - ai.llm-gateway.token-quotas-reserve-reconcile
+- id: ai.llm-gateway.shared-limit-failure-domain
+  subtopic: Quotas in tokens, not just requests
+  kind: principle
+  claim: 'A shared provider limit is a shared failure domain: per-team quotas, priority classes and separating batch from interactive traffic stop one team taking everyone down.'
+  prompt: How do you stop one team's batch job exhausting everyone's provider limit?
+  objectives:
+  - 2
+- id: ai.llm-gateway.cost-attribution-tags
+  subtopic: Cost attribution
+  kind: procedure
+  claim: Price every request at completion and tag it with team, feature, environment and user, with budgets and anomaly alerts.
+  prompt: How does a gateway attribute AI cost?
+  objectives:
+  - 2
+  requires:
+  - ai.serving.track-cost-per-feature
+- id: ai.llm-gateway.semantic-cache-risk
+  subtopic: Caching and guardrails
+  kind: tradeoff
+  claim: Semantic caching returns answers for similar prompts, which risks wrong answers for close but different requests and leaks between users, so limit it to shared content with strict thresholds.
+  prompt: What's the risk of semantic caching?
+  objectives:
+  - 3
+  same_as: ai.serving.response-and-semantic-caching
+- id: ai.llm-gateway.gateway-fail-open
+  subtopic: Build or buy
+  kind: tradeoff
+  claim: As a critical proxy the gateway needs replicas and a few milliseconds of overhead; if its quota store fails it usually fails open with a local limit and alerts.
+  prompt: What should a gateway do when its quota store is down?
+  objectives:
+  - 3
+items:
+  llm-gateway-check-1-v2:
+  - ai.llm-gateway.virtual-keys
+  llm-gateway-check-2-v2:
+  - ai.llm-gateway.fallback-before-first-token
+  llm-gateway-check-3-v2:
+  - ai.llm-gateway.token-quotas-reserve-reconcile
+  llm-gateway-fire-1-v2:
+  - ai.llm-gateway.semantic-cache-risk
+  llm-gateway-fire-2-v2:
+  - ai.llm-gateway.stream-and-cancel
+  llm-gateway-fire-3-v2:
+  - ai.llm-gateway.fallbacks-need-evals
+  llm-gateway-fire-4-v2:
+  - ai.llm-gateway.gateway-fail-open
+  llm-gateway:b3:
+  - ai.llm-gateway.quota-request-arithmetic
+  - ai.llm-gateway.token-quotas-reserve-reconcile
+  llm-gateway:b4:
+  - ai.llm-gateway.shared-limit-failure-domain

@@ -49,6 +49,13 @@ body.section-track #active-run, body.section-track .topbar-side, body.section-tr
 .tr-cat-head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
 .tr-cat-head h3 { margin:0; font-size:16px; font-weight:550; }
 .tr-cat-head .sd-muted { font-size:12px; }
+.tr-deep { margin:40px 0 28px; border-top:1px dashed var(--line-soft); padding-top:18px; }
+.tr-deep > summary { cursor:pointer; list-style:none; display:grid; gap:4px; }
+.tr-deep > summary::-webkit-details-marker { display:none; }
+.tr-deep > summary b { font-size:16px; font-weight:550; }
+.tr-deep > summary b::after { content:' ▸'; opacity:.6; }
+.tr-deep[open] > summary b::after { content:' ▾'; }
+.tr-deep > summary .sd-muted { font-size:12px; max-width:60ch; }
 .tr-lesson-card h3, .tr-ex-card h3, .tr-story-card h3 { margin:12px 0 8px; }
 .tr-card-sum { color:var(--text-2); font-size:12.5px; line-height:1.6; margin:0 0 16px; }
 .tr-lesson-card.is-done { border-color:#35d39a44; }
