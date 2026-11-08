@@ -16,6 +16,11 @@ sources:
   - ['Anthropic docs: Message Batches API', 'https://docs.anthropic.com/en/docs/build-with-claude/batch-processing']
 ---
 
+```outage
+key: b950
+case: openai-2024
+```
+
 ## Cost arithmetic
 
 Cost per request = input tokens × input price + output tokens × output price. Cached input is billed at a large discount, and batch APIs are typically about half price in exchange for delayed results.

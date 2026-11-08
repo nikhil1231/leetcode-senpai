@@ -1,0 +1,65 @@
+/* Outage cases (sd-outage.js): the small diagram that breaks, its playback strip, the record and the fix card. */
+.oc { display:grid; gap:12px; }
+.oc-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.oc-tag { font-size:10px; letter-spacing:.12em; font-weight:700; text-transform:uppercase; padding:3px 9px; border-radius:999px; border:1px solid var(--line-hi); }
+.oc-tag.is-real { color:var(--red); border-color:color-mix(in srgb, var(--red) 45%, transparent); background:color-mix(in srgb, var(--red) 12%, transparent); }
+.oc-tag.is-whatif { color:var(--amber); border-color:color-mix(in srgb, var(--amber) 45%, transparent); background:color-mix(in srgb, var(--amber) 12%, transparent); }
+.oc-tag.is-composite { color:var(--text-2); }
+.oc-when { font-size:12.5px; color:var(--text-2); }
+.oc-kicker { margin:0; font-size:15px; font-weight:600; line-height:1.45; }
+.oc-setup { margin:0; color:var(--text-2); font-size:13.5px; line-height:1.55; }
+.oc-stage { background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:6px; overflow:hidden; }
+.oc-svg { display:block; width:100%; height:auto; max-height:340px; }
+.oc-edge { fill:none; stroke:var(--line-hi); }
+.oc-edge.is-live { stroke:color-mix(in srgb, var(--accent) 70%, var(--line-hi)); stroke-dasharray:7 5; animation:oc-flow .7s linear infinite; }
+.oc-edge.is-bad { stroke:var(--red); }
+.oc-svg marker path { fill:var(--line-hi); }
+.oc-node rect { fill:var(--panel); stroke:var(--line-hi); stroke-width:2; }
+.oc-node text { fill:var(--text); font-family:var(--font); }
+.oc-icon { font-size:18px; } .oc-label { font-size:12.5px; font-weight:600; } .oc-util { font-size:12px; font-family:var(--font-mono); fill:var(--text-2) !important; }
+.oc-node.is-warm rect { stroke:var(--amber); } .oc-node.is-hot rect { stroke:#ff9f43; }
+.oc-node.is-saturated rect { stroke:var(--red); fill:color-mix(in srgb, var(--red) 14%, var(--panel)); animation:oc-pulse 1s ease-in-out infinite; }
+.oc-node.is-saturated .oc-util, .oc-node.is-down .oc-util { fill:var(--red) !important; font-weight:700; }
+.oc-node.is-down rect { stroke:var(--red); stroke-dasharray:6 4; fill:color-mix(in srgb, var(--red) 8%, var(--panel2)); }
+.oc-node.is-pickable { cursor:pointer; } .oc-node.is-pickable:hover rect, .oc-node.is-pickable:focus rect { stroke:var(--accent); }
+.oc-node:focus { outline:none; }
+.oc-node.is-picked rect { stroke:var(--accent); stroke-width:3; }
+.oc-node.is-culprit rect { stroke:var(--red); stroke-width:3.5; }
+@keyframes oc-pulse { 50% { stroke-opacity:.45; } }
+@keyframes oc-flow { to { stroke-dashoffset:-12; } }
+@media (prefers-reduced-motion: reduce) { .oc-edge.is-live, .oc-node.is-saturated rect { animation:none; } }
+.oc-ask { display:grid; gap:8px; justify-items:start; }
+.oc-ask p { margin:0; }
+.oc-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.oc-chip { width:auto; padding:6px 12px; font-size:13px; }
+.oc-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.oc-bar input[type=range] { flex:1 1 160px; min-width:120px; accent-color:var(--accent); }
+.oc-read { display:flex; gap:10px; flex-wrap:wrap; font-size:13px; font-family:var(--font-mono); color:var(--text-2); }
+.oc-read b { color:var(--text); } .oc-read .is-bad { color:var(--red); }
+.oc-ok { display:flex; align-items:flex-end; gap:2px; height:28px; }
+.oc-ok i { flex:1; background:var(--line-hi); border-radius:2px 2px 0 0; }
+.oc-ok i.is-warn { background:var(--amber); } .oc-ok i.is-bad { background:var(--red); } .oc-ok i.is-now { outline:2px solid var(--accent); outline-offset:1px; }
+.oc-cap { min-height:44px; display:grid; gap:6px; justify-items:start; }
+.oc-cap p { margin:0; font-size:14px; line-height:1.5; }
+.oc-verdict, .oc-sum { margin:0; font-size:14px; }
+.oc-record { border-left:3px solid var(--line-hi); padding:2px 0 2px 14px; display:grid; gap:8px; }
+.oc-record h5 { margin:0; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-2); }
+.oc-record p { margin:0; font-size:13.5px; line-height:1.6; }
+.oc-sources { margin:0; padding-left:18px; font-size:12.5px; } .oc-sources a { color:var(--accent); }
+.oc-fine { color:var(--text-2); font-size:12px !important; }
+.oc-take { font-size:14px !important; }
+.oc-next { margin:0; color:var(--accent); font-size:13.5px; }
+.oc-fix { display:grid; gap:12px; }
+.oc-goal { margin:0; font-size:13px; color:var(--text-2); }
+.oc-hints { margin:0; padding-left:20px; font-size:13.5px; display:grid; gap:4px; }
+.oc-builder { margin-top:4px; }
+.oc-result { border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:var(--panel); }
+.oc-result.is-pass { border-color:color-mix(in srgb, var(--green) 50%, transparent); }
+.oc-result > p { margin:0 0 8px; }
+/* The incident archive in Ripple Ops. */
+.rp-case-page { display:grid; gap:16px; }
+.rp-card.is-case .rp-tier { text-transform:none; }
+@media (max-width: 600px) {
+  .oc-svg { max-height:260px; }
+  .oc-kicker { font-size:14px; }
+}

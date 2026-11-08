@@ -21,10 +21,20 @@ def test_sections_split_at_headings_and_keep_every_block_once():
         if not lesson.get('blocks'):
             continue
         split = adaptive.sections(lesson)
-        keys = [k for s in split['sections'] for k in s['blocks']] + split['finale']
+        keys = [k for s in split['sections'] for k in s['blocks']] + split['finale'] + split['opener']
         assert sorted(keys) == sorted(b['key'] for b in lesson['blocks'] if b['type'] != 'md'), key
         types = {b['key']: b['type'] for b in lesson['blocks'] if b['type'] != 'md'}
         assert all(types[k] in adaptive.FINALE for k in split['finale'])
+        assert all(types[k] in adaptive.OPENER for k in split['opener'])
+
+
+def test_an_outage_opens_the_lesson_and_is_never_a_warmup_or_folded():
+    lesson = LESSONS['cache-aside']
+    split = adaptive.sections(lesson)
+    assert split['opener'] == ['b950']
+    assert all('b950' not in s['blocks'] for s in split['sections'])
+    assert 'b950' not in adaptive.probes(lesson, {})
+    assert adaptive.plan(lesson, {})['opener'] == ['b950']
 
 
 def test_lead_skips_callouts_tables_code_and_lists():
@@ -44,7 +54,8 @@ def test_unseen_lesson_probes_one_block_per_section_and_learns_everything():
 def test_evidence_decides_modes_and_strong_warmups_skim_the_unknown_rest():
     lesson = LESSONS['cache-aside']
     secs = adaptive.sections(lesson)['sections']
-    graded = [s for s in secs if any(items.gradeable(lesson['blocks'][int(k[1:])]) for k in s['blocks'])]
+    by_key = {b['key']: b for b in lesson['blocks'] if b['type'] != 'md'}
+    graded = [s for s in secs if any(items.gradeable(by_key[k]) for k in s['blocks'])]
     held = {f'cache-aside:{k}': 'solid' for s in graded[:4] for k in s['blocks']}
     plan = {s['id']: s for s in adaptive.plan(lesson, held)['sections']}
     assert all(plan[s['id']]['mode'] == 'known' for s in graded[:4])

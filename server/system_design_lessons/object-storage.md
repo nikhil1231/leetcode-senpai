@@ -17,6 +17,11 @@ sources:
 case: jobs
 ---
 
+```outage
+key: b950
+case: proxied-uploads
+```
+
 > [!story] The upload service that melted the API
 > A photo app proxied every upload through its API servers: the phone sent bytes to the API, which streamed them to S3. A marketing push brought 40,000 simultaneous uploads of 5 MB photos. API instances ran out of memory buffering request bodies, connection slots filled with slow mobile uploads, and *every* endpoint — login, feed, checkout — timed out. Moving to presigned direct uploads took the bytes off the API entirely; the API's job became issuing permissions and recording metadata, a few milliseconds per upload.
 

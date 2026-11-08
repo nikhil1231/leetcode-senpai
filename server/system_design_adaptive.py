@@ -3,7 +3,8 @@
 A lesson splits into sections at its `##` headings. Each section's mode comes from evidence
 on its gradeable blocks, read from the knowledge ledger: `known` (collapsed: you have shown
 this), `skim` (key points and the remaining activities) or `learn` (the full do-first path).
-Interview and recall blocks form the lesson's finale. Walkthrough lessons (designs and the
+Interview and recall blocks form the lesson's finale. An outage block is the lesson's opener: it
+plays before the warm-up and is never folded, and its "now fix it" half belongs to the finale. Walkthrough lessons (designs and the
 casebook) are attempt-first instead of probed: you try a stage before seeing it, and the
 number of attempted stages grows through the course, fading the worked support.
 """
@@ -13,6 +14,7 @@ from .system_design_items import block_id, gradeable, is_walkthrough
 
 HEADING = re.compile(r'^##\s+(.+?)\s*$', re.M)
 FINALE = ('interview', 'recall')
+OPENER = ('outage',)
 # Fill-the-gaps leans on the lesson's own numbers, so it is never a warm-up question.
 PROBE_KINDS = ('predict', 'calc', 'order', 'sort', 'bug')
 MAX_PROBES = 5
@@ -36,8 +38,8 @@ def lead(text):
 
 
 def sections(lesson):
-    """{'sections': [{id, title, parts, blocks, lead, words}], 'finale': [block keys]}."""
-    out, finale = [{'id': 's0', 'title': None, 'parts': []}], []
+    """{'sections': [{id, title, parts, blocks, lead, words}], 'finale': [block keys], 'opener': [block keys]}."""
+    out, finale, opener = [{'id': 's0', 'title': None, 'parts': []}], [], []
     for b in lesson.get('blocks', []):
         if b['type'] == 'md':
             text, pos = b['text'], 0
@@ -52,6 +54,8 @@ def sections(lesson):
                 out[-1]['parts'].append({'type': 'md', 'text': rest})
         elif b['type'] in FINALE:
             finale.append(b['key'])
+        elif b['type'] in OPENER:
+            opener.append(b['key'])
         else:
             out[-1]['parts'].append({'type': 'block', 'key': b['key'], 'kind': b['type']})
     result = []
@@ -62,7 +66,7 @@ def sections(lesson):
         result.append({**s, 'blocks': [p['key'] for p in s['parts'] if p['type'] == 'block'],
                        'lead': next((x for x in map(lead, prose) if x), ''),
                        'words': sum(len(t.split()) for t in prose)})
-    return {'sections': result, 'finale': finale}
+    return {'sections': result, 'finale': finale, 'opener': opener}
 
 
 def evidence(lesson, section, statuses):
@@ -130,7 +134,7 @@ def plan(lesson, statuses, *, fresh=False, overrides=None, position=None):
         if not walk and o.get('mode') in MODES and not (o['mode'] == 'known' and evs[s['id']]['wrong']):
             mode = o['mode']
         out.append({**s, 'mode': mode, 'evidence': evs[s['id']], 'attempt': s['id'] in attempts, 'note': note})
-    return {'sections': out, 'finale': split['finale'], 'known_share': round(share, 2), 'walkthrough': walk}
+    return {'sections': out, 'finale': split['finale'], 'opener': split['opener'], 'known_share': round(share, 2), 'walkthrough': walk}
 
 
 def callbacks(lesson_id, order, views, limit=2):

@@ -56,7 +56,7 @@
     const top = res.bill.items.filter(i => i.usd >= 0.5).slice(0, 8);
     const label = i => i.id === '_egress' ? 'Bandwidth to users' : i.id === '_xregion' ? 'Cross-region replication' : (o.labelOf?.(i.defId) || i.defId);
     return `<div class="rp-report">
-      <div class="rp-score">${stars(s.stars)}<div><strong>${['Ripple went down', 'Survived, barely', 'Every target met', 'Every target met, with money to spare'][s.stars]}</strong>
+      <div class="rp-score">${stars(s.stars)}<div><strong>${(o.headlines || ['Ripple went down', 'Survived, barely', 'Every target met', 'Every target met, with money to spare'])[s.stars]}</strong>
         <span>${s.availability.toFixed(s.availability >= 99.99 ? 3 : 2)}% available · ${money(res.bill.total)}/month${s.lost >= 1 ? ` · ${fmt(s.lost)} writes lost` : ''}</span></div></div>
       <ul class="rp-objs">${s.objectives.map(x => `<li class="${x.pass ? 'is-pass' : 'is-fail'}"><span>${x.pass ? '✓' : '✗'}</span><em>${esc(x.label)}</em><b>${esc(x.actual)}</b><small>target ${esc(x.target)}</small></li>`).join('')}</ul>
       ${res.events.length ? `<h5>Incidents</h5><ul class="rp-evs">${res.events.map(e => `<li class="rp-${outcome[e.outcome][1]}"><b>${hh(e.at)}</b><span>${esc(e.label)}</span><em>${outcome[e.outcome][0]}${e.type !== 'poison-message' ? ` · ${(e.ok * 100).toFixed(1)}% ok` : ''}${e.lost >= 1 ? ` · ${fmt(e.lost)} lost` : ''}</em></li>`).join('')}</ul>` : ''}

@@ -16,6 +16,11 @@ sources:
   - ['Google SRE Book: Handling overload', 'https://sre.google/sre-book/handling-overload/']
 ---
 
+```outage
+key: b950
+case: slack-2021
+```
+
 > [!story] Twice the servers, half the throughput
 > An API team doubled its application fleet from 20 to 40 instances before a launch. Throughput went *down*. Each instance held a pool of 50 database connections; 40 × 50 = 2,000 connections against a Postgres server configured for 500. New instances queued for connections, timed out and retried, and the database burned CPU managing connection churn. The bottleneck had always been the database. Scaling the tier in front of it just added contenders.
 

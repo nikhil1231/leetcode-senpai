@@ -43,12 +43,24 @@ def tools(lesson):
     return [{'key': b['key'], 'type': b['type'], 'about': _first_line(b)} for b in lesson['blocks'] if b['type'] != 'md']
 
 
+def outage_note(b):
+    """An outage block for the tutor: the story and the fix, not the graph."""
+    kind = {'real': 'A real outage', 'what-if': 'A what-if built on a real write-up', 'composite': 'A composite of a common pattern'}[b['kind']]
+    fix = b.get('fix') or {}
+    return (f'[BLOCK {b["key"]} · outage] {kind}: {b["title"]} ({b.get("company", "")} {b["when"]}).\n'
+            f'He watches it break in the simulator first, then fixes it at the end of the lesson. Setup: {b["setup"]}\n'
+            f'What happened: {b["happened"]}\nLesson: {b["takeaway"]}'
+            + (f'\nThe fix he is asked for: {fix.get("prompt", "")} Hints: {" / ".join(fix.get("hints", []))}' if fix else ''))
+
+
 def notes(lesson, limit=NOTES_LIMIT):
     """The lesson as the tutor's private notes: prose in order, with blocks marked in place."""
     parts = []
     for b in lesson['blocks']:
         if b['type'] == 'md':
             parts.append(b['text'])
+        elif b['type'] == 'outage':
+            parts.append(outage_note(b))
         else:
             body = {k: v for k, v in b.items() if k not in ('type', 'key')}
             parts.append(f'[BLOCK {b["key"]} · {b["type"]}]\n' + yaml.safe_dump(body, sort_keys=False, allow_unicode=True, width=1000)[:1500])

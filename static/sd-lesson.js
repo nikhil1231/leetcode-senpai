@@ -1,6 +1,7 @@
 // Adaptive lesson player. A short warm-up finds what you already know; the lesson then folds
 // known sections away, trims prose to its key point and puts activities first. Walkthroughs are
-// attempt-first. The tutor explains mistakes, answers questions and throws curveballs when it is
+// attempt-first. A lesson with an outage case opens on it (watch it break, before the warm-up) and
+// asks you to fix it in the finale. The tutor explains mistakes, answers questions and throws curveballs when it is
 // connected; without it every section, activity and check still works.
 (function () {
   'use strict';
@@ -159,9 +160,10 @@
       <label class="sd-warmup-note"><span>Anything you already know, or want from this lesson? <small>Optional. The tutor uses it.</small></span><textarea class="textarea" rows="2" maxlength="1000" data-draft="note" placeholder="e.g. I use Redis daily but never thought about eviction"></textarea></label>
       <div class="sd-actions">${btn(S.busy.plan ? 'Building…' : `Build my lesson →`, 'plan', S.busy.plan ? 'disabled' : '', answered === probes.length)}${btn('I’m new to this: teach me everything', 'fresh')}<span class="sd-muted">${answered} of ${probes.length} answered</span></div></section>`;
   }
+  const openerHtml = () => (S.session.opener || []).map(slot).join('');
   function finaleHtml() {
-    const fin = S.session.finale;
-    return `<section class="sd-finale"><span class="sd-eyebrow">PUT IT TOGETHER</span><h3 id="sd-sec-finale" tabindex="-1">Use it as you would in an interview</h3>${twistHtml()}${fin.map(slot).join('')}
+    const fin = S.session.finale, fixes = (S.session.opener || []).filter(k => S.nodes['fix:' + k]);
+    return `<section class="sd-finale"><span class="sd-eyebrow">PUT IT TOGETHER</span><h3 id="sd-sec-finale" tabindex="-1">${fixes.length ? 'Fix what broke, then use it as you would in an interview' : 'Use it as you would in an interview'}</h3>${fixes.map(k => slot('fix:' + k)).join('')}${twistHtml()}${fin.map(slot).join('')}
       ${S.session.redesign ? `<div class="sd-redesign-note"><b>Coming back later:</b> in a few days this design returns as a blank-page redesign from memory, scheduled with the rest of your reviews. ${btn('Try it now', 'redesign')}</div>` : ''}</section>`;
   }
   function gapsHtml() {
@@ -204,11 +206,11 @@
   function html() {
     if (S.error && !S.session) return `<div class="sd-error">${esc(S.error)}</div>${btn('Try again', 'reload')}`;
     if (!S.session) return '<p class="sd-muted">Getting your lesson ready…</p>';
-    if (!S.session.planned) return warmupHtml();
+    if (!S.session.planned) return openerHtml() + warmupHtml();
     const P = pages(), i = pageIndex(P), p = P[i], next = P[i + 1];
     const dots = `<div class="sd-pager-top"><span class="sd-eyebrow">PART ${i + 1} OF ${P.length} · ${esc(p.label).toUpperCase()}</span><div class="sd-pager-dots">${P.map((x, j) => `<button type="button" data-lp="page" data-page="${j}" class="${j === i ? 'is-on' : j < i ? 'is-past' : ''} is-${x.kind === 'sec' ? x.s.mode : x.kind}" aria-label="Go to ${esc(x.label)}" title="${esc(x.label)}"></button>`).join('')}</div></div>`;
     const pager = `<nav class="sd-pager" aria-label="Lesson pages">${i ? btn('← Back', 'page', `data-page="${i - 1}"`) : '<span></span>'}${next ? btn(`Next: ${next.label} →`, 'page', `data-page="${i + 1}"`, true) : `<span class="sd-muted">End of the lesson.</span>`}</nav>`;
-    return `${S.error ? `<div class="sd-error" role="alert">${esc(S.error)}</div>` : ''}${i === 0 && !reference() ? planBanner() : ''}${dots}<div class="sd-page${p.kind === 'check' ? ' is-check' : ''}">${pageHtml(p)}</div>${pager}`;
+    return `${S.error ? `<div class="sd-error" role="alert">${esc(S.error)}</div>` : ''}${i === 0 ? openerHtml() : ''}${i === 0 && !reference() ? planBanner() : ''}${dots}<div class="sd-page${p.kind === 'check' ? ' is-check' : ''}">${pageHtml(p)}</div>${pager}`;
   }
   function railHtml() {
     if (!S.session?.planned) return '<span class="sd-eyebrow">IN THIS LESSON</span><p class="sd-muted">Warm-up first.</p>';
@@ -481,6 +483,7 @@
           else if (!S.session?.planned) setTimeout(paint, 0);
         },
       });
+    tmp.querySelectorAll(':scope > [data-fix-for]').forEach(n => { S.nodes['fix:' + n.dataset.fixFor] = n; });
     tmp.querySelectorAll(':scope > [data-block]').forEach(n => {
       S.nodes[n.dataset.block] = n;
       // Unsubmitted text inside an activity (a half-written answer) is saved too.

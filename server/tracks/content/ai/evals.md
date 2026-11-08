@@ -16,6 +16,11 @@ sources:
   - ['Anthropic docs: Create strong empirical evaluations', 'https://docs.anthropic.com/en/docs/test-and-evaluate/develop-tests']
 ---
 
+```outage
+key: b950
+case: gpt4o-sycophancy-2025
+```
+
 ## What an eval is
 
 An eval is **inputs + expected behaviour + a scorer**, run automatically:

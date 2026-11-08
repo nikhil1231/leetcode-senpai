@@ -82,8 +82,8 @@ def test_inserting_keyed_simulators_does_not_renumber_other_blocks():
             continue
         checked += 1
         with_sims, without = parse(text)['blocks'], parse(KEYED.sub('', text))['blocks']
-        keys = lambda blocks: [b['key'] for b in blocks if 'key' in b]
-        assert [k for k in keys(with_sims) if not re.match(r'^b[1-9]\d{2}$', k)] == keys(without)
+        keys = lambda blocks: [b['key'] for b in blocks if 'key' in b and not re.match(r'^b[1-9]\d{2}$', b['key'])]
+        assert keys(with_sims) == keys(without)
     assert checked >= 4
 
 

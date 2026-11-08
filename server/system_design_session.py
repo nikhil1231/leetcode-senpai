@@ -91,7 +91,7 @@ def session(store, key, now=None):
     progress = saved['state'] if saved and saved.get('plan_at') == (frozen.get('at') if is_planned else None) else None
     return {'lesson_id': key, 'planned': is_planned, 'fresh': frozen.get('fresh', False),
             'probes': frozen.get('probes', []) if is_planned else adaptive.probes(lesson, statuses),
-            'sections': result['sections'], 'finale': result['finale'], 'known_share': result['known_share'],
+            'sections': result['sections'], 'finale': result['finale'], 'opener': result['opener'], 'known_share': result['known_share'],
             'walkthrough': result['walkthrough'], 'position': position, 'intro': notes.get('intro', ''),
             'notes_pending': is_planned and not notes and llm.enabled(store.get_settings()),
             'callbacks': [{'id': q, 'lesson_id': QUESTIONS[q]['lesson_id'],

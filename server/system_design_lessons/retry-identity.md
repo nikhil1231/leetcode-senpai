@@ -17,6 +17,11 @@ sources:
 case: jobs
 ---
 
+```outage
+key: b950
+case: dynamodb-2015
+```
+
 > [!story] Two Generals, every day
 > The "Two Generals" problem proves that no protocol over an unreliable channel can guarantee both sides agree an action happened. Every payment API lives with it: the client sends "charge £40", the provider charges the card, and the response is lost on the way back. The client cannot know whether to retry. Stripe, Adyen, AWS and every serious API answer the same way — make retries safe with an **idempotency key**, so "do it again" means "tell me what happened the first time".
 

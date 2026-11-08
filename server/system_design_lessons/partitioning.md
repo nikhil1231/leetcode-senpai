@@ -16,6 +16,11 @@ sources:
   - ['Amazon DynamoDB: Partitions and data distribution', 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.Partitions.html']
 ---
 
+```outage
+key: b950
+case: notion-postgres
+```
+
 > [!story] Sharded by the wrong thing
 > A B2B SaaS company sharded its database by `user_id` because "users are the unit of scale". But nearly every product query was per *company*: dashboards, reports and permissions all aggregated a company's users. Each dashboard load fanned out to all 32 shards, one slow shard slowed every page, and a company-wide transaction (re-assigning all of a team's tickets) became a distributed transaction. Re-sharding by `company_id` took nine months.
 

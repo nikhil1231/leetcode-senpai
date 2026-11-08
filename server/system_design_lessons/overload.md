@@ -16,6 +16,11 @@ sources:
   - ['Bronson et al., Metastable Failures in Distributed Systems (HotOS 2021)', 'https://sigops.org/s/conferences/hotos/2021/papers/hotos21-s11-bronson.pdf']
 ---
 
+```outage
+key: b950
+case: facebook-2010
+```
+
 > [!story] The outage that outlived its cause
 > A cache cluster restarted during a routine deploy, and for 30 seconds the database took every read. It slowed; clients timed out after 2 seconds and retried; the retries doubled the load; the database slowed further. The cache came back within a minute, but the database stayed pinned at 100% for 40 more — busy serving requests whose clients had already given up and retried. This is a **metastable failure**: the trigger was brief, but the system had entered a self-sustaining overloaded state, and only shedding load deliberately got it out.
 

@@ -17,6 +17,11 @@ sources:
 case: links
 ---
 
+```outage
+key: b950
+case: cache-key-change
+```
+
 > [!story] The cache that was holding up the database
 > A retailer's product database served about 2,000 queries a second during normal traffic, comfortably. A Redis cluster in front of it absorbed another 38,000 reads a second. One Friday a deploy changed the cache key format from `product:{id}` to `product:v2:{id}`. Every key missed at once. Forty thousand reads a second landed on a database sized for two thousand, connection pools filled, the API timed out, and the outage lasted until engineers rolled back. Nothing was "broken" — the cache was simply doing a job nobody had written down: it *was* the capacity plan.
 

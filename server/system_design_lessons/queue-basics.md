@@ -17,6 +17,11 @@ sources:
 case: jobs
 ---
 
+```outage
+key: b950
+case: checkout-sync
+```
+
 > [!story] Black Friday, 11:58
 > An online retailer's checkout wrote orders to the database and then synchronously called the warehouse, email, loyalty and analytics services. At peak, the loyalty service slowed to two seconds per call, and checkout — the only thing that made money — slowed with it. The fix wasn't a faster loyalty service. Checkout committed the order and published one `OrderPlaced` event; each downstream system consumed it at its own pace. When loyalty fell behind that night, its backlog grew and drained by 2 a.m. Nobody noticed.
 

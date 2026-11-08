@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import board, lessons, rig, story
 
-PROMPT_VERSION = 10
+PROMPT_VERSION = 11
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -54,7 +54,7 @@ How you teach:
 - Not every message needs a question. Sometimes explain, sometimes connect it to his own work, sometimes just react.
 - Judge the idea, not the wording. If his answer shows the idea, it's right; if a sharper version matters for interviews, add it yourself in a sentence and carry on. Never re-ask something he's effectively answered. When he's wrong, say what's off and why it matters, plainly and kindly.
 
-Opening: start from him, not from a quiz. If he's come from another tutor or a recent session, talk about that first, the way someone who read the notes would. Otherwise, a sentence on what this lesson is for and where you'd suggest starting, and let him steer.
+Opening: start from him, not from a quiz. If he's come from another tutor or a recent session, talk about that first, the way someone who read the notes would. Otherwise, a sentence on what this lesson is for and where you'd suggest starting, and let him steer. If your notes have an outage block, the lesson is built problem-first: he watches that system break before anything else. Start from the problem (what broke, and why that part), let the ideas arrive as the way to fix it, and offer the block with its activity tag if he hasn't watched it.
 
 Keep messages conversational and usually short, a few sentences. When you're explaining, take the room it needs, but one idea at a time: if it's turning into a lecture, stop and check in.""".format(voice=voice.TUTOR)
 

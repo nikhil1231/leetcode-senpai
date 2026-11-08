@@ -89,7 +89,7 @@
 
   // ---------- Shared pieces ----------
   const KICKER = { predict: 'Predict first', timeline: 'Step through it', sim: 'Experiment', sort: 'Sort it out', order: 'Put it in order',
-    calc: 'Estimate', bug: 'Spot the bug', critique: 'Critique a design', faded: 'Fill the gaps', recall: 'Explain it yourself', incident: 'On-call drill', arch: 'Architecture', board: 'Whiteboard', interview: 'In the interview' };
+    calc: 'Estimate', bug: 'Spot the bug', critique: 'Critique a design', faded: 'Fill the gaps', recall: 'Explain it yourself', incident: 'On-call drill', arch: 'Architecture', board: 'Whiteboard', interview: 'In the interview', outage: 'Watch it break' };
   const button = (text, act, extra = '', primary = false) => `<button type="button" class="button ${primary ? 'is-primary' : ''}" data-b="${act}" ${extra}>${esc(text)}</button>`;
   const doneTag = '<span class="sd-block-done" hidden>✓ Done</span>';
   function frame(b, inner, title) {
@@ -650,6 +650,21 @@
     } };
   };
 
+  // ---------- Outage: watch it break here, fix it at the end (sd-outage.js) ----------
+  // The fix half is its own section, so a lesson player can put it in the finale; render() puts it last.
+  const fixFrame = b => b.fix ? `<section class="sd-block sd-block-outage-fix" data-fix-for="${b.key}"><header class="sd-block-head"><span class="sd-kicker">Now fix it</span><h4>${inline(b.title)}</h4></header><div class="sd-outage-fix"></div></section>` : '';
+  R.outage = b => frame(b, '<div class="sd-outage"></div>', b.title);
+  W.outage = (el, b, ctx) => {
+    const host = el.querySelector('.sd-outage'), fixEl = el.parentNode?.querySelector(`[data-fix-for="${b.key}"] .sd-outage-fix`);
+    if (!window.SDOutage) { host.innerHTML = '<p class="sd-error">The outage player did not load. Reload the page.</p>'; return; }
+    let state = {};
+    const save = part => s => { state = { ...state, [part]: s }; ctx.save(b, state); };
+    const w = window.SDOutage.watch(host, b, { lesson: true, save: save('watch'), onGuess: () => {}, onDone: () => ctx.done(b, null) });
+    const f = fixEl ? window.SDOutage.fix(fixEl, b, { save: save('fix') }) : null;
+    ctx.track({ destroy() { w.destroy(); f?.destroy(); } });
+    return { restore(st) { state = { ...st }; if (st.fix) f?.restore(st.fix); return st.watch ? w.restore(st.watch) : null; } };
+  };
+
   // ---------- Simulator host ----------
   R.sim = b => frame(b, `${b.intro ? `<div class="sd-prompt">${md(b.intro)}</div>` : ''}<div class="sd-sim" data-sim="${esc(b.name)}"></div>${b.challenges ? `<ul class="sd-challenges">${b.challenges.map((c, i) => `<li data-c="${i}"><span class="sd-check">○</span>${inline(c.text)}</li>`).join('')}</ul>` : ''}${b.takeaway ? `<details class="sd-takeaway"><summary>What to notice</summary>${md(b.takeaway)}</details>` : ''}`, b.title);
   const OPS = { '<': (a, c) => a < c, '<=': (a, c) => a <= c, '>': (a, c) => a > c, '>=': (a, c) => a >= c, '==': (a, c) => a === c };
@@ -675,7 +690,9 @@
 
   // ---------- Assembly ----------
   function render(lesson) {
-    return (lesson.blocks || []).map(b => b.type === 'md' ? `<div class="sd-md">${md(b.text)}</div>` : (R[b.type] ? R[b.type](b) : '')).join('');
+    const blocks = lesson.blocks || [];
+    return blocks.map(b => b.type === 'md' ? `<div class="sd-md">${md(b.text)}</div>` : (R[b.type] ? R[b.type](b) : '')).join('')
+      + blocks.filter(b => b.type === 'outage').map(fixFrame).join('');
   }
   function outline(lesson) {
     const heads = [];
@@ -722,6 +739,6 @@
       },
     };
   }
-  const renderBlock = b => b.type === 'md' ? `<div class="sd-md">${md(b.text)}</div>` : (R[b.type] ? R[b.type](b) : '');
+  const renderBlock = b => b.type === 'md' ? `<div class="sd-md">${md(b.text)}</div>` : (R[b.type] ? R[b.type](b) : '') + (b.type === 'outage' ? fixFrame(b) : '');
   window.SDBlocks = { md, inline, esc, render, renderBlock, wire, outline, slug, highlight };
 })();

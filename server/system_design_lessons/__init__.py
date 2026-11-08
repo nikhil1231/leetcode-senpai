@@ -7,8 +7,11 @@ Block keys are positional (b0, b1, …) and practice history is keyed by them, s
 in a published lesson are appended after the existing ones, never inserted.
 Question IDs are `<lesson>-check-<n>-v2` / `<lesson>-fire-<n>-v2`; once published
 their semantics are immutable, like v1. Anything malformed fails loudly at import.
+An ```outage block names a case from static/simulators/outages.json (scripts/build_outages.py);
+the case is copied into the block, so the lesson carries everything the player needs.
 """
 import hashlib
+import json
 import os
 import re
 
@@ -48,7 +51,19 @@ REQUIRED = {
     'incident': ['title', 'start', 'nodes'],
     'arch': ['nodes', 'edges'],
     'interview': ['say', 'followups', 'weak', 'strong'],
+    'outage': ['case'],
 }
+OUTAGES = os.path.join(HERE, '..', '..', 'static', 'simulators', 'outages.json')
+_cases = None
+
+
+def cases():
+    """Outage cases by id, read once."""
+    global _cases
+    if _cases is None:
+        with open(OUTAGES, encoding='utf-8') as fh:
+            _cases = {c['id']: c for c in json.load(fh)['cases']}
+    return _cases
 EXPLICIT_KEY = re.compile(r'^b[1-9]\d{2}$')  # three digits, so never a positional key
 FRONT = ['id', 'category', 'skill', 'title', 'minutes', 'summary', 'objectives', 'sources']
 SKILLS = {'requirements', 'reads', 'capacity', 'retries', 'concurrency', 'operations'}
@@ -187,6 +202,12 @@ def _check_block(lesson, kind, data, n):
                 raise LessonError(f'{where}: missing node needs choices')
     if kind == 'calc' and float(data['answer']) <= 0:
         raise LessonError(f'{where}: answer must be positive')
+    if kind == 'outage':
+        case = cases().get(data['case'])
+        if not case:
+            raise LessonError(f'{where}: unknown outage case {data["case"]!r}')
+        if case.get('lesson') != lesson:
+            raise LessonError(f'{where}: case {data["case"]} belongs to lesson {case.get("lesson")!r}')
 
 
 def _question(lesson, meta, raw, kind, n):
@@ -269,6 +290,8 @@ def parse(text, name='lesson', skills=None):
         else:
             raise LessonError(f'{name}: block key {explicit!r} must be unique and look like b900 (b100-b999)')
         taken.add(key)
+        if lang == 'outage':
+            data = {**{k: v for k, v in cases()[data['case']].items() if k != 'id'}, **data}
         blocks.append({'type': lang, 'key': key, **data})
     tail = body[pos:].strip()
     if tail:

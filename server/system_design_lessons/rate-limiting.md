@@ -16,6 +16,11 @@ sources:
   - ['IETF draft: RateLimit header fields for HTTP', 'https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/']
 ---
 
+```outage
+key: b950
+case: github-ddos-2018
+```
+
 > [!story] The limit that allowed double
 > An API advertised "100 requests per minute" using a fixed-window counter keyed by `user:minute`. A scraper discovered it could send 100 requests at 12:00:59 and another 100 at 12:01:00 — 200 requests in two seconds, every minute, without ever being rejected. Nothing was buggy; the algorithm counts per calendar window, not per rolling minute. The team switched to a sliding-window counter, and the scraper's burst dropped to the intended rate.
 

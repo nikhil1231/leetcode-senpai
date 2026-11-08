@@ -16,6 +16,7 @@
   const LABEL = { ask: 'Questions', read: 'Reads', write: 'Writes', media: 'Media views', upload: 'Uploads', search: 'Searches', realtime: 'Live messages',
     geo: 'Nearby lookups', locate: 'Location updates', payment: 'Payments', attack: 'Attack traffic' };
   const DBS = new Set(['db-sql', 'db-nosql', 'db-graph', 'db-timeseries']);
+  const EDGE = new Set(['dns', 'cdn']);
   const READISH = new Set(['read', 'attack', 'search', 'geo', 'media']);
   const KB = { read: 2, write: 1, media: 300, upload: 2000, search: 4, realtime: 1, geo: 2, locate: 0.1, payment: 2, attack: 1 };
   // A normal day: quiet at night, busy in the evening. Scaled so the mean is 1 and the peak is the scenario's.
@@ -24,7 +25,7 @@
     'region-outage': 'Region outage', 'db-failover': 'Database primary dies', 'bad-deploy': 'Bad deploy', 'slow-dependency': 'Slow third party',
     'poison-message': 'Poison message', ddos: 'DDoS attack', 'partner-burst': 'Partner bulk import',
     'model-update': 'Provider silently updates the model', 'rate-limit': 'Provider throttles the model', 'provider-outage': 'Model provider outage',
-    'injection-campaign': 'Injection campaign', 'doc-change': 'Refund policy changed' };
+    'injection-campaign': 'Injection campaign', 'doc-change': 'Refund policy changed', 'node-down': 'A component fails' };
 
   const clamp = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
   const mean = a => (Number(a[0]) + Number(a[1])) / 2;
@@ -153,6 +154,12 @@
     c = c.filter(k => rank(m, k, type, scn) === best);
     const checks = m.nodes[from].role === 'pass' || m.nodes[from].defId === 'dns';
     if (checks) { const up = c.filter(k => !ctx.down.has(k)); if (up.length) c = up; }
+    // Clients fail over at the DNS layer: a dead name server or CDN is skipped for the next-best way in.
+    if (m.nodes[from].role === 'source' && c.some(k => ctx.down.has(k) && EDGE.has(m.nodes[k].defId))) {
+      const up = c.filter(k => !(ctx.down.has(k) && EDGE.has(m.nodes[k].defId)));
+      const alive = up.length ? up : m.kids[from].filter(k => !ctx.down.has(k) && (!filter || filter(m.nodes[k])) && reach(m, k, type));
+      if (alive.length) { const b = Math.min(...alive.map(k => rank(m, k, type, scn))); c = alive.filter(k => rank(m, k, type, scn) === b); }
+    }
     return c;
   }
   function send(ctx, from, type, rps, depth, filter) {
@@ -388,7 +395,7 @@
 
   // ---------- events ----------
   function modsAt(scn, h, m) {
-    const o = { start: false, mult: {}, hotShare: 0, cacheCold: 1, az: false, region: false, dbFail: false, deployErr: 0, extMs: 0, extErr: 0, poison: false, ddos: 0, cacheNode: false, active: [] };
+    const o = { start: false, mult: {}, hotShare: 0, cacheCold: 1, az: false, region: false, dbFail: false, deployErr: 0, extMs: 0, extErr: 0, poison: false, ddos: 0, cacheNode: false, dead: new Set(), active: [] };
     for (const e of scn.events || []) {
       const at = Number(e.at) || 0, dur = Math.max(1, Number(e.dur) || 1);
       if (e.type === 'poison-message' && h >= at) o.poison = true;
@@ -407,6 +414,10 @@
       else if (e.type === 'bad-deploy') o.deployErr = Math.max(o.deployErr, h === at ? (p.err || 0.3) : (m.has('monitoring') ? 0 : p.err || 0.3));
       else if (e.type === 'slow-dependency') { o.extMs = Math.max(o.extMs, p.ms || 4000); o.extErr = Math.max(o.extErr, p.err || 0.2); }
       else if (e.type === 'ddos') o.ddos = Math.max(o.ddos, p.mult || 20);
+      else if (e.type === 'node-down') {   // one named component (or every one of a kind) stops answering: software, not hardware
+        const ids = [].concat(p.node || []), kinds = [].concat(p.defId || []);
+        for (const id of m.ids) if (ids.includes(id) || kinds.includes(m.nodes[id].defId)) o.dead.add(id);
+      }
     }
     if (o.cacheNode) {
       const caches = m.of('cache'), ring = m.has('consistent-hash'), shards = sum(caches, c => m.nodes[c].count) || 1;
@@ -420,6 +431,7 @@
     const down = new Set();
     for (const id of m.ids) {
       const n = m.nodes[id];
+      if (n.role !== 'source' && mods.dead.has(id)) down.add(id);
       if (n.role === 'source' || n.role === 'external' || n.role === 'ops' || n.role === 'dlq') continue;
       if (mods.region && m.regions === 1 && n.defId !== 'cdn' && n.defId !== 'dns') down.add(id);
       if (mods.az && n.azs === 1 && !n.def.multiAz && n.role !== 'pass' && n.role !== 'cdn') down.add(id);

@@ -16,6 +16,11 @@ sources:
   - ['Google Research: Consistent hashing with bounded loads', 'https://research.google/blog/consistent-hashing-with-bounded-loads/']
 ---
 
+```outage
+key: b950
+case: memcached-remap
+```
+
 > [!story] The cache resize that took down the database
 > A team ran 10 memcached servers and picked one per key with `hash(key) % 10`. Traffic grew, so they added an 11th server on a Tuesday afternoon. About 90% of keys suddenly mapped to a different server — which didn't have them. The cache hit rate fell from 95% to under 10% in seconds, and the database behind it, sized for a 5% miss rate, collapsed. The client library had offered "ketama" consistent hashing all along; turning it on would have moved about one key in eleven.
 

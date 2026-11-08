@@ -16,6 +16,11 @@ sources:
   - ['Ragas docs: Metrics', 'https://docs.ragas.io/en/stable/concepts/metrics/']
 ---
 
+```outage
+key: b950
+case: air-canada-2024
+```
+
 ## The pipeline
 
 ```arch

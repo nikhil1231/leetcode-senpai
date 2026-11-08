@@ -29,7 +29,7 @@ LEVELS = {l['id']: l for l in _json('ripple.json')['levels']}
 COMPONENTS = list(ECON)
 EVENTS = ('surge', 'hot-key', 'cache-flush', 'cache-node', 'az-outage', 'region-outage', 'db-failover', 'bad-deploy',
           'slow-dependency', 'poison-message', 'ddos', 'partner-burst',
-          'model-update', 'rate-limit', 'provider-outage', 'injection-campaign', 'doc-change')
+          'model-update', 'rate-limit', 'provider-outage', 'injection-campaign', 'doc-change', 'node-down')
 TRAFFIC = ('read', 'write', 'media', 'upload', 'search', 'realtime', 'geo', 'locate', 'payment')
 ALIASES = {'lb': 'load-balancer', 'app': 'app-server', 'service': 'app-server', 'server': 'app-server', 'api': 'app-server',
            'db': 'db-sql', 'sql': 'db-sql', 'postgres': 'db-sql', 'database': 'db-sql', 'nosql': 'db-nosql', 'redis': 'cache',
@@ -131,6 +131,11 @@ def _scenario(raw):
         for k, lo, hi in (('mult', 0.01, 50), ('share', 0.05, 0.9), ('ms', 500, 30000), ('err', 0, 1), ('drop', 0, 0.5)):
             if e.get(k) is not None and _num(e[k], lo, hi) is not None:
                 ev['params'][k] = _num(e[k], lo, hi)
+        if ev['type'] == 'node-down':
+            kind = ALIASES.get(str(e.get('component') or e.get('defId') or '').strip().lower(), str(e.get('component') or e.get('defId') or '').strip().lower())
+            if kind not in ECON:
+                continue
+            ev['params']['defId'] = kind
         events.append(ev)
     scn['events'] = events
     scn['title'] = level['title'] if level and not raw.get('title') else str(raw.get('title') or 'The tutor\'s design')[:80]
@@ -287,10 +292,10 @@ incidents:
 - kind: one of {components}. A client is added if you leave it out.
 - Settings per component where it has them: size (tier), instances, zones (1-3), replicas, shards, autoscale (max instances), timeouts, canary, hotKey, coalesce (true/false).
 - Traffic: users and per-user daily requests by type ({traffic}), or level: a Ripple Ops level id to borrow its traffic and targets ({levels}).
-- incidents (up to {events_max}): type is one of {events}; at (hour 0-23), dur (hours), and mult (surge, ddos, partner-burst), share (hot-key 0.05-0.6), ms (slow-dependency) or err (bad-deploy 0-1) where they apply.
+- incidents (up to {events_max}): type is one of {events}; at (hour 0-23), dur (hours), and mult (surge, ddos, partner-burst), share (hot-key 0.05-0.6), ms (slow-dependency), err (bad-deploy 0-1) or component (node-down: the kind of component that stops answering, e.g. dns or service-discovery) where they apply.
 - An LLM system (a RAG bot, an agent with tools): use the AI parts ({ai_parts}), options grounded, cachePrefix (models), fresh (vector-db), confirm and scoped (tool-gateway). Give users, questions (per user a day), optionally mix (shares of {ai_kinds}), quality (target %) and p95 (ms). The run then scores answers right, errors, latency, harmful actions and the token bill. AI incidents: model-update, rate-limit, provider-outage, injection-campaign, doc-change."""
 
 
 def guide():
     return GUIDE.format(components=', '.join(c for c in COMPONENTS if not ECON[c].get('ai')), traffic=', '.join(TRAFFIC), levels=', '.join(LEVELS),
-                        events=', '.join(EVENTS[:12]), events_max=MAX_EVENTS, ai_parts=', '.join(c for c in COMPONENTS if ECON[c].get('ai')), ai_kinds=', '.join(AI_KINDS))
+                        events=', '.join(EVENTS[:12] + ('node-down',)), events_max=MAX_EVENTS, ai_parts=', '.join(c for c in COMPONENTS if ECON[c].get('ai')), ai_kinds=', '.join(AI_KINDS))

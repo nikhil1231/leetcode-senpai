@@ -17,6 +17,11 @@ sources:
 case: links
 ---
 
+```outage
+key: b950
+case: media-from-origin
+```
+
 > [!incident] Christmas Day, 2015
 > During a traffic surge, Steam changed its CDN caching configuration. For about an hour, store pages that included account details — names, addresses, partial card numbers, purchase history — were cached at the edge and served to whoever requested the same URL next. Roughly 34,000 users were affected. The pages were personalised, but nothing in the response told shared caches that. The CDN did exactly what it was told.
 

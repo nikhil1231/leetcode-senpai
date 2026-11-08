@@ -5,7 +5,8 @@
 // knowledge model, and failures open gaps the tutor will ask about. The model plays the cast for
 // debriefs, design reviews (with what-if incidents run against your design), mock interviews and new
 // levels; without it the game still works. The Ripple Assist chapters (chapter "assist") are AI
-// systems run by ai-sim.js through the same builder.
+// systems run by ai-sim.js through the same builder. The incident archive plays real outages that
+// have no lesson of their own (sd-outage.js): watch one break, then fix it.
 (function () {
   'use strict';
   const esc = s => String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -18,18 +19,19 @@
   const UNITS = { peakReadRps: 'req/s', peakWriteRps: 'req/s', storageGbYear: 'GB', egressTbMonth: 'TB', cacheGb: 'GB',
     questionsPerDay: 'a day', peakQps: 'per second', tokensPerQuestion: 'tokens', largeModelMonthUsd: '$ a month' };
   const MIC = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v2.5"/></svg>';
-  let camp = null, sims = null, pending = null;
+  let camp = null, sims = null, pending = null, outages = [];
   const readLocal = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
   const writeLocal = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* fine */ } };
 
   async function loadStatic() {
     if (camp) return;
-    const [c, s] = await Promise.all([getJson('/simulators/ripple.json'), getJson('/simulators/internals.json'), B().load()]);
-    camp = c; sims = Object.fromEntries(s.topics.map(t => [t.id, t]));
+    const [c, s, o] = await Promise.all([getJson('/simulators/ripple.json'), getJson('/simulators/internals.json'), window.SDOutage?.cases().catch(() => []) || [], B().load()]);
+    camp = c; sims = Object.fromEntries(s.topics.map(t => [t.id, t])); outages = o || [];
   }
 
   function mount(el, o = {}) {
     let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '';
+    let casePage = null;
     let est = {}, graded = null, notes = '', notesOpen = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
     const levels = () => camp.levels;
     const byId = id => levels().find(l => l.id === id);
@@ -42,6 +44,22 @@
     }
     const unlocked = id => ov.progress.unlocked.includes(id);
     const best = id => ov.progress.levels[id]?.best || 0;
+
+    // ---------- the incident archive ----------
+    function archiveHtml() {
+      const own = outages.filter(c => !c.lesson), taught = outages.filter(c => c.lesson);
+      if (!outages.length) return '';
+      const tag = c => (window.SDOutage.KIND[c.kind] || ['Composite'])[0];
+      return `<section class="rp-sec"><h3>The incident archive</h3><p class="rp-sub">Real outages that don't belong to one lesson. Watch each one break on the simulator, read what happened, then fix it.</p>
+        <div class="rp-cards">${own.map(c => `<button type="button" class="rp-card is-case" data-case="${esc(c.id)}"><span class="rp-card-top"><span class="rp-tier">${esc(tag(c))} · ${esc(c.company || '')} · ${esc(c.when)}</span>${readLocal(`outage-fixst-${c.id}`)?.fixed ? '<span class="rp-stars">✓</span>' : ''}</span>
+          <strong>${esc(c.title)}</strong><span class="rp-kicker">${esc(c.kicker)}</span><span class="rp-card-foot">${c.fix ? 'Watch it, then fix it' : 'Watch it'}</span></button>`).join('')}</div>
+        ${taught.length ? `<p class="rp-sub">Lessons open with one too: ${taught.map(c => `<button type="button" class="sim-link" data-lesson="${esc(c.lesson)}" data-section="${esc(c.section)}">${esc(c.company ? c.company + ', ' + c.when : c.title)}</button>`).join(' · ')}.</p>` : ''}</section>`;
+    }
+    function openCase(id) {
+      const c = outages.find(x => x.id === id);
+      if (!c) return;
+      stopBuilder(); view = 'case'; L = c; paint();
+    }
 
     // ---------- hub ----------
     function levelCard(l) {
@@ -71,6 +89,7 @@
           <div class="rp-cards">${main.map(levelCard).join('')}</div></section>
         ${assist.length ? `<section class="rp-sec"><h3>Ripple Assist: the AI chapters</h3><p class="rp-sub">Ripple ships an AI support assistant. Models, retrieval, routing, guardrails, tools and evals instead of servers and databases, against quality, latency, safety and a token bill. They open once you've survived “${esc(byId('async-work')?.title || '')}”, one after another.</p><div class="rp-cards">${assist.map(levelCard).join('')}</div></section>` : ''}
         <section class="rp-sec"><h3>Side quests</h3><p class="rp-sub">Ripple's partnerships, from the casebook. They open once you've survived “${esc(byId('async-work')?.title || '')}”.</p><div class="rp-cards">${side.map(levelCard).join('')}</div></section>
+        ${archiveHtml()}
         <section class="rp-sec"><h3>New incidents</h3><p class="rp-sub">Priya writes you a fresh level, aimed at what your last runs got wrong unless you pick a topic.</p>
           ${ov.enabled ? `<div class="rp-gen"><select data-gen-focus aria-label="Topic"><option value="">My weak spots</option>${conceptOpts}</select>
             <select data-gen-size aria-label="Size"><option value="startup">Startup scale</option><option value="scale-up" selected>Scale-up</option><option value="giant">Giant</option></select>
@@ -343,7 +362,7 @@
       try { const s = await call(`/scenarios/${encodeURIComponent(id)}`); s.generated = true; await openLevel(s); }
       catch (e) { err = e.message; paint(); }
     }
-    function stopBuilder() { if (builder) { builder.flush(); builder.destroy(); builder = null; } clearInterval(clock); keepChat(); }
+    function stopBuilder() { if (builder) { builder.flush(); builder.destroy(); builder = null; } casePage?.destroy(); casePage = null; clearInterval(clock); keepChat(); }
     async function mountBuilder() {
       const stage = el.querySelector('[data-stage]');
       if (!stage || !L) return;
@@ -359,6 +378,12 @@
       if (dead) return;
       stopBuilder();
       if (view === 'hub') { el.innerHTML = hubHtml(); return; }
+      if (view === 'case') {
+        el.innerHTML = `<div class="rp rp-case-page"><div class="sd-breadcrumb"><button type="button" class="button" data-hub>← Ripple Ops</button><span>/ The incident archive</span></div><h2 id="sd-heading" tabindex="-1">${esc(L.title)}</h2><div data-case-host></div></div>`;
+        casePage = window.SDOutage.page(el.querySelector('[data-case-host]'), L);
+        el.querySelector('#sd-heading')?.focus({ preventScroll: true });
+        return;
+      }
       writeLocal(`rp-step-${L.id}`, step);
       el.innerHTML = levelHtml(L);
       if (step === 'build') await mountBuilder();
@@ -371,6 +396,7 @@
       if (!t) return;
       const d = t.dataset;
       if (d.open) { const l = byId(d.open); if (l && unlocked(l.id)) await openLevel(l); }
+      else if (d.case) openCase(d.case);
       else if (d.hub !== undefined) { stopBuilder(); view = 'hub'; L = null; await refresh(); paint(); }
       else if (d.step) { if (step === 'build') stopBuilder(); step = d.step; paint(); }
       else if (d.daily !== undefined) { const s = dailyScenario(); if (s) await openLevel({ ...byId(s.base), ...s, startFrom: s.base }); }

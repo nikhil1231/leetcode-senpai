@@ -16,6 +16,11 @@ sources:
 case: links
 ---
 
+```outage
+key: b950
+case: discord-messages
+```
+
 > [!incident] The Justin Bieber problem
 > Early Instagram engineers described a recurring incident: when one of the most-followed accounts posted, likes and comments on that single photo arrived so fast that the cache and database shard holding it were overwhelmed — while the rest of the cluster sat idle. Twitter, Facebook and every social product since have a version of it. Sharding spreads *keys*; it does nothing for *one* key that a large share of all traffic wants.
 

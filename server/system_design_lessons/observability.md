@@ -16,6 +16,11 @@ sources:
   - ['W3C Trace Context', 'https://www.w3.org/TR/trace-context/']
 ---
 
+```outage
+key: b950
+case: cloudflare-2019
+```
+
 > [!story] Green dashboards, angry customers
 > An outage report from a payments company: for 50 minutes, about 8% of card payments failed for customers of one bank. Every dashboard was green — average latency was normal, the overall error rate barely moved, CPU was fine. The alerts were on host metrics and global averages, so a problem confined to one bank's BIN range was invisible. Support tickets found it first. The fix wasn't more dashboards; it was being able to slice errors by the dimensions that matter, and alerting on what customers experience.
 

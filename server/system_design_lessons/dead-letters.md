@@ -17,6 +17,11 @@ sources:
 case: jobs
 ---
 
+```outage
+key: b950
+case: poison-invoice
+```
+
 > [!story] One bad message, six hours of silence
 > A payments team consumed a Kafka topic with strict per-account ordering. One event arrived with a currency code the consumer didn't recognise. It threw, didn't commit the offset, and retried — forever. Every later event in that partition, for thousands of accounts, queued behind it. Dashboards showed the consumer "healthy" (it was running) while lag climbed for six hours. A single **poison message** had stopped a twelfth of the business.
 

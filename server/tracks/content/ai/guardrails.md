@@ -16,6 +16,11 @@ sources:
   - ['NIST AI Risk Management Framework', 'https://www.nist.gov/itl/ai-risk-management-framework']
 ---
 
+```outage
+key: b950
+case: chevy-tahoe-2023
+```
+
 ## Prompt injection
 
 Models can't reliably tell *your* instructions from instructions that appear inside data. Two forms:
