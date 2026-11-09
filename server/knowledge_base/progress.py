@@ -166,7 +166,7 @@ def next_step(rep, tutor=False, active=None, last_lesson=None):
                           'label': f'Start ({len(untested)} questions)', 'tutor': False})
         cont = _lesson_state(l) == 'started'
         found.append({'kind': 'learn', 'lesson': l['id'], 'area': a['id'],
-                      'title': ('Go deeper on ' if cont else 'Learn ') + l['title'],
+                      'title': ('Go deeper on ' if cont else 'Next lesson: ') + l['title'],
                       'why': (f'You have been tested on {l["tested"]} of its {l["total"]} ideas so far. '
                               + ('The tutor will work through the rest with you.' if tutor else 'The lesson covers the rest.') if cont
                               else 'Next in the course.' + (' The tutor will ask you questions as you go; talk or type.' if tutor else '')),

@@ -497,3 +497,10 @@ details.sd-goals summary { cursor:pointer; font-size:11px; letter-spacing:.08em;
 .sd-sim-open { display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; text-align:left; background:var(--panel2); color:var(--text); border:1px dashed var(--line-hi); border-radius:10px; padding:14px 16px; font:inherit; cursor:pointer; }
 .sd-sim-open:hover, .sd-sim-open:focus-visible { border-color:var(--accent); }
 .sd-sim-open span { color:var(--accent); font-size:12.5px; white-space:nowrap; }
+
+/* Sort-it-out rows: on a narrow screen the choices drop under the prompt instead of crushing it. */
+@media (max-width: 720px) {
+  .sd-sort-item { grid-template-columns: minmax(0, 1fr); }
+  .sd-seg { display: flex; flex-wrap: wrap; width: 100%; }
+  .sd-seg button { flex: 1 1 auto; border-bottom: 1px solid var(--line); }
+}

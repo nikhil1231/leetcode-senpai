@@ -47,6 +47,8 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 #tab-design .button:not(.is-primary) { background:transparent; border:1px solid var(--line); color:var(--text-2); }
 #tab-design .button:not(.is-primary):hover { background:var(--panel2); border-color:#46525c; color:var(--text); }
 #tab-design :focus-visible,.section-switcher :focus-visible,.design-nav :focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+/* Headings take programmatic focus on navigation so screen readers announce the page; they are not controls. */
+#tab-design [tabindex="-1"]:focus-visible,#tab-track [tabindex="-1"]:focus-visible { outline:none; }
 .sd-eyebrow { display:block; color:var(--accent); font-size:9px; letter-spacing:.13em; font-weight:650; line-height:1.6; }
 .sd-page-intro { margin-bottom:32px; max-width:760px; }
 .sd-page-intro h2 { font-size:clamp(25px,2.6vw,35px); font-weight:550; line-height:1.22; letter-spacing:-.04em; margin:12px 0; color:var(--text); }

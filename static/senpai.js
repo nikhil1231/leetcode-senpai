@@ -109,9 +109,8 @@
     const short = target ? target.split(/[(:\-–—.;,]/)[0].trim() : '';
     return `<header class="dc-hero sp-hero"><span class="dc-eyebrow">Senpai · your career target</span><h2>${short ? esc(short) : 'No career target yet'}</h2>
       ${target && target !== short ? `<p class="help">${esc(target)}</p>` : ''}
-      <p class="help">${fresh} ${js.configured ? `<a href="${esc(js.links.settings)}" target="_blank" rel="noopener">Edit target in Job Scout</a>` : ''}
-        ${!synced && !js.configured ? '<button type="button" class="button is-ghost is-small" data-settings>Edit in Settings</button>' : ''}</p>
-      <div class="dc-actions">${js.configured ? '<button type="button" class="button is-small" data-sync>Sync now</button>' : ''}
+      <p class="help">${fresh} ${js.configured ? `<a href="${esc(js.links.settings)}" target="_blank" rel="noopener">Edit target in Job Scout</a>` : ''}</p>
+      <div class="dc-actions">${js.configured ? '<button type="button" class="button is-small" data-sync>Sync now</button>' : ''}${!synced && !js.configured ? '<button type="button" class="button is-small" data-settings>Set target</button>' : ''}
         <button type="button" class="button is-small is-ghost" data-weekly>Run weekly review</button>
         <button type="button" class="button is-small is-ghost" data-settings>Preferences &amp; charter</button></div></header>`;
   }

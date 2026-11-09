@@ -135,6 +135,8 @@ body.section-track #active-run, body.section-track .topbar-side, body.section-tr
 .tr-brief summary { cursor:pointer; margin-bottom:8px; }
 .tr-brief details + details { margin-top:14px; }
 .tr-brief ul, .tr-brief ol { padding-left:20px; }
+.tr-brief p, .tr-brief ul, .tr-brief ol, .tr-brief pre { margin: 0 0 12px; }
+.tr-brief > :last-child { margin-bottom: 0; }
 .tr-hint { border-left:3px solid var(--accent-line); padding-left:10px; color:var(--text-2); }
 .tr-ide { min-width:0; }
 .tr-tabs { display:flex; gap:2px; overflow-x:auto; border-bottom:1px solid var(--line); }

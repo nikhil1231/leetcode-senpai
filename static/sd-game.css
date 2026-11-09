@@ -22,6 +22,7 @@
 .bd-edge.is-bad .bd-line { stroke:var(--red); }
 @keyframes bd-flow { to { stroke-dashoffset:-14; } }
 @media (prefers-reduced-motion: reduce) { .bd-edge.is-live .bd-line, .bd-node.is-saturated { animation:none; } }
+.bd-play[hidden] { display:none; }
 .bd-play { background:var(--panel); border:1px solid var(--accent-line); border-radius:12px; padding:10px 12px; display:grid; gap:8px; }
 .bd-play-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .bd-time { position:relative; flex:1 1 320px; min-width:220px; padding-top:4px; }

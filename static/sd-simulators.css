@@ -49,7 +49,7 @@
 .bd-h { position:absolute; width:12px; height:12px; border-radius:50%; background:var(--accent); border:2px solid var(--bg, #0c0e14); opacity:0; cursor:crosshair; transition:opacity .12s; z-index:6; }
 .bd-node:hover .bd-h, .bd-node.is-sel .bd-h, .bd-canvas.is-linking .bd-h { opacity:1; }
 .bd-h-top { left:calc(50% - 6px); top:-7px; } .bd-h-bottom { left:calc(50% - 6px); bottom:-7px; } .bd-h-left { top:calc(50% - 6px); left:-7px; } .bd-h-right { top:calc(50% - 6px); right:-7px; }
-.bd-empty { position:absolute; left:50%; top:40%; transform:translate(-50%,-50%); text-align:center; color:var(--text-2); pointer-events:none; max-width:360px; }
+.bd-empty { position:absolute; left:min(50%, 300px); top:min(40%, 220px); transform:translate(-50%,-50%); text-align:center; color:var(--text-2); pointer-events:none; max-width:360px; }
 .bd-empty span { font-size:42px; } .bd-empty strong { display:block; color:var(--text); font-size:15px; margin:6px 0 2px; } .bd-empty p { margin:0; font-size:12.5px; }
 .bd-panel { display:grid; gap:10px; align-content:start; }
 .bd-box { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }

@@ -8,8 +8,8 @@
   // Sub-views light up the sidebar item they live under.
   const UNDER = {lessons: 'curriculum', lesson: 'curriculum', setup: 'practise', workspace: 'practise', exercise: 'practise', skills: 'practise', cases: 'practise', quickfire: 'practise', papers: 'practise', drills: 'practise', mistakes: 'practise', redesign: 'practise'};
   const NAMES = {leetcode: ['Leetcode Senpai', 'Interview prep'], 'system-design': ['System Design', 'Learn and practise'],
-    fundamentals: ['Fundamentals', 'Role stack knowledge'], ai: ['AI Engineering', 'LLMs, RAG, evals and agents'],
-    experience: ['Experience', 'Your stories, under questioning'], practical: ['Practical Coding', 'Build, debug and review']};
+    fundamentals: ['Fundamentals', 'Role stack knowledge'], ai: ['AI Engineering', 'LLMs, RAG and agents'],
+    experience: ['Experience', 'Your stories, tested'], practical: ['Practical Coding', 'Build, debug and review']};
   const TRACKS = ['fundamentals', 'ai', 'experience', 'practical'];
   let current = 'leetcode', lastLeetcodeTab = 'tutor';
   const design = () => current === 'system-design';
@@ -58,7 +58,7 @@
     window.Tracks?.open(section, view, entering);
   }
   function select(section, view = 'home', update = true) {
-    close(true);
+    close(!menu.classList.contains('hidden'));
     if (section === 'system-design' && design() && window.SystemDesign.isBusy?.()) return;
     if (TRACKS.includes(section)) return openTrack(section, view, update);
     if (section !== 'system-design') {
