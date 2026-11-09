@@ -10,7 +10,7 @@ import hashlib
 import logging
 import time
 
-from .. import config, curriculum, learning_sequences, practice, scheduler
+from .. import config, curriculum, learning_sequences, next_up as next_up_mod, practice, scheduler
 from ..system_design_learning import course_summary
 from ..tracks import senpai as tracks_senpai
 from . import brief as brief_mod, capabilities as caps_mod, career, demand, interventions, jobscout, policy, sessions, snapshot
@@ -394,6 +394,29 @@ def time_split(plan, goal, known, now):
         note = (note + ' ' if note else '') + 'Includes a temporary priority: ' + policy.active_overlays(plan, now)[0]['label'] + '.'
     return {'weekly_minutes': plan.get('weekly_minutes'), 'note': note,
             'buckets': [{'id': k, 'label': SPLIT_LABELS[k], 'share': round(alloc[k], 3), 'minutes': minutes[k]} for k in order]}
+
+
+def week_start(settings, now):
+    """Monday 00:00 of the current week in the user's timezone, as a timestamp."""
+    from .daily import local_now
+    local = local_now(settings, now)
+    monday = (local - dt.timedelta(days=local.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    return monday.timestamp()
+
+
+def next_up(store, b=None, session=None, now=None):
+    """The one thing to do next: today's open block from the bucket furthest behind its weekly share."""
+    now = _now(now)
+    b = b or bundle(store, now)
+    session = session or today_session(store, now, b=b)
+    plan = load_plan(store, now)
+    target = policy.bucket_minutes(plan, now)
+    start = week_start(b['settings'], now)
+    done = next_up_mod.served(next_up_mod.evidence(b), start, now)
+    out = next_up_mod.choose(session.get('blocks', []), target, done)
+    return {**out, 'week_start': start, 'weekly_minutes': plan.get('weekly_minutes'),
+            'session_complete': bool(session.get('blocks')) and not out['primary'],
+            'note': session.get('note') or ''}
 
 
 def week_brief(store, b, now=None):

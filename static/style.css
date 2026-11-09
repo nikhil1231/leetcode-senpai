@@ -268,7 +268,7 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
   border-radius: 6px;
   background: var(--panel3);
   color: var(--text-2);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 650;
   letter-spacing: .045em;
   text-transform: uppercase;
@@ -323,7 +323,7 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
   z-index: 2;
   padding: 10px 12px;
   text-align: left;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .07em;
@@ -484,7 +484,7 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
 .coach-chip.ai-on .coach-dot { background: var(--green); box-shadow: 0 0 0 3px rgba(53, 211, 154, .16); }
 .coach-chip .coach-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #user-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; min-width: 0; }
-#user-chip .last-updated { font-size: 10.5px; }
+#user-chip .last-updated { font-size: 11.5px; }
 #user-chip .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .content { display: flex; flex-direction: column; min-width: 0; }
@@ -639,7 +639,7 @@ body.section-track .topbar-side > :not(.study-top) { display: none !important; }
   transition: opacity .3s var(--ease);
 }
 .overview .stat:first-child { border-left: 0; }
-.overview .stat-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.overview .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .overview .stat-value { font-size: 16px; font-weight: 650; letter-spacing: -.02em; line-height: 1.15; }
 .overview .stat-value em { font-style: normal; font-weight: 500; font-size: 12px; color: var(--muted); }
 .overview .stat.is-due .stat-value { color: var(--amber); }
@@ -839,7 +839,7 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
   border-radius: 5px;
   background: color-mix(in srgb, var(--tone) 14%, transparent);
   color: var(--tone);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 650;
 }
 .q-seg-head:hover .q-seg-label { color: var(--text); }
@@ -885,7 +885,7 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 
 /* Difficulty: colour and weight carry it, no fill. */
 .q-diff {
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 700;
   letter-spacing: .07em;
   text-transform: uppercase;
@@ -1001,7 +1001,7 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .active-clock-label {
   display: block;
   margin-bottom: 4px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: .12em;
@@ -1382,7 +1382,7 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
   border-radius: 99px;
   background: color-mix(in srgb, var(--pill) 12%, transparent);
   color: var(--pill);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   text-align: center;
   white-space: nowrap;
@@ -1394,7 +1394,7 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
   border-radius: 5px;
   background: rgba(245, 181, 68, .16);
   color: var(--amber);
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .07em;
@@ -1439,8 +1439,8 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
   transition: transform .15s var(--ease);
 }
 .fc-cell:hover { transform: scale(1.15); }
-.fc-n { font-size: 9px; font-weight: 600; color: #fff; }
-.fc-axis { display: flex; justify-content: space-between; margin-top: 9px; font-size: 10.5px; color: var(--muted); }
+.fc-n { font-size: 11px; font-weight: 600; color: #fff; }
+.fc-axis { display: flex; justify-content: space-between; margin-top: 9px; font-size: 11.5px; color: var(--muted); }
 
 /* ---------------------------------------------------------------------------
    11. History / problems
@@ -1469,7 +1469,7 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
   border-radius: 5px;
   background: rgba(245, 181, 68, .1);
   color: var(--amber);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
 }
 .pat { color: var(--muted); font-style: italic; }
@@ -1478,7 +1478,7 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
 .pred-partial { color: var(--amber); }
 .pred-wrong { color: var(--red); }
 .conf-1 { color: var(--red); } .conf-2 { color: var(--amber); } .conf-3 { color: var(--green); }
-.warn-chip { padding: 1px 7px; border-radius: 5px; background: rgba(245, 181, 68, .16); color: var(--amber); font-size: 10px; font-weight: 600; }
+.warn-chip { padding: 1px 7px; border-radius: 5px; background: rgba(245, 181, 68, .16); color: var(--amber); font-size: 11px; font-weight: 600; }
 
 /* ---------------------------------------------------------------------------
    12. Discover
@@ -1638,7 +1638,7 @@ pre.code {
   border-radius: 5px;
   background: var(--panel3);
   color: var(--muted);
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .07em;
@@ -2142,7 +2142,7 @@ body.has-active-session #user-chip {
 
 .chart-dumbbell-dot.is-to { background: var(--c); }
 
-.chart-dumbbell-axis { color: var(--muted); font-size: 10px; }
+.chart-dumbbell-axis { color: var(--muted); font-size: 11px; }
 
 .chart-dumbbell-ticks { position: relative; height: 12px; }
 
@@ -2665,7 +2665,7 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
   background: var(--bg-elev);
   text-align: left;
 }
-.active-run.has-editor .active-kicker { flex: none; padding: 3px 10px 3px 8px; font-size: 10.5px; }
+.active-run.has-editor .active-kicker { flex: none; padding: 3px 10px 3px 8px; font-size: 11.5px; }
 .active-run.has-editor .active-run-inner h2 {
   min-width: 0; margin: 0; font-size: 18px; letter-spacing: -.02em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -3060,3 +3060,14 @@ body.section-track .go-settings { flex: 1; margin-left: 0; height: 34px; }
 @media (max-width: 960px) {
   body.section-design .sidebar, body.section-track .sidebar { position: static; }
 }
+
+/* Settings > Usage */
+.usage-list { list-style: none; margin: 4px 0 14px; padding: 0; max-width: 420px; }
+.usage-list li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; color: var(--text-2); }
+.usage-list b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.evidence-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.evidence-table th { padding: 4px 8px 6px; text-align: right; color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.evidence-table th:first-child, .evidence-table td:first-child { text-align: left; }
+.evidence-table td { padding: 6px 8px; border-top: 1px solid var(--line-soft); text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.evidence-table td:first-child { color: var(--text); }

@@ -1,0 +1,27 @@
+/* "Do this next": the shared recommendation card, the slim section banner, and the weekly split bars. */
+.nu-card { padding: 22px 24px; margin-bottom: 18px; border: 1px solid var(--accent-line); border-radius: 16px;
+  background: linear-gradient(180deg, var(--accent-soft), transparent 85%), var(--panel); }
+.nu-card h2 { font-size: 24px; line-height: 1.25; margin: 6px 0 4px; }
+.nu-meta { color: var(--muted); font-size: 12.5px; }
+.nu-why { margin: 10px 0 0; color: var(--text); font-size: 14px; line-height: 1.5; max-width: 66ch; }
+.nu-sub { margin: 6px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; max-width: 66ch; }
+.nu-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.nu-actions .button.is-primary { padding: 11px 24px; font-size: 15px; }
+.nu-alt small { color: var(--muted); margin-left: 4px; }
+.nu-week { list-style: none; margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid var(--line); display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 22px; }
+.nu-week li { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 12.5px; color: var(--text-2); }
+.nu-week li.is-next span { color: var(--text); font-weight: 600; }
+.nu-bar { display: block; height: 6px; border-radius: 3px; background: var(--track, var(--line)); overflow: hidden; }
+.nu-bar b { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.nu-week em { font-style: normal; color: var(--text); font-variant-numeric: tabular-nums; }
+.nu-week small { color: var(--muted); }
+.nu-card.is-clear { border-color: var(--line-hi); background: var(--panel); }
+.nu-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; margin-bottom: 16px;
+  border: 1px solid var(--line-hi); border-radius: 12px; background: var(--panel); }
+.nu-banner b { font-size: 15px; }
+.nu-banner .nu-why { margin-top: 4px; font-size: 13px; color: var(--text-2); }
+@media (max-width: 720px) { .nu-card { padding: 18px; } .nu-card h2 { font-size: 20px; } .nu-banner { flex-direction: column; align-items: flex-start; } .nu-week li { grid-template-columns: 84px minmax(0, 1fr) auto; } }
+.tuh-pick.is-secondary { opacity: .92; padding: 16px 20px; }
+.tuh-pick.is-secondary h2 { font-size: 18px; }
+.nu-banner .dc-eyebrow { display: block; margin-bottom: 3px; }

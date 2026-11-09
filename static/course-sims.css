@@ -16,7 +16,7 @@
 .fs-sql { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; } .fs-sql .button { font-size:11.5px; padding:5px 8px; }
 .fs-table { width:100%; border-collapse:collapse; font:12px var(--font-mono); margin:0 0 10px; }
 .fs-table th, .fs-table td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); }
-.fs-table th { font:600 10.5px var(--font); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.fs-table th { font:600 11.5px var(--font); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
 .fs-table tr.is-dead td { color:var(--muted); text-decoration:line-through; }
 .fs-gantt { display:grid; gap:4px; margin:4px 0 10px; }
 .fs-lane { display:grid; grid-template-columns:56px minmax(0,1fr); gap:8px; align-items:center; font:11px var(--font-mono); color:var(--muted); }
@@ -67,7 +67,7 @@
 .ai-tokens span { background:color-mix(in srgb, var(--c) 22%, transparent); border-radius:3px; padding:1px 0; margin-right:1px; }
 .ai-timeline { position:relative; display:flex; height:22px; border-radius:6px; background:var(--panel3); margin:14px 0 4px; }
 .ai-timeline i { display:block; height:100%; } .ai-timeline .is-prefill { background:#7cb7ff; border-radius:6px 0 0 6px; } .ai-timeline .is-decode { background:#8ad9c2; border-radius:0 6px 6px 0; }
-.ai-timeline em { position:absolute; top:-14px; font:10px var(--font); color:var(--text-2); font-style:normal; transform:translateX(-50%); white-space:nowrap; }
+.ai-timeline em { position:absolute; top:-14px; font:11px var(--font); color:var(--text-2); font-style:normal; transform:translateX(-50%); white-space:nowrap; }
 .fs-gantt-key .ai-k-prefill::before { background:#7cb7ff; } .fs-gantt-key .ai-k-decode::before { background:#8ad9c2; }
 .ai-tool { display:grid; gap:8px; }
 .ai-msg { border:1px solid var(--line); border-radius:8px; padding:8px 12px; background:var(--panel2); }
@@ -91,4 +91,4 @@
 .ai-hist.is-two > span { flex:1; display:flex; align-items:flex-end; gap:1px; height:100%; } .ai-hist.is-two > span > i { flex:1; border-radius:2px 2px 0 0; }
 .ai-hist.is-two .is-neg { background:#46525c; } .ai-hist.is-two .is-pos { background:#35d39a; } .ai-hist.is-two > span.is-over { background:var(--accent-soft); }
 .fs-gantt-key .ai-k-neg::before { background:#46525c; } .fs-gantt-key .ai-k-pos::before { background:#35d39a; }
-.ai-hist-axis { display:flex; justify-content:space-between; font:10px var(--font-mono); color:var(--muted); margin:3px 4px 8px; }
+.ai-hist-axis { display:flex; justify-content:space-between; font:11px var(--font-mono); color:var(--muted); margin:3px 4px 8px; }

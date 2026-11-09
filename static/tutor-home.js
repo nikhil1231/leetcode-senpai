@@ -25,6 +25,7 @@
     const eyebrow = {resume: 'Where you left off', next: 'Your tutor suggests', pickup: 'From your other tutor', course: 'Next in the course'}[p?.kind] || '';
     const known = [...new Set([...(d.notes || []).map(n => n.text), ...(d.style || [])])];
     el.innerHTML = `<section class="tuh">
+      <div id="nu-tutor"></div>
       ${!d.enabled ? `<div class="tuh-pick"><span class="dc-eyebrow">Tutor offline</span><h2>The tutor needs a model</h2><p>No model is connected, so there's nobody to talk to yet. Everything else works as usual.</p>
         <div class="sd-actions"><button type="button" class="button is-primary" data-tuh="today">Today's plan</button></div></div>` : p ? `
       <div class="tuh-pick"><span class="dc-eyebrow">${esc(eyebrow)}</span><h2>${esc(p.title)}</h2>${p.why ? `<p>${esc(p.why)}</p>` : ''}
@@ -33,6 +34,10 @@
       ${known.length ? `<details class="tuh-known"><summary>What your tutor knows about how you learn</summary><ul>${known.map(t => `<li><span>${esc(t)}</span>${(d.notes || []).some(n => n.text === t) ? `<button type="button" class="button is-ghost is-small" data-forget="${esc(t)}" aria-label="Forget this">Forget</button>` : ''}</li>`).join('')}</ul>
         <p class="help">The tutor adds to this as it gets to know you; the rest comes from your other tutor's notes.</p></details>` : ''}
     </section>`;
+    window.NextUp?.mount(el.querySelector('#nu-tutor')).then(nu => {
+      // One recommendation leads; the tutor's own suggestion becomes the alternative.
+      if (nu && nu.primary) { const pick = el.querySelector('.tuh-pick'); if (pick) { pick.classList.add('is-secondary'); const e = pick.querySelector('.dc-eyebrow'); if (e) e.textContent = 'Or · ' + e.textContent.toLowerCase(); } }
+    });
     el.querySelector('[data-tuh="go"]')?.addEventListener('click', () => open(p));
     el.querySelector('[data-tuh="today"]')?.addEventListener('click', () => window.App?.goTab('today'));
     el.querySelectorAll('[data-forget]').forEach(b => b.addEventListener('click', async () => {

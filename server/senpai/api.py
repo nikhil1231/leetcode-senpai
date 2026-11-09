@@ -120,6 +120,11 @@ async def get_today(store=Depends(store_for)):
     return await asyncio.to_thread(run)
 
 
+@router.get('/next')
+async def get_next(store=Depends(store_for)):
+    return await asyncio.to_thread(lambda: service.next_up(store))
+
+
 @router.post('/session')
 async def new_session(body: SessionRequest, store=Depends(store_for)):
     def run():

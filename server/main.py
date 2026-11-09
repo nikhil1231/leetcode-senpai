@@ -54,6 +54,7 @@ from .study_prompt import router as study_prompt_router
 from .handover import router as handover_router
 from .senpai import jobscout as senpai_jobscout, service as senpai_service, worker as senpai_worker
 from .senpai.api import router as senpai_router, daily_router as senpai_daily_router
+from .search_index import router as search_router
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 log = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ app.include_router(system_design_drills_router)
 app.include_router(system_design_session_router)
 app.include_router(activity_router)
 app.include_router(tracks_router)
+app.include_router(search_router)
 app.include_router(senpai_router)
 app.include_router(knowledge_router)
 app.include_router(tutor_router)

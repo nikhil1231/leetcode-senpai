@@ -25,7 +25,7 @@ body.has-editor-run:not(.run-minimised):not(.section-design) .page-coach { displ
 .page-coach-error { margin: 0; padding: 0 14px; color: var(--amber); font-size: 13px; }
 .page-coach .coach-chat { border-top: 1px solid var(--line); margin-top: 10px; }
 .page-coach-send { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
-.page-coach-send span { font-size: 10px; color: var(--muted); }
+.page-coach-send span { font-size: 11px; color: var(--muted); }
 @media (min-width: 1200px) {
   body.page-coach-open .content > main { width: calc(100% - 400px); margin-left: 0; margin-right: 400px; }
   body.page-coach-open .content > .active-run { margin-right: 400px; }

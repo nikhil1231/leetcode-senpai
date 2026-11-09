@@ -630,7 +630,7 @@
         <div class="column"><div class="panel-box"><h3>Pace</h3>${paceHtml(d.pace)}</div></div>
       </div>
       <div class="columns">
-        <div class="column"><div class="panel-box"><h3>Topic evidence</h3>${(d.topic_evidence || []).map(t => `<p>${escapeHtml(t.category)}: ${t.solved} of ${t.total} covered · ${plural(t.implementation_count, "independent implementation")} · ${plural(t.retention_count, "later check")}</p>`).join('')}</div></div>
+        <div class="column"><div class="panel-box"><h3>Topic evidence</h3>${evidenceTable(d.topic_evidence || [])}</div></div>
         <div class="column"><div class="panel-box"><h3>Time to solve (weekly median)</h3>${Charts.lines(d.time_trend, { yLabel: "min" })}</div></div>
       </div>
       <div class="columns">
@@ -738,6 +738,12 @@
 
   // How well you plan before coding. Sprint pattern guesses, which train the
   // recognition half of this directly, get a line of their own.
+  function evidenceTable(rows) {
+    if (!rows.length) return '<p class="empty">No topics covered yet.</p>';
+    return `<table class="evidence-table"><thead><tr><th>Topic</th><th>Covered</th><th>Independent</th><th>Later checks</th></tr></thead><tbody>${rows.map((t) =>
+      `<tr><td>${escapeHtml(t.category)}</td><td>${t.solved}<span class="small">/${t.total}</span></td><td>${t.implementation_count}</td><td>${t.retention_count}</td></tr>`).join("")}</tbody></table>`;
+  }
+
   function planningHtml(pl, pa) {
     const sprint = pa && pa.sprint_graded
       ? `<p class="small plan-sprint">Sprint pattern guesses: <b>${pctOrDash(
@@ -1323,6 +1329,8 @@
       </div>
       <button class="button is-primary" id="btn-save-sched">Save settings</button>
 
+      ${window.Usage ? window.Usage.settingsHtml() : ""}
+
       <div class="section-title">Data</div>
       <div class="buttons">
         <button class="button is-ghost" id="btn-backfill">Backfill recent history</button>
@@ -1334,6 +1342,7 @@
       ${App.signOutHtml()
         ? `<p class="help">Signed in: ${escapeHtml(App.accountIdentity())}</p><div class="buttons">${App.signOutHtml()}</div>`
         : '<p class="help">Running in local mode — there is no session to sign out of.</p>'}`;
+    window.Usage?.bindSettings(el);
     const signoutBtn = $("#btn-signout");
     if (signoutBtn) signoutBtn.addEventListener("click", App.signOut);
     // A jump bar: Settings is one long page, so each section gets an anchor.

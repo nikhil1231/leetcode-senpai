@@ -70,8 +70,8 @@
       ${sp.note ? `<p class="help">${esc(sp.note)}</p>` : ''}</div>`;
   const briefItems = (br) => !br?.items?.length ? '' : `<ol class="sp-brief-items">${br.items.map((it) => `<li class="sp-brief-item"><div><span class="sp-chip">${esc(it.label)}</span><b>${esc(it.title)}</b><span class="sp-min">${it.minutes} min</span></div>
         <p>${esc(it.why)}</p><button type="button" class="button is-small" data-brief="${esc(it.id)}">${it.kind === 'cv' ? 'Start the interview' : 'Start'}</button></li>`).join('')}</ol>`;
-  const briefHtml = (br, extra = '') => !br ? '' : `<section class="sp-brief"><div class="sp-today-head"><span class="dc-eyebrow">This week${br.goal ? ' · toward ' + esc(br.goal) : ''}</span>${extra}</div>
-      ${splitHtml(br.split)}${briefItems(br)}</section>`;
+  const briefHtml = (br, extra = '', { split = true } = {}) => !br ? '' : `<section class="sp-brief"><div class="sp-today-head"><span class="dc-eyebrow">This week${br.goal ? ' · toward ' + esc(br.goal) : ''}</span>${extra}</div>
+      ${split ? splitHtml(br.split) : (br.split?.note ? `<p class="help">${esc(br.split.note)}</p>` : '')}${briefItems(br)}</section>`;
   function bindBrief(root, br) {
     root.querySelectorAll('[data-brief]').forEach((btn) => btn.addEventListener('click', () => {
       const it = br.items.find((x) => x.id === btn.dataset.brief);
@@ -87,12 +87,13 @@
       const s = await api('/senpai/today');
       if (!box.isConnected) return;
       const open = s.blocks.filter((b) => !b.done);
-      box.innerHTML = `<section class="sp-home">${briefHtml(s.brief, '<button class="button is-small is-ghost" type="button" data-open-senpai>Open Senpai</button>')}
+      box.innerHTML = `<div id="nu-today"></div><section class="sp-home">${briefHtml(s.brief, '<button class="button is-small is-ghost" type="button" data-open-senpai>Open Senpai</button>', { split: false })}
         <div class="sp-home-today"><h3>Today · ${open.length ? `${open.reduce((n, b) => n + b.minutes, 0)} minutes planned` : (s.blocks.length ? 'session complete' : 'nothing prepared')}</h3>
         ${open.length ? `<ol class="sp-blocks">${open.slice(0, 3).map(blockHtml).join('')}</ol>${open.length > 3 ? `<p class="help">+${open.length - 3} more in Senpai.</p>` : ''}`
           : `<p class="help">${esc(s.note || 'Everything in today\'s session is done. Prepare another in Senpai if you want more.')}</p>`}</div></section>`;
       bindBlocks(box, s);
       bindBrief(box, s.brief);
+      window.NextUp?.mount(box.querySelector('#nu-today'), { force: true });
       box.querySelector('[data-open-senpai]').addEventListener('click', () => App.goTab('senpai'));
     } catch (e) {
       window.DailyCoach?.mountSummary();
@@ -355,5 +356,5 @@
 
   // The periodic refresh must not wipe a teaching conversation mid-draft.
   window.Views.renderSenpai = () => (teachState ? Promise.resolve() : renderSenpai(true));
-  window.Senpai = { mountToday, openTeach };
+  window.Senpai = { mountToday, openTeach, start: startBlock };
 })();

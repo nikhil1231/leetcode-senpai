@@ -12,7 +12,7 @@
 .vz-card-blurb { color:var(--text-2); font-size:12.5px; line-height:1.45; }
 .vz-card-meta { display:flex; justify-content:space-between; gap:8px; color:var(--text-2); font-size:11.5px; }
 .vz-card-meta code, .vz-cx code { font-family:var(--font-mono); color:var(--text); }
-.vz-pill { flex:none; font-size:10.5px; text-transform:capitalize; padding:2px 8px; border-radius:999px; border:1px solid var(--line-hi); color:var(--text-2); }
+.vz-pill { flex:none; font-size:11.5px; text-transform:capitalize; padding:2px 8px; border-radius:999px; border:1px solid var(--line-hi); color:var(--text-2); }
 .vz-easy { color:#5cd894; border-color:rgba(92,216,148,.4); }
 .vz-medium { color:#f5c451; border-color:rgba(245,196,81,.4); }
 .vz-hard { color:#ff7a7a; border-color:rgba(255,122,122,.4); }

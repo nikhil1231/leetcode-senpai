@@ -36,6 +36,12 @@ it — it is the source of truth.**
   service, or a call only the user can make — spending money, deleting data, or changing
   the LeetCode account integration.
 
+## UI
+
+`docs/design-system.md` has the rules (type floor, widths, states, the single "Do this next" recommendation from
+`server/next_up.py`). `tests/test_ui_audit.py` enforces what can be checked statically. Ctrl/Cmd-K is the command
+palette (`static/palette.js`, index from `/api/search-index`); a new page or lesson type should appear in it.
+
 ## Model spend (OpenRouter)
 
 - **Never use Anthropic models (`anthropic/…`) through OpenRouter.** They are far too

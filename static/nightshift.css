@@ -26,7 +26,7 @@
 .ns-hint { color:#76838e; font-family:var(--font); }
 .ns-cmds { padding:8px 10px; display:grid; gap:6px; max-height:28vh; overflow:auto; }
 .ns-group { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
-.ns-group > span { font:600 10px var(--font); text-transform:uppercase; letter-spacing:.08em; color:#76838e; width:64px; }
+.ns-group > span { font:600 11px var(--font); text-transform:uppercase; letter-spacing:.08em; color:#76838e; width:64px; }
 .ns-cmd { font:11.5px var(--font-mono); background:#131a20; color:#c9d4dc; border:1px solid #232d36; border-radius:6px; padding:4px 8px; cursor:pointer; text-align:left; max-width:100%; }
 .ns-cmd:hover:not(:disabled) { border-color:var(--accent); } .ns-cmd.is-ran { color:#76838e; } .ns-cmd:disabled { opacity:.5; cursor:default; }
 .ns-prompt { display:flex; gap:8px; align-items:center; padding:8px 12px; border-top:1px solid #1c242c; font:13px var(--font-mono); color:#35d39a; }
@@ -38,10 +38,10 @@
 @keyframes ns-pulse { 50% { opacity:.55; } }
 @media (prefers-reduced-motion: reduce) { .ns-light.is-bad { animation:none; } }
 .ns-figs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
-.ns-figs b { display:block; font:600 16px var(--font-mono); } .ns-figs span { font-size:10.5px; color:var(--muted); line-height:1.3; display:block; }
+.ns-figs b { display:block; font:600 16px var(--font-mono); } .ns-figs span { font-size:11.5px; color:var(--muted); line-height:1.3; display:block; }
 .ns-actions { display:grid; gap:6px; }
 .ns-action { text-align:left; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 9px; font:12.5px var(--font); cursor:pointer; }
-.ns-action small { display:block; color:var(--muted); font-size:10.5px; margin-top:2px; }
+.ns-action small { display:block; color:var(--muted); font-size:11.5px; margin-top:2px; }
 .ns-action:hover:not(:disabled) { border-color:var(--accent); } .ns-action.is-done { border-style:dashed; } .ns-action:disabled { opacity:.55; cursor:default; }
 .ns-q { margin-top:14px; } .ns-q h3 { margin:4px 0 10px; font-size:16px; }
 .ns-q .sd-option.is-right { border-color:#35d39a; } .ns-q .sd-option.is-wrong { border-color:#fb7185; }
