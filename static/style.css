@@ -3054,3 +3054,9 @@ body.section-track .go-settings { flex: 1; margin-left: 0; height: 34px; }
 .problems-table td.problem-action { white-space: normal; }
 .problems-table .problem-actions { flex-wrap: wrap; justify-content: flex-end; max-width: 250px; margin-left: auto; }
 .chart-bar-row > :first-child, .chart-dumbbell-row > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* Phone: in System Design and the tracks the sidebar is three rows tall (brand, section nav, tools), so pinning it
+   would hide a quarter of the screen. It scrolls away; the topbar stays pinned. */
+@media (max-width: 960px) {
+  body.section-design .sidebar, body.section-track .sidebar { position: static; }
+}

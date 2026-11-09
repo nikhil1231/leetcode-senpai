@@ -70,3 +70,5 @@
 .bd-warn { color:#f5c451; } .bd-good { color:#5cd894; } .bd-tip { color:var(--text-2); }
 @media (max-width: 1100px) { .bd-grid { grid-template-columns:170px minmax(0,1fr); } .bd-panel { grid-column:1 / -1; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); } }
 @media (max-width: 720px) { .bd-grid { grid-template-columns:1fr; } .bd-palette { max-height:none; } .bd-items { grid-auto-flow:column; grid-auto-columns:max-content; overflow-x:auto; max-height:none; } .bd-stage { height:520px; } }
+/* Phone: the canvas is wider than the screen, so the empty-state hint is centred on what is visible. */
+@media (max-width: 720px) { .bd-empty { left: calc(50vw - 36px); top: 120px; max-width: min(280px, 70vw); } }
