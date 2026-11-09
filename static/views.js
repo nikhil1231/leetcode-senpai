@@ -445,7 +445,7 @@
 
   function masteryPill(t) {
     if (!t.solved) return `<span class="mastery-pill is-empty">untested</span>`;
-    return `<span class="mastery-pill">${t.implementation_count || 0} independent · ${t.retention_count || 0} later checks</span>`;
+    return `<span class="mastery-pill">${t.implementation_count || 0} independent · ${t.retention_count || 0} later</span>`;
   }
 
   function topicNode(t, focus) {
@@ -630,7 +630,7 @@
         <div class="column"><div class="panel-box"><h3>Pace</h3>${paceHtml(d.pace)}</div></div>
       </div>
       <div class="columns">
-        <div class="column"><div class="panel-box"><h3>Topic evidence</h3>${(d.topic_evidence || []).map(t => `<p>${escapeHtml(t.category)}: ${t.solved} of ${t.total} covered · ${t.implementation_count} independent implementations · ${t.retention_count} later checks</p>`).join('')}</div></div>
+        <div class="column"><div class="panel-box"><h3>Topic evidence</h3>${(d.topic_evidence || []).map(t => `<p>${escapeHtml(t.category)}: ${t.solved} of ${t.total} covered · ${plural(t.implementation_count, "independent implementation")} · ${plural(t.retention_count, "later check")}</p>`).join('')}</div></div>
         <div class="column"><div class="panel-box"><h3>Time to solve (weekly median)</h3>${Charts.lines(d.time_trend, { yLabel: "min" })}</div></div>
       </div>
       <div class="columns">
@@ -755,7 +755,7 @@
       ["No idea yet", `${o.blanks} of ${o.starts}`],
     ];
     const rows = (pl.categories || []).filter((c) => c.avg_score != null).map((c) => ({
-      label: c.category.replace(/ .*/, ""), value: c.avg_score, display: `${c.avg_score}/5`,
+      label: c.category, value: c.avg_score, display: `${c.avg_score}/5`,
       hint: `${c.category}: ${c.avg_score}/5 over ${c.scored} graded plan${c.scored === 1 ? "" : "s"}`
         + (c.blanks ? `, ${c.blanks} no-idea start${c.blanks === 1 ? "" : "s"}` : ""),
       color: c.avg_score >= 4 ? "var(--green)" : c.avg_score >= 2.5 ? "var(--amber)" : "var(--red)",
@@ -797,7 +797,7 @@
     const rows = (calibration && calibration.categories) || [];
     const graded = calibration && calibration.graded_attempts != null ? calibration.graded_attempts : 0;
     const min = calibration && calibration.min_graded_attempts;
-    const count = min != null ? `${graded}/${min} graded solves` : plural(graded, "graded solve");
+    const count = min != null && graded < min ? `${graded}/${min} graded solves` : plural(graded, "graded solve");
     const categoryCount = rows.length ? ` · ${plural(rows.length, "graded category", "graded categories")}` : "";
     const countHtml = `<div class="small">${escapeHtml(count + categoryCount)}</div>`;
     if (!calibration || calibration.status === "not_enough_data" || !rows.length) {
@@ -810,7 +810,7 @@
     const chartRows = rows.map((r) => {
       const g = Number(r.gap) || 0;
       return {
-        label: r.category.replace(/ .*/, ""),
+        label: r.category,
         hint: `${r.category}: self ${quality(r.self_quality)}, objective ${quality(r.objective_quality)}, gap ${gap(r.gap)}; ${calibrationEvidenceText(r)}`,
         from: r.self_quality || 0,
         to: r.objective_quality || 0,

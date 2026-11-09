@@ -1299,7 +1299,7 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 }
 .family > summary {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) 62px minmax(90px, 1fr) 112px;
+  grid-template-columns: minmax(0, 1.4fr) 62px minmax(90px, 1fr) minmax(112px, auto);
   gap: 14px;
   align-items: center;
   padding: 13px 15px;
@@ -1328,7 +1328,7 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 
 .topic-node {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) 62px minmax(90px, 1fr) 112px;
+  grid-template-columns: minmax(0, 1.4fr) 62px minmax(90px, 1fr) minmax(112px, auto);
   gap: 14px;
   align-items: center;
   padding: 10px 0;
@@ -1414,7 +1414,7 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
 .linechart { width: 100%; overflow: visible; }
 
 .chart-bars { display: flex; flex-direction: column; gap: 9px; }
-.chart-bar-row { display: grid; grid-template-columns: 108px minmax(0, 1fr) 46px; gap: 10px; align-items: center; font-size: 12px; }
+.chart-bar-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 46px; gap: 10px; align-items: center; font-size: 12px; }
 .chart-bar-label { color: var(--text-2); text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chart-bar-val { text-align: right; color: var(--text); font-weight: 600; font-size: 12px; }
 
@@ -2126,7 +2126,7 @@ body.has-active-session #user-chip {
 
 .pack-card .goal-track { width: 120px; }
 
-.chart-dumbbells { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto auto; column-gap: 10px; }
+.chart-dumbbells { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto auto; column-gap: 10px; }
 
 .chart-dumbbell-row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; font-size: 12px; }
 
@@ -3049,3 +3049,8 @@ body.section-track .go-settings { flex: 1; margin-left: 0; height: 34px; }
 .settings-jump { position: sticky; top: var(--topbar); z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
 .settings-jump a { padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--text-2); font-size: 12px; text-decoration: none; }
 .settings-jump a:hover, .settings-jump a:focus-visible { color: var(--text); border-color: var(--accent-line); }
+
+/* Problems: the action cluster wraps instead of pushing the table past the page edge. */
+.problems-table td.problem-action { white-space: normal; }
+.problems-table .problem-actions { flex-wrap: wrap; justify-content: flex-end; max-width: 250px; margin-left: auto; }
+.chart-bar-row > :first-child, .chart-dumbbell-row > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

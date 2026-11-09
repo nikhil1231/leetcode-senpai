@@ -30,3 +30,9 @@
 .vz-links { list-style:none; padding:0 !important; }
 .vz-see { white-space:nowrap; color:var(--accent); }
 @media (max-width: 640px) { .vz-grid { grid-template-columns:1fr; } .vz-stage { min-height:320px; } }
+/* Internals simulators: two columns, the long "How it works" prose spans the row at a readable measure. */
+.vz-info.is-internals { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
+.vz-info.is-internals section:nth-child(-n+2) { grid-column:1 / -1; }
+.vz-info.is-internals section:nth-child(-n+2) p { max-width:86ch; }
+.vz-info .vz-cx { display:flex; gap:16px; margin-top:10px; }
+@media (max-width:720px) { .vz-info.is-internals { grid-template-columns:minmax(0,1fr); } }

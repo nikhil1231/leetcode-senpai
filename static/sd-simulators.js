@@ -60,7 +60,7 @@
 
   function internalsInfo(t) {
     const list = a => a.length ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
-    return `<div class="vz-info">
+    return `<div class="vz-info is-internals">
       <section><h3>What it is</h3><p>${esc(t.overview)}</p>${t.time || t.space ? `<p class="vz-cx">${t.time ? `<span>Time <code>${esc(t.time)}</code></span>` : ''}${t.space ? `<span>Space <code>${esc(t.space)}</code></span>` : ''}</p>` : ''}</section>
       <section><h3>How it works</h3><p>${esc(t.howItWorks)}</p></section>
       ${t.tradeoffs.length ? `<section><h3>Trade-offs</h3><ul>${t.tradeoffs.map(x => `<li><strong>${esc(x.decision)}.</strong> ${esc(x.rationale)}</li>`).join('')}</ul></section>` : ''}

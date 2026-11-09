@@ -56,13 +56,17 @@
   async function home(root, section) {
     const d = await api('/tutor/next?section=' + section);
     const p = d.primary;
-    const prev = d.previously ? `<p class="hub-prev"><span>Last time · ${esc(d.previously.lesson_title)} · ${ago(d.previously.at)}</span>${window.SDBlocks ? window.SDBlocks.inline(d.previously.summary) : esc(d.previously.summary)}</p>` : '';
+    const prev = d.previously ? `<div class="hub-prev"><span>Last time · ${esc(d.previously.lesson_title)} · ${ago(d.previously.at)}</span><p class="hub-prev-body is-clamped">${window.SDBlocks ? window.SDBlocks.inline(d.previously.summary) : esc(d.previously.summary)}</p>${String(d.previously.summary || '').length > 260 ? '<button type="button" class="hub-prev-more" aria-expanded="false">Show more</button>' : ''}</div>` : '';
     root.innerHTML = `<div class="hub">
       <div class="sd-page-intro hub-intro"><span class="sd-eyebrow">${esc(NAMES[section].toUpperCase())}${d.tutor ? ` · ${esc(d.company.name)} · ${esc(d.company.label)}, ${esc(d.company.users)}` : ''}</span><h2 id="sd-heading" tabindex="-1">${d.tutor ? 'Your tutor suggests' : 'Next up'}</h2></div>
       ${prev}
       <section class="hub-next"><h3>${esc(p.title)}</h3><p>${esc(p.why)}</p><div class="sd-actions">${btn(p.label, 'primary', '', true)}</div></section>
       ${d.alternatives.length ? `<div class="hub-alts"><span>Or</span>${d.alternatives.map((a, i) => `<button type="button" class="hub-alt" data-hub="alt" data-i="${i}"><b>${esc(a.title)}</b><small>${esc(a.why)}</small></button>`).join('')}</div>` : ''}
       ${standingHtml(d.standing)}</div>`;
+    root.querySelector('.hub-prev-more')?.addEventListener('click', e => {
+      const body = root.querySelector('.hub-prev-body'), open = body.classList.toggle('is-clamped') === false;
+      e.currentTarget.textContent = open ? 'Show less' : 'Show more'; e.currentTarget.setAttribute('aria-expanded', String(open));
+    });
     wire(root, section, {primary: () => p, alt: n => d.alternatives[+n.dataset.i], progress: () => ({kind: 'view', view: 'progress'})});
   }
 

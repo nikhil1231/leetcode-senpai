@@ -92,3 +92,7 @@
 .tu-compact { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 12px 16px; color: var(--text-2); font-size: 14px; }
 .tu-style { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; margin-left: auto; }
 .tu-style select { background: var(--panel2, var(--panel)); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
+.hub-prev p { margin: 0; }
+.hub-prev-body.is-clamped { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.hub-prev-more { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 12.5px; cursor: pointer; }
+.hub-prev-more:hover, .hub-prev-more:focus-visible { text-decoration: underline; }
