@@ -33,7 +33,7 @@
 .bd-item { display:flex; align-items:center; gap:8px; text-align:left; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-left:3px solid var(--b); border-radius:8px; padding:7px 9px; font:12.5px var(--font); cursor:grab; }
 .bd-item:hover, .bd-item:focus-visible { border-color:var(--accent); border-left-color:var(--b); }
 .bd-item span { font-size:17px; line-height:1; }
-.bd-stage { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:auto; height:640px; outline:none; }
+.bd-stage { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:auto; height:clamp(440px, calc(100vh - 300px), 700px); outline:none; }
 .bd-stage:focus-visible { border-color:var(--accent); }
 .bd-canvas { position:relative; background-image:radial-gradient(var(--line) 1px, transparent 1px); background-size:22px 22px; touch-action:pan-x pan-y; }
 .bd-edges { position:absolute; inset:0; pointer-events:none; }

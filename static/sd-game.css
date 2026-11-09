@@ -85,7 +85,9 @@
 .rp-card { display:grid; gap:6px; align-content:start; text-align:left; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:13px 14px; font:inherit; cursor:pointer; }
 .rp-card:hover:not(:disabled), .rp-card:focus-visible { border-color:var(--accent); background:var(--panel2); }
 .rp-card.is-done { border-color:rgba(53,211,154,.35); }
-.rp-card.is-locked { opacity:.55; cursor:not-allowed; }
+.rp-card.is-locked { cursor:not-allowed; }
+.rp-card.is-locked > :not(.rp-card-foot) { opacity:.55; }
+.rp-card.is-locked .rp-card-foot { color:var(--text-2); }
 .rp-card strong { font-size:14.5px; }
 .rp-card-top { display:flex; justify-content:space-between; gap:8px; align-items:center; }
 .rp-tier { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); }
