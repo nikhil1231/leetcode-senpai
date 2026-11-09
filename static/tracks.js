@@ -48,7 +48,8 @@
   }
 
   async function open(track, route = 'home') {
-    const [view, ...rest] = String(route || 'home').split('/');
+    let [view, ...rest] = String(route || 'home').split('/');
+    if (!(registry[KIND[track]] || {})[view]) { view = 'home'; rest = []; }
     const seq = ++current.seq;
     while (cleanups.length) { try { cleanups.pop()(); } catch (e) { /* ignore */ } }
     if (current.track !== track || !document.querySelector('#track-nav [data-track-view]')) nav(track);

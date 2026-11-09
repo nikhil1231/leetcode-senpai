@@ -25,7 +25,8 @@
     const eyebrow = {resume: 'Where you left off', next: 'Your tutor suggests', pickup: 'From your other tutor', course: 'Next in the course'}[p?.kind] || '';
     const known = [...new Set([...(d.notes || []).map(n => n.text), ...(d.style || [])])];
     el.innerHTML = `<section class="tuh">
-      ${!d.enabled ? '<p class="help">The tutor needs the model, which is not connected. Everything else works as usual.</p>' : p ? `
+      ${!d.enabled ? `<div class="tuh-pick"><span class="dc-eyebrow">Tutor offline</span><h2>The tutor needs a model</h2><p>No model is connected, so there's nobody to talk to yet. Everything else works as usual.</p>
+        <div class="sd-actions"><button type="button" class="button is-primary" data-tuh="today">Today's plan</button></div></div>` : p ? `
       <div class="tuh-pick"><span class="dc-eyebrow">${esc(eyebrow)}</span><h2>${esc(p.title)}</h2>${p.why ? `<p>${esc(p.why)}</p>` : ''}
         <div class="sd-actions"><button type="button" class="button is-primary" data-tuh="go">${label}</button>
         <button type="button" class="button is-ghost" data-tuh="today">Today's plan</button></div></div>` : '<p class="help">Nothing in particular is waiting. Open any lesson and the tutor is there.</p>'}

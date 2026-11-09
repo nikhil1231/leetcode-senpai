@@ -102,7 +102,7 @@
 
 /* ---- Ripple Ops: a level ---- */
 .rp-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 18px; align-items:end; padding-bottom:14px; border-bottom:1px solid var(--line); }
-.rp-crumb { grid-column:1 / -1; justify-self:start; background:none; border:0; padding:0; color:var(--text-2); font:12.5px var(--font); cursor:pointer; }
+.rp-crumb { grid-column:1 / -1; justify-self:start; background:none; border:0; padding:0; color:var(--text-2); font:12.5px var(--font); cursor:pointer; margin-bottom:6px; }
 .rp-crumb:hover, .rp-crumb:focus-visible { color:var(--accent); }
 .rp-title h2 { margin:2px 0 3px; font-size:21px; } .rp-title p { margin:0; color:var(--text-2); font-size:13px; }
 .rp-steps { display:flex; gap:4px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:4px; }

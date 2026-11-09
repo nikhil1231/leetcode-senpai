@@ -1336,6 +1336,22 @@
         : '<p class="help">Running in local mode — there is no session to sign out of.</p>'}`;
     const signoutBtn = $("#btn-signout");
     if (signoutBtn) signoutBtn.addEventListener("click", App.signOut);
+    // A jump bar: Settings is one long page, so each section gets an anchor.
+    const heads = [...el.querySelectorAll(":scope > .section-title")];
+    if (heads.length > 3) {
+      heads.forEach((h, i) => { h.id = h.id || "settings-sec-" + i; h.style.scrollMarginTop = "84px"; });
+      const nav = document.createElement("nav");
+      nav.className = "settings-jump";
+      nav.setAttribute("aria-label", "Settings sections");
+      nav.innerHTML = heads.map((h) => `<a href="#${h.id}">${escapeHtml(h.textContent)}</a>`).join("");
+      nav.addEventListener("click", (e) => {
+        const a = e.target.closest("a");
+        if (!a) return;
+        e.preventDefault();
+        document.getElementById(a.getAttribute("href").slice(1))?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      el.prepend(nav);
+    }
 
     $("#btn-save-learning-coach").addEventListener("click", async () => {
       const button = $("#btn-save-learning-coach");
