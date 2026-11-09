@@ -29,6 +29,8 @@
   <link rel="stylesheet" href="/palette.css?v=__ASSET_VER__" />
   <link rel="stylesheet" href="/daily-coach.css?v=__ASSET_VER__" />
   <link rel="stylesheet" href="/page-coach.css?v=__ASSET_VER__" />
+  <link rel="stylesheet" href="/readiness.css?v=__ASSET_VER__" />
+  <link rel="stylesheet" href="/themes.css?v=__ASSET_VER__" />
   <script src="https://whats.nikhil.ing/tweak.js" defer></script>  <!-- the Tweak button: ~/infra README, Tweak -->
 </head>
 <body>
@@ -78,13 +80,15 @@
       </button>
       <div id="section-menu" class="section-menu hidden" aria-labelledby="section-menu-title">
         <div class="section-menu-heading" id="section-menu-title">Your learning spaces<span>Choose what to work on</span></div>
+        <button type="button" data-section="readiness" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 12l4.2-3.2"/><path d="M12 3.5v2M3.5 12h2M20.5 12h-2"/></svg><span><strong>Overview</strong><small>Interview readiness across all six, on one scale</small></span><span class="section-check" aria-hidden="true">✓</span></button>
+        <div class="section-menu-rule" role="separator"></div>
         <button type="button" data-section="leetcode" class="section-option"><span class="section-option-icon">&lt;/&gt;</span><span><strong>LeetCode</strong><small>Algorithms, patterns &amp; problem solving</small></span><span class="section-check" aria-hidden="true">✓</span></button>
         <button type="button" data-section="system-design" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="2" width="8" height="6" rx="1.5"/><rect x="2" y="16" width="7" height="6" rx="1.5"/><rect x="15" y="16" width="7" height="6" rx="1.5"/><path d="M12 8v4H5.5v4M12 12h6.5v4"/></svg><span><strong>System Design</strong><small>Architecture, trade-offs &amp; clear reasoning</small></span><span class="section-check" aria-hidden="true">✓</span></button>
         <button type="button" data-section="fundamentals" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 5h16v11H4z"/><path d="M8 20h8M12 16v4M7 9l2 2-2 2M11 13h5"/></svg><span><strong>Fundamentals</strong><small>Languages, Linux, networking, databases &amp; cloud</small></span><span class="section-check" aria-hidden="true">✓</span></button>
         <button type="button" data-section="ai" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg><span><strong>AI Engineering</strong><small>LLMs, RAG, evals, agents &amp; serving</small></span><span class="section-check" aria-hidden="true">✓</span></button>
         <button type="button" data-section="experience" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span><strong>Experience</strong><small>Your stories, behavioural answers &amp; deep dives</small></span><span class="section-check" aria-hidden="true">✓</span></button>
         <button type="button" data-section="practical" class="section-option"><svg class="section-option-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13 6l-2 12"/></svg><span><strong>Practical Coding</strong><small>Build, extend, debug &amp; review real code</small></span><span class="section-check" aria-hidden="true">✓</span></button>
-        <div class="section-menu-foot">Six disciplines. One interview toolkit.</div>
+        <div class="section-menu-foot">Six disciplines. One interview toolkit. Ctrl K jumps to anything.</div>
       </div>
       </div>
 
@@ -118,6 +122,7 @@
 
       <div class="sidebar-foot">
         <button id="btn-palette" class="palette-trigger" type="button" aria-label="Search and jump to anything" aria-keyshortcuts="Control+K Meta+K"><span>Search</span><kbd>Ctrl K</kbd></button>
+        <button id="readiness-chip" class="readiness-chip hidden" type="button" aria-label="Interview readiness overview"></button>
         <button id="btn-go-tutor" class="go-tutor" type="button" title="Back to your tutor, from anywhere">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-tutor" /></svg><span>Your tutor</span>
         </button>
@@ -579,6 +584,7 @@
   <script src="/tracks.js?v=__ASSET_VER__"></script>
   <script src="/experience.js?v=__ASSET_VER__"></script>
   <script src="/practical.js?v=__ASSET_VER__"></script>
+  <script src="/readiness.js?v=__ASSET_VER__"></script>
   <script src="/ai-round.js?v=__ASSET_VER__"></script>
   <script src="/nightshift-engine.js?v=__ASSET_VER__"></script>
   <script src="/nightshift.js?v=__ASSET_VER__"></script>

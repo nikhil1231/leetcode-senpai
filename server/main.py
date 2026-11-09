@@ -40,6 +40,7 @@ from .system_design_drills import router as system_design_drills_router
 from .system_design_session import router as system_design_session_router
 from .activity import router as activity_router
 from .tracks.api import router as tracks_router
+from .readiness import router as readiness_router
 from .knowledge_base.api import router as knowledge_router
 from .tutor.api import router as tutor_router
 from .ripple_ops import router as ripple_router
@@ -106,6 +107,7 @@ app.include_router(system_design_drills_router)
 app.include_router(system_design_session_router)
 app.include_router(activity_router)
 app.include_router(tracks_router)
+app.include_router(readiness_router)
 app.include_router(search_router)
 app.include_router(senpai_router)
 app.include_router(knowledge_router)
@@ -294,6 +296,7 @@ class SettingsUpdate(BaseModel):
     senpai_mode: Literal["mixed", "retrieval", "learn", "interview"] | None = None
     senpai_depth: Literal["balanced", "deep", "broad"] | None = None
     senpai_focus_note: str | None = Field(default=None, max_length=1000)
+    interview_date: str | None = Field(default=None, max_length=10)   # YYYY-MM-DD, or blank to clear
     senpai_weekly_day: int | None = Field(default=None, ge=1, le=7)
     senpai_learning_rate: float | None = Field(default=None, ge=0, le=1)
     senpai_max_weekly_shift: float | None = Field(default=None, ge=0, le=0.5)
@@ -2949,6 +2952,12 @@ def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
             raise HTTPException(409, "Your career target is synced from Job Scout; edit it there.")
         updates["target_job"] = updates["target_job"].strip()
         updates.setdefault("target_job_source", current.get("target_job_source", "local"))
+    if updates.get("interview_date"):
+        try:
+            import datetime as _dt
+            _dt.date.fromisoformat(updates["interview_date"])
+        except ValueError:
+            raise HTTPException(400, "interview_date must be a date like 2026-12-01")
     if "daily_coach_timezone" in updates:
         try:
             ZoneInfo(updates["daily_coach_timezone"])

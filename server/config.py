@@ -152,6 +152,8 @@ DEFAULT_SETTINGS = {
     "target_job": "",
     # Where target_job came from: "local" (typed here) or "job_scout" (a synced copy).
     "target_job_source": "local",
+    # When the interview is (YYYY-MM-DD). Blank: no countdown on the readiness overview.
+    "interview_date": "",
     "senpai_charter": SENPAI_CHARTER,
     # The shared teaching voice (server/voice.py); blank uses the built-in one.
     "voice_tutor": "",

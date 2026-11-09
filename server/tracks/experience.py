@@ -19,6 +19,7 @@ from .experience_content import (COMPETENCIES, COMPETENCY_IDS, DIVE_QUESTIONS, M
 from .http import put, store_for
 
 TRACK = 'experience'
+MIN_CHECKS = 5     # ticks in total (the required ones included) for a clean answer
 BY_PROMPT = {p['id']: p for p in PROMPTS}
 COMP_TITLE = {c[0]: c[1] for c in COMPETENCIES}
 
@@ -37,7 +38,7 @@ ITEMS = items()
 
 def drill_clean(checks, seconds):
     ticked = {k for k, v in (checks or {}).items() if v}
-    return len(ticked) >= 5 and REQUIRED_CHECKS <= ticked and 0 < seconds <= MAX_CLEAN_SECONDS
+    return len(ticked) >= MIN_CHECKS and REQUIRED_CHECKS <= ticked and 0 < seconds <= MAX_CLEAN_SECONDS
 
 
 def events(records):
@@ -133,7 +134,8 @@ def overview(records, now, job_context=None):
             'mistakes': s['mistakes'], 'history': s['history'], 'daily': s['daily'],
             'stories': rows, 'coverage': coverage(rows, states, now), 'prompts': prompt_rows, 'packs': packs,
             'competencies': [{'id': c, 'title': t, 'blurb': b} for c, t, b in COMPETENCIES],
-            'checks': [{'key': k, 'text': t} for k, t in STAR_CHECKS], 'target_seconds': list(TARGET_SECONDS),
+            'checks': [{'key': k, 'text': t, 'required': k in REQUIRED_CHECKS} for k, t in STAR_CHECKS], 'min_checks': MIN_CHECKS,
+            'target_seconds': list(TARGET_SECONDS),
             'max_clean_seconds': MAX_CLEAN_SECONDS, 'probes': PROBES,
             'recent_drills': [{k: d.get(k) for k in ('id', 'prompt_id', 'story_id', 'seconds', 'clean', 'at')} for d in recent],
             'cv': cv_claims(job_context, rows), 'next_prompt': next_prompt(records, now)['id']}

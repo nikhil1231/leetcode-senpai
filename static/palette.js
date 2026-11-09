@@ -7,7 +7,8 @@
   const TRACK_VIEWS = [['fundamentals', 'Fundamentals', [['home', 'Home'], ['lessons', 'Learn'], ['practise', 'Practise'], ['progress', 'What you know']]],
     ['ai', 'AI Engineering', [['home', 'Home'], ['lessons', 'Learn'], ['practise', 'Practise'], ['progress', 'What you know']]],
     ['experience', 'Experience', [['home', 'Overview'], ['stories', 'Story bank'], ['drill', 'Timed answers'], ['dives', 'Deep dives'], ['mistakes', 'Mistakes book']]],
-    ['practical', 'Practical Coding', [['home', 'Exercises'], ['mistakes', 'Mistakes book']]]];
+    ['practical', 'Practical Coding', [['home', 'Exercises'], ['mistakes', 'Mistakes book']]],
+    ['readiness', 'Overview', [['home', 'Interview readiness']]]];
   const KIND = { page: 'Page', action: 'Action', lesson: 'Lesson', simulator: 'Simulator', exercise: 'Exercise', problem: 'Problem' };
 
   let index = null, loading = null, results = [], sel = 0, root, input, list, lastFocus;
@@ -28,6 +29,7 @@
     TRACK_VIEWS.forEach(([s, name, views]) => views.forEach(([v, t]) => out.push({ kind: 'page', title: `${name}: ${t}`, sub: name, key: s + '/' + v, run: () => go.section(s, v) })));
     out.push(
       { kind: 'action', title: 'Do this next', sub: 'Your plan\'s next step', run: () => window.NextUp?.load(true).then((d) => d.primary ? window.Senpai?.start(d.primary.action) : window.App?.goTab('senpai')) },
+      { kind: 'action', title: 'See interview readiness across all sections', sub: 'Overview', run: () => go.section('readiness', 'home') },
       { kind: 'action', title: 'Start a System Design quickfire round', sub: 'Practise', run: () => go.section('system-design', 'quickfire') },
       { kind: 'action', title: 'Start any problem by URL, number or title', sub: 'LeetCode', run: () => document.getElementById('btn-quick-start')?.click() },
       { kind: 'action', title: 'Open the design builder', sub: 'System Design', run: () => { go.section('system-design', 'simulators'); setTimeout(() => window.DesignSimulators?.openItem('builder', 'builder'), 50); } },

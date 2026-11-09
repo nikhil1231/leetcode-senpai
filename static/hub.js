@@ -46,30 +46,40 @@
 
   // ---------- Home: one next step ----------
   function standingHtml(s) {
-    if (!s.tested) return `<p class="hub-standing">Nothing tested here yet, so there is no score: <a href="#" data-hub="progress">see the map</a>.</p>`;
-    const bits = [`you get <b>${s.score}%</b> right of what's been tested (${(LEVEL[s.level] || '').toLowerCase()})`, `<b>${s.coverage}%</b> of the course tested`];
-    if (s.week.gained) bits.push(`+${s.week.gained} learned this week`);
-    if (s.slipping) bits.push(`${s.slipping} slipping`);
-    if (s.misconceptions) bits.push(plural(s.misconceptions, 'misconception'));
-    return `<p class="hub-standing">${bits.join(' · ')} · <a href="#" data-hub="progress">What you know →</a></p>`;
+    if (!s.tested) return `<aside class="hub-stand"><span class="sd-eyebrow">WHERE YOU STAND</span><p class="hub-stand-empty">Nothing tested here yet, so there is no score. A placement check takes about five minutes.</p><a href="#" class="hub-stand-link" data-hub="progress">See the map →</a></aside>`;
+    const stat = (label, value, cls = '') => `<div class="${cls}"><dt>${label}</dt><dd>${value}</dd></div>`;
+    return `<aside class="hub-stand"><span class="sd-eyebrow">WHERE YOU STAND</span>
+      <div class="hub-stand-score"><strong>${s.score}%</strong><span>right of what's been tested</span></div>${pill(s.level)}
+      <div class="hub-stand-bar" role="img" aria-label="${s.coverage}% of the course tested"><span style="width:${Math.max(s.coverage ? 2 : 0, s.coverage)}%"></span></div>
+      <dl class="hub-stats">${stat('Course tested', s.coverage + '%')}${stat('This week', s.week.gained ? '+' + s.week.gained : '0')}${stat('Slipping', s.slipping, s.slipping ? 'is-warn' : '')}${s.misconceptions ? stat('To clear up', s.misconceptions, 'is-warn') : ''}</dl>
+      <a href="#" class="hub-stand-link" data-hub="progress">What you know →</a></aside>`;
   }
   async function home(root, section) {
     const d = await api('/tutor/next?section=' + section);
     const p = d.primary;
     const prev = d.previously ? `<div class="hub-prev"><span>Last time · ${esc(d.previously.lesson_title)} · ${ago(d.previously.at)}</span><p class="hub-prev-body is-clamped">${window.SDBlocks ? window.SDBlocks.inline(d.previously.summary) : esc(d.previously.summary)}</p>${String(d.previously.summary || '').length > 260 ? '<button type="button" class="hub-prev-more" aria-expanded="false">Show more</button>' : ''}</div>` : '';
-    root.innerHTML = `<div class="hub">
+    root.innerHTML = `<div class="hub hub-home">
       <div class="sd-page-intro hub-intro"><span class="sd-eyebrow">${esc(NAMES[section].toUpperCase())}${d.tutor ? ` · ${esc(d.company.name)} · ${esc(d.company.label)}, ${esc(d.company.users)}` : ''}</span><h2 id="sd-heading" tabindex="-1">${d.tutor ? 'Your tutor suggests' : 'Next up'}</h2></div>
       <div id="nu-banner"></div>
-      ${prev}
-      <section class="hub-next"><h3>${esc(p.title)}</h3><p>${esc(p.why)}</p><div class="sd-actions">${btn(p.label, 'primary', '', true)}</div></section>
-      ${d.alternatives.length ? `<div class="hub-alts"><span>Or</span>${d.alternatives.map((a, i) => `<button type="button" class="hub-alt" data-hub="alt" data-i="${i}"><b>${esc(a.title)}</b><small>${esc(a.why)}</small></button>`).join('')}</div>` : ''}
-      ${standingHtml(d.standing)}</div>`;
-    window.NextUp?.banner(root.querySelector('#nu-banner'), section);
+      <div class="hub-layout">
+        <div class="hub-main">
+          <section class="hub-next"><span class="hub-kicker">Next step</span><h3>${esc(p.title)}</h3><p>${esc(p.why)}</p><div class="sd-actions">${btn(p.label, 'primary', '', true)}</div></section>
+          ${d.alternatives.length ? `<div class="hub-alts" role="group" aria-label="Other options">${d.alternatives.map((a, i) => `<button type="button" class="hub-alt" data-hub="alt" data-i="${i}"><span class="hub-kicker">Or</span><b>${esc(a.title)}</b><small>${esc(a.why)}</small><i aria-hidden="true">→</i></button>`).join('')}</div>` : ''}
+          ${prev}
+        </div>
+        ${standingHtml(d.standing)}
+      </div>
+      <div id="rd-strip"></div></div>`;
     root.querySelector('.hub-prev-more')?.addEventListener('click', e => {
       const body = root.querySelector('.hub-prev-body'), open = body.classList.toggle('is-clamped') === false;
       e.currentTarget.textContent = open ? 'Show less' : 'Show more'; e.currentTarget.setAttribute('aria-expanded', String(open));
     });
     wire(root, section, {primary: () => p, alt: n => d.alternatives[+n.dataset.i], progress: () => ({kind: 'view', view: 'progress'})});
+    // The view is built detached and attached by mount(), and these two skip an element that is not in the page.
+    return () => {
+      window.NextUp?.banner(root.querySelector('#nu-banner'), section);
+      window.Readiness?.strip(root.querySelector('#rd-strip'), section);
+    };
   }
 
   // ---------- Progress: what you know ----------
@@ -199,10 +209,11 @@
     slot.innerHTML = '<div class="tr-loading">Loading…</div>';
     const host = document.createElement('div');
     try {
-      await VIEWS[view](host, section);
+      const attached = await VIEWS[view](host, section);   // a view may return what to run once it is in the page
       if (mine === seq && slot.isConnected) {
         slot.replaceChildren(host);
         if (section === SD) window.DesignLedger?.mount(slot);
+        if (typeof attached === 'function') attached();
       }
     } catch (e) {
       if (mine === seq) slot.innerHTML = `<div class="sd-panel"><p class="tr-error">${esc(e.message || 'Something went wrong')}</p></div>`;

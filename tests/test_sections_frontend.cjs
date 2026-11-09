@@ -19,7 +19,7 @@ function harness(hash='') {
     nodes.set(key,n);return n;
   }
   const options=['leetcode','system-design','fundamentals','ai','experience','practical'].map(k=>{const n=node('option '+k);n.dataset.section=k;return n;});
-  const views=['home','cases','skills','lessons','progress','curriculum','quickfire'].map(k=>{const n=node('view '+k);n.dataset.designView=k;return n;});
+  const views=['home','cases','skills','lessons','progress','curriculum','quickfire','practise'].map(k=>{const n=node('view '+k);n.dataset.designView=k;return n;});
   node('#section-menu').classList.add('hidden');
   const location={hash};
   const history={pushState(a,b,url){routes.push(url);location.hash=url;},replaceState(a,b,url){location.hash=url;}};
@@ -50,12 +50,14 @@ test('a deep link and browser back restore the correct learning space',()=>{
   h.context.location.hash='#/leetcode';h.listeners.popstate();
   assert.equal(h.node('body').classList.contains('section-design'),false);
 });
-test('workspace navigation stays associated with cases and exercises with drills',()=>{
-  const h=harness();h.sections.setView('workspace');
-  assert.equal(h.views[1].attrs['aria-current'],'page');
+test('workspace and skill-drill views stay under Practise in the navigation',()=>{
+  const h=harness(),practise=h.views.find(v=>v.dataset.designView==='practise');
+  h.sections.setView('workspace');
+  assert.equal(practise.attrs['aria-current'],'page');
   h.sections.setView('exercise');
-  assert.equal(h.views[1].attrs['aria-current'],undefined);
-  assert.equal(h.views[2].attrs['aria-current'],'page');
+  assert.equal(practise.attrs['aria-current'],'page');
+  h.sections.setView('home');
+  assert.equal(practise.attrs['aria-current'],undefined);
 });
 test('the section menu supports arrows, Escape and focus return',()=>{
   const h=harness();h.node('#section-trigger').events.click();
@@ -80,7 +82,8 @@ test('curriculum, quickfire and individual lessons support direct links and back
     const h=harness('#/system-design/'+view);
     assert.equal(h.opened[0][0],view);
     h.sections.setView(view.startsWith('lesson/')?'lesson':view);
-    assert.equal(h.views.find(v=>v.dataset.designView===(view.startsWith('lesson/')?'lessons':view)).attrs['aria-current'],'page');
+    const under=view==='quickfire'?'practise':'curriculum';   // Quickfire is a way to practise; lessons live under Learn
+    assert.equal(h.views.find(v=>v.dataset.designView===under).attrs['aria-current'],'page');
   }
 });
 
@@ -98,4 +101,18 @@ test('learning tracks get their own shell, deep links and a way back',()=>{
   assert.equal(h.node('#track-nav').classList.contains('hidden'),true);
   h.sections.select('leetcode');
   assert.equal(h.node('#tabs').classList.contains('hidden'),false);
+});
+test('Overview is a section of its own and sets the colour identity on the body',()=>{
+  const h=harness();
+  assert.ok(h.sections.TRACKS.includes('readiness'));
+  h.sections.select('readiness');
+  assert.equal(h.node('body').dataset.section,'readiness');
+  assert.equal(h.node('body').classList.contains('section-track'),true);
+  assert.equal(h.context.location.hash,'#/readiness');
+  assert.deepEqual(h.opened.at(-1).slice(0,3),['track','readiness','home']);
+  for(const id of ['system-design','fundamentals','ai','experience','practical','leetcode']){h.sections.select(id);assert.equal(h.node('body').dataset.section,id);}
+});
+test('a deep link to the overview opens it',()=>{
+  const h=harness('#/readiness');
+  assert.equal(h.opened[0][1],'readiness');
 });

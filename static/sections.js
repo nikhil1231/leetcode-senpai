@@ -9,8 +9,10 @@
   const UNDER = {lessons: 'curriculum', lesson: 'curriculum', setup: 'practise', workspace: 'practise', exercise: 'practise', skills: 'practise', cases: 'practise', quickfire: 'practise', papers: 'practise', drills: 'practise', mistakes: 'practise', redesign: 'practise'};
   const NAMES = {leetcode: ['Leetcode Senpai', 'Interview prep'], 'system-design': ['System Design', 'Learn and practise'],
     fundamentals: ['Fundamentals', 'Role stack knowledge'], ai: ['AI Engineering', 'LLMs, RAG and agents'],
-    experience: ['Experience', 'Your stories, tested'], practical: ['Practical Coding', 'Build, debug and review']};
-  const TRACKS = ['fundamentals', 'ai', 'experience', 'practical'];
+    experience: ['Experience', 'Your stories, tested'], practical: ['Practical Coding', 'Build, debug and review'],
+    readiness: ['Overview', 'Interview readiness']};
+  const HUE = {'system-design': 165, fundamentals: 205, ai: 290, experience: 22, practical: 78, readiness: 45};   // mirrors themes.css, for the browser chrome colour
+  const TRACKS = ['fundamentals', 'ai', 'experience', 'practical', 'readiness'];
   let current = 'leetcode', lastLeetcodeTab = 'tutor';
   const design = () => current === 'system-design';
   function close(focus = false) {
@@ -22,6 +24,7 @@
     if (current === 'system-design' && section !== 'system-design') window.SystemDesign.onTab('today');
     current = section;
     const track = TRACKS.includes(section);
+    document.body.dataset.section = section;   // themes.css: one colour identity per section
     document.body.classList.toggle('section-design', section === 'system-design');
     document.body.classList.toggle('section-track', track);
     $('#tabs').classList.toggle('hidden', section !== 'leetcode');
@@ -31,6 +34,8 @@
     trigger.querySelector('.brand-name').textContent = name;
     trigger.querySelector('.brand-sub').textContent = sub;
     trigger.setAttribute('aria-label', 'Switch learning section. Current: ' + (section === 'leetcode' ? 'LeetCode' : name));
+    window.Readiness?.mark?.(section);
+    try { document.querySelector('meta[name="theme-color"]')?.setAttribute('content', HUE[section] ? `hsl(${HUE[section]} 14% 6.5%)` : '#0a0c11'); } catch (e) { /* no document chrome to tint */ }
     menu.querySelectorAll('[data-section]').forEach(n => {
       const selected = n.dataset.section === section;
       n.classList.toggle('is-selected', selected);

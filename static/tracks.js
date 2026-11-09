@@ -7,16 +7,17 @@
   const B = () => window.SDBlocks;
   const md = t => (B() ? B().md(t) : `<p>${esc(t)}</p>`);
   const inline = t => (B() ? B().inline(t) : esc(t));
-  const KIND = { fundamentals: 'course', ai: 'course', experience: 'experience', practical: 'practical' };
-  const TITLES = { fundamentals: 'Fundamentals', ai: 'AI Engineering', experience: 'Experience', practical: 'Practical Coding' };
+  const KIND = { fundamentals: 'course', ai: 'course', experience: 'experience', practical: 'practical', readiness: 'readiness' };
+  const TITLES = { fundamentals: 'Fundamentals', ai: 'AI Engineering', experience: 'Experience', practical: 'Practical Coding', readiness: 'Overview' };
   const NAV = {
     course: [['home', 'Home', 'i-today'], ['lessons', 'Learn', 'i-topics'], ['practise', 'Practise', 'i-drill'], ['progress', 'What you know', 'i-insights']],
     experience: [['home', 'Overview', 'i-today'], ['stories', 'Story bank', 'i-playbook'], ['drill', 'Timed answers', 'i-drill'], ['dives', 'Deep dives', 'i-topics'], ['mistakes', 'Mistakes book', 'i-insights']],
     practical: [['home', 'Exercises', 'i-today'], ['mistakes', 'Mistakes book', 'i-insights']],
+    readiness: [['home', 'Readiness', 'i-today']],
   };
   // Extra prep for an interview round that lives in another section.
   const ROUND_LINKS = { workflow: [['experience', 'dives', 'Deep dives on your CV']] };
-  const NOTES = { course: 'Read it once.<br>Recall it often.<br>Explain it simply.', experience: 'Specific.<br>Measured.<br>In the first person.', practical: 'Run the tests.<br>Change one thing.<br>Say what you see.' };
+  const NOTES = { course: 'Read it once.<br>Recall it often.<br>Explain it simply.', experience: 'Specific.<br>Measured.<br>In the first person.', practical: 'Run the tests.<br>Change one thing.<br>Say what you see.', readiness: 'One scale.<br>Six disciplines.<br>No blind spots.' };
   const VIEW_TITLES = { home: 'Home', practise: 'Practise', progress: 'What you know', placement: 'Find your level', lessons: 'Learn', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round', nightshift: 'Night Shift' };
   const ACTIVE = { lesson: 'lessons', story: 'stories', dive: 'dives', claim: 'dives', exercise: 'home' };
   // Course tracks: practice views sit under Practise.
@@ -36,8 +37,10 @@
     const kind = KIND[track];
     el.innerHTML = `<span class="design-nav-label">${esc(TITLES[track].toUpperCase())}</span>` +
       NAV[kind].map(([v, label, icon]) => `<button type="button" data-track-view="${v}"><svg class="nav-icon" viewBox="0 0 24 24"><use href="#${icon}"/></svg>${label}</button>`).join('') +
+      (kind === 'readiness' ? window.Readiness?.navLinks() || '' : '') +
       `<div class="design-nav-note">${NOTES[kind]}</div>`;
     el.querySelectorAll('[data-track-view]').forEach(n => n.addEventListener('click', () => window.AppSections.select(track, n.dataset.trackView)));
+    el.querySelectorAll('[data-go-section]').forEach(n => n.addEventListener('click', () => window.AppSections.select(n.dataset.goSection)));
   }
   function markNav(view) {
     document.querySelectorAll('#track-nav [data-track-view]').forEach(n => {
@@ -55,7 +58,7 @@
     if (current.track !== track || !document.querySelector('#track-nav [data-track-view]')) nav(track);
     current = { track, view, arg: rest.join('/') || null, seq };
     markNav(view);
-    $('#page-title').textContent = VIEW_TITLES[view] || TITLES[track];
+    $('#page-title').textContent = track === 'readiness' ? 'Interview readiness' : VIEW_TITLES[view] || TITLES[track];
     $('#page-sub').textContent = TITLES[track];
     // A fresh container per view, so listeners from the previous view can't fire.
     const host = $('#tab-track'), root = document.createElement('div');

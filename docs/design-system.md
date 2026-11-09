@@ -9,6 +9,25 @@ stylesheets; the rest are conventions to keep when adding a page.
   slim banner and keep their own section-specific suggestion beneath it. Do not add another "what to do now" source.
 - Opening the app to answering a question is one click from that card.
 
+## One colour per section
+Each section has its own identity, set once by `sections.js` as `<body data-section="…">` and defined in
+`static/themes.css`: LeetCode indigo, System Design mint, Fundamentals sky, AI Engineering orchid, Experience apricot,
+Practical Coding lime, Overview gold. A section re-points `--accent*`, `--on-accent` (dark label for accent fills) and tints
+its surfaces from one hue (`--h`). Rules:
+- Style with the tokens (`--accent`, `--accent-soft`, `--accent-line`, `rgba(var(--accent-rgb), a)`), never a literal
+  hex, so the page follows its section. Series colours inside diagrams are data, not chrome, and stay fixed.
+- Anything that refers to a *specific* section from another place (switcher, readiness cards, strip) uses `--sec-<id>`.
+- Status colours (green, amber, red) keep their meaning in every section; no section accent is green or red.
+- A new section needs a `--sec-<id>` token and a `body[data-section]` block; `tests/test_ui_audit.py` checks both, and
+  that the accent passes WCAG AA as text on the panel and under the button label.
+
+## Readiness
+Overview (`#/readiness`, `static/readiness.js`, `server/readiness.py`) puts all six sections on one scale: what you
+would get right today out of each section's whole syllabus. Untested is unknown, never zero (below 15% tested the
+band says so). The overall figure weights sections by the Senpai plan. The same numbers appear as a strip on Tutor and
+every section Home and as the sidebar chip, so no section is a dead end. An optional interview date adds a countdown
+and the weekly pace needed to reach 70%.
+
 ## Type scale
 Nothing below 11px (audited). Use: 11 / 11.5 captions and kickers, 12 / 12.5 secondary text, 13 / 13.5 body in dense
 UI, 14–15 body, 16–18 lead text, 20–24 card titles, 25+ page headings. Kickers (uppercase, letter-spaced) are the only

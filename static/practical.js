@@ -84,9 +84,11 @@
   async function home(ctx) {
     const d = await ctx.call(''); if (ctx.stale()) return;
     ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">PRACTICAL CODING</span><h2>${esc(d.track.blurb)}</h2><p>Code runs in your browser with real Python. Tests are visible, and hidden edge-case checks run when you submit. Opening the solution before submitting means the exercise won't count as held.</p></div>
+      <div id="rd-strip"></div>
       ${T.knowledgeHtml(d, 'exercises you have done cleanly and still hold')}
       ${d.groups.map(g => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(g.title)}</h3><p class="sd-muted">${esc(g.blurb)}</p></div><div class="sd-lesson-grid">${g.exercises.map(e => `<button type="button" class="sd-lesson-card tr-ex-card is-${e.status}" data-t="open" data-id="${e.id}"><span class="sd-eyebrow">${CAT[g.id]} · ${e.minutes} MIN${e.level === 'stretch' ? ' · STRETCH' : ''}</span><h3>${esc(e.title)}</h3><p class="tr-card-sum">${esc(e.summary)}</p><span><span>${e.open ? 'In progress' : e.best ? `${e.best.clean ? 'Clean' : 'Attempted'} · ${when(e.best.at)}${e.best.elapsed_sec ? ' · ' + fmt(e.best.elapsed_sec) : ''}` : 'Not started'}</span><span>${e.open ? 'Resume →' : 'Open →'}</span></span></button>`).join('')}</div></section>`).join('')}`;
     wireActions(ctx.root, { open: n => ctx.go('exercise/' + n.dataset.id) });
+    window.Readiness?.strip(ctx.root.querySelector('#rd-strip'), 'practical');
   }
 
   // ---------- workspace ----------
