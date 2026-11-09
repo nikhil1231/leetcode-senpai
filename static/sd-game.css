@@ -86,13 +86,13 @@
 .rp-card:hover:not(:disabled), .rp-card:focus-visible { border-color:var(--accent); background:var(--panel2); }
 .rp-card.is-done { border-color:rgba(53,211,154,.35); }
 .rp-card.is-locked { cursor:not-allowed; }
-.rp-card.is-locked > :not(.rp-card-foot) { opacity:.55; }
+.rp-card.is-locked > :not(.rp-card-foot) { opacity:.7; }
 .rp-card.is-locked .rp-card-foot { color:var(--text-2); }
 .rp-card strong { font-size:14.5px; }
 .rp-card-top { display:flex; justify-content:space-between; gap:8px; align-items:center; }
 .rp-tier { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); }
 .rp-kicker { color:var(--text-2); font-size:12.5px; line-height:1.45; }
-.rp-card-meta { display:flex; flex-wrap:wrap; gap:4px; } .rp-card-meta em { font-style:normal; font-size:10.5px; padding:2px 7px; border-radius:999px; background:var(--accent-soft); color:var(--text-2); }
+.rp-card-meta { display:flex; flex-wrap:wrap; gap:4px; } .rp-card-meta em { font-style:normal; font-size:11.5px; padding:2px 7px; border-radius:999px; background:var(--accent-soft); color:var(--text-2); }
 .rp-card-foot { font-size:11.5px; color:var(--text-2); }
 .rp-gen { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
 .rp-gen select { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px 9px; font:13px var(--font); }
@@ -109,7 +109,7 @@
 .rp-title h2 { margin:2px 0 3px; font-size:21px; } .rp-title p { margin:0; color:var(--text-2); font-size:13px; }
 .rp-steps { display:flex; gap:4px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:4px; }
 .rp-steps button { display:flex; gap:6px; align-items:center; background:none; border:0; color:var(--text-2); font:12.5px var(--font); padding:6px 10px; border-radius:7px; cursor:pointer; }
-.rp-steps button i { font-style:normal; width:18px; height:18px; border-radius:50%; display:inline-grid; place-items:center; background:var(--line); font-size:10.5px; }
+.rp-steps button i { font-style:normal; width:18px; height:18px; border-radius:50%; display:inline-grid; place-items:center; background:var(--line); font-size:11.5px; }
 .rp-steps button.is-on { background:var(--accent-soft); color:var(--text); } .rp-steps button.is-on i { background:var(--accent); color:#0a0c11; }
 .rp-brief { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(280px,1fr); gap:16px; align-items:start; }
 .rp-msgs { display:grid; gap:10px; }

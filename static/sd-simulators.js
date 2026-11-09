@@ -121,7 +121,7 @@
     const stage = root.querySelector('[data-sim-stage]'), mine = token;
     if (current.kind === 'game') inst = window.RippleOps.mount(stage, { sandbox: () => openItem('builder', 'builder') });
     else if (current.kind === 'builder') inst = window.SDBuilder.mount(stage);
-    else if (current.kind === 'design') inst = window.SDWalkthrough.mount(stage, { design: current.id, back: home });
+    else if (current.kind === 'design') inst = window.SDWalkthrough.mount(stage, { design: current.id });
     else if (current.kind === 'course') {
       if (!window.SDSims?.has(current.id)) { stage.innerHTML = '<p class="wt-note">This simulator is not loaded on this page.</p>'; return; }
       stage.innerHTML = '';
