@@ -58,6 +58,16 @@ def has_plan(attempt):
     return plan_status(attempt) == "planned"
 
 
+def effective_held(attempt, enrichment=None):
+    """Whether the plan held: the solver's own answer on older solves, else the
+    plan grader's read of the plan against the final code. None when unknown."""
+    stated = attempt.get("plan_held")
+    if stated in HELD_VALUES:
+        return stated
+    inferred = _plan_grade(enrichment).get("held")
+    return inferred if inferred in HELD_VALUES else None
+
+
 def planned_edge_cases(attempt):
     raw = attempt.get("planned_edge_cases") or []
     if isinstance(raw, str):
@@ -192,7 +202,7 @@ def plan_components(attempt, enrichment=None, canonical=None):
     checks = [c for c in grade.get("edge_cases") or [] if isinstance(c, dict) and c.get("case")]
     if planned_edge_cases(attempt) and checks:
         out["edges"] = sum(1 for c in checks if c.get("covered")) / len(checks)
-    out["held"] = _HELD_VALUE.get(attempt.get("plan_held"))
+    out["held"] = _HELD_VALUE.get(effective_held(attempt, enrichment))
     return out
 
 
@@ -217,7 +227,7 @@ def plan_miss(attempt, enrichment=None, canonical=None):
         return True
     if status != "planned":
         return False
-    if attempt.get("plan_held") == "pivoted":
+    if effective_held(attempt, enrichment) == "pivoted":
         return True
     c = plan_components(attempt, enrichment, canonical)
     return (c["approach"] is not None and c["approach"] < 1) or c["complexity"] == 0
@@ -258,7 +268,8 @@ def plan_review(attempt, enrichment=None, canonical=None, difficulty=None):
         "edge_cases": planned_edge_cases(attempt),
         "plan_time_sec": attempt.get("plan_time_sec"),
         "soft_limit_sec": plan_soft_limit_sec(difficulty),
-        "held": attempt.get("plan_held"),
+        "held": effective_held(attempt, enrichment),
+        "held_inferred": attempt.get("plan_held") not in HELD_VALUES and effective_held(attempt, enrichment) is not None,
         "check_revealed": bool(attempt.get("plan_check_revealed")),
         "graded": bool(grade),
         "grading_error": (enrichment or {}).get("plan_grading_error"),

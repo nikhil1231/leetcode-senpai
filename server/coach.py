@@ -255,12 +255,13 @@ async def recall_hint(store, slug, recall_text, previous):
 
 
 async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None, execution_status="unknown"):
+                         execution_status="unknown"):
     """Grade an accepted solution's code against the canonical optimal approach.
 
+    Runs as soon as a solve is Accepted, before it's rated, so it reads only the
+    code and the plan's complexity claim, never the self-assessment.
     Returns (result, error): result is a dict {score, optimal, analysis,
-    positives, negatives, inferred_time, inferred_space} or None; error is a
+    positives, negatives, improve, followup, inferred_time, inferred_space} or None; error is a
     human-readable reason when no grade could be produced. When the LLM is
     disabled both are None (the solve is already logged and scheduled).
     """
@@ -278,10 +279,6 @@ async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_sp
         "canon_space": (canonical or {}).get("space"),
         "code": code, "lang": lang,
         "claim_time": claim_time, "claim_space": claim_space,
-        "self_confidence": self_confidence,
-        "self_independence": self_independence,
-        "self_note": self_note,
-        "self_approach": self_approach,
         "execution_status": execution_status,
         "statement": statement_text(p.get("content_html"), limit=12000),
     }, settings=settings)

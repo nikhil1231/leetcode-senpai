@@ -219,7 +219,9 @@ class PracticeAnswer(BaseModel):
 class Annotate(BaseModel):
     demonstrated_skill_ids: list[str] | None = Field(None, max_length=20)
     confidence: int
-    independence: str
+    # Inferred from the run when absent (assessment.inferred_independence); the
+    # modal only sends "solution" for an answer looked at outside the app.
+    independence: str | None = None
     mistake_note: str | None = None
     approach: str | None = None
     complexity_time: str | None = None
@@ -397,7 +399,7 @@ def _effective_tags(e):
 PENDING_MAX_AGE_SEC = config.PENDING_MAX_AGE_SEC
 
 # Bump to re-generate stored solution grades after a prompt/schema change.
-SOLUTION_PROMPT_VERSION = 2
+SOLUTION_PROMPT_VERSION = 3
 DRILL_CACHE_FLAG = "pattern_sprint_drills"
 DRILL_CACHE_TARGET = 3
 
@@ -610,7 +612,10 @@ def _replace_completed_drill_cache(uid, completed_slug):
 async def _enrich_bg(uid, attempt_id):
     store = get_store(uid)
     await enrich.enrich_attempt(store, attempt_id)
-    await enrich.review_process(store, attempt_id)
+    # Usually already done at Accepted, for the post-solve modal.
+    done = (store.get_enrichment(attempt_id) or {}).get("process_prompt_version", 0)
+    if done < enrich.PROCESS_PROMPT_VERSION:
+        await enrich.review_process(store, attempt_id)
 
 
 async def _recover_code(store, attempt, lc):
@@ -674,11 +679,12 @@ async def _grade_solution(store, attempt, lc=None):
         store.update_attempt(attempt["id"], {"solution_grading_status": "skipped"})
         return {"grading_status": "skipped", "graded": None, "grading_error": None}
     try:
+        # Graded as soon as it's Accepted, before any rating: the claim is the
+        # plan's target, or a complexity typed on an older solve.
         graded, err = await coach.grade_solution(
             store, attempt["slug"], code, attempt.get("lang"),
-            attempt.get("complexity_time"), attempt.get("complexity_space"),
-            attempt.get("confidence"), attempt.get("independence"),
-            attempt.get("mistake_note"), attempt.get("approach"),
+            attempt.get("complexity_time") or attempt.get("complexity_target_time"),
+            attempt.get("complexity_space") or attempt.get("complexity_target_space"),
             execution_status=assessment.observed(attempt),
         )
     except Exception as exc:  # defensive; coach already swallows LLM errors
@@ -1766,8 +1772,8 @@ def _schedule_solve(store, attempt):
         current = {**current, "slug": slug}
     attempt = assessment.episode_attempt(attempt, store.attempts_for_slug(slug))
     store.update_attempt(attempt['id'], {'assistance_events': attempt['assistance_events']})
-    graded = attempt.get("solution_grade") or {}
-    plan_held = attempt.get("plan_held") if plans.has_plan(attempt) else None
+    plan_held = (plans.effective_held(attempt, store.get_enrichment(attempt["id"]))
+                 if plans.has_plan(attempt) else None)
     new_state = scheduler.advance_review(
         current, attempt["confidence"], 'solution' if attempt.get('unsolved') else assessment.independence(attempt),
         solution_score=None,
@@ -1788,14 +1794,15 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
                  uid: str = Depends(auth.require_user)):
     if body.confidence not in (1, 2, 3):
         raise HTTPException(400, "confidence must be 1..3")
-    if body.independence not in ("solo", "hints", "solution"):
+    if body.independence not in (None, "solo", "hints", "solution"):
         raise HTTPException(400, "bad independence")
     store = get_store(uid)
     attempt = store.get_attempt(attempt_id)
     if not attempt:
         raise HTTPException(404, "no such attempt")
+    independence = body.independence or assessment.inferred_independence(attempt)
     fields = {
-        "confidence": body.confidence, "independence": body.independence,
+        "confidence": body.confidence, "independence": independence,
         "mistake_note": body.mistake_note, "approach": body.approach,
         "complexity_time": body.complexity_time, "complexity_space": body.complexity_space,
     }
@@ -1804,7 +1811,9 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
             raise HTTPException(400, 'Unknown technique')
         fields['demonstrated_skill_ids'] = body.demonstrated_skill_ids
     # Only meaningful for a run that started from a plan.
-    if plans.has_plan(attempt):
+    # Only meaningful for a run that started from a plan, and only when said:
+    # otherwise the plan grader infers it (plans.effective_held).
+    if plans.has_plan(attempt) and body.plan_held:
         fields["plan_held"] = body.plan_held
     # LeetCode's feed reports when a solve was accepted, never when it was begun,
     # so a detected solve reaches here with no clock. The modal asks for one; a
@@ -1819,7 +1828,7 @@ def api_annotate(attempt_id: str, body: Annotate, bg: BackgroundTasks,
     if attempt.get("kind") == "drill":
         bg.add_task(_replace_completed_drill_cache, uid, slug)
     suggestion = None
-    if scheduler.quality(body.confidence, body.independence) < 3:
+    if scheduler.quality(body.confidence, independence) < 3:
         suggestion = _similar_suggestion(store, slug)
     plan = None
     if plans.plan_status(attempt):
@@ -1838,19 +1847,20 @@ async def api_grade_solution(attempt_id: str, uid: str = Depends(auth.require_us
     attempt = store.get_attempt(attempt_id)
     if not attempt:
         raise HTTPException(404, "no such attempt")
-    if attempt.get("confidence") is None or attempt.get("independence") is None:
-        raise HTTPException(400, "self-assessment is required before solution grading")
     result = await _grade_solution(store, attempt, lc)
-    if result.get("grading_status") == "viewed" and scheduler.regrade_applies(
-            store.get_review(attempt["slug"]), attempt_id):
+    # Graded at Accepted, usually before the rating: only a rated solve's card moves.
+    if result.get("grading_status") == "viewed" and attempt.get("confidence") is not None \
+            and scheduler.regrade_applies(store.get_review(attempt["slug"]), attempt_id):
         result["review"] = _schedule_solve(store, store.get_attempt(attempt_id))
     return {"ok": True, **result}
 
 
 @app.post("/api/attempt/{attempt_id}/grade-plan")
 async def api_grade_plan(attempt_id: str, uid: str = Depends(auth.require_user)):
-    """Grade a rated solve's pre-solve plan and return its scorecard. Awaited by
-    the post-solve modal, like solution grading; the rating is already saved."""
+    """Grade a solve's pre-solve plan and return its scorecard. The post-solve
+    modal asks for it as soon as the solve is Accepted, usually before the rating.
+    The grade infers whether the plan held, which caps the card, so a solve
+    already rated today is rescheduled with it."""
     store = get_store(uid)
     attempt = store.get_attempt(attempt_id)
     if not attempt:
@@ -1860,8 +1870,29 @@ async def api_grade_plan(attempt_id: str, uid: str = Depends(auth.require_user))
     enrichment, err = await enrich.grade_plan(store, attempt_id)
     _record_assessment(store, attempt_id, 'plan', (enrichment or {}).get('plan_grade'))
     attempt = store.get_attempt(attempt_id)
+    if enrichment and attempt.get("confidence") is not None and scheduler.regrade_applies(
+            store.get_review(attempt["slug"]), attempt_id):
+        _schedule_solve(store, attempt)
     return {"ok": True, "llm": llm.enabled(store.get_settings()), "error": err,
             "plan": _plan_review(store, attempt, enrichment)}
+
+
+@app.post("/api/attempt/{attempt_id}/review-process")
+async def api_review_process(attempt_id: str, uid: str = Depends(auth.require_user)):
+    """The coach's read of how an in-editor solve went (stuck points, fixes, a
+    "next time" line), asked for when the solve is Accepted so the post-solve
+    modal can show it. Kept if already done for this prompt version."""
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt:
+        raise HTTPException(404, "no such attempt")
+    enrichment, err = store.get_enrichment(attempt_id), None
+    if (enrichment or {}).get("process_prompt_version", 0) < enrich.PROCESS_PROMPT_VERSION:
+        enrichment, err = await enrich.review_process(store, attempt_id)
+    enrichment = enrichment or {}
+    return {"ok": True, "llm": llm.enabled(store.get_settings()),
+            "review": enrichment.get("process_review"),
+            "error": err or enrichment.get("process_review_error")}
 
 
 def _plan_review(store, attempt, enrichment=None):

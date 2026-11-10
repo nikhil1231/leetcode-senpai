@@ -240,12 +240,6 @@ const editorialLinkHtml = (slug) => slug
 window.H = { $, $$, api, prefetch, fmtTime, solveSecOf, pct, badge, escapeHtml, toast, cxOptions, loader,
   beginRender, COMPLEXITIES, sanitizeProblemHtml };
 
-renderComplexityFields("#annotate-complexities", {
-  timeId: "annotate-time",
-  spaceId: "annotate-space",
-  timeLabel: "Time complexity",
-  spaceLabel: "Space complexity",
-});
 renderComplexityFields("#predict-complexities", {
   timeId: "predict-time",
   spaceId: "predict-space",
@@ -1624,12 +1618,15 @@ $("#btn-pause-session").addEventListener("click", togglePause);
 $("#btn-resume-session").addEventListener("click", togglePause);
 
 // ---- annotation modal ----------------------------------------------------------
-function skillPickLabel(n) {
-  return n === 0 ? 'none picked' : n === 1 ? '1 picked' : `${n} picked`;
-}
-
+// The post-solve modal. An Accepted from the editor first gets the interviewer's
+// follow-up ("can we do better?"), with no feedback yet, so you can still improve
+// it yourself. Then the review: the solution grade leads, the plan and how the
+// run went sit below in one line each, and choosing a confidence saves. How it
+// went, whether the plan held and the complexity are inferred from the run.
+// Grading starts as the modal opens, not after the rating.
 function openAnnotate(attempt) {
   currentAttempt = attempt;
+  rating = false;
   $("#annotate-title").textContent = attempt.title;
   $("#annotate-problem-id").textContent = attempt.frontend_id ? `#${attempt.frontend_id} · ` : "";
   $("#annotate-problem-link").href = attempt.url || `https://leetcode.com/problems/${attempt.slug}/`;
@@ -1641,59 +1638,78 @@ function openAnnotate(attempt) {
   if (attempt.slug) meta.push(attempt.slug);
   $("#annotate-problem-meta").textContent = meta.join(" · ");
   renderAnnotateFacts(attempt);
-  const skillOpts = attempt.available_skills || [];
-  const pickedSkills = attempt.demonstrated_skill_ids || [];
-  $('#annotate-skills').classList.toggle('hidden', !skillOpts.length);
-  $('#annotate-skills').innerHTML = skillOpts.length ? `<details class="skill-picker"${pickedSkills.length ? ' open' : ''}>
-    <summary class="label-sm skill-picker-head">
-      <span class="skill-picker-label">Techniques used <span class="help-inline">optional — pick any this solution relied on</span></span>
-      <span class="skill-picker-count">${skillPickLabel(pickedSkills.length)}</span><span class="skill-picker-caret" aria-hidden="true"></span>
-    </summary>
-    <div class="skill-chips">${skillOpts.map(s => `<label class="skill-chip${s.suggested ? ' is-suggested' : ''}"><input type="checkbox" data-skill="${escapeHtml(s.id)}" ${pickedSkills.includes(s.id) ? 'checked' : ''}><span>${escapeHtml(s.name)}</span></label>`).join('')}</div>
-  </details>` : '';
-  // The closed dropdown still has to show what's picked, so keep the count live.
-  const chips = $('#annotate-skills .skill-chips');
-  if (chips) chips.addEventListener('change', () => {
-    $('#annotate-skills .skill-picker-count').textContent =
-      skillPickLabel(chips.querySelectorAll('input:checked').length);
-  });
-  // Default independence from the run: gave up → solution; leaned on hints → hints.
-  const usedHints = (attempt.hint_level_used || 0) >= 2;
   const heading = $("#annotate-heading");
   heading.textContent = attempt.unsolved ? "Run ended" : "Solved!";
   heading.classList.toggle("celebrate", !attempt.unsolved);
-  selectPill("#conf-group", attempt.unsolved ? "1" : "2");
-  selectPill("#indep-group", attempt.gave_up ? "solution" : usedHints ? "hints" : "solo");
-  // What you did usually is what you planned; start from the plan and edit.
-  const plan = attempt.plan || {};
-  const fromPlan = plan.status === "planned";
-  setComplexityValue("annotate-time", attempt.complexity_time || (fromPlan ? plan.target_time : ""));
-  setComplexityValue("annotate-space", attempt.complexity_space || (fromPlan ? plan.target_space : ""));
+  selectPill("#conf-group", "");
   $("#annotate-minutes").value = "";
   $("#annotate-library").classList.toggle("hidden", attempt.in_library !== false);
   const addBtn = $("#btn-annotate-add-library");
   addBtn.disabled = false;
   addBtn.textContent = "Add to library";
   $("#annotate-note").value = "";
-  $("#annotate-approach").value = attempt.approach || (fromPlan ? plan.approach || "" : "");
-  $("#annotate-approach-help").textContent = fromPlan && plan.approach
-    ? "from your plan — edit it to what you actually did" : "optional";
-  selectPill("#held-group", attempt.plan_held || "");
+  $("#annotate-note").classList.add("hidden");
+  $("#btn-annotate-add-note").classList.remove("hidden");
+  // Gave up in the app is already known; this is for an answer seen elsewhere.
+  $("#annotate-looked").checked = false;
+  $(".annotate-looked").classList.toggle("hidden", !!attempt.gave_up || !!attempt.unsolved);
   renderAnnotatePlan(attempt);
-  const saveBtn = $("#btn-save-annotate");
-  saveBtn.textContent = "Save";
-  delete saveBtn.dataset.saved;
-  saveBtn.disabled = false;
+  renderAnnotateProcess(attempt);
   $("#annotate-modal").classList.remove("hidden");
   markSettling(attempt.slug, "solved");
-  initAnnotateGrade(attempt);
   // Only while unrated: the server won't reopen a solve once it's rated.
   $("#btn-optimize-annotate").classList.toggle("hidden",
     !(attempt.via === "editor" && attempt.code && attempt.confidence == null && !attempt.unsolved));
+  // The plan and the run are graded now, whichever stage shows first.
+  if (llmEnabled && attempt.plan && attempt.plan.status === "planned" && !attempt.plan.graded
+      && !attempt.plan.grading_error) gradePlan(attempt.id);
+  if (followupEligible(attempt)) runFollowup(attempt);
+  else {
+    setAnnotateStage("review");
+    initAnnotateGrade(attempt);
+  }
   // Detection asked for the code and didn't get it: the likeliest reason is
   // the cookie, so find out now rather than on the next reload.
   if (!attempt.code && attempt.submission_id) checkLeetCodeAuth();
 }
+
+// ---- the interviewer's follow-up ----------------------------------------------
+// Keyed by the code, so a better Accepted after "Try it" gets asked again.
+const followupSeen = new Set();
+const followupKey = (a) => `${a.id}|${a.code || ""}`;
+
+function followupEligible(a) {
+  return llmEnabled && a.via === "editor" && !!a.code && a.confidence == null
+    && !a.unsolved && !followupSeen.has(followupKey(a));
+}
+
+function setAnnotateStage(stage) {
+  const followup = stage === "followup";
+  $("#annotate-followup").classList.toggle("hidden", !followup);
+  $("#annotate-review").classList.toggle("hidden", followup);
+  $("#annotate-rate").classList.toggle("hidden", followup);
+}
+
+async function runFollowup(attempt) {
+  setAnnotateStage("followup");
+  $("#annotate-followup-text").innerHTML = `<span class="spinner"></span> Reading your code…`;
+  $("#btn-followup-try").classList.add("hidden");
+  const r = await requestSolutionGrade(attempt.id);
+  if (!currentAttempt || currentAttempt.id !== attempt.id || followupSeen.has(followupKey(attempt))) return;
+  const question = r && r.grading_status === "viewed" && r.graded && (r.graded.followup || "").trim();
+  if (!question) return finishFollowup();
+  $("#annotate-followup-text").textContent = `Correct. ${question}`;
+  $("#btn-followup-try").classList.remove("hidden");
+}
+
+function finishFollowup() {
+  if (!currentAttempt) return;
+  followupSeen.add(followupKey(currentAttempt));
+  setAnnotateStage("review");
+  initAnnotateGrade(currentAttempt);
+}
+$("#btn-followup-done").addEventListener("click", finishFollowup);
+$("#btn-followup-try").addEventListener("click", () => keepOptimizing());
 
 // Rendered when the modal opens, and again whenever a better submission lands
 // for a solve still sitting here unrated.
@@ -1754,7 +1770,8 @@ function solvePaceHtml(a) {
 function refreshAnnotate(fresh) {
   currentAttempt = { ...currentAttempt, ...fresh };
   renderAnnotateFacts(currentAttempt);
-  initAnnotateGrade(currentAttempt);
+  if (followupEligible(currentAttempt)) runFollowup(currentAttempt);
+  else initAnnotateGrade(currentAttempt);
   toast("Picked up your newer submission for this one.");
 }
 
@@ -1819,15 +1836,28 @@ function planGradeHtml(plan) {
     ${plan.note ? `<p class="grade-analysis">${escapeHtml(plan.note)}</p>` : ""}`;
 }
 
+// Last time on this problem, as a comparison rather than a quote.
 function previousPlanHtml(prev) {
   if (!prev || !prev.approach) return "";
   const when = prev.solved_at ? new Date(prev.solved_at * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
   const bits = [];
-  if (prev.target_time) bits.push(escapeHtml(prev.target_time));
-  if (prev.held) bits.push(escapeHtml(prev.held));
   if (prev.score != null) bits.push(`${prev.score}/5`);
-  return `<b>Last time${when ? ` (${when})` : ""}${prev.planned ? " you planned" : " you wrote"}:</b> “${escapeHtml(prev.approach)}”${
-    bits.length ? ` · ${bits.join(" · ")}` : ""}`;
+  if (prev.held) bits.push(escapeHtml(prev.held));
+  if (prev.target_time) bits.push(`target ${escapeHtml(prev.target_time)}`);
+  return `<b>Last time${when ? ` (${when})` : ""}:</b> ${bits.length ? bits.join(" · ") : prev.planned ? "planned" : "explained"}`;
+}
+
+// The plan in one line: verdict, score, whether it held and the time it took
+// against the limit for the difficulty. What was planned folds away below.
+function planHeadlineHtml(plan) {
+  if (!plan || plan.status !== "planned" || !plan.graded) return "";
+  const bits = [];
+  if (plan.approach_verdict && plan.approach_verdict !== "unknown") bits.push(verdictTag(plan.approach_verdict, APPROACH_VERDICTS));
+  if (plan.score != null) bits.push(`<span class="plan-score">${plan.score}/5</span>`);
+  if (plan.held) bits.push(`<span class="small">plan ${escapeHtml(plan.held)}</span>`);
+  const missing = plan.missing_step ? `<p class="small">Missing: ${escapeHtml(plan.missing_step)}</p>` : "";
+  return `<div class="plan-headline">${bits.join(" ")}</div>${missing}${
+    plan.note ? `<p class="plan-note">${escapeHtml(plan.note)}</p>` : ""}`;
 }
 
 function renderAnnotatePlan(attempt) {
@@ -1836,17 +1866,17 @@ function renderAnnotatePlan(attempt) {
   const shown = plan.status === "planned" || plan.status === "blank";
   card.classList.toggle("hidden", !shown);
   if (!shown) return;
+  const limit = plan.soft_limit_sec || PLAN_SOFT_LIMIT_DEFAULT_SEC;
   $("#annotate-plan-meta").textContent = plan.plan_time_sec != null && plan.status === "planned"
-    ? `planned in ${fmtClock(plan.plan_time_sec)}` : "";
-  $("#annotate-plan-meta").classList.toggle("is-over", (plan.plan_time_sec || 0) >= (plan.soft_limit_sec || PLAN_SOFT_LIMIT_DEFAULT_SEC));
+    ? `${fmtClock(plan.plan_time_sec)} of ${fmtClock(limit)}` : "";
+  $("#annotate-plan-meta").classList.toggle("is-over", (plan.plan_time_sec || 0) >= limit);
   $("#annotate-plan-body").innerHTML = planSummaryHtml(plan);
-  $("#annotate-plan-held").classList.toggle("hidden", plan.status !== "planned");
   const prev = previousPlanHtml(attempt.previous_plan);
   $("#annotate-plan-previous").innerHTML = prev;
   $("#annotate-plan-previous").classList.toggle("hidden", !prev);
   const grade = $("#annotate-plan-grade");
   if (plan.grading_error) return renderPlanGradeError(plan.grading_error, attempt.id);
-  const html = plan.graded ? planGradeHtml(plan) : "";
+  const html = plan.status === "blank" ? `<p class="small">Started with no idea yet.</p>` : planHeadlineHtml(plan);
   grade.innerHTML = html;
   grade.classList.toggle("hidden", !html);
 }
@@ -1857,10 +1887,10 @@ function renderPlanGradeError(err, attemptId) {
   grade.innerHTML = `<p class="missed"><b>Plan grading failed:</b> ${escapeHtml(err || "Unknown error")}</p>
     <div class="grade-actions"><button id="btn-grade-plan" class="button is-small is-link">Retry</button></div>`;
   const btn = $("#btn-grade-plan");
-  if (btn) btn.addEventListener("click", () => gradePlanAfterSave(attemptId));
+  if (btn) btn.addEventListener("click", () => gradePlan(attemptId));
 }
 
-async function gradePlanAfterSave(attemptId) {
+async function gradePlan(attemptId) {
   const grade = $("#annotate-plan-grade");
   grade.classList.remove("hidden");
   grade.innerHTML = `<div class="grading"><span class="spinner"></span><span class="grading-text">Grading your plan…</span></div>`;
@@ -1875,10 +1905,42 @@ async function gradePlanAfterSave(attemptId) {
   }
 }
 
-$$("#held-group button").forEach((b) => b.addEventListener("click", () => {
-  // Optional, so a second click takes the answer back.
-  selectPill("#held-group", b.classList.contains("sel") ? "" : b.dataset.val);
-}));
+// ---- how the run went (in-editor solves) ---------------------------------------
+// Numbers from the editor's change log at once; the coach's read of it (where
+// you got stuck, a "next time" line) is asked for as the modal opens.
+function processStatsHtml(r) {
+  const at = (ms) => (ms == null ? "—" : fmtClock(Math.round(ms / 1000)));
+  const bits = [`first run ${at(r.first_run_ms)}`, `${r.runs} run${r.runs === 1 ? "" : "s"}`,
+    `${r.failed_submits} failed submit${r.failed_submits === 1 ? "" : "s"}`];
+  return `<p class="small process-stats">${bits.join(" · ")}</p>`;
+}
+
+function processReviewHtml(review) {
+  if (!review) return "";
+  const stuck = (review.stuck_points || []).slice(0, 2);
+  return `${stuck.length ? `<ul class="process-list">${stuck.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : ""}${
+    review.takeaway ? `<p class="process-next"><b>Next time:</b> ${escapeHtml(review.takeaway)}</p>` : ""}`;
+}
+
+async function renderAnnotateProcess(attempt) {
+  const card = $("#annotate-process");
+  const body = $("#annotate-process-body");
+  const r = attempt.recording;
+  card.classList.toggle("hidden", !r);
+  if (!r) return;
+  const stats = processStatsHtml(r);
+  const known = (attempt.enrichment || {}).process_review;
+  if (!llmEnabled || known) { body.innerHTML = stats + processReviewHtml(known); return; }
+  body.innerHTML = `${stats}<div class="grading"><span class="spinner"></span><span class="grading-text">Reading how it went…</span></div>`;
+  try {
+    const res = await api(`/attempt/${attempt.id}/review-process`, "POST");
+    if (!currentAttempt || currentAttempt.id !== attempt.id) return;
+    body.innerHTML = stats + (res.review ? processReviewHtml(res.review)
+      : res.error ? `<p class="missed small">Couldn't read the run: ${escapeHtml(res.error)}</p>` : "");
+  } catch (e) {
+    if (currentAttempt && currentAttempt.id === attempt.id) body.innerHTML = stats;
+  }
+}
 
 // ---- solution grading (inside the annotate modal) ------------------------------
 let annotateGradeTimer = null;
@@ -1899,31 +1961,22 @@ function initAnnotateGrade(attempt) {
     if (cookieDead()) return renderSolutionNeedsCookie(lcState, attempt.id);
   }
   const status = attempt.solution_grading_status;
-  // Claim the column up front so the grade lands where you're already looking,
-  // not below the fold after Save.
-  if (attempt.confidence == null || !attempt.independence) {
-    panel.classList.remove("hidden");
-    $("#annotate-grade-body").innerHTML = `<p class="grade-pending">Save your rating and the coach grades your submitted code here.</p>`;
-    return;
-  }
   if (status === "viewed" && attempt.solution_grade) {
     renderSolutionGrade(attempt.solution_grade);
   } else if (status === "failed") {
     renderSolutionGradeError(attempt.solution_grading_error, attempt.id);
-  } else if (!attempt.code) {
-    renderSolutionGradeError("Your code wasn't captured when this solve was detected.", attempt.id);
+  } else {
+    gradeSolution(attempt.id);
   }
 }
 
-// A solve detected on load opens its modal before the overview and the cookie
-// check have answered, so the panel above was drawn without either. Draw it
-// again when they land — only while unrated, since after Save the panel may
-// be holding a grade in flight.
+// Unrated solves are graded where they stand; refreshed when a better
+// submission lands. Never wipes a cookie mid-paste.
 function redrawUnratedGrade() {
   if (!currentAttempt || currentAttempt.confidence != null) return;
   const typed = document.querySelector("#grade-cookie-input");
-  if (typed && typed.value) return;  // never wipe a cookie mid-paste
-  initAnnotateGrade(currentAttempt);
+  if (typed && typed.value) return;
+  if (!$("#annotate-review").classList.contains("hidden")) initAnnotateGrade(currentAttempt);
 }
 
 function cookieDead() {
@@ -1959,33 +2012,49 @@ function assessmentDimensionsHtml(a) {
     ${(a.correctness_objections || []).map(c => `<p><b>Correctness objection (${escapeHtml(c.verification)}):</b> ${escapeHtml(c.explanation)}</p>`).join('')}`;
 }
 
+// The solution grade leads the review: the score, then how to improve it, the
+// thing worth reading. Complexity only shows when the code missed the optimum
+// or the plan's target; what worked folds away.
+function improvementsOf(g) {
+  const seen = new Set();
+  return (g.improve && g.improve.length ? g.improve : (g.negatives || g.improvements || []))
+    .filter((x) => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase()));
+}
+
+function solutionComplexityHtml(g, plan) {
+  const t = g.inferred_time, sp = g.inferred_space;
+  if (!t && !sp) return "";
+  const optimum = plan && (plan.optimal_time || plan.optimal_space)
+    ? ` · optimal ${escapeHtml(plan.optimal_time || "?")} / ${escapeHtml(plan.optimal_space || "?")}` : "";
+  if (!g.optimal) return `<p class="hero-cx"><b>Your code:</b> ${escapeHtml(t || "?")} time, ${escapeHtml(sp || "?")} space${optimum}</p>`;
+  const target = plan && plan.target_time;
+  if (target && t && target.replace(/\s/g, "").toLowerCase() !== t.replace(/\s/g, "").toLowerCase()) {
+    return `<p class="hero-cx">You planned ${escapeHtml(target)}; your code is ${escapeHtml(t)}.</p>`;
+  }
+  return "";
+}
+
 function renderSolutionGrade(g) {
   g = g || {};
   stopAnnotateGrading();
   $("#annotate-grade").classList.remove("hidden");
-  const panel = $("#annotate-grade-body");
+  const plan = currentAttempt && currentAttempt.plan;
+  const improve = improvementsOf(g);
   const positives = (g.positives || []).filter(Boolean);
-  const negatives = (g.negatives || g.improvements || []).filter(Boolean);
-  const hasCx = g.inferred_time || g.inferred_space;
-  panel.innerHTML = `
-    <div class="grade-score">Score <b>${g.score}/5</b>${
-      g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
-    ${(g.corrections || []).map(c => `<p class="small"><b>Assessment correction:</b> the saved code returns ${escapeHtml(c.observed_output)} for ${escapeHtml(c.input)}. The original code objection was disproved. Original feedback is retained below; recorded help remains part of this attempt.</p>`).join('')}
-    ${assessmentDimensionsHtml(g.assessment)}
+  const objections = ((g.assessment || {}).correctness_objections || []);
+  $("#annotate-grade-body").innerHTML = `
+    <div class="hero-head"><span class="hero-score">${g.score}/5</span>${
+      g.optimal ? `<span class="plan-tag is-ok">optimal</span>` : `<span class="plan-tag is-partial">can be better</span>`}</div>
     ${g.analysis ? `<p class="grade-analysis">${escapeHtml(g.analysis)}</p>` : ""}
-    ${hasCx ? `<p class="small"><b>Complexity:</b> time ${escapeHtml(g.inferred_time || "?")}, space ${escapeHtml(g.inferred_space || "?")}</p>` : ""}
-    ${positives.length ? `<div class="grade-bullets grade-positives"><b>Positives</b><ul>${
-      positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
-    ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>Negatives</b><ul>${
-      negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+    ${(g.corrections || []).map((c) => `<p class="small"><b>Assessment correction:</b> the saved code returns ${escapeHtml(c.observed_output)} for ${escapeHtml(c.input)}, so the objection below was disproved.</p>`).join("")}
+    ${objections.map((c) => `<p class="missed small"><b>Possible bug (${escapeHtml(c.verification)}):</b> ${escapeHtml(c.explanation)}</p>`).join("")}
+    <div class="hero-improve"><h4>How to improve</h4>${improve.length
+      ? `<ul>${improve.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>`
+      : `<p class="small">Nothing to change: this is optimal and clean.</p>`}</div>
+    ${solutionComplexityHtml(g, plan)}
+    ${positives.length ? `<details class="annotate-more"><summary>What worked</summary><ul class="process-list">${
+      positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></details>` : ""}
     ${editorialLinkHtml(currentAttempt && currentAttempt.slug)}`;
-}
-
-function markAnnotateDone() {
-  const saveBtn = $("#btn-save-annotate");
-  saveBtn.textContent = "Done";
-  saveBtn.dataset.saved = "1";
-  saveBtn.disabled = false;
 }
 
 // The cookie died between solving and grading. Take a fresh one right here —
@@ -2020,13 +2089,7 @@ function renderSolutionNeedsCookie(state, attemptId, note = "") {
       return renderSolutionNeedsCookie(state, attemptId,
         "LeetCode rejected that one — copy it again from a signed-in leetcode.com tab.");
     }
-    // Grading waits on the rating, as it always does; before Save, the cookie
-    // is simply in place for when it runs.
-    if (currentAttempt.confidence == null || !currentAttempt.independence) {
-      $("#annotate-grade-body").innerHTML = `<p class="grade-pending">Cookie saved. Save your rating and the coach fetches and grades your code here.</p>`;
-      return;
-    }
-    await gradeSavedSolution(attemptId);
+    await gradeSolution(attemptId);
   });
 }
 
@@ -2040,46 +2103,59 @@ function renderSolutionGradeError(err, attemptId) {
 
 function wireGradeButton(attemptId) {
   const btn = $("#btn-grade-solution");
-  if (btn) btn.addEventListener("click", () => gradeSavedSolution(attemptId));
+  if (btn) btn.addEventListener("click", () => gradeSolution(attemptId));
 }
 
-async function gradeSavedSolution(attemptId) {
-  showAnnotateGrading([
-    "Reading your saved self-assessment…",
-    "Checking the submitted solution…",
-    "Summarizing the grade…",
-  ]);
-  try {
-    const r = await api(`/attempt/${attemptId}/grade-solution`, "POST");
-    if (r.grading_status === "viewed" && r.graded) {
-      if (currentAttempt) currentAttempt.solution_grade = r.graded;
-      renderSolutionGrade(r.graded);
-      markAnnotateDone();
-      refreshBehindModal();
-      return true;
-    }
-    if (r.grading_status === "skipped") {
-      $("#annotate-grade").classList.add("hidden");
-      return true;
-    }
-    if (r.grading_status === "needs_cookie") {
-      renderLcWarning(r.cookie_state);
-      renderSolutionNeedsCookie(r.cookie_state, attemptId);
-      return false;
-    }
-    renderSolutionGradeError(r.grading_error, attemptId);
-    return false;
-  } catch (e) {
-    renderSolutionGradeError(e.message, attemptId);
+// One request per solve at a time: the interviewer stage and the review share it.
+const solutionGradeJobs = new Map();
+
+function requestSolutionGrade(attemptId) {
+  if (solutionGradeJobs.has(attemptId)) return solutionGradeJobs.get(attemptId);
+  const job = api(`/attempt/${attemptId}/grade-solution`, "POST")
+    .then((r) => {
+      if (currentAttempt && currentAttempt.id === attemptId) {
+        currentAttempt.solution_grading_status = r.grading_status;
+        if (r.graded) currentAttempt.solution_grade = r.graded;
+        if (r.grading_error) currentAttempt.solution_grading_error = r.grading_error;
+      }
+      return r;
+    })
+    .catch((e) => ({ grading_status: "failed", grading_error: e.message }))
+    .finally(() => solutionGradeJobs.delete(attemptId));
+  solutionGradeJobs.set(attemptId, job);
+  return job;
+}
+
+async function gradeSolution(attemptId) {
+  showAnnotateGrading(["Reading your code…", "Checking it against the optimum…", "Writing it up…"]);
+  const r = await requestSolutionGrade(attemptId);
+  if (!currentAttempt || currentAttempt.id !== attemptId) return false;
+  if (r.grading_status === "viewed" && r.graded) {
+    renderSolutionGrade(r.graded);
+    return true;
+  }
+  if (r.grading_status === "skipped") {
+    $("#annotate-grade").classList.add("hidden");
+    return true;
+  }
+  if (r.grading_status === "needs_cookie") {
+    renderLcWarning(r.cookie_state);
+    renderSolutionNeedsCookie(r.cookie_state, attemptId);
     return false;
   }
+  renderSolutionGradeError(r.grading_error, attemptId);
+  return false;
 }
 
 function selectPill(group, val) {
   $$(`${group} button`).forEach((b) => b.classList.toggle("sel", b.dataset.val === val));
 }
-$$("#conf-group button").forEach((b) => b.addEventListener("click", () => selectPill("#conf-group", b.dataset.val)));
-$$("#indep-group button").forEach((b) => b.addEventListener("click", () => selectPill("#indep-group", b.dataset.val)));
+$$("#conf-group button").forEach((b) => b.addEventListener("click", () => rateSolve(Number(b.dataset.val))));
+$("#btn-annotate-add-note").addEventListener("click", () => {
+  $("#annotate-note").classList.remove("hidden");
+  $("#btn-annotate-add-note").classList.add("hidden");
+  $("#annotate-note").focus?.();
+});
 
 function closeAnnotate({ next = true } = {}) {
   $("#annotate-modal").classList.add("hidden");
@@ -2144,94 +2220,37 @@ $("#btn-annotate-add-library").addEventListener("click", async () => {
   refreshBehindModal();
 });
 
-$("#btn-save-annotate").addEventListener("click", async () => {
-  if (!currentAttempt) return;
-  const saveBtn = $("#btn-save-annotate");
-  if (saveBtn.dataset.saved === "1") {
-    closeAnnotate();
-    return;
-  }
-  // dataset.saved only covers a save that already landed. A second click while
-  // the first request is still in flight has to be dropped too, or one solve
-  // is logged twice.
-  if (saveBtn.disabled) return;
-  saveBtn.disabled = true;
-  const attemptId = currentAttempt.id;
-  const slug = currentAttempt.slug;
-  const confidence = Number($("#conf-group button.sel").dataset.val);
-  const independence = $("#indep-group button.sel").dataset.val;
-  // Only offered for a detected solve, and only ever fills a blank clock — the
+// Choosing a confidence is the rating: it saves and closes. How it went is
+// inferred from the run (hints, giving up) unless you say you looked at the
+// answer; any grading still running finishes and is kept on the solve.
+let rating = false;
+async function rateSolve(confidence) {
+  if (!currentAttempt || rating) return;
+  rating = true;
+  selectPill("#conf-group", String(confidence));
+  const attempt = currentAttempt;
+  // Only offered for a detected solve, and only ever fills a blank clock: the
   // server refuses to overwrite a time it measured itself.
   const minutes = Number($("#annotate-minutes").value);
   const timeTakenSec = minutes > 0 ? Math.round(minutes * 60) : null;
-  const heldBtn = $("#held-group button.sel");
-  const planHeld = (heldBtn && heldBtn.dataset.val) || null;
-  let r;
   try {
-    r = await api(`/attempt/${attemptId}/annotate`, "POST", {
-      confidence, independence,
-      demonstrated_skill_ids: currentAttempt.available_skills ? Array.from(document.querySelectorAll('#annotate-skills input:checked')).map(b => b.dataset.skill) : null,
-      mistake_note: $("#annotate-note").value || null,
-      approach: $("#annotate-approach").value || null,
-      complexity_time: complexityValue("annotate-time"),
-      complexity_space: complexityValue("annotate-space"),
-      plan_held: planHeld,
+    await api(`/attempt/${attempt.id}/annotate`, "POST", {
+      confidence,
+      independence: $("#annotate-looked").checked ? "solution" : null,
+      mistake_note: $("#annotate-note").value.trim() || null,
       time_taken_sec: timeTakenSec,
     });
   } catch (e) {
-    saveBtn.disabled = false;
+    rating = false;
+    selectPill("#conf-group", "");
     toast(e.message);
     return;
   }
-  clearSettling(slug);
+  clearSettling(attempt.slug);
   refreshBehindModal();
-  $("#btn-optimize-annotate").classList.add("hidden");  // rated now: past optimizing
-  if (currentAttempt) {
-    Object.assign(currentAttempt, {
-      confidence, independence,
-      demonstrated_skill_ids: currentAttempt.available_skills ? Array.from(document.querySelectorAll('#annotate-skills input:checked')).map(b => b.dataset.skill) : null,
-      mistake_note: $("#annotate-note").value || null,
-      approach: $("#annotate-approach").value || null,
-      complexity_time: complexityValue("annotate-time"),
-      complexity_space: complexityValue("annotate-space"),
-    });
-    if (timeTakenSec != null && currentAttempt.time_taken_sec == null) {
-      currentAttempt.time_taken_sec = timeTakenSec;
-    }
-  }
-  // Only promise a grade we can actually produce. Code missing from a detected
-  // solve is fetched at grading time — unless the cookie is already known to be
-  // dead, in which case the modal stays open on the prompt for a fresh one.
-  const recoverable = llmEnabled && !!(currentAttempt && !currentAttempt.code
-    && currentAttempt.submission_id);
-  const awaitingCookie = recoverable && cookieDead();
-  const willGrade = llmEnabled && !!(currentAttempt
-    && (currentAttempt.code || (recoverable && !awaitingCookie)));
-  // A plan is graded whether or not there's code: it's the plan being judged.
-  const willGradePlan = llmEnabled && !!(currentAttempt && currentAttempt.plan
-    && currentAttempt.plan.status === "planned");
-  if (currentAttempt && r.plan) {
-    currentAttempt.plan = r.plan;
-    currentAttempt.plan_held = planHeld;
-  }
-  toast(willGrade ? "Logged — grading your solution…"
-    : awaitingCookie ? "Logged — paste a fresh cookie to grade your solution"
-    : willGradePlan ? "Logged — grading your plan…" : "Logged");
-  if (!willGrade && !willGradePlan && !awaitingCookie) {
-    closeAnnotate();
-  } else {
-    const jobs = [];
-    if (willGradePlan) jobs.push(gradePlanAfterSave(attemptId));
-    // With no code to grade the rating is the last thing to wait for; the
-    // plan grade fills in whether or not the modal is still open.
-    if (willGrade) jobs.push(gradeSavedSolution(attemptId));
-    else markAnnotateDone();
-    await Promise.all(jobs);
-  }
-  if (!$("#annotate-modal").classList.contains("hidden") && saveBtn.dataset.saved !== "1") {
-    saveBtn.disabled = false;
-  }
-});
+  toast("Saved");
+  if (currentAttempt && currentAttempt.id === attempt.id) closeAnnotate();
+}
 
 // ---- recall modal --------------------------------------------------------------
 async function openRecall(slug, title, category, attemptId = null, gradingStatus = null, kind = "adhoc") {
@@ -3177,6 +3196,7 @@ async function keepOptimizing() {
     toast(e.message);
     return;
   }
+  followupSeen.delete(followupKey(attempt));
   closeAnnotate({ next: false });
   applyActive(res.active);
   toast("Optimizing — submit a better version, or Stop optimizing to keep this one.");

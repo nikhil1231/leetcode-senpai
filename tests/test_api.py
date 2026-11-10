@@ -2077,14 +2077,8 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
     seen = {}
 
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None, execution_status="unknown"):
-        seen.update({
-            "self_confidence": self_confidence,
-            "self_independence": self_independence,
-            "self_note": self_note,
-            "self_approach": self_approach,
-        })
+                         execution_status="unknown"):
+        seen.update({"claim_time": claim_time, "claim_space": claim_space})
         return {"score": 4, "optimal": False, "analysis": "one-pass hashmap",
                 "positives": ["Uses the right lookup structure"],
                 "negatives": ["Needs a cleaner early return"],
@@ -2094,8 +2088,8 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
     monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
     aid = client.store.add_attempt({
         "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
-        "kind": "adhoc", "confidence": 3, "independence": "solo",
-        "mistake_note": "missed edge case", "approach": "hashmap",
+        "kind": "adhoc", "plan_status": "planned", "predicted_approach": "hashmap",
+        "complexity_target_time": "O(n)", "complexity_target_space": "O(n)",
         "code": "class Solution: pass", "lang": "python3",
         "solution_grading_status": None,
     })
@@ -2109,18 +2103,14 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
     assert stored["solution_grade"]["score"] == 4
     assert stored["solution_grade"]["prompt_version"] == main.SOLUTION_PROMPT_VERSION
     assert stored["solution_grade"]["improvements"] == ["Needs a cleaner early return"]
-    assert seen == {
-        "self_confidence": 3,
-        "self_independence": "solo",
-        "self_note": "missed edge case",
-        "self_approach": "hashmap",
-    }
+    # Graded at Accepted, before any rating: the claim is the plan's target.
+    assert seen == {"claim_time": "O(n)", "claim_space": "O(n)"}
+    assert stored.get("confidence") is None
 
 
 def test_grade_solution_endpoint_failure(client, monkeypatch):
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None, execution_status="unknown"):
+                         execution_status="unknown"):
         return None, "AuthError: invalid API key"
 
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
@@ -2219,16 +2209,57 @@ def test_grade_solution_never_blames_the_cookie_for_an_outage(client, monkeypatc
     assert "reach LeetCode" in body["grading_error"]
 
 
-def test_grade_solution_requires_self_assessment(client, monkeypatch):
+def test_grade_solution_before_rating_grades_without_moving_the_card(client, monkeypatch):
+    async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
+                         execution_status="unknown"):
+        return {"score": 3, "optimal": False, "followup": "Can we avoid the second pass?",
+                "improve": ["One pass is enough"]}, None
+
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.coach, "grade_solution", fake_grade)
+    client.store.upsert_review("two-sum", {"slug": "two-sum", "due_date": "2000-01-01"})
     aid = client.store.add_attempt({
         "slug": "two-sum", "solved_at": int(time.time()), "source": "auto",
         "kind": "adhoc", "confidence": None, "independence": None,
         "code": "class Solution: pass",
     })
-    r = client.post(f"/api/attempt/{aid}/grade-solution")
-    assert r.status_code == 400
-    assert "self-assessment" in r.json()["detail"]
+    r = client.post(f"/api/attempt/{aid}/grade-solution").json()
+    assert r["grading_status"] == "viewed"
+    assert r["graded"]["followup"] == "Can we avoid the second pass?"
+    assert "review" not in r
+    assert client.store.get_review("two-sum")["due_date"] == "2000-01-01"
+
+
+def test_annotate_infers_how_it_went_from_the_run(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: False)
+    solo = client.store.add_attempt({"slug": "two-sum", "solved_at": 1, "kind": "adhoc"})
+    hinted = client.store.add_attempt({"slug": "3sum", "solved_at": 2, "kind": "adhoc",
+                                       "hint_level_used": 1})
+    looked = client.store.add_attempt({"slug": "valid-anagram", "solved_at": 3, "kind": "adhoc"})
+    for aid, body in ((solo, {}), (hinted, {}), (looked, {"independence": "solution"})):
+        assert client.post(f"/api/attempt/{aid}/annotate", json={"confidence": 3, **body}).status_code == 200
+    assert client.store.get_attempt(solo)["independence"] == "solo"
+    assert client.store.get_attempt(hinted)["independence"] == "hints"
+    assert client.store.get_attempt(looked)["independence"] == "solution"
+
+
+def test_review_process_endpoint_keeps_a_current_review(client, monkeypatch):
+    calls = []
+
+    async def fake_review(store, attempt_id):
+        calls.append(attempt_id)
+        return {"process_review": {"takeaway": "Run the examples first."}}, None
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.enrich, "review_process", fake_review)
+    aid = client.store.add_attempt({"slug": "two-sum", "solved_at": 1, "kind": "adhoc"})
+    r = client.post(f"/api/attempt/{aid}/review-process").json()
+    assert r["review"]["takeaway"] == "Run the examples first."
+    client.store.upsert_enrichment(aid, {"slug": "two-sum", "process_review": {"takeaway": "kept"},
+                                         "process_prompt_version": main.enrich.PROCESS_PROMPT_VERSION})
+    r = client.post(f"/api/attempt/{aid}/review-process").json()
+    assert r["review"]["takeaway"] == "kept"
+    assert calls == [aid]
 
 
 def test_annotate_folds_solution_grade_into_schedule(client):
@@ -2258,8 +2289,7 @@ def test_poll_records_fresh_solve_without_grading_before_annotation(client, monk
     calls = []
 
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None, execution_status="unknown"):
+                         execution_status="unknown"):
         calls.append(slug)
         return {"score": 5, "optimal": True, "analysis": "optimal",
                 "improvements": [], "inferred_time": "O(n)",
@@ -2912,8 +2942,7 @@ def test_resume_and_browser_storage_scope_follow_authenticated_user(client, monk
 # ---- a solution grade that lands after the rating reaches the schedule ----------
 def _grading_to(monkeypatch, score):
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         self_confidence=None, self_independence=None, self_note=None,
-                         self_approach=None, execution_status="unknown"):
+                         execution_status="unknown"):
         return {"score": score, "optimal": False, "analysis": "", "positives": [],
                 "negatives": [], "inferred_time": "O(n)", "inferred_space": "O(n)"}, None
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)

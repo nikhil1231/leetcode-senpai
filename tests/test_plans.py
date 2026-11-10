@@ -190,3 +190,19 @@ def test_plan_review_shows_the_missing_step():
         "approach_verdict": "partial", "missing_step": "move the smaller side"}})
     assert review["approach_verdict"] == "partial"
     assert review["missing_step"] == "move the smaller side"
+
+
+def test_effective_held_prefers_what_the_solver_said():
+    graded = {"plan_grade": {"held": "pivoted"}}
+    assert plans.effective_held(_planned(plan_held="held"), graded) == "held"
+    assert plans.effective_held(_planned(), graded) == "pivoted"
+    assert plans.effective_held(_planned(), {"plan_grade": {"held": "nonsense"}}) is None
+    assert plans.effective_held(_planned()) is None
+
+
+def test_inferred_held_scores_and_caps_like_a_stated_one():
+    graded = {"plan_grade": {"held": "pivoted", "approach_verdict": "viable"}}
+    assert plans.plan_components(_planned(), graded)["held"] == 0.0
+    assert plans.plan_miss(_planned(), graded) is True
+    review = plans.plan_review(_planned(), graded)
+    assert review["held"] == "pivoted" and review["held_inferred"] is True

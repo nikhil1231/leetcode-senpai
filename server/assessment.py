@@ -24,6 +24,17 @@ def assistance(a):
     return max(labels, key=lambda x: HELP_ORDER.get(x, 1))
 
 
+def inferred_independence(a):
+    """How a solve went, from what the app saw: gave up -> solution; any hint or
+    assistance event -> hints; otherwise solo. Help taken outside the app isn't
+    visible, so the modal still lets you say you looked at the answer."""
+    if a.get('gave_up') or a.get('unsolved'):
+        return 'solution'
+    if a.get('assistance_events') or a.get('hint_level_used') or a.get('recall_hints'):
+        return 'hints'
+    return 'solo'
+
+
 def independence(a):
     help_ = assistance(a)
     return 'solution' if help_ == 'solution' else 'hints' if help_ in ('conceptual_hint', 'code_hint', 'unknown') else 'solo'

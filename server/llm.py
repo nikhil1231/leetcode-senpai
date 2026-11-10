@@ -78,6 +78,7 @@ class PlanGrade(BaseModel):
     solution_time: str = Field("", description="bare big-O of their code, empty if no code")
     solution_space: str = Field("", description="bare big-O of their code, empty if no code")
     missing_step: str = Field("", description="the key step the plan lacked, a few words; empty when viable")
+    held: Literal["held", "tweaked", "pivoted", "unknown"] = Field("unknown", description="did the final code follow the plan's idea")
     note: str = ""
 
 
@@ -116,6 +117,8 @@ class SolutionGrade(BaseModel):
     positives: list[str] = Field(default_factory=list)
     negatives: list[str] = Field(default_factory=list)
     improvements: list[str] = Field(default_factory=list)  # legacy alias for negatives
+    improve: list[str] = Field(default_factory=list, description="up to 3 concrete changes that would make this code better, each point once; empty when there is nothing meaningful")
+    followup: str = Field("", description="the question an interviewer would ask next to push toward the most valuable improvement, without giving it away; empty when the code is already optimal for this language")
     inferred_time: str = ""
     inferred_space: str = ""
 
@@ -435,6 +438,10 @@ TASKS: dict[str, Task] = {
         "if none was given). optimal_time/optimal_space: the canonical optimum. "
         "solution_time/solution_space: what their final code actually achieves. Write "
         "every complexity as a bare big-O with no prose, e.g. O(n log n) or O(n + m). "
+        "held: compare the plan with the final code. 'held' = the code carries out "
+        "the plan's idea; 'tweaked' = same idea with a changed key detail; 'pivoted' = "
+        "the code uses a different approach; 'unknown' when there is no code. If the "
+        "solver said whether it held, use their answer. "
         "note: one or two plain sentences on the plan itself: what it got right, and "
         "if it was not viable, what to have said before coding. Never ask for more "
         "implementation detail in the note. British English, no em dashes.",
@@ -478,20 +485,31 @@ TASKS: dict[str, Task] = {
         "clarity, comparing against the canonical optimal approach. Score 5 only if "
         "the complexity is optimal AND the code is clean/idiomatic; 3-4 for a correct "
         "but suboptimal or messy solution; 1-2 for brute force or hard-to-read code. "
-        "Set optimal=true only when time & space match the canonical optimum. Keep "
-        "analysis to one or two concise sentences about the submitted solution's "
+        "Judge the code in its own language and that language's standard idioms. "
+        "Never count the returned output as auxiliary space, nor temporary pieces whose "
+        "total size is the output's size: building a Python string with ''.join over "
+        "a list or generator is the standard, optimal way, and a canonical O(1) space "
+        "bound that needs an in-place growable buffer does not apply to it. Do not mark "
+        "down constant-factor differences; only asymptotic improvements and real "
+        "clarity problems count. Set optimal=true when the asymptotic time and "
+        "auxiliary space match the canonical optimum as achievable in this language. "
+        "Keep analysis to one or two concise sentences about the submitted solution's "
         "quality, not a walkthrough. Put concise bullets in positives and negatives; "
-        "negatives should be empty when there are no meaningful issues. Also infer "
-        "the solution's actual time/space complexity.",
+        "negatives should be empty when there are no meaningful issues. improve: up "
+        "to 3 concrete changes that would make the code better, merged so each point "
+        "appears once (do not repeat them across analysis, optimisation and "
+        "negatives); empty when the code is optimal and clean. followup: if there is "
+        "an asymptotic improvement or a follow-up the statement names, the question "
+        "an interviewer would ask next to push them towards it, without naming the "
+        "technique or giving the answer (for example 'Can we do this without the "
+        "extra array?'); empty when the code is already optimal. Also infer the "
+        "solution's actual time/space complexity. Plain words, British English, no em "
+        "dashes.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
             f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
             f"Canonical optimal complexity: time={p.get('canon_time') or '?'}, "
             f"space={p.get('canon_space') or '?'}.\n"
-            f"Self-assessment: confidence={p.get('self_confidence') or '?'}, "
-            f"independence={p.get('self_independence') or '?'}.\n"
-            f"Solver note: {p.get('self_note') or '(none)'}\n"
-            f"Solver stated approach: {p.get('self_approach') or '(none)'}\n"
             f"Solver claimed time={p.get('claim_time') or '?'}, space={p.get('claim_space') or '?'}.\n"
             f"Execution status: {p.get('execution_status', 'unknown')}\n"
             f"Statement and constraints: {p.get('statement') or '(unknown; do not invent)'}\n"

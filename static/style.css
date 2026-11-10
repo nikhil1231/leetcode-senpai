@@ -1927,30 +1927,55 @@ pre.code {
 
 .sprint-section .section-title { color: var(--accent); }
 
-/* Post-solve: rating | plan | solution side by side, so both grades land in view
-   instead of stacking below the fold. Each column scrolls on its own and Save
-   stays pinned. A column with nothing to show drops out and the card narrows. */
-.overlay-card.annotate-wide { width: min(1240px, 96vw); display: flex; flex-direction: column; }
-.overlay-card.annotate-wide:has(#annotate-plan.hidden),
-.overlay-card.annotate-wide:has(#annotate-grade.hidden) { width: min(880px, 96vw); }
-.overlay-card.annotate-wide:has(#annotate-plan.hidden):has(#annotate-grade.hidden) { width: min(560px, 96vw); }
+/* Post-solve, top to bottom: the summary, then either the interviewer's
+   follow-up or the review (the solution grade leads; plan and how it went sit
+   below, one line each), then the confidence row that saves. The middle scrolls. */
+.overlay-card.annotate-wide { width: min(880px, 96vw); display: flex; flex-direction: column; }
 .overlay-card.annotate-wide > .modal-title { margin-bottom: 10px; }
-.overlay-card.annotate-wide > .overlay-actions { margin-top: 16px; }
-.annotate-cols {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 14px;
-  min-height: 0;
-  margin-top: 14px;
+.annotate-time-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 10px; }
+.annotate-time-row .label-sm { margin: 0; }
+.annotate-time-row .input { width: 110px; }
+
+.followup-card {
+  margin-top: 14px; padding: 16px 18px; border-radius: 12px;
+  background: linear-gradient(180deg, var(--accent-soft), transparent); border: 1px solid var(--accent-line);
 }
-.annotate-col { min-height: 0; overflow-y: auto; }
-.annotate-cols > .plan-card { margin-top: 0; }
-.annotate-form > .label-sm:first-child { margin-top: 0; }
-.grade-card .grade-score { margin-top: 10px; }
-.grade-card .grade-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
-.grade-card .missed { margin: 10px 0 0; font-size: 12.5px; }
-.grade-card .grading { margin-top: 10px; }
+.followup-kicker { margin: 0 0 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.followup-text { margin: 0; font-size: 16px; line-height: 1.45; max-width: 70ch; display: flex; align-items: center; gap: 10px; }
+.followup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+.annotate-review { min-height: 0; overflow-y: auto; margin-top: 14px; }
+.solution-hero { padding: 16px 18px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.solution-hero-title { margin: 0 0 6px; font-size: 14px; font-weight: 650; }
+.hero-head { display: flex; align-items: center; gap: 10px; }
+.hero-score { font-size: 24px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.solution-hero .grade-analysis { max-width: 75ch; color: var(--text-2); }
+.hero-improve { margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--panel2); }
+.hero-improve h4 { margin: 0 0 6px; font-size: 13px; font-weight: 650; }
+.hero-improve ul { margin: 0 0 0 18px; }
+.hero-improve li { margin: 4px 0; line-height: 1.45; max-width: 75ch; }
+.hero-improve .small { margin: 0; }
+.hero-cx { margin: 10px 0 0; font-size: 13px; color: var(--text-2); }
+.solution-hero .grade-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.solution-hero .missed { margin: 10px 0 0; font-size: 12.5px; }
+.solution-hero .grading { margin-top: 6px; }
+.annotate-more { margin-top: 10px; font-size: 13px; }
+.annotate-more summary { cursor: pointer; color: var(--muted); }
+.annotate-more[open] summary { margin-bottom: 6px; }
+.annotate-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.annotate-rows > .plan-card { margin-top: 0; }
+.plan-headline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.plan-note { margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--text-2); }
+.annotate-row .plan-grade { margin-top: 8px; padding-top: 0; border-top: 0; }
+.process-stats { margin: 8px 0 0; }
+.process-next { margin: 6px 0 0; font-size: 13px; line-height: 1.45; }
+
+.annotate-rate { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.annotate-rate > .label-sm:first-child { margin-top: 0; }
+.annotate-rate-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 10px; }
+.annotate-looked { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.annotate-rate #annotate-note { margin-top: 8px; }
+.annotate-rate .overlay-actions { margin-top: 12px; }
 .grade-cookie { display: flex; gap: 8px; margin-top: 10px; }
 .grade-cookie .input { flex: 1; min-width: 0; }
 .grade-pending { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
@@ -2479,8 +2504,7 @@ body.has-active-session #user-chip {
   .active-actions .icon-button, .active-actions .give-up-btn { flex: 0 0 auto; }
   .overlay-card.predict-wide { grid-template-columns: 1fr; }
   .overlay-card.annotate-wide { display: block; }
-  .annotate-cols { grid-auto-flow: row; }
-  .annotate-col { overflow: visible; }
+  .annotate-review { overflow: visible; }
   .overlay-card.predict-wide > .modal-titlebar,
   .overlay-card.predict-wide > #predict-statement,
   .overlay-card.predict-wide > .predict-form { grid-column: 1; }
@@ -2980,37 +3004,6 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .learning-cta-title { grid-area: title; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .learning-cta-go { grid-area: go; font-size: 13px; font-weight: 600; color: var(--accent); white-space: nowrap; }
 
-/* Technique picker in the annotate modal: a collapsed dropdown of toggle chips,
-   this problem's own first, with the pick count on the closed trigger. */
-.annotate-skills { margin: 14px 0 0; }
-.skill-picker-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  list-style: none;
-}
-.skill-picker-head::-webkit-details-marker { display: none; }
-.skill-picker-head:hover .skill-picker-label { color: var(--text); }
-.skill-picker-label { flex: 1; min-width: 0; }
-.skill-picker-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.skill-picker-caret {
-  width: 5px;
-  height: 5px;
-  border-right: 1.6px solid var(--muted);
-  border-bottom: 1.6px solid var(--muted);
-  transform: translateY(-2px) rotate(45deg);
-  transition: transform .2s var(--ease);
-}
-.skill-picker[open] .skill-picker-caret { transform: translateY(2px) rotate(-135deg); }
-.skill-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 176px; overflow-y: auto; }
-.skill-chip { position: relative; cursor: pointer; }
-.skill-chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.skill-chip span { display: inline-block; padding: 4px 10px; border: 1px solid var(--line-hi); border-radius: 999px; font-size: 12px; color: var(--text-2); }
-.skill-chip.is-suggested span { border-color: rgba(167, 139, 250, .45); }
-.skill-chip:hover span { background: var(--panel3); color: var(--text); }
-.skill-chip input:focus-visible + span { outline: 2px solid var(--accent-2); outline-offset: 1px; }
-.skill-chip input:checked + span { background: rgba(167, 139, 250, .18); border-color: var(--accent-2); color: var(--text); }
 /* -- dictation mic (dictate.js) -- */
 .dictate-wrap { position: relative; }
 .dictate-wrap > textarea { padding-right: 40px; }

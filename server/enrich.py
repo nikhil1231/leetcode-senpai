@@ -134,6 +134,7 @@ def normalize_plan_grade(res):
     return {
         "pattern_verdict": res.get("pattern_verdict") or "unknown",
         "approach_verdict": verdict,
+        "held": res.get("held") if res.get("held") in plans.HELD_VALUES else None,
         "missing_step": "" if verdict == "viable" else " ".join(str(res.get("missing_step") or "").split())[:100],
         "optimal_time": (res.get("optimal_time") or "")[:60],
         "optimal_space": (res.get("optimal_space") or "")[:60],

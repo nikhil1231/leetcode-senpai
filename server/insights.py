@@ -407,7 +407,7 @@ def planning_stats(problems, attempts, enrichments, canonical_by_slug=None):
                 if score is not None:
                     r["scores"].append(score)
                 if c["held"] is not None:
-                    r["held"].append(1 if a.get("plan_held") == "held" else 0)
+                    r["held"].append(1 if c["held"] == 1 else 0)
                 if c["complexity"] is not None:
                     r["optimal"].append(c["complexity"])
                 if c["edges"] is not None:

@@ -212,7 +212,7 @@ test('reopening a self-graded recall shows the self-grade, not an empty score', 
   assert.doesNotMatch(ui.node('#recall-grade').innerHTML, /undefined/);
 });
 
-test('annotation rejects double-clicks and keeps notes on a failed save', async () => {
+test('rating rejects a double tap and keeps the note on a failed save', async () => {
   let rejectRequest;
   let calls = 0;
   const ui = app(() => {
@@ -220,16 +220,13 @@ test('annotation rejects double-clicks and keeps notes on a failed save', async 
     return new Promise((resolve, reject) => { rejectRequest = reject; });
   });
   ui.run('currentAttempt = { id: "attempt-one" }');
-  ui.node('#conf-group button.sel').dataset.val = '3';
-  ui.node('#indep-group button.sel').dataset.val = 'solo';
   ui.node('#annotate-note').value = 'Remember duplicate values';
-  const save = ui.node('#btn-save-annotate').listeners.click;
-  const first = save();
-  await save();
+  const first = ui.run('rateSolve(3)');
+  await ui.run('rateSolve(3)');
   assert.equal(calls, 1);
   rejectRequest(new Error('offline'));
   await first;
-  assert.equal(ui.node('#btn-save-annotate').disabled, false);
+  assert.equal(ui.run('rating'), false);
   assert.equal(ui.node('#annotate-note').value, 'Remember duplicate values');
   assert.equal(ui.run('currentAttempt.id'), 'attempt-one');
 });
@@ -318,17 +315,22 @@ test('a solve with no captured code asks for a fresh cookie when it is known dea
   assert.match(panel, /grade-cookie-form/);
 });
 
-test('a solve with no captured code still promises a grade while the cookie may be fine', () => {
-  const ui = app(async () => response({}));
-  ui.run(`llmEnabled = true; lcState = "ok";
-          initAnnotateGrade({ id: "attempt-one", submission_id: 7, code: null })`);
-  assert.match(ui.node('#annotate-grade-body').innerHTML, /Save your rating/);
+test('a solve with no captured code is graded at once while the cookie may be fine', async () => {
+  const calls = [];
+  const ui = app(async (path) => { calls.push(path); return response({ grading_status: 'viewed', graded: { score: 4 } }); });
+  ui.run(`llmEnabled = true; lcState = "ok"; currentAttempt = { id: "attempt-one", submission_id: 7, code: null };
+          initAnnotateGrade(currentAttempt)`);
+  await new Promise((r) => setImmediate(r));
+  assert.ok(calls.some((p) => p.endsWith('/attempt-one/grade-solution')));
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /4\/5/);
 });
 
 test('a solve that lands without its code re-checks the cookie at once', async () => {
-  const ui = app(async () => response({ state: 'missing' }));
+  const ui = app(async (path) => response(String(path).includes('grade-solution')
+    ? { grading_status: 'needs_cookie', cookie_state: 'missing' } : { state: 'missing' }));
   ui.run(`llmEnabled = true; lastLcCheckAt = Date.now();
           openAnnotate({ id: "attempt-one", slug: "two-sum", submission_id: 7, code: null })`);
+  await new Promise((r) => setImmediate(r));
   await new Promise((r) => setImmediate(r));
   assert.equal(ui.run('lcState'), 'missing');
   assert.match(ui.node('#annotate-grade-body').innerHTML, /grade-cookie-form/);
@@ -351,15 +353,26 @@ test('a manual log has no submission to explain away', () => {
   assert.equal(ui.node('#annotate-grade-body').innerHTML, '');
 });
 
-test('saving a manual log never promises a grade', async () => {
+test('rating a manual log saves without asking for a grade, and infers how it went', async () => {
   const calls = [];
-  const ui = app(async (path) => { calls.push(path); return response({ ok: true }); });
+  const ui = app(async (path, opts) => { calls.push([path, opts && opts.body ? JSON.parse(opts.body) : null]); return response({ ok: true }); });
   ui.run('llmEnabled = true; currentAttempt = { id: "attempt-one", code: null }');
-  ui.node('#conf-group button.sel').dataset.val = '3';
-  ui.node('#indep-group button.sel').dataset.val = 'solo';
-  await ui.node('#btn-save-annotate').listeners.click();
-  assert.equal(ui.node('#toast').textContent, 'Logged');
-  assert.ok(!calls.some((p) => p.includes('grade-solution')));
+  await ui.run('rateSolve(3)');
+  assert.equal(ui.node('#toast').textContent, 'Saved');
+  assert.ok(!calls.some(([p]) => p.includes('grade-solution')));
+  const body = calls.find(([p]) => p.endsWith('/annotate'))[1];
+  assert.equal(body.confidence, 3);
+  assert.equal(body.independence, null);
+  assert.equal('plan_held' in body, false);
+});
+
+test('saying you looked at the answer rates the solve as read', async () => {
+  const bodies = [];
+  const ui = app(async (path, opts) => { if (opts && opts.body) bodies.push(JSON.parse(opts.body)); return response({ ok: true }); });
+  ui.run('currentAttempt = { id: "attempt-one" }');
+  ui.node('#annotate-looked').checked = true;
+  await ui.run('rateSolve(2)');
+  assert.equal(bodies[0].independence, 'solution');
 });
 
 test('a cookie that dies before grading is replaced and graded without leaving the modal', async () => {
@@ -375,15 +388,13 @@ test('a cookie that dies before grading is replaced and graded without leaving t
     if (path.endsWith('/leetcode-status')) return response({ state: 'ok' });
     if (path.endsWith('/grade-solution')) {
       return response(cookieGood
-        ? { grading_status: 'viewed', graded: { score: 4, analysis: 'hash map' } }
+        ? { grading_status: 'viewed', graded: { score: 4, analysis: 'hash map', improve: ['Return early'] } }
         : { grading_status: 'needs_cookie', cookie_state: 'expired' });
     }
     return response({ ok: true });
   });
-  ui.run('llmEnabled = true; currentAttempt = { id: "attempt-one", submission_id: 7, code: null }');
-  ui.node('#conf-group button.sel').dataset.val = '3';
-  ui.node('#indep-group button.sel').dataset.val = 'solo';
-  await ui.node('#btn-save-annotate').listeners.click();
+  ui.run('llmEnabled = true; lcState = "ok"; currentAttempt = { id: "attempt-one", submission_id: 7, code: null }');
+  await ui.run('gradeSolution("attempt-one")');
   assert.match(ui.node('#annotate-grade-body').innerHTML, /grade-cookie-form/);
   assert.equal(ui.run('lcState'), 'expired');
 
@@ -393,8 +404,8 @@ test('a cookie that dies before grading is replaced and graded without leaving t
   assert.deepEqual(saved, [{ session: 'fresh-cookie', csrf: null }]);
   assert.equal(ui.run('lcState'), 'ok');
   assert.equal(calls.filter((p) => p.endsWith('/grade-solution')).length, 2);
-  assert.match(ui.node('#annotate-grade-body').innerHTML, /Score <b>4\/5<\/b>/);
-  assert.equal(ui.node('#btn-save-annotate').dataset.saved, '1');
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /4\/5/);
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /How to improve[\s\S]*Return early/);
 });
 
 // The cookie lives on the server, so the browser cannot know it is missing
@@ -526,23 +537,50 @@ test('a lock-in whose start fails puts the dashboard back', async () => {
   assert.equal(ui.node('#toast').textContent, "Couldn't start the run: You're offline.");
 });
 
-test('saving a planned solve sends whether the plan held, then grades the plan', async () => {
+test('a planned solve is graded as the modal opens, and whether it held is not asked', async () => {
   const calls = [];
   const ui = app(async (path, opts) => {
     calls.push([path, opts && opts.body ? JSON.parse(opts.body) : null]);
-    if (path.endsWith('/annotate')) return response({ ok: true, plan: { status: 'planned', held: 'pivoted' } });
-    return response({ ok: true, plan: { status: 'planned', graded: true, score: 2, approach_verdict: 'partial' } });
+    if (path.endsWith('/grade-plan')) return response({ ok: true, plan: { status: 'planned', graded: true, score: 2,
+      approach_verdict: 'partial', missing_step: 'move the smaller side', held: 'tweaked' } });
+    return response({ ok: true });
   });
-  ui.run('llmEnabled = true; currentAttempt = { id: "a1", code: null, plan: { status: "planned" } }');
-  ui.node('#conf-group button.sel').dataset.val = '3';
-  ui.node('#indep-group button.sel').dataset.val = 'solo';
-  ui.node('#held-group button.sel').dataset.val = 'pivoted';
-  await ui.node('#btn-save-annotate').listeners.click();
-  const annotate = calls.find(([p]) => p.endsWith('/annotate'));
-  assert.equal(annotate[1].plan_held, 'pivoted');
+  ui.run(`llmEnabled = true; openAnnotate({ id: "a1", slug: "two-sum", code: null, plan: { status: "planned" } })`);
+  await new Promise((r) => setImmediate(r));
   assert.ok(calls.some(([p]) => p.endsWith('/a1/grade-plan')));
-  assert.equal(ui.node('#toast').textContent, 'Logged — grading your plan…');
-  assert.match(ui.node('#annotate-plan-grade').innerHTML, /Plan score <b>2\/5<\/b>/);
+  const plan = ui.node('#annotate-plan-grade').innerHTML;
+  assert.match(plan, /missing the key step/);
+  assert.match(plan, /2\/5/);
+  assert.match(plan, /plan tweaked/);
+  await ui.run('rateSolve(3)');
+  const annotate = calls.find(([p]) => p.endsWith('/annotate'));
+  assert.equal('plan_held' in annotate[1], false);
+});
+
+test('an Accepted from the editor gets the interviewer\'s follow-up before any feedback', async () => {
+  const ui = app(async (path) => response(String(path).endsWith('/grade-solution')
+    ? { grading_status: 'viewed', graded: { score: 3, optimal: false, followup: 'Can we do this without the extra array?',
+        improve: ['Reuse the output array for the prefix products'] } }
+    : { ok: true }));
+  ui.run(`llmEnabled = true; openAnnotate({ id: "a1", slug: "product-of-array-except-self", via: "editor", code: "x = 1" })`);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ui.node('#annotate-followup-text').textContent, 'Correct. Can we do this without the extra array?');
+  // No spoilers yet: the review is still unrendered.
+  assert.doesNotMatch(ui.node('#annotate-grade-body').innerHTML, /Reuse the output array/);
+  ui.run('finishFollowup()');
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /Reuse the output array/);
+  // Seen for this code: reopening goes straight to the review.
+  assert.equal(ui.run('followupEligible({ id: "a1", via: "editor", code: "x = 1" })'), false);
+  assert.equal(ui.run('followupEligible({ id: "a1", via: "editor", code: "x = 2" })'), true);
+});
+
+test('an optimal Accepted skips the follow-up and shows the review', async () => {
+  const ui = app(async (path) => response(String(path).endsWith('/grade-solution')
+    ? { grading_status: 'viewed', graded: { score: 5, optimal: true, followup: '', improve: [] } }
+    : { ok: true }));
+  ui.run(`llmEnabled = true; openAnnotate({ id: "a2", slug: "two-sum", via: "editor", code: "y" })`);
+  await new Promise((r) => setImmediate(r));
+  assert.match(ui.node('#annotate-grade-body').innerHTML, /Nothing to change/);
 });
 
 test('the plan card says whether the plan was ready to code, and grades no edge cases', () => {
