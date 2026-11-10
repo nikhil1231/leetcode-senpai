@@ -225,3 +225,12 @@
 .rp-key.is-sized { border-color:#60a5fa; }
 .is-viewing .bd-palette, .is-viewing .bd-canvas { pointer-events:none; }
 .rp-reftabs .rp-ref { margin-top:10px; }
+
+/* Under the builder the day's results fold to one bar (sd-simulators.css lifts the open body over the canvas on wide screens). */
+.rp-results { padding:0; gap:0; overflow:visible; }
+.rp-res-bar { display:flex; align-items:center; gap:12px; width:100%; background:none; border:0; color:var(--text); font:600 13px var(--font); padding:8px 14px; cursor:pointer; text-align:left; border-radius:var(--radius-lg); }
+.rp-res-bar:hover, .rp-res-bar:focus-visible { background:var(--panel2); }
+.rp-res-bar small { margin-left:auto; color:var(--text-2); font-weight:500; font-size:12px; }
+.rp-res-body { display:grid; gap:10px; padding:4px 16px 16px; }
+.rp-res-body[hidden] { display:none; }
+.rp-res-body > h3 { display:none; }

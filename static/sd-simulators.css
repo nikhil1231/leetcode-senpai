@@ -104,5 +104,55 @@
   .bd-grid { height:calc(100vh - 230px); min-height:420px; align-items:stretch; }
   .bd-stage { height:auto; min-height:0; }
   .bd-palette, .bd-panel { max-height:none; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
-  .bd-palette { grid-template-rows:auto minmax(0,1fr); } .bd-items { max-height:none; }
+  .bd-palette { grid-template-rows:auto minmax(0,1fr); } .bd-items { max-height:none; align-content:start; }
+}
+
+/* ---- app mode: a simulator's build canvas on a wide screen ----
+   The page stops scrolling and fills the window: compact toolbars on top, the canvas takes the rest,
+   the palette, side panel and results fold away, and each scrolls on its own. */
+.bd-fold { display:none; }
+@media (min-width: 1101px) {
+  body:has(.sim-detail .bd-grid) { overflow:hidden; }
+  body:has(.sim-detail .bd-grid) main { max-width:none; height:calc(100vh - var(--topbar)); padding:8px 14px 10px; display:flex; flex-direction:column; overflow:hidden; }
+  body:has(.sim-detail .bd-grid) #tab-design { max-width:none; width:100%; flex:1; min-height:0; display:flex; flex-direction:column; }
+  .sim-detail:has(.bd-grid) { flex:1; min-height:0; display:flex; flex-direction:column; gap:6px; }
+  .sim-detail:has(.bd-grid) > .sim-top { margin:0; }
+  .sim-detail:has(.rp-level .bd-grid) > .sim-top { display:none; }      /* "← Ripple Ops" in the level header is the way back */
+  .sim-detail:has(.bd-grid) > .sim-stage { flex:1; min-height:0; margin:0; overflow:hidden; display:flex; flex-direction:column; }
+  .sim-stage.bd, .sim-stage .rp-stage.bd { flex:1; min-height:0; display:flex; flex-direction:column; gap:6px; }
+  .sim-stage .bd-grid { flex:1 1 0; height:auto; min-height:0; }
+  #tab-design .sim-detail:has(.bd-grid) .button { height:28px; padding:0 10px; font-size:12.5px; line-height:1; white-space:nowrap; }
+  #tab-design .sim-stage .bd-fold { display:inline-flex; width:30px; padding:0; font-size:15px; }
+  .sim-stage .bd-fold[aria-pressed="false"] { color:var(--muted); }
+  .sim-stage .bd-bar { gap:6px; }
+  .sim-stage .bd-bar select { padding:4px 8px; font-size:12.5px; }
+  .sim-stage .bd-cost { padding:4px 9px; }
+  .sim-stage .bd-play:not([hidden]) { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:6px 10px; }   /* both control rows share one line when they fit */
+  .sim-stage .bd-play-row { display:contents; }
+  .sim-stage .bd-time { flex:1 1 200px; min-width:160px; }
+  .sim-stage .bd-now { flex-basis:100%; }
+  .sim-stage .bd-play-ctl { margin-top:0; }
+  :is(.sim-stage.bd, .sim-stage .bd).bd-no-palette .bd-grid { grid-template-columns:minmax(0,1fr) 300px; }
+  :is(.sim-stage.bd, .sim-stage .bd).bd-no-panel .bd-grid { grid-template-columns:190px minmax(0,1fr); }
+  :is(.sim-stage.bd, .sim-stage .bd).bd-no-palette.bd-no-panel .bd-grid { grid-template-columns:minmax(0,1fr); }
+  :is(.sim-stage.bd, .sim-stage .bd).bd-no-palette .bd-palette, :is(.sim-stage.bd, .sim-stage .bd).bd-no-panel .bd-panel { display:none; }
+
+  /* Ripple Ops, build step: one-line header, one-line strip, a short reasoning box, then the canvas. */
+  .sim-stage .rp-level { flex:1; min-height:0; display:flex; flex-direction:column; gap:6px; }
+  .sim-stage .rp-level .rp-head { display:flex; align-items:center; gap:14px; padding-bottom:6px; }
+  .sim-stage .rp-level .rp-crumb { margin:0; white-space:nowrap; }
+  .sim-stage .rp-level .rp-title { flex:1; min-width:0; display:flex; align-items:baseline; gap:10px; white-space:nowrap; overflow:hidden; }
+  .sim-stage .rp-level .rp-title h2 { margin:0; font-size:16px; }
+  .sim-stage .rp-level .rp-title p { overflow:hidden; text-overflow:ellipsis; font-size:12.5px; }
+  .sim-stage .rp-steps button { padding:4px 9px; }
+  .sim-stage .rp-build { flex:1; min-height:0; display:flex; flex-direction:column; gap:6px; position:relative; }
+  .sim-stage .rp-hints { max-height:6.5em; overflow-y:auto; padding:6px 10px; }
+  .sim-stage .rp-notes { padding:4px 10px; }
+  .sim-stage .rp-notes-head { min-height:28px; }
+  .sim-stage .rp-notes-log { max-height:3.2em; margin:4px 0 2px; padding:4px 8px; }
+  .sim-stage .rp-notes textarea { height:3.6em; min-height:0; margin:4px 0 2px; padding:4px 8px; resize:none; }
+  .sim-stage .rp-reftabs { margin:0; max-height:9em; overflow-y:auto; }
+  .sim-stage .rp-results { flex:0 0 auto; position:relative; }
+  .sim-stage .rp-res-body { position:absolute; left:0; right:0; bottom:calc(100% + 6px); max-height:min(70vh, calc(100vh - 220px)); overflow-y:auto; overscroll-behavior:contain; z-index:8;
+    background:var(--panel); border:1px solid var(--line-hi); border-radius:var(--radius-lg); padding:14px 16px; box-shadow:0 -12px 40px rgba(0,0,0,.55); }
 }

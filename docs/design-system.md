@@ -60,6 +60,9 @@ place 11px is the default.
 ## Widths
 - Reading width: ~66–86ch for prose (`max-width` on paragraphs, not on cards).
 - Content column: the page's own `max-width`; hubs 920px, wide pages (lists, grids, simulators) fill `main` (1280px).
+- App mode: a simulator's build canvas on a screen wider than 1100px takes the whole window (no page scroll, no
+  1280px cap). Toolbars stay one compact line, the palette, side panel and results fold away, and each scrolls on its
+  own (`sd-simulators.css`). Other pages keep the normal scrolling layout.
 - Do not set a narrower width on one page of a set to "look centred". Left-aligned content with whitespace on the
   right reads as unfinished.
 

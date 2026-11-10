@@ -31,7 +31,7 @@
   }
 
   function mount(el, o = {}) {
-    let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false, refView = false, mineG = null;
+    let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false, refView = false, mineG = null, resOpen = true;
     let casePage = null;
     let est = {}, graded = null, notes = '', editing = false, mic = 'idle', voice = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
     const levels = () => camp.levels;
@@ -177,7 +177,7 @@
         ${notesHtml()}
         <div data-reftabs>${refTabsHtml(l)}</div>
         <div class="rp-stage" data-stage></div>
-        <section class="rp-results" data-results>${resultsHtml(l)}</section></div>`;
+        <section class="rp-results" data-results>${resultsInline(l)}</section></div>`;
     }
     // ---------- your reasoning: talk while you draw ----------
     // The mic writes into a read-only log that keeps the newest words in view; it needs no focus, so you can
@@ -268,6 +268,13 @@
       if (!builder || !canCompare(L)) return;
       if (ref && !refView) mineG = builder.graph();
       refView = ref; applyView();
+    }
+    // Under the builder the results fold to one bar; open, they rise over the canvas (on wide screens) instead of pushing it away.
+    function resultsInline(l) {
+      const h = resultsHtml(l);
+      if (!h) return '';
+      return `<button type="button" class="rp-res-bar" data-res-toggle aria-expanded="${resOpen}"><span>${resOpen ? '▾' : '▸'} How the day went</span>${B().stars(res.summary.stars)}<small>${resOpen ? 'Hide' : 'Show the results'}</small></button>
+        <div class="rp-res-body"${resOpen ? '' : ' hidden'}>${h}</div>`;
     }
     function debriefHtml() {
       if (!ov.enabled) return '';
@@ -397,13 +404,13 @@
     // The results wait for the end of the day. Saving the run and the LLM debrief carry on in the background meanwhile.
     function paintResults() {
       if (!L) return;
-      const r = el.querySelector('[data-results]'); if (r) r.innerHTML = modalOpen ? '' : resultsHtml(L);
+      const r = el.querySelector('[data-results]'); if (r) r.innerHTML = modalOpen ? '' : resultsInline(L);
       const m = el.querySelector('[data-modal-body]'); if (m) fillModal(m);
       paintTabs();
     }
     function onDayEnd(info) {
       if (dead || info.whatif || !res || revealed) return;
-      revealed = true;
+      revealed = true; resOpen = true;
       applyView();
       if (info.finished) openModal(); else paintResults();
     }
@@ -429,7 +436,7 @@
     function closeModal(quiet) {
       el.querySelector('[data-modal]')?.remove();
       if (!modalOpen) return;
-      modalOpen = false;
+      modalOpen = false; resOpen = false;     // just read in the modal: fold it to the bar
       if (!quiet) { paintResults(); el.querySelector('[data-results]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
     }
 
@@ -520,6 +527,7 @@
       if (!t) return;
       const d = t.dataset;
       if (d.modalClose !== undefined) { closeModal(); return; }
+      if (d.resToggle !== undefined) { resOpen = !resOpen; paintResults(); return; }
       if (d.open) { const l = byId(d.open); if (l && unlocked(l.id)) await openLevel(l); }
       else if (d.case) openCase(d.case);
       else if (d.hub !== undefined) { stopBuilder(); view = 'hub'; L = null; await refresh(); paint(); }

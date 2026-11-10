@@ -87,17 +87,21 @@
     const scenario = () => game ? opts.scenario : Sim.fromScale(S.scale, S.nfr);
     const allowed = d => (!opts.toolbox || opts.toolbox.includes(d.id)) && (!d.ai || !!scenario()?.ai);   // AI parts belong to Ripple Assist levels
 
+    let folds = {};
+    try { folds = JSON.parse(localStorage.getItem('bd-folds')) || {}; } catch { /* private window: fine */ }
     el.classList.add('bd');
     el.innerHTML = '<p class="bd-note">Loading the builder…</p>';
 
     function shell() {
       el.innerHTML = `<div class="bd-bar">
+          <button type="button" class="button bd-fold" data-act="fold-palette" title="Show or hide the components list" aria-label="Show or hide the components list">◧</button>
           ${game ? '' : `<select data-preset aria-label="Load a sample architecture"><option value="">Load a sample…</option>${data.presets.map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}</select>`}
           <button type="button" class="button" data-act="undo">Undo</button><button type="button" class="button" data-act="clear">Clear</button>
           <button type="button" class="button" data-act="mermaid">Copy as Mermaid</button>
           <span class="bd-cost" data-cost title="Fixed monthly prices of what you've drawn. Usage (requests, bandwidth) is added when you run the day."></span>
           <button type="button" class="button is-primary bd-run" data-act="run">▶ Run the day</button>
-          <span class="bd-status" data-status aria-live="polite"></span></div>
+          <span class="bd-status" data-status aria-live="polite"></span>
+          <button type="button" class="button bd-fold" data-act="fold-panel" title="Show or hide the side panel" aria-label="Show or hide the side panel">◨</button></div>
         <div class="bd-play" data-play hidden></div>
         <div class="bd-grid">
           <aside class="bd-palette" aria-label="Components"><input type="search" class="input" placeholder="Filter components" data-filter aria-label="Filter components"><div class="bd-items" data-items></div></aside>
@@ -106,6 +110,18 @@
             <div data-nodes></div><div class="bd-empty" data-empty><span>🏗️</span><strong>Build your design</strong><p>Drag a component in${game ? '' : ', or load a sample'}. Hover a node and drag from a dot to connect it. Click a node to size it.</p></div></div></div></div>
           <aside class="bd-panel" data-panel></aside></div>`;
       paintItems('');
+      paintFolds();
+    }
+    // The palette and the side panel fold away on wide screens to give the canvas the room; the choice is remembered.
+    function paintFolds() {
+      el.classList.toggle('bd-no-palette', !!folds.palette); el.classList.toggle('bd-no-panel', !!folds.panel);
+      el.querySelector('[data-act="fold-palette"]')?.setAttribute('aria-pressed', String(!folds.palette));
+      el.querySelector('[data-act="fold-panel"]')?.setAttribute('aria-pressed', String(!folds.panel));
+    }
+    function fold(k) {
+      folds = { ...folds, [k]: !folds[k] };
+      try { localStorage.setItem('bd-folds', JSON.stringify(folds)); } catch { /* private window: fine */ }
+      paintFolds(); applyView();
     }
     function paintItems(q) {
       const t = q.trim().toLowerCase(), list = defs.filter(d => allowed(d) && (!t || `${d.label} ${d.description}`.toLowerCase().includes(t)));
@@ -372,7 +388,7 @@
       zoom = nz; vx += cx - ax * nz - r.left; vy += cy - ay * nz - r.top; applyView();
     };
     const onWheel = ev => {
-      if (!ev.target.closest('[data-stage]')) return;
+      if (ev.target.closest('.bd-stage') !== stage()) return;   // only the canvas zooms; a host page may wrap the whole builder in its own [data-stage]
       ev.preventDefault(); setZoom(zoom * Math.exp(-ev.deltaY * 0.0015), ev.clientX, ev.clientY);
     };
     const onDown = ev => {
@@ -464,6 +480,7 @@
       if (item) addNode(item.dataset.def);
       else if (act === 'undo') doUndo(); else if (act === 'delete') remove();
       else if (act === 'mermaid') copyMermaid();
+      else if (act === 'fold-palette') fold('palette'); else if (act === 'fold-panel') fold('panel');
       else if (act === 'run') runDay();
       else if (act === 'play') togglePlay();
       else if (act === 'stepback') gotoHour(play.h - 1); else if (act === 'stepfwd') gotoHour(play.h + 1); else if (act === 'skip') gotoHour(23);
