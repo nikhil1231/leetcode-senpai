@@ -95,6 +95,14 @@ def test_explicit_block_keys_are_validated():
         parse(text.replace('key: b901', 'key: b900'))
 
 
+def _assert_short_notes(t):
+    """A topic page leads with one key idea and short numbered steps, not paragraphs (visualise.js notes())."""
+    assert 40 <= len(t['keyIdea']) <= 260, t['id']
+    assert 4 <= len(t['steps']) <= 9, t['id']
+    for s in [t['keyIdea'], *t['steps']]:
+        assert len(s) <= 260 and s.count('**') % 2 == 0 and s.count('`') % 2 == 0, (t['id'], s)
+
+
 def test_visualise_index_matches_the_shipped_animations():
     """Every algorithm listed on the Visualise tab has a module to mount, and the data is well formed."""
     import json
@@ -110,6 +118,7 @@ def test_visualise_index_matches_the_shipped_animations():
         assert t['difficulty'] in ('easy', 'medium', 'hard') and t['title'] and t['concept'] and t['time'] and t['space']
         assert isinstance(t['pitfalls'], list) and isinstance(t['problems'], list)
         assert all(p['title'] and (p['slug'] is None or p['slug'] in neet) for p in t['problems'])
+        _assert_short_notes(t)
     assert 'widgets/dsa/index.json' in main._VERSIONED_ASSETS
 
 
@@ -134,6 +143,7 @@ def test_simulator_hub_lists_exactly_the_shipped_internals_widgets():
     assert len(ids) == len(set(ids)) == 32 and set(ids) == shipped
     for t in topics:
         assert t['title'] and t['blurb'] and t['overview'] and t['howItWorks'] and t['difficulty'] in ('easy', 'medium', 'hard')
+        _assert_short_notes(t)
     cats = {t['category'] for t in topics}
     assert cats == {c for c, _ in json.load(open(os.path.join(STATIC, 'simulators', 'internals.json'), encoding='utf-8'))['categories']}
 

@@ -21,18 +21,52 @@
 .vz-head h2 { margin:0; font-size:18px; display:flex; gap:10px; align-items:center; flex:1; min-width:0; }
 .vz-nav { display:flex; gap:6px; }
 .vz-stage { min-height:420px; margin-bottom:20px; overflow-x:auto; }
+/* Course simulators' notes: a few short cards. */
 .vz-info { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
 .vz-info section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
 .vz-info h3 { margin:0 0 8px; font-size:13px; color:var(--text-2); text-transform:uppercase; letter-spacing:.06em; }
 .vz-info p, .vz-info li { font-size:13.5px; line-height:1.55; color:var(--text); }
 .vz-info ul { margin:0; padding-left:18px; display:grid; gap:6px; }
-.vz-cx { display:flex; gap:18px; color:var(--text-2); }
-.vz-links { list-style:none; padding:0 !important; }
 .vz-see { white-space:nowrap; color:var(--accent); }
 @media (max-width: 640px) { .vz-grid { grid-template-columns:1fr; } .vz-stage { min-height:320px; } }
-/* Internals simulators: two columns, the long "How it works" prose spans the row at a readable measure. */
-.vz-info.is-internals { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
-.vz-info.is-internals section:nth-child(-n+2) { grid-column:1 / -1; }
-.vz-info.is-internals section:nth-child(-n+2) p { max-width:86ch; }
-.vz-info .vz-cx { display:flex; gap:16px; margin-top:10px; }
-@media (max-width:720px) { .vz-info.is-internals { grid-template-columns:minmax(0,1fr); } }
+/* Topic notes (Visualise topics and the Simulators page's internals): key idea, then one tab at a time. */
+.vz-key { background:linear-gradient(135deg, var(--accent-soft), transparent 70%); border:1px solid var(--accent-line); border-radius:12px; padding:14px 18px; margin-bottom:14px; }
+.vz-kicker { font-size:11px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); }
+.vz-key-text { margin:6px 0 0; font-size:16px; line-height:1.5; color:var(--text); max-width:86ch; }
+.vz-key .vz-cx { margin:10px 0 0; flex-wrap:wrap; font-size:12.5px; }
+.vz-cx { display:flex; gap:18px; color:var(--text-2); }
+.vz-cx span { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:3px 10px; }
+.vz-notes { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.vz-tabs { display:flex; gap:2px; overflow-x:auto; border-bottom:1px solid var(--line); padding:0 8px; }
+.vz-tab { flex:none; background:none; border:0; border-bottom:2px solid transparent; margin-bottom:-1px; padding:12px 12px 10px; font:500 13.5px var(--font); color:var(--text-2); cursor:pointer; }
+.vz-tab span { font-size:11.5px; color:var(--text-2); background:var(--panel2); border-radius:999px; padding:1px 7px; margin-left:4px; }
+.vz-tab:hover { color:var(--text); }
+.vz-tab.is-on { color:var(--text); border-bottom-color:var(--accent); }
+.vz-panel { padding:18px 20px 20px; }
+.vz-panel p, .vz-panel li { font-size:14px; line-height:1.6; color:var(--text); }
+.vz-panel code { font-family:var(--font-mono); font-size:.92em; background:var(--panel2); border-radius:4px; padding:1px 5px; }
+.vz-steps { list-style:none; counter-reset:step; margin:0; padding:0; display:grid; gap:12px; max-width:86ch; }
+.vz-steps li { counter-increment:step; display:grid; grid-template-columns:28px 1fr; gap:12px; align-items:start; }
+.vz-steps li::before { content:counter(step); width:26px; height:26px; border-radius:50%; display:grid; place-items:center; font-size:12.5px; font-weight:600; color:var(--accent); background:var(--accent-soft); border:1px solid var(--accent-line); }
+.vz-prose { max-width:86ch; margin:0; }
+.vz-bg { margin-top:18px; border-top:1px solid var(--line); padding-top:12px; max-width:86ch; }
+.vz-bg summary { cursor:pointer; font-size:13px; color:var(--text-2); }
+.vz-bg summary:hover { color:var(--text); }
+.vz-bg p { margin:10px 0 0; color:var(--text-2); }
+.vz-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+.vz-tile { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+.vz-tile h4 { margin:0 0 6px; font-size:12px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-2); }
+.vz-tile .vz-choice { margin:0; font-size:15px; font-weight:600; line-height:1.45; }
+.vz-tile .vz-why { margin:8px 0 0; font-size:13.5px; color:var(--text-2); }
+.vz-pits { list-style:none; margin:0; padding:0; display:grid; gap:10px; max-width:96ch; }
+.vz-pits li { display:grid; gap:3px; padding:10px 14px; border-left:3px solid #f5c451; background:var(--panel2); border-radius:0 8px 8px 0; }
+.vz-pits strong { font-weight:600; }
+.vz-pits li > span { font-size:13.5px; color:var(--text-2); }
+.vz-hint { margin:0 0 12px; color:var(--text-2) !important; font-size:13px !important; }
+.vz-qs { margin:0; padding-left:22px; display:grid; gap:10px; max-width:86ch; }
+.vz-qs li::marker { color:var(--accent); font-weight:600; }
+.vz-links { list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:8px; }
+.vz-links a { display:inline-block; padding:6px 12px; border:1px solid var(--line); border-radius:999px; background:var(--panel2); color:var(--text); text-decoration:none; font-size:13.5px; }
+.vz-links a:hover { border-color:var(--accent); }
+.sim-min { font-size:12.5px; font-weight:400; color:var(--text-2); }
+@media (max-width:640px) { .vz-panel { padding:14px; } .vz-tiles { grid-template-columns:1fr; } .vz-key-text { font-size:15px; } }

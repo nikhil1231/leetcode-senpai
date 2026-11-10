@@ -82,15 +82,7 @@
       <p class="sim-foot">Looking for algorithm animations? The 46 step-throughs for graphs, trees, DP and more are on the <button type="button" class="sim-link" data-sim-dsa>LeetCode Visualise tab</button>.</p>`;
   }
 
-  function internalsInfo(t) {
-    const list = a => a.length ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
-    return `<div class="vz-info is-internals">
-      <section><h3>What it is</h3><p>${esc(t.overview)}</p>${t.time || t.space ? `<p class="vz-cx">${t.time ? `<span>Time <code>${esc(t.time)}</code></span>` : ''}${t.space ? `<span>Space <code>${esc(t.space)}</code></span>` : ''}</p>` : ''}</section>
-      <section><h3>How it works</h3><p>${esc(t.howItWorks)}</p></section>
-      ${t.tradeoffs.length ? `<section><h3>Trade-offs</h3><ul>${t.tradeoffs.map(x => `<li><strong>${esc(x.decision)}.</strong> ${esc(x.rationale)}</li>`).join('')}</ul></section>` : ''}
-      ${t.pitfalls.length ? `<section><h3>Common pitfalls</h3>${list(t.pitfalls)}</section>` : ''}
-      ${t.questions.length ? `<section><h3>Questions to be ready for</h3>${list(t.questions)}</section>` : ''}</div>`;
-  }
+  const internalsInfo = t => window.Visualise.notes(t, { background: t.overview });
   function courseInfo(t) {
     const section = t.category === 'ai' ? 'ai' : 'fundamentals';
     return `<div class="vz-info">${t.notes ? `<section><h3>What to notice</h3>${window.SDBlocks ? `<div class="sd-md">${window.SDBlocks.md(t.notes)}</div>` : `<p>${esc(t.notes)}</p>`}</section>` : ''}
@@ -101,8 +93,8 @@
     const t = it.kind === 'internals' ? internals[it.id] : null;
     const c = it.kind === 'course' ? course[it.id] : null;
     return `<div class="sim-detail"><div class="sim-top"><button type="button" class="button" data-sim-back>← All simulators</button>
-      ${it.kind === 'design' || it.kind === 'game' ? '' : `<h2>${esc(it.title)} ${pill(it.difficulty)}</h2>`}</div>
-      ${c && c.blurb ? `<p class="sim-note">${esc(c.blurb)}</p>` : ''}<div class="sim-stage" data-sim-stage><p class="wt-note">Loading…</p></div>${t ? internalsInfo(t) : ''}${c ? courseInfo(c) : ''}</div>`;
+      ${it.kind === 'design' || it.kind === 'game' ? '' : `<h2>${esc(it.title)} ${pill(it.difficulty)}${t ? `<span class="sim-min">${t.minutes} min</span>` : ''}</h2>`}</div>
+      ${c && c.blurb ? `<p class="sim-note">${esc(c.blurb)}</p>` : ''}${t ? window.Visualise.keyCard(t) : ''}<div class="sim-stage" data-sim-stage><p class="wt-note">Loading…</p></div>${t ? internalsInfo(t) : ''}${c ? courseInfo(c) : ''}</div>`;
   }
 
   function render() {
@@ -143,6 +135,7 @@
       return;
     }
     root.querySelector('[data-sim-back]')?.addEventListener('click', home);
+    window.Visualise?.wireNotes(root);
     const stage = root.querySelector('[data-sim-stage]'), mine = token;
     if (current.kind === 'game') inst = window.RippleOps.mount(stage, { level: level || undefined, sandbox: () => openItem('builder', 'builder'), onRoute: sync });
     else if (current.kind === 'builder') inst = window.SDBuilder.mount(stage);
