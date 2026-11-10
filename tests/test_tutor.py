@@ -119,6 +119,24 @@ def test_parse_strips_markers_and_keeps_only_valid_new_activities():
     assert ses.parse('Go [[ACTIVITY b1]]', fresh('explain'), L)[1] == ''
 
 
+def test_an_activity_named_without_its_marker_is_still_handed_over():
+    # Real replies that named a simulator in prose and forgot the marker.
+    cons, sq = lessons.get('system-design', 'consensus'), lessons.get('system-design', 'service-quality')
+    assert ses.implied("There's a little 5-node simulator: kill the leader and partition the cluster.", cons) == 'b3'
+    assert ses.implied('The 2PC simulator: crash the coordinator mid-protocol and watch who ends up in doubt.', cons) == 'b910'
+    assert ses.implied('Try the queue simulation: compare the p99 wait at 50% and 90% utilisation.', sq) == 'b6'
+    assert ses.implied('The 2PC simulator again.', cons, shown=['b910']) == ''
+    # Talk about the topic, with no pointer at something to do, attaches nothing.
+    assert ses.implied("Raft's leader election uses randomised timeouts, so one follower usually times out first.", cons) == ''
+    assert ses.implied('For an export, run it as an async job against a snapshot.', lessons.get('system-design', 'api-contracts')) == ''
+    s = {**fresh(), 'lesson': 'consensus'}
+    assert ses.parse('Want to break one? Play with the 5-node simulator and partition the cluster.', s, cons)[1] == 'b3'
+    assert ses.parse('Play with the 5-node simulator and partition the cluster.', {**fresh('explain')}, cons)[1] == ''
+    ses.end(s, 3)
+    ses.add_debrief(s, 'Next: the two-phase commit simulator, crash the coordinator and see who is in doubt.', 4, cons)
+    assert s['turns'][-1]['show_block'] == 'b910' and 'b910' in s['shown']
+
+
 def test_replies_fold_in_with_the_mode_speaker_and_private_notes():
     s = fresh('critique')
     turn = ses.add_reply(s, 'Here is the design. <private>Planted: write-through on a cold path.</private>', L, 2)

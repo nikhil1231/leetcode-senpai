@@ -7,6 +7,10 @@
    you've edited inside it. Submit handlers await Dictate.settle(field) so
    grading reads that text — bounded, and instant when nothing is pending.
    The button or Esc stops listening; typing in the field takes over at once.
+   A chat can keep the mic on across turns: Dictate.hold(field) on send stops
+   it like settle() but remembers it was on (the button shows it waiting), and
+   Dictate.resume(field) when the reply is in turns it back on. Clicking the
+   button or typing in between forgets it.
    Dictate.listen(sink) is the same engine without a field, for a view that
    shows the words itself (Ripple Ops' reasoning log): sink is
    { el, get(), set(text), live(), ui(state), idleMs? }, el scopes settle(). */
@@ -39,6 +43,7 @@
   const SEGMENT_MS = 12000;   // cut a new audio segment at the first pause after this
   const IDLE_MS = 60000;      // give up re-listening after a minute of silence
   const pending = new Set();  // sessions not yet finalised (transcript may still change)
+  const armed = new WeakSet(); // fields whose mic is held for a reply, to come back on after it
   let active = null;
 
   window.Dictate = {
@@ -52,6 +57,8 @@
       return Promise.race([Promise.all(mine.map((s) => s.settled)), timeout])
         .then(() => mine.forEach((s) => { s.abandoned = true; }));  // too late now: leave the text be
     },
+    hold(field) { return window.Dictate.settle(field); },  // no dictation here: nothing to remember
+    resume() {},
   };
 
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -125,10 +132,12 @@
   const setUi = (s, state) => s.sink.ui(state);
 
   function buttonUi(btn, state) {
+    btn.classList.toggle("is-armed", state === "armed");
     btn.classList.toggle("is-listening", state === "listening");
     btn.classList.toggle("is-transcribing", state === "transcribing");
     btn.setAttribute("aria-pressed", String(state === "listening"));
-    btn.title = state === "listening" ? "Stop dictation (Esc)" : state === "transcribing" ? "Improving the transcript…" : "Dictate";
+    btn.title = state === "listening" ? "Stop dictation (Esc)" : state === "transcribing" ? "Improving the transcript…"
+      : state === "armed" ? "The mic comes back on after the reply (click to turn it off)" : "Dictate";
   }
 
   // A textarea as a sink: the words go into it as if typed.
@@ -141,7 +150,7 @@
       field.dispatchEvent(new Event("input", { bubbles: true }));
     },
     live: () => field.isConnected && !field.disabled,
-    ui: (state) => buttonUi(btn, state),
+    ui: (state) => buttonUi(btn, state === "idle" && armed.has(field) ? "armed" : state),
   });
 
   async function start(sink) {
@@ -265,11 +274,13 @@
 
     btn.addEventListener("mousedown", (e) => e.preventDefault());  // keep the caret in the field
     btn.addEventListener("click", () => {
-      if (active && active.el === field) stop(active);
+      if (armed.has(field)) { armed.delete(field); buttonUi(btn, "idle"); }
+      else if (active && active.el === field) stop(active);
       else start(fieldSink(field, btn));
       field.focus();
     });
     field.addEventListener("keydown", (e) => {
+      if (armed.has(field) && !["Shift", "Control", "Alt", "Meta", "Enter"].includes(e.key)) { armed.delete(field); buttonUi(btn, "idle"); }
       if (!active || active.el !== field) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stop(active); return; }
       if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
@@ -288,6 +299,21 @@
   }).observe(document.body, { childList: true, subtree: true });
 
   window.Dictate.supported = true;
+  // Stop and settle like settle(), remembering the mic was on so resume() can bring it back.
+  window.Dictate.hold = (field) => {
+    if (active && active.el === field && !active.halted) {
+      armed.add(field);  // set first: the button's idle state now shows as waiting
+      return window.Dictate.settle(field);
+    }
+    return window.Dictate.settle(field);
+  };
+  window.Dictate.resume = (field) => {
+    if (!field || !armed.has(field)) return;
+    armed.delete(field);
+    const btn = field.parentNode && field.parentNode.querySelector(".dictate-btn");
+    if (!btn || !field.isConnected || field.disabled) { if (btn) buttonUi(btn, "idle"); return; }
+    if (!active || active.el !== field) start(fieldSink(field, btn));
+  };
   // Listen into a sink until stop(); the handle reports whether it is still the one listening.
   window.Dictate.listen = (sink) => {
     start(sink);

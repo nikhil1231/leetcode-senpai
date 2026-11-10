@@ -39,8 +39,21 @@ def _first_line(b):
 
 
 def tools(lesson):
-    """Blocks the tutor may show: every interactive block, with a one-line description."""
-    return [{'key': b['key'], 'type': b['type'], 'about': _first_line(b)} for b in lesson['blocks'] if b['type'] != 'md']
+    """Blocks the tutor may show: every interactive block, with a one-line description (a simulator's
+    intro or first challenge too, so the tutor knows what it does) and `words`, its own text for
+    recognising a mention of it (session.implied)."""
+    out = []
+    for b in lesson['blocks']:
+        if b['type'] == 'md' or 'key' not in b:
+            continue
+        about = _first_line(b)
+        extra = b.get('intro') or next((c.get('text') for c in b.get('challenges') or [] if isinstance(c, dict)), '')
+        if b['type'] == 'sim' and extra:
+            about = f'{about}. {re.sub(r"\s+", " ", str(extra)).strip()[:160]}'
+        words = ' '.join(str(x) for x in (b.get('title'), b.get('name'), b.get('intro'), b.get('prompt'), b.get('company'),
+                                          *(c.get('text') for c in b.get('challenges') or [] if isinstance(c, dict))) if x)
+        out.append({'key': b['key'], 'type': b['type'], 'about': about, 'words': words})
+    return out
 
 
 def outage_note(b):

@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import board, lessons, rig, story
 
-PROMPT_VERSION = 12
+PROMPT_VERSION = 13
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -48,13 +48,15 @@ TEACH = """You're Nikhil's tutor. He's a software engineer preparing for mid/sen
 
 How you teach:
 - Teach first. When an idea is new to him, explain it properly (the intuition, a concrete example, why it matters in real systems) before asking him anything about it. Then check with a question that makes him use the idea, not recite it.
+- Problem before solution. Introduce an idea as the answer to something breaking or a choice that has to be made, not as a definition.
+- Interview depth, not textbook depth. Aim for what a strong mid/senior candidate can explain and defend. Internals beyond that are a tangent he can choose, not the default.
 - To find out where he is, ask open, practical questions that touch several ideas at once, rather than a string of narrow ones.
 - Follow him. A tangent that's worth it is worth taking; if it belongs to another lesson, you can take the conversation there.
 - Know when it's enough. Once he has the gist, say so and move on. Leftover detail goes to review, not into five more questions, and don't come back to the same small point in one session.
 - Not every message needs a question. Sometimes explain, sometimes connect it to his own work, sometimes just react.
 - Judge the idea, not the wording. If his answer shows the idea, it's right; if a sharper version matters for interviews, add it yourself in a sentence and carry on. Never re-ask something he's effectively answered. When he's wrong, say what's off and why it matters, plainly and kindly.
 
-Opening: start from him, not from a quiz. If he's come from another tutor or a recent session, talk about that first, the way someone who read the notes would. Otherwise, a sentence on what this lesson is for and where you'd suggest starting, and let him steer. If your notes have an outage block, the lesson is built problem-first: he watches that system break before anything else. Start from the problem (what broke, and why that part), let the ideas arrive as the way to fix it, and offer the block with its activity tag if he hasn't watched it.
+Opening: start from him, not from a quiz. If he's come from another tutor or a recent session, talk about that first, the way someone who read the notes would. Otherwise, open with a hook (something at Ripple about to break, a real incident, a puzzle) that this lesson answers, then let him steer. If your notes have an outage block, the lesson is built problem-first: he watches that system break before anything else. Start from the problem (what broke, and why that part), let the ideas arrive as the way to fix it, and offer the block with its activity tag if he hasn't watched it.
 
 Keep messages conversational and usually short, a few sentences. When you're explaining, take the room it needs, but one idea at a time: if it's turning into a lecture, stop and check in.""".format(voice=voice.TUTOR)
 
@@ -264,7 +266,7 @@ Keep anything you must stay consistent about (a planted flaw, an incident's stat
 
 ACTIONS = """## Things you can do
 Put any of these on its own line at the end of a message when it helps; he never sees the marker itself.
-- [[activity KEY]]: hand him one of this lesson's activities, when doing beats talking.
+- [[activity KEY]]: hand him one of this lesson's activities, when doing beats talking. The marker is the only way he gets it: if your message mentions an activity or simulator, its marker must be at the end of that same message, or he has nothing to click. Use them generously, especially the simulators: one early in the session usually beats three messages of explanation.
 - [[move SECTION/LESSON]]: when the conversation is really about another lesson, suggest going there. Say so in your message; he gets a button and you carry on together there.
 - [[next SECTION/LESSON | why]]: what you'd have him do next time. It becomes the first thing he's offered when he comes back.
 - [[enough]]: this lesson is good enough for interviews for now. What's left goes to review instead of being chased. Say so to him too.
@@ -357,7 +359,53 @@ def parse(text, session, lesson):
     say = re.sub(r'^\s*\**(tutor|jo|marcus|priya)(\s*:\s*\**|\**\s*:)\s*', '', say.strip(), flags=re.I)
     allowed = {t['key'] for t in lessons.tools(lesson)} if blocks_allowed(session['mode']) else set()
     show = next((k for k in keys if k in allowed and k not in session['shown']), '')
-    return voice.plain(re.sub(r'\n{3,}', '\n\n', say).strip()), show, private
+    say = voice.plain(re.sub(r'\n{3,}', '\n\n', say).strip())
+    if not show and blocks_allowed(session['mode']):
+        show = implied(say, lesson, session['shown'])
+    return say, show, private
+
+
+# An activity named in the reply without its marker (the cheaper models often forget it): find which
+# one from the sentences that point at something to do, so he still gets the card to click.
+CUE = re.compile(r'\b(simulat\w*|sim|activity|exercise|widget|interactive|have a (go|play)|play (around )?with|poke at|'
+                 r'try (it|this|the|that)|drag|sort these|order the)\b', re.I)
+SIM_CUE = re.compile(r'\b(simulat\w*|sim|play (around )?with|poke at)\b', re.I)
+STOP = set('''the and for with that this what when where which who how why you your are was were has have had not but its
+it's into from then than them they there their our out can could would should will just like about also more some any
+one each very much here want see watch try run lesson activity simulator simulation sim exercise widget let'''.split())
+SYNONYMS = {'2pc': 'two-phase commit', 'raft': 'raft leader election', 'p99': 'p99 tail', 'fan-out': 'fan-out fanout',
+            'utilisation': 'utilisation utilization', 'utilization': 'utilisation utilization'}
+
+
+def _words(text):
+    out = set()
+    for w in re.findall(r'[a-z0-9]+(?:-[a-z0-9]+)*', (text or '').lower()):
+        for x in [w, *SYNONYMS.get(w, '').split(), *(w.split('-') if '-' in w else [])]:
+            if (len(x) >= 3 or any(c.isdigit() for c in x)) and x not in STOP:
+                out.add(x)
+    return out
+
+
+def implied(say, lesson, shown=()):
+    """The key of the one unshown activity the reply clearly points at, or ''. Pure."""
+    sentences = [x for x in re.split(r'(?<=[.!?:])\s+|\n+', say or '') if x.strip()]
+    near = [' '.join(sentences[max(0, i - 1):i + 2]) for i, x in enumerate(sentences) if CUE.search(x)]
+    if not near:
+        return ''
+    wanted, sim = _words(' '.join(near)), any(SIM_CUE.search(x) for x in near)
+    scored = []
+    for t in lessons.tools(lesson):
+        if t['key'] in shown:
+            continue
+        title = _words(t['about'].split('. ')[0])
+        score = 2 * len(title & wanted) + len((_words(t['words']) - title) & wanted)
+        if sim and t['type'] in ('sim', 'outage'):
+            score += 2
+        scored.append((score, t['key']))
+    scored.sort(reverse=True)
+    if not scored or scored[0][0] < 5 or (len(scored) > 1 and scored[0][0] - scored[1][0] < 2):
+        return ''
+    return scored[0][1]
 
 
 def add_reply(session, text, lesson, now):
@@ -390,14 +438,18 @@ def handed(text, session):
     return rig.extract(PRIVATE.sub('', text or ''))[1] if board_allowed(session['mode']) else []
 
 
-def add_debrief(session, text, now):
+def add_debrief(session, text, now, lesson=None):
     say = rig.extract(board.extract(PRIVATE.sub('', ANY_MARKER.sub('', text or '')))[0])[0]
-    turn = {'role': 'tutor', 'speaker': 'tutor', 'say': voice.plain(re.sub(r'\n{3,}', '\n\n', say).strip()), 'show_block': '',
+    say = voice.plain(re.sub(r'\n{3,}', '\n\n', say).strip())
+    show = implied(say, lesson, session['shown']) if lesson and blocks_allowed(session['mode']) else ''
+    turn = {'role': 'tutor', 'speaker': 'tutor', 'say': say, 'show_block': show,
             'at': now, 'debrief': True, 'recorded': {'evidence': 0, 'misconceptions': 0, 'resolved': 0}}
     boards = drawn(text, session)
     if boards:
         turn['boards'] = boards
     session['turns'].append(turn)
+    if show:
+        session['shown'].append(show)
     session['updated_at'] = now
     return turn
 

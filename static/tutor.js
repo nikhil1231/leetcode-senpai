@@ -144,9 +144,9 @@
     form.addEventListener('submit', async e => {
       e.preventDefault();
       if (T.busy) return;
-      await window.Dictate?.settle?.(box);
+      await window.Dictate?.hold?.(box);  // the mic, if on, comes back on with the reply (resumeMic)
       const text = box.value.trim();
-      if (!text) return;
+      if (!text) { resumeMic(); return; }
       box.value = '';
       send({text});
     });
@@ -213,12 +213,15 @@
       t.session = s; t.busy = false;
       if (!s.error) t.pending = null;
       sync();
+      resumeMic();
     } catch (e) {
       if (T !== t) return;
       t.busy = false;
       status(e.message, true);
+      resumeMic();
     }
   }
+  function resumeMic() { window.Dictate?.resume?.(T?.host.querySelector('.tu-compose textarea')); }
   function lastSpeaker() { const turns = T.session?.turns || []; for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === 'tutor') return turns[i].speaker; return 'tutor'; }
 
   function status(text, isError = false) {

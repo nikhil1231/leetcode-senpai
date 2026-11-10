@@ -554,7 +554,7 @@ async def _debrief(store, s, l):
         s['error'] = DEBRIEF_FAILED
     else:
         s.pop('error', None)
-        ses.add_debrief(s, text, now)
+        ses.add_debrief(s, text, now, l)
     store.put_knowledge('tutor_sessions', s['id'], s)
     _remember(store, s, now, '', debrief=s['turns'][-1]['say'] if text is not None else '')
 
