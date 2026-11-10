@@ -2267,6 +2267,7 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
   setComplexityValue("recall-space", "");
   $("#recall-grade").classList.add("hidden");
   $("#recall-grade").innerHTML = "";
+  $("#recall-modal .overlay-card").classList.remove("is-graded");
   $("#recall-actions").innerHTML =
     `<button id="btn-close-recall" class="button is-ghost">Cancel</button>
      ${llmEnabled ? `<button id="btn-hint-recall" class="button" type="button" title="A small nudge from what you've written so far — words, not code">Hint</button>` : ""}
@@ -2435,10 +2436,13 @@ function renderRecallGrade(g) {
       positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
     ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>What was missing</b><ul>${
       negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
-    ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
-    <p class="small">Scheduled next review accordingly.</p>
-    ${editorialLinkHtml(currentRecall.slug)}
+    <div class="grade-meta small">
+      ${currentRecall.category ? `<span>${escapeHtml(currentRecall.category)}</span>` : ""}
+      <span>Next review scheduled</span>
+      ${currentRecall.slug ? `<a href="${escapeHtml(leetcodeEditorialUrl(currentRecall.slug))}" target="_blank" rel="noopener">Read the editorial ↗</a>` : ""}
+    </div>
     ${currentRecall.attempt_id ? recallClarificationHtml() : ""}`;
+  $("#recall-modal .overlay-card").classList.add("is-graded");
   wireRecallClarification();
   $("#recall-actions").innerHTML = `<button id="btn-close-recall" class="button is-primary">Done</button>`;
   $("#btn-close-recall").addEventListener("click", () => $("#recall-modal").classList.add("hidden"));
@@ -2447,9 +2451,9 @@ function renderRecallGrade(g) {
 function recallClarificationHtml() {
   return `<div class="recall-clarify">
     <label class="label-sm" for="recall-clarify-text">Ask about this grade</label>
-    <textarea id="recall-clarify-text" class="textarea" data-dictate rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="What should I clarify about the answer or grade?"></textarea>
-    <div class="recall-clarify-actions">
-      <button id="btn-recall-clarify" class="button is-small is-link">Ask</button>
+    <div class="recall-clarify-row">
+      <textarea id="recall-clarify-text" class="textarea" data-dictate rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="What should I clarify about the answer or grade?"></textarea>
+      <button id="btn-recall-clarify" class="button">Ask</button>
     </div>
     <div id="recall-clarify-reply" class="small recall-clarify-reply hidden"></div>
   </div>`;

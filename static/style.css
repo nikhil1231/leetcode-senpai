@@ -1515,7 +1515,14 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
 }
 .overlay-card.recall-wide > h2,
 .overlay-card.recall-wide > #recall-problem { grid-column: 1 / -1; }
-.overlay-card.recall-wide > #recall-statement { grid-column: 1; grid-row: 3 / span 6; }
+.overlay-card.recall-wide > #recall-statement {
+  grid-column: 1; grid-row: 3 / span 8;
+  position: sticky; top: 0;
+  max-height: calc(92vh - 130px);
+}
+.overlay-card.recall-wide > #recall-statement + .help { margin-top: 14px; }
+.overlay-card.recall-wide.is-graded .complexity-presets { display: none; }
+.overlay-card.recall-wide.is-graded #recall-text { min-height: 96px; }
 .overlay-card.recall-wide > .help,
 .overlay-card.recall-wide > .label-sm,
 .overlay-card.recall-wide > #recall-text,
@@ -1564,16 +1571,21 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
   border-radius: var(--radius);
   background: var(--bg-elev);
 }
-.grade-score { font-size: 14px; font-weight: 600; }
+.grade-score { font-size: 15px; font-weight: 600; }
 .grade-score b { color: var(--accent); }
 .recall-grade .missed { margin-top: 8px; color: var(--amber); font-size: 12.5px; }
 .recall-grade ul.improvements { margin: 6px 0 2px 18px; font-size: 12.5px; list-style: disc; color: var(--text-2); }
 .recall-grade ul.improvements li { margin: 3px 0; }
 .recall-grade .grade-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 .tag.grade-optimal { background: rgba(53, 211, 154, .14); color: var(--green); }
-.recall-clarify { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
-.recall-clarify textarea { min-height: 70px; }
-.recall-clarify-actions { display: flex; justify-content: flex-end; margin-top: 9px; }
+.grade-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin-top: 14px; }
+.grade-meta > * + *::before { content: "·"; margin: 0 8px; color: var(--muted); }
+.grade-meta a { color: var(--accent); }
+.recall-clarify { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.overlay-card .recall-clarify .label-sm { margin-top: 0; }
+.recall-clarify-row { display: flex; align-items: flex-end; gap: 9px; }
+.recall-clarify-row > :first-child { flex: 1; min-width: 0; }
+.recall-clarify textarea { min-height: 64px; }
 .recall-clarify-reply { margin-top: 12px; white-space: pre-wrap; line-height: 1.6; }
 .missed { color: var(--amber); }
 
@@ -1738,7 +1750,7 @@ pre.code {
   .overlay-card.recall-wide > .columns,
   .overlay-card.recall-wide > #recall-grade,
   .overlay-card.recall-wide > #recall-actions { grid-column: 1; grid-row: auto; }
-  .recall-statement { max-height: 38vh; }
+  .overlay-card.recall-wide > #recall-statement { position: static; max-height: 38vh; }
   .sprint-layout { grid-template-columns: 1fr; }
   .sprint-prompt { max-height: 38vh; }
   .sprint-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2447,11 +2459,11 @@ body.has-active-session #user-chip {
 
 .recall-statement img { display: block; max-width: 100%; height: auto; margin: 12px auto; border-radius: 6px; background: #fff; }
 
-.grade-analysis { margin: 8px 0 6px; line-height: 1.45; }
+.grade-analysis { margin: 8px 0 6px; font-size: 13.5px; line-height: 1.55; }
 
-.grade-bullets { margin-top: 10px; font-size: 13px; }
+.grade-bullets { margin-top: 12px; font-size: 13px; line-height: 1.5; }
 
-.grade-bullets b { display: block; margin-bottom: 3px; }
+.grade-bullets b { display: block; margin-bottom: 3px; color: var(--text); }
 
 .grade-bullets ul { margin: 0 0 0 18px; }
 
@@ -2520,7 +2532,7 @@ body.has-active-session #user-chip {
   .overlay-card.recall-wide > #recall-grade,
   .overlay-card.recall-wide > #recall-actions { grid-column: 1; grid-row: auto; }
   .complexity-fields { grid-template-columns: 1fr; }
-  .recall-statement { max-height: 38vh; }
+  .overlay-card.recall-wide > #recall-statement { position: static; max-height: 38vh; }
   .sprint-layout { grid-template-columns: 1fr; }
   .sprint-prompt { max-height: 38vh; }
   .sprint-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
