@@ -45,6 +45,19 @@ def test_prompts_carry_the_claims_and_keep_notes_off_the_poster():
     assert 'Take two locks' in rp and 'one global order' in rp and 'two padlocks' not in rp and 'never ask' not in rp
 
 
+def test_each_poster_gets_a_style_unlike_the_recent_ones():
+    seen, library = [], []
+    for i in range(len(wall_gen.STYLES)):
+        st = wall_gen.pick_style(library, 'jc')
+        seen.append(st['name'])
+        library.append({'ok': True, 'created_at': i, 'style': st['name']})
+    assert len(set(seen)) == len(wall_gen.STYLES)                       # every look before any repeats
+    assert wall_gen.pick_style(library, 'jc')['name'] == seen[0]        # then the one used longest ago
+    assert wall_gen.pick_style([{'ok': True, 'created_at': 1}], 'jc')['name'] != 'spectrum'   # old posters count as spectrum
+    ip = wall_gen.image_prompt(BRIEF, COPY, wall_gen.STYLES[1])
+    assert '#0E1330' in ip and '#B6F23A' in ip and '#FFA41B' not in ip
+
+
 def test_passing_needs_correct_words_facts_and_diagrams():
     assert wall_gen.passed(review())
     assert not wall_gen.passed(review(ok=False, score=9))                       # a typo always fails

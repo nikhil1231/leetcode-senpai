@@ -9,7 +9,7 @@ picture against the claims and the words for spelling, facts, sensible diagrams 
 A failed try goes back to the image model as an edit with the reviewer's notes, up to ATTEMPTS.
 Posters are derived: kept in Firestore (wall_posters, the JPEG in wall_images) and stamped with
 PROMPT_VERSION; posters of the KEPT versions still count as current, so a new prompt applies to new
-posters without remaking the old ones. Without a model nothing is made and the wall shows its plain card. Pure: copy_prompt, image_prompt, fix_prompt, review_prompt, passed, due. I/O: the rest.
+posters without remaking the old ones. Without a model nothing is made and the wall shows its plain card. Pure: pick_style, copy_prompt, image_prompt, fix_prompt, review_prompt, passed, due. I/O: the rest.
 """
 import asyncio
 import io
@@ -26,13 +26,56 @@ from .knowledge_base import api as kb_api, model as kmodel
 
 log = logging.getLogger(__name__)
 POSTERS, IMAGES = 'wall_posters', 'wall_images'
-PROMPT_VERSION = 'wall-7'   # wall-7: glanceable copy (a takeaway, a detail, a big figure), text colour per panel
-KEPT = ('wall-4', 'wall-5', 'wall-6', PROMPT_VERSION)
-# The panels' colours, in order (a bright modern infographic: warm to cool on a light background), each
-# with the text colour that reads on it.
-PALETTE = (('tangerine', '#FFA41B', 'charcoal'), ('vermilion', '#FF5A1F', 'white'), ('raspberry pink', '#F2316F', 'white'),
-           ('sky cyan', '#1FB5F2', 'charcoal'), ('periwinkle violet', '#8C7BF2', 'white'),
-           ('emerald teal', '#14C79A', 'charcoal'), ('lime green', '#8EE66B', 'charcoal'))
+PROMPT_VERSION = 'wall-8'   # wall-8: each poster gets its own style (palette, background, layout); wall-7: glanceable copy
+KEPT = ('wall-4', 'wall-5', 'wall-6', 'wall-7', PROMPT_VERSION)
+# A poster's look: background, layout and the panels' colours in order (name, hex, the text colour that reads
+# on it). pick_style gives each new poster the style used longest ago, so neighbours on the phone differ.
+STYLES = (
+    {'name': 'spectrum', 'background': 'a light off-white background (#F7F7F9)', 'topic': 'dark charcoal (#22232B)',
+     'layout': 'Each panel is a full-width rounded block stacked down the poster, the panels running warm to cool like a spectrum, '
+               'with its icon in a white circle at its right.',
+     'palette': (('tangerine', '#FFA41B', 'charcoal'), ('vermilion', '#FF5A1F', 'white'), ('raspberry pink', '#F2316F', 'white'),
+                 ('sky cyan', '#1FB5F2', 'charcoal'), ('periwinkle violet', '#8C7BF2', 'white'))},
+    {'name': 'midnight', 'background': 'a deep midnight navy background (#0E1330)', 'topic': 'soft white (#EEF1FF)',
+     'layout': 'Each panel is a dark raised card (#1B2250) stacked down the poster, with a thick vertical bar of its accent colour on '
+               'the left edge, its text in white; the icon sits in an outlined circle of the accent at its right.',
+     'palette': (('electric lime', '#B6F23A', 'white'), ('hot magenta', '#FF3DA5', 'white'), ('aqua', '#35E0E8', 'white'),
+                 ('amber', '#FFC233', 'white'))},
+    {'name': 'duotone', 'background': 'a warm cream background (#FFF3E0)', 'topic': 'deep navy (#14213D)',
+     'layout': 'Only two colours besides the background. The panels are large blocks that alternate sides: the first sits flush left '
+               'and fills about 85% of the width, the next flush right, and so on, staggered like steps, each with a huge bold takeaway.',
+     'palette': (('deep navy', '#14213D', 'white'), ('coral', '#FF6B4A', 'white'), ('deep navy', '#14213D', 'white'))},
+    {'name': 'bento', 'background': 'a soft lilac background (#EDE7FF)', 'topic': 'deep purple (#2A1B5C)',
+     'layout': 'A bento grid of tiles with generous rounded corners and small gaps: the first panel is a tall tile filling the whole '
+               'width at the top, the others sit side by side in two columns beneath it; each tile a different pastel with big text.',
+     'palette': (('butter yellow', '#FFE066', 'charcoal'), ('mint', '#9BF0C8', 'charcoal'), ('peach', '#FFB5A0', 'charcoal'),
+                 ('sky', '#A8D8FF', 'charcoal'))},
+    {'name': 'ink', 'background': 'a very light grey-green background (#EEF3F0)', 'topic': 'deep forest green (#0B3D2E)',
+     'layout': 'One hue only, in three depths: the panels are tall rounded blocks stacked down the poster, '
+               'dark at the top getting lighter down it, with the takeaway huge and left-aligned and the icon at the far right.',
+     'palette': (('deep forest green', '#0B3D2E', 'white'), ('jade green', '#1F8A63', 'white'), ('light sage', '#9ED8B8', 'charcoal'))},
+    {'name': 'pop', 'background': 'a bright yellow background (#FFD93D)', 'topic': 'black (#111111)',
+     'layout': 'A bold flat neo-brutalist look: each panel is a white or coloured card with a thick black outline and sharp square '
+               'corners, stacked with a small gap, the takeaway in heavy black type, the icon in a coloured square at its right.',
+     'palette': (('white', '#FFFFFF', 'charcoal'), ('pink', '#FF8FB8', 'charcoal'), ('cyan', '#5FE0E8', 'charcoal'))},
+    {'name': 'dusk', 'background': 'a rich plum-to-indigo vertical gradient background (#3B1D6E to #1B1B4B)', 'topic': 'white (#FFFFFF)',
+     'layout': 'Each panel is a big translucent white card (frosted glass, no heavy blur) with rounded corners, stacked down the poster; '
+               'the takeaway in white, and a vivid accent-coloured circle holding the icon above-left of the text.',
+     'palette': (('coral', '#FF7A59', 'white'), ('gold', '#FFC145', 'white'), ('turquoise', '#2EE6C5', 'white'))},
+)
+
+
+def pick_style(library, lesson=''):
+    """The style whose last use is oldest (never used first; the first, 'spectrum', stands for posters made before styles),
+    so consecutive posters differ. Ties break by the lesson's name, so the pick is repeatable."""
+    last = {}
+    for p in library:
+        if p.get('ok'):
+            last[p.get('style', 'spectrum')] = max(last.get(p.get('style', 'spectrum'), 0), p['created_at'])
+    pick = min(range(len(STYLES)), key=lambda i: (last.get(STYLES[i]['name'], -1), (i + sum(map(ord, lesson))) % len(STYLES)))
+    return STYLES[pick]
+
+
 ATTEMPTS = 3
 WIDTH = 1179            # stored width: an iPhone's; wall.fit_image fits other screens
 MAX_BYTES = 900_000     # a Firestore document holds 1 MiB
@@ -64,7 +107,7 @@ class PosterReview(BaseModel):
     all_ideas_present: bool = Field(description="every panel asked for appears, with its takeaway; a panel may leave out details of its claim")
     diagrams_make_sense: bool = Field(description="every icon and diagram illustrates its idea correctly; no nonsense labels, arrows or pairings")
     legible: bool = Field(description="all text is large and contrasted enough to read on a phone lock screen")
-    tasteful: bool = Field(description="looks professionally designed: bright but coherent colours, clean typography, consistent icons; nothing cluttered, glossy or clip-art")
+    tasteful: bool = Field(description="looks professionally designed: coherent, vivid colours, clean typography, consistent icons; nothing cluttered, glossy or clip-art")
     score: int = Field(description="1 unusable … 10 a poster you would gladly look at every day: clear, refined, correct")
     issues: list[str] = Field(description="each problem found, naming exactly where it is and what to change; empty when there are none")
     verdict: Literal["pass", "redraw"]
@@ -90,9 +133,9 @@ def copy_prompt(b):
             "\n\nWrite the headline and the panels.")
 
 
-def image_prompt(b, copy):
+def image_prompt(b, copy, style=STYLES[0]):
     def panel(i, p):
-        name, hex_, ink = PALETTE[(i - 1) % len(PALETTE)]
+        name, hex_, ink = style['palette'][(i - 1) % len(style['palette'])]
         mark = (f'Big figure: "{p["figure"]}" with the small label "{p["figure_label"]}" under it.' if p.get('figure')
                 else f'Icon: {p["visual"]}.')
         return f'Panel {i} ({name} {hex_}, {ink} text). Takeaway: "{p["takeaway"]}". Detail: "{p["detail"]}". {mark}'
@@ -101,7 +144,7 @@ def image_prompt(b, copy):
 Topic label: "{copy['headline']}"
 {panels}
 Write exactly the quoted text above and nothing else: no extra captions, footnotes or labels, no colour names or codes, and no text inside the icons. Every word spelled exactly as given.
-Style: a bright, modern flat infographic, the quality of a design studio's print. A light off-white background (#F7F7F9). Each panel is a solid block of its own vivid colour given above, exactly that colour, with all its text in the text colour given (white, or dark charcoal #22232B); the panels run warm to cool down the poster like a spectrum. Hierarchy, so the poster teaches in a two-second glance: in each panel the takeaway is the biggest, boldest text on the whole poster; the detail is a smaller medium-weight line under it; a big figure, when given, sits at the panel's right side as a very large bold number with its small label beneath, in place of an icon. Otherwise the panel's icon is a clean line icon in the panel's colour inside a white circle at its right, all icons in the same style (no diagrams, flows, arrows or code). The topic label is small, uppercase and letter-spaced in dark charcoal (#22232B) at the very top, with a short thin rule in the first panel's colour. One clean geometric sans-serif typeface. A strong grid: the panels fill the poster's height, aligned and evenly spaced.
+Style: a modern flat infographic, the quality of a design studio's print. Background: {style['background']}. Each panel uses its own colour given above, exactly that colour, with all its text in the text colour given (white, or dark charcoal #22232B). Layout: {style['layout']} Hierarchy, so the poster teaches in a two-second glance: in each panel the takeaway is the biggest, boldest text on the whole poster; the detail is a smaller medium-weight line under it; a big figure, when given, is a very large bold number with its small label beneath, in place of an icon. Otherwise the panel's icon is a clean flat icon, all icons in the same style (no diagrams, flows, arrows or code). The topic label is small, uppercase and letter-spaced in {style['topic']} at the very top, with a short thin rule in the first panel's colour. One clean geometric sans-serif typeface. A strong grid: the panels fill the poster's height, aligned and evenly spaced.
 Avoid: glossy, 3D, bevels or heavy drop shadows, stickers, badges, emoji, confetti, starbursts, ribbons and decorative clutter.
 Use the whole canvas from the very top edge to the bottom: there is no area to keep clear. All text large enough to read on a phone lock screen.
 The background must run seamlessly to every edge: no border, frame or band. Margins of 5% on the sides. No watermark, signature, logos or fake phone UI."""
@@ -119,7 +162,7 @@ REVIEW_SYSTEM = ("You review generated study posters before they become someone'
                  "for them back, and never ask for more text. Be strict about what is shown: a misspelled, repeated "
                  "or garbled word, a wrong or misleading statement, a missing panel, an icon that does not fit, or "
                  "text too small to read on a phone each means verdict 'redraw'. A panel with a big figure shows it "
-                 "in place of an icon. Bright colours are wanted, but a cluttered, glossy or clip-art look scores 6 "
+                 "in place of an icon. Vivid colours on any background are wanted, but a cluttered, glossy or clip-art look scores 6 "
                  "or less, and so does a poster whose takeaways are not its most prominent text.")
 
 
@@ -184,7 +227,7 @@ def make(store, now, lesson=None, force=False, pin=False):
     if not target:
         return None
     b = wall.brief(target, views, mis)
-    copy = _copy(b)
+    copy, style = _copy(b), pick_style(library, b['lesson'])
     best, last, spent = None, None, 0.0
     for attempt in range(1, ATTEMPTS + 1):
         try:
@@ -192,7 +235,7 @@ def make(store, now, lesson=None, force=False, pin=False):
                 pic = llm._raw_image(config.WALL_IMAGE_MODEL, fix_prompt(last[1]['issues'] or ['Redraw it more carefully.']),
                                      ASPECT, edit=(last[0], 'image/jpeg'))
             else:
-                pic = llm._raw_image(config.WALL_IMAGE_MODEL, image_prompt(b, copy), ASPECT)
+                pic = llm._raw_image(config.WALL_IMAGE_MODEL, image_prompt(b, copy, style), ASPECT)
             spent += float(pic['usage'].get('cost') or 0)
             data = _jpeg(pic['image'])
             review = llm._raw_look(config.WALL_REVIEW_MODEL, REVIEW_SYSTEM, review_prompt(b, copy), data, 'image/jpeg',
@@ -216,7 +259,7 @@ def make(store, now, lesson=None, force=False, pin=False):
     return store.put_knowledge(POSTERS, key, {
         'lesson': b['lesson'], 'title': b['title'], 'section': b['section'], 'points': b['points'],
         'ideas': [i['claim'] for i in b['ideas']], 'copy': copy, 'created_at': now, 'version': PROMPT_VERSION,
-        'ok': ok, 'review': review, 'attempts': attempt, 'model': model, 'reviewer': config.WALL_REVIEW_MODEL,
+        'style': style['name'], 'ok': ok, 'review': review, 'attempts': attempt, 'model': model, 'reviewer': config.WALL_REVIEW_MODEL,
         'cost': round(spent, 4), 'bytes': len(data), 'pinned_at': time.time() if pin else None})   # from when it is ready
 
 
