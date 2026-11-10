@@ -92,3 +92,18 @@ test('eval noise stays defined when the cheaper model is actually better, and st
 test('HNSW always returns k results, even with a tiny ef or M, because the graph is built connected',()=>{
  for(const Mm of [2,3,6]) for(const ef of [1,5,10]){ const g=M.buildHnsw(M.points(400,2),Mm,3); const r=M.hnswSearch(g,[0.3,0.7],10,ef); assert.equal(r.result.length,10,`M=${Mm} ef=${ef}`); assert.ok(r.recall>=0.8); }
 });
+test('durable runs: a script redoes everything, checkpoints repeat a half-done side effect, durable does neither',()=>{
+ const r=(runtime,crash)=>M.durableRun({runtime,crash});
+ assert.equal(r('script','none').wasted,0);
+ assert.ok(r('script','approval').wasted>30000); assert.equal(r('checkpoint','approval').wasted,0);
+ assert.equal(r('script','email').emails,2); assert.equal(r('checkpoint','email').emails,2); assert.equal(r('durable','email').emails,1);
+ assert.equal(r('checkpoint','approval').approvals,2); assert.equal(r('durable','approval').approvals,1);
+ for(const c of Object.keys(M.CRASHES)) assert.equal(r('durable',c).duplicates,0,c);
+});
+test('multi-agent: wins on broad independent work, loses on coupled work, and costs more tokens when small',()=>{
+ const m=(arch,breadth,coupled=false)=>M.multiAgent({arch,breadth,coupled});
+ assert.ok(m('orchestrator',8).quality>m('single',8).quality);
+ assert.ok(m('orchestrator',4,true).quality<m('single',4,true).quality);
+ assert.ok(m('orchestrator',3).tokens>m('single',3).tokens);
+ assert.ok(m('orchestrator',8).minutes<m('single',8).minutes);
+});

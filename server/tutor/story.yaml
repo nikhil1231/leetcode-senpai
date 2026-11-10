@@ -119,9 +119,12 @@ chapters:
     casebook: Ripple keeps growing into chat, video, rides through a partnership, and payments. Each is a new system to design from scratch.
   fundamentals:
     languages: Ripple's services run on Java and Python. When they misbehave, the runtime is the first suspect.
-    systems: Production is Linux boxes and networks. Priya wants you able to debug one live, at 3am.
-    data: Postgres holds the money. Its internals decide when it stalls.
+    systems: Production is Linux boxes and networks. Priya wants you able to debug one live, at 3am, and to know why the kernel behaves as it does.
+    data: Postgres holds the money. Every query, schema and internal decides whether the numbers are right and when it stalls.
     infrastructure: Ripple moves to Kubernetes on AWS with a real delivery pipeline. The platform is now part of your job.
+    security: Ripple's first penetration test report lands on Marcus's desk, and enterprise customers want SSO before they sign.
+    architecture: The codebase has outgrown its first design. Marcus wants to know which parts to split, and Jo wants to know why.
+    quality: A release broke checkout on a Friday. Priya wants tests that would have caught it, and a plan for the next one.
   ai:
     assisted: Ripple's engineers code with AI pairs, and you are hiring people who do too.
     models: Ripple ships its first feature built on a large language model.

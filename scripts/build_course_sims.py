@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..'))
 OUT = os.path.join(HERE, '..', 'static', 'simulators', 'courses.json')
 SECTIONS = [('fundamentals', 'Fundamentals'), ('ai', 'AI engineering')]
-SCRIPTS = ('fund-sims.js', 'ai-sims.js')
+SCRIPTS = ('fund-sims.js', 'core-sims.js', 'ai-sims.js')
 
 
 def build():

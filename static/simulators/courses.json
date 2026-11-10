@@ -70,6 +70,51 @@
    ]
   },
   {
+   "id": "cpusched",
+   "title": "A CPU scheduler",
+   "blurb": "Choose a workload and a policy. Each bar is one job; green is running, red is ready but waiting. Add a context-switch cost to see what preemption costs.",
+   "notes": "No policy wins everything. SRTF minimises waiting but needs to know the future; round robin gives good response time at the cost of switches; MLFQ learns which jobs are short by watching them. Real schedulers blend fairness, priorities and cache affinity.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "os-scheduling",
+   "lessonTitle": "Processes, threads and CPU scheduling",
+   "challenges": [
+    "See the convoy effect: average wait above 15 ms under FCFS",
+    "Get the average wait under 4 ms on the convoy workload",
+    "Make round robin spend over 20% of the CPU on context switches"
+   ]
+  },
+  {
+   "id": "paging",
+   "title": "Page replacement",
+   "blurb": "Feed a reference string to a replacement policy. Each column is one memory reference; each row is a physical frame. F marks a page fault.",
+   "notes": "Optimal is the floor no real policy reaches. LRU approximates it when the past predicts the future, Clock approximates LRU cheaply, and FIFO can get worse with more memory. A loop just bigger than memory is LRU's worst case.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "os-memory",
+   "lessonTitle": "Virtual memory and paging",
+   "challenges": [
+    "Find Belady's anomaly: one more frame, more faults",
+    "Make LRU fault on every single reference",
+    "Find a frame count where LRU matches the optimal policy on the textbook string"
+   ]
+  },
+  {
+   "id": "philosophers",
+   "title": "Dining philosophers",
+   "blurb": "Philosophers sit around a table with one fork between each pair and need both neighbouring forks to eat. Each strategy runs 100 times with random timing.",
+   "notes": "Deadlock needs all four Coffman conditions. A global lock order removes circular wait, tryLock with back-off removes hold-and-wait, and limiting the number of contenders makes a full cycle impossible. Shorter thinking times mean more contention and faster deadlocks.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "os-concurrency",
+   "lessonTitle": "Synchronisation: mutexes, semaphores, monitors and deadlock",
+   "challenges": [
+    "Deadlock the table",
+    "Break circular wait with a lock order and never deadlock",
+    "Prevent deadlock with a semaphore instead"
+   ]
+  },
+  {
    "id": "pid1",
    "title": "PID 1, signals and zombies in a container",
    "blurb": "Choose how the container starts, then stop it, or make the app leave an orphan behind.",
@@ -141,6 +186,37 @@
    ]
   },
   {
+   "id": "sqljoin",
+   "title": "Joins on two tiny tables",
+   "blurb": "Users and orders. Dee has no orders, Cy has only a refunded one, and order 105 was a guest checkout with no user. Change the join, where the filter goes, and how you count.",
+   "notes": "ON decides which rows match; WHERE filters the joined result afterwards. A condition on the right-hand table belongs in ON if you want to keep unmatched left rows. And COUNT(*) counts rows, including the NULL-filled ones an outer join adds, while COUNT(column) counts non-NULL values.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "sql-queries",
+   "lessonTitle": "SQL queries: joins, NULLs and grouping",
+   "challenges": [
+    "List every user, including those with no orders",
+    "Turn a LEFT JOIN back into an inner join with a WHERE clause",
+    "Find the users with no paid order (Cy and Dee)",
+    "Watch COUNT(*) claim Dee has an order"
+   ]
+  },
+  {
+   "id": "sqlwindow",
+   "title": "Window functions on eight sales",
+   "blurb": "Each row is one month's sale for a rep in North or South. Note the ties: two North sales of 120 and three South sales of 80.",
+   "notes": "ROW_NUMBER is unique, RANK leaves gaps after ties, DENSE_RANK doesn't. Filter on a window function from an outer query or CTE, because WHERE runs first. And with ORDER BY but no frame, aggregates use RANGE … CURRENT ROW, which includes every tied row; say ROWS when you mean physical rows.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "sql-windows",
+   "lessonTitle": "SQL analytics: window functions, CTEs and query plans",
+   "challenges": [
+    "Find a RANK() that skips a number after a tie",
+    "Return the top two sales in each region",
+    "Make two rows share one running total, then fix it with a ROWS frame"
+   ]
+  },
+  {
    "id": "mvcc",
    "title": "Two sessions, one row",
    "blurb": "Run statements in two sessions, one at a time. The table shows every row version and which session can see it.",
@@ -167,6 +243,51 @@
    "challenges": [
     "Watch the connection pool fill up behind the ALTER",
     "Set a lock_timeout short enough that no request fails"
+   ]
+  },
+  {
+   "id": "jwt",
+   "title": "A JWT verifier, one check at a time",
+   "blurb": "Pick a token an attacker might send, and the checks your verifier makes. The server issues RS256 tokens for the audience \"api\".",
+   "notes": "Verify the signature with a pinned algorithm and a trusted key, then check exp, iss and aud. Each missing check is one specific attack that works. Use a maintained library and configure it explicitly rather than trusting the token's header.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "auth-basics",
+   "lessonTitle": "Authentication, sessions and authorisation",
+   "challenges": [
+    "Get a forged admin token accepted",
+    "Make \"alg: none\" work against a server that does verify signatures",
+    "Find checks that reject every attack and still accept the genuine token"
+   ]
+  },
+  {
+   "id": "oauth",
+   "title": "OAuth flows under attack",
+   "blurb": "Pick a flow and an attack, and decide whether the client sends state and whether the authorization server matches redirect URIs exactly.",
+   "notes": "Authorization code with PKCE for every client, exact redirect URI matching on the server, and state (or PKCE) against login CSRF. The implicit flow puts tokens in URLs, where history, logs and other scripts can read them; it is retired.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "oauth-oidc",
+   "lessonTitle": "OAuth 2.0 and OpenID Connect",
+   "challenges": [
+    "Steal an access token from the implicit flow",
+    "Find the attack that PKCE alone does not stop",
+    "Configure a public client that blocks all four attacks"
+   ]
+  },
+  {
+   "id": "websec",
+   "title": "Six attacks against your defences",
+   "blurb": "Turn defences on and see which attacks still land. Pick an attack to see its steps.",
+   "notes": "Each attack has a defence at its root: escaping for XSS, SameSite and tokens for CSRF, parameters for SQL injection, egress control for SSRF, per-object checks for access control, an exact allow list for CORS. Measures like HttpOnly, UUIDs and IMDSv2 limit damage; they are layers, not fixes.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "web-attacks",
+   "lessonTitle": "Web attacks and their defences",
+   "challenges": [
+    "Stop the stored XSS with a single defence",
+    "See HttpOnly limit an XSS without stopping it",
+    "Block all six attacks with only five defences"
    ]
   },
   {
@@ -283,6 +404,21 @@
    "challenges": [
     "Run out of memory with the fixed rule",
     "Survive the day"
+   ]
+  },
+  {
+   "id": "loadshape",
+   "title": "Four test shapes, one flawed service",
+   "blurb": "The service has three planted flaws. Run each kind of test and see which flaws it exposes. (Turn a flaw off to see a clean run.)",
+   "notes": "A passing load test says only that this shape of traffic works. Stress tests find ceilings and bottlenecks, spike tests find slow scaling, and only a long soak finds leaks. Pick the shapes that match the risks you have.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "testing-strategy",
+   "lessonTitle": "Testing strategy: from unit tests to chaos",
+   "challenges": [
+    "Pass a load test even though all three flaws are present",
+    "Find the memory leak",
+    "Find all three planted flaws"
    ]
   },
   {
@@ -428,6 +564,35 @@
     "Step through a whole session, from initialize to a tool result",
     "Compare the two transports",
     "Stop every attack"
+   ]
+  },
+  {
+   "id": "multiagent",
+   "title": "One agent or many",
+   "blurb": "A research task with some number of sub-questions. Compare one agent working through them in one context, a fixed fan-out workflow, and an orchestrator with worker agents.",
+   "notes": "Multi-agent designs pay off for broad, independent work: fresh contexts keep quality up as breadth grows, and parallelism keeps wall time flat. They cost several times the tokens, and they hurt when sub-tasks share decisions that workers can't see.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "multi-agent",
+   "lessonTitle": "Multi-agent systems and agent memory",
+   "challenges": [
+    "Find a task where the orchestrator gives the best quality",
+    "Find a task where splitting makes quality worse than one agent"
+   ]
+  },
+  {
+   "id": "durable",
+   "title": "What a crash costs an agent run",
+   "blurb": "An eight-step report workflow: plan, three research steps, draft, wait for human approval, email the client, log it in the CRM. Pick how the run is executed and what goes wrong.",
+   "notes": "Checkpointing after each step saves the work, but a step that crashed after acting will act again. Record side effects with idempotency keys, and keep pending human approvals in durable state, so a restart replays history instead of repeating the world.",
+   "category": "ai",
+   "categoryLabel": "AI engineering",
+   "lesson": "durable-agents",
+   "lessonTitle": "Durable orchestration, reflection and autonomy levels",
+   "challenges": [
+    "Send the client the report twice",
+    "Survive a deploy during the approval wait without asking the approver again",
+    "Crash right after the email is sent, and still send exactly one"
    ]
   },
   {

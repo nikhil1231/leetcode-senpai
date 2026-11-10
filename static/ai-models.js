@@ -439,8 +439,71 @@
     return { rows, harms: rows.filter(r => !r.blocked).length, params: P };
   }
 
+  // ---------- Durable agent runs: what a crash costs under each runtime ----------
+  // An eight-step report workflow with a human approval and two side effects. `script` keeps state in
+  // memory, `checkpoint` saves state after every step, `durable` also records each side effect with an
+  // idempotency key, so a step that crashed after acting is not repeated.
+  const DURABLE_STEPS = [
+    { id: 'plan', label: 'Plan the research', tokens: 3000 }, { id: 'r1', label: 'Research: pricing', tokens: 8000 },
+    { id: 'r2', label: 'Research: competitors', tokens: 8000 }, { id: 'r3', label: 'Research: regulation', tokens: 8000 },
+    { id: 'draft', label: 'Draft the report', tokens: 10000 }, { id: 'approve', label: 'Wait for a human to approve (hours)', tokens: 0, human: true },
+    { id: 'email', label: 'Email the report to the client', tokens: 500, effect: true }, { id: 'crm', label: 'Log it in the CRM', tokens: 300, effect: true },
+  ];
+  const CRASHES = { none: null, research: { at: 2, label: 'Worker crashes during "Research: competitors"' }, approval: { at: 5, label: 'A deploy restarts the worker during the approval wait' }, email: { at: 6, label: 'Crash after the email is sent, before the step is recorded', after: true } };
+  function durableRun({ runtime = 'script', crash = 'research' } = {}) {
+    const c = CRASHES[crash], attempts = [];
+    let tokens = 0, emails = 0, approvals = 0, crm = 0;
+    const doStep = (st, mark) => { tokens += st.tokens; if (st.human) approvals++; if (st.id === 'email') emails++; if (st.id === 'crm') crm++; mark.push('ran'); };
+    const one = [];
+    let done = new Set();
+    for (let i = 0; i < DURABLE_STEPS.length; i++) {
+      const st = DURABLE_STEPS[i];
+      if (c && i === c.at) {
+        if (c.after) { doStep(st, one); one[one.length - 1] = 'crashed-after'; }
+        else { tokens += Math.round(st.tokens / 2); if (st.human) approvals++; one.push('crashed'); }
+        break;
+      }
+      doStep(st, one); done.add(i);
+    }
+    attempts.push(one);
+    if (c) {
+      const two = [];
+      for (let i = 0; i < DURABLE_STEPS.length; i++) {
+        const st = DURABLE_STEPS[i];
+        if (runtime !== 'script' && done.has(i)) { two.push('replayed'); continue; }
+        if (runtime === 'durable' && c.after && i === c.at) { two.push('deduped'); continue; }
+        if (runtime === 'durable' && st.human && i === c.at) { two.push('resumed'); continue; }   // the request is in the event history: keep waiting
+        doStep(st, two);
+      }
+      attempts.push(two);
+    }
+    const base = DURABLE_STEPS.reduce((t, st) => t + st.tokens, 0);
+    return { attempts, tokens, wasted: tokens - base, emails, approvals, crm, duplicates: Math.max(0, emails - 1) + Math.max(0, crm - 1), crash: c };
+  }
+
+  // ---------- One agent or many ----------
+  // A research task split into `breadth` sub-questions. A single agent works through them in one growing
+  // context; an orchestrator hands each to a worker with a fresh context and merges summaries. Workers
+  // cannot see each other, which hurts when the sub-tasks depend on each other.
+  function multiAgent({ arch = 'single', breadth = 4, coupled = false } = {}) {
+    const per = 9000, K = breadth;
+    if (arch === 'single') {
+      const tokens = Array.from({ length: K }, (_, i) => 4000 + per + i * per * 0.6).reduce((a, b) => a + b, 0);
+      const quality = Math.max(0.35, 0.93 - 0.045 * Math.max(0, K - 3));
+      return { tokens: Math.round(tokens), minutes: K * 1.5 + 1, quality, calls: K * 6 };
+    }
+    if (arch === 'workflow') {
+      const tokens = K * (per + 3000) + 6000;
+      const quality = coupled ? 0.62 : 0.84;
+      return { tokens, minutes: 2.5, quality, calls: K * 2 + 1 };
+    }
+    const tokens = K * (per * 1.6 + 5000) + 12000 + K * 2500;
+    const quality = Math.min(0.95, 0.9 + 0.005 * K) - (coupled ? 0.28 : 0);
+    return { tokens: Math.round(tokens), minutes: 3.5, quality, calls: K * 8 + 4 };
+  }
+
   const api = { rng, pct, PROMPTS, mcpSession, MCP_ATTACKS, mcpAttacks, distribution, sample, roughTokens, SAMPLES, call, bill, toolTranscript, structured, DOCS, QUERIES, bm25, search, searchScore,
-    points, buildHnsw, hnswSearch, RAG_QUESTIONS, rag, evalStats, threshold, agent, MODELS, serve, ATTACKS, injection };
+    points, buildHnsw, hnswSearch, RAG_QUESTIONS, rag, evalStats, threshold, agent, MODELS, serve, ATTACKS, injection, DURABLE_STEPS, CRASHES, durableRun, multiAgent };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.AIModels = api;
 })(typeof window !== 'undefined' ? window : globalThis);

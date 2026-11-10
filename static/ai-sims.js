@@ -258,4 +258,48 @@
           + r.rows.map(x => `<div class="fs-flow is-${x.blocked ? 'ok' : 'bad'}"><b>${esc(x.label)}</b><span>${x.blocked ? '✓ no harm' : '✗ ' + esc(x.harm)}</span>${x.blocked ? `<ol>${x.by.map(b => `<li>${esc(b)}</li>`).join('')}</ol>` : ''}</div>`).join('')
           + `<p class="sim-note">This sandbox assumes the model is fooled every time, because sometimes it will be. Classifiers and prompts only lower the odds; what stops harm is what the model is able to do: least privilege, allowlists, confirmation on anything irreversible, and no untrusted channel out.</p>` };
     }));
+
+  // ---------- Durable agent runs ----------
+  const RUNTIME_NOTE = {
+    script: 'State lives in the process. Any crash or deploy starts the whole run again: tokens are paid twice, the approver is asked again, and anything already sent is sent again.',
+    checkpoint: 'State is saved after each step, so a restart resumes at the step that failed. But a step that crashed after acting (sent the email) but before saving is run again.',
+    durable: 'Every step\'s result and every side effect is recorded in an event history. On restart the run replays from history: finished steps are skipped, a pending approval keeps waiting, and the email call carries an idempotency key so the provider drops the repeat.',
+  };
+  const MARK = { ran: ['Ran', 'run'], replayed: ['From history', 'queued'], crashed: ['Crashed', 'wait'], 'crashed-after': ['Acted, then crashed', 'wait'], deduped: ['Recorded: skipped', 'queued'], resumed: ['Still waiting', 'queued'] };
+  reg('durable', (el, cfg, api) => {
+    const seen = { dupEmail: 0, approvalOnce: 0, emailOnce: 0 };
+    return simple(el, cfg, api, { runtime: 'script', crash: 'research' },
+      [{ key: 'runtime', label: 'How the agent run is executed', type: 'select', options: [['script', 'A loop in one process (state in memory)'], ['checkpoint', 'Checkpoint state after every step'], ['durable', 'Durable execution (event history + idempotency keys)']] },
+        { key: 'crash', label: 'What goes wrong', type: 'select', options: Object.entries(M.CRASHES).map(([k, v]) => [k, v ? v.label : 'Nothing']) }],
+      s => {
+        const r = M.durableRun(s);
+        if (r.emails > 1) seen.dupEmail = 1;
+        if (s.crash === 'approval' && r.approvals === 1) seen.approvalOnce = 1;
+        if (s.crash === 'email' && r.emails === 1) seen.emailOnce = 1;
+        const rows = r.attempts.map((a, n) => `<tr><th>Attempt ${n + 1}</th>${M.DURABLE_STEPS.map((st, i) => { const m = a[i]; return m ? `<td><span class="cs-chip is-${m === 'ran' ? 'run' : m.startsWith('crashed') ? 'bad' : 'skip'}">${MARK[m][0]}</span></td>` : '<td></td>'; }).join('')}</tr>`).join('');
+        return { metrics: { ...seen, runtime: s.runtime, crash: s.crash, wasted: r.wasted, emails: r.emails },
+          html: stats([{ label: 'Tokens paid twice', value: fmt(r.wasted), tone: r.wasted > 10000 ? 'bad' : r.wasted ? 'warn' : 'ok' }, { label: 'Emails the client got', value: String(r.emails), tone: r.emails > 1 ? 'bad' : 'ok' },
+            { label: 'Times the approver was asked', value: String(r.approvals), tone: r.approvals > 1 ? 'warn' : 'ok' }, { label: 'CRM entries', value: String(r.crm), tone: r.crm > 1 ? 'warn' : '' }])
+            + `<div class="cs-grid-wrap"><table class="fs-table cs-runs"><thead><tr><th></th>${M.DURABLE_STEPS.map(st => `<th>${esc(st.label)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`
+            + `<p class="sim-note">${esc(RUNTIME_NOTE[s.runtime])}</p>` };
+      });
+  });
+
+  // ---------- One agent or many ----------
+  reg('multiagent', (el, cfg, api) => {
+    const seen = { multiWins: 0, multiLoses: 0 };
+    return simple(el, cfg, api, { breadth: 4, coupled: false },
+      [{ key: 'breadth', label: 'Sub-questions in the task', min: 1, max: 10 }, { key: 'coupled', label: 'Sub-tasks depend on each other (one design, shared decisions)', type: 'toggle' }],
+      s => {
+        const runs = ['single', 'workflow', 'orchestrator'].map(a => ({ a, ...M.multiAgent({ ...s, arch: a }) }));
+        const label = { single: 'One agent, one context', workflow: 'Fixed fan-out workflow', orchestrator: 'Orchestrator + worker agents' };
+        const best = runs.reduce((b, x) => x.quality > b.quality ? x : b);
+        if (best.a === 'orchestrator' && !s.coupled) seen.multiWins = 1;
+        if (s.coupled && runs[2].quality < runs[0].quality) seen.multiLoses = 1;
+        const maxT = Math.max(...runs.map(x => x.tokens));
+        return { metrics: { ...seen, breadth: s.breadth, coupled: s.coupled ? 1 : 0, best: best.a },
+          html: `<table class="fs-table"><thead><tr><th>Structure</th><th>Quality</th><th>Tokens</th><th>Wall time</th><th>Model calls</th></tr></thead><tbody>${runs.map(x => `<tr class="${x === best ? 'is-on' : ''}"><td>${label[x.a]}</td><td>${pc(x.quality)}</td><td><span class="cs-bar"><i style="width:${100 * x.tokens / maxT}%"></i></span>${fmt(x.tokens)}</td><td>${x.minutes.toFixed(1)} min</td><td>${x.calls}</td></tr>`).join('')}</tbody></table>`
+            + `<p class="sim-note">${s.coupled ? 'Workers with separate contexts make decisions the others never see, and the merge step inherits the conflicts. Coupled work wants one context (or one agent writing, others only reviewing).' : s.breadth <= 2 ? 'With little breadth, the coordination overhead buys nothing: one agent is cheaper and as good.' : 'Independent sub-questions parallelise: each worker starts with a clean context, so quality holds as breadth grows, and wall time stays flat. The bill is several times the tokens.'}</p>` };
+      });
+  });
 })();
