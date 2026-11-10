@@ -98,3 +98,11 @@
 .bd-play-ctl { margin-top:6px; flex-wrap:wrap; }
 .bd-speed { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
 .bd-speed select { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:3px 6px; }
+
+/* ---- app-like layout: the build screen fits the viewport; side panels scroll on their own ---- */
+@media (min-width: 1101px) {
+  .bd-grid { height:calc(100vh - 230px); min-height:420px; align-items:stretch; }
+  .bd-stage { height:auto; min-height:0; }
+  .bd-palette, .bd-panel { max-height:none; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+  .bd-palette { grid-template-rows:auto minmax(0,1fr); } .bd-items { max-height:none; }
+}

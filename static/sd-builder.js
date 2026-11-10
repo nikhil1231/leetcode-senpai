@@ -243,15 +243,17 @@
         <label><span>Between regions</span><select data-set="crossRegion" ${S.settings.regions > 1 ? '' : 'disabled'}><option value="async" ${S.settings.crossRegion !== 'sync' ? 'selected' : ''}>Async replication</option><option value="sync" ${S.settings.crossRegion === 'sync' ? 'selected' : ''}>Sync replication</option></select></label></div>
         <p class="bd-fine">Every region runs a full copy of what you've drawn, and costs that much. Users reach the nearest one only if there's a DNS node with geo routing.</p></section>`;
     }
+    const jit = str => { let x = 2166136261; for (let i = 0; i < str.length; i++) x = Math.imul(x ^ str.charCodeAt(i), 16777619); x ^= x >>> 15; x = Math.imul(x, 2246822519); return ((x ^ (x >>> 13)) >>> 0) / 4294967296; };
     function paintPanel() {
       const panel = el.querySelector('[data-panel]');
       if (!panel) return;
       const d = sel?.kind === 'node' && nodeById(sel.id) ? def(nodeById(sel.id).defId) : null, n = d ? nodeById(sel.id) : null;
       if (play) {
         const t = play.res.ticks[play.h];
-        const rows = S.nodes.map(x => ({ x, st: t.nodes[x.id] })).filter(r => r.st && (r.st.util > 0.005 || r.st.status === 'down')).sort((a, b) => b.st.util - a.st.util).slice(0, 10);
-        panel.innerHTML = `<section class="bd-box"><h4>${hh(play.h)} · busiest components</h4>${rows.map(r => `<div class="bd-row bd-u-${esc(r.st.status)}"><span>${def(r.x.defId).icon} ${esc(def(r.x.defId).label)}</span><b>${r.st.status === 'down' ? 'down' : Math.round(r.st.util * 100) + '%'}</b></div>`).join('') || '<p class="bd-note">Quiet.</p>'}
-          <h4 style="margin-top:12px">Requests this hour</h4>${Object.entries(t.types).map(([k, v]) => `<div class="bd-row"><span>${esc(Sim.LABEL[k] || k)}</span><b>${fmt(v.rps)}/s · ${(v.ok * 100).toFixed(v.ok > 0.999 ? 2 : 1)}% · ${ms(v.p99)}</b></div>`).join('')}
+        const wob = (id, k, amp) => 1 + amp * (jit(`${play.h}|${id}|${k}`) * 2 - 1);   // display-only wobble: the graded numbers are untouched
+        const rows = S.nodes.map(x => ({ x, st: t.nodes[x.id] })).filter(r => r.st && (r.st.util > 0.005 || r.st.status === 'down')).map(r => ({ ...r, u: r.st.util < 1 ? Math.min(r.st.util * wob(r.x.id, 'u', 0.08), 0.99) : r.st.util })).sort((a, b) => b.u - a.u).slice(0, 10);
+        panel.innerHTML = `<section class="bd-box"><h4>${hh(play.h)} · busiest components</h4>${rows.map(r => `<div class="bd-row bd-u-${esc(r.st.status)}"><span>${def(r.x.defId).icon} ${esc(def(r.x.defId).label)}</span><b>${r.st.status === 'down' ? 'down' : `${fmt(Math.round((r.st.load || 0) * wob(r.x.id, 'r', 0.06)))}/s · ${Math.round(r.u * 100)}%`}</b></div>`).join('') || '<p class="bd-note">Quiet.</p>'}
+          <h4 style="margin-top:12px">Requests this hour</h4>${Object.entries(t.types).map(([k, v]) => `<div class="bd-row"><span>${esc(Sim.LABEL[k] || k)}</span><b>${fmt(Math.round(v.rps * wob(k, 'q', 0.04)))}/s · ${(v.ok * 100).toFixed(v.ok > 0.999 ? 2 : 1)}% · ${ms(v.p99 * wob(k, 'p', 0.07))}</b></div>`).join('')}
           ${Object.values(t.queues).some(q => q.backlog > 1) ? `<h4 style="margin-top:12px">Queues</h4>${Object.entries(t.queues).map(([id, q]) => `<div class="bd-row"><span>${esc(def(nodeById(id)?.defId).label)}${q.stalled ? ' (stalled)' : ''}</span><b>${fmt(q.backlog)} waiting · ${Number.isFinite(q.lagMin) ? Math.round(q.lagMin) + ' min' : '∞'}</b></div>`).join('')}` : ''}</section>
           ${game || !play.done ? '' : `<section class="bd-box"><h4>The day</h4>${reportHtml(play.res, { labelOf, maxFindings: 6 })}</section>`}`;
         return;
