@@ -111,6 +111,13 @@ The weak point is the coordinator. A participant that voted yes and then loses c
 
 Two kinds of "distributed transaction" are worth separating. **Database-internal** ones (all participants run the same software, as in a distributed SQL database) can be optimised and work well. **Heterogeneous** ones, across different systems or through XA, are fragile: a coordinator crash blocks real locks in real databases, and a message broker plus a database can't join one unless both support XA. That's why most architectures avoid cross-service 2PC and use an outbox, idempotent consumers or sagas instead. Don't confuse 2PC (atomic commit) with 2PL (a locking scheme for isolation).
 
+```sim
+name: twopc
+key: b910
+title: Two-phase commit, with failures
+intro: Run a distributed commit, then crash a participant or the coordinator at different moments and see who is left in doubt.
+```
+
 *Source: Kleppmann, Designing Data-Intensive Applications, ch. 8 and 9.*
 
 ## Use a coordination service

@@ -21,13 +21,13 @@ VERSION = 2
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Course order. A lesson listed here must have a file; a file must be listed.
 ORDER = {
-    'foundations': ['request-flow', 'guarantees', 'service-quality', 'numbers', 'estimates'],
+    'foundations': ['request-flow', 'guarantees', 'service-quality', 'numbers', 'estimates', 'distribute-or-not'],
     'apis': ['api-contracts', 'stateless-balancing', 'sync-async', 'retry-identity', 'realtime-push'],
-    'storage': ['data-models', 'indexes', 'transactions', 'storage-engines', 'object-storage', 'id-generation'],
+    'storage': ['data-models', 'graph-data', 'indexes', 'transactions', 'storage-engines', 'encoding-evolution', 'object-storage', 'id-generation'],
     'caching': ['cache-aside', 'cache-freshness', 'http-cdn', 'hot-keys'],
-    'queues': ['queue-basics', 'acknowledgements', 'dead-letters', 'outbox', 'event-streams'],
-    'distributed': ['replication', 'partitioning', 'consistent-hashing', 'consistency', 'consensus', 'concurrent-holds'],
-    'reliability': ['scaling', 'overload', 'rate-limiting', 'observability', 'recovery'],
+    'queues': ['queue-basics', 'acknowledgements', 'dead-letters', 'outbox', 'event-streams', 'batch-processing', 'stream-processing', 'derived-data'],
+    'distributed': ['replication', 'partitioning', 'consistent-hashing', 'consistency', 'clocks-ordering', 'consensus', 'concurrent-holds'],
+    'reliability': ['scaling', 'overload', 'rate-limiting', 'observability', 'recovery', 'data-responsibility'],
     'specialised': ['search-index', 'geo-index', 'feed-fanout'],
     'designs': ['design-links', 'design-jobs', 'design-seats', 'tradeoffs'],
     'casebook': ['design-feed', 'design-chat', 'design-ratelimiter', 'design-notifications', 'design-typeahead',

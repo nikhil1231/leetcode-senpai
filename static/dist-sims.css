@@ -1,0 +1,23 @@
+/* Distributed-data simulators (dist-sims.js): write cards, event strips, notes and the compatibility table. */
+.dc-writes { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:8px; margin:0 0 10px; }
+.dc-write { border:1px solid var(--line); border-radius:8px; padding:8px 12px; background:var(--panel2); display:grid; gap:2px; }
+.dc-write > b { font-size:13px; }
+.dc-write > span { font:12px var(--font-mono); color:var(--muted); }
+.dc-write > em { font-style:normal; font-size:12px; font-weight:700; }
+.dc-write.is-kept { border-color:#35d39a66; } .dc-write.is-kept > em { color:#35d39a; }
+.dc-write.is-dropped { border-color:#fb718566; opacity:.85; } .dc-write.is-dropped > em { color:#fb7185; }
+
+.dc-strip { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 10px; }
+.dc-ev { min-width:30px; padding:5px 6px; border:1px solid var(--line); border-radius:6px; font:12px var(--font-mono); text-align:center; background:var(--panel2); }
+.dc-ev.is-ok { color:#35d39a; }
+.dc-ev.is-dup { color:#f5b84b; border-color:#f5b84b88; }
+.dc-ev.is-lost { color:#fb7185; border-color:#fb718588; }
+.dc-ev.is-batch { outline:1px dashed var(--muted); outline-offset:2px; }
+.dc-ev.is-crash { border-bottom:3px solid #fb7185; }
+
+.dc-notes { margin:10px 0 0; padding-left:18px; display:grid; gap:6px; font-size:12.5px; color:var(--text-2); line-height:1.5; }
+.dc-notes li.is-best { color:var(--text); }
+
+.dc-compat td.is-ok { color:#35d39a; } .dc-compat td.is-bad { color:#fb7185; }
+.dc-compat td:not(:first-child), .dc-compat th:not(:first-child) { text-align:center; }
+.dc-compat tr.is-on td:first-child { font-weight:700; }

@@ -71,26 +71,30 @@ chapters were not read in depth). All additions are paraphrased and cite the cha
 | 11 Stream processing | `event-streams` | event vs processing time, window types, three join kinds, micro-batching vs checkpoints, effectively-once, idempotent sinks |
 | 12 Future of data systems | `guarantees` | timeliness vs integrity |
 
-### Large gaps left as notes (not added; each is a lesson-sized job)
+### Large gaps, now written as lessons (2026-11-10)
 
-1. **Time, clocks and ordering** as its own lesson (chapters 8-9): synchronous vs asynchronous vs partially synchronous system models,
-   crash-stop vs crash-recovery vs Byzantine faults, safety vs liveness, hybrid logical clocks, causal consistency implementations.
-   Only a compact section now sits inside `consensus`.
-2. **Stream processing** as its own lesson (chapter 11): CDC internals, event-sourcing patterns, stream-table duality, joins and
-   exactly-once in depth. Now a compact section in `event-streams`.
-3. **Batch processing** (chapter 10): the Unix philosophy, MapReduce and its lineage, sort-merge vs broadcast-hash vs partitioned-hash
-   joins and skew handling, immutable inputs and outputs, dataflow engines (Spark, Flink), graph processing (Pregel). No lesson covers it.
-4. **Derived data and integration** (chapter 12): unbundling the database, Lambda and Kappa architectures, designing around dataflow,
-   the end-to-end argument, enforcing uniqueness through a partitioned log, auditing and "trust but verify".
-5. **Encoding and schema evolution** as its own lesson (chapter 4): what is now a table inside `event-streams` deserves a page,
-   including dataflow through databases, services and message brokers, and actors.
-6. **Data models, query languages and graphs** (chapter 2): declarative vs imperative queries, MapReduce querying, Cypher, SPARQL and
-   Datalog, graph traversal examples. Only a paragraph exists.
-7. **Ethics and privacy** (chapter 12, "Doing the Right Thing"; a full chapter in the 2nd edition): predictive analytics, tracking,
-   consent, data as a liability. Not in any lesson.
-8. **Operability, simplicity and evolvability** (chapter 1) and **single-node vs distributed** trade-offs: a short "why not distribute?" lesson.
-9. **Knowledge points.** The 17 lessons edited this session (see section 4) now have stale knowledge-point files (the stored
-   `source_hash` no longer matches). They need regenerating in-session, not through OpenRouter.
+| Gap | New lesson | Category | Widgets and diagrams |
+|---|---|---|---|
+| Time, clocks and ordering | `clocks-ordering` | Distributed | new `lwwclock` simulator, Lamport `timeline`, total-order-broadcast `arch`; Raft and fencing material stays in `consensus` |
+| Stream processing | `stream-processing` | Queues | new `replay` simulator, reused `streamwindow`, pipeline `arch`, stream-table join `timeline` |
+| Batch processing and joins | `batch-processing` | Queues | new `batchjoin` simulator, prebuilt `mapreduce` widget, nightly-pipeline `arch` |
+| Derived data and integration | `derived-data` | Queues | new `dualwrite` simulator, one-log `arch`, unique-username `timeline` |
+| Encoding and schema evolution | `encoding-evolution` | Storage | new `compat` simulator, reused `encoding` widget, schema-registry `arch`, rolling-upgrade `timeline` |
+| Graph data and query languages | `graph-data` | Storage | `arch` property-graph diagram, reused `datamodels` widget, recursive-CTE bug drill |
+| Ethics and privacy | `data-responsibility` | Reliability | where-the-data-goes `arch`, deletion-request `incident` |
+| Operability and single-node vs distributed | `distribute-or-not` | Foundations | growth-steps `arch`, reused `nines` simulator |
+
+Also embedded two prebuilt widgets that were bundled but unused: `twopc` (in `consensus`) and `cowbtree` (in `storage-engines`).
+New code: `static/dist-models.js` (pure models, tested by `tests/test_dist_models.cjs`), `static/dist-sims.js`, `static/dist-sims.css`.
+
+Still open:
+1. The new lessons have no knowledge-point files yet, and the 17 lessons edited earlier have stale ones. Regenerate in a session
+   (not through OpenRouter).
+2. Smaller DDIA items not yet written: dataflow through actors, MapReduce querying and Datalog examples beyond a paragraph, a
+   fuller treatment of system models (synchronous, partially synchronous, asynchronous; crash-stop vs crash-recovery vs Byzantine)
+   and safety vs liveness, hybrid logical clocks, causal consistency implementations.
+3. Xu design chapters with no page: Google Drive, Google Maps, ad click aggregation, email, leaderboard, digital wallet, stock exchange
+   (see section 1). The new lessons above supply prerequisites for several (ad clicks, wallet, exchange).
 
 ### 2nd edition (2026), from web summaries only; I have not seen the book
 - 14 chapters, a Kleppmann and Riccomini co-authorship. Trade-offs and non-functional requirements open the book; streaming gets two

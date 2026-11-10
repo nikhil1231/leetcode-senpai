@@ -52,6 +52,13 @@ Details worth knowing:
 - **One home per key.** Each key lives in exactly one place, which lets transactional engines attach key-range locks directly to the tree. That is one reason relational databases stayed with B-trees (see the transactions lesson).
 
 ```sim
+name: cowbtree
+key: b911
+title: A copy-on-write B-tree
+intro: Update a key and watch new pages and a new root path get written while the old version stays intact.
+```
+
+```sim
 name: btree
 key: b901
 title: B-tree inserts and page splits
