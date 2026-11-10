@@ -28,52 +28,49 @@ log = logging.getLogger(__name__)
 POSTERS, IMAGES = 'wall_posters', 'wall_images'
 PROMPT_VERSION = 'wall-8'   # wall-8: each poster gets its own style (palette, background, layout); wall-7: glanceable copy
 KEPT = ('wall-4', 'wall-5', 'wall-6', 'wall-7', PROMPT_VERSION)
-# A poster's look: background, layout and the panels' colours in order (name, hex, the text colour that reads
-# on it). pick_style gives each new poster the style used longest ago, so neighbours on the phone differ.
+# The panels' colours (a bright modern infographic: warm to cool), each with the text colour that reads on it. Every
+# poster uses these; pick_style rotates which of them lead, so the colours stay but the poster does not repeat.
+PALETTE = (('tangerine', '#FFA41B', 'charcoal'), ('vermilion', '#FF5A1F', 'white'), ('raspberry pink', '#F2316F', 'white'),
+           ('sky cyan', '#1FB5F2', 'charcoal'), ('periwinkle violet', '#8C7BF2', 'white'),
+           ('emerald teal', '#14C79A', 'charcoal'), ('lime green', '#8EE66B', 'charcoal'))
+# A poster's look: background and layout (the colours are PALETTE's). pick_style gives each new poster the look used
+# longest ago, so neighbours on the phone differ.
 STYLES = (
     {'name': 'spectrum', 'background': 'a light off-white background (#F7F7F9)', 'topic': 'dark charcoal (#22232B)',
-     'layout': 'Each panel is a full-width rounded block stacked down the poster, the panels running warm to cool like a spectrum, '
-               'with its icon in a white circle at its right.',
-     'palette': (('tangerine', '#FFA41B', 'charcoal'), ('vermilion', '#FF5A1F', 'white'), ('raspberry pink', '#F2316F', 'white'),
-                 ('sky cyan', '#1FB5F2', 'charcoal'), ('periwinkle violet', '#8C7BF2', 'white'))},
+     'layout': 'Each panel is a full-width rounded block stacked down the poster, with its icon in a white circle at its right.'},
     {'name': 'midnight', 'background': 'a deep midnight navy background (#0E1330)', 'topic': 'soft white (#EEF1FF)',
-     'layout': 'Each panel is a dark raised card (#1B2250) stacked down the poster, with a thick vertical bar of its accent colour on '
-               'the left edge, its text in white; the icon sits in an outlined circle of the accent at its right.',
-     'palette': (('electric lime', '#B6F23A', 'white'), ('hot magenta', '#FF3DA5', 'white'), ('aqua', '#35E0E8', 'white'),
-                 ('amber', '#FFC233', 'white'))},
-    {'name': 'duotone', 'background': 'a warm cream background (#FFF3E0)', 'topic': 'deep navy (#14213D)',
-     'layout': 'Only two colours besides the background. The panels are large blocks that alternate sides: the first sits flush left '
-               'and fills about 85% of the width, the next flush right, and so on, staggered like steps, each with a huge bold takeaway.',
-     'palette': (('deep navy', '#14213D', 'white'), ('coral', '#FF6B4A', 'white'), ('deep navy', '#14213D', 'white'))},
-    {'name': 'bento', 'background': 'a soft lilac background (#EDE7FF)', 'topic': 'deep purple (#2A1B5C)',
+     'layout': 'Each panel is a full-width rounded block stacked down the poster with a generous gap between blocks, so the vivid '
+               'colours glow against the dark; the icon sits in a white circle at its right.'},
+    {'name': 'steps', 'background': 'a warm cream background (#FFF3E0)', 'topic': 'deep navy (#14213D)',
+     'layout': 'The panels are large blocks that alternate sides like steps: the first sits flush left and fills about 85% of the '
+               'width, the next flush right, and so on, each with a huge bold takeaway.'},
+    {'name': 'bento', 'background': 'a pale blue-grey background (#E8EEF7)', 'topic': 'deep indigo (#2A1B5C)',
      'layout': 'A bento grid of tiles with generous rounded corners and small gaps: the first panel is a tall tile filling the whole '
-               'width at the top, the others sit side by side in two columns beneath it; each tile a different pastel with big text.',
-     'palette': (('butter yellow', '#FFE066', 'charcoal'), ('mint', '#9BF0C8', 'charcoal'), ('peach', '#FFB5A0', 'charcoal'),
-                 ('sky', '#A8D8FF', 'charcoal'))},
-    {'name': 'ink', 'background': 'a very light grey-green background (#EEF3F0)', 'topic': 'deep forest green (#0B3D2E)',
-     'layout': 'One hue only, in three depths: the panels are tall rounded blocks stacked down the poster, '
-               'dark at the top getting lighter down it, with the takeaway huge and left-aligned and the icon at the far right.',
-     'palette': (('deep forest green', '#0B3D2E', 'white'), ('jade green', '#1F8A63', 'white'), ('light sage', '#9ED8B8', 'charcoal'))},
-    {'name': 'pop', 'background': 'a bright yellow background (#FFD93D)', 'topic': 'black (#111111)',
-     'layout': 'A bold flat neo-brutalist look: each panel is a white or coloured card with a thick black outline and sharp square '
-               'corners, stacked with a small gap, the takeaway in heavy black type, the icon in a coloured square at its right.',
-     'palette': (('white', '#FFFFFF', 'charcoal'), ('pink', '#FF8FB8', 'charcoal'), ('cyan', '#5FE0E8', 'charcoal'))},
-    {'name': 'dusk', 'background': 'a rich plum-to-indigo vertical gradient background (#3B1D6E to #1B1B4B)', 'topic': 'white (#FFFFFF)',
-     'layout': 'Each panel is a big translucent white card (frosted glass, no heavy blur) with rounded corners, stacked down the poster; '
-               'the takeaway in white, and a vivid accent-coloured circle holding the icon above-left of the text.',
-     'palette': (('coral', '#FF7A59', 'white'), ('gold', '#FFC145', 'white'), ('turquoise', '#2EE6C5', 'white'))},
+               'width at the top, the others sit side by side in two columns beneath it, with big text.'},
+    {'name': 'tall', 'background': 'a very light grey-green background (#EEF3F0)', 'topic': 'deep forest green (#0B3D2E)',
+     'layout': 'The panels are tall rounded blocks stacked almost touching, the takeaway huge and left-aligned filling the block, '
+               'and the icon at the far right, small.'},
+    {'name': 'outline', 'background': 'a clean white background (#FFFFFF)', 'topic': 'black (#111111)',
+     'layout': 'A bold flat neo-brutalist look: each panel is a coloured card with a thick black outline and sharp square corners, '
+               'stacked with a small gap, the takeaway in heavy type, the icon in a white square at its right.'},
+    {'name': 'dusk', 'background': 'a rich indigo-to-plum vertical gradient background (#1B1B4B to #3B1D6E)', 'topic': 'white (#FFFFFF)',
+     'layout': 'Each panel is a rounded block inset from the edges and stacked down the poster, its icon in a white circle '
+               'overlapping the block\'s top-left corner, the text beside it.'},
 )
 
 
 def pick_style(library, lesson=''):
-    """The style whose last use is oldest (never used first; the first, 'spectrum', stands for posters made before styles),
-    so consecutive posters differ. Ties break by the lesson's name, so the pick is repeatable."""
-    last = {}
+    """The look used longest ago (never used first; 'spectrum' stands for posters made before styles), so consecutive
+    posters differ, with the palette rotated by one colour per poster made so the same colours do not lead each time.
+    Ties break by the lesson's name, so the pick is repeatable. -> a style with its `palette`"""
+    last, made = {}, 0
     for p in library:
         if p.get('ok'):
+            made += 1
             last[p.get('style', 'spectrum')] = max(last.get(p.get('style', 'spectrum'), 0), p['created_at'])
     pick = min(range(len(STYLES)), key=lambda i: (last.get(STYLES[i]['name'], -1), (i + sum(map(ord, lesson))) % len(STYLES)))
-    return STYLES[pick]
+    r = made % len(PALETTE)
+    return {**STYLES[pick], 'palette': PALETTE[r:] + PALETTE[:r]}
 
 
 ATTEMPTS = 3
@@ -133,7 +130,7 @@ def copy_prompt(b):
             "\n\nWrite the headline and the panels.")
 
 
-def image_prompt(b, copy, style=STYLES[0]):
+def image_prompt(b, copy, style={**STYLES[0], 'palette': PALETTE}):
     def panel(i, p):
         name, hex_, ink = style['palette'][(i - 1) % len(style['palette'])]
         mark = (f'Big figure: "{p["figure"]}" with the small label "{p["figure_label"]}" under it.' if p.get('figure')
@@ -144,7 +141,7 @@ def image_prompt(b, copy, style=STYLES[0]):
 Topic label: "{copy['headline']}"
 {panels}
 Write exactly the quoted text above and nothing else: no extra captions, footnotes or labels, no colour names or codes, and no text inside the icons. Every word spelled exactly as given.
-Style: a modern flat infographic, the quality of a design studio's print. Background: {style['background']}. Each panel uses its own colour given above, exactly that colour, with all its text in the text colour given (white, or dark charcoal #22232B). Layout: {style['layout']} Hierarchy, so the poster teaches in a two-second glance: in each panel the takeaway is the biggest, boldest text on the whole poster; the detail is a smaller medium-weight line under it; a big figure, when given, is a very large bold number with its small label beneath, in place of an icon. Otherwise the panel's icon is a clean flat icon, all icons in the same style (no diagrams, flows, arrows or code). The topic label is small, uppercase and letter-spaced in {style['topic']} at the very top, with a short thin rule in the first panel's colour. One clean geometric sans-serif typeface. A strong grid: the panels fill the poster's height, aligned and evenly spaced.
+Style: a modern flat infographic, the quality of a design studio's print. Background: {style['background']}. Each panel is a solid block of its own vivid colour given above, exactly that colour, with all its text in the text colour given (white, or dark charcoal #22232B). Layout: {style['layout']} Hierarchy, so the poster teaches in a two-second glance: in each panel the takeaway is the biggest, boldest text on the whole poster; the detail is a smaller medium-weight line under it; a big figure, when given, is a very large bold number with its small label beneath, in place of an icon. Otherwise the panel's icon is a clean flat icon, all icons in the same style (no diagrams, flows, arrows or code). The topic label is small, uppercase and letter-spaced in {style['topic']} at the very top, with a short thin rule in the first panel's colour. One clean geometric sans-serif typeface. A strong grid: the panels fill the poster's height, aligned and evenly spaced.
 Avoid: glossy, 3D, bevels or heavy drop shadows, stickers, badges, emoji, confetti, starbursts, ribbons and decorative clutter.
 Use the whole canvas from the very top edge to the bottom: there is no area to keep clear. All text large enough to read on a phone lock screen.
 The background must run seamlessly to every edge: no border, frame or band. Margins of 5% on the sides. No watermark, signature, logos or fake phone UI."""

@@ -54,8 +54,11 @@ def test_each_poster_gets_a_style_unlike_the_recent_ones():
     assert len(set(seen)) == len(wall_gen.STYLES)                       # every look before any repeats
     assert wall_gen.pick_style(library, 'jc')['name'] == seen[0]        # then the one used longest ago
     assert wall_gen.pick_style([{'ok': True, 'created_at': 1}], 'jc')['name'] != 'spectrum'   # old posters count as spectrum
-    ip = wall_gen.image_prompt(BRIEF, COPY, wall_gen.STYLES[1])
-    assert '#0E1330' in ip and '#B6F23A' in ip and '#FFA41B' not in ip
+    st = wall_gen.pick_style(library, 'jc')
+    assert {c[1] for c in st['palette']} == {c[1] for c in wall_gen.PALETTE}              # always the same colours...
+    assert wall_gen.pick_style(library[:3], 'jc')['palette'][0] != wall_gen.pick_style([], 'jc')['palette'][0]                # ...led by a different one each time
+    ip = wall_gen.image_prompt(BRIEF, COPY, {**wall_gen.STYLES[1], 'palette': wall_gen.PALETTE})
+    assert '#0E1330' in ip and '#FFA41B' in ip and '#FF5A1F' in ip
 
 
 def test_passing_needs_correct_words_facts_and_diagrams():
