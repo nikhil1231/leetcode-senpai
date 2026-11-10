@@ -59,9 +59,11 @@
   }
 
   // ---------- Pieces ----------
+  // Free recall is already marked point by point; the tutor can't see the typed answer, so no extra diagnosis.
+  const selfMarked = key => S.lesson?.blocks.find(x => x.key === key)?.type === 'recall';
   const slot = key => `<div data-slot="${esc(key)}"></div>${wrongHtml(key)}`;
   function wrongHtml(key) {
-    if (!(key in S.wrong) || !S.session?.tutor) return '';
+    if (!(key in S.wrong) || !S.session?.tutor || selfMarked(key)) return '';
     const t = S.explain[key] || {loading: true};
     // Per-item notes sit on their rows (itemNotes); only the shared point stays below.
     if (!t.loading && t.items?.length && !t.reply?.trim()) return '';
@@ -431,7 +433,7 @@
       restoreTyped();
     } finally { S.restoring = false; }
     // Explanations that were still loading when the last save happened are asked for again.
-    if (S.session.tutor) Object.keys(S.wrong).filter(k => !S.explain[k]).forEach(k => explain(k));
+    if (S.session.tutor) Object.keys(S.wrong).filter(k => !S.explain[k] && !selfMarked(k)).forEach(k => explain(k));
   }
   // Questions in the warm-up still to do for this lesson (0 once planned), when it has loaded.
   async function warmup(id) {
@@ -487,7 +489,7 @@
           if (correct === false) S.wrong[key] = node?.dataset.answer || '';
           const p = Promise.resolve(ctx.done(key, correct)).catch(() => {});
           S.pending.push(p);
-          if (correct === false && S.session?.tutor) setTimeout(() => explain(key), 0);
+          if (correct === false && S.session?.tutor && !selfMarked(key)) setTimeout(() => explain(key), 0);
           else if (!S.session?.planned) setTimeout(paint, 0);
         },
       });

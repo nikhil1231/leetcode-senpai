@@ -322,9 +322,18 @@
       if (!given) { btn.disabled = true; await window.Dictate?.settle(area); btn.disabled = false; }
       const text = area.value.trim(); if (text.length < 15) { area.focus(); return; }
       btn.disabled = true; area.disabled = true; btn.textContent = 'Checking…';
-      let res = null;
+      let res = null, err = null;
       if (given) res = given.res;
-      else { try { res = await ctx.recall(b, text); } catch (e) { res = { message: 'Saved locally only: ' + e.message }; } }
+      else {
+        for (let i = 0; i < 2 && !res; i++) {
+          try { res = await ctx.recall(b, text); } catch (e) { if (i) err = e; else await new Promise(ok => setTimeout(ok, 1500)); }
+        }
+        if (!res) {
+          btn.disabled = false; area.disabled = false; btn.textContent = 'Check my answer';
+          r.hidden = false; r.innerHTML = `<p class="sd-muted">Marking failed (${esc(err?.message || 'network error')}). Your answer is kept: press Check again.</p>`;
+          return;
+        }
+      }
       ctx.save(b, { text, res });
       btn.textContent = 'Checked'; r.hidden = false;
       const model = `<details class="sd-model" ${res?.grade ? '' : 'open'}><summary>Model answer</summary>${md(b.model)}</details>`;
