@@ -1,0 +1,164 @@
+# The overview of one area (pass one): a short guided tour, one step per lesson, every step the same shape.
+# Loaded and checked by server/tutor/overviews.py. `use` and `check` name a block of the step's lesson
+# (lesson/key); answers to it are recorded on that lesson.
+area: storage
+title: Databases and storage
+minutes: 35
+intro: |
+  This is a quick tour of the eight topics in this area, one short step each. Every step has the same shape: the problem, the usual answer, the main catch, and one thing worth remembering. Most end with a quick check or something to try.
+
+  Nothing here goes deep. The aim is that you know what each piece is for and where it sits in a system, so the full lessons later have somewhere to land. Take it at your own pace; the page remembers which step you're on.
+picture:
+  title: Where each topic sits in Ripple
+  nodes:
+    - {id: app, label: Creators and visitors, kind: client, x: 0, y: 1}
+    - {id: api, label: Ripple API, kind: service, x: 1, y: 1, note: 'makes IDs, enforces rules'}
+    - {id: db, label: Postgres, kind: db, x: 2, y: 1, note: 'tables, indexes, transactions'}
+    - {id: disk, label: Disk, kind: storage, x: 3, y: 1, note: 'log + storage engine'}
+    - {id: files, label: Object storage, kind: storage, x: 2, y: 0, note: 'images, videos'}
+    - {id: graph, label: Follows, kind: db, x: 2, y: 2, note: 'who follows whom'}
+  edges:
+    - [app, api, 'requests']
+    - [api, db, 'rows']
+    - [db, disk, 'writes']
+    - [app, files, 'uploads']
+    - [api, graph, 'hops']
+picture_note: |
+  Read it left to right. The **API** decides what shape the data takes and what **ID** each record gets. **Postgres** holds the rows, finds them with **indexes** and keeps overlapping changes safe with **transactions**. Underneath, a **storage engine** decides how bytes are laid out on **disk**. Big files skip the database and go to **object storage**. Relationships like follows can become a **graph** question. And every one of these formats has to survive the code changing around it, which is **encoding and schema evolution**.
+steps:
+  - lesson: data-models
+    title: Choose the shape of your data
+    minutes: 4
+    problem: |
+      Sam wants three features this month: saved collections of links, per-link analytics and creator profiles with custom fields. Each needs somewhere to live, and so far Ripple's only answer is "another table in Postgres". Is that always right?
+    answer: |
+      Start from how the data is used, not from a product name. List the main queries (how often, how fast), the writes, the rules that must always hold, and anything that grows without limit. Then pick the model that makes those cheap:
+      - **Relational** (Postgres, MySQL): related records, rules like foreign keys, multi-row transactions.
+      - **Document** (MongoDB, Firestore): self-contained records with varying fields, read whole.
+      - **Key-value** (Redis, DynamoDB): lookups by one key, at huge scale.
+      - **Wide-column** (Cassandra, Bigtable): very high write rates, read by key and time range.
+    catch: |
+      Each model makes some queries cheap and others painful. Copying data to make reads cheap (denormalising) means every write must update every copy, and the copies can drift apart.
+    remember: |
+      Postgres is usually the right first answer, with a JSONB column when fields vary. Move one workload to a specialised store when a specific query or scale needs it, and be able to say which.
+    check: data-models/b1
+    later: [Partition and sort keys in wide-column stores, Records that grow without limit, 'Zero-downtime schema changes: expand, migrate, contract']
+    recap: Pick the model from the queries, writes and rules; Postgres first.
+
+  - lesson: graph-data
+    title: When the relationships are the data
+    minutes: 3
+    problem: |
+      Ripple wants "people you may know": people followed by the people you follow. In Postgres that's a `follows` table joined to itself, once per hop.
+    answer: |
+      Two or three hops in SQL are fine: a `follows` table with an index, and a recursive query with a depth limit. A graph database (such as Neo4j) earns its place when questions follow an unknown number of hops and you ask them all the time: fraud rings, dependency chains, route finding.
+    catch: |
+      Hops multiply. A graph is also hard to split across machines, because any edge can point anywhere.
+    remember: |
+      With 200 follows each, one hop reaches 200 people, two hops about 40,000 and three hops about 8 million. Cap the depth.
+    check: graph-data/b8
+    later: [Property graphs and Cypher, Recursive SQL with cycle protection, Why sharding a graph is hard]
+    recap: SQL handles a few hops; a graph store is for many hops, often.
+
+  - lesson: indexes
+    title: Finding rows fast
+    minutes: 5
+    problem: |
+      The "your links" page gets slower every week. It shows one creator's 20 newest links, and Postgres reads every row in the table to find them.
+    answer: |
+      An **index** is a sorted copy of some columns that points back to the rows, usually stored as a B-tree. Because it's sorted, the database can jump straight to one creator's links, already in date order, and stop after 20. An index on `(creator_id, created_at)` does exactly that.
+    catch: |
+      Column order matters: that index helps queries that start with `creator_id`, not ones that filter on `created_at` alone. And every index is updated on every write, so each extra one slows inserts and takes disk and memory.
+    remember: |
+      A B-tree over a billion rows is only three or four levels deep, so a lookup reads a handful of pages.
+    use: indexes/b5
+    use_note: Try the first challenge only (get rows read down to 20). The rest is for the full lesson.
+    later: [The leftmost-prefix rule, 'Covering, partial and expression indexes', Reading a query plan, Queries that can't use an index]
+    recap: An index is a sorted copy; column order decides which queries it serves; every index taxes writes.
+
+  - lesson: transactions
+    title: Keeping overlapping changes safe
+    minutes: 5
+    problem: |
+      Ripple adds a free plan with a 10-link limit. Two requests from the same creator arrive at once. Both read "9 links used", both pass the check, and both create a link. Now they have 11.
+    answer: |
+      A **transaction** groups changes so they all commit or none do, and once COMMIT returns the change survives a crash. But it only shields you from other transactions as far as its **isolation level** promises, and the usual default (Read Committed) doesn't stop this race. The fix is to let the database do the check in one step: a conditional update (`UPDATE … SET used = used + 1 WHERE used < 10`), a unique constraint, or a row lock.
+    catch: |
+      Stricter isolation (Serializable) stops more races, but costs throughput and makes some transactions fail and need a retry. And a rollback can't unsend an email or undo a payment call.
+    remember: |
+      Read, check, then write can lose an update even inside BEGIN and COMMIT. Uniqueness belongs in a unique index, not in an app-side check.
+    use: transactions/b1
+    later: ['The anomalies by name: dirty reads, lost updates, write skew', 'Choosing between locks, version checks and Serializable', Deadlocks and long transactions]
+    recap: Transactions give all-or-nothing and durability; isolation level decides which races remain.
+
+  - lesson: storage-engines
+    title: What happens on disk
+    minutes: 4
+    problem: |
+      Ripple wants to record every click, about 50 times as many writes as link creation, and Marcus wants a monthly report over all of them. Those two jobs pull a database in opposite directions.
+    answer: |
+      Every database first appends each change to a **write-ahead log**; once that's flushed to disk, the commit is safe, and after a crash the log is replayed. Below that, engines lay data out differently:
+      - **B-tree** engines (Postgres, MySQL) update pages in place and are good at reads and transactions.
+      - **LSM-tree** engines (Cassandra, RocksDB) turn every write into a sequential append and merge files later, which suits heavy write streams like clicks.
+      - **Column stores** (BigQuery, ClickHouse) keep each column together, so a report reading 2 of 30 columns reads a fraction of the data.
+    catch: |
+      LSM trees pay for fast writes with background merging and slower reads. Column stores are slow at single-row writes, so data arrives in batches.
+    remember: |
+      Write-heavy and recent: LSM. Read-heavy and transactional: B-tree. Reports over many rows: columns.
+    check: storage-engines/b3
+    later: [B-tree pages and splits, LSM compaction and Bloom filters, 'Read, write and space amplification', Crash recovery from the log]
+    recap: The log makes commits durable; B-trees for reads, LSM for writes, columns for reports.
+
+  - lesson: encoding-evolution
+    title: Changing data formats safely
+    minutes: 4
+    problem: |
+      Ripple deploys the API one server at a time, so for ten minutes old and new code run side by side, reading the same rows and queue messages. The new code adds a field. The old code doesn't know it, and drops it when it rewrites the record.
+    answer: |
+      Data outlives the code that wrote it, so formats must work both ways: new code reads old data (**backward compatible**) and old code reads new data (**forward compatible**). Add fields as optional with a default, never reuse a field's name or number, and remove a field only once nothing reads it. JSON needs no schema; Protocol Buffers and Avro carry one, which makes these rules checkable.
+    catch: |
+      Schema formats are smaller and safer to evolve but need tooling (schemas, generated code, a registry). JSON needs nothing but leaves the rules to discipline.
+    remember: |
+      Add with a default, never reuse, remove last.
+    use: encoding-evolution/b1
+    use_note: Pick one change and look at both directions. That's enough for now.
+    later: [Protocol Buffers field numbers, Avro reader and writer schemas, Schema registries for event streams]
+    recap: Formats must be readable by older and newer code at once.
+
+  - lesson: object-storage
+    title: Where big files go
+    minutes: 4
+    problem: |
+      Creators can upload a cover image for each link. The first version sends the image through the API into a Postgres column. Then a few creators upload 20 MB videos over slow phone connections, and the whole API slows down.
+    answer: |
+      Big files go in **object storage** (S3, Google Cloud Storage, R2): cheap, very durable and effectively unlimited. The database keeps the facts you query: owner, status, size, and the key where the bytes live. The API gives the client a short-lived **presigned URL**, and the client uploads straight to the store, so the API never carries the bytes.
+    catch: |
+      Object storage isn't a filesystem or a database: tens of milliseconds to the first byte, no renames, no queries over contents. And with bytes in one system and facts in another, a crash between the two needs a plan, such as a "pending" row that's cleaned up if the upload never arrives.
+    remember: |
+      Bytes in the object store, facts in the database.
+    check: object-storage/b1
+    later: [Presigned URL security, Multipart uploads, The crash window between bytes and metadata, Lifecycle rules and download costs]
+    recap: Bytes in object storage, facts in the database, uploads direct with presigned URLs.
+
+  - lesson: id-generation
+    title: Picking an ID scheme
+    minutes: 3
+    problem: |
+      Ripple's links use auto-increment IDs. Anyone can see that link 48,213 was made this morning and 48,900 this evening, and work out Ripple's growth. They can also guess the next link.
+    answer: |
+      Pick the ID by what it's for:
+      - **Auto-increment**: compact and ordered; fine for internal tables on one database.
+      - **UUIDv4** (random): unguessable, no coordination; good for tokens.
+      - **UUIDv7 or ULID**: time-ordered and made anywhere; a good default for public IDs.
+      - **Snowflake**: 64-bit and time-ordered, for very high rates across many machines, each with its own worker number.
+    catch: |
+      Ordered IDs reveal when something was created. Random IDs scatter inserts across the index, which slows writes on big tables.
+    remember: |
+      Public IDs are part of your API: they shouldn't leak volume or be guessable.
+    check: id-generation/b1
+    later: [Why random keys slow B-tree inserts, Snowflake bit layout and clock problems, Short public codes]
+    recap: Choose IDs by purpose; ordered ones leak time, random ones hurt index locality.
+finish:
+  play: [r2, r5]
+  text: |
+    That's the whole area. You don't need to remember all of it: the full lessons go through each piece properly, and each one will feel familiar now.

@@ -188,10 +188,10 @@ def _pass_one(rep, sessions, designs, play, done):
             break
     a = todo[0]
     m = a['layers'][1]
-    out.append({'kind': 'map', 'area': a['id'], 'lesson': 'map-' + a['id'], 'title': f'Map the area: {a["title"]}', 'layer': 1,
-                'why': (f'Pass one: the big picture of every area first. {len(a["lessons"])} lessons in one 30 to 40 minute session: '
-                        f'what each piece is for, the standard answer and the main tradeoff. {len(areas) - len(todo)} of {len(areas)} areas mapped.'),
-                'label': 'Map it with the tutor', 'tutor': True})
+    out.append({'kind': 'map', 'area': a['id'], 'lesson': 'map-' + a['id'], 'title': f'Overview: {a["title"]}', 'layer': 1,
+                'why': (f'Pass one: a short overview of every area first. {len(a["lessons"])} topics in about 35 minutes: '
+                        f'what each is for, the usual answer and its catch. {len(areas) - len(todo)} of {len(areas)} areas done.'),
+                'label': 'Start the overview', 'tutor': False})
     if play and play.get('areas') and set(play['areas']) <= ok:
         out.append({'kind': 'play', 'level': play['id'], 'href': play['href'], 'title': f'Play Ripple Ops: {play["title"]}',
                     'why': 'Use what you have mapped: build Ripple for this level and live through its day. No internals needed.',

@@ -29,8 +29,12 @@
 .tu-error, .tu-status.is-error { color: var(--red); }
 .tu-head h3 { margin: 4px 0 0; }
 .tu-head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.tu-body { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 18px; margin-top: 16px; }
-.tu-chat { display: flex; flex-direction: column; gap: 12px; max-height: min(68vh, 760px); overflow-y: auto; padding-right: 4px; scroll-behavior: smooth; }
+.tu-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin-top: 14px; }
+.tu-body.has-stage { grid-template-columns: minmax(320px, 1fr) minmax(0, 1.25fr); }
+.tu-body.goals-open { grid-template-columns: 230px minmax(0, 1fr); }
+.tu-body.goals-open.has-stage { grid-template-columns: 230px minmax(300px, 1fr) minmax(0, 1.25fr); }
+.tu-convo { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.tu-chat { display: flex; flex-direction: column; gap: 12px; height: max(380px, calc(100vh - 330px)); overflow-y: auto; padding-right: 4px; scroll-behavior: smooth; }
 .tu-msg { max-width: 92%; }
 .tu-them { align-self: flex-start; }
 .tu-me { align-self: flex-end; }
@@ -46,14 +50,26 @@
 .tu-them[data-speaker="sam"] .tu-avatar { background: var(--accent-2); }
 .tu-note { align-self: center; font-size: 12px; color: var(--muted); }
 .tu-block { margin-top: 10px; }
+.tu-stage-item.tu-block { margin-top: 0; }
 .tu-block > [data-block] { margin: 0; }
 .tu-wrap { padding: 14px; border: 1px solid var(--accent-line); border-radius: 10px; background: var(--accent-soft); }
 .tu-debrief { align-self: stretch; max-width: none; }
 .tu-debrief .tu-text { border-color: var(--accent-line); background: var(--accent-soft); }
-.tu-rail { position: sticky; top: 12px; align-self: start; }
-.tu-rail summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.tu-rail summary::-webkit-details-marker { display: none; }
-.tu-rail .tu-progress { font-size: 12px; }
+.tu-goals { align-self: start; position: sticky; top: 12px; max-height: calc(100vh - 120px); overflow-y: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
+.tu-goals-btn .tu-progress { color: var(--muted); font-size: 12px; margin-left: 4px; }
+.tu-goals-btn[aria-expanded="true"] { border-color: var(--accent-line); color: var(--accent); }
+/* The stage: what the tutor brought in, beside the chat. */
+.tu-stage { min-width: 0; display: flex; flex-direction: column; gap: 10px; height: max(430px, calc(100vh - 260px)); position: sticky; top: 12px; }
+.tu-stage-tabs { display: flex; gap: 6px; overflow-x: auto; flex: none; padding-bottom: 2px; }
+.tu-stage-tab { flex: none; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.tu-stage-tab.is-on { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.tu-stage-tab:focus-visible, .tu-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tu-stage-items { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel2); }
+.tu-stage-item { margin: 0; }
+.tu-stage-item > [data-block] { margin: 0; }
+.tu-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tu-chip { padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.tu-chip:hover, .tu-chip.is-on { border-color: var(--accent-line); color: var(--accent); }
 .tu-objectives { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
 .tu-obj { display: flex; gap: 8px; font-size: 13px; line-height: 1.4; color: var(--muted); }
 .tu-obj.is-working { color: var(--text); } .tu-obj.is-working > span:first-child { color: var(--amber); }
@@ -66,12 +82,16 @@
 .tu-status.is-busy::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--accent); animation: tu-pulse 1s ease-in-out infinite; }
 @keyframes tu-pulse { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .tu-status.is-busy::before { animation: none; } .tu-chat { scroll-behavior: auto; } }
+@media (max-width: 1000px) {
+  .tu-body, .tu-body.has-stage, .tu-body.goals-open, .tu-body.goals-open.has-stage { grid-template-columns: minmax(0, 1fr); }
+  .tu-goals { position: static; max-height: none; }
+  .tu-stage { order: -1; position: static; height: auto; max-height: 55vh; }
+  .tu-stage-items { max-height: 48vh; }
+  .tu-chat { height: auto; max-height: 70vh; }
+}
 @media (max-width: 760px) {
   .tu-entry, .tu-panel { padding: 14px; }
-  .tu-body { grid-template-columns: 1fr; }
-  .tu-rail { position: static; order: -1; }
   .tu-objectives { gap: 4px; }
-  .tu-chat { max-height: none; }
   .tu-msg { max-width: 100%; }
 }
 

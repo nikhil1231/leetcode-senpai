@@ -640,7 +640,40 @@ def test_the_tutor_prompt_is_layered_and_map_sessions_have_their_own_role():
     assert '## Pass one: map depth' in ses.system(s, cons, views, [], {}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
     m = lessons.get('system-design', 'map-distributed')
     text = ses.system(ses.new('m', m, 'teach', 0), m, [], [], {}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
-    assert "this is a map session" in text and '## Layers in this lesson' not in text
+    assert "going through an overview with him" in text and '## Layers in this lesson' not in text
+    assert 'sketch on the whiteboard' in text and '[[move' not in text
+
+
+def test_an_authored_overview_is_the_storage_lesson_with_its_own_steps_and_short_turns():
+    m = lessons.get('system-design', 'map-storage')
+    ov = m['overview']
+    assert m['title'] == 'Overview: Databases and storage'
+    assert [s['lesson'] for s in ov['steps']] == lessons.area_lessons('storage')
+    assert len(m['objectives']) == len(ov['steps']) and ov['picture'] == 'b1'
+    for s in ov['steps']:   # every step has the same shape and an activity borrowed from its own lesson
+        assert all(s[f] for f in ('problem', 'answer', 'catch', 'remember', 'later', 'recap'))
+        b = next(x for x in m['blocks'] if x['key'] == (s.get('use') or s['check']))
+        assert b['from']['lesson'] == s['lesson']
+    text = ses.system(ses.new('m', m, 'teach', 0), m, [], [], {'overview_step': 3}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
+    assert 'Follow the steps in your notes' in text and 'about 80 words at most' in text
+    assert 'up to step 3 of 8' in text and '### Step 3: Finding rows fast (indexes)' in text
+    assert '[[move' not in text and '[[next' not in text
+
+
+def test_an_overview_must_follow_its_area_and_borrow_real_blocks():
+    from server.tutor import overviews
+    import copy
+    good = {'area': 'storage', 'title': 'x', 'minutes': 30, 'intro': 'x', 'steps': copy.deepcopy(overviews.get('storage')['steps'])}
+    overviews.parse(copy.deepcopy(good), 'ok')
+    bad = copy.deepcopy(good); bad['steps'][0]['check'] = 'indexes/b5'
+    with pytest.raises(overviews.OverviewError):
+        overviews.parse(bad, 'bad')
+    bad = copy.deepcopy(good); bad['steps'] = bad['steps'][1:]
+    with pytest.raises(overviews.OverviewError):
+        overviews.parse(bad, 'bad')
+    bad = copy.deepcopy(good); del bad['steps'][2]['catch']
+    with pytest.raises(overviews.OverviewError):
+        overviews.parse(bad, 'bad')
 
 
 def test_links_come_from_markers_or_a_named_resource_and_replay_to_the_tutor():
@@ -656,6 +689,25 @@ def test_links_come_from_markers_or_a_named_resource_and_replay_to_the_tutor():
     assert f'[[play {raft["key"]}]]' in ses.messages(s, cons)[1]['content']
     jo = ses.new('j', cons, 'explain', 0)
     assert 'links' not in ses.add_reply(jo, f'[[play {raft["key"]}]] hm', cons, 1)
+
+
+def test_reading_the_overview_saves_the_step_marks_ideas_seen_and_finishing_counts_the_area(client):
+    d = ok(client.get('/api/tutor/map/storage'))
+    assert d['lesson']['overview']['steps'][0]['lesson'] == 'data-models' and d['step'] == 0 and not d['mapped']
+    ok(client.post('/api/tutor/map/storage/step', json={'step': 1}))
+    assert not client.store.list_knowledge('knowledge_events')
+    r = ok(client.post('/api/tutor/map/storage/step', json={'step': 2, 'finished': 0, 'answers': {'b2': True, 'zz': True}}))
+    assert r == {'step': 2, 'mapped': False}
+    seen = client.store.list_knowledge('knowledge_events')
+    assert seen and {e['kind'] for e in seen} == {'exposure'}
+    assert {p for e in seen for p in e['points']} <= {p['id'] for p in kcat.active(kcat.CATALOG) if p['lesson'] == 'data-models'}
+    ok(client.post('/api/tutor/map/storage/step', json={'step': 2, 'finished': 0}))
+    assert len(client.store.list_knowledge('knowledge_events')) == len(seen)   # once each
+    d = ok(client.get('/api/tutor/map/storage'))
+    assert d['step'] == 2 and d['answers'] == {'b2': True}
+    assert ok(client.post('/api/tutor/map/storage/step', json={'step': 9, 'done': True}))['mapped']
+    assert ok(client.get('/api/tutor/map/storage'))['mapped']
+    assert client.post('/api/tutor/map/distributed/step', json={'step': 1}).status_code == 404
 
 
 def test_area_map_over_http_and_a_map_session_counts_for_pass_one(client):

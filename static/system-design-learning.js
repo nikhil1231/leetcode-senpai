@@ -49,7 +49,7 @@
   function lessonRow(l,index) {
     return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}${window.StudyPrompt?.button({section:'system-design',lesson:l.id},l.title)||''}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span>${catalog.known?rings(l):''}<span class="sd-muted">${l.minutes} min</span></a>`;
   }
-  const lessonHead=()=>`<div class="sd-lesson-head hub-learn-row" aria-hidden="true"><span></span><span>Lesson</span><span>Status</span>${catalog.known?'<span class="sd-rings"><span>Map</span><span>Interview</span><span>Depth</span></span>':''}<span>Time</span></div>`;
+  const lessonHead=()=>`<div class="sd-lesson-head hub-learn-row" aria-hidden="true"><span></span><span>Lesson</span><span>Status</span>${catalog.known?'<span class="sd-rings"><span>Overview</span><span>Interview</span><span>Depth</span></span>':''}<span>Time</span></div>`;
   function matches(l) {
     return (!category || l.category===category) && (!search || (l.title+' '+l.objectives.join(' ')).toLowerCase().includes(search.toLowerCase())) &&
       (filter==='all' || filter==='unfinished'&&!l.completed || filter==='review'&&l.needs_review || filter==='completed'&&l.completed);
@@ -66,7 +66,7 @@
       const numbered=c.lessons.map(l=>({l,n:number++})).filter(({l})=>matches(l));
       if(!numbered.length)return '';
       const current=catalog.course.lessons.find(l=>l.id===catalog.course.next_lesson)?.category, L=areaLayers(c);
-      return `<details class="sd-course-category" ${filter!=='all'||category||search||c.id===current?'open':''}><summary><span class="sd-course-stage">${String(i+1).padStart(2,'0')}</span><span><strong>${esc(c.title)}${window.StudyPrompt?.button({section:'system-design',category:c.id},c.title)||''}</strong><small>${esc(c.description)}</small></span><span class="sd-category-total">${c.completed}/${c.total} lessons done</span>${L[1].total?window.DesignMap.ladder(L,MAPPABLE(c)?`<a class="sd-map-link" href="#/system-design/map/${esc(c.id)}">${L[1].seen<L[1].total?'Map it in one sitting →':'Revisit the map →'}</a>`:''):''}</summary><div class="sd-course-lessons ${catalog.known?'has-layers':''}">${lessonHead()}${numbered.map(({l,n})=>lessonRow(l,n)).join('')}</div></details>`;
+      return `<details class="sd-course-category" ${filter!=='all'||category||search||c.id===current?'open':''}><summary><span class="sd-course-stage">${String(i+1).padStart(2,'0')}</span><span><strong>${esc(c.title)}${window.StudyPrompt?.button({section:'system-design',category:c.id},c.title)||''}</strong><small>${esc(c.description)}</small></span><span class="sd-category-total">${c.completed}/${c.total} lessons done</span>${L[1].total?window.DesignMap.ladder(L,MAPPABLE(c)?`<a class="sd-map-link" href="#/system-design/map/${esc(c.id)}">${L[1].seen<L[1].total?'Start the overview →':'Revisit the overview →'}</a>`:''):''}</summary><div class="sd-course-lessons ${catalog.known?'has-layers':''}">${lessonHead()}${numbered.map(({l,n})=>lessonRow(l,n)).join('')}</div></details>`;
     }).join('');
     return html || '<div class="sd-panel">No lessons match these filters. Try another category or show all lessons.</div>';
   }

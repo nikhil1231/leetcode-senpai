@@ -5,10 +5,12 @@ sits), the list of blocks it may bring into the conversation, and the lesson's k
 Blocks keep their positional keys, so an answer given inside the tutor is recorded against the
 same ledger item as one given in the lesson.
 
-An area map ("map-<area>", pass one of the layered course) is a lesson made from a whole system
-design area: one objective per lesson in it, the area's simulators, outages and diagrams as its
-blocks (renumbered, each with `from` naming its lesson and key so answers land on the real
-ledger item), and the map-layer ideas of every lesson as its notes and points.
+An area overview ("map-<area>", pass one of the layered course; ids keep the old "map" name) is a
+lesson made from a whole system design area. An authored overview (overviews.py) gives it its steps,
+objectives, blocks and notes. Without one: one objective per lesson in the area, the area's
+simulators, outages and diagrams as its blocks (renumbered, each with `from` naming its lesson and
+key so answers land on the real ledger item), and the map-layer ideas of every lesson as its notes.
+Either way its points are the map-layer ideas of every lesson in the area.
 """
 import re
 
@@ -17,6 +19,7 @@ import yaml
 from ..knowledge_base import catalog as kcat
 from ..system_design_curriculum import CATEGORIES as SD_CATEGORIES, LESSONS as SD_LESSONS
 from ..tracks import courses
+from . import overviews
 
 SECTIONS = ('system-design', 'fundamentals', 'ai')
 NOTES_LIMIT = 32000
@@ -40,11 +43,16 @@ def area_map(area):
     if not found:
         return None
     keys, blocks = area_lessons(area), []
+    ov = overviews.lesson(area)
+    if ov:
+        return {'section': 'system-design', 'id': MAP_PREFIX + area, 'title': f'Overview: {found[0]}', 'category': area,
+                'summary': found[1], 'blocks': ov['blocks'], 'map': {'area': area, 'lessons': keys}, 'overview': ov,
+                'objectives': ov['objectives']}
     for k in keys:
         for b in SD_LESSONS[k]['blocks']:
             if b['type'] in MAP_BLOCKS and 'key' in b and len(blocks) < 999:
                 blocks.append({**b, 'key': f'b{len(blocks) + 1}', 'from': {'lesson': k, 'key': b['key']}})
-    return {'section': 'system-design', 'id': MAP_PREFIX + area, 'title': f'The map: {found[0]}', 'category': area,
+    return {'section': 'system-design', 'id': MAP_PREFIX + area, 'title': f'Overview: {found[0]}', 'category': area,
             'summary': found[1], 'blocks': blocks, 'map': {'area': area, 'lessons': keys},
             'objectives': [f"{SD_LESSONS[k]['title']}: what it is for, the standard answer and its main tradeoff" for k in keys]}
 
@@ -120,7 +128,7 @@ def map_notes(lesson, catalog=None):
 def notes(lesson, limit=NOTES_LIMIT):
     """The lesson as the tutor's private notes: prose in order, with blocks marked in place."""
     if lesson.get('map'):
-        text = map_notes(lesson)
+        text = overviews.notes(lesson['map']['area']) if lesson.get('overview') else map_notes(lesson)
         return text if len(text) <= limit else text[:limit] + '\n…(notes truncated)'
     parts = []
     for b in lesson['blocks']:
@@ -151,7 +159,7 @@ def points(section, key, catalog=None):
 def titles():
     """{(section, lesson id): title} for every lesson the tutor can teach."""
     out = {('system-design', k): l['title'] for k, l in SD_LESSONS.items()}
-    out.update({('system-design', MAP_PREFIX + c): f'The map: {t}' for c, t, _ in map_areas()})
+    out.update({('system-design', MAP_PREFIX + c): f'Overview: {t}' for c, t, _ in map_areas()})
     for section in SECTIONS[1:]:
         out.update({(section, k): l['title'] for k, l in courses.lessons(section).items()})
     return out

@@ -50,7 +50,7 @@
       n.classList.toggle('is-active', selected);
       if (selected) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
     });
-    const titles = {home:'Home', practise:'Practise', curriculum:'Learn', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', simulators:'Simulators', lesson:'Lesson', map:'Area map', cases:'Design cases', skills:'Skill drills', lessons:'Learn', progress:'What you know', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
+    const titles = {home:'Home', practise:'Practise', curriculum:'Learn', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', simulators:'Simulators', lesson:'Lesson', map:'Overview', cases:'Design cases', skills:'Skill drills', lessons:'Learn', progress:'What you know', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
     $('#page-title').textContent = titles[view] || 'System Design';
     $('#page-sub').textContent = 'System Design';
   }

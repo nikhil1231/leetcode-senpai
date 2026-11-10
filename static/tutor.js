@@ -9,6 +9,10 @@
 // which starts as soon as the lesson opens. Without the model there is no card and the lesson
 // works as usual. A "Teach me" session on a design lesson starts with the lesson's warm-up check
 // (DesignLesson.warmup) unless skipped; full marks there marks the lesson done instead.
+// The session panel is side by side: the chat on the left, and on the right a stage holding what the
+// tutor brought in (whiteboards, activities, designs), one at a time with tabs, so the text and the
+// board are both in view. The objectives are a side panel, folded by default. On narrow screens the
+// stage sits above the chat.
 (function () {
   'use strict';
   const {api, escapeHtml: esc} = window.H;
@@ -20,6 +24,9 @@
     `<button type="button" class="button ${primary ? 'is-primary' : ''}" data-tu="${act}" ${attrs}>${esc(text)}</button>`;
   const MARK = {open: ['○', 'Not yet'], working: ['◐', 'In progress'], demonstrated: ['●', 'Shown']};
   const PREFER_NOTES = 'tutor:prefer-notes';
+  const GOALS_OPEN = 'tutor:goals-open';
+  const goalsOpen = () => { try { return localStorage.getItem(GOALS_OPEN) === '1'; } catch (_) { return false; } };
+  const setGoalsOpen = on => { try { if (on) localStorage.setItem(GOALS_OPEN, '1'); else localStorage.removeItem(GOALS_OPEN); } catch (_) {} };
   const preferNotes = () => { try { return localStorage.getItem(PREFER_NOTES) === '1'; } catch (_) { return false; } };
   const setPreferNotes = on => { try { if (on) localStorage.setItem(PREFER_NOTES, '1'); else localStorage.removeItem(PREFER_NOTES); } catch (_) {} };
   let T = null, queued = null;
@@ -99,12 +106,12 @@
     chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
     report: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
   };
-  const toolsMode = () => !!T.info && !T.warming && !T.passed && (!T.info.enabled || T.notes) && !(T.open && T.session);
+  const toolsMode = () => !!T.info && !T.warming && !T.passed && (!T.info.enabled || T.notes || !!T.ctx.lesson.overview) && !(T.open && T.session);
   function toolsHtml() {
     const i = T.info, active = T.session && T.session.status === 'active';
     const x = i.outside, has = x || (i.outside_elsewhere || []).length;
     const when = x ? ' · ' + new Date(x.at * 1000).toLocaleDateString(undefined, {day: 'numeric', month: 'short'}) : '';
-    const tutor = i.enabled ? `<button type="button" class="tu-icon" data-tu="${active ? 'resume' : 'start'}" aria-label="${active ? 'Continue your tutor session' : 'Learn this with the tutor'}" title="${active ? 'Continue your tutor session' : 'Learn this with the tutor: it asks the questions and brings in the activities'}">${ICON.chat}${active ? '<i class="tu-dot"></i>' : ''}</button>` : '';
+    const tutor = i.enabled ? `<button type="button" class="tu-icon" data-tu="${active ? 'resume' : 'start'}" aria-label="${active ? 'Continue your tutor session' : 'Learn this with the tutor'}" title="${active ? 'Continue your tutor session' : T.ctx.lesson.overview ? 'Go through the overview with the tutor' : 'Learn this with the tutor: it asks the questions and brings in the activities'}">${ICON.chat}${active ? '<i class="tu-dot"></i>' : ''}</button>` : '';
     const report = has ? `<button type="button" class="tu-icon ${T.outOpen ? 'is-on' : ''}" data-tu="outside" aria-expanded="${!!T.outOpen}" aria-label="What your outside tutor reported${esc(when)}" title="From your outside tutor${esc(when)}">${ICON.report}</button>` : '';
     if (!tutor && !report) return '';
     return `<div class="tu-tools">${report}${tutor}</div>${T.outOpen && has ? `<div class="tu-pop" role="dialog" aria-label="From your outside tutor">${outsideHtml()}</div>` : ''}${T.error ? `<p class="tu-error">${esc(T.error)}</p>` : ''}`;
@@ -148,14 +155,49 @@
   }
 
   function panelHtml() {
-    const s = T.session, mode = T.overview.modes.find(m => m.id === s.mode);
+    const s = T.session, mode = T.overview.modes.find(m => m.id === s.mode), open = goalsOpen();
+    const back = T.ctx.lesson.overview ? 'Back to the overview' : T.ctx.lesson.map ? 'Back to the page' : 'Show the notes';
     return `<section class="tu-panel"><header class="tu-head"><div><span class="sd-eyebrow">TUTOR · ${esc(mode?.label || s.mode)}</span><h3>${esc(T.ctx.lesson.title)}</h3></div>
-        <div class="tu-head-actions">${btn('Show the notes', 'close')}${s.status === 'active' ? btn('End session', 'end') : ''}</div></header>
-      <div class="tu-body"><div class="tu-chat" aria-live="polite"></div>
-        <details class="tu-rail" ${window.matchMedia?.('(max-width: 760px)').matches ? '' : 'open'}><summary><span class="sd-eyebrow">OBJECTIVES</span> <span class="sd-muted tu-progress"></span></summary><ol class="tu-objectives"></ol></details></div>
-      <form class="tu-compose"><textarea data-dictate rows="2" aria-label="Your reply" placeholder="Answer, ask, or think out loud…"></textarea>
-        <button type="submit" class="button is-primary">Send</button></form>
-      <div class="tu-status" role="status"></div></section>`;
+        <div class="tu-head-actions"><button type="button" class="button tu-goals-btn" data-tu="goals" aria-expanded="${open}" aria-controls="tu-goals">Objectives <span class="tu-progress"></span></button>${btn(back, 'close')}${s.status === 'active' ? btn('End session', 'end') : ''}</div></header>
+      <div class="tu-body${open ? ' goals-open' : ''}">
+        <aside class="tu-goals" id="tu-goals" aria-label="Objectives"${open ? '' : ' hidden'}><span class="sd-eyebrow">OBJECTIVES</span><ol class="tu-objectives"></ol></aside>
+        <div class="tu-convo"><div class="tu-chat" aria-live="polite"></div>
+          <form class="tu-compose"><textarea data-dictate rows="2" aria-label="Your reply" placeholder="Answer, ask, or think out loud…"></textarea>
+            <button type="submit" class="button is-primary">Send</button></form>
+          <div class="tu-status" role="status"></div></div>
+        <aside class="tu-stage" aria-label="Whiteboard and activities" hidden><div class="tu-stage-tabs" role="tablist" aria-label="What the tutor brought in"></div><div class="tu-stage-items"></div></aside>
+      </div></section>`;
+  }
+
+  // The stage: whiteboards, activities and designs, one shown at a time. Each keeps its node (and its live
+  // state) when another is shown; the message it came with keeps a chip that brings it back.
+  function stageAdd(node, label, id) {
+    const stage = T.host.querySelector('.tu-stage');
+    if (!stage) return;
+    node.dataset.stage = id;
+    node.classList.add('tu-stage-item');
+    stage.querySelector('.tu-stage-items').appendChild(node);
+    const tab = document.createElement('button');
+    tab.type = 'button'; tab.className = 'tu-stage-tab'; tab.dataset.stageTab = id; tab.setAttribute('role', 'tab');
+    tab.textContent = label;
+    tab.addEventListener('click', () => stageShow(id));
+    stage.querySelector('.tu-stage-tabs').appendChild(tab);
+    stage.hidden = false;
+    T.host.querySelector('.tu-body')?.classList.add('has-stage');
+  }
+  function stageShow(id) {
+    const stage = T.host.querySelector('.tu-stage');
+    if (!stage) return;
+    stage.querySelectorAll('.tu-stage-item').forEach(n => { n.hidden = n.dataset.stage !== id; });
+    stage.querySelectorAll('.tu-stage-tab').forEach(n => { const on = n.dataset.stageTab === id; n.classList.toggle('is-on', on); n.setAttribute('aria-selected', String(on)); });
+    T.host.querySelectorAll('.tu-chip').forEach(n => n.classList.toggle('is-on', n.dataset.stageChip === id));
+  }
+  function chip(id, label) {
+    const c = document.createElement('button');
+    c.type = 'button'; c.className = 'tu-chip'; c.dataset.stageChip = id;
+    c.innerHTML = `<span aria-hidden="true">▸</span> ${esc(label)}`;
+    c.addEventListener('click', () => { stageShow(id); if (window.matchMedia?.('(max-width: 1000px)').matches) T.host.querySelector('.tu-stage')?.scrollIntoView?.({block: 'start', behavior: 'smooth'}); });
+    return c;
   }
 
   function paint() {
@@ -202,6 +244,13 @@
     const t = T;
     try {
       if (action === 'outside') { t.outOpen = !t.outOpen; paint(); return; }
+      if (action === 'goals') {
+        const on = !goalsOpen(); setGoalsOpen(on);
+        t.host.querySelector('.tu-body')?.classList.toggle('goals-open', on);
+        const g = t.host.querySelector('.tu-goals'); if (g) g.hidden = !on;
+        t.host.querySelector('.tu-goals-btn')?.setAttribute('aria-expanded', String(on));
+        return;
+      }
       if (action === 'refile') {
         await api(`/knowledge/handback/${t.info.outside.filing.retry.session}/file`, 'POST');
         if (T === t) load();
@@ -221,13 +270,14 @@
         setPreferNotes(false);
         t.busy = true; t.error = ''; t.open = true;
         t.session = {id: null, mode: t.mode, status: 'active', turns: [], objectives: t.info.objectives.map(() => ({status: 'open'})), progress: {demonstrated: 0, total: t.info.objectives.length}};
-        paint(); status(`${cast(firstSpeaker(t.mode))?.name || 'The tutor'} is getting ready…`);
+        paint(); t.host.scrollIntoView?.({block: 'start', behavior: 'smooth'});
+        status(`${cast(firstSpeaker(t.mode))?.name || 'The tutor'} is getting ready…`);
         const s = await api('/tutor/sessions', 'POST', {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid(), focus: t.focus || '', carry: t.carry || null, layer: t.layer || 0});
         t.focus = ''; t.carry = null; t.layer = 0;
         if (T !== t) return;
         t.session = s; t.busy = false; paint();
       } else if (action === 'resume') {
-        t.open = true; paint();
+        t.open = true; paint(); t.host.scrollIntoView?.({block: 'start', behavior: 'smooth'});
       } else if (action === 'close') {
         t.open = false; t.notes = true; paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
       } else if (action === 'end' || action === 'fresh') {
@@ -295,8 +345,11 @@
     if (!chat) return;
     chat.querySelectorAll('.tu-optimistic').forEach(n => n.remove());
     const answered = new Set(s.turns.filter(t => t.role === 'block').map(t => t.block));
+    const before = T.host.querySelectorAll('.tu-stage-item').length;
     s.turns.slice(T.rendered).forEach(turn => chat.appendChild(turnNode(turn, answered)));
     T.rendered = s.turns.length;
+    const items = T.host.querySelectorAll('.tu-stage-item');
+    if (items.length > before) stageShow(items[items.length - 1].dataset.stage);
     if (s.status === 'ended' && !chat.querySelector('.tu-wrap')) {
       const retry = s.debrief_due ? btn('Write the debrief', 'end', '', true) : '';
       const nx = !retry && T.info?.next;
@@ -309,7 +362,7 @@
       const st = s.objectives[i]?.status || 'open';
       return `<li class="tu-obj is-${st}" title="${MARK[st][1]}"><span aria-hidden="true">${MARK[st][0]}</span><span>${inline(o)}</span></li>`;
     }).join('');
-    T.host.querySelector('.tu-progress').textContent = `${s.progress.demonstrated} of ${s.progress.total} shown`;
+    T.host.querySelector('.tu-progress').textContent = `${s.progress.demonstrated}/${s.progress.total}`;
     status(s.error || '', !!s.error);
     scrollChat();
   }
@@ -327,9 +380,16 @@
       n.className = 'tu-msg tu-them' + (turn.debrief ? ' tu-debrief' : ''); n.dataset.speaker = turn.speaker;
       n.innerHTML = `<div class="tu-who"><span class="tu-avatar" aria-hidden="true">${esc(who.name[0])}</span><b>${esc(who.name)}</b>${who.role ? `<small>${esc(who.role)}</small>` : ''}</div><div class="tu-text sd-md">${md(turn.say)}</div>`;
       const at = T.session?.turns.indexOf(turn);
-      (turn.boards || []).forEach((d, i) => n.appendChild(boardNode(d, `wb${at}-${i}`)));
-      (turn.designs || []).forEach(d => n.appendChild(designNode(d, at)));
-      if (turn.show_block) n.appendChild(blockNode(turn.show_block, answered.has(turn.show_block)));
+      const chips = document.createElement('div');
+      chips.className = 'tu-chips';
+      const put = (node, label, id) => { stageAdd(node, label, id); chips.appendChild(chip(id, label)); };
+      (turn.boards || []).forEach((d, i) => put(boardNode(d, `wb${at}-${i}`), `Whiteboard: ${d.title || 'sketch'}`, `wb${at}-${i}`));
+      (turn.designs || []).forEach((d, i) => put(designNode(d, at), `Simulator: ${d.title}`, `ds${at}-${i}`));
+      if (turn.show_block) {
+        const b = (T.ctx.lesson.blocks || []).find(x => x.key === turn.show_block);
+        put(blockNode(turn.show_block, answered.has(turn.show_block)), `Activity: ${String(b?.title || b?.prompt || 'try it').replace(/[*`]/g, '').slice(0, 48)}`, `ac${at}`);
+      }
+      if (chips.childElementCount) n.appendChild(chips);
       if (turn.links?.length) n.appendChild(linksNode(turn.links));
       if (turn.move) n.appendChild(moveNode(turn.move));
     }

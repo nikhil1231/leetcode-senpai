@@ -238,7 +238,8 @@ def area_map(area: str, store=Depends(store_for)):
     titles = lessons.titles()
     prog = _ripple(store)
     mem = store.get_knowledge('tutor_memory', _memory_key('system-design', l['id'])) or {}
-    return {'lesson': {k: l[k] for k in ('id', 'title', 'category', 'summary', 'objectives', 'blocks', 'map')},
+    return {'lesson': {k: l[k] for k in ('id', 'title', 'category', 'summary', 'objectives', 'blocks', 'map') + (('overview',) if l.get('overview') else ())},
+            'step': mem.get('overview_step', 0), 'answers': mem.get('overview_answers') or {},
             'lessons': [{'id': k, 'title': titles[('system-design', k)], 'layers': progress.layer_tally([v for v in views if v['lesson'] == k])}
                         for k in l['map']['lessons']],
             'layers': progress.layer_tally(views), 'mapped': bool(mem.get('mapped_at')),
@@ -246,6 +247,37 @@ def area_map(area: str, store=Depends(store_for)):
                            'locked': r['kind'] == 'game' and prog is not None and r['id'] not in prog['unlocked']}
                           for r in res.for_lessons(l['map']['lessons'])],
             'enabled': llm.enabled(store.get_settings())}
+
+
+class OverviewStep(BaseModel):
+    step: int = Field(ge=0, le=40, description='The step now open (0: the start).')
+    finished: int = Field(default=-1, ge=-1, le=40, description='A step just finished, whose ideas count as seen; -1 for none.')
+    done: bool = Field(default=False, description='The whole overview is finished.')
+    answers: dict[str, bool] = Field(default_factory=dict, max_length=40, description='Activity keys answered on the page: right or not.')
+
+
+@router.post('/map/{area}/step')
+def overview_step(area: str, body: OverviewStep, store=Depends(store_for)):
+    """Where he is in an area overview. A finished step marks its lesson's map ideas as seen (exposures,
+    once each); finishing the overview counts the area as done for pass one, like a map session."""
+    l = lessons.area_map(area)
+    if not l or not l.get('overview'):
+        raise HTTPException(404, 'No overview for this area')
+    now, steps = time.time(), l['overview']['steps']
+    mk = _memory_key('system-design', l['id'])
+    mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
+    mem['overview_step'] = min(body.step, len(steps) + 1)
+    keys = {b['key'] for b in l['blocks']}
+    mem['overview_answers'] = {**(mem.get('overview_answers') or {}), **{k: v for k, v in body.answers.items() if k in keys}}
+    if 0 <= body.finished < len(steps):
+        lesson = steps[body.finished]['lesson']
+        pts = [p['id'] for p in kcat.active(kcat.CATALOG) if p['section'] == 'system-design' and p['lesson'] == lesson and p['layer'] == kcat.MAP]
+        kb_api.write_events(store, SOURCE, [{'kind': 'exposure', 'points': [pid], 'key': f'overview.{area}.{pid}', 'ref': l['id'],
+                                             'note': 'Read in the area overview'} for pid in pts], now)
+    if body.done and not mem.get('mapped_at'):
+        mem['mapped_at'] = now
+    store.put_knowledge('tutor_memory', mk, mem)
+    return {'step': mem['overview_step'], 'mapped': bool(mem.get('mapped_at'))}
 
 
 @router.get('/home')
@@ -543,9 +575,10 @@ def _profile(store, l, summary, events, own, now):
     titles = lessons.titles()
     learner = store.get_knowledge('tutor_memory', LEARNER_KEY) or {}
     study = store.list_knowledge('study_sessions')
-    profile = {'style': lm.style_notes(study, learner), 'standing': lm.standing(summary),
-               'lately': lm.other_lessons(store.list_knowledge('tutor_memory'), titles, _memory_key(l['section'], l['id']), now),
-               'outside': lm.outside_reports(study, titles, now)}
+    profile = {'style': lm.style_notes(study, learner), 'standing': lm.standing(summary)}
+    if not l.get('map'):   # an overview stays on its area: other lessons' threads only pull it elsewhere
+        profile.update(lately=lm.other_lessons(store.list_knowledge('tutor_memory'), titles, _memory_key(l['section'], l['id']), now),
+                       outside=lm.outside_reports(study, titles, now))
     prog = _ripple(store) if l['section'] == 'system-design' else None
     return {'text': lm.text(profile), 'covered': [p['claim'] for p in lm.covered_elsewhere(events, own, now)],
             'lessons': lessons.catalogue(exclude=(l['section'], l['id'])), 'unlocked': set(prog['unlocked']) if prog else None}

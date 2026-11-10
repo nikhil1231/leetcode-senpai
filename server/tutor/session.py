@@ -21,7 +21,7 @@ career brief), so lessons connect to the job he wants; "cv" mode interviews him 
 session opened to close one gap carries it as `focus` and starts there.
 
 Lessons are layered (knowledge_base/layers.yaml): map, interview-ready, depth. A lesson session
-teaches to interview depth and parks depth ideas until asked; an area map ("map-<area>", MAP)
+teaches to interview depth and parks depth ideas until asked; an area overview ("map-<area>", MAP)
 covers a whole area at map depth in one sitting and ends on a design in the simulator. In both
 the tutor can hand over the game levels, worked designs and internals simulators that practise
 the lesson ([[play rN]], resources.py) as links under its message.
@@ -66,20 +66,27 @@ Opening: start from him, not from a quiz. If he's come from another tutor or a r
 
 Keep messages conversational and usually short, a few sentences. When you're explaining, take the room it needs, but one idea at a time: if it's turning into a lecture, stop and check in.""".format(voice=voice.TUTOR)
 
-MAP = """You're Nikhil's tutor, and this is a map session: one whole area of system design in one sitting of about 30 to 40 minutes. You've taught him before and will again.
+MAP = """You're Nikhil's tutor, going through an overview with him: a short tour of one whole area of system design, about 30 to 40 minutes. You've taught him before and will again.
 
 {voice}
 
-What a map session is for: the big picture, so he knows every piece in this area, where it fits in a design, and what he doesn't know yet. For each piece: the problem it solves, the standard answer, the one big tradeoff, a headline number, and how it connects to the other pieces and to the rest of a system. Not internals: that's for later passes. He'd rather know the shape of everything than the insides of one thing.
+What it's for: he should come away knowing what each topic in the area is for, the usual answer, its main catch, and where it sits in a system. Not internals: the full lessons cover those later.
 
 How to run it:
-- Open with one Ripple problem that needs the whole area, and sketch on the whiteboard where each piece of the area sits in Ripple's system. That sketch is the map; come back to it as you go.
-- Then take the pieces (the objectives) one at a time, a few minutes each: explain briefly with a concrete example, ask one quick question that makes him use it, react, move on. Don't drill. If he already knows a piece, confirm it in one exchange and move on.
-- When something deeper comes up, name it and park it: "there's a whole story about X; that's for the interview pass". The notes list what's beyond the map for each piece. Naming it is the point: he should leave knowing what he doesn't know.
-- Show rather than tell: the activities and the simulators below show how pieces behave. Use a few, not all.
-- Finish with a design: hand over a design of Ripple that uses this area's pieces to run in the simulator (```design), and point him at the Ripple Ops level or worked design for this area if there is one. Then a short wrap-up: one line per piece, and what's waiting in the interview pass.
+- {route}
+- Short turns: two to four sentences, about 80 words at most, unless he asks for more. One idea per message. At most one question, a quick one that makes him use the idea; react briefly and move on. Don't drill.
+- If he already knows a topic, confirm it in one exchange and go to the next.
+- When something deeper comes up, say the full lesson covers it and carry on. Don't teach it here.
+- Use an activity (its marker) when doing beats explaining. Use a few, not all.
+- Stay on this overview: don't suggest other lessons or what to do next until the wrap-up.
+- Wrap up in a few lines: one short line per topic, then suggest he ends the session for the debrief."""
 
-Keep messages short and conversational. Pace matters more than completeness: covering every piece lightly beats covering half of them well.""".format(voice=voice.TUTOR)
+MAP_STEPS = ("Follow the steps in your notes, in order: the big picture (block b1), then one step per topic, then the wrap-up. "
+             "He has the same steps on the page in front of him, so you can refer to them by number. For each step: the problem, "
+             "the usual answer, the catch, in your own words, then the step's activity or a quick question.")
+MAP_PIECES = ("Open with one Ripple problem that needs the whole area and sketch on the whiteboard where each piece sits in Ripple. "
+              "Then take the pieces (the objectives) one at a time: the problem, the usual answer, the catch. Finish by handing "
+              "over a design of Ripple that uses the area's pieces to run in the simulator (```design).")
 
 ROLES = {
     'teach': TEACH,
@@ -268,6 +275,11 @@ What it should leave him able to do (a map for you, not a checklist to read out)
     parts.append(f"""Setting: Ripple, a link shortener growing into a global social product, now at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
 Borrow it for examples now and then; don't narrate.
 Scale: Ripple's size is {story_state['users']}, and that is the only figure for it. He sees only this conversation, so before any question turns on Ripple's scale, give him the numbers in it. Judge his numbers only against figures stated in this conversation; if he picks his own assumptions, judge whether they are reasonable and consistent, not whether they match figures he was never given.""")
+    if lesson.get('overview') and memory.get('overview_step'):
+        n = len(lesson['overview']['steps'])
+        at = memory['overview_step']
+        parts.append(f"## Where he is on the page\nHe has read the overview on the page up to {'the wrap-up' if at > n else f'step {at} of {n}'}. "
+                     "Ask whether he wants to start from there or from the top; don't re-teach steps he says he's got.")
     if mode == 'teach' and session.get('layer') == 1 and not lesson.get('map'):
         parts.append(PASS_ONE)
     elif mode == 'teach' and not lesson.get('map') and any(v.get('layer', 2) != 2 for v in views):
@@ -275,7 +287,7 @@ Scale: Ripple's size is {story_state['users']}, and that is the only figure for 
     if blocks_allowed(mode):
         tools = '\n'.join(f'- {t["key"]} ({t["type"]}): {t["about"]}' for t in lessons.tools(lesson) if t['key'] not in session['shown'])
         res = lesson_resources(lesson)
-        parts.append(ACTIONS.format(
+        parts.append((ACTIONS_MAP if lesson.get('map') else ACTIONS).format(
             activities=f"\n\nActivities from this lesson (one line saying what to do, then the marker; never two in a row, each once; you'll see how he did):\n{tools}" if tools else '',
             play=("\n- [[play rN]]: hand him one of the links below: a Ripple Ops level (the design game: he builds and runs Ripple's system "
                   "against a real day, using what he's learnt, no internals needed), a worked design or a simulator. Like activities, "
@@ -304,6 +316,11 @@ Put any of these on its own line at the end of a message when it helps; he never
 
 Lessons you can move to or suggest (SECTION/LESSON: title):
 {lessons}"""
+
+ACTIONS_MAP = """## Things you can do
+Put any of these on its own line at the end of a message when it helps; he never sees the marker itself.
+- [[activity KEY]]: hand him one of the overview's activities, when doing beats talking. The marker is the only way he gets it: if your message mentions an activity, its marker must be at the end of that same message.
+- [[note …]]: something worth remembering about how he learns or what he's after (not a fact about the topic).{activities}{play}{lessons:.0}"""
 
 PICKUP = """## He's just come from his other tutor
 Since his last session with you, Nikhil studied this lesson with another tutor (often for an hour or more). Its report:
@@ -347,7 +364,10 @@ def lesson_resources(lesson):
 
 
 def system(session, lesson, views, misconceptions, memory, story_state, debrief=False, career=None, profile=None):
-    role = MAP if lesson.get('map') and session['mode'] == 'teach' else ROLES[session['mode']]
+    if lesson.get('map') and session['mode'] == 'teach':
+        role = MAP.format(voice=voice.TUTOR, route=MAP_STEPS if lesson.get('overview') else MAP_PIECES)
+    else:
+        role = ROLES[session['mode']]
     text = voice.live(role) + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career, profile)
     if debrief:
         mistakes = '\n'.join(f'- He said "{m["quote"]}": {m["text"]}' for m in session.get('mistakes', [])) or '(none recorded)'

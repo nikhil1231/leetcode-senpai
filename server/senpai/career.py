@@ -173,7 +173,7 @@ def tutor_brief(goal_text, job, plan, section, category, lesson_id=None):
         lines.append(f'- His career goal: {goal_text.strip()[:300]}')
     tags = [t for t in demand.get('tags') or [] if _cap_of_tag(t['tag']) == cid][:3]
     if tags and roles:
-        lines.append('- Why this lesson matters to that: ' + '; '.join(
+        lines.append('- Background only (don\'t use it to sell the lesson): ' + '; '.join(
             f"{t['tag']} appears in {round((t.get('share') or 0) * 100)}% of the {roles} roles he's targeting" for t in tags) + '.')
     if cid in set(target_capabilities(goal_text)):
         lines.append('- His target names this area directly: connect the ideas to that kind of role when it helps.')
