@@ -193,3 +193,16 @@
 @media (max-width: 1000px) { .rp-hero, .rp-brief, .rp-res-grid { grid-template-columns:1fr; } .rp-head { grid-template-columns:1fr; } }
 @media (max-width: 560px) { .rp-stats { grid-template-columns:1fr 1fr; } .rp-recent li { grid-template-columns:52px minmax(0,1fr); } .rp-recent time { display:none; } }
 .rp-mix { list-style:none; padding:0; margin:6px 0 0; display:grid; gap:3px; font-size:12px; } .rp-mix li { display:flex; gap:8px; } .rp-mix b { font-family:var(--font-mono); min-width:36px; }
+
+/* The day's results open as a modal; each section pops in, one after another. */
+.rp-modal { position:fixed; inset:0; z-index:60; display:grid; place-items:center; padding:20px; background:rgba(5,7,10,.72); backdrop-filter:blur(3px); animation:rp-fade .25s ease both; }
+.rp-modal-card { position:relative; width:min(1000px, 100%); max-height:calc(100vh - 40px); overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); padding:22px; box-shadow:0 24px 80px rgba(0,0,0,.6); animation:rp-rise .35s cubic-bezier(.2,.9,.3,1.2) both; }
+.rp-modal-x { position:absolute; top:10px; right:12px; z-index:1; background:transparent; border:1px solid var(--line); color:var(--text-2); border-radius:8px; width:30px; height:30px; cursor:pointer; }
+.rp-modal-x:hover { color:var(--text); border-color:var(--accent); }
+.rp-modal-body { display:grid; gap:10px; }
+.rp-modal-body h3 { margin:0; font-size:20px; }
+.rp-pop { opacity:0; animation:rp-pop .5s cubic-bezier(.2,.9,.3,1.2) var(--d, 0s) both; }
+@keyframes rp-fade { from { opacity:0; } }
+@keyframes rp-rise { from { opacity:0; transform:translateY(24px) scale(.97); } }
+@keyframes rp-pop { from { opacity:0; transform:translateY(14px) scale(.96); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce) { .rp-modal, .rp-modal-card, .rp-pop { animation:none; opacity:1; } }

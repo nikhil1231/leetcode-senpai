@@ -276,7 +276,7 @@
     renderModelChip();
     if (document.body.classList.contains('section-design')) {
       window.AppSections?.setView(screen);
-      history.replaceState(null, '', '#/system-design' + (screen==='home'?'':'/'+(screen==='lesson'?window.DesignLearning.route():screen==='redesign'?window.DesignRedesign.route():screen)));
+      history.replaceState(null, '', '#/system-design' + (screen==='home'?'':'/'+(screen==='lesson'?window.DesignLearning.route():screen==='simulators'?window.DesignSimulators.route():screen==='redesign'?window.DesignRedesign.route():screen)));
     }
     if (screen==='workspace') {
       root().querySelectorAll('[role="tab"]').forEach(n=>n.addEventListener('keydown',event=>{
@@ -392,14 +392,15 @@
 
   const VIEWS = ['home','practise','cases','skills','lessons','progress','curriculum','quickfire','papers','mistakes','drills','simulators'];
   let loading = null;
-  async function renderDesign() {
+  // deferPaint: the caller paints the target view itself, so the default screen never flashes before it.
+  async function renderDesign(deferPaint=false) {
     active=true;
-    if(catalog) { if(!root().childElementCount)paint(); startTimers(); return; }
+    if(catalog) { if(!deferPaint && !root().childElementCount)paint(); startTimers(); return; }
     if(loading)return loading;
     root().innerHTML=loader('Opening your design workspace…');
     loading=(async()=>{
-      try { catalog=await call();paint(); }
-      catch(e) { root().innerHTML=`<div class="sd-error">${esc(e.message)}</div><button id="sd-load-retry" class="button">Try again</button>`; $('#sd-load-retry').onclick=renderDesign; }
+      try { catalog=await call(); if(!deferPaint)paint(); }
+      catch(e) { root().innerHTML=`<div class="sd-error">${esc(e.message)}</div><button id="sd-load-retry" class="button">Try again</button>`; $('#sd-load-retry').onclick=()=>renderDesign(); }
       finally {loading=null;}
     })();
     return loading;
@@ -407,7 +408,7 @@
   async function openView(view, entering=false, fromAction=false) {
     if(busy && !fromAction)return;
     const navigation=++viewEpoch;
-    await renderDesign();
+    await renderDesign(true);
     if(!catalog || navigation!==viewEpoch)return;
     if(session && screen==='workspace') {
       try {await saveDraft();} catch(e){error=e.message;paint();return;}
@@ -423,6 +424,7 @@
       }
       view='cases';
     }
+    if(view.startsWith('simulators/')){window.DesignSimulators.want=view.slice(11);view='simulators';}
     try {
       const fresh=await call();
       window.DesignLedger.invalidate();

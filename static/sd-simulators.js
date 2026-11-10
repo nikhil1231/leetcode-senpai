@@ -13,7 +13,7 @@
     return r.json();
   };
   let items = null, internals = null, course = null, error = '';
-  let query = '', group = '', current = null, keep = false, inst = null, token = 0;
+  let query = '', group = '', current = null, keep = false, inst = null, token = 0, wantLevel = '';
 
   async function load() {
     if (items) return;
@@ -119,6 +119,7 @@
 
   function wire(root) {
     stop();
+    const level = wantLevel; wantLevel = '';
     root.querySelector('[data-sim-retry]')?.addEventListener('click', () => { error = ''; items = null; window.SystemDesign?.openView('simulators'); });
     if (!items) return;
     if (!current) {
@@ -143,7 +144,7 @@
     }
     root.querySelector('[data-sim-back]')?.addEventListener('click', home);
     const stage = root.querySelector('[data-sim-stage]'), mine = token;
-    if (current.kind === 'game') inst = window.RippleOps.mount(stage, { sandbox: () => openItem('builder', 'builder') });
+    if (current.kind === 'game') inst = window.RippleOps.mount(stage, { level: level || undefined, sandbox: () => openItem('builder', 'builder'), onRoute: sync });
     else if (current.kind === 'builder') inst = window.SDBuilder.mount(stage);
     else if (current.kind === 'design') inst = window.SDWalkthrough.mount(stage, { design: current.id });
     else if (current.kind === 'course') {
@@ -160,9 +161,14 @@
   }
 
   async function open() {
-    if (!keep) current = null;          // arriving from the menu shows the list; opening a card keeps its choice
-    keep = false;
+    const want = api.want; api.want = null;
+    if (!keep && !want) current = null;          // arriving from the menu shows the list; opening a card keeps its choice
+    keep = false; wantLevel = '';
     try { await load(); error = ''; } catch (e) { error = `Could not load the simulators (${e.message}).`; }
+    if (want && items) {                  // a refreshed URL: #/system-design/simulators/<kind>~<id>[~<level>]
+      const [kind, id, level] = want.split('~');
+      current = items.find(i => i.kind === kind && i.id === id) || null; wantLevel = level || '';
+    }
   }
 
   // Open one simulator directly (from a lesson, the home page or Ripple Ops).
@@ -172,5 +178,8 @@
     await window.SystemDesign?.openView('simulators');
   }
 
-  window.DesignSimulators = { render, wire, open, stop, openItem, isBusy: () => false };
+  // The URL names the open simulator (and Ripple level) so a refresh lands in the same place.
+  const route = () => current ? 'simulators/' + current.kind + '~' + current.id + (current.kind === 'game' && inst?.route?.() ? '~' + inst.route() : '') : 'simulators';
+  const sync = () => { if (current && document.body.classList.contains('section-design')) history.replaceState(null, '', '#/system-design/' + route()); };
+  const api = window.DesignSimulators = { render, wire, open, stop, openItem, route, isBusy: () => false };
 })();

@@ -82,9 +82,9 @@
     else window.SystemDesign.openView(view);
   }
   function route(initial) {
-    const match = location.hash.match(/^#\/system-design(?:\/([^/]+)(?:\/([a-z0-9-]+))?)?$/);
+    const match = location.hash.match(/^#\/system-design(?:\/([^/]+)(?:\/([A-Za-z0-9~._-]+))?)?$/);
     const track = location.hash.match(/^#\/([a-z-]+)(?:\/([a-z0-9/_-]+))?$/);
-    if (match) select('system-design', (match[1]==='lesson'||match[1]==='redesign')&&match[2] ? match[1]+'/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
+    if (match) select('system-design', (match[1]==='lesson'||match[1]==='redesign'||match[1]==='simulators')&&match[2] ? match[1]+'/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
     else if (track && TRACKS.includes(track[1])) select(track[1], track[2] || 'home', false);
     else if (initial === true && !/^#\/leetcode/.test(location.hash)) { history.replaceState(null, '', '#/readiness'); select('readiness', 'home', false); }   // the app opens on Overview
     else if (current !== 'leetcode') select('leetcode', 'home', false);

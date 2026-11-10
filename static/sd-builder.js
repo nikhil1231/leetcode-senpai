@@ -34,16 +34,21 @@
     confirm: ['Confirm actions', 'Refunds, cancellations and anything irreversible need the user (or an agent) to confirm first.'],
     scoped: ['Scope to the user', 'Tools only act on the signed-in user\'s own records, whatever the model asks for.'] };
 
+  const NORMAL = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] };
   const anchors = n => ({ top: [n.x + W / 2, n.y], right: [n.x + W, n.y + H / 2], bottom: [n.x + W / 2, n.y + H], left: [n.x, n.y + H / 2] });
-  function edgePath(a, b) {                                   // nearest pair of sides, joined by a gentle curve
+  // Arrows leave and enter a box square to its edge. Of the 16 side pairs, take the shortest that doesn't have to turn
+  // back on itself; if every pair would, the body loops round (the control points still push straight out of each edge).
+  function edgePath(a, b) {
+    const A = anchors(a), B = anchors(b);
     let best = null;
-    for (const [sa, pa] of Object.entries(anchors(a))) for (const [sb, pb] of Object.entries(anchors(b))) {
-      const d = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
-      if (!best || d < best.d) best = { d, pa, pb, sa, sb };
+    for (const sa of Object.keys(A)) for (const sb of Object.keys(B)) {
+      const [x1, y1] = A[sa], [x2, y2] = B[sb], na = NORMAL[sa], nb = NORMAL[sb], dx = x2 - x1, dy = y2 - y1;
+      const back = (na[0] * dx + na[1] * dy < 0 ? 1 : 0) + (nb[0] * -dx + nb[1] * -dy < 0 ? 1 : 0);
+      const cost = Math.hypot(dx, dy) + back * 400;
+      if (!best || cost < best.cost) best = { cost, sa, sb, d: Math.hypot(dx, dy) };
     }
-    const [x1, y1] = best.pa, [x2, y2] = best.pb;
-    return Math.abs(x2 - x1) >= Math.abs(y2 - y1)
-      ? `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}` : `M ${x1} ${y1} C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`;
+    const [x1, y1] = A[best.sa], [x2, y2] = B[best.sb], na = NORMAL[best.sa], nb = NORMAL[best.sb], k = Math.max(50, Math.min(180, best.d * 0.5));
+    return `M ${x1} ${y1} C ${x1 + na[0] * k} ${y1 + na[1] * k}, ${x2 + nb[0] * k} ${y2 + nb[1] * k}, ${x2} ${y2}`;
   }
 
   // ---------- the day report (shared with Ripple Ops) ----------
@@ -67,7 +72,7 @@
 
   function mount(el, opts = {}) {
     const game = opts.mode === 'game', key = opts.storageKey || KEY;
-    let defs = null, S = null, sel = null, undo = [], drag = null, link = null, dead = false, saveTimer = null;
+    let defs = null, S = null, sel = null, group = new Set(), box = null, undo = [], drag = null, link = null, dead = false, saveTimer = null;
     let play = null;           // {res, h, timer} while a simulated day is on screen
     const def = id => defs.find(d => d.id === id) || { label: id, icon: '▫️', border: '#444c56' };
     const labelOf = id => def(id).label;
@@ -95,9 +100,9 @@
         <div class="bd-play" data-play hidden></div>
         <div class="bd-grid">
           <aside class="bd-palette" aria-label="Components"><input type="search" class="input" placeholder="Filter components" data-filter aria-label="Filter components"><div class="bd-items" data-items></div></aside>
-          <div class="bd-stage" data-stage tabindex="0" aria-label="Design canvas. Select a component and press Delete to remove it."><div class="bd-canvas" data-canvas style="width:${CANVAS_W}px;height:${CANVAS_H}px">
+          <div class="bd-stage" data-stage tabindex="0" aria-label="Design canvas. Select a component and press Delete to remove it."><div class="bd-sizer" data-sizer><div class="bd-canvas" data-canvas style="width:${CANVAS_W}px;height:${CANVAS_H}px">
             <svg class="bd-edges" width="${CANVAS_W}" height="${CANVAS_H}"><defs><marker id="bd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z"/></marker></defs><g data-edges></g><path class="bd-preview" data-preview d="" marker-end="url(#bd-arrow)"/></svg>
-            <div data-nodes></div><div class="bd-empty" data-empty><span>🏗️</span><strong>Build your design</strong><p>Drag a component in${game ? '' : ', or load a sample'}. Hover a node and drag from a dot to connect it. Click a node to size it.</p></div></div></div>
+            <div data-nodes></div><div class="bd-empty" data-empty><span>🏗️</span><strong>Build your design</strong><p>Drag a component in${game ? '' : ', or load a sample'}. Hover a node and drag from a dot to connect it. Click a node to size it.</p></div></div></div></div>
           <aside class="bd-panel" data-panel></aside></div>`;
       paintItems('');
     }
@@ -126,7 +131,7 @@
     function paintCanvas() {
       const nodes = el.querySelector('[data-nodes]'), tick = play ? play.res.ticks[play.h] : null;
       nodes.innerHTML = S.nodes.map(n => {
-        const d = def(n.defId), on = sel?.kind === 'node' && sel.id === n.id, st = tick?.nodes[n.id];
+        const d = def(n.defId), on = (sel?.kind === 'node' && sel.id === n.id) || group.has(n.id), st = tick?.nodes[n.id];
         const heat = st ? ` is-${st.status}` : '';
         return `<div class="bd-node${on ? ' is-sel' : ''}${heat}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px;width:${W}px;height:${H}px;--b:${esc(d.border)}${st ? `;--u:${Math.min(1, st.util)}` : ''}">
           ${['top', 'right', 'bottom', 'left'].map(s => `<i class="bd-h bd-h-${s}" data-handle="${s}"></i>`).join('')}<span class="bd-icon">${d.icon}</span><span class="bd-label">${esc(d.label)}</span>
@@ -137,6 +142,7 @@
         const w = live ? Math.min(6, 1.4 + Math.log10(1 + st.load) * 0.9) : 0;
         return `<g class="bd-edge${on ? ' is-sel' : ''}${live ? ' is-live' : ''}${st && (st.status === 'saturated' || st.status === 'down') ? ' is-bad' : ''}" data-edge="${esc(e.id)}"><path class="bd-hit" d="${d}"/><path class="bd-line" d="${d}" marker-end="url(#bd-arrow)"${live ? ` style="stroke-width:${w.toFixed(1)}px"` : ''}/></g>`; }).join('');
       el.querySelector('[data-empty]').hidden = S.nodes.length > 0;
+      applyView();
     }
 
     // ---------- the bar: live cost, and the playback strip ----------
@@ -157,17 +163,24 @@
       const now = evs.filter(e => h >= e.at && h < e.at + e.dur);
       const say = now.find(e => e.line && e.at === h);
       p.hidden = false;
-      p.innerHTML = `<div class="bd-play-row"><button type="button" class="button" data-act="play" aria-label="${play.timer ? 'Pause' : 'Play'}">${play.timer ? '⏸' : '▶'}</button>
+      p.innerHTML = `<div class="bd-play-row"><button type="button" class="button" data-act="play" aria-label="${play.timer ? 'Pause' : h >= 23 ? 'Replay' : 'Play'}">${play.timer ? '⏸ Pause' : h >= 23 ? '↺ Replay' : '▶ Play'}</button>
           <div class="bd-time"><input type="range" min="0" max="23" step="1" value="${h}" data-hour aria-label="Hour of the simulated day">
             <div class="bd-marks">${evs.map(e => `<i class="bd-mark" style="left:${e.at / 23 * 100}%;width:${Math.max(1.5, Math.min(e.dur, 24 - e.at) / 23 * 100)}%" title="${esc(e.label || Sim.EVENT_LABEL[e.type])} at ${hh(e.at)}"></i>`).join('')}</div>
             <div class="bd-ok">${res.ticks.map(x => `<i style="height:${Math.max(2, (1 - x.ok) * 100)}%" class="${x.ok < 0.95 ? 'is-bad' : x.ok < 0.999 ? 'is-warn' : ''}"></i>`).join('')}</div></div>
           <div class="bd-read"><b>${hh(h)}</b><span>${fmt(rps)} req/s</span><span class="${t.ok < 0.99 ? 'is-bad' : ''}">${(t.ok * 100).toFixed(t.ok > 0.999 ? 2 : 1)}% ok</span><span>p99 ${ms(worst)}</span>${t.retryMult > 1.05 ? `<span class="is-bad">retries ×${t.retryMult.toFixed(1)}</span>` : ''}</div>
           <button type="button" class="button" data-act="endplay">Back to editing</button></div>
+        <div class="bd-play-row bd-play-ctl"><button type="button" class="button" data-act="stepback" aria-label="Previous hour" ${h <= 0 ? 'disabled' : ''}>⏮ Step back</button><button type="button" class="button" data-act="stepfwd" aria-label="Next hour" ${h >= 23 ? 'disabled' : ''}>Step ⏭</button>
+          <label class="bd-speed">Speed <select data-speed aria-label="Playback speed">${[[0.5, '0.5×'], [1, '1×'], [2, '2×'], [4, '4×']].map(([v, l]) => `<option value="${v}"${play.speed === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+          <button type="button" class="button" data-act="skip" ${h >= 23 ? 'disabled' : ''}>Skip to the end ⏩</button></div>
         ${now.length ? `<div class="bd-now">${now.map(e => `<span class="bd-chip">⚡ ${esc(e.label || Sim.EVENT_LABEL[e.type])}</span>`).join('')}${say ? `<span class="bd-say">${avatar(say.who)}<em>${esc(say.line)}</em></span>` : ''}</div>` : ''}`;
+      if (h >= 23 && !play.done) {            // the last hour is on screen: the day is over, now the results may show
+        const mine = play; mine.done = true;
+        mine.endTimer = setTimeout(() => { if (play === mine) { paintPanel(); opts.onDayEnd?.({ finished: true, whatif: mine.whatif }); } }, 900);
+      }
     }
     function startPlay(res) {
       stopPlay(false);
-      play = { res, h: 0, timer: null };
+      play = { res, h: 0, timer: null, speed: 1, done: false, whatif: false };
       sel = null;
       paintCanvas(); paintPanel(); paintPlay();
       togglePlay();
@@ -176,12 +189,16 @@
       if (!play) return;
       if (play.timer) { clearInterval(play.timer); play.timer = null; paintPlay(); return; }
       if (play.h >= 23) play.h = 0;
-      play.timer = setInterval(() => { if (!play) return; if (play.h >= 23) { clearInterval(play.timer); play.timer = null; paintPlay(); return; } play.h++; paintCanvas(); paintPlay(); }, opts.speedMs || 450);
+      play.timer = setInterval(() => { if (!play) return; if (play.h >= 23) { clearInterval(play.timer); play.timer = null; paintPlay(); return; } play.h++; paintCanvas(); paintPlay(); paintPanel(); }, (opts.speedMs || 450) / play.speed);
       paintPlay();
     }
+    function pausePlay() { if (play?.timer) { clearInterval(play.timer); play.timer = null; } }
+    function gotoHour(h) { if (!play) return; pausePlay(); play.h = Math.max(0, Math.min(23, h)); paintCanvas(); paintPlay(); paintPanel(); }
     function stopPlay(repaint = true) {
       if (!play) return;
-      clearInterval(play.timer); play = null;
+      clearInterval(play.timer); clearTimeout(play.endTimer);
+      const old = play; play = null;
+      if (!old.done) opts.onDayEnd?.({ finished: false, whatif: old.whatif });
       if (repaint) { paintCanvas(); paintPlay(); paintPanel(); } else paintPlay();
     }
     function runDay(extra) {
@@ -189,7 +206,7 @@
       const scn = extra ? { ...scenario(), events: [...(scenario().events || []), ...extra] } : scenario();
       const res = Sim.run(scn, graph(), econ);
       if (!extra) last = res;
-      startPlay(res);
+      startPlay(res); play.whatif = !!extra;
       opts.onRun?.(res, graph(), { whatif: !!extra, scenario: scn });
       return res;
     }
@@ -236,7 +253,7 @@
         panel.innerHTML = `<section class="bd-box"><h4>${hh(play.h)} · busiest components</h4>${rows.map(r => `<div class="bd-row bd-u-${esc(r.st.status)}"><span>${def(r.x.defId).icon} ${esc(def(r.x.defId).label)}</span><b>${r.st.status === 'down' ? 'down' : Math.round(r.st.util * 100) + '%'}</b></div>`).join('') || '<p class="bd-note">Quiet.</p>'}
           <h4 style="margin-top:12px">Requests this hour</h4>${Object.entries(t.types).map(([k, v]) => `<div class="bd-row"><span>${esc(Sim.LABEL[k] || k)}</span><b>${fmt(v.rps)}/s · ${(v.ok * 100).toFixed(v.ok > 0.999 ? 2 : 1)}% · ${ms(v.p99)}</b></div>`).join('')}
           ${Object.values(t.queues).some(q => q.backlog > 1) ? `<h4 style="margin-top:12px">Queues</h4>${Object.entries(t.queues).map(([id, q]) => `<div class="bd-row"><span>${esc(def(nodeById(id)?.defId).label)}${q.stalled ? ' (stalled)' : ''}</span><b>${fmt(q.backlog)} waiting · ${Number.isFinite(q.lagMin) ? Math.round(q.lagMin) + ' min' : '∞'}</b></div>`).join('')}` : ''}</section>
-          ${game ? '' : `<section class="bd-box"><h4>The day</h4>${reportHtml(play.res, { labelOf, maxFindings: 6 })}</section>`}`;
+          ${game || !play.done ? '' : `<section class="bd-box"><h4>The day</h4>${reportHtml(play.res, { labelOf, maxFindings: 6 })}</section>`}`;
         return;
       }
       const field = (k, label, ph) => `<label><span>${label}</span><input type="text" inputmode="decimal" data-scale="${k}" value="${esc(S.scale[k])}" placeholder="${ph}"></label>`;
@@ -279,6 +296,7 @@
       S.nodes.push(n); sel = { kind: 'node', id: n.id }; touch();
     }
     function remove() {
+      if (group.size) { snapshot(); S.nodes = S.nodes.filter(n => !group.has(n.id)); S.edges = S.edges.filter(e => !group.has(e.from) && !group.has(e.to)); group.clear(); sel = null; touch(); return; }
       if (!sel) return;
       snapshot();
       if (sel.kind === 'node') { S.nodes = S.nodes.filter(n => n.id !== sel.id); S.edges = S.edges.filter(e => e.from !== sel.id && e.to !== sel.id); }
@@ -325,7 +343,33 @@
 
     // ---------- pointer handling ----------
     const stage = () => el.querySelector('[data-stage]'), canvas = () => el.querySelector('[data-canvas]');
-    const local = ev => { const r = canvas().getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
+    let zoom = 1, pan = null, vx = 0, vy = 0;
+    const local = ev => { const r = canvas().getBoundingClientRect(); return [(ev.clientX - r.left) / zoom, (ev.clientY - r.top) / zoom]; };
+    // The view is a pan offset plus zoom. It may drift past the canvas edge, but never so far that no component
+    // (or, on an empty canvas, none of the canvas) is left on screen.
+    function clampView(x, y) {
+      const st = stage(), vw = st.clientWidth, vh = st.clientHeight;
+      const rects = S && S.nodes.length ? S.nodes.map(n => [n.x, n.y, W, H]) : [[0, 0, CANVAS_W, CANVAS_H]];
+      let best = null, bd = Infinity;
+      for (const [rx, ry, rw, rh] of rects) {
+        const mx = Math.min(60, rw * zoom), my = Math.min(60, rh * zoom);
+        const lim = (o, r0, rs, m, v) => { const lo = m - (r0 + rs) * zoom, hi = v - m - r0 * zoom; return lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, o)); };
+        const cx = lim(x, rx, rw, mx, vw), cy = lim(y, ry, rh, my, vh), d = Math.hypot(cx - x, cy - y);
+        if (d < bd) { bd = d; best = [cx, cy]; if (!d) break; }
+      }
+      return best;
+    }
+    const applyView = () => { [vx, vy] = clampView(vx, vy); canvas().style.transform = `translate(${vx}px,${vy}px) scale(${zoom})`; };
+    const setZoom = (z, cx, cy) => {
+      const nz = Math.max(0.4, Math.min(2, z));
+      if (nz === zoom) return;
+      const r = canvas().getBoundingClientRect(), ax = (cx - r.left) / zoom, ay = (cy - r.top) / zoom;
+      zoom = nz; vx += cx - ax * nz - r.left; vy += cy - ay * nz - r.top; applyView();
+    };
+    const onWheel = ev => {
+      if (!ev.target.closest('[data-stage]')) return;
+      ev.preventDefault(); setZoom(zoom * Math.exp(-ev.deltaY * 0.0015), ev.clientX, ev.clientY);
+    };
     const onDown = ev => {
       if (!ev.target.closest('[data-canvas]')) return;
       const handle = ev.target.closest('[data-handle]'), node = ev.target.closest('.bd-node'), edge = ev.target.closest('[data-edge]');
@@ -336,14 +380,46 @@
         stage().setPointerCapture?.(ev.pointerId);
       } else if (node) {
         const n = nodeById(node.dataset.id), [px, py] = local(ev);
-        sel = { kind: 'node', id: n.id }; drag = { id: n.id, dx: px - n.x, dy: py - n.y, moved: false };
+        if (ev.ctrlKey || ev.metaKey) {   // Ctrl/Cmd-click toggles one component in or out of the selection
+          ev.preventDefault();
+          if (!group.size && sel?.kind === 'node') group.add(sel.id);
+          group.has(n.id) ? group.delete(n.id) : group.add(n.id);
+          sel = group.size === 1 ? { kind: 'node', id: [...group][0] } : null; if (group.size < 2) group.clear();
+          paintCanvas(); paintPanel(); return;
+        }
+        const together = group.has(n.id) && group.size > 1;
+        if (!together) { group.clear(); sel = { kind: 'node', id: n.id }; } else sel = null;
+        drag = { id: n.id, dx: px - n.x, dy: py - n.y, moved: false, from: together ? S.nodes.filter(m => group.has(m.id)).map(m => [m.id, m.x, m.y]) : null, px, py };
         paintCanvas(); paintPanel(); stage().focus({ preventScroll: true });
         stage().setPointerCapture?.(ev.pointerId);
       } else if (edge) { sel = { kind: 'edge', id: edge.dataset.edge }; paintCanvas(); paintPanel(); stage().focus({ preventScroll: true }); }
-      else if (!play) { sel = null; paintCanvas(); paintPanel(); }
+      else if (ev.shiftKey) {   // Shift-drag on empty space: rubber-band select (Ctrl+Shift adds to the selection)
+        const [px, py] = local(ev); box = { x: px, y: py, w: 0, h: 0 };
+        if (ev.ctrlKey || ev.metaKey) { if (!group.size && sel?.kind === 'node') group.add(sel.id); } else group.clear();
+        sel = null; paintPanel();
+        const m = document.createElement('div'); m.className = 'bd-marquee'; canvas().appendChild(m); box.el = m;
+        stage().setPointerCapture?.(ev.pointerId); ev.preventDefault();
+      } else {
+        if (!ev.ctrlKey && !ev.metaKey) { group.clear(); paintCanvas(); }
+        if (!play && sel && !ev.ctrlKey && !ev.metaKey) { sel = null; paintCanvas(); paintPanel(); }
+        const st = stage(); pan = { x: ev.clientX, y: ev.clientY, l: vx, t: vy };
+        st.classList.add('is-panning'); st.setPointerCapture?.(ev.pointerId);
+      }
     };
     const onMove = ev => {
-      if (drag) {
+      if (box) {
+        const [px, py] = local(ev), x = Math.min(box.x, px), y = Math.min(box.y, py), w = Math.abs(px - box.x), h = Math.abs(py - box.y);
+        Object.assign(box.el.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+        box.r = [x, y, x + w, y + h];
+      } else if (pan) { vx = pan.l + ev.clientX - pan.x; vy = pan.t + ev.clientY - pan.y; applyView(); }
+      else if (drag && drag.from) {
+        const [px, py] = local(ev);
+        if (!drag.moved) { snapshot(); drag.moved = true; }
+        let dx = Math.round(px - drag.px), dy = Math.round(py - drag.py);
+        for (const [, x, y] of drag.from) { dx = Math.max(dx, -x); dy = Math.max(dy, -y); dx = Math.min(dx, CANVAS_W - W - x); dy = Math.min(dy, CANVAS_H - H - y); }
+        for (const [id, x, y] of drag.from) { const m = nodeById(id); m.x = x + dx; m.y = y + dy; const div = el.querySelector(`.bd-node[data-id="${CSS.escape(id)}"]`); if (div) { div.style.left = m.x + 'px'; div.style.top = m.y + 'px'; } }
+        el.querySelectorAll('[data-edge]').forEach(g => { const e = S.edges.find(x => x.id === g.dataset.edge); if (!e) return; const a = nodeById(e.from), b = nodeById(e.to); g.querySelectorAll('path').forEach(p => p.setAttribute('d', edgePath(a, b))); });
+      } else if (drag) {
         const n = nodeById(drag.id), [px, py] = local(ev);
         if (!drag.moved) { snapshot(); drag.moved = true; }
         n.x = Math.max(0, Math.min(CANVAS_W - W, Math.round(px - drag.dx))); n.y = Math.max(0, Math.min(CANVAS_H - H, Math.round(py - drag.dy)));
@@ -351,11 +427,18 @@
         el.querySelectorAll('[data-edge]').forEach(g => { const e = S.edges.find(x => x.id === g.dataset.edge); if (!e) return; const a = nodeById(e.from), b = nodeById(e.to); g.querySelectorAll('path').forEach(p => p.setAttribute('d', edgePath(a, b))); });
       } else if (link) {
         const a = nodeById(link.from), [px, py] = local(ev), [x1, y1] = anchors(a)[link.side];
-        el.querySelector('[data-preview]').setAttribute('d', `M ${x1} ${y1} L ${px} ${py}`);
+        const nn = NORMAL[link.side], k = Math.min(80, Math.hypot(px - x1, py - y1) / 2);
+        el.querySelector('[data-preview]').setAttribute('d', `M ${x1} ${y1} C ${x1 + nn[0] * k} ${y1 + nn[1] * k}, ${px} ${py}, ${px} ${py}`);
       }
     };
     const onUp = ev => {
-      if (drag) { if (drag.moved) save(); drag = null; }
+      if (box) {
+        const r = box.r; box.el.remove();
+        if (r) { for (const n of S.nodes) if (n.x < r[2] && n.x + W > r[0] && n.y < r[3] && n.y + H > r[1]) group.add(n.id); }
+        box = null; if (group.size === 1) { sel = { kind: 'node', id: [...group][0] }; group.clear(); } paintCanvas(); paintPanel();
+      }
+      if (pan) { pan = null; stage().classList.remove('is-panning'); }
+      if (drag) { if (drag.moved) { save(); applyView(); } drag = null; }
       if (link) {
         const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('.bd-node'), to = over && over.dataset.id;
         if (to && to !== link.from && !S.edges.some(e => e.from === link.from && e.to === to)) {
@@ -378,13 +461,15 @@
       else if (act === 'mermaid') copyMermaid();
       else if (act === 'run') runDay();
       else if (act === 'play') togglePlay();
+      else if (act === 'stepback') gotoHour(play.h - 1); else if (act === 'stepfwd') gotoHour(play.h + 1); else if (act === 'skip') gotoHour(23);
       else if (act === 'endplay') stopPlay();
       else if (act === 'clear') { if (!S.nodes.length) return; snapshot(); S.nodes = []; S.edges = []; sel = null; touch(); }
     };
     const onInput = ev => {
       const t = ev.target;
       if (t.dataset.filter !== undefined) paintItems(t.value);
-      else if (t.dataset.hour !== undefined && play) { play.h = +t.value; if (play.timer) { clearInterval(play.timer); play.timer = null; } paintCanvas(); paintPlay(); paintPanel(); }
+      else if (t.dataset.hour !== undefined && play) gotoHour(+t.value);
+      else if (t.dataset.speed !== undefined && play) { play.speed = +t.value; if (play.timer) { pausePlay(); togglePlay(); } }
       else if (t.dataset.cfg && t.type === 'number') setCfg(t.dataset.cfg, t.value, t);
       else if (t.dataset.scale) { S.scale[t.dataset.scale] = t.value; save(); paintPanelKeepFocus(t); paintBar(); }
       else if (t.dataset.nfr && t.tagName === 'INPUT') { S.nfr[t.dataset.nfr] = t.value; save(); paintPanelKeepFocus(t); }
@@ -417,7 +502,7 @@
       shell(); paintCanvas(); paintPanel(); paintBar();
       const on = (t, ev, f) => { t.addEventListener(ev, f); offs.push(() => t.removeEventListener(ev, f)); }, offs = [];
       on(el, 'pointerdown', onDown); on(el, 'pointermove', onMove); on(el, 'pointerup', onUp); on(el, 'pointercancel', onUp);
-      on(el, 'keydown', onKey); on(el, 'click', onClick); on(el, 'input', onInput); on(el, 'change', onChange);
+      on(el, 'wheel', onWheel); on(el, 'keydown', onKey); on(el, 'click', onClick); on(el, 'input', onInput); on(el, 'change', onChange);
       on(el, 'dragstart', onDragStart); on(el, 'dragover', onDragOver); on(el, 'drop', onDrop);
       el._bdOffs = offs;
     }).catch(err => { if (!dead) el.innerHTML = `<p class="bd-note">Could not load the builder (${esc(err.message)}).</p>`; });

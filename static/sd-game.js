@@ -30,7 +30,7 @@
   }
 
   function mount(el, o = {}) {
-    let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '';
+    let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false;
     let casePage = null;
     let est = {}, graded = null, notes = '', notesOpen = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
     const levels = () => camp.levels;
@@ -178,7 +178,7 @@
         <section class="rp-results" data-results>${resultsHtml(l)}</section></div>`;
     }
     function resultsHtml(l) {
-      if (!res) return '';
+      if (!res || !revealed) return '';
       const s = res.summary, prog = posted?.progress, nextL = levels().find(x => x.after === l.id && (!x.side || x.chapter === l.chapter) && (prog || ov.progress).unlocked.includes(x.id));
       const showRef = l.solution && (s.stars >= 2 || attempts >= 2);
       return `<h3>How the day went</h3>
@@ -296,7 +296,7 @@
     }
     async function onRun(r, g, info) {
       if (info.whatif) return;
-      res = r; attempts++; debrief = null; dbState = ''; posted = null;
+      res = r; attempts++; debrief = null; dbState = ''; posted = null; revealed = false; modalPlayed = false; closeModal();
       paintResults();
       posted = await postRun(r);
       if (dead) return;
@@ -311,7 +311,42 @@
       catch (e) { dbState = e.message === 'auth' ? '' : `The debrief didn't come through (${e.message}).`; }
       if (!dead) paintResults();
     }
-    function paintResults() { const r = el.querySelector('[data-results]'); if (r && L) r.innerHTML = resultsHtml(L); }
+    // The results wait for the end of the day. Saving the run and the LLM debrief carry on in the background meanwhile.
+    function paintResults() {
+      if (!L) return;
+      const r = el.querySelector('[data-results]'); if (r) r.innerHTML = modalOpen ? '' : resultsHtml(L);
+      const m = el.querySelector('[data-modal-body]'); if (m) fillModal(m);
+    }
+    function onDayEnd(info) {
+      if (dead || info.whatif || !res || revealed) return;
+      revealed = true;
+      if (info.finished) openModal(); else paintResults();
+    }
+    function fillModal(body) {
+      body.innerHTML = resultsHtml(L);
+      if (modalPlayed) return;
+      modalPlayed = true;
+      // Each section pops in, one after another.
+      const parts = [...body.children].flatMap(c => c.classList.contains('rp-res-grid') ? [...c.children].flatMap(col => [...col.children]) : [c]);
+      parts.forEach((n, i) => { n.classList.add('rp-pop'); n.style.setProperty('--d', (0.15 + i * 0.35) + 's'); });
+    }
+    function openModal() {
+      closeModal(true);
+      modalOpen = true;
+      const m = document.createElement('div');
+      m.className = 'rp-modal'; m.dataset.modal = '';
+      m.innerHTML = '<div class="rp-modal-card" role="dialog" aria-modal="true" aria-label="How the day went"><button type="button" class="rp-modal-x" data-modal-close aria-label="Close and keep the results below">✕</button><div class="rp-modal-body" data-modal-body></div></div>';
+      el.appendChild(m);
+      fillModal(m.querySelector('[data-modal-body]'));
+      m.querySelector('.rp-modal-x').focus({ preventScroll: true });
+      const r = el.querySelector('[data-results]'); if (r) r.innerHTML = '';
+    }
+    function closeModal(quiet) {
+      el.querySelector('[data-modal]')?.remove();
+      if (!modalOpen) return;
+      modalOpen = false;
+      if (!quiet) { paintResults(); el.querySelector('[data-results]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    }
 
     // ---------- reasoning, time-linked to the design ----------
     // Each pause in what he writes or says becomes an entry: the words added and, when it changed, the design at that moment.
@@ -373,12 +408,14 @@
       const ta = el.querySelector('[data-notes]');
       if (ta && !ta.value && notes) { ta.value = notes; if (notesOpen == null) ta.closest('details').open = true; }
       const scn = L;
-      builder = B().mount(stage, { mode: 'game', scenario: scn, toolbox: L.toolbox, storageKey: `rp-canvas-${L.id}`, initial, onChange: saveDraft, onRun });
+      builder = B().mount(stage, { mode: 'game', scenario: scn, toolbox: L.toolbox, storageKey: `rp-canvas-${L.id}`, initial, onChange: saveDraft, onRun, onDayEnd });
       await builder.ready;
     }
     async function paint() {
       if (dead) return;
+      modalOpen = false;
       stopBuilder();
+      o.onRoute?.();
       if (view === 'hub') { el.innerHTML = hubHtml(); return; }
       if (view === 'case') {
         el.innerHTML = `<div class="rp rp-case-page"><div class="sd-breadcrumb"><button type="button" class="button" data-hub>← Ripple Ops</button><span>/ The incident archive</span></div><h2 id="sd-heading" tabindex="-1">${esc(L.title)}</h2><div data-case-host></div></div>`;
@@ -394,9 +431,11 @@
 
     // ---------- events ----------
     const onClick = async ev => {
+      if (ev.target.matches?.('[data-modal]')) { closeModal(); return; }
       const t = ev.target.closest('button, [data-open]');
       if (!t) return;
       const d = t.dataset;
+      if (d.modalClose !== undefined) { closeModal(); return; }
       if (d.open) { const l = byId(d.open); if (l && unlocked(l.id)) await openLevel(l); }
       else if (d.case) openCase(d.case);
       else if (d.hub !== undefined) { stopBuilder(); view = 'hub'; L = null; await refresh(); paint(); }
@@ -454,6 +493,7 @@
       chatSend(text).then(keepChat);
     };
     const onKey = ev => {
+      if (ev.key === 'Escape' && modalOpen) { ev.preventDefault(); closeModal(); return; }
       if (ev.target.matches('[data-chat-text]') && ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ev.target.form?.requestSubmit(); }
       if (ev.target.matches('[data-est]') && ev.key === 'Enter') { ev.preventDefault(); graded = Sim().grade(L, est, L.estimate); paint(); }
     };
@@ -469,7 +509,7 @@
       if (want && byId(want) && unlocked(want)) await openLevel(byId(want)); else paint();
     })();
 
-    return { destroy() { dead = true; stopBuilder(); clearTimeout(draftTimer); clearTimeout(logTimer); el.removeEventListener('toggle', onToggle, true); el.removeEventListener('click', onClick); el.removeEventListener('input', onInput); el.removeEventListener('submit', onSubmit); el.removeEventListener('keydown', onKey); } };
+    return { route: () => (view === 'level' && L && byId(L.id) ? L.id : ''), destroy() { dead = true; stopBuilder(); clearTimeout(draftTimer); clearTimeout(logTimer); el.removeEventListener('toggle', onToggle, true); el.removeEventListener('click', onClick); el.removeEventListener('input', onInput); el.removeEventListener('submit', onSubmit); el.removeEventListener('keydown', onKey); } };
   }
 
   // Lessons and the home page link straight into a level.

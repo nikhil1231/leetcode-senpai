@@ -35,7 +35,11 @@
 .bd-item span { font-size:17px; line-height:1; }
 .bd-stage { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:auto; height:clamp(440px, calc(100vh - 300px), 700px); outline:none; }
 .bd-stage:focus-visible { border-color:var(--accent); }
-.bd-canvas { position:relative; background-image:radial-gradient(var(--line) 1px, transparent 1px); background-size:22px 22px; touch-action:pan-x pan-y; }
+.bd-stage { cursor:grab; overflow:hidden; overscroll-behavior:contain; position:relative; }
+#app .bd-stage:focus-visible { outline:none; border-color:var(--line); }
+.bd-sizer { position:absolute; inset:0; }
+.bd-stage.is-panning { cursor:grabbing; user-select:none; }
+.bd-canvas { position:absolute; left:0; top:0; transform-origin:0 0; background-image:radial-gradient(var(--line) 1px, transparent 1px); background-size:22px 22px; touch-action:none; }
 .bd-edges { position:absolute; inset:0; pointer-events:none; }
 .bd-line { fill:none; stroke:var(--text-2); stroke-width:1.8; }
 .bd-hit { fill:none; stroke:transparent; stroke-width:16; pointer-events:stroke; cursor:pointer; }
@@ -89,3 +93,8 @@
 .sim-speed label { display: inline-flex; align-items: center; gap: 6px; }
 .sim-speed input { width: 90px; accent-color: var(--accent); }
 .sim-speed output { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text); }
+
+.bd-marquee { position:absolute; z-index:5; border:1px dashed var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); pointer-events:none; }
+.bd-play-ctl { margin-top:6px; flex-wrap:wrap; }
+.bd-speed { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
+.bd-speed select { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:3px 6px; }
