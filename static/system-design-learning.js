@@ -32,15 +32,25 @@
     tickAt=performance.now();clock=setInterval(()=>{tick();checkpoint();},1000);
   }
   function progress(completed,total) {return `<div class="sd-course-bar" role="progressbar" aria-label="Lessons completed" aria-valuenow="${completed}" aria-valuemin="0" aria-valuemax="${total}"><span style="width:${total?100*completed/total:0}%"></span></div>`;}
-  const statusText = l => l.status==='completed'?'Completed':l.status==='in_progress'?'In progress':'Not started';
+  // A lesson worked through elsewhere (the tutor, an outside tutor's session) reads as covered, not "Not started".
+  const statusText = l => {
+    const k=catalog.known?.[l.id];
+    return l.status==='completed'?(l.tested_out?'Known':'Completed'):k?.state==='covered'?'Covered':l.status==='in_progress'||k?.state==='started'?'In progress':'Not started';
+  };
+  // Ideas, two layers: solid is what you would recall today, dim is everything you have covered (tested or taught).
+  function ideaBar(held,seen,total,label) {
+    const pc=n=>total?Math.min(100,100*n/total):0;
+    return `<div class="sd-course-bar sd-idea-bar" role="img" aria-label="${esc(label)}" title="${esc(label)}"><span class="is-seen" style="width:${pc(seen)}%"></span><span style="width:${pc(held)}%"></span></div>`;
+  }
+  const ideaLabel=(held,seen,total)=>`${seen} of ${total} ideas covered; ${held} of them you would recall today`;
   // What the knowledge model holds for a lesson, from every source (tutors, ChatGPT, checks); blank until something is tested.
   function known(l) {
     const k=catalog.known?.[l.id];
-    return `<span class="sd-known" ${k&&k.tested?`title="Ideas you hold now, of ${k.total}; ${k.tested} tested">${k.held}/${k.total} held`:'>'}</span>`;
+    return `<span class="sd-known">${k&&k.seen?ideaBar(k.held,k.seen,k.total,ideaLabel(k.held,k.seen,k.total)):''}</span>`;
   }
-  function held(c) {
-    const ks=c.lessons.map(l=>catalog.known?.[l.id]).filter(Boolean), n=ks.reduce((a,k)=>a+k.held,0);
-    return ks.some(k=>k.tested)?` · ${n}/${ks.reduce((a,k)=>a+k.total,0)} ideas held`:'';
+  function ideas(c) {
+    const ks=c.lessons.map(l=>catalog.known?.[l.id]).filter(Boolean), sum=f=>ks.reduce((a,k)=>a+k[f],0);
+    return {held:sum('held'),seen:sum('seen'),total:sum('total')||1};
   }
   function lessonRow(l,index) {
     return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}${window.StudyPrompt?.button({section:'system-design',lesson:l.id},l.title)||''}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span>${known(l)}<span class="sd-muted">${l.minutes} min</span></a>`;
@@ -60,7 +70,7 @@
       const numbered=c.lessons.map(l=>({l,n:number++})).filter(({l})=>matches(l));
       if(!numbered.length)return '';
       const current=catalog.course.lessons.find(l=>l.id===catalog.course.next_lesson)?.category;
-      return `<details class="sd-course-category" ${filter!=='all'||category||search||c.id===current?'open':''}><summary><span class="sd-course-stage">${String(i+1).padStart(2,'0')}</span><span><strong>${esc(c.title)}${window.StudyPrompt?.button({section:'system-design',category:c.id},c.title)||''}</strong><small>${esc(c.description)}</small></span><span class="sd-category-total">${c.completed}/${c.total} completed${held(c)}</span>${progress(c.completed,c.total)}</summary><div>${numbered.map(({l,n})=>lessonRow(l,n)).join('')}</div></details>`;
+      return `<details class="sd-course-category" ${filter!=='all'||category||search||c.id===current?'open':''}><summary><span class="sd-course-stage">${String(i+1).padStart(2,'0')}</span><span><strong>${esc(c.title)}${window.StudyPrompt?.button({section:'system-design',category:c.id},c.title)||''}</strong><small>${esc(c.description)}</small></span><span class="sd-category-total">${c.completed}/${c.total} lessons done${(i=>i.seen?` · ${i.seen}/${i.total} ideas covered`:'')(ideas(c))}</span>${(i=>ideaBar(i.held,i.seen,i.total,ideaLabel(i.held,i.seen,i.total)))(ideas(c))}</summary><div>${numbered.map(({l,n})=>lessonRow(l,n)).join('')}</div></details>`;
     }).join('');
     return html || '<div class="sd-panel">No lessons match these filters. Try another category or show all lessons.</div>';
   }

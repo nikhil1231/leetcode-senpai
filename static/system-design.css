@@ -352,6 +352,10 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 .sd-course-stats span { display:block; color:var(--muted); font-size:11px; margin-top:8px; line-height:1.6; }
 .sd-course-bar { height:5px; background:var(--line); border-radius:4px; overflow:hidden; min-width:80px; }
 .sd-course-bar>span { height:100%; display:block; background:var(--accent); }
+.sd-idea-bar { position:relative; }
+.sd-idea-bar>span { position:absolute; left:0; top:0; }
+.sd-idea-bar>span.is-seen { background:var(--accent); opacity:.32; }
+.sd-known .sd-idea-bar { display:inline-block; width:64px; min-width:64px; vertical-align:middle; }
 .sd-course-toolbar,.sd-fire-controls { display:flex; gap:14px; align-items:end; flex-wrap:wrap; margin-bottom:20px; }
 .sd-course-toolbar label,.sd-fire-controls label { display:flex; flex-direction:column; gap:7px; font-size:11px; color:var(--muted); min-width:140px; }
 .sd-course-toolbar .select,.sd-fire-controls .select { width:100%; max-width:290px; }

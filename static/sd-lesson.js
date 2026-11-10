@@ -155,10 +155,10 @@
   }
   function warmupHtml() {
     const probes = S.session.probes, answered = probes.filter(k => k in S.answered).length;
-    return `<section class="sd-warmup"><span class="sd-eyebrow">WARM-UP · ${probes.length} QUESTION${probes.length === 1 ? '' : 'S'}</span><h3>First, show me what you already know</h3><p>Each question stands for one part of the lesson. Get it right and that part folds away to a summary; miss it and we work through it. Skip any you would only be guessing at.</p>
+    return `<section class="sd-warmup"><span class="sd-eyebrow">WARM-UP · ${probes.length} QUESTION${probes.length === 1 ? '' : 'S'}</span><h3>First, show me what you already know</h3><p>${window.Tutor?.warming?.(S.id) ? 'Each question stands for one part of the lesson. The tutor skips what you get right and starts from what you miss. Full marks and the lesson counts as done. Skip any you would only be guessing at.' : 'Each question stands for one part of the lesson. Get it right and that part folds away to a summary; miss it and we work through it. Skip any you would only be guessing at.'}</p>
       ${probes.map((k, i) => `<div class="sd-probe"><span class="sd-probe-n">${i + 1}</span>${slot(k)}</div>`).join('')}
       <label class="sd-warmup-note"><span>Anything you already know, or want from this lesson? <small>Optional. The tutor uses it.</small></span><textarea class="textarea" rows="2" maxlength="1000" data-draft="note" placeholder="e.g. I use Redis daily but never thought about eviction"></textarea></label>
-      <div class="sd-actions">${btn(S.busy.plan ? 'Building…' : `Build my lesson →`, 'plan', S.busy.plan ? 'disabled' : '', answered === probes.length)}${btn('I’m new to this: teach me everything', 'fresh')}<span class="sd-muted">${answered} of ${probes.length} answered</span></div></section>`;
+      <div class="sd-actions">${btn(S.busy.plan ? 'Building…' : window.Tutor?.warming?.(S.id) ? 'Done: on to the tutor →' : `Build my lesson →`, 'plan', S.busy.plan ? 'disabled' : '', answered === probes.length)}${btn(window.Tutor?.warming?.(S.id) ? 'I don’t know this yet: skip the check' : 'I’m new to this: teach me everything', 'fresh')}<span class="sd-muted">${answered} of ${probes.length} answered</span></div></section>`;
   }
   const openerHtml = () => (S.session.opener || []).map(slot).join('');
   function finaleHtml() {
@@ -292,6 +292,7 @@
       await Promise.all(S.pending);
       S.session = await call(`/course/lessons/${id}/plan`, 'POST', {probes: S.session.probes.filter(k => k in S.answered), note: S.drafts.note || '', fresh: action === 'fresh'});
       S.page = 0;
+      if (window.Tutor?.warmed?.(id, S.session)) return;  // the tutor takes it from here
       window.scrollTo({top: S.host.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth'});
       notes();
     });
@@ -432,7 +433,14 @@
     // Explanations that were still loading when the last save happened are asked for again.
     if (S.session.tutor) Object.keys(S.wrong).filter(k => !S.explain[k]).forEach(k => explain(k));
   }
-  async function load() {
+  // Questions in the warm-up still to do for this lesson (0 once planned), when it has loaded.
+  async function warmup(id) {
+    if (S?.id !== id) return 0;
+    await S.loaded;
+    return S?.id === id && S.session && !S.session.planned ? S.session.probes.length : 0;
+  }
+  function load() { S.loaded = loadNow(); return S.loaded; }
+  async function loadNow() {
     const lesson = S.id;
     S.error = ''; paint();
     try {
@@ -507,5 +515,5 @@
   // Leaving the tab or closing it saves straight away instead of waiting for the debounce.
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S) saveNow(); });
   window.addEventListener('pagehide', () => { if (S) saveNow(); });
-  window.DesignLesson = {mount, reset, _test: {chunks, prose: (t, k) => { S = S || {more: {}}; return prose(t, k); }}};
+  window.DesignLesson = {mount, reset, warmup, refresh: () => { if (S?.session) paint(); }, _test: {chunks, prose: (t, k) => { S = S || {more: {}}; return prose(t, k); }}};
 })();

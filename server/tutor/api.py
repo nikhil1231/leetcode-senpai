@@ -154,12 +154,17 @@ def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Dep
                   'at': last.get('last_at')} if last else None
     summary = kmodel.summary(c, states, seen, mis, now)
     sc = story.scale(summary)
-    step = progress.next_step(rep, tutor, active, mine[0]['_key'][len(prefix):] if mine else None)
+    done = {r['lesson_id'] for r in store.list_design_records() if r.get('kind') == 'course_lesson' and r.get('tested_out_at')} \
+        if section == 'system-design' else set()
+    step = progress.next_step(rep, tutor, active, mine[0]['_key'][len(prefix):] if mine else None, done)
+    # The tutor's own suggestion is offered beside the course order, not over it: following it
+    # every time hopped between areas and left lessons behind.
     nxt = lm.fresh_next(store.get_knowledge('tutor_memory', LEARNER_KEY), now) if tutor else None
-    if nxt and nxt['section'] == section and nxt['lesson'] in titles and step['primary'].get('kind') != 'resume':
-        step = {'primary': {'kind': 'learn', 'lesson': nxt['lesson'], 'title': f"Your tutor suggests {titles[nxt['lesson']]}",
-                            'why': nxt['why'] or 'Where your tutor said to go next.', 'label': 'Go with the tutor', 'tutor': True},
-                'alternatives': ([step['primary']] + step['alternatives'])[:2]}
+    if nxt and nxt['section'] == section and nxt['lesson'] in titles and nxt['lesson'] not in done \
+            and nxt['lesson'] != step['primary'].get('lesson'):
+        step = {**step, 'alternatives': [{'kind': 'learn', 'lesson': nxt['lesson'], 'title': f"Your tutor suggests {titles[nxt['lesson']]}",
+                                          'why': nxt['why'] or 'Where your tutor said to go next.', 'label': 'Go with the tutor', 'tutor': True},
+                                         *step['alternatives']][:2]}
     return {**step,
             'tutor': tutor, 'previously': previously,
             'standing': {k: rep[k] for k in ('total', 'tested', 'coverage', 'score', 'level', 'slipping', 'held')}

@@ -108,6 +108,20 @@ def test_lessons_probed_right_wait_until_last():
     assert step['primary']['kind'] == 'learn' and step['primary']['lesson'] == 'guarantees'
 
 
+def test_gaps_in_the_area_you_are_working_in_come_before_lessons_elsewhere():
+    # Outside sessions covered consistency and consensus, and started request-flow back in Foundations.
+    events = [ans(p, NOW - DAY) for l in ('consistency', 'consensus') for p in pids(l, 12)]
+    events += [ans(p, NOW - DAY) for p in pids('request-flow', 5)]
+    r = rep(events)
+    step = progress.next_step(r, last_lesson='consensus')
+    assert step['primary']['kind'] == 'learn' and step['primary']['lesson'] == 'replication'
+    # The lesson you were partway through comes first; with no area to go on, started lessons do.
+    assert progress.next_step(r, last_lesson='request-flow')['primary']['lesson'] == 'request-flow'
+    assert progress.next_step(r)['primary']['lesson'] == 'request-flow'
+    # A lesson finished with full marks on its warm-up is skipped.
+    assert progress.next_step(r, last_lesson='consensus', done={'replication'})['primary']['lesson'] == 'partitioning'
+
+
 def test_priorities_resume_fix_review():
     wrong = [ans(p, NOW - DAY, False) for p in pids('request-flow', 6)]
     mis = [{'_key': 'drip:g', 'kind': 'gap', 'point': pids('guarantees', 1)[0], 'text': 'name the invariant', 'status': 'open',
@@ -189,5 +203,6 @@ def test_an_older_question_version_is_not_evidence_for_the_new_one(monkeypatch):
 
 def test_lessons_tally_held_tested_and_total_per_lesson():
     v = lambda lesson, status: {'lesson': lesson, 'status': status, 'r': 1.0 if status != 'unseen' else 0.0, 'depth': None, 'misconceptions': 0}
-    out = progress.lessons([v('a', 'solid'), v('a', 'shaky'), v('a', 'unseen'), v('b', 'unseen')])
-    assert out == {'a': {'held': 1, 'tested': 2, 'total': 3}, 'b': {'held': 0, 'tested': 0, 'total': 1}}
+    out = progress.lessons([v('a', 'solid'), v('a', 'shaky'), v('a', 'unseen'), v('b', 'unseen'), {**v('b', 'unseen'), 'exposures': 2}])
+    assert out == {'a': {'held': 1, 'tested': 2, 'seen': 2, 'total': 3, 'state': 'new'},
+                   'b': {'held': 0, 'tested': 0, 'seen': 1, 'total': 2, 'state': 'new'}}

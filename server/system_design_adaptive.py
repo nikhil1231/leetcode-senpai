@@ -17,7 +17,8 @@ FINALE = ('interview', 'recall')
 OPENER = ('outage',)
 # Fill-the-gaps leans on the lesson's own numbers, so it is never a warm-up question.
 PROBE_KINDS = ('predict', 'calc', 'order', 'sort', 'bug')
-MAX_PROBES = 5
+MAX_PROBES = 8
+PER_SECTION = 2
 HELD = ('solid', 'learning')
 MODES = ('known', 'skim', 'learn')
 KNOWN_SHARE = 0.75
@@ -98,21 +99,26 @@ def attempt_stages(position, total_sections):
 
 
 def probes(lesson, statuses, limit=MAX_PROBES):
-    """One quick gradeable block per undecided section, in course order. None for walkthroughs."""
+    """Quick gradeable blocks from the undecided sections, in course order: one per section first,
+    then a second from each while there is room. None for walkthroughs."""
     if is_walkthrough(lesson):
         return []
     split = sections(lesson)
     by_key = {b['key']: b for b in lesson.get('blocks', []) if b['type'] != 'md'}
-    out = []
-    for s in split['sections']:
-        if mode_of(evidence(lesson, s, statuses)):
-            continue
-        key = next((k for k in s['blocks'] if by_key[k]['type'] in PROBE_KINDS and gradeable(by_key[k])), None)
-        if key:
-            out.append(key)
-        if len(out) >= limit:
-            break
-    return out
+    pools = [[k for k in s['blocks'] if by_key[k]['type'] in PROBE_KINDS and gradeable(by_key[k])]
+             for s in split['sections'] if not mode_of(evidence(lesson, s, statuses))]
+    picked = [k for depth in range(PER_SECTION) for pool in pools if len(pool) > depth for k in [pool[depth]]]
+    order = {k: i for i, k in enumerate(k for pool in pools for k in pool)}
+    return sorted(picked[:limit], key=order.get)
+
+
+def tested_out(lesson, plan_result, probes_correct):
+    """Full marks on the warm-up: every probe right, and every section the warm-up can check (one
+    with a quick question) known. Sections with only longer activities don't hold it back."""
+    by_key = {b['key']: b for b in lesson.get('blocks', []) if b['type'] != 'md'}
+    checkable = [s for s in plan_result['sections']
+                 if any(by_key[k]['type'] in PROBE_KINDS and gradeable(by_key[k]) for k in s['blocks'])]
+    return bool(probes_correct) and all(probes_correct) and bool(checkable) and all(s['mode'] == 'known' for s in checkable)
 
 
 def plan(lesson, statuses, *, fresh=False, overrides=None, position=None):

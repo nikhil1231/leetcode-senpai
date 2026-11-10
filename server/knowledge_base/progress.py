@@ -52,11 +52,18 @@ def _tally(views):
 
 
 def lessons(views):
-    """-> {lesson id: {held, tested, total}} for the lesson rows of a course list."""
+    """-> {lesson id: {held, tested, seen, total, state}} for the lesson rows of a course list. `seen`
+    counts ideas tested or explained to you (an outside tutor's session, say) though not yet tested;
+    `state` is new, started or covered."""
     by = {}
     for v in views:
         by.setdefault(v['lesson'], []).append(v)
-    return {k: {x: t[x] for x in ('held', 'tested', 'total')} for k, t in ((k, _tally(vs)) for k, vs in by.items())}
+    out = {}
+    for k, vs in by.items():
+        t = _tally(vs)
+        out[k] = {x: t[x] for x in ('held', 'tested', 'total')} | {
+            'seen': sum(v['status'] != 'unseen' or bool(v.get('exposures')) for v in vs), 'state': _lesson_state(t)}
+    return out
 
 
 def section_points(catalog, section):
@@ -122,13 +129,30 @@ def _lesson_state(l):
     return 'covered' if l['tested'] >= COVERED * l['total'] else 'started'
 
 
-def next_step(rep, tutor=False, active=None, last_lesson=None):
+def _pick(lessons, last_lesson, done):
+    """(area, lesson) to learn next. Finish the lesson you were on; then fill the gaps in its area in
+    course order, so outside sessions that hop around don't leave holes behind; then the earliest
+    started lesson anywhere, then the earliest new one. A new lesson whose placement probe went well
+    waits until the others are done. `done`: lessons finished another way (full marks on a warm-up)."""
+    todo = [(a, l) for a, l in lessons if not _strong(a) and l['id'] not in done and _lesson_state(l) != 'covered']
+    waits = lambda al: _lesson_state(al[1]) == 'new' and bool(al[1]['tested']) and (al[1]['score'] or 0) >= STRONG
+    here = next((a['id'] for a, l in lessons if l['id'] == last_lesson), None)
+    if any(l['id'] == last_lesson and _lesson_state(l) == 'started' for _, l in todo):
+        return next(al for al in todo if al[1]['id'] == last_lesson)
+    in_area = sorted((al for al in todo if al[0]['id'] == here), key=waits)
+    started = [al for al in todo if _lesson_state(al[1]) == 'started']
+    fresh = sorted((al for al in todo if _lesson_state(al[1]) == 'new'), key=waits)
+    return (in_area or started or fresh or [None])[0]
+
+
+def next_step(rep, tutor=False, active=None, last_lesson=None, done=()):
     """-> {'primary': action, 'alternatives': [action, ...]}. Actions, in priority order:
 
     resume a tutor session; clear an open misconception; review slipping points; a placement
     check before the first lesson of an untested area; the next lesson (continue a started one
     first, skip areas you are strong in); a mixed review. `active` is the lesson of an active
-    tutor session ({lesson, lesson_title}); `last_lesson` the lesson worked on most recently.
+    tutor session ({lesson, lesson_title}); `last_lesson` the lesson worked on most recently; `done`
+    lessons finished outside the knowledge model (full marks on a warm-up).
     """
     lessons = [(a, l) for a in rep['areas'] for l in a['lessons']]
     titles = {l['id']: l['title'] for _, l in lessons}
@@ -148,14 +172,7 @@ def next_step(rep, tutor=False, active=None, last_lesson=None):
         found.append({'kind': 'review', 'count': due, 'title': f'{due} ideas are slipping',
                       'why': 'Recalling them now, before they are gone, makes them stick far longer than relearning later.',
                       'label': 'Review them (about 5 minutes)', 'tutor': False})
-    open_lessons = [(a, l) for a, l in lessons if not _strong(a)]
-    started = [(a, l) for a, l in open_lessons if _lesson_state(l) == 'started']
-    if last_lesson:
-        started.sort(key=lambda al: al[1]['id'] != last_lesson)
-    # A new lesson whose placement probe went well waits until the others are done.
-    fresh = sorted((al for al in open_lessons if _lesson_state(al[1]) == 'new'),
-                   key=lambda al: bool(al[1]['tested']) and (al[1]['score'] or 0) >= STRONG)
-    pick = (started or fresh or [None])[0]
+    pick = _pick(lessons, last_lesson, set(done))
     if pick:
         a, l = pick
         untested = [x for x in a['lessons'] if not x['tested']]

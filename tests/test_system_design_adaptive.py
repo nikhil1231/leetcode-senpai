@@ -42,13 +42,33 @@ def test_lead_skips_callouts_tables_code_and_lists():
     assert adaptive.lead(text) == '**Key** point here.'
 
 
-def test_unseen_lesson_probes_one_block_per_section_and_learns_everything():
+def test_unseen_lesson_probes_every_section_before_any_twice_and_learns_everything():
     lesson = LESSONS['cache-aside']
     probes = adaptive.probes(lesson, {})
     assert 0 < len(probes) <= adaptive.MAX_PROBES
     sections = {k: s['id'] for s in adaptive.sections(lesson)['sections'] for k in s['blocks']}
-    assert len({sections[p] for p in probes}) == len(probes)
+    by_key = {b['key']: b for b in lesson['blocks'] if b['type'] != 'md'}
+    probeable = {s['id'] for s in adaptive.sections(lesson)['sections']
+                 if any(by_key[k]['type'] in adaptive.PROBE_KINDS and items.gradeable(by_key[k]) for k in s['blocks'])}
+    per = [sections[p] for p in probes]
+    assert set(per) == probeable or len(probes) == adaptive.MAX_PROBES
+    assert max(per.count(x) for x in per) <= adaptive.PER_SECTION
+    assert probes == sorted(probes, key=[b['key'] for b in lesson['blocks'] if b['type'] != 'md'].index)
     assert {s['mode'] for s in adaptive.plan(lesson, {})['sections']} == {'learn'}
+
+
+def test_full_marks_on_the_warm_up_tests_the_lesson_out():
+    passable = 0
+    for key, lesson in LESSONS.items():
+        probes = adaptive.probes(lesson, {})
+        if not probes:
+            continue
+        held = adaptive.plan(lesson, {f'{key}:{k}': 'solid' for k in probes})
+        passable += adaptive.tested_out(lesson, held, [True] * len(probes))
+        assert not adaptive.tested_out(lesson, held, [True] * (len(probes) - 1) + [False])
+        assert not adaptive.tested_out(lesson, adaptive.plan(lesson, {}), [True] * len(probes))
+        assert not adaptive.tested_out(lesson, held, [])
+    assert passable >= 40
 
 
 def test_evidence_decides_modes_and_strong_warmups_skim_the_unknown_rest():
@@ -129,6 +149,30 @@ def test_warmup_then_frozen_plan_survives_later_evidence(client):
     assert client.store.get_design_record('course_cache-aside')['plan']['self_report'] == 'I know Redis'
     reset = call(client, 'POST', '/course/lessons/cache-aside/plan/reset')
     assert not reset['planned']
+
+
+def test_full_marks_on_the_warm_up_marks_the_lesson_done(client):
+    s = call(client, 'GET', '/course/lessons/cache-aside/session')
+    call(client, 'POST', '/course/lessons/cache-aside/open')
+    for k in s['probes'][:-1]:
+        call(client, 'POST', '/course/lessons/cache-aside/activity', block=k, correct=True)
+    call(client, 'POST', '/course/lessons/cache-aside/activity', block=s['probes'][-1], correct=False)
+    missed = call(client, 'POST', '/course/lessons/cache-aside/plan', probes=s['probes'])
+    assert not missed['tested_out']
+    # A fresh lesson, all right first time: done without reading it.
+    s = call(client, 'GET', '/course/lessons/cache-freshness/session')
+    call(client, 'POST', '/course/lessons/cache-freshness/open')
+    for k in s['probes']:
+        call(client, 'POST', '/course/lessons/cache-freshness/activity', block=k, correct=True)
+    assert call(client, 'POST', '/course/lessons/cache-freshness/plan', probes=s['probes'])['tested_out']
+    row = next(l for l in learning.course_summary(client.store.list_design_records())['lessons'] if l['id'] == 'cache-freshness')
+    assert row['completed'] and row['tested_out']
+    # "I don't know this yet" never counts.
+    s = call(client, 'GET', '/course/lessons/hot-keys/session')
+    call(client, 'POST', '/course/lessons/hot-keys/open')
+    for k in s['probes']:
+        call(client, 'POST', '/course/lessons/hot-keys/activity', block=k, correct=True)
+    assert not call(client, 'POST', '/course/lessons/hot-keys/plan', probes=s['probes'], fresh=True)['tested_out']
 
 
 def test_tutor_moments_save_learner_text_and_degrade_without_the_model(client):

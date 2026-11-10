@@ -146,7 +146,7 @@ def course_summary(records, now=None):
         latest_score = sum(a['correct'] and not a['revealed'] for a in complete[-1]['answers'].values()) if complete else None
         latest_total = len(complete[-1]['answers']) if complete else None
         activities = state.get('activities', {})
-        done = bool(state.get('read_at') and complete)
+        done = bool(state.get('read_at') and complete) or bool(state.get('tested_out_at'))  # or full marks on the warm-up
         calibration = ('not_assessed' if not independent else 'more_practice'
                        if len(recent) < 3 else 'needs_work'
                        if sum(clean(a) for a in recent) / len(recent) < .7 else 'developing_strength')
@@ -160,7 +160,7 @@ def course_summary(records, now=None):
             'activities_total': item.get('interactive', 0),
             'activities_done': sum(1 for a in activities.values() if a.get('done')),
             'objective_progress': objective_progress, 'opened': bool(state.get('opened_at')), 'read': bool(state.get('read_at')),
-            'completed': done, 'passed': passed, 'quiz_attempts': len(quizzes),
+            'completed': done, 'passed': passed, 'tested_out': bool(state.get('tested_out_at')), 'quiz_attempts': len(quizzes),
             'latest_score': latest_score, 'best_score': max((sum(a['correct'] and not a['revealed'] for a in r['answers'].values()) for r in complete), default=None),
             'status': 'completed' if done else 'in_progress' if state or quizzes else 'not_started',
             'needs_review': bool(due or mistakes), 'mistakes': mistakes, 'due': due,

@@ -98,7 +98,7 @@ def session(store, key, now=None):
                            'lesson_title': LESSONS[QUESTIONS[q]['lesson_id']]['title']} for q in calls if q in QUESTIONS],
             'attempts': attempts, 'tutor': llm.enabled(store.get_settings()), 'progress': progress,
             'plan_at': frozen.get('at') if is_planned else None,
-            'redesign': f'redesign:{key}' in ledger_items.BY_ID}
+            'redesign': f'redesign:{key}' in ledger_items.BY_ID, 'tested_out': bool(state.get('tested_out_at'))}
 
 
 @router.get('/course/lessons/{key}/session')
@@ -123,8 +123,11 @@ def make_plan(key: str, body: PlanBody, store=Depends(store_for)):
     position = WALKTHROUGHS.index(key) if key in WALKTHROUGHS else None
     result = adaptive.plan(lesson, statuses, fresh=body.fresh, position=position)
     order = list(LESSONS)
-    save_state(store, key, {'plan': {'at': now, 'fresh': body.fresh, 'self_report': body.note.strip(),
-                                     'probes': [p for p in body.probes if any(b.get('key') == p for b in lesson['blocks'])],
+    probes = [p for p in body.probes if any(b.get('key') == p for b in lesson['blocks'])]
+    answers = state_of(store, key).get('activities') or {}
+    passed = not body.fresh and adaptive.tested_out(lesson, result, [(answers.get(p) or {}).get('first_correct') is True for p in probes])
+    save_state(store, key, {**({'tested_out_at': int(now)} if passed else {}), 'plan': {'at': now, 'fresh': body.fresh, 'self_report': body.note.strip(),
+                                     'probes': probes,
                                      'modes': {s['id']: s['mode'] for s in result['sections']},
                                      'callbacks': adaptive.callbacks(key, order, views), 'notes': None}})
     return session(store, key, now)

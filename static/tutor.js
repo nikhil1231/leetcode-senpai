@@ -7,7 +7,8 @@
 // the design simulator, whose result goes back to it (server/tutor/rig.py). Ending a session brings a
 // debrief from the tutor: the only teaching in the role-play modes. Home can queue a session,
 // which starts as soon as the lesson opens. Without the model there is no card and the lesson
-// works as usual.
+// works as usual. A "Teach me" session on a design lesson starts with the lesson's warm-up check
+// (DesignLesson.warmup) unless skipped; full marks there marks the lesson done instead.
 (function () {
   'use strict';
   const {api, escapeHtml: esc} = window.H;
@@ -55,7 +56,17 @@
   // Notes stay hidden until chosen when the tutor is on. The lesson body's own display rule beats
   // [hidden], so hide it inline.
   function hideLesson() {
-    if (T.ctx.layout) T.ctx.layout.style.display = T.open || (T.info?.enabled && !T.notes) ? 'none' : '';
+    if (T.ctx.layout) T.ctx.layout.style.display = !T.warming && (T.open || (T.info?.enabled && !T.notes)) ? 'none' : '';
+  }
+
+  // The warm-up before a session: shown in the lesson body, then the tutor (or full marks) follows.
+  const warming = id => !!T?.warming && T.ctx.lesson.id === id;
+  function warmed(id, session) {
+    if (!warming(id)) return false;
+    T.warming = false;
+    if (session?.tested_out) { T.passed = true; paint(); T.host.scrollIntoView?.({block: 'start', behavior: 'smooth'}); }
+    else act('start-now');
+    return true;
   }
 
   async function load() {
@@ -80,6 +91,9 @@
     const i = T.info, o = T.overview, out = outsideHtml();
     if (!i.enabled) return out;
     const active = T.session && T.session.status === 'active';
+    if (T.warming) return out + `<section class="tu-entry tu-compact"><span><b>Quick check first.</b> Answer what you can below; the tutor starts from what you miss.</span>${btn('Skip it: start the tutor', 'start-now')}</section>`;
+    if (T.passed) return out + `<section class="tu-entry"><span class="sd-eyebrow">FULL MARKS</span><p>You got every warm-up question right, so this lesson counts as done and Home moves you on.</p>
+      <div class="sd-actions">${btn('Next lesson →', 'home', '', true)}${btn('Talk it through anyway', 'start-now')}${btn('Read the notes', 'notes')}</div></section>`;
     const go = active ? btn('Continue your session', 'resume', '', true) : btn(T.notes ? 'Learn this with the tutor' : 'Start', 'start', '', true);
     if (T.notes) return out + `<section class="tu-entry tu-compact"><span>Rather be taught? The tutor asks the questions and brings in this lesson's activities.</span>${go}</section>`;
     const mode = o.modes.find(m => m.id === T.mode);
@@ -160,8 +174,18 @@
         await api(`/knowledge/handback/${t.info.outside.filing.retry.session}/file`, 'POST');
         if (T === t) load();
       } else if (action === 'notes') {
-        t.notes = true; setPreferNotes(true); paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
-      } else if (action === 'start') {
+        t.notes = true; t.passed = false; setPreferNotes(true); paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
+      } else if (action === 'home') {
+        window.AppSections?.select(t.ctx.section, 'home');
+      } else if (action === 'start' && t.mode === 'teach' && !t.focus && !t.carry && t.ctx.section === 'system-design'
+                 && await window.DesignLesson?.warmup?.(t.ctx.lesson.id)) {
+        if (T !== t) return;
+        t.warming = true; t.passed = false; t.notes = false; t.error = '';
+        paint(); window.DesignLesson?.refresh?.();
+        t.ctx.layout?.scrollIntoView?.({block: 'start', behavior: 'smooth'});
+      } else if (action === 'start' || action === 'start-now') {
+        if (t.warming) { t.warming = false; window.DesignLesson?.refresh?.(); }
+        t.passed = false;
         setPreferNotes(false);
         t.busy = true; t.error = ''; t.open = true;
         t.session = {id: null, mode: t.mode, status: 'active', turns: [], objectives: t.info.objectives.map(() => ({status: 'open'})), progress: {demonstrated: 0, total: t.info.objectives.length}};
@@ -362,5 +386,5 @@
   }
 
   function reset() { T = null; }
-  window.Tutor = {mount, reset, queue};
+  window.Tutor = {mount, reset, queue, warming, warmed};
 })();
