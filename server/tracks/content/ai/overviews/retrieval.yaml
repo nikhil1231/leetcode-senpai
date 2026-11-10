@@ -1,0 +1,107 @@
+# The overview of one area of the AI course. Format and rules: server/tutor/overviews.py and the system design
+# overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: retrieval
+title: Retrieval and RAG
+minutes: 25
+intro: |
+  This tour covers the two topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Both steps have a simulator to try and end with a quick check.
+
+  Ripple's support team wants a bot that answers creators' questions from the help centre, rather than from whatever the model happens to remember. That means finding the right passages first (search by meaning and by keyword) and then answering only from them. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple's help-centre bot
+  plain: true
+  nodes:
+    - {id: docs, label: Help centre, kind: storage, x: 0, y: 0, note: 'articles and PDFs'}
+    - {id: ingest, label: Ingestion, kind: process, x: 1, y: 0, note: 'parse, chunk, embed'}
+    - {id: index, label: Search index, kind: vector, x: 2, y: 0, note: 'vectors and keywords'}
+    - {id: user, label: Creator, kind: client, x: 0, y: 1}
+    - {id: bot, label: Support bot, kind: service, x: 1, y: 1, note: 'rewrites the question'}
+    - {id: rerank, label: Re-ranker, kind: process, x: 2, y: 1, note: 'keeps the best 5'}
+    - {id: model, label: LLM, kind: model, x: 2, y: 2, note: 'answers with citations'}
+  edges:
+    - [docs, ingest]
+    - [ingest, index]
+    - [user, bot]
+    - [bot, index, 'search']
+    - [bot, rerank]
+    - [bot, model]
+  paths:
+    - label: A help article changes
+      steps:
+        - [docs, ingest, 'The refund article is rewritten. A webhook tells ingestion straight away, rather than waiting for a nightly rebuild (step 2).']
+        - [ingest, index, 'The article is split into passages of a few hundred tokens, each starting with its title and section, turned into vectors, and stored with its date and who may see it. The old passages are deleted.']
+    - label: '"How do I get my money back?"'
+      steps:
+        - [user, bot, 'A creator asks "how do I get my money back for a cancelled plan?"']
+        - [bot, index, 'The search runs two ways at once. By meaning, "money back" finds the refund article; by keyword, an exact error code would be found too (step 1). Only passages this creator may see are searched.']
+        - [bot, rerank, 'The top 50 are scored again more carefully, and the best 5 are kept.']
+        - [bot, model, 'The model answers only from those 5 passages, cites them, and says so if they don''t contain the answer (step 2).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. The top row runs whenever the help centre changes; the bottom row runs on every question. Most bad answers come from the top row or the search, not from the model.
+steps:
+  - lesson: embeddings
+    title: Searching by meaning
+    minutes: 8
+    problem: |
+      Ripple's help-centre search matches words, so "how do I get my money back" finds nothing, because the article says "refund". The team switches to embeddings, and now a search for error code E-4021 returns articles about other errors.
+    answer: |
+      An **embedding model** turns text into a vector (a list of a few hundred to a few thousand numbers) so that texts with similar meaning end up close together, even if they share no words. Closeness is usually measured with **cosine similarity**. Queries and documents must be embedded with the same model, so store the model's name with every vector: changing models means embedding everything again.
+
+      Comparing a query with every vector is fine for 100,000 documents and too slow for 100 million. **Approximate nearest-neighbour** indexes give up a little accuracy (**recall**, the share of true nearest neighbours found) for a large speed-up. **HNSW**, a layered graph that the search walks down towards the query, is the common one: fast and accurate, but it needs a lot of memory. At moderate scale, keeping vectors beside the rows they describe (pgvector in Postgres) makes filters and deletes much simpler.
+
+      In practice, search both ways. Keyword search (**BM25**) is good at exact terms, identifiers and rare words; vectors are good at paraphrases. Merge the two result lists, then **re-rank** the top 50 to 100 with a slower, more accurate model that reads the query and each candidate together.
+    catch: |
+      Embeddings capture what a passage is about better than its exact details, so error codes, product names, numbers and negation ("not supported") get blurred. And filters such as "only this customer's documents" must run inside the search. Filtering afterwards can leave too few results, or let through documents the user shouldn't see.
+    remember: |
+      Use keyword and vector search together. Each catches what the other misses.
+    use: embeddings/b911
+    check: embeddings/b3
+    later: [Normalisation and dot products, HNSW and IVF settings, Reciprocal rank fusion, How much memory vectors take]
+    recap: Embeddings put similar meanings close together. Combine vector search with keyword search, filter inside the search, and re-rank.
+
+  - lesson: rag
+    title: Answering from your own documents
+    minutes: 9
+    problem: |
+      The support bot confidently tells a creator a refund policy that was replaced last month. Worse, it once quoted a passage from another customer's private workspace.
+    answer: |
+      **Retrieval-augmented generation (RAG)** finds relevant passages and puts them in the prompt, so the model answers from your documents. It has two paths:
+      - **Ingestion**, run whenever documents change: parse them carefully (tables and PDFs lose the most), split them into **chunks** of roughly 200 to 800 tokens at natural boundaries, start each chunk with its title and section so it makes sense on its own, and store it with its source, date, version and who may see it. Re-ingest when a document changes and delete the chunks of removed ones.
+      - **Query**, on every question: rewrite follow-ups into standalone questions ("what about on Pro?" becomes "refund policy for the Pro plan"), search with keywords and vectors, applying permissions as filters inside the search, re-rank, and pass the best 3 to 8 passages to the model. The prompt says to answer only from those passages, cite them, and say when they don't contain the answer.
+
+      To find what went wrong, look at the retrieved passages first. If the right passage wasn't there, the problem is in ingestion or retrieval; if it was there and the answer is still wrong, the problem is generation. Measure the two separately: **recall@k** for retrieval (was the right passage in the top k?) and **faithfulness** for generation (is every claim supported by the passages?).
+    catch: |
+      Most RAG failures are retrieval failures, and there are many stages to keep working. RAG is also the wrong tool sometimes: a handful of stable documents can simply go in the prompt with caching; "how many links did I make last month?" needs a database query, not a document search; and teaching a tone or format is a job for fine-tuning.
+    remember: |
+      Permissions are filters inside the search query, never instructions to the model.
+    use: rag/b910
+    use_note: The first two challenges are enough for now (find the data leak, then answer all seven).
+    check:
+      type: sort
+      prompt: The bot gave a bad answer. Where in the pipeline is the fault?
+      buckets: [Ingestion, Retrieval, Generation]
+      items:
+        - {text: 'It quotes a refund policy that was replaced last month', bucket: 0, why: 'The superseded chunks were never deleted when the article changed.'}
+        - {text: 'A table of plan prices came out of a PDF as jumbled numbers', bucket: 0, why: 'Parsing lost the table, so every later stage works from bad text.'}
+        - {text: 'A creator sees a passage from another workspace''s private document', bucket: 1, why: 'Permissions have to be a filter inside the search, so the passage is never retrieved.'}
+        - {text: 'A search for error E-4021 brings back articles about other errors', bucket: 1, why: 'Vector search blurs identifiers; keyword search would match it exactly.'}
+        - {text: 'The follow-up "what about on Pro?" retrieves nothing useful', bucket: 1, why: 'The question needed rewriting into a standalone one before searching.'}
+        - {text: 'The right passage was in the prompt, but the answer contradicts it', bucket: 2, why: 'Retrieval did its job; the model didn''t stick to the passage.'}
+        - {text: 'The help centre doesn''t cover the question, and the bot makes up an answer', bucket: 2, why: 'The prompt needs a clear "say you don''t know" path.'}
+    later: [Chunking and contextual retrieval, Query rewriting, Citations and post-checks, Building a labelled RAG test set]
+    recap: Ingest carefully and keep it fresh, retrieve with hybrid search and permission filters, then answer only from cited passages.
+finish:
+  check:
+    type: predict
+    prompt: |
+      Creators ask the bot "how many links did I create last month?" and get vague or wrong answers. What do you change?
+    choices:
+      - Use bigger chunks, so more of the help centre fits in each passage
+      - Give the bot a tool that runs a query on the creator's own data, and answer from the result
+      - Fine-tune the model on examples of link counts
+      - Add more help-centre articles about link counts
+    answer: 1
+    reveal: |
+      The answer lives in Ripple's database, not in any document, so no amount of retrieval over the help centre can find it. A tool call that counts the creator's links (with the usual check that they own the data) gives the model a real number to answer from. Fine-tuning can't teach facts that change every day, and more articles still won't contain this creator's numbers.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

@@ -1,0 +1,76 @@
+# The overview of one area of the fundamentals course. Format and rules: server/tutor/overviews.py and the system
+# design overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: quality
+title: Testing and reliability
+minutes: 20
+intro: |
+  This tour is a single step, in the same pattern as the others: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping, with a simulator and a quick check.
+
+  A release broke checkout on a Friday afternoon. Priya wants tests that would have caught it, and a plan for the next failure nobody has thought of yet. The step covers what each kind of test is for, from unit tests to deliberately breaking production. The full lesson goes further, and the page keeps your place if you stop part-way.
+picture:
+  title: What would have caught Friday's bug
+  plain: true
+  nodes:
+    - {id: code, label: Checkout code, kind: process, x: 0, y: 1}
+    - {id: unit, label: Unit tests, kind: process, x: 1, y: 0, note: 'thousands, ms each'}
+    - {id: integ, label: Integration tests, kind: process, x: 1, y: 1, note: 'real Postgres in Docker'}
+    - {id: contract, label: Contract checks, kind: storage, x: 1, y: 2, note: 'between services'}
+    - {id: e2e, label: End-to-end, kind: process, x: 2, y: 1, note: 'a handful of journeys'}
+    - {id: prod, label: Production, kind: service, x: 3, y: 1, note: 'load tests, chaos'}
+  edges:
+    - [code, unit]
+    - [code, integ]
+    - [code, contract]
+    - [integ, e2e]
+    - [e2e, prod]
+  paths:
+    - label: Friday's three bugs
+      steps:
+        - [code, unit, 'A discount was rounded the wrong way at exactly £100. A unit test on the boundary catches it in milliseconds.']
+        - [code, integ, 'A query applied a coupon twice because of a join. It only goes wrong against a real database, so an integration test with Postgres in a container catches it.']
+        - [code, contract, 'The payments team renamed a field checkout relies on. Checking checkout''s recorded expectations in the payments pipeline fails before they deploy.']
+    - label: Before and after release
+      steps:
+        - [integ, e2e, 'A few end-to-end journeys (sign up, upgrade, pay) run against the deployed system, because they''re the only proof the whole thing works.']
+        - [e2e, prod, 'A soak test at normal load for hours finds a slow memory leak, and a game day checks that failover actually works.']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. Each kind of test catches a different kind of bug, and the cheapest one that can catch a bug is the one to write. The further right a test sits, the slower and flakier it is, and the less it tells you about where the bug is.
+steps:
+  - lesson: testing-strategy
+    title: A testing strategy, from unit tests to chaos
+    minutes: 10
+    problem: |
+      Ripple's only tests are a slow end-to-end suite that fails a third of the time, so people re-run it until it passes. On Friday a release broke checkout and the suite didn't notice.
+    answer: |
+      Think of the test suite as a **pyramid**: many fast **unit tests** (one function or class, in memory, milliseconds), fewer **integration tests** against real dependencies (a real Postgres in a container, seconds), and a handful of **end-to-end** tests through the deployed system for the journeys that earn money. Cost and flakiness grow towards the top, and the precision of a failure shrinks.
+
+      **Test doubles** stand in for slow or external parts: a **stub** returns canned answers, a **spy** records how it was called, a **mock** fails if the calls don't match expectations, and a **fake** is a working, simpler implementation (an in-memory repository). Prefer stubs and fakes that let you check outcomes; mocks tie tests to how the code works, so refactoring breaks them.
+
+      Other tools for specific gaps:
+      - **Contract tests** between services: each consumer records what it needs from a provider, and the provider's pipeline checks every recorded expectation before deploying.
+      - **Property-based tests** state something true for all inputs (`decode(encode(x)) == x`) and let a library generate hundreds of cases.
+      - **Performance tests** in four shapes: **load** (expected peak), **stress** (until it breaks), **spike** (a sudden jump) and **soak** (hours, to find leaks). Measure percentiles, not averages.
+      - **Chaos engineering**: define a steady state in business terms, inject a failure in a limited area, and check it holds.
+    catch: |
+      Flaky tests destroy trust: once people re-run until green, real failures get through too. The usual causes are sleeps instead of waiting for a condition, state shared between tests, and test order. Quarantine and fix them rather than retrying. And coverage numbers say which lines ran, not whether anything was checked.
+    remember: |
+      Write the cheapest test that can catch the bug: unit tests for logic, integration tests for anything involving a real database or network.
+    use: testing-strategy/b5
+    check: testing-strategy/b1
+    later: [Fixing flaky tests, Consumer-driven contracts, Writing good properties, Running a game day]
+    recap: Many unit tests, fewer integration tests against real dependencies, a few end-to-end journeys. Prefer fakes to mocks, and fix flaky tests.
+finish:
+  check:
+    type: predict
+    prompt: |
+      You join the team with the slow, flaky end-to-end suite. What do you do first?
+    choices:
+      - Add more end-to-end tests for checkout
+      - Quarantine and fix the flaky tests, add unit and integration tests for the checkout logic, and keep a few end-to-end journeys
+      - Require 100% line coverage on every pull request
+      - Configure CI to retry failing tests until they pass
+    answer: 1
+    reveal: |
+      The suite isn't trusted because it's flaky, and it's slow because everything is tested from the top. Fixing the flaky tests restores trust, and moving most checks down to unit and integration tests makes failures fast and precise, leaving a few end-to-end journeys as the final proof. More end-to-end tests make both problems worse, a coverage target measures lines run rather than things checked, and automatic retries hide real failures.
+  text: |
+    That's the whole area. The full lesson goes through each piece properly, and it should feel familiar now.

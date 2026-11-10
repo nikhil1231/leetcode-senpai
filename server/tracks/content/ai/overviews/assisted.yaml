@@ -1,0 +1,124 @@
+# The overview of one area of the AI course. Format and rules: server/tutor/overviews.py and the system design
+# overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: assisted
+title: AI-assisted coding
+minutes: 30
+intro: |
+  This tour covers the three topics in this area, one short step each. Every step follows the same pattern: a situation, the usual answer, its main drawback, and one fact worth keeping. Each step has something to try and ends with a quick check.
+
+  Ripple's engineers code with AI pairs, and Ripple hires people who do too, so interviews now include a round where you're expected to use one. What's marked isn't the code the AI writes but how you drive it: whether you understand the problem first, stay in charge of the design, check what comes back, and keep the interviewer with you. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: One change, with an AI pair
+  plain: true
+  nodes:
+    - {id: report, label: Bug report, kind: storage, x: 0, y: 0}
+    - {id: you, label: You, kind: user, x: 1, y: 0, note: 'read, then hypothesise'}
+    - {id: test, label: Failing test, kind: process, x: 2, y: 0, note: 'pins the bug down'}
+    - {id: ai, label: AI pair, kind: model, x: 2, y: 1, note: 'one specific change'}
+    - {id: diff, label: The diff, kind: storage, x: 1, y: 1, note: 'read it aloud'}
+    - {id: suite, label: Full test suite, kind: process, x: 0, y: 1, note: 'plus an edge case'}
+  edges:
+    - [report, you]
+    - [you, test]
+    - [test, ai, 'a precise prompt']
+    - [ai, diff]
+    - [diff, suite]
+  paths:
+    - label: Fix the bug
+      steps:
+        - [report, you, '"Back-to-back bookings are rejected." Read the report and the code, run the tests, and say your hypothesis aloud before opening the AI (step 1).']
+        - [you, test, 'Write a small test that fails because of the bug: a booking ending at 10:00 and another starting at 10:00.']
+        - [test, ai, 'Ask for one change you''ve already decided on: "In rooms.py, make overlaps() treat bookings as half-open in both directions. Don''t change anything else." (step 2)']
+        - [ai, diff, 'Read the diff aloud. Did it fix both comparisons, or only the one the test covers? Did it touch the test?']
+        - [diff, suite, 'Run the new test, the full suite and the mirror case yourself. The AI saying "tests pass" doesn''t count (step 2).']
+picture_note: |
+  Press the request under the diagram to walk through it. You make the decisions at every arrow: what the bug is, what the fix should be, and whether the diff is right. The AI does the typing in the middle. Which work you hand to an AI at all, outside an interview, is step 3.
+steps:
+  - lesson: ai-coding-round
+    title: What the round is scoring
+    minutes: 8
+    problem: |
+      Your next interview has an AI-assisted round: an unfamiliar booking app spread over several files, an AI chat panel, and 60 minutes. You've practised plenty of algorithm questions, but not this.
+    answer: |
+      It comes in three common formats: in a browser with an AI chat panel, in your own editor with your own assistant, or a take-home followed by a call where you defend every line. Ask the recruiter which, and what the AI can do (edit files or only chat).
+
+      The task is usually one codebase in three phases: **fix a bug** (rarely algorithmic: an off-by-one, a wrong comparison), **add a feature**, then **scale or optimise**. A rough budget for an hour: 5 minutes to get oriented, 10 to 15 on the bug, 20 to 25 on the feature, the rest on scale. Not finishing the last phase is normal if you can say what you'd do.
+
+      Interviewers score four things, and the AI's output isn't one of them:
+      - **Approach**: understanding the problem and code before acting.
+      - **Control**: you make the design decisions and the AI types; you redirect it and reject what doesn't fit.
+      - **Verification**: reading what it wrote, running it and testing the edges. Often the strongest signal.
+      - **Communication**: saying what you'll ask the AI and why, and what came back.
+    catch: |
+      The AI in an interview is often less helpful than the one you use at work: it answers only what you ask and won't point out bugs. Everything you do is on screen. Candidates get marked down, even with working code, for pasting the whole problem in, accepting diffs unread, going quiet, asking for a full rewrite after each failure, and being unable to explain what was generated. The most common way to run out of time is spending 30 minutes on the bug.
+    remember: |
+      You're marked on how you drive the AI, not on what it writes.
+    use: ai-coding-round/b5
+    check: ai-coding-round/b1
+    later: [The first five minutes, Budgeting the hour, What strong looks like for each of the four, The take-home format]
+    recap: Bug, feature, scale on an unfamiliar codebase. You're scored on approach, control, verification and communication.
+
+  - lesson: ai-debugging
+    title: Debugging with an AI pair
+    minutes: 8
+    problem: |
+      The bug report says orders of £100 or more should ship free, and an order of exactly £100 doesn't. You ask the AI to fix it. It replies "Fixed! I ran the tests and they all pass."
+    answer: |
+      Run the usual loop and keep the AI in the middle of it: **reproduce** the bug, **localise** it, say a **hypothesis** aloud, make a **small fix**, then **verify**.
+
+      A good prompt names the file and function, states the expected behaviour (ideally as a test), gives any constraint, and asks for a small change you can review. "Fix it", "here's the whole problem" and "rewrite the whole file" produce large diffs that hide the bug and hand over the design.
+
+      Then read the diff for the ways AI patches usually go wrong:
+      - **Symptom fixes**: `if total == 100` instead of changing `>` to `>=`.
+      - Flipping only the one comparison the test covers.
+      - Wrapping the failure in `try/except` and returning a default, which hides it.
+      - Changing the test's assertion instead of the code.
+      - Renaming and reformatting unrelated code, or calling a method that doesn't exist.
+
+      Verify with your new test, the full suite and the edge cases the visible tests miss, then reread the bug report to check every complaint is fixed.
+    catch: |
+      A chat-only assistant can't run code, so "I ran the tests" means nothing: only checks you ran count. Its explanation of unfamiliar code helps you read faster, but it can be confidently wrong, so check it against the code. And if two prompts haven't got you closer, stop: either your hypothesis is wrong, or the fix is small enough to type yourself while explaining it.
+    remember: |
+      Only the checks you ran yourself count as verification.
+    use: ai-debugging/b3
+    check: ai-debugging/b1
+    later: [Giving an agent the right context, Using the AI to explain code, When to stop prompting, Reporting what you checked]
+    recap: Reproduce, localise, hypothesise, fix small, verify. Prompt precisely, read the diff for the usual failure patterns, and run the checks yourself.
+
+  - lesson: ai-workflow
+    title: Your own AI workflow
+    minutes: 6
+    problem: |
+      An interviewer asks, "How do you use AI in your day-to-day work?" Jo's answer is "I use it for everything, it's amazing." It says nothing about judgement.
+    answer: |
+      Decide what to hand over by how easy the work is to check and how costly a mistake would be:
+      - **Delegate and review the diff**: well-specified, low-risk, easy-to-check work, such as tests for existing code, mechanical migrations and scaffolding.
+      - **Do it yourself, using the AI to check or speed up**: subtle, high-stakes logic such as concurrency or money.
+      - **Keep it entirely**: design decisions and judgement calls you're accountable for, such as choosing an architecture or what to tell a customer about an incident.
+
+      Context is most of the job, because an agent only knows what's in its context. Keep a short project instructions file (build and test commands, conventions, things never to touch), give a failing test as the spec, ask for a plan before larger edits, and keep diffs small. Run agents read-only by default, with approval for anything that changes things and no production credentials.
+
+      A strong answer names your tools and a concrete workflow, what you delegate and keep and why, a real example with its outcome, and one failure and what you changed afterwards.
+    catch: |
+      An agent that reads untrusted content (issues, web pages, dependencies) can be prompt-injected, so never give one agent private data, untrusted content and a way to send data out all at once. And handing everything over dulls your own skills, so keep the hard parts (design, subtle debugging, review) yours.
+    remember: |
+      You're the author of record. If you can't explain a line, it doesn't ship.
+    use: ai-workflow/b3
+    check: ai-workflow/b1
+    later: [Project instruction files, Planning before editing, Guardrails for coding agents, Measuring whether it actually helped]
+    recap: Delegate what's easy to check and cheap to get wrong, keep design and judgement. Give agents good context and tight limits.
+finish:
+  check:
+    type: predict
+    prompt: |
+      Twenty minutes into the round, the AI's patch makes every visible test pass. The bug report mentions both back-to-back bookings and bookings that end at midnight. What do you do next?
+    choices:
+      - Move on to the feature, since the tests pass
+      - Read the diff against the bug report, run the full suite, and test the midnight case yourself, saying what you're checking as you go
+      - Ask the AI to confirm that every case in the bug report is now fixed
+      - Ask the AI to rewrite the booking module so the problem can't come back
+    answer: 1
+    reveal: |
+      Passing the visible tests isn't proof: they may not cover the midnight case at all. Reading the diff against the report, running the suite and testing the uncovered case yourself is verification, and narrating it is communication, two of the four things being scored. Asking the AI to confirm is taking its word for it, and a rewrite adds new risk and hides what changed.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

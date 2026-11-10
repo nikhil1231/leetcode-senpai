@@ -1,0 +1,99 @@
+# The overview of one area of the fundamentals course. Format and rules: server/tutor/overviews.py and the system
+# design overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: architecture
+title: Design and architecture
+minutes: 25
+intro: |
+  This tour covers the two topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Both steps have something to try and end with a quick check.
+
+  Ripple's codebase has outgrown its first design. Marcus wants to know which parts to split into services, and Jo wants to know why any of it matters. The first step is design inside one codebase (classes, interfaces, patterns); the second is how the codebase as a whole is structured, and when to split it. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple's codebase, mid-change
+  plain: true
+  nodes:
+    - {id: client, label: Ripple apps, kind: client, x: 0, y: 1}
+    - {id: facade, label: Routing facade, kind: lb, x: 1, y: 1, note: 'routes by path'}
+    - {id: notify, label: Notifications service, kind: service, x: 2, y: 0, note: 'split out'}
+    - {id: mono, label: Ripple monolith, kind: service, x: 2, y: 1, note: 'links, billing, analytics'}
+    - {id: legacy, label: Old billing system, kind: service, x: 2, y: 2, note: 'being replaced'}
+    - {id: db, label: Postgres, kind: db, x: 3, y: 1, note: 'a schema per module'}
+  edges:
+    - [client, facade]
+    - [facade, mono]
+    - [facade, legacy]
+    - [mono, notify, 'events']
+    - [mono, db]
+  paths:
+    - label: Upgrade a creator's plan
+      steps:
+        - [client, facade, 'A creator upgrades to the Pro plan.']
+        - [facade, mono, 'The facade sends upgrades to the new billing module. Invoices still go to the old system until they move too (step 2).']
+        - [mono, db, 'Inside the monolith, billing calls a PaymentGateway interface rather than the payment provider''s SDK, so the provider can be swapped or faked in tests (step 1).']
+        - [mono, notify, 'An UpgradeCompleted event tells the notifications service to email the creator.']
+    - label: Jo adds a pricing rule
+      steps:
+        - [mono, db, 'A weekend discount is a new pricing strategy class behind the same interface, not another branch in a switch statement (step 1).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. Ripple is a modular monolith: one deployable with clear modules inside. Notifications has been split out because a separate team owns it and its load is spiky; billing is being replaced piece by piece behind a facade rather than rewritten in one go (step 2).
+steps:
+  - lesson: lld-design
+    title: Classes, SOLID and patterns
+    minutes: 9
+    problem: |
+      Ripple's pricing lives in one 600-line class with a switch on the plan type. Adding a plan means editing it in five places, and its tests need the real payment provider. Separately, a low-level design interview asks you to model a parking lot in classes.
+    answer: |
+      **SOLID** names five habits that keep classes small and changeable:
+      - **Single responsibility**: one reason to change. An invoice that calculates totals, renders a PDF and emails itself changes for three reasons.
+      - **Open/closed**: add behaviour by adding code, not by editing a switch in five places.
+      - **Liskov substitution**: a subtype must work anywhere its parent does. A read-only list that throws on `add()` breaks it.
+      - **Interface segregation**: don't make clients depend on methods they don't use, such as a printer forced to implement `fax()`.
+      - **Dependency inversion**: depend on interfaces passed in, not concrete classes created inside. A service that takes a `PaymentGateway` can be given Stripe in production and a fake in tests.
+
+      Prefer **composition** (holding and delegating to other objects) over inheritance. Know the common patterns by the problem they solve: **strategy** (swap an algorithm), **observer** (notify listeners), **factory** and **builder** (create objects), **adapter** (fit a vendor's interface to yours), **decorator** (wrap to add retries or caching), **state** (behaviour that depends on state, like a vending machine).
+
+      In the interview: clarify requirements and scope, list the entities, sketch classes and their relationships (UML: a filled diamond for ownership, a hollow triangle for inheritance), walk one use case through a sequence diagram, then show how the design absorbs a change.
+    catch: |
+      Patterns are tools, not decoration. A design with a factory, a builder and three interfaces for a problem that needed one class is harder to change, not easier. Singletons in particular are global state; inject one shared instance instead.
+    remember: |
+      A design is judged by how easily it absorbs the next change.
+    use: lld-design/b4
+    check: lld-design/b1
+    later: [Composition over inheritance, Each pattern with an example, UML class and sequence diagrams, Running the round]
+    recap: SOLID keeps classes small and changeable; patterns solve named problems. Inject dependencies, and add behaviour by adding classes.
+
+  - lesson: architecture-styles
+    title: Structuring the whole system
+    minutes: 9
+    problem: |
+      Marcus proposes splitting Ripple's monolith into twelve microservices. Jo asks why. Separately, the old billing system needs replacing, and the last attempt at a full rewrite was abandoned after a year.
+    answer: |
+      Start with a **modular monolith**: one deployable, divided into modules by business area (links, billing, analytics), each with a narrow interface and ideally its own schema. Inside each, a **hexagonal** structure keeps the business logic in the middle and puts databases and providers behind interfaces (**ports**) with implementations (**adapters**).
+
+      **Microservices** buy independent deployment and scaling per team, and isolation when something fails. They cost network calls, data you can no longer join or update in one transaction, contracts to version, and a lot of platform work. Split along business boundaries, when a team or a scaling need demands it. If one feature keeps needing three services deployed together, you've built a **distributed monolith**.
+
+      Useful terms from **domain-driven design**: a **bounded context** is a boundary inside which words mean one thing ("customer" to billing is a payer, to support a person with tickets); an **aggregate** is a group of objects changed together under rules; an **anti-corruption layer** translates a legacy model so it doesn't leak into yours.
+
+      A process across services uses a **saga**: local steps, each with a compensating step, coordinated either by events (**choreography**) or by one coordinator (**orchestration**). To replace a legacy system, use the **strangler fig**: put a routing facade in front, move one capability at a time to the new system, and retire the old one when nothing routes to it.
+    catch: |
+      Each of these has a cost. Choreography is hard to follow beyond a few steps, because the flow exists nowhere in the code. **CQRS** (separate models for writes and reads) and **event sourcing** (storing events rather than current state) add real complexity and earn it only in some domains. And the twelve-factor rules (config in the environment, stateless processes, logs to stdout, fast start and clean shutdown) still apply whichever style you pick.
+    remember: |
+      Start with a modular monolith, and split a module out when a team or a scaling need forces it.
+    use: architecture-styles/b6
+    check: architecture-styles/b1
+    later: [Layered and hexagonal structures, Domain-driven design terms, Choreography versus orchestration, CQRS and event sourcing]
+    recap: A modular monolith first, split along business boundaries when needed. Sagas coordinate across services; the strangler fig replaces legacy one piece at a time.
+finish:
+  check:
+    type: predict
+    prompt: |
+      Notifications and billing are modules in Ripple's monolith. Notifications has its own team shipping daily and needs 50 times its normal capacity during campaigns. Billing changes weekly and its load is steady. What do you do?
+    choices:
+      - Split both into services, along with every other module
+      - Split notifications into a service fed by events, and keep billing as a module
+      - Keep both, and scale the whole monolith up for campaigns
+      - Rewrite billing as a service first, because it handles money
+    answer: 1
+    reveal: |
+      Notifications has both reasons to split: a separate team that deploys on its own schedule, and a load pattern unlike the rest of the system. Billing has neither, so splitting it would only add network calls and distributed transactions. Scaling the whole monolith for one module's spikes is expensive, and splitting everything at once is how teams end up with a distributed monolith.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

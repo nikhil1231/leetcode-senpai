@@ -1,0 +1,142 @@
+# The overview of one area (pass one). Format and rules: storage.yaml and server/tutor/overviews.py.
+# Copy follows the Writing rules in CLAUDE.md.
+area: caching
+title: Caching and read paths
+minutes: 35
+intro: |
+  This tour covers the four topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step ends with a quick check, and two have a simulator to try first.
+
+  A viral link has just sent Ripple's traffic up twenty times overnight, almost all of it reads of a handful of links. A cache is the obvious answer, and this area is about what it costs: stale data, a database that now depends on it, and the ways a single popular key can still knock things over. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple's read path
+  plain: true
+  nodes:
+    - {id: app, label: Visitors and creators, kind: client, x: 0, y: 1}
+    - {id: cdn, label: CDN, kind: cdn, x: 1, y: 1, note: 'servers near each user'}
+    - {id: api, label: Ripple API, kind: service, x: 2, y: 1, note: 'a few seconds in memory'}
+    - {id: redis, label: Redis, kind: cache, x: 3, y: 0, note: 'shared cache'}
+    - {id: db, label: Postgres, kind: db, x: 3, y: 1, note: 'the source of truth'}
+  edges:
+    - [app, cdn, 'HTTPS']
+    - [cdn, api, 'on a miss']
+    - [api, redis]
+    - [api, db]
+  paths:
+    - label: Open a popular link page
+      steps:
+        - [app, cdn, 'The link''s preview page is the same for everyone, so the CDN server nearest the visitor answers in a few milliseconds (step 3).']
+        - [cdn, api, 'Only when its copy expires does the CDN ask Ripple, and it sends one request for all the visitors waiting.']
+        - [api, redis, 'The API checks Redis. Most popular links are already there (step 1).']
+        - [api, db, 'On a miss it reads Postgres and puts the result in Redis with an expiry time, ready for the next reader.']
+    - label: Fix a link's destination
+      steps:
+        - [app, cdn, 'A creator fixes a typo in where a link points. Changes are never cached, so the request goes straight through.']
+        - [api, db, 'The API commits the change to Postgres first (step 1).']
+        - [api, redis, 'Then it deletes the cached copy, so the next read fetches the new value.']
+        - [cdn, app, 'The CDN may still serve the old page until its own copy expires. The worst case is the expiry times of every layer added together (step 2).']
+    - label: A celebrity shares a link
+      steps:
+        - [app, cdn, 'Thirty per cent of all requests are now for one link.']
+        - [api, redis, 'That key lives on one Redis server, which hits 100% CPU. A copy in each API server''s memory for a few seconds takes most of the load off it (step 4).']
+        - [api, db, 'When the key expires, one request per API server goes to Postgres to refill it, and the rest wait for that answer instead of all querying at once (step 4).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. There are caches at three levels here: the CDN near the user, a few seconds of memory in each API server, and Redis in front of Postgres. Each one takes load off the one behind it, and each one is another copy that can be out of date.
+steps:
+  - lesson: cache-aside
+    title: Put a cache in front of the database
+    minutes: 8
+    problem: |
+      A viral link sends Ripple's traffic up twenty times. Almost all of it is reads of the same few links, and Postgres is at 90% CPU answering the same queries over and over.
+    answer: |
+      The usual pattern is **cache-aside**. On a read, the API checks Redis; on a miss it reads Postgres, stores the result in Redis with a **TTL** (time to live, an expiry time) and returns it. On a write, it commits to Postgres first and then **deletes** the cached key, so the next read fetches the new value. Deleting is safer than writing the new value into the cache, because two writers setting the cache can finish in the wrong order.
+
+      What the database sees is requests × **miss rate**. At 10,000 reads a second, a 90% hit rate leaves 1,000 for Postgres, and 99% leaves 100. How high the hit rate gets depends on how concentrated the traffic is and how much of it fits in memory. When the cache is full, an **eviction policy** decides what leaves, usually the least recently used key (LRU).
+
+      Other write strategies exist: **write-through** updates the cache and the database together (fresher, slower writes), and **write-behind** writes to the cache and saves to the database later (fast, but writes are lost if the cache dies).
+    catch: |
+      Once the database is sized for the misses, the cache is part of your capacity, not an optimisation. If it empties (a deploy changes the key format, a node restarts), the database gets the full load at once. And a cache doesn't help when data is rarely read twice, must always be exactly current, or is written more often than read.
+    remember: |
+      The miss rate sizes the database. Going from a 90% to a 99% hit rate cuts its load ten times.
+    use: cache-aside/b9
+    use_note: The first two challenges are enough for now (get the database under capacity, then reach 90% while caching half the keys).
+    check: cache-aside/b1
+    later: [Comparing write strategies by what they lose, Sizing a cache from the working set, One-off scans that push out the hot keys, Caching misses for keys that don't exist]
+    recap: Read from the cache, fill it on a miss, delete on write. The miss rate is what the database has to carry.
+
+  - lesson: cache-freshness
+    title: How stale is too stale?
+    minutes: 7
+    problem: |
+      A creator fixes a typo in a link's destination, but visitors keep landing on the broken page for minutes. In the same week, an admin removes a teammate from a workspace and the teammate can still edit links for a while.
+    answer: |
+      Start from what each kind of data promises, not from one TTL for everything:
+      - **Bounded staleness**: a reader may see a value up to some seconds old. Click counts and link previews are fine with this. A TTL plus deleting on write gives it.
+      - **Read-your-writes**: the person who made a change sees it straight away, while others may lag. A creator editing their own link expects this. A common way is to read from the database for that user for a short while after they write.
+      - **Authoritative**: permissions, balances and prices at checkout. Don't serve these from a cache, or check the source at the moment the decision is made.
+
+      A TTL only limits how long one copy lives in one cache. Copies can stack: if Redis keeps a value for 60 s and the CDN keeps the page built from it for 300 s, a visitor can see a value about 360 s old.
+    catch: |
+      Invalidation races with reads. In the **stale refill race**, a slow reader fetches the old value from the database, the writer updates the database and deletes the key, and then the slow reader puts the old value back in the cache, where it stays until the TTL runs out. Fixes such as leases or version numbers on cache writes add machinery, and a crash between the commit and the delete can skip the delete entirely. Keep a TTL on everything as a backstop, so any missed invalidation heals itself.
+    remember: |
+      The worst-case staleness is roughly the sum of the TTLs along the read path, plus any replica lag.
+    check: cache-freshness/b1
+    later: [Leases and versioned cache writes, Invalidating from the database's change log, Staleness across stacked caches and replicas, Read-your-writes in practice]
+    recap: Choose bounded staleness, read-your-writes or authoritative per kind of data. TTLs stack across layers, and a TTL backstops missed deletes.
+
+  - lesson: http-cdn
+    title: Caching in browsers and CDNs
+    minutes: 7
+    problem: |
+      Ripple serves its JavaScript and link preview pages from one region. Visitors in Australia wait a second for every page, and the bandwidth bill is growing faster than traffic.
+    answer: |
+      HTTP caching is set by response headers that browsers, proxies and CDNs all follow. Every cache asks three things:
+      - **May I store this, and share it?** `public` (anyone), `private` (only the user's browser) or `no-store` (nobody).
+      - **How long can I use it without asking?** `max-age` for everyone, `s-maxage` for shared caches such as a CDN.
+      - **How do I check it's still good?** An **ETag** (a version tag). The client sends it back and the server replies **304 Not Modified** with no body if nothing changed.
+
+      The usual choices: give files such as `app.3f9a1c.js` a name that includes a hash of their content and cache them for a year as `immutable`. Serve the HTML that references them with `no-cache` and an ETag, so it's checked on every load. Personal pages get `private`, card numbers `no-store`. A **CDN** keeps copies on servers near users, so most requests never reach Ripple.
+    catch: |
+      Get it wrong in one direction and a CDN shows one user's account page to another: personal responses must never be `public`. And you can't clear browsers' caches, so to change a cached file you change its URL rather than trying to purge it.
+    remember: |
+      `no-cache` means "check before using", not "don't store". `no-store` means don't store.
+    check: http-cdn/b4
+    later: [Cache keys and Vary, 'CDN tiers, request collapsing and purging by tag', Stale-while-revalidate, Serving private content from the edge]
+    recap: Headers decide who may store a response, for how long, and how to check it. Hash asset names and cache them for a year; keep personal pages private.
+
+  - lesson: hot-keys
+    title: One hot key, and the rush when it expires
+    minutes: 7
+    problem: |
+      A celebrity shares a Ripple link and 30% of all reads are now for that one key. Its Redis server is at 100% CPU, and adding more Redis servers doesn't help. Every time the key expires, thousands of requests miss together and all of them query Postgres.
+    answer: |
+      Sharding spreads keys across servers, not the traffic for one key. For a key that's read a lot, keep a copy in each API server's memory for a few seconds, or store it under several names and spread reads across them. For a counter everyone increments (likes, views), split it into several sub-counters and add them up on read.
+
+      A **stampede** happens when a popular key expires and every request in the gap before the refill goes to the database. The defences:
+      - **Request coalescing**: the first miss in each process fetches the value, and the other requests wait for its answer.
+      - **TTL jitter**: add a random amount to each expiry, so keys cached together don't all expire together.
+      - **Refresh early** or **serve stale while refreshing**, so readers never see a miss at all.
+    catch: |
+      Coalescing works per process, so 200 API servers can still send 200 queries. Local copies add a few seconds of staleness. And none of it helps if the cache itself goes down: then every request misses, and the database needs its own protection, such as limiting concurrent queries, rejecting excess work and warming the cache before full traffic returns.
+    remember: |
+      Adding shards doesn't help a hot key, because one key always lives on one shard.
+    use: hot-keys/b7
+    use_note: The first two challenges are enough for now (coalescing, then jitter).
+    check: hot-keys/b1
+    later: [How many copies of a hot key, Sharded counters, Leases and early refresh, Planning for the cache going down]
+    recap: Serve hot keys from local memory or several copies. Coalescing and jitter stop stampedes; plan for the cache being gone.
+finish:
+  check:
+    type: predict
+    prompt: |
+      At peak, Ripple's Redis cluster restarts and comes back empty. Postgres was sized for the 5% of reads that used to miss. What protects it?
+    choices:
+      - Add more Redis servers, so the cache has more room to fill
+      - Nothing is needed, because the cache refills within a few seconds
+      - Limit concurrent database queries and reject or serve stale beyond that, coalesce refills, and let traffic back in as the cache warms
+      - Raise every TTL, so keys stay in the cache longer once they're back
+    answer: 2
+    reveal: |
+      With an empty cache every request is a miss, so Postgres suddenly gets twenty times the load it was sized for, and a slow database makes refills slower still. It needs a limit on how much work it accepts, coalescing so each key is fetched once, and a gradual return of traffic while the cache warms. More Redis servers and longer TTLs don't help an empty cache, and "a few seconds" is exactly the window in which the database falls over.
+  play: [r1]
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

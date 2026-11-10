@@ -1,0 +1,97 @@
+# The overview of one area of the AI course. Format and rules: server/tutor/overviews.py and the system design
+# overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: evaluation
+title: Evals
+minutes: 25
+intro: |
+  This tour covers the two topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Both steps have something to try and end with a quick check.
+
+  Ripple's AI features need numbers before anyone trusts them: whether a prompt change helped, whether a cheaper model is good enough, whether the agent really did what it said. This area is about building those numbers and knowing when to believe them. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: How Ripple tests its AI features
+  plain: true
+  nodes:
+    - {id: prod, label: Support bot, kind: service, x: 0, y: 0, note: 'real traffic'}
+    - {id: traces, label: Traces, kind: storage, x: 1, y: 0, note: 'input, context, output'}
+    - {id: you, label: Error analysis, kind: user, x: 1, y: 1, note: 'read, note, group, count'}
+    - {id: dataset, label: Eval set, kind: storage, x: 2, y: 1, note: '50 to 200 cases'}
+    - {id: ci, label: CI run, kind: process, x: 3, y: 1, note: 'on every change'}
+    - {id: checks, label: Code checks, kind: process, x: 3, y: 0}
+    - {id: judge, label: LLM judge, kind: model, x: 3, y: 2, note: 'checked against labels'}
+  edges:
+    - [prod, traces]
+    - [traces, you]
+    - [you, dataset]
+    - [dataset, ci]
+    - [ci, checks]
+    - [ci, judge]
+  paths:
+    - label: Find out what to measure
+      steps:
+        - [prod, traces, 'Every request is kept as a trace: the question, the passages retrieved, any tool calls and the answer.']
+        - [traces, you, 'Someone who knows the domain reads 50 to 100 of them, notes the first thing that went wrong in each, groups the notes into failure modes and counts them (step 2).']
+        - [you, dataset, 'The most common failure modes become test cases, along with every failure that reached a user.']
+    - label: Jo changes the prompt
+      steps:
+        - [dataset, ci, 'CI runs the new prompt on the whole eval set, and the current production setup on the same cases (step 1).']
+        - [ci, checks, 'Code decides whatever code can: the JSON is valid, every citation points at a real passage.']
+        - [ci, judge, 'A judge model scores what code can''t, one criterion at a time, such as "every claim is supported by the passages". It''s trusted only as far as it agrees with expert labels (step 2).']
+        - [ci, dataset, 'Results are broken down by category. Here, a one-point drop overall hides a nine-point drop on refund questions.']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. The left side decides what to measure, from real failures. The right side measures it on every change, against the version already in production.
+steps:
+  - lesson: evals
+    title: Measuring quality
+    minutes: 8
+    problem: |
+      Jo fixes one bad support answer by changing the prompt and ships it. A week later refund questions are clearly worse, and nobody can say when it started or why.
+    answer: |
+      An **eval** is a set of inputs, the behaviour you expect for each, and a **scorer** that turns an output into pass or fail (or a number), run automatically.
+      - **Inputs** come from real traffic: common cases, edge cases, adversarial ones, and every failure seen in production. Fifty to a hundred good cases beat thousands of synthetic ones.
+      - **Expected behaviour** can be an exact answer, a reference answer, a list of facts that must appear, or a rubric such as "cites a source, under 120 words".
+      - **Scorers**: use a code check wherever code can decide (valid JSON, same rows as a reference SQL query). Use an **LLM judge** with a specific rubric for subjective criteria such as politeness or faithfulness to the passages: one criterion at a time, pass or fail, with its reason before the verdict. Use people to label examples and check the judge.
+
+      Run the evals in CI on every prompt, model or retrieval change, and compare against the setup currently in production on the same cases. Break results down by category, and track cost and latency per case alongside quality.
+    catch: |
+      An eval is a sample, so its score has error bars: one point on 400 cases is four cases, which can be noise. Compare on the same cases, read the cases that newly fail, and size the set for the smallest difference you care about. Judges have biases too: they prefer the first of two answers, longer answers, and answers from their own model family. And tuning a prompt until a small set passes overfits it, so keep a held-out set.
+    remember: |
+      Compare per category, against what's in production, on the same cases.
+    use: evals/b910
+    check: evals/b1
+    later: [Judge biases and how to reduce them, Online signals and A/B tests, Quality against cost and latency, Common pitfalls]
+    recap: An eval is inputs, expected behaviour and a scorer. Use code where it can decide, a calibrated judge where it can't, and run it on every change.
+
+  - lesson: evals-practice
+    title: Numbers you can trust
+    minutes: 8
+    problem: |
+      The team built a general "quality" judge. It says 92% of answers are good, and the score went up after the last change. The support agents say the answers got worse.
+    answer: |
+      Start with **error analysis**, not a metric: read 50 to 100 real traces, note the first thing that went wrong in each (later errors often follow from it), group the notes into a handful of failure modes, count them, and fix the top one or build an evaluator for it.
+
+      Then build one evaluator per failure mode that matters: code checks for mechanical failures, and a pass-or-fail judge for each one that needs judgement. Before trusting a judge, check it against 100 to 200 labels from one domain expert, split into examples for the judge's prompt, a set to tune on, and a held-out set used once. Measure how many real failures it catches (**TPR**, true positive rate) and how many good answers it passes (**TNR**, true negative rate). When failures are rare, a judge that passes everything looks accurate and is useless.
+
+      For agents, check three things: the **outcome** in the real system (is the subscription actually cancelled?), the **trajectory** (right tools, no wasteful or unsafe steps), and **repeated runs**, because customers see every run: 90% success per run is only about 73% for three in a row.
+    catch: |
+      A general "is this good?" judge that hasn't been checked tends to reward length, so scores rise while experts see worse answers. Labels from a committee blur the criteria. And synthetic test data is cleaner than real input, so keep sampling real traffic.
+    remember: |
+      A judge's score means nothing until you've measured how often it agrees with an expert.
+    use: evals-practice/b1
+    check: evals-practice/b7
+    later: [Correcting a judge's flag rate, Building synthetic data from dimensions, Guardrails versus evaluators, Keeping datasets honest]
+    recap: Find failure modes by reading traces, build an evaluator for each, and validate judges with TPR and TNR. For agents, check outcome, path and repeats.
+finish:
+  check:
+    type: predict
+    prompt: |
+      A judge flags 5% of support answers as unfaithful. Checked against 200 expert labels, it catches 40% of the real failures and passes 99% of the good answers. What do you conclude?
+    choices:
+      - About 5% of answers are unfaithful, as the judge says
+      - The judge misses most real failures, so the true rate is much higher than 5%. Fix the judge and check it again before using its numbers
+      - The judge is 99% accurate, so it can be trusted
+      - Switch the judge to a 1 to 10 score, to get more detail
+    answer: 1
+    reveal: |
+      Passing 99% of good answers is easy when most answers are good. What matters is that it catches only 40% of failures, so most unfaithful answers get through. Correcting for that gives a true rate of about 10%, double what it reports. A 1 to 10 score is less reliable than pass or fail per criterion. The fix is a better rubric or examples, checked again on held-out labels.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

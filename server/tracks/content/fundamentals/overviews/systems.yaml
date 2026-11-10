@@ -1,0 +1,195 @@
+# The overview of one area of the fundamentals course. Format and rules: server/tutor/overviews.py and the system
+# design overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: systems
+title: Operating systems, Linux and networking
+minutes: 40
+intro: |
+  This tour covers the six topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step has something to try and ends with a quick check.
+
+  Ripple's production is Linux machines and networks, and Priya wants you able to debug one live at 3am and to know why the kernel behaves as it does. The first four steps are the operating system (CPU, memory, locks, files), the fifth is the Linux you meet in production, and the last is what happens on the wire. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: One request on one Linux machine
+  plain: true
+  nodes:
+    - {id: client, label: Phone, kind: client, x: 0, y: 1}
+    - {id: net, label: The network, kind: cdn, x: 1, y: 1, note: 'DNS, TCP, TLS, HTTP'}
+    - {id: proc, label: Ripple API process, kind: process, x: 2, y: 1, note: 'threads, file descriptors'}
+    - {id: cpu, label: CPU scheduler, kind: process, x: 3, y: 0, note: 'run queue'}
+    - {id: mem, label: Memory, kind: storage, x: 3, y: 1, note: 'pages, page cache'}
+    - {id: disk, label: Disk, kind: storage, x: 3, y: 2, note: 'ext4 with a journal'}
+  edges:
+    - [client, net]
+    - [net, proc]
+    - [proc, cpu]
+    - [proc, mem]
+    - [mem, disk, 'write-back']
+  paths:
+    - label: A request arrives
+      steps:
+        - [client, net, 'The phone looks up api.ripple.com, then opens a TCP connection and a TLS session: two round trips on a fresh connection before the request can be sent (step 6).']
+        - [net, proc, 'The kernel puts the bytes on a socket, which is one of the process''s file descriptors, and wakes the thread that was blocked reading it (steps 1 and 5).']
+        - [proc, cpu, 'That thread moves from blocked to ready, and waits in the run queue until the scheduler gives it a CPU (step 1).']
+    - label: Save an upload
+      steps:
+        - [proc, mem, 'The handler calls write(). The data is copied into the page cache and write() returns straight away (step 4).']
+        - [mem, disk, 'The kernel writes it to disk some seconds later. Only fsync() waits until it''s really there.']
+    - label: A busy afternoon
+      steps:
+        - [proc, mem, 'The process asks for 1 GiB. It gets address space at once, but physical memory only page by page as it touches it (step 2).']
+        - [proc, cpu, 'Two threads each lock one account and wait for the other''s: neither can ever continue (step 3).']
+        - [proc, mem, 'The container goes over its memory limit, and the kernel kills the process with SIGKILL: exit code 137 (step 5).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. The process only ever sees its own threads, virtual memory and file descriptors. Everything to the right is the kernel sharing real CPUs, RAM and disks between processes, and most production puzzles are about where those two views differ.
+steps:
+  - lesson: os-scheduling
+    title: Processes, threads and CPU scheduling
+    minutes: 6
+    problem: |
+      On one of Ripple's API machines, a reporting job with long CPU bursts runs alongside the API, and quick API requests start waiting behind it.
+    answer: |
+      A **process** is a running program with its own memory, open files and credentials. A **thread** runs inside a process with its own stack and registers, sharing the process's memory. A thread is **running** on a CPU, **ready** (able to run, waiting for a CPU) or **blocked** (waiting for I/O, a lock or a timer).
+
+      Switching between threads (a **context switch**) costs a few microseconds directly and more through cold caches. Scheduling policies trade waiting time against **response time** (time to first run), which is what makes interactive work feel fast:
+      - **First come, first served**: one long job ahead of short ones makes them all wait (the **convoy effect**).
+      - **Shortest job first**: lowest average wait, but needs job lengths in advance, and long jobs can starve.
+      - **Round robin**: each thread gets a short slice in turn. Too short and switching dominates; too long and it becomes first come, first served.
+      - **Multi-level feedback queues**: learn which jobs are short by watching them.
+
+      Linux's fair scheduler runs whichever task has had the least weighted CPU time. **nice** values shift the weights (about 10% per step, only when the CPU is contended), and cgroup CPU quotas, such as Kubernetes CPU limits, throttle a container.
+    catch: |
+      Priorities bring their own failures. **Starvation**: a low-priority thread never runs. **Priority inversion**: a low-priority thread holds a lock a high-priority one needs, while a medium-priority one keeps the CPU; the usual fix is to lend the lock holder the higher priority.
+    remember: |
+      A thread waiting for I/O or a lock is blocked, not ready. Only ready threads compete for the CPU.
+    use: os-scheduling/b3
+    use_note: The first two challenges are enough for now (see the convoy effect, then fix it).
+    check: os-scheduling/b1
+    later: [What a context switch costs, How Linux's fair scheduler works, Real-time classes, Priority inversion]
+    recap: Threads are running, ready or blocked. Policies trade waiting against response time; one long job can make short ones queue.
+
+  - lesson: os-memory
+    title: Virtual memory and paging
+    minutes: 6
+    problem: |
+      A Redis server using 40 GiB on a 64 GiB machine takes a snapshot, and memory climbs towards 70 GiB. Meanwhile another process shows 30 GB of virtual memory but only 2 GB actually in use.
+    answer: |
+      Each process gets its own **virtual address space**. The CPU translates virtual addresses to physical memory one **page** at a time (usually 4 KiB on x86, 16 KiB on Apple Silicon) using **page tables**, and caches recent translations in the **TLB**.
+
+      A **page fault** is the CPU telling the kernel a translation is missing. It's normal:
+      - **Minor**: the page is in memory but not yet mapped for this process, such as the first touch of newly allocated memory. Microseconds.
+      - **Major**: the data has to come from disk. Milliseconds.
+      - **Invalid**: no mapping at all, delivered as a segmentation fault.
+
+      Memory is handed out on first touch (**demand paging**), which is why virtual size is large and resident size (RSS) smaller. After `fork()`, parent and child share every page until one of them writes it, and then just that page is copied (**copy-on-write**). When RAM is full, the kernel evicts pages it hasn't used recently, approximating LRU.
+    catch: |
+      Copy-on-write makes fork cheap, but a forked child of a process with a busy heap (Redis snapshotting while writes continue) copies most pages and nearly doubles memory. And if the pages processes are actively using don't fit in RAM, the system **thrashes**: everything keeps faulting pages back in and little real work gets done.
+    remember: |
+      Virtual size counts what's reserved; RSS counts what's actually in RAM.
+    use: os-memory/b3
+    check: os-memory/b7
+    later: [Multi-level page tables and TLB reach, 'FIFO, LRU and Clock', "Belady's anomaly", Working sets]
+    recap: Every process has virtual memory, mapped page by page on first touch. Faults are normal, copy-on-write shares pages until written, and too little RAM means thrashing.
+
+  - lesson: os-concurrency
+    title: Locks, semaphores and deadlock
+    minutes: 7
+    problem: |
+      Two transfers between the same pair of accounts sometimes hang Ripple's payouts job forever. A queue between two threads occasionally hands a consumer nothing, even though it waited to be told there was work.
+    answer: |
+      When threads share data, a **critical section** must run as if alone. Every lock is built on an atomic hardware instruction such as **compare-and-swap**. The primitives:
+      - **Mutex**: one holder at a time.
+      - **Counting semaphore**: up to N holders, such as 10 database connections.
+      - **Condition variable**: lets a thread sleep inside a critical section until some state changes; `wait` releases the lock and sleeps, then takes the lock back.
+      - **Read-write lock**: many readers or one writer.
+      - A **monitor** is a lock with its condition variables, like Java's `synchronized` with `wait` and `notify`.
+
+      Always re-check the condition in a **while loop** after waking: another thread may have taken the item first, and spurious wakeups are allowed.
+
+      **Deadlock** needs four conditions at once: exclusive resources, holding one while waiting for another, no forced release, and a circular wait. Break any one. The usual fix is a global lock order: lock the lower account ID first, whichever way the money moves. Or use `tryLock` with a timeout and a random back-off.
+    catch: |
+      Each fix has a relative. Retrying with `tryLock` in step with each other gives **livelock** (both keep backing off), which random back-off breaks. Unfair locks can **starve** a thread. Databases don't prevent deadlock; they detect it and abort one transaction, which your code should retry.
+    remember: |
+      Wait in a while loop, and take locks in one global order.
+    use: os-concurrency/b5
+    use_note: The first two challenges are enough for now (deadlock the table, then fix it with a lock order).
+    check: os-concurrency/b1
+    later: [Spinlocks versus mutexes, Writing a bounded buffer, Mesa and Hoare semantics, Livelock and starvation]
+    recap: Mutexes, semaphores, condition variables and read-write locks each fit a job. Re-check conditions in a loop, and order locks to prevent deadlock.
+
+  - lesson: os-filesystems
+    title: Files, the page cache and crashes
+    minutes: 6
+    problem: |
+      A Ripple service updates `config.json` by writing over it. After a power cut, the file is empty. On another machine, `df` says the disk is full but `du` can only find half the space used.
+    answer: |
+      A file is an **inode** (its size, owner, permissions, timestamps, link count and where its data blocks are) plus **directory entries** that map names to inode numbers. A hard link is another name for the same inode; a symbolic link is a small file holding a path. `rename()` within one file system is **atomic**: anyone opening the name sees the old file or the new one, never a mix.
+
+      `read()` comes from the **page cache** when it can. `write()` copies data into the page cache, marks it dirty and returns; the kernel writes it to disk seconds later. Only **`fsync()`** waits until the data is on stable storage, so a successful `write()` isn't durable.
+
+      After a crash, **journaling** (ext4, XFS) or **copy-on-write** file systems (ZFS, btrfs, APFS) keep the file system's own structures consistent. To replace a file safely: write a temporary file, `fsync` it, `rename` it over the old one, then `fsync` the directory.
+    catch: |
+      A journal protects the file system's structure, not your data: without `fsync`, your bytes can still be lost. `fsync` is slow (milliseconds), which is why databases group many commits into one. And a deleted file that a process still has open keeps its space until the process closes it, which is the `df` and `du` mystery.
+    remember: |
+      `write()` returning isn't durability. `fsync()` is.
+    use: os-filesystems/b1
+    check: os-filesystems/b3
+    later: [Hard links and symbolic links, fsync and fdatasync, Journaling modes, Safe file replacement step by step]
+    recap: A file is an inode plus names. Writes land in the page cache, only fsync makes them durable, and write-then-rename replaces a file safely.
+
+  - lesson: linux-processes
+    title: Linux processes in production
+    minutes: 7
+    problem: |
+      Ripple's API pods drop in-flight requests on every deploy. A Java pod keeps restarting with exit code 137 and no OutOfMemoryError in its logs. A third service fails with "Too many open files".
+    answer: |
+      A process is created with `fork()` and usually becomes another program with `exec()`. A child that has exited stays a **zombie** until its parent collects its exit status.
+
+      **Signals**: SIGTERM asks a process to shut down and can be handled, so it can finish in-flight work; SIGKILL can't be caught. Exit code 137 is 128 + 9: killed by SIGKILL. Kubernetes sends SIGTERM, waits 30 seconds by default, then SIGKILLs. In a container, your app is **PID 1**, which gets no default signal handling: without its own SIGTERM handler it ignores the signal and is killed at the deadline. A shell as PID 1 may not pass signals on, so use the exec form of `CMD` or a tiny init such as tini.
+
+      **Memory**: free RAM is used as page cache, so judge memory by "available", not "free". Exceeding a container's cgroup memory limit gets it killed even if the machine has memory to spare. A JVM needs memory outside its heap, so set the heap to about 75% of the limit.
+
+      **File descriptors**: files, sockets and pipes all count against a per-process limit (often 1,024). A count that keeps climbing in `/proc/<pid>/fd` is a leak, typically unclosed sockets.
+    catch: |
+      Load average counts tasks waiting on disk as well as runnable ones, so a high load with idle CPUs points to I/O, not CPU. Debugging a live box means knowing a few tools: `vmstat`, `iostat -xz`, `pidstat`, `free -h`, `ss`, `dmesg` (OOM kills appear there) and, carefully, `strace`.
+    remember: |
+      Exit code 137 means SIGKILL: usually the OOM killer or the end of a shutdown grace period.
+    use: linux-processes/b911
+    check: linux-processes/b1
+    later: [Zombies and reaping, Graceful shutdown in Kubernetes, Reading memory numbers, The tools for a slow box]
+    recap: Handle SIGTERM and drain, keep the heap inside the cgroup limit, and watch descriptor counts. 137 means SIGKILL.
+
+  - lesson: networking-stack
+    title: What happens on the wire
+    minutes: 7
+    problem: |
+      Creators in Sydney say the first Ripple page load takes over a second, and switching to HTTP/2 made things worse on a flaky mobile connection. An interviewer asks, "What happens when you type a URL?"
+    answer: |
+      Walk the layers and count the round trips:
+      - **DNS**: a resolver walks from the root servers to the domain's own servers and caches the answer for its **TTL**. Lower the TTL days before a migration so the change spreads quickly.
+      - **TCP**: the handshake costs one round trip. A new connection starts by sending only about 14 KB and doubles that each round trip (**slow start**), so new connections are slow and reusing them matters. A lost packet holds up everything behind it.
+      - **TLS**: proves the server holds the private key for a certificate a trusted authority signed for that hostname, then encrypts. TLS 1.3 needs one round trip (1.2 needed two).
+      - **HTTP**: HTTP/1.1 runs one request at a time per connection; HTTP/2 multiplexes many on one TCP connection; HTTP/3 runs over QUIC on UDP, so a lost packet only stalls its own stream.
+
+      On a fresh connection with TLS 1.3, that's two round trips before the request goes out: 160 ms at an 80 ms round trip, before the server does anything.
+    catch: |
+      HTTP/2's single TCP connection means one lost packet stalls every stream, which is why it can be worse than HTTP/1.1 on lossy links, and why HTTP/3 exists. The side that closes a TCP connection keeps it in TIME_WAIT for about 60 seconds, so opening thousands of short connections can run out of ports; the fix is connection pooling.
+    remember: |
+      Count round trips: DNS, TCP, TLS, then the request. Reusing connections removes most of them.
+    use: networking-stack/b905
+    check: networking-stack/b3
+    later: [DNS record types, Congestion control, Certificates and mTLS, 'Debugging with curl, dig and ss']
+    recap: DNS, a TCP handshake, a TLS handshake, then HTTP. Count the round trips, reuse connections, and know where HTTP/2 and HTTP/3 differ.
+finish:
+  check:
+    type: predict
+    prompt: |
+      On an 8-core API machine the load average is 30, the CPUs are 15% busy, and requests are slow. Where do you look first?
+    choices:
+      - The CPU scheduler, by lowering the reporting job's nice value
+      - Disk I/O, with `iostat -xz`, since load average also counts tasks waiting on the disk
+      - The TLS settings, since handshakes are expensive
+      - Nowhere yet: add more cores
+    answer: 1
+    reveal: |
+      Load average counts runnable tasks and tasks in uninterruptible sleep, which is almost always disk I/O. With the CPUs mostly idle, the 30 is threads blocked on the disk, so `iostat -xz` (latency and queue per device) and `pidstat -d` (which process) are the next steps. More cores or a different nice value won't help threads that aren't waiting for a CPU, and TLS work would show up as CPU time.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

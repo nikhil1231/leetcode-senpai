@@ -1,0 +1,103 @@
+# The overview of one area of the fundamentals course. Format and rules: server/tutor/overviews.py and the system
+# design overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: languages
+title: Languages and runtimes
+minutes: 25
+intro: |
+  This tour covers the two topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Both steps have a simulator to try and end with a quick check.
+
+  Ripple's services run on Java and Python, and when they misbehave under load the runtime is the first suspect: counts that come out low, a pool that never grows, an async service that freezes for seconds. This area is about what each runtime actually guarantees when several things happen at once. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Two of Ripple's services
+  plain: true
+  nodes:
+    - {id: client, label: Ripple API, kind: client, x: 0, y: 1}
+    - {id: java, label: Links service, kind: service, x: 1, y: 0, note: 'Java, thread pool'}
+    - {id: db, label: Postgres, kind: db, x: 2, y: 0}
+    - {id: py, label: Analytics service, kind: service, x: 1, y: 2, note: 'Python, asyncio'}
+    - {id: ext, label: Partner API, kind: external, x: 2, y: 1, note: 'slow HTTP'}
+    - {id: pool, label: Process pool, kind: worker, x: 2, y: 2, note: 'CPU-heavy reports'}
+  edges:
+    - [client, java]
+    - [java, db]
+    - [client, py]
+    - [py, ext, 'await']
+    - [py, pool]
+  paths:
+    - label: Count clicks in Java
+      steps:
+        - [client, java, 'Clicks on one popular link arrive on 200 threads at once, each adding one to an in-memory counter.']
+        - [java, db, 'A plain `count++` loses updates, because reading, adding and writing are three separate steps. `AtomicLong` or `LongAdder` makes it one (step 1).']
+    - label: The Java pool backs up
+      steps:
+        - [java, db, 'Postgres slows down. The pool has 4 core threads, a maximum of 32 and an unbounded queue, so it never grows past 4 and the queue grows until memory runs out (step 1).']
+        - [client, java, 'A bounded queue with a policy that makes the caller run the task pushes back on callers instead.']
+    - label: One blocking call in Python
+      steps:
+        - [client, py, 'The analytics service handles 2,000 connections on one event loop.']
+        - [py, ext, 'One handler calls the partner API with a synchronous HTTP client. Until it returns, every other request on the loop waits (step 2).']
+        - [py, pool, 'Building a big report is pure-Python CPU work, so it goes to a process pool. Threads wouldn''t help, because only one can run Python at a time (step 2).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. The Java service runs many threads that share memory, so the question is what each thread is guaranteed to see. The Python service runs one thread at a time, so the question is which work can wait in parallel and which needs a separate process.
+steps:
+  - lesson: java-concurrency
+    title: Java threads and the memory model
+    minutes: 9
+    problem: |
+      Ripple's Java links service keeps an in-memory click counter and builds its config object lazily on first use. Under load the counts come out low, and once a thread got a config object that was only half built.
+    answer: |
+      There are three separate problems, each with its own fix:
+      - **Visibility**: whether one thread sees another's write at all. A flag that isn't `volatile` may never be re-read.
+      - **Atomicity**: whether a compound action happens in one piece. `count++` is read, add, write, and two threads can interleave.
+      - **Ordering**: the compiler and CPU may reorder writes, so another thread can see a reference before the object it points to is fully built.
+
+      The **Java Memory Model** guarantees only what a **happens-before** edge gives: unlocking then locking the same lock, writing then reading a `volatile` field, starting or joining a thread, putting into and taking from a concurrent collection. `volatile` gives visibility and ordering for single reads and writes, but doesn't make `count++` atomic. For that use a lock, `AtomicLong` (or `LongAdder` under heavy contention), or `ConcurrentHashMap.compute`. Lazy initialisation with double-checked locking needs the field to be `volatile`. When a rule spans several variables, you need a lock.
+
+      Thread pools: a `ThreadPoolExecutor` only grows past its core size when its queue refuses a task, so with an unbounded queue it never grows. Bound the queue and choose what happens when it's full. Size CPU-bound pools at about one thread per core, and I/O-bound pools larger. **Virtual threads** (Java 21) let plain blocking code handle huge numbers of concurrent requests, but don't make CPU work faster.
+    catch: |
+      Races rarely show up in tests, and sleeping or timing never creates a happens-before edge, so code that "works on my machine" can still be broken. Deadlocks need a fix too: always take locks in the same order, or use `tryLock` with a timeout.
+    remember: |
+      `volatile` gives visibility, not atomicity. `count++` on a volatile field still loses updates.
+    use: java-concurrency/b910
+    use_note: The first and third challenges are enough for now (lose an increment, then fix it).
+    check: java-concurrency/b3
+    later: ['synchronized versus ReentrantLock', CompletableFuture and its default pool, Virtual threads and pinning, Avoiding deadlock]
+    recap: Visibility, atomicity and ordering are separate. Only happens-before edges guarantee anything, and an unbounded queue stops a pool growing.
+
+  - lesson: python-runtime
+    title: How Python runs
+    minutes: 8
+    problem: |
+      Ripple's Python analytics service, built on asyncio, freezes for seconds at a time. Separately, a CPU-heavy report job got no faster when it was given eight threads.
+    answer: |
+      CPython's **Global Interpreter Lock (GIL)** lets only one thread run Python bytecode at a time. A thread releases it while waiting on I/O, sleeping, or running C code that releases it (NumPy, hashing, compression). So:
+      - **Threads** suit I/O-bound work such as HTTP calls and database queries, because waiting releases the GIL.
+      - **Processes** (`ProcessPoolExecutor`) suit pure-Python CPU work, because each has its own interpreter and GIL. Arguments are pickled, which has a cost.
+      - If the heavy work already runs in C (a big pandas groupby), a thread is fine.
+
+      **asyncio** runs coroutines on one thread and switches only at an `await`. That's cheap for thousands of mostly waiting connections, but it's cooperative: any call that blocks without awaiting (`requests.get`, `time.sleep`, a synchronous database driver, a long CPU loop) freezes every request on the loop. Use async libraries (httpx, asyncpg), or move the blocking call off the loop with `asyncio.to_thread`, or to a process pool for CPU work. Limit concurrency with a semaphore rather than starting 10,000 requests at once.
+
+      Memory is mostly freed as soon as nothing refers to an object, with a separate collector for reference cycles. Long-running services still leak through caches and dictionaries that only grow.
+    catch: |
+      The GIL doesn't make code thread-safe: `x += 1` on shared data is several bytecodes, and a switch can land between them. Free-threaded builds without the GIL exist from 3.13, but they're not the default yet.
+    remember: |
+      Threads or asyncio for waiting, processes for computing, and never block the event loop.
+    use: python-runtime/b911
+    check: python-runtime/b1
+    later: [asyncio.gather and TaskGroup, Finding leaks with tracemalloc, Mutable default arguments and late binding, Free-threaded Python]
+    recap: The GIL runs one thread of Python at a time. Use threads or asyncio for I/O, processes for CPU work, and keep blocking calls off the event loop.
+finish:
+  check:
+    type: predict
+    prompt: |
+      An async Python service has to fetch 5,000 partner URLs and lightly parse each response. What's the best approach?
+    choices:
+      - Start 5,000 threads, one per URL
+      - Use an async HTTP client, limit it to about 100 requests at a time with a semaphore, and run them as tasks in a task group
+      - Use a process pool with 5,000 processes
+      - Call `requests.get` for each URL inside the async handler
+    answer: 1
+    reveal: |
+      The work is almost all waiting on the network, which is what asyncio handles cheaply on one thread. A semaphore stops it opening 5,000 sockets at once, and a task group cancels the rest if something fails badly. Thousands of threads or processes cost far more memory for no gain, and a synchronous `requests.get` inside an async handler blocks the whole event loop for every request.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

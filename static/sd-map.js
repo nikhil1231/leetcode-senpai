@@ -8,18 +8,24 @@
 // A step's number fills in once its check is answered correctly.
 // Activities are the lessons' own blocks; answers land on the lesson they came from.
 // Areas without an authored overview keep the older page: the lessons, then what puts them to work.
+// The AI and fundamentals courses use the same page (#/<track>/map/<category>) for their authored overviews.
 (function () {
   'use strict';
   const {api, escapeHtml: esc} = window.H;
   const B = () => window.SDBlocks;
   const LAYER = {1: 'Overview', 2: 'Interview-ready', 3: 'Depth'};
-  let M = null, area = '', error = '', step = 0, answers = {}, wired = null, observer = null, review = null;
+  let M = null, area = '', section = 'system-design', error = '', step = 0, answers = {}, wired = null, observer = null, review = null;
   const rid = () => 'k' + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
 
-  async function open(id) {
-    area = id; error = '';
+  const SD = () => section === 'system-design';
+  const q = () => SD() ? '' : '?section=' + section;
+  const home = () => SD() ? '#/system-design/curriculum' : `#/${section}/lessons`;
+  const lessonHref = id => SD() ? `#/system-design/lesson/${esc(id)}` : `#/${section}/lesson/${esc(id)}`;
+
+  async function open(id, sec = 'system-design') {
+    area = id; section = sec; error = '';
     try {
-      M = await api('/tutor/map/' + encodeURIComponent(id));
+      M = await api('/tutor/map/' + encodeURIComponent(id) + q());
       step = Math.min(M.step || 0, (M.lesson.overview?.steps.length || 0) + 2);
       answers = {...(M.answers || {})};
       review = {session: M.review || null, busy: false, pending: null, error: ''};
@@ -55,12 +61,12 @@
   }
 
   const md = t => B().md(String(t || '').trim());
-  const back = '<div class="sd-breadcrumb"><a class="button" href="#/system-design/curriculum">← The course</a></div>';
+  const back = () => `<div class="sd-breadcrumb"><a class="button" href="${home()}">← The course</a></div>`;
   const lessonTitle = id => M.lessons.find(x => x.id === id)?.title || id;
 
   // ---------- The guided overview ----------
   // A step's check (or activity) answered correctly on this page.
-  const right = s => [s.check, s.use].some(k => k && answers[k] === true);
+  const right = s => answers[s.check || s.use] === true;   // with both, the check decides
   function stepBar(ov) {
     const n = ov.steps.length, names = ['Start', ...ov.steps.map(s => s.title), 'Check', 'Wrap-up'];
     return `<nav class="ov-bar" aria-label="Overview steps"><ol>${names.map((name, i) => {
@@ -82,17 +88,24 @@
       ${pic ? `<h3 class="ov-h">The big picture</h3>${B().renderBlock(pic)}<div class="sd-md ov-picture-note">${md(ov.picture_note)}</div>` : ''}`;
   }
 
+  // A step can carry something to try (`use`), a check, or both: the activity comes first.
+  function tryHtml(s) {
+    const find = k => k && M.lesson.blocks.find(x => x.key === k);
+    const use = find(s.use), check = find(s.check);
+    return `${use ? `<section class="ov-part ov-try"><h4 class="ov-label">Try it</h4>${s.use_note ? `<p class="sd-muted ov-note">${esc(s.use_note)}</p>` : ''}${B().renderBlock(use)}</section>` : ''}
+      ${check ? `<section class="ov-part ov-try"><h4 class="ov-label">Quick check</h4>${B().renderBlock(check)}</section>` : ''}`;
+  }
+
   function stepHtml(s) {
-    const act = s.use || s.check, b = act && M.lesson.blocks.find(x => x.key === act);
     return `<header class="ov-step-head"><span class="sd-eyebrow">STEP ${step} OF ${M.lesson.overview.steps.length} · ABOUT ${s.minutes} MIN</span>
         <h3>${esc(s.title)}</h3></header>
       ${part('The problem', s.problem)}
       ${part('The usual answer', s.answer)}
       ${part('The catch', s.catch)}
       ${part('Worth remembering', s.remember, 'is-remember')}
-      ${b ? `<section class="ov-part ov-try"><h4 class="ov-label">${s.use ? 'Try it' : 'Quick check'}</h4>${s.use_note ? `<p class="sd-muted ov-note">${esc(s.use_note)}</p>` : ''}${B().renderBlock(b)}</section>` : ''}
+      ${tryHtml(s)}
       <aside class="ov-later"><h4 class="ov-label">Covered in the full lesson</h4><ul>${s.later.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
-        <a class="ov-later-link" href="#/system-design/lesson/${esc(s.lesson)}">${esc(lessonTitle(s.lesson))} →</a></aside>`;
+        <a class="ov-later-link" href="${lessonHref(s.lesson)}">${esc(lessonTitle(s.lesson))} →</a></aside>`;
   }
 
   function finishHtml(ov) {
@@ -159,7 +172,7 @@
     const r = review;
     r.busy = true; r.error = ''; r.session = null; paintReview(root);
     try {
-      r.session = await api('/tutor/sessions', 'POST', {section: 'system-design', lesson: M.lesson.id, mode: 'review', key: rid()});
+      r.session = await api('/tutor/sessions', 'POST', {section, lesson: M.lesson.id, mode: 'review', key: rid()});
     } catch (e) { r.error = e.message; }
     if (review !== r) return;
     r.busy = false; paintReview(root);
@@ -189,7 +202,7 @@
     const prev = step > 0 ? `<button type="button" class="button" data-ov-go="${step - 1}">← Back</button>` : '<span></span>';
     const next = step === 0 ? 'Start the tour →' : step < n ? `Next: ${ov.steps[step].title} →` : step === n ? 'Next: check what you know →'
       : step === n + 1 ? 'Next: wrap-up →' : '';
-    const last = M.mapped ? '<a class="button is-primary" data-primary="1" href="#/system-design/curriculum">Back to the course →</a>'
+    const last = M.mapped ? `<a class="button is-primary" data-primary="1" href="${home()}">Back to the course →</a>`
       : '<button type="button" class="button is-primary" data-primary="1" data-ov-finish>Finish the overview ✓</button>';
     return `<div class="ov-pager">${prev}${step > n + 1 ? last : `<button type="button" class="button is-primary" data-primary="1" data-ov-go="${step + 1}">${esc(next)}</button>`}</div>`;
   }
@@ -197,18 +210,20 @@
   function overviewHtml() {
     const l = M.lesson, ov = l.overview, n = ov.steps.length;
     const body = step === 0 ? startHtml(ov) : step === n + 1 ? reviewHtml() : step > n ? finishHtml(ov) : stepHtml(ov.steps[step - 1]);
-    return `${back}
-      <div class="sd-page-intro sd-rich-intro ov-intro-head"><span class="sd-eyebrow">PASS ONE · OVERVIEW${M.mapped ? ' · DONE ✓' : ''}</span>
+    return `${back()}
+      <div class="sd-page-intro sd-rich-intro ov-intro-head"><span class="sd-eyebrow">${eyebrow()}</span>
         <h2 id="sd-heading" tabindex="-1">${esc(ov.title)}</h2>
-        <p>${n} topics, about ${ov.minutes} minutes. What each one is for, the usual answer and its catch.</p></div>
+        <p>${n === 1 ? 'One topic' : `${n} topics`}, about ${ov.minutes} minutes. What ${n === 1 ? 'it is' : 'each one is'} for, the usual answer and its catch.</p></div>
       <div id="sd-map-tutor"></div>
       <div class="sd-map-body ov">${stepBar(ov)}<article class="sd-panel ov-card" aria-live="polite">${body}${pager(ov)}</article></div>`;
   }
 
+  const eyebrow = () => `${SD() ? 'PASS ONE · ' : ''}OVERVIEW${M.mapped ? ' · DONE ✓' : ''}`;
+
   // ---------- The older page, for areas without an authored overview ----------
   function listHtml() {
     const l = M.lesson, use = M.resources.filter(r => r.layer <= 2 && r.kind !== 'internals');
-    return `${back}
+    return `${back()}
       <div class="sd-page-intro"><span class="sd-eyebrow">PASS ONE · OVERVIEW${M.mapped ? ' · DONE ✓' : ''}</span><h2 id="sd-heading" tabindex="-1">${esc(l.title.replace(/^Overview: /, ''))}</h2>
         <p>${esc(l.summary)} One sitting with the tutor covers every piece at overview depth: what it is for, the usual answer and its catch. The rest waits for the full lessons.</p></div>
       <div id="sd-map-tutor"></div>
@@ -229,10 +244,11 @@
   function done(key, correct) {
     const b = (M?.lesson.blocks || []).find(x => x.key === key);
     if (!b?.from || typeof correct !== 'boolean') return Promise.resolve();
-    return api(`/system-design/course/lessons/${encodeURIComponent(b.from.lesson)}/activity`, 'POST', {block: b.from.key, correct});
+    const path = SD() ? `/system-design/course/lessons/${encodeURIComponent(b.from.lesson)}/activity` : `/tracks/${section}/lessons/${encodeURIComponent(b.from.lesson)}/activity`;
+    return api(path, 'POST', {block: b.from.key, correct});
   }
 
-  const save = (body) => api(`/tutor/map/${encodeURIComponent(area)}/step`, 'POST', body).catch(e => console.warn('Could not save the overview step', e));
+  const save = (body) => api(`/tutor/map/${encodeURIComponent(area)}/step${q()}`, 'POST', body).catch(e => console.warn('Could not save the overview step', e));
 
   // One filled button: the step's unanswered activity first, then the pager's next step.
   function oneNext(card) {
@@ -267,7 +283,7 @@
       if (r) {
         M.mapped = !!r.mapped;
         const eyebrow = root.querySelector('.ov-intro-head .sd-eyebrow');
-        if (eyebrow && M.mapped) eyebrow.textContent = 'PASS ONE · OVERVIEW · DONE ✓';
+        if (eyebrow && M.mapped) eyebrow.textContent = `${SD() ? 'PASS ONE · ' : ''}OVERVIEW · DONE ✓`;
         go(step, root);
       }
     });
@@ -290,7 +306,7 @@
     const slot = root.querySelector('#sd-map-tutor');
     if (!slot || !M) return;
     if (M.lesson.overview) wireOverview(root);
-    window.Tutor?.mount(slot, {section: 'system-design', lesson: M.lesson, layout: root.querySelector('.sd-map-body'), done});
+    window.Tutor?.mount(slot, {section, lesson: M.lesson, layout: root.querySelector('.sd-map-body'), done});
   }
 
   function stop() { wired?.destroy?.(); wired = null; observer?.disconnect(); observer = null; review = null; }

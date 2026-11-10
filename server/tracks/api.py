@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import llm, system_design_coach
+from ..tutor import overviews
 from ..system_design_learning import judge
 from . import TRACKS, courses, experience, practical
 from .http import put, store_for
@@ -55,6 +56,8 @@ def get_track(track: str, store=Depends(store_for)):
             exercises = {e['id']: {k: e[k] for k in ('title', 'minutes', 'status', 'best', 'open')}
                          for g in groups for e in g['exercises']}
         body = courses.overview(track, records, now, exercises)
+        toured = set(overviews.areas(track))
+        body['course'] = [{**c, 'overview': c['id'] in toured} for c in body['course']]
     elif meta['kind'] == 'experience':
         body = experience.overview(records, now, store.get_senpai('senpai', 'job_context'))
     else:

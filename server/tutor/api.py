@@ -226,28 +226,32 @@ def _next_level(store):
     return None
 
 
+Section = Literal['system-design', 'fundamentals', 'ai']
+
+
 @router.get('/map/{area}')
-def area_map(area: str, store=Depends(store_for)):
+def area_map(area: str, section: Section = 'system-design', store=Depends(store_for)):
     """An area map for its page: the lesson the tutor teaches, its lessons with what you hold in each
     layer, and the game levels, worked designs and simulators that practise the area."""
-    l = lessons.area_map(area)
+    l = lessons.area_map(area, section)
     if not l:
         raise HTTPException(404, 'Unknown area')
     now = time.time()
     c, _, states, seen, mis = kb_api.evidence(store, now)
-    views = kmodel.views(c, states, seen, mis, now, [p for p in kcat.active(c) if p['lesson'] in l['map']['lessons']])
+    views = kmodel.views(c, states, seen, mis, now, [p for p in kcat.active(c) if p['section'] == section and p['lesson'] in l['map']['lessons']])
     titles = lessons.titles()
-    prog = _ripple(store)
-    mem = store.get_knowledge('tutor_memory', _memory_key('system-design', l['id'])) or {}
+    prog = _ripple(store) if section == 'system-design' else None
+    mem = store.get_knowledge('tutor_memory', _memory_key(section, l['id'])) or {}
     review = store.get_knowledge('tutor_sessions', mem['review']) if mem.get('review') else None
     return {'review': public(review) if review else None, 'lesson': {k: l[k] for k in ('id', 'title', 'category', 'summary', 'objectives', 'blocks', 'map') + (('overview',) if l.get('overview') else ())},
             'step': mem.get('overview_step', 0), 'answers': mem.get('overview_answers') or {},
-            'lessons': [{'id': k, 'title': titles[('system-design', k)], 'layers': progress.layer_tally([v for v in views if v['lesson'] == k])}
+            'section': section,
+            'lessons': [{'id': k, 'title': titles[(section, k)], 'layers': progress.layer_tally([v for v in views if v['lesson'] == k])}
                         for k in l['map']['lessons']],
             'layers': progress.layer_tally(views), 'mapped': bool(mem.get('mapped_at')),
             'resources': [{**{k: r[k] for k in ('key', 'kind', 'id', 'title', 'about', 'href', 'layer', 'lessons')},
                            'locked': r['kind'] == 'game' and prog is not None and r['id'] not in prog['unlocked']}
-                          for r in res.for_lessons(l['map']['lessons'])],
+                          for r in (res.for_lessons(l['map']['lessons']) if section == 'system-design' else [])],
             'enabled': llm.enabled(store.get_settings())}
 
 
@@ -259,22 +263,23 @@ class OverviewStep(BaseModel):
 
 
 @router.post('/map/{area}/step')
-def overview_step(area: str, body: OverviewStep, store=Depends(store_for)):
+def overview_step(area: str, body: OverviewStep, section: Section = 'system-design', store=Depends(store_for)):
     """Where he is in an area overview. A finished step marks its lesson's map ideas as seen (exposures,
-    once each); finishing the overview counts the area as done for pass one, like a map session."""
-    l = lessons.area_map(area)
+    once each; only system design is layered, so other courses mark none); finishing the overview counts
+    the area as done for pass one, like a map session."""
+    l = lessons.area_map(area, section)
     if not l or not l.get('overview'):
         raise HTTPException(404, 'No overview for this area')
     now, steps = time.time(), l['overview']['steps']
-    mk = _memory_key('system-design', l['id'])
+    mk = _memory_key(section, l['id'])
     mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
     mem['overview_step'] = min(body.step, len(steps) + 2)   # the steps, then the check, then the wrap-up
     keys = {b['key'] for b in l['blocks']}
     mem['overview_answers'] = {**(mem.get('overview_answers') or {}), **{k: v for k, v in body.answers.items() if k in keys}}
     if 0 <= body.finished < len(steps):
         lesson = steps[body.finished]['lesson']
-        pts = [p['id'] for p in kcat.active(kcat.CATALOG) if p['section'] == 'system-design' and p['lesson'] == lesson and p['layer'] == kcat.MAP]
-        kb_api.write_events(store, SOURCE, [{'kind': 'exposure', 'points': [pid], 'key': f'overview.{area}.{pid}', 'ref': l['id'],
+        pts = [p['id'] for p in kcat.active(kcat.CATALOG) if p['section'] == section and p['lesson'] == lesson and p['layer'] == kcat.MAP]
+        kb_api.write_events(store, SOURCE, [{'kind': 'exposure', 'points': [pid], 'key': f'overview.{area}.{pid}' if section == 'system-design' else f'overview.{section}.{area}.{pid}', 'ref': l['id'],
                                              'note': 'Read in the area overview'} for pid in pts], now)
     if body.done and not mem.get('mapped_at'):
         mem['mapped_at'] = now

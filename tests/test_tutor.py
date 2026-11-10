@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from server import auth, config, llm, main
 from server.knowledge_base import catalog as kcat, model as kmodel
-from server.tutor import api, lessons, resources, session as ses, story
+from server.tutor import api, lessons, overviews, resources, session as ses, story
 from tests.fake_store import FakeStore
 
 L = lessons.get('system-design', 'cache-aside')
@@ -605,7 +605,8 @@ def test_the_tutor_hands_over_a_design_and_reads_the_run(client):
 
 # ---- layers, area maps and links ----------------------------------------------------------
 
-def test_an_area_map_is_a_lesson_made_of_its_area():
+def test_an_area_map_is_a_lesson_made_of_its_area(monkeypatch):
+    monkeypatch.setattr(overviews, 'lesson', lambda area, section='system-design': None)   # the page for an area with no tour
     m = lessons.get('system-design', 'map-distributed')
     keys = lessons.area_lessons('distributed')
     assert m['map'] == {'area': 'distributed', 'lessons': keys} and len(m['objectives']) == len(keys)
@@ -630,7 +631,7 @@ def test_resources_link_game_levels_designs_and_simulators_to_lessons():
     assert 'locked until he clears the one before' in line
 
 
-def test_the_tutor_prompt_is_layered_and_map_sessions_have_their_own_role():
+def test_the_tutor_prompt_is_layered_and_map_sessions_have_their_own_role(monkeypatch):
     cons = lessons.get('system-design', 'consensus')
     s = {**ses.new('s', cons, 'teach', 0)}
     views = kmodel.views(kcat.CATALOG, {}, {}, [], 0, lessons.points('system-design', 'consensus')[0])
@@ -638,6 +639,7 @@ def test_the_tutor_prompt_is_layered_and_map_sessions_have_their_own_role():
     assert '## Layers in this lesson' in text and 'Depth ideas are for later' in text and '[[play rN]]' in text
     s['layer'] = 1
     assert '## Pass one: map depth' in ses.system(s, cons, views, [], {}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
+    monkeypatch.setattr(overviews, 'lesson', lambda area, section='system-design': None)   # an area with no tour
     m = lessons.get('system-design', 'map-distributed')
     text = ses.system(ses.new('m', m, 'teach', 0), m, [], [], {}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
     assert "going through an overview with him" in text and '## Layers in this lesson' not in text
@@ -717,7 +719,7 @@ def test_reading_the_overview_saves_the_step_marks_ideas_seen_and_finishing_coun
     assert d['step'] == 2 and d['answers'] == {'b2': True}
     assert ok(client.post('/api/tutor/map/storage/step', json={'step': 9, 'done': True}))['mapped']
     assert ok(client.get('/api/tutor/map/storage'))['mapped']
-    assert client.post('/api/tutor/map/distributed/step', json={'step': 1}).status_code == 404
+    assert client.post('/api/tutor/map/casebook/step', json={'step': 1}).status_code == 404
 
 
 def test_the_overview_check_is_a_conversation_of_its_own_beside_the_tutor_session(client):
@@ -741,7 +743,7 @@ def test_the_overview_check_is_a_conversation_of_its_own_beside_the_tutor_sessio
     old = client.store.get_knowledge('tutor_sessions', 'sess-ov-rev1')
     assert old['status'] == 'ended' and old['ended_by'] == 'replaced sess-ov-rev2' and not any(t.get('debrief') for t in old['turns'])
     assert ok(client.get('/api/tutor/map/storage'))['review']['id'] == 'sess-ov-rev2'
-    assert client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-distributed', 'mode': 'review', 'key': 'sess-ov-x1'}).status_code == 422
+    assert client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-casebook', 'mode': 'review', 'key': 'sess-ov-x1'}).status_code == 404
     assert client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'indexes', 'mode': 'review', 'key': 'sess-ov-x2'}).status_code == 422
     assert 'review' not in {m['id'] for m in ok(client.get('/api/tutor'))['modes']}
     assert ok(client.post('/api/tutor/map/storage/step', json={'step': 30}))['step'] == 10   # 8 steps, the check, the wrap-up
@@ -764,3 +766,51 @@ def test_area_map_over_http_and_a_map_session_counts_for_pass_one(client):
     assert ok(client.get('/api/tutor/map/distributed'))['mapped']
     step = ok(client.get('/api/tutor/next?section=system-design'))
     assert step['primary']['kind'] == 'map' and step['primary']['area'] == 'foundations'
+
+
+def test_every_course_area_has_a_tour_whose_checks_exist():
+    from server.tracks import courses
+    assert overviews.areas('system-design') == [c for c, _, _ in lessons.map_areas()]
+    for track in overviews.TRACKS:
+        assert set(overviews.areas(track)) == {c for c, _, _ in courses.COURSES[track]['categories']} - {'design'}
+    for (section, area), o in overviews.OVERVIEWS.items():
+        ov = overviews.lesson(area, section)
+        keys = {b['key'] for b in ov['blocks']}
+        assert ov['picture'] in keys and ov['finish'].get('check') in keys, (section, area)
+        assert all((s.get('check') or s.get('use')) in keys for s in ov['steps'])
+
+
+def test_a_track_overview_is_its_own_lesson_and_page(client):
+    m = lessons.get('ai', 'map-agents')
+    assert m['section'] == 'ai' and m['overview'] and m['map']['lessons'] == ['agents', 'mcp', 'multi-agent', 'durable-agents']
+    assert all(b['from']['lesson'] in m['map']['lessons'] for b in m['blocks'] if 'from' in b)
+    assert '### Step 2: One tool interface for every model (mcp)' in lessons.notes(m)
+    assert ('ai', 'map-agents') in lessons.titles() and lessons.get('ai', 'map-design') is None
+    d = ok(client.get('/api/tutor/map/agents?section=ai'))
+    assert d['section'] == 'ai' and d['lesson']['id'] == 'map-agents' and not d['resources'] and d['step'] == 0
+    assert client.get('/api/tutor/map/agents').status_code == 404   # not a system design area
+    r = ok(client.post('/api/tutor/map/agents/step?section=ai', json={'step': 2, 'finished': 0, 'answers': {'b2': True}}))
+    assert r == {'step': 2, 'mapped': False} and not client.store.list_knowledge('knowledge_events')
+    assert ok(client.post('/api/tutor/map/agents/step?section=ai', json={'step': 6, 'done': True}))['mapped']
+    assert client.store.get_knowledge('tutor_memory', 'lesson:ai:map-agents')['overview_answers'] == {'b2': True}
+    client.replies.append('Sam wants Assist to tidy up old links. Agent or workflow?')
+    r = ok(client.post('/api/tutor/sessions', json={'section': 'ai', 'lesson': 'map-agents', 'mode': 'review', 'key': 'sess-ai-rev'}))
+    assert r['mode'] == 'review' and 'Step 4:' in client.chats[-1][0]['content']
+
+
+def test_course_categories_say_which_have_a_tour_and_the_palette_lists_them():
+    from server import search_index
+    from server.tracks import api as tracks_api
+    body = tracks_api.get_track('fundamentals', FakeStore('alice'))
+    assert all(c['overview'] for c in body['course'])
+    routes = {x['route'] for x in search_index.lessons()}
+    assert '#/ai/map/models' in routes and '#/fundamentals/map/quality' in routes and '#/system-design/map/queues' in routes
+
+
+def test_lesson_blocks_reject_an_empty_bucket_and_unwrap_text_choices():
+    from server.system_design_lessons import LessonError, _check_block
+    with pytest.raises(LessonError):
+        _check_block('x', 'sort', {'prompt': 'p', 'buckets': ['A, B', 'C'], 'items': [{'text': 't', 'bucket': 0}]}, 0)
+    b = {'prompt': 'p', 'choices': [{'text': 'one: two'}, 'three'], 'answer': 0, 'reveal': 'r'}
+    _check_block('x', 'predict', b, 0)
+    assert b['choices'] == ['one: two', 'three']

@@ -18,10 +18,10 @@
   // Extra prep for an interview round that lives in another section.
   const ROUND_LINKS = { workflow: [['experience', 'dives', 'Deep dives on your CV']] };
   const NOTES = { course: 'Read it once.<br>Recall it often.<br>Explain it simply.', experience: 'Specific.<br>Measured.<br>In the first person.', practical: 'Run the tests.<br>Change one thing.<br>Say what you see.', readiness: 'One scale.<br>Six disciplines.<br>No blind spots.' };
-  const VIEW_TITLES = { home: 'Home', practise: 'Practise', progress: 'What you know', placement: 'Find your level', lessons: 'Learn', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round', nightshift: 'Night Shift', tutor: 'Tutor' };
+  const VIEW_TITLES = { home: 'Home', practise: 'Practise', progress: 'What you know', placement: 'Find your level', lessons: 'Learn', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', map: 'Overview', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round', nightshift: 'Night Shift', tutor: 'Tutor' };
   const ACTIVE = { lesson: 'lessons', story: 'stories', dive: 'dives', claim: 'dives', exercise: 'home' };
   // Course tracks: practice views sit under Practise.
-  const COURSE_ACTIVE = { lesson: 'lessons', quickfire: 'practise', mistakes: 'practise', placement: 'practise', round: 'practise', exercise: 'practise', nightshift: 'practise' };
+  const COURSE_ACTIVE = { lesson: 'lessons', map: 'lessons', quickfire: 'practise', mistakes: 'practise', placement: 'practise', round: 'practise', exercise: 'practise', nightshift: 'practise' };
   const registry = { course: {} };
   let current = { track: null, view: 'home', arg: null, seq: 0 };
   const cleanups = [];
@@ -192,7 +192,8 @@
   C.lessons = async ctx => {
     const d = await ctx.call('');
     if (ctx.stale()) return;
-    const catHtml = c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p></div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`;
+    const tour = c => c.overview ? `<a class="sd-map-link" href="#/${esc(ctx.track)}/map/${esc(c.id)}">Start the overview →</a>` : '';
+    const catHtml = c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p>${tour(c)}</div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`;
     const core = d.course.filter(c => !c.deep), deep = d.course.filter(c => c.deep);
     const deepOpen = deep.some(c => c.lessons.some(l => l.opened));
     ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">${core.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><h2>The course, in order.</h2><p>Home picks the next lesson for you; open any lesson here when you want to choose.</p></div>${loopHtml(d.rounds)}
@@ -200,6 +201,14 @@
       ${deep.length ? `<details class="tr-deep"${deepOpen ? ' open' : ''}><summary><span class="sd-eyebrow">GOING DEEPER · OPTIONAL · ${deep.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><b>What happens under the hood</b><span class="sd-muted">Not needed for the course or its interviews, and never picked for you. A lesson here starts counting towards what you know once you open it.</span></summary>${deep.map(catHtml).join('')}</details>` : ''}`;
     wireActions(ctx.root, { go: n => ctx.go(n.dataset.view), lesson: n => ctx.go('lesson/' + n.dataset.id), exercise: n => ctx.go('exercise/' + n.dataset.id),
       section: n => window.AppSections.select(n.dataset.section, n.dataset.view) });
+  };
+  // An area overview: the same guided tour as system design's (sd-map.js), for one category of this course.
+  C.map = async ctx => {
+    await window.DesignMap.open(ctx.arg, ctx.track);
+    if (ctx.stale()) return;
+    ctx.root.innerHTML = window.DesignMap.render();
+    window.DesignMap.wire(ctx.root);
+    ctx.onLeave(() => window.DesignMap.stop());
   };
   C.lesson = async ctx => {
     const [lesson, overview] = await Promise.all([ctx.call('/lessons/' + ctx.arg), ctx.call('')]);

@@ -21,6 +21,10 @@ def lessons():
     from .tutor.lessons import map_areas
     out += [{'kind': 'lesson', 'title': f'Overview: {t}', 'sub': 'System Design area overview (pass one)', 'route': f'#/system-design/map/{c}'}
             for c, t, _ in map_areas()]
+    from .tutor import overviews
+    from .tutor.lessons import track_area
+    out += [{'kind': 'lesson', 'title': f'Overview: {track_area(s, c)[0]}', 'sub': f'{COURSE_NAMES[s]} area overview',
+             'route': f'#/{s}/map/{c}'} for s in overviews.TRACKS for c in overviews.areas(s)]
     for track, name in COURSE_NAMES.items():
         for cat in courses.overview(track, [], 0)['course']:
             out += [{'kind': 'lesson', 'title': l['title'], 'sub': f'{name} lesson', 'route': f"#/{track}/lesson/{l['id']}"}

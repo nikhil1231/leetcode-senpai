@@ -1,0 +1,125 @@
+# The overview of one area of the AI course. Format and rules: server/tutor/overviews.py and the system design
+# overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: models
+title: How LLMs behave
+minutes: 30
+intro: |
+  This tour covers the three topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step has something to try and ends with a quick check.
+
+  Ripple is shipping its first feature built on a large language model: it suggests a description for each new link and answers creators' questions about how their links are doing. To build it well you need to know what a model call costs, how to get output your code can rely on, and which model to use. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple's first LLM feature
+  plain: true
+  nodes:
+    - {id: app, label: Creator, kind: client, x: 0, y: 1}
+    - {id: api, label: Ripple API, kind: service, x: 1, y: 1, note: 'builds the prompt'}
+    - {id: model, label: LLM API, kind: model, x: 2, y: 1, note: 'billed per token'}
+    - {id: tools, label: Ripple tools, kind: tool, x: 1, y: 0, note: 'get_link_stats'}
+    - {id: check, label: Validator, kind: process, x: 1, y: 2, note: 'checks the JSON'}
+  edges:
+    - [app, api]
+    - [api, model, 'prompt and tools']
+    - [api, tools, 'runs tool calls']
+    - [api, check]
+  paths:
+    - label: Suggest a link description
+      steps:
+        - [app, api, 'A creator adds a link and asks for a suggested description.']
+        - [api, model, 'The API sends instructions, the page''s text wrapped in tags and marked as data, two examples and the JSON shape it wants back: about 3,000 tokens in (step 2).']
+        - [api, model, 'The model reads the whole prompt at once, then writes its answer one token at a time. 150 tokens at 80 a second is about two seconds (step 1).']
+        - [api, check, 'The reply is checked against the schema in code. If it fails, the API retries once with the error included, then gives up visibly (step 2).']
+    - label: '"How did my link do last week?"'
+      steps:
+        - [app, api, 'A creator asks how a link did last week.']
+        - [api, model, 'The question goes with a get_link_stats tool definition: its name, what it''s for and its arguments.']
+        - [api, tools, 'The model replies with a tool call instead of text. The API checks the arguments and that this creator owns the link, then runs it (step 2).']
+        - [api, model, 'It sends the result back, and the model writes the answer from real numbers.']
+    - label: Sort 50,000 support emails a day
+      steps:
+        - [api, model, 'Each email goes to a small, fast model at temperature 0, which must reply with one of 12 categories. It''s cheap and, on Ripple''s own test set, accurate enough (steps 1 and 3).']
+        - [api, check, 'Anything outside the 12 categories goes to a person instead of being filed blindly.']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. The model only ever sees what the API sends it, and it only ever proposes: the API decides what to run, what to accept and what to show. Which model sits in the LLM box, and whether it should think before answering, is step 3.
+steps:
+  - lesson: llm-basics
+    title: What a model call costs
+    minutes: 7
+    problem: |
+      The first version of link descriptions takes nine seconds, costs more than expected, and now and then describes things that aren't on the page at all.
+    answer: |
+      A model predicts the next **token** (a piece of a word) again and again, based on everything in its context. In English a token is about 4 characters, so 3,000 words is about 4,000 tokens; code, other languages and IDs take more. Price, rate limits and context size are all counted in tokens, and output tokens usually cost several times more than input.
+
+      A call has two phases. **Prefill** reads the whole prompt at once and decides the **time to first token**. **Decode** writes the answer one token at a time. So latency is roughly time to first token plus output tokens ÷ tokens per second: 0.5 s plus 400 tokens at 80 a second is about 5.5 s. Asking for less output is the biggest lever. **Prompt caching** reuses the prefill for a prefix that repeats, such as a long system prompt, so put stable content first.
+
+      The **context window** is the most tokens a call can hold, prompt plus output, and nothing carries over between calls: chat "memory" is the app sending history again. Models use long contexts unevenly and miss things in the middle more often.
+
+      **Temperature** controls randomness. Near 0 the model nearly always picks the most likely token, for extraction, classification and code. Around 0.7 to 1 gives variety, for brainstorming. Even at 0, outputs can differ slightly between calls.
+    catch: |
+      A model is trained to produce plausible text, not to check facts. When the answer isn't well covered by its training or the context, it still writes something fluent, which may be wrong (a **hallucination**). The most direct fix is **grounding**: put the source material in the prompt and require answers to cite it. Allowing "I don't know", narrower tasks and checks in code help too. Fine-tuning doesn't add reliable facts.
+    remember: |
+      Latency is roughly time to first token plus output tokens ÷ speed, so cut the output before anything else.
+    use: llm-basics/b910
+    use_note: The first two challenges are enough for now (a slow call with a short prompt, then fast first words on a long one).
+    check: llm-basics/b3
+    later: [Top-p and top-k, Where long contexts go wrong, Prompt caching in detail, Why outputs vary at temperature 0]
+    recap: Everything is counted in tokens, and output length drives latency. Low temperature for consistent answers; ground facts in the prompt.
+
+  - lesson: prompting
+    title: Prompts, structured output and tools
+    minutes: 8
+    problem: |
+      The description feature asks for JSON in the prompt, and about one reply in fifty doesn't parse. Then Sam wants creators to ask "how did my link do last week?" and get real numbers, not a guess.
+    answer: |
+      A production prompt is a specification with five parts: the role and context; the task and its constraints, including what to do when unsure ("if the page doesn't say, leave it blank"); the inputs, wrapped in tags and labelled as data; two to five varied examples of tricky cases; and an **output contract**, ideally a schema.
+
+      For output your code can rely on, from weakest to strongest: ask for JSON in the prompt; use the provider's **structured output** mode, which constrains the model to a schema; or use a tool call with a schema. Validate in code every time (Pydantic, zod). If validation fails, retry once with the error included, then fail visibly.
+
+      **Tool calling** lets the model ask your code to act. The app sends the message with tool definitions (name, description, argument schema); the model replies with a tool call; the app validates the arguments, runs it and sends back the result; then the model writes the answer. The model only proposes. Permissions, limits and side effects are in your code.
+
+      Treat prompts as code: version them with the model they were tuned for, record the version with every output, and test changes on an eval set before shipping.
+    catch: |
+      Text you didn't write, such as a web page or a tool result, can contain instructions ("ignore the above and…"). Wrapping it in tags makes the model less likely to follow them but doesn't prevent it (**prompt injection**), so treat output built from untrusted input as untrusted. And the model copies examples closely, including their length and style, so make them varied.
+    remember: |
+      The model proposes; your code validates and decides.
+    use: prompting/b911
+    use_note: The first two challenges are enough for now (complete the round, then see what breaks without a tool result).
+    check: prompting/b3
+    later: [Reasoning before answering, Repairing invalid output, Writing tool descriptions, Pinning and versioning prompts]
+    recap: Write prompts as specifications with an output contract, validate in code, and let the model propose tool calls that your code runs.
+
+  - lesson: choosing-models
+    title: Choosing a model
+    minutes: 6
+    problem: |
+      Marcus asks which model Ripple should use. There are two jobs on the table: sorting 50,000 support emails a day into categories, and an assistant that plans changes across many files of Ripple's code.
+    answer: |
+      Choose per task: the cheapest model that passes your own tests for that task. Within one provider's range the largest model often costs 10 to 30 times as much per token as the smallest and is several times slower. Small models suit narrow, high-volume work (classifying, extracting, routing); large ones earn their price on open-ended reasoning, messy context and multi-step agents.
+
+      **Reasoning models** write hidden "thinking" tokens before they answer. Those are billed, usually at the output rate, and add latency: 2,000 thinking tokens at $15 per million is $0.03 a request, or $3,000 a day at 100,000 requests. Thinking helps with maths, tricky code, planning and judging subtle cases; it doesn't help extraction, classification, short chat or anything with a tight latency budget.
+
+      Public leaderboards only tell you a model's rough tier. Shortlist two or three and compare them on your own **eval set**: quality per category, cost per request and p95 latency. An API model gives top quality with nothing to run; open-weight models you host give control of data and versions, and only work out cheaper at high, steady volume.
+
+      To improve results, climb one step at a time and measure each: a clearer prompt, a few examples, retrieval or tools, fine-tuning, and only then training your own model.
+    catch: |
+      A model is a dependency you don't control: providers update and retire models. Keep the model ID in config, rerun your evals per category before switching, and have a tested fallback. And fine-tuning teaches behaviour (format, tone, a narrow skill), not facts that change.
+    remember: |
+      Decide on your own eval set, not a leaderboard.
+    use: choosing-models/b4
+    check: choosing-models/b2
+    later: [Distillation, Self-hosting costs, The adaptation ladder in detail, Treating an upgrade as a migration]
+    recap: Pick the cheapest model that passes your evals, per task. Turn thinking on for multi-step problems only, and treat models as dependencies.
+finish:
+  check:
+    type: predict
+    prompt: |
+      Ripple wants to tag every new link with one of 12 categories, about 200,000 links a day. Which setup do you start with?
+    choices:
+      - The largest reasoning model at temperature 1, answering in free text
+      - A small model at temperature 0, constrained to a schema with the 12 categories, validated in code and measured on a labelled test set
+      - Fine-tune a model on the categories before trying anything else
+      - A mid-sized model told to "think step by step", with the category taken from the last line of its answer
+    answer: 1
+    reveal: |
+      Classification is narrow and high-volume, so a small model at temperature 0 is the cheap, fast starting point, and a schema with an enum makes the answer something code can rely on. A labelled test set tells you whether it's good enough before anything bigger is considered. A reasoning model at high temperature is slow, expensive and inconsistent here. Fine-tuning is several rungs up the ladder, and parsing free text from the last line is the weakest way to get structured output.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

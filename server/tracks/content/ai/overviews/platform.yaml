@@ -1,0 +1,175 @@
+# The overview of one area of the AI course. Format and rules: server/tutor/overviews.py and the system design
+# overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: platform
+title: 'Under the hood: AI platforms'
+minutes: 40
+intro: |
+  This tour covers the five topics in this optional area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step has something to try and ends with a quick check.
+
+  Every team at Ripple now wants models: chat, search, a legal assistant, nightly backfills. Rather than each building its own, Ripple needs one shared platform: GPUs on Kubernetes, a gateway every team goes through, a safe way to release changes, fine-tunes, and a design that ties it together. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple's inference platform
+  plain: true
+  nodes:
+    - {id: teams, label: Ripple teams, kind: client, x: 0, y: 1}
+    - {id: gw, label: LLM gateway, kind: service, x: 1, y: 1, note: 'keys, quotas, cost'}
+    - {id: ext, label: External API, kind: external, x: 2, y: 0, note: 'overflow, not confidential'}
+    - {id: router, label: Model router, kind: service, x: 2, y: 1, note: 'by cache and load'}
+    - {id: big, label: 70B pool, kind: process, x: 3, y: 0, note: '2 GPUs per replica'}
+    - {id: small, label: 8B pool, kind: process, x: 3, y: 1, note: 'plus team adapters'}
+    - {id: batch, label: Batch queue, kind: queue, x: 3, y: 2, note: 'fills idle GPUs'}
+    - {id: obs, label: Traces and evals, kind: storage, x: 1, y: 2, note: 'per release'}
+  edges:
+    - [teams, gw]
+    - [gw, ext]
+    - [gw, router]
+    - [router, big]
+    - [router, small]
+    - [batch, small, 'off-peak']
+    - [gw, obs]
+  paths:
+    - label: The support bot asks a question
+      steps:
+        - [teams, gw, 'The support team calls the gateway with its own key and a model alias, "chat-large" (step 2).']
+        - [gw, router, 'The gateway checks the team''s token quota, records the cost against the team, and passes the request on.']
+        - [router, big, 'The router picks the replica that already has this system prompt cached and the shortest queue (step 5).']
+    - label: A traffic spike
+      steps:
+        - [router, big, 'Queues on the 70B pool grow. A new replica takes minutes to start: a node, a 15 GB image and 140 GB of weights to load (step 1).']
+        - [router, big, 'So the pool keeps warm spare replicas, and scales on waiting requests and latency, not on GPU utilisation.']
+    - label: Release a new prompt
+      steps:
+        - [gw, obs, 'The new prompt, model version and settings ship as one versioned configuration: an eval gate, shadow traffic, then a 5% canary that rolls itself back if errors, latency or cost rise against the old version (step 3).']
+    - label: A team's fine-tune and a backfill
+      steps:
+        - [router, small, 'The legal team''s fine-tune is a small LoRA adapter applied on top of the shared 8B model, not a separate copy of it (step 4).']
+        - [batch, small, 'A nightly backfill waits in the batch queue and runs on idle GPUs, and is paused when interactive traffic rises (step 5).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. Everything here runs on Kubernetes (step 1). The gateway is the one door every team uses (step 2), and every change to prompts and models goes out through the release process recorded on the left (step 3).
+steps:
+  - lesson: gpu-kubernetes
+    title: GPUs on Kubernetes
+    minutes: 8
+    problem: |
+      Ripple runs its models on Kubernetes. Autoscaling is switched on, yet the chat model falls over at every traffic spike, and data scientists' notebooks each hold a whole GPU while sitting idle.
+    answer: |
+      A node's GPUs appear to Kubernetes as a resource, `nvidia.com/gpu`, that pods request in whole units. The **NVIDIA GPU Operator** installs and manages the drivers and the pieces around them. **Taint** the GPU node pools so only GPU workloads land on those expensive machines.
+
+      Choose how a workload gets its GPU:
+      - **Whole GPUs** for big models, especially ones split across several GPUs.
+      - **MIG** splits an A100 or H100 into up to seven isolated slices with their own memory, for separate tenants or steady latency.
+      - **Time-slicing** shares a GPU with no memory isolation and unpredictable latency, for development and trusted, bursty work.
+
+      In a shared cluster, use per-team quotas, priorities (inference above batch, with batch jobs saving checkpoints so they can be pre-empted) and **gang scheduling**, which starts a multi-pod job only when all its pods can run.
+    catch: |
+      CPU and GPU utilisation are poor signals for scaling LLM servers: scale on waiting requests, KV cache usage or latency against the target. And a new replica takes minutes to start (a new node, a 10 to 20 GB image, 140 GB of weights for a 70B model, warm-up), so interactive models need warm spare replicas, pre-pulled images and weights cached on local disks, all of which cost money while idle.
+    remember: |
+      Scale LLM servers on queue length or latency, and keep warm replicas, because cold starts take minutes.
+    use: gpu-kubernetes/b5
+    check: gpu-kubernetes/b1
+    later: [The GPU Operator's parts, Kueue and Volcano, Quotas with borrowing, Cutting cold starts]
+    recap: GPUs are requested whole, sliced with MIG or time-shared. Scale on queues or latency, not utilisation, and keep warm replicas.
+
+  - lesson: llm-gateway
+    title: One door to every model
+    minutes: 7
+    problem: |
+      Five teams call three model providers directly, each with provider keys in their own code. At 14:00 every AI feature starts getting 429 errors: a data team's backfill has used up the company's shared provider limit.
+    answer: |
+      An **LLM gateway** is one front door for every team:
+      - Teams get **virtual keys** the gateway can scope, rotate and revoke; the real provider keys stay in one place.
+      - **Model aliases** such as "chat-large" map to a provider, version and region, so routing changes without code changes.
+      - It handles retries and **fallbacks** to another provider, but only before streaming starts. Once tokens have reached the user, it ends the stream cleanly rather than splicing two answers.
+      - It enforces **quotas in tokens**: reserve the input plus the maximum output, make the call, then settle against the real usage. 2 million tokens a minute at 3,500 reserved per request allows about 571 requests a minute.
+      - It prices every request and tags it with team, feature and environment, with budgets and alerts.
+
+      A shared provider limit is a shared failure domain, so per-team quotas, priority classes and keeping batch work apart from interactive traffic stop one team taking everyone down.
+    catch: |
+      The gateway is now on every request's path, so it needs replicas, must add only a few milliseconds, and should fail open with a local limit if its quota store goes down. Fallback routes use a different model, so they need their own evals, or they quietly serve worse answers.
+    remember: |
+      Count quotas in tokens, not requests, and reserve the maximum output up front.
+    use: llm-gateway/b4
+    check: llm-gateway/b3
+    later: [Streaming through a proxy, Cost attribution, Caching and guardrails in the gateway, Build or buy]
+    recap: One gateway holds keys, maps aliases, falls back before streaming, enforces token quotas per team and attributes cost.
+
+  - lesson: llmops
+    title: Releasing AI changes safely
+    minutes: 7
+    problem: |
+      On Friday someone edits the support assistant's system prompt in a config file. By Monday refusals are up 8 points, and nobody can tell which change caused it or quickly put it back.
+    answer: |
+      In an AI feature, a release is often not code. Version the prompt, model version, parameters, tools, retrieval and guardrail settings together as one **configuration** that never changes once made, and record its ID with every output.
+
+      Then take each release through the same path: an **eval gate** per category; **shadow traffic** (the new version runs on real inputs without users seeing it); a **canary** to a small share of users with automatic rollback; a ramp in steps; and the old configuration kept ready. Good rollback triggers are fast signals compared against the old version: error and refusal rates, p95 latency, cost per request, and the pass rate of judges you've validated. A monthly satisfaction survey or a single complaint is too slow or too noisy.
+
+      Record one **trace** per request, with a span for each step (router, retrieval, tool calls, model calls) holding inputs, outputs, timings, tokens and cost, with personal data removed. Add a quality measure, such as a validated judge's pass rate on sampled traffic, to the SLOs.
+    catch: |
+      Quality can fall while latency and availability look perfect, which is why it needs its own measure. Behaviour also drifts with nothing released: new kinds of question, stale retrieval sources, or a provider updating the model behind an alias. Pin versions, and run a small eval against production every day so silent changes show up on a chart.
+    remember: |
+      A prompt change is a release. Give it a version, an eval gate and a rollback.
+    use: llmops/b1
+    check: llmops/b3
+    later: [Shadow traffic, Tracing with OpenTelemetry, Error budgets for AI features, Detecting drift]
+    recap: Version prompts, models and settings together, release through evals, shadow and canary, and trace every request.
+
+  - lesson: fine-tuning
+    title: Fine-tuning
+    minutes: 7
+    problem: |
+      The legal team wants the support model to answer in their house format and tone, and asks for a fine-tune. They have one 24 GB GPU and about a thousand good examples.
+    answer: |
+      **Fine-tuning** continues training a model on your own examples to change its behaviour. **Supervised fine-tuning** on hundreds to a few thousand high-quality input and output pairs teaches a format, a tone or a narrow task. **Preference tuning** learns from better and worse answers (DPO learns from the pairs directly). **Distillation** trains a small model on a large one's outputs.
+
+      Updating every weight is expensive: with standard training settings it needs about 16 bytes per parameter before anything else, 128 GB for an 8B model. **LoRA** freezes the model and trains two thin matrices beside chosen weight matrices, adding under 1% more parameters. **QLoRA** does the same on a 4-bit copy of the model, so an 8B model can be tuned on a 24 GB card.
+
+      Larger training runs spread across GPUs: **data parallelism** gives each GPU a full copy and a slice of each batch; **sharding** (FSDP, ZeRO) splits the weights and optimiser state across GPUs; and **checkpoints** let a multi-day run survive losing a machine. To serve many fine-tunes, keep one base model in memory and apply each team's LoRA adapter per request.
+    catch: |
+      Fine-tuning teaches behaviour, not facts that change, and sloppy examples make the model worse. A fine-tune has to beat the base model with a good prompt on your evals, and be checked for forgetting what it used to do well and for safety regressions.
+    remember: |
+      Fine-tune for behaviour and retrieve for knowledge, and only keep a fine-tune that beats the well-prompted base model.
+    use: fine-tuning/b1
+    check: fine-tuning/b5
+    later: [Preference tuning and reinforcement fine-tuning, LoRA rank and size, Training across many GPUs, Serving many adapters]
+    recap: Fine-tuning changes behaviour. LoRA and QLoRA make it cheap; it must beat the well-prompted base model on your evals.
+
+  - lesson: design-inference-platform
+    title: Designing a platform for every team
+    minutes: 8
+    problem: |
+      Marcus asks you to design one platform that serves open models to every team at Ripple, instead of each team running its own GPUs.
+    answer: |
+      Start by asking why self-host at all: data that must stay in-house, team fine-tunes, or cost at high volume. Otherwise, renting tokens from a provider is simpler. Then pin down the models, traffic shapes, latency targets and teams.
+
+      The usual shape:
+      - A **gateway** for keys, quotas, routing and cost.
+      - A **model router** that picks replicas by what's already in their prefix cache, their load (queue depth, KV cache usage) and which adapter they have loaded, not in turn.
+      - **GPU pools per model**, shared across teams, with isolation coming from quotas and priorities.
+      - Team fine-tunes served as **LoRA adapters** on shared base models.
+      - A **batch queue** that runs low-priority, checkpointing work on idle GPUs and pauses it when interactive load rises.
+      - **Overflow** to an external API, for traffic that isn't confidential.
+
+      For capacity: GPUs = peak output tokens a second ÷ what one replica sustains at the latency target × headroom. 30,000 ÷ 2,000 × 1.3 rounds up to 20 replicas, 40 GPUs at two per replica.
+    catch: |
+      The per-replica figure must come from a load test at the latency target, not the engine's maximum throughput, which is measured with huge batches and slow responses. And compare honestly with renting: GPU-hours at your real utilisation plus the team's time, against a provider's price per token on the same evals.
+    remember: |
+      Size replicas from what they sustain within the latency target, not from their maximum throughput.
+    use: design-inference-platform/b1
+    check: design-inference-platform/b3
+    later: [Clarifying questions for a platform, Routing by cache affinity, Rolling teams over alias by alias, Self-hosting against renting]
+    recap: Gateway, cache-aware router, shared GPU pools per model, adapters, a batch tier and overflow. Size from goodput, and justify self-hosting first.
+finish:
+  check:
+    type: predict
+    prompt: |
+      Every night at 1am, interactive latency on the shared 70B pool spikes. A data team's backfill runs at that time through the same model alias. What's the proper fix?
+    choices:
+      - Add 50% more GPUs to the 70B pool
+      - Give batch work its own priority class and token quota, and run it through the batch queue on idle capacity, paused when interactive load rises
+      - Ask the data team to move the backfill to the afternoon
+      - Switch the router to round robin, so load spreads evenly
+    answer: 1
+    reveal: |
+      The problem is two kinds of traffic sharing one pool with nothing to separate them. A priority class and quota in the gateway, and the batch queue on the platform side, let the backfill use idle GPUs without hurting interactive users, and pause it when they need the capacity. More GPUs would sit idle most of the day, moving the job only moves the clash, and round robin ignores the cache and load information the router needs.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

@@ -26,7 +26,7 @@ case: rides
 
 ```sort
 prompt: What storage and consistency does each kind of data need?
-buckets: [Ephemeral, in memory, Durable and strongly consistent, Durable, eventually consistent / analytical]
+buckets: ["Ephemeral, in memory", Durable and strongly consistent, "Durable, eventually consistent / analytical"]
 items:
   - {text: "A driver's current position", bucket: 0, why: 'Overwritten every 4 s and worthless after ~30 s. Keep the latest in memory with a TTL.'}
   - {text: 'Trip 991: rider, driver, state, pickup and drop-off, fare', bucket: 1, why: 'Money and disputes depend on it. Use transactional storage with atomic state transitions.'}

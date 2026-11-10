@@ -1,0 +1,189 @@
+# The overview of one area (pass one). Format and rules: storage.yaml and server/tutor/overviews.py.
+# Copy follows the Writing rules in CLAUDE.md.
+area: reliability
+title: Reliability and operations
+minutes: 40
+intro: |
+  This tour covers the six topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step ends with a quick check, and most have a simulator to try first.
+
+  Ripple has a pager now, and Priya carries it. This area is about the things that go wrong in production rather than on the whiteboard: too much traffic, a dependency that hangs, an alert that wakes someone for nothing, a migration that deletes the wrong rows, and the personal data that ends up everywhere. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: What Priya looks after
+  plain: true
+  nodes:
+    - {id: app, label: Creators and visitors, kind: client, x: 0, y: 1}
+    - {id: edge, label: Edge, kind: cdn, x: 1, y: 1, note: 'limits per IP and key'}
+    - {id: api, label: Ripple API, kind: service, x: 2, y: 1, note: 'limits, breakers'}
+    - {id: dep, label: Preview service, kind: external, x: 3, y: 0, note: 'sometimes hangs'}
+    - {id: db, label: Postgres, kind: db, x: 3, y: 1}
+    - {id: backup, label: Backups, kind: storage, x: 4, y: 1, note: 'nightly + log archive'}
+    - {id: mon, label: Monitoring, kind: service, x: 2, y: 2, note: 'metrics, logs, traces'}
+    - {id: pager, label: Priya, kind: user, x: 3, y: 2, note: 'on call'}
+  edges:
+    - [app, edge]
+    - [edge, api]
+    - [api, dep]
+    - [api, db]
+    - [db, backup, 'log archive']
+    - [api, mon, 'telemetry']
+    - [mon, pager, 'pages']
+  paths:
+    - label: A traffic spike
+      steps:
+        - [app, edge, 'A mention on a news site''s front page sends eight times the usual traffic. The edge turns away any single client that goes over its limit (step 3).']
+        - [edge, api, 'The API takes only as many requests as it can finish in time and turns the rest away at once. Redirects and logins keep working; previews are switched off for now (step 2).']
+        - [api, db, 'Postgres is the narrowest point, so that''s where to look, not at the API''s CPU (step 1).']
+    - label: A dependency hangs
+      steps:
+        - [api, dep, 'The preview service stops answering, and calls to it wait the full timeout.']
+        - [api, dep, 'After a run of failures the circuit breaker opens: calls fail straight away and pages show no preview, so the API''s threads aren''t all stuck waiting (step 2).']
+        - [api, mon, 'Latency and errors rise on the metrics, and a trace shows the time going into preview calls (step 4).']
+        - [mon, pager, 'Priya is paged because users'' requests are slow, not because a CPU graph crossed a line.']
+    - label: A bad migration
+      steps:
+        - [api, db, 'At 14:32 a migration deletes half the links table. The replica deletes them too, milliseconds later.']
+        - [db, backup, 'Last night''s backup plus the archived log of every change lets Priya restore to 14:31:59 (step 5).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. One topic has no box: personal data (step 6) is in Postgres, the logs, the monitoring system and the backups, and deleting someone's data means knowing every one of those places.
+steps:
+  - lesson: scaling
+    title: Find the bottleneck before scaling
+    minutes: 7
+    problem: |
+      At the evening peak, Ripple's p99 latency triples and throughput stops rising. The API servers are at 25% CPU. Marcus wants to double them.
+    answer: |
+      Throughput is capped by the most constrained resource on the path, so adding capacity anywhere else does nothing. Measure first: for each resource, how busy it is, how much work is waiting for it, and its errors (**USE**); for each service, its request rate, errors and duration (**RED**). Low CPU with rising latency means requests are waiting on something further down, such as the database or a connection pool.
+
+      Then fix it with the cheapest step that works, in this order: fix the work itself (a missing index, a query run once per row), cache, add read replicas, move work off the request path, and only then partition. A bigger machine (**vertical scaling**) is a quick stopgap but has a ceiling and costs rise faster than capacity. More machines (**horizontal scaling**) needs stateless services and split data.
+    catch: |
+      Each fix moves the bottleneck somewhere else, and the wrong fix can make things worse: more API servers open more database connections and can push the database over. Parallel work also stops helping once coordination dominates: if 5% of the work must happen in sequence, no number of machines makes it more than 20 times faster.
+    remember: |
+      Autoscale on signs of saturation, such as requests per instance, concurrency or queue age, not on CPU alone. A service that waits on I/O shows low CPU while overloaded.
+    use: scaling/b1
+    use_note: The first challenge is enough for now (find the first bottleneck at 8,000 requests a second).
+    check: scaling/b6
+    later: [The USE and RED methods in practice, "Amdahl's law and the Universal Scalability Law", Autoscaling warm-up and scale-in, The scaling ladder step by step]
+    recap: Find the narrowest point before adding capacity. Climb from cheap fixes (the work, caching) to expensive ones (partitioning).
+
+  - lesson: overload
+    title: When there's more work than capacity
+    minutes: 7
+    problem: |
+      A news site links to Ripple and traffic jumps eight times. Queues inside the API grow, requests time out, clients retry, and the API ends up serving almost nobody. It stays down even after the traffic drops back.
+    answer: |
+      A server with no defences doesn't slow down gracefully past its limit. Its queues grow, it works on requests whose callers have given up, retries add more load, and useful throughput (**goodput**) collapses, sometimes staying collapsed after the trigger has gone. The defences:
+      - **Bound queues and concurrency**, and turn away excess work early and cheaply with a 503 or 429.
+      - **Shed by priority**: keep what earns money or unblocks users (redirects, login, checkout), serve simpler or cached versions of pages and search, and turn off optional extras (recommendations, analytics collection) first.
+      - **Timeouts** on every call, and a **circuit breaker** per dependency: after a run of failures it opens and calls fail straight away or use a fallback; after a pause it lets a few trial calls through, and closes again if they succeed.
+      - **Bulkheads**: a separate pool of threads or connections per dependency, so one that hangs can only use up its own pool.
+    catch: |
+      Turning away work on purpose needs decisions made in advance about what matters most, and those are product decisions as much as engineering ones. Limits and breakers also need tuning: set too tight, they reject healthy traffic.
+    remember: |
+      Decide in advance what to drop, and drop it early and cheaply.
+    use: overload/b3
+    check: overload/b6
+    later: [Metastable failures, Backpressure, Admission control by priority, Brownouts]
+    recap: Bound queues, shed low-value work early, and isolate dependencies with timeouts, circuit breakers and bulkheads.
+
+  - lesson: rate-limiting
+    title: Limits per client
+    minutes: 6
+    problem: |
+      A partner's bulk import sends 500 requests a second and normal creators start seeing timeouts. On the same day someone tries thousands of passwords a minute against the login page.
+    answer: |
+      A rate limit counts requests per key and rejects those over the limit with **429** and a Retry-After header. The algorithms differ in how they treat bursts:
+      - **Fixed window** ("100 per minute", reset on the minute): cheap, but a client can send 100 at the end of one minute and 100 at the start of the next.
+      - **Sliding window counter**: weights the previous window's count to smooth that out. The usual choice for "N per period".
+      - **Token bucket**: tokens refill at a steady rate up to a maximum, and each request spends one. Allows short bursts while holding the average.
+      - **Leaky bucket**: lets requests out at a steady rate, so bursts turn into waiting.
+
+      Choose the key by the goal: per IP at the edge to stop floods, per API key or account for fairness between customers, weighted by cost on expensive endpoints, and monthly quotas for billing. Across many servers the counter has to be shared (in Redis, updated atomically), because limits kept per server multiply: 50 servers each allowing 100 a minute let a client make 5,000.
+    catch: |
+      The shared counter is now something that can fail. If the limiter refuses everything when its store is down (**fails closed**), the whole API goes down with it. Most endpoints should **fail open** with a rough local limit; keep fail-closed for login attempts and other abuse-prone paths.
+    remember: |
+      In a token bucket, the bucket size sets the largest burst and the refill rate sets the long-run average.
+    use: rate-limiting/b1
+    use_note: The first two challenges are enough for now (see the boundary burst, then find an algorithm without it).
+    check: rate-limiting/b8
+    later: [Sliding logs, Atomic counters in Redis, Rate-limit headers, Rate limits versus quotas]
+    recap: Fixed windows leak bursts at the boundary, sliding windows and token buckets don't. Share the counter, and fail open on most endpoints.
+
+  - lesson: observability
+    title: Seeing what's wrong
+    minutes: 6
+    problem: |
+      Priya is woken at 3am by "API CPU above 80%". Users were fine. The next week, checkout is slow for an hour and nothing pages anyone.
+    answer: |
+      Three kinds of telemetry answer different questions:
+      - **Metrics**: numbers aggregated over time. Is something wrong, how bad, how widespread, since when. Cheap per data point.
+      - **Logs**: structured records of single events. What exactly happened to link 88123.
+      - **Traces**: one request's path across services as a tree of timed steps (**spans**). Where the time went, and which dependency failed. Usually only a sample is kept.
+
+      Start with the **golden signals** for each service: latency, traffic, errors and saturation. Put the request's trace ID in every log line so the three can be joined up.
+
+      **Page on symptoms** users feel, such as error rate or latency burning through the SLO faster than planned, not on causes such as high CPU or a single error line. Causes that will become a problem later, such as a disk filling, become tickets.
+    catch: |
+      Metrics get expensive with **cardinality**: a label holding a user ID turns one metric into millions of series. And sampling 1% of traces at random misses rare failures; keep every trace that errored or was slow (**tail-based sampling**).
+    remember: |
+      Page on what users feel, then use the causes to investigate.
+    check: observability/b1
+    later: [Sampling strategies, Keeping cardinality bounded, Alerting on error-budget burn rate, Debugging an incident with all three]
+    recap: Metrics say something is wrong, traces say where, logs say what happened. Page on symptoms, not causes.
+
+  - lesson: recovery
+    title: Backups and getting back
+    minutes: 6
+    problem: |
+      At 14:32 a migration deletes half the links table. The replica in another zone deletes them too, a few milliseconds later. Priya needs the data back and the site up.
+    answer: |
+      Recovery is defined by two numbers. **RPO** (recovery point objective) is how much data you can afford to lose, measured in time, such as "at most 5 minutes of links". **RTO** (recovery time objective) is how long you can be down, such as "back within 30 minutes".
+
+      Replicas, RAID and copies in other regions protect against losing hardware, not against a bad command, which they copy faithfully. Only backups let you go back in time. **Point-in-time recovery** combines a regular base backup with a continuous archive of the database's change log, so you can restore to the second before the delete. A replica that deliberately applies changes an hour late also gives you a window to stop it. Keep copies in more than one place, at least one off-site, and some that can't be altered, so ransomware can't reach them.
+
+      Disaster-recovery setups trade cost for speed: **backup and restore** (hours, cheapest), **pilot light** (data copied, minimal servers), **warm standby** (a smaller full copy, minutes) and **active-active** (near zero, most expensive).
+    catch: |
+      Backups fail silently. GitLab had five backup and replication mechanisms in 2017, and none produced a usable recent copy when they needed one. Restoring one database to the past also leaves other systems, such as search or the payment provider, ahead of it, and those need reconciling.
+    remember: |
+      A backup that has never been restored is a hope, not a plan. Practise restores.
+    use: recovery/b1
+    use_note: The first two challenges are enough for now (snapshots alone, then continuous log archiving).
+    check: recovery/b3
+    later: [Deriving RPO and RTO from business impact, Immutable backups, Choosing a disaster-recovery strategy, Restore drills and game days]
+    recap: RPO is data you can lose, RTO is time you can be down. Only backups undo a bad command, and only a tested restore proves them.
+
+  - lesson: data-responsibility
+    title: Personal data is a liability
+    minutes: 5
+    problem: |
+      A creator asks Ripple to delete their account and everything about them. Their email is in Postgres, the click events in the log, the warehouse, the application logs and last month's backups.
+    answer: |
+      Treat personal data as something to protect and limit, not just an asset:
+      - **Collect the minimum** for a stated purpose. Store "over 18" rather than a date of birth, the payment provider's token rather than a card number, and never a raw password, only a salted, slow hash.
+      - **Keep it for a defined period**, then delete it.
+      - **Know where it goes**: every derived copy, log and backup, so a deletion or export request can actually be honoured.
+      - Know the difference between **pseudonymised** data (identifiers replaced by a stable ID or hash, which still links one person's records, so it's still personal data) and **anonymised** data (can't be linked back to anyone, which usually means aggregated).
+
+      When a system makes predictions about people, such as flagging accounts as fraud, check for bias and feedback loops, and give people a way to have a decision reviewed.
+    catch: |
+      Append-only logs and backups are built not to forget. One answer is **crypto-shredding**: encrypt each person's data with their own key and delete the key to make every copy unreadable. Another is short retention. And logging whole requests quietly copies personal data into the logs. This is engineering guidance, not legal advice.
+    remember: |
+      Data you never collect can't leak and never needs deleting.
+    check: data-responsibility/b7
+    later: [Tracing one user's data through a system, Erasure in append-only logs, Encryption and access control, Accountability in predictive systems]
+    recap: Collect the minimum, keep it for a set time, know every copy. A hashed identifier is still personal data.
+finish:
+  check:
+    type: predict
+    prompt: |
+      At 9pm the dashboard is slow. The API servers are at 30% CPU, Postgres is at 95% CPU, and the preview service is timing out. Marcus wants to double the API servers. What do you do first?
+    choices:
+      - Double the API servers, since more servers always means more capacity
+      - Let the preview calls fail fast with a fallback, turn off optional work, and look at the queries keeping Postgres busy
+      - Restore Postgres from last night's backup to get a fresh copy
+      - Raise every rate limit, so fewer requests are rejected
+    answer: 1
+    reveal: |
+      The narrowest point is Postgres, and the hanging preview service is tying up threads. A circuit breaker with a fallback frees the threads, shedding optional work takes load off the database, and its busiest queries are where a cache or an index helps. More API servers would open more database connections and make it worse. A restore doesn't add capacity, and raising rate limits lets more load in.
+  play: [r4, r1]
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

@@ -132,8 +132,8 @@ prompt: A mobile app uses the authorization code flow without PKCE. A malicious 
 choices:
   - text: Nothing useful, because the code is single-use and short-lived
   - text: Receive the authorization code and redeem it, since a public client has no secret
-  - text: Read the user's password from the login page
-  - text: Only see the state parameter
+  - text: Read the user's password as they type it on the login page
+  - text: Only see the state parameter, which on its own grants no access
 answer: 1
 reveal: |
   The operating system may hand the redirect to either app. A public client has no client secret, so whoever holds the code can redeem it, and single-use only helps if the real app redeems it first. PKCE fixes this: the token endpoint demands the code_verifier, which never left the real app. Better still, use claimed HTTPS redirect links (Universal Links, App Links), which only the verified app can receive. The password is safe either way; the login happens in the system browser.

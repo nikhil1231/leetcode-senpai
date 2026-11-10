@@ -151,7 +151,7 @@ def _flat(value, where):
     """Plain list items like `- Cache-aside: reads…` parse as one-key mappings; undo that."""
     if isinstance(value, dict) and len(value) == 1:
         (k, v), = value.items()
-        return f'{k}: {v}'
+        return str(v) if k == 'text' else f'{k}: {v}'   # `- text: …` is the questions format, used here by mistake
     if not isinstance(value, (str, int, float)):
         raise LessonError(f'{where}: expected text, got {value!r}')
     return str(value)
@@ -186,6 +186,8 @@ def _check_block(lesson, kind, data, n):
         for item in data['items']:
             if not 0 <= item['bucket'] < len(data['buckets']):
                 raise LessonError(f'{where}: bucket out of range for {item}')
+        if len({item['bucket'] for item in data['items']}) < len(data['buckets']):   # usually a label split on its comma
+            raise LessonError(f'{where}: a bucket has no items: {data["buckets"]}')
     if kind == 'bug':
         lines = data['code'].rstrip('\n').split('\n')
         if not data['bug'] or any(not 1 <= b <= len(lines) for b in data['bug']):

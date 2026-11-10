@@ -24,7 +24,7 @@ case: seats
 
 ```sort
 prompt: Which path, with which guarantee, serves each request?
-buckets: [Browse path (cached, ≤ 10 s stale), Authoritative path (primary DB, atomic)]
+buckets: ["Browse path (cached, ≤ 10 s stale)", "Authoritative path (primary DB, atomic)"]
 items:
   - {text: 'Render the seat map for event 812', bucket: 0, why: 'Thousands of viewers per seat change. A cached map refreshed every few seconds is fine, because the hold step re-checks.'}
   - {text: 'Hold seat 14C', bucket: 1, why: 'An ownership transition. It must check current state at the authority.'}

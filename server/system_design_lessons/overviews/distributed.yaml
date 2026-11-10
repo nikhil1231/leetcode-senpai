@@ -1,0 +1,210 @@
+# The overview of one area (pass one). Format and rules: storage.yaml and server/tutor/overviews.py.
+# Copy follows the Writing rules in CLAUDE.md.
+area: distributed
+title: Distributed data and correctness
+minutes: 40
+intro: |
+  This tour covers the seven topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step ends with a quick check, and most have a simulator to try first.
+
+  Ripple is launching in Europe. One database becomes copies in two regions, one table becomes many shards, and the network between them sometimes drops, delays or reorders messages. The area is about what stays true when that happens, and what each guarantee costs. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple in two regions
+  plain: true
+  nodes:
+    - {id: us, label: US creators, kind: client, x: 0, y: 0}
+    - {id: eu, label: EU creators, kind: client, x: 0, y: 2}
+    - {id: usapi, label: API (US), kind: service, x: 1, y: 0}
+    - {id: euapi, label: API (EU), kind: service, x: 1, y: 2}
+    - {id: leader, label: Postgres leader, kind: db, x: 2, y: 0, note: 'takes every write'}
+    - {id: etcd, label: etcd, kind: service, x: 3, y: 1, note: '3 nodes, picks the leader'}
+    - {id: replica, label: Replica (EU), kind: db, x: 2, y: 2, note: 'reads, a little behind'}
+  edges:
+    - [us, usapi]
+    - [eu, euapi]
+    - [usapi, leader]
+    - [euapi, leader, 'writes']
+    - [euapi, replica, 'reads']
+    - [leader, replica, 'replication']
+    - [etcd, leader]
+    - [etcd, replica]
+  paths:
+    - label: An EU creator edits a link
+      steps:
+        - [eu, euapi, 'A creator in Berlin renames a link.']
+        - [euapi, leader, 'Every write goes to the one leader, about 80 ms away in the US (step 1).']
+        - [leader, replica, 'The leader sends the change on to the EU replica, which applies it a fraction of a second later.']
+        - [euapi, replica, 'If the creator reloads inside that window, their reads go to the leader for a moment, so they see their own edit (step 1).']
+    - label: The US region goes dark
+      steps:
+        - [usapi, leader, 'The leader stops answering.']
+        - [etcd, replica, 'A majority of etcd''s nodes agree the leader is gone and promote the EU replica, under a new, higher term number (step 6).']
+        - [etcd, leader, 'If the old leader comes back still thinking it leads, its writes carry the old term number and are refused (steps 1 and 6).']
+    - label: A network cut between regions
+      steps:
+        - [eu, euapi, 'The link across the Atlantic is down. A free-plan creator in the EU tries to create their eleventh link.']
+        - [euapi, leader, 'The ten-link limit is a rule that must always hold, and the EU can''t reach the leader to check it, so the API says "try again shortly" rather than guess (step 4).']
+        - [euapi, replica, 'Click counts are still served from the EU replica, even if they''re a few seconds old, because a slightly stale number does no harm (step 4).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. Some topics don't have a box of their own. The click data is too big for one machine, so it's split across shards by link ID (step 2), and Ripple's cache servers are chosen with a hash ring so adding one doesn't empty the cache (step 3). Clocks (step 5) explain why the two regions don't both accept edits and keep the latest timestamp. And when a creator sells a limited run of prints, one database decides who gets each one (step 7).
+steps:
+  - lesson: replication
+    title: Copies of the data, and their lag
+    minutes: 6
+    problem: |
+      EU creators wait 80 ms or more for every read from the US database. Ripple adds a replica in Europe. Soon a creator renames a link, reloads the page, and sees the old name.
+    answer: |
+      In **leader-follower** replication, every write goes to one leader, which sends a log of its changes to the followers (replicas). Reads can go to any copy. The leader can wait for followers before it confirms a write, or not:
+      - **Synchronous**: the leader waits for a follower. A confirmed write survives the leader dying, but every write pays the round trip, and writes stall if that follower is down.
+      - **Asynchronous**: the leader confirms straight away. Fast, but if it dies before sending a write on, a write the client was told succeeded is lost.
+      - The common middle ground is to wait for one replica in another zone and update far-away replicas asynchronously.
+
+      Followers are always a little behind (**replication lag**). For a creator who has just made a change, send their reads to the leader for a short while, or to a replica that has caught up to their write.
+    catch: |
+      When the leader fails, a follower is promoted (**failover**). If the old leader is only cut off, not dead, it may keep accepting writes, so two leaders diverge (**split brain**). The old leader must be **fenced**: a lease that expires, or a number on every write that storage checks so writes from an older leader are refused. And replicas don't protect you from mistakes: a dropped table reaches every follower in milliseconds, so you still need backups.
+    remember: |
+      With asynchronous replication, the writes you can lose on failover are the ones inside the replication lag.
+    use: replication/b3
+    check: replication/b6
+    later: [Semi-synchronous replication, Monotonic reads, Deciding a leader is dead, 'Multi-leader and leaderless replication']
+    recap: One leader takes writes and followers lag behind it. Route a user's reads around their own lag, and fence an old leader on failover.
+
+  - lesson: partitioning
+    title: Splitting data across machines
+    minutes: 5
+    problem: |
+      Ripple's clicks table is heading for 20 TB and 30,000 writes a second, more than one machine can hold or absorb. The data has to be split across several databases.
+    answer: |
+      Split it into **partitions** (shards) by a **shard key**, in one of three ways:
+      - **By range** of the key: range scans stay cheap, but a key that keeps increasing (a timestamp, an auto-increment ID) sends every new write to the last shard.
+      - **By hash** of the key: writes spread evenly, but a range query has to ask every shard.
+      - **By directory**: a lookup table says where each key lives. Flexible, but it's another service to keep available.
+
+      Choose the key from the queries. A good shard key appears in the most frequent queries, groups the rows that change together, has many distinct values with even load, and never changes for a row. For clicks, hashing on `link_id` keeps each link's clicks together and spreads links evenly.
+    catch: |
+      Queries without the shard key go to every shard and wait for the slowest. Transactions across shards need two-phase commit or a saga, so design the common ones to stay on one shard. And changing the key later means moving every row while the system is live.
+    remember: |
+      The shard key should match the unit you query and update together, such as a company in a business app or a conversation in chat.
+    check: partitioning/b3
+    later: [Secondary indexes across shards, How many shards, Hot partitions, Resharding online]
+    recap: Shard by range, hash or directory, and pick the key from the queries. Queries without the key go to every shard.
+
+  - lesson: consistent-hashing
+    title: Adding a server without moving everything
+    minutes: 4
+    problem: |
+      Ripple picks a cache server with `hash(key) % 20`. When a 21st server is added, almost every key now maps to a different server, the hit rate collapses, and the database gets the full read load.
+    answer: |
+      **Consistent hashing** puts servers and keys on the same circle of hash values. A key belongs to the first server found clockwise from it. A new server takes over only the keys between it and the server before it, about 1/N of them, and every other key stays where it was.
+
+      With one point per server, some servers end up with much bigger arcs than others. **Virtual nodes** fix that: each server is placed at 100 to 200 points around the circle, which evens out the load and lets a bigger server take more points. Replicas of a key go to the next distinct servers clockwise.
+    catch: |
+      Consistent hashing balances keys, not traffic. A single hot key still lands on one server. And it only decides placement; moving the affected keys and keeping copies in step is still your job.
+    remember: |
+      Modulo hashing moves almost every key when the server count changes. A ring moves about 1/N.
+    use: consistent-hashing/b1
+    use_note: The first two challenges are enough for now (compare keys moved, then add virtual nodes).
+    check: consistent-hashing/b7
+    later: [Placing replicas across failure domains, Rendezvous and jump hashing, Bounded-load hashing, Weighting servers of different sizes]
+    recap: On a ring, adding a server moves about 1/N of the keys. Virtual nodes even out the load; a hot key is still one server's problem.
+
+  - lesson: consistency
+    title: How consistent, for which operation?
+    minutes: 6
+    problem: |
+      The network between Ripple's two regions drops for a few minutes. Should the EU side keep accepting writes it can't confirm with the US? For click counts the answer seems obvious, for the free-plan link limit less so.
+    answer: |
+      Consistency is a range of guarantees:
+      - **Linearizable**: the system behaves like a single copy. Once anyone has seen a write, every later read sees it.
+      - **Causal**: things that depend on each other appear in order everywhere, such as a reply after the message it replies to.
+      - **Read-your-writes**: you see your own changes, even if others don't yet.
+      - **Eventual**: copies agree once writes stop, and nothing is promised before that.
+
+      **CAP** says that during a network partition, a replica that's cut off has to choose, for each operation, between refusing (consistency) and answering with possibly stale or conflicting data (availability). Partitions do happen, so that's the real choice. Even without one, stronger guarantees cost latency (**PACELC**).
+
+      In stores without a leader, each value is kept on N replicas, written to W of them and read from R. If R + W > N, every read overlaps the latest write.
+    catch: |
+      Stronger guarantees cost latency and availability; weaker ones cost anomalies that the product has to tolerate. The same store with W = 1 and R = 1 is fine for like counts but lets a single-use coupon be redeemed twice.
+    remember: |
+      Choose per operation, not per database: linearizable for rules that must always hold (unique names, balances, the last seat), session guarantees for the user's own view, eventual for counts, feeds and search.
+    use: consistency/b5
+    use_note: The first two challenges are enough for now (catch a stale read, then make the quorums overlap).
+    check: consistency/b3
+    later: [Linearizability tested on a timeline, Sloppy quorums and hinted handoff, Read repair and anti-entropy, Explaining failure behaviour to users]
+    recap: Consistency is a spectrum. During a partition each operation either refuses or risks stale data, so choose per operation.
+
+  - lesson: clocks-ordering
+    title: Clocks you can't trust
+    minutes: 5
+    problem: |
+      A proposal: let both regions accept edits to a link and keep whichever has the later timestamp. A creator changes a link in the EU and, 10 ms later, changes it back from the US. The US server's clock is 40 ms behind, so the first edit wins and the second disappears without an error.
+    answer: |
+      Machines don't share a clock, and the one each has drifts and can jump when it's corrected. Use each kind of clock for its own job:
+      - **Time-of-day clock**: for showing people when something happened. Two machines' readings can differ by tens of milliseconds.
+      - **Monotonic clock**: only ever goes forward. For timeouts and measuring durations on one machine; meaningless when compared across machines.
+      - **Logical clocks**: a **Lamport timestamp** is a counter that each machine bumps on every event and moves forward to the largest value it has seen, so an event always gets a larger number than anything that caused it. A **version vector** keeps one counter per replica and can tell whether two writes were **concurrent** (neither saw the other), so both can be kept and merged.
+
+      When every node must agree on a final order straight away, such as which of two people registered a username first, you need **total order broadcast**, which is consensus (step 6).
+    catch: |
+      Logical clocks don't tell you the real time, and version vectors grow with the number of replicas and hand concurrent writes back to the application to merge. Google's Spanner can trust timestamps only because it uses GPS and atomic clocks to bound the error and waits out the uncertainty on every commit.
+    remember: |
+      Don't order events from different machines by their wall-clock timestamps. Last-write-wins silently drops a later write whenever the clocks disagree by more than the gap between the writes.
+    use: clocks-ordering/b3
+    use_note: The first two challenges are enough for now (lose a write to clock skew, then pick a strategy that keeps it).
+    check: clocks-ordering/b12
+    later: [How far clocks drift, Lamport timestamps step by step, Total order broadcast as a shared log, How TrueTime waits out uncertainty]
+    recap: Wall clocks are for display, monotonic clocks for durations, logical clocks for cause and effect, consensus for a final order.
+
+  - lesson: consensus
+    title: Getting machines to agree
+    minutes: 5
+    problem: |
+      Ripple's weekly digest email is sent by a scheduler that runs on three servers so it survives one dying. Only one may be active at a time, or every creator gets three emails.
+    answer: |
+      When several machines must agree on one thing (who leads, which value was committed, who holds a lock), you need **consensus**. It works by **majority**: a decision needs ⌊N/2⌋ + 1 votes, and any two majorities share at least one node, so two conflicting decisions can't both win. To survive f failed nodes you need 2f + 1: three nodes survive one failure, five survive two.
+
+      **Raft** is the common algorithm. Nodes vote for a leader in numbered **terms** (with random timeouts so they don't all stand at once), and the leader commits a log entry once a majority has stored it. You rarely build this yourself: **etcd**, **ZooKeeper** or **Consul** provide leader election, leases and small, consistent configuration such as which server owns which shard.
+    catch: |
+      Every write to a coordination service needs a majority round, so it's for small metadata, not sessions, bulk data or busy counters. And a lease can expire while its holder is paused (a long garbage-collection pause, a frozen VM), so two processes believe they hold it. A **fencing token**, a number that goes up with each new holder and that storage checks, makes the old holder's writes fail.
+    remember: |
+      A cluster of 2f + 1 nodes survives f failures, and only the side with a majority can make progress.
+    use: consensus/b3
+    check: consensus/b6
+    later: [Raft log replication in detail, Two-phase commit and its failure modes, Leases and watches, When to avoid locks entirely]
+    recap: Agreement needs a majority, so 2f + 1 nodes survive f failures. Use etcd or ZooKeeper for small coordination data, with fencing.
+
+  - lesson: concurrent-holds
+    title: Many people, one item
+    minutes: 5
+    problem: |
+      A creator sells 200 signed prints through a Ripple link. At noon, 20,000 fans click Buy. Each buyer gets a 10-minute hold on a print while they pay, and no print may be sold twice.
+    answer: |
+      Put the condition inside the write, at the one database that decides. Claiming a print is one statement:
+
+      `UPDATE prints SET held_by = $user, hold_expires_at = now() + interval '10 minutes' WHERE id = $id AND (status = 'available' OR hold_expires_at < now())`
+
+      If it changes no rows, someone else has it. Confirming checks everything at once: this user holds it, the hold hasn't expired and it's still held, then marks it sold. Expiry is judged at that moment by the database's own clock, so a hold is over when its time is up, whether or not a cleanup job has run.
+
+      For the mechanism: a conditional update for one row, a row lock (`SELECT … FOR UPDATE`) when several rows must be read and changed together, and a distributed lock only when no single database has the final say.
+    catch: |
+      Conditional updates stay correct under any load, but they don't add capacity: 20,000 requests on 200 rows queue on locks, fill the connection pool and slow everything else. For a rush like this, add a **waiting room** that lets buyers in at a rate the system can sustain and shows them an honest place in the queue.
+    remember: |
+      Correctness lives in the condition at the database, not in a lock inside one server or in a cleanup job.
+    check: concurrent-holds/b5
+    later: [Every condition a confirm must check, Row locks versus conditional updates, Pre-allocating stock for flash sales, Sizing the queue]
+    recap: Claim and confirm with one conditional statement at the database, using its clock for expiry. Add a waiting room for rushes.
+finish:
+  check:
+    type: predict
+    prompt: |
+      EU creators want to create links quickly even when the Atlantic link is down. A teammate proposes a second leader in Europe, with the later timestamp winning whenever both regions edit the same thing. What's the main problem?
+    choices:
+      - None. Timestamps settle every conflict, and two leaders double write capacity
+      - Clock skew means the later edit can lose, and during a cut both sides can break rules such as unique short codes and the ten-link limit. Give each creator a home region that owns their writes instead
+      - It needs consistent hashing to decide which leader gets each write
+      - The replicas would need synchronous replication across the Atlantic, which is too slow
+    answer: 1
+    reveal: |
+      Last-write-wins trusts clocks that disagree by tens of milliseconds, so a later edit can be silently dropped. And with both sides accepting writes during a partition, each can hand out the same short code or let a creator past their limit, because neither can see the other's writes. Giving each creator a home region keeps one authority for their data, so rules can be checked in one place, while still keeping most writes close to the user.
+  play: [r3, r2]
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

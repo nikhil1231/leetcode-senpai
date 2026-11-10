@@ -1,0 +1,188 @@
+# The overview of one area (pass one). Format and rules: storage.yaml and server/tutor/overviews.py.
+# Copy follows the Writing rules in CLAUDE.md.
+area: apis
+title: APIs and application servers
+minutes: 35
+intro: |
+  This tour covers the five topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step ends with a quick check, and most have a simulator to try first.
+
+  Ripple has just opened its API to partners. Their scripts page through every link, retry whenever something looks wrong, and never read the documentation twice. The area is about building an API that stays correct with clients like that. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple's API, with partners on it
+  plain: true
+  nodes:
+    - {id: partner, label: Partner scripts, kind: external, x: 0, y: 0, note: 'retry on any error'}
+    - {id: app, label: Creator dashboard, kind: client, x: 0, y: 1}
+    - {id: lb, label: Load balancer, kind: lb, x: 1, y: 0}
+    - {id: gw, label: Gateway, kind: service, x: 1, y: 1, note: 'open WebSockets'}
+    - {id: api, label: Ripple API, kind: service, x: 2, y: 0, note: 'stateless copies'}
+    - {id: pubsub, label: Pub/sub, kind: stream, x: 2, y: 1, note: 'finds the right gateway'}
+    - {id: db, label: Postgres, kind: db, x: 3, y: 0, note: 'links, jobs, keys'}
+    - {id: queue, label: Job queue, kind: queue, x: 3, y: 1}
+    - {id: worker, label: Workers, kind: worker, x: 3, y: 2, note: 'exports, click counts'}
+  edges:
+    - [partner, lb, 'HTTPS']
+    - [app, lb]
+    - [app, gw, 'WebSocket']
+    - [lb, api]
+    - [api, db]
+    - [api, queue]
+    - [queue, worker]
+    - [worker, pubsub, 'live counts']
+    - [pubsub, gw]
+  paths:
+    - label: A partner creates a link
+      steps:
+        - [partner, lb, 'POST /links, with an Idempotency-Key header the script made for this one link (step 4).']
+        - [lb, api, 'The load balancer sends it to the copy with the fewest requests in progress. Any copy will do, because none keeps state (step 2).']
+        - [api, db, 'The API stores the link and the key in one transaction and returns 201 Created (step 1).']
+        - [lb, partner, 'The response is lost on the way back. The script waits a random, growing delay, retries with the same key, and gets the original link rather than a second one (step 4).']
+    - label: Export a year of clicks
+      steps:
+        - [app, lb, 'The creator asks for a CSV of every click. Building it takes about 90 seconds, too long to keep a request open.']
+        - [api, db, 'The API checks the request and writes a job row, so the request can''t be lost from here on (step 3).']
+        - [api, queue, 'It queues the job and replies 202 Accepted with a URL where the app can check progress.']
+        - [queue, worker, 'A worker builds the file. The job moves from queued to running to succeeded, and the app sees each state.']
+    - label: Watch clicks arrive live
+      steps:
+        - [app, gw, 'The dashboard keeps a WebSocket open to one of the gateways (step 5).']
+        - [worker, pubsub, 'A worker counting clicks publishes each new total on that link''s channel.']
+        - [pubsub, gw, 'Pub/sub hands it to the gateways subscribed to the channel, which push it down their open connections.']
+        - [gw, app, 'If the phone lost signal, the app reconnects and asks for every update after the last one it saw.']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. The shape of the API itself (its URLs, status codes and pages) is step 1, and it applies to every arrow coming from outside. The rest of the area is about what happens when clients and networks misbehave: servers that come and go, work that takes too long, responses that get lost, and connections that drop.
+steps:
+  - lesson: api-contracts
+    title: Design the contract first
+    minutes: 7
+    problem: |
+      A partner's script pages through all of a creator's links with `?offset=100`, `?offset=200` and so on. While it runs, the creator adds new links, and the script ends up with some links twice. Another partner sends `PATCH /links/5 {"clicks_delta": 1}`, times out, retries, and the count goes up by two.
+    answer: |
+      An API is a promise that other teams build on, so make success, failure and retries unambiguous:
+      - **Methods** say what's safe. GET never changes anything. GET, PUT and DELETE are **idempotent**: doing them twice leaves the same state as doing them once, so they can be retried. POST isn't, and PATCH depends on what it does ("add one" isn't; "set to 3" is).
+      - **Status codes** say what happened: 201 when something was created, 202 when work was accepted but isn't done, 400 or 422 for a bad request, 401 for "who are you?", 403 for "not allowed", 404, 409 for a conflict with current state, 429 for "slow down".
+      - **Every list is bounded** with a maximum page size and paged with a **cursor** ("the 50 links after this one") rather than an offset ("links 100 to 150"). Offsets count positions, so a new row shifts everything and the next page repeats an item.
+      - **Concurrent edits** use a version: the client sends `If-Match` with the version it read, and the server refuses (412) if someone changed it since.
+
+      For the protocol, start from the clients: REST for partners and public use, gRPC between internal services, GraphQL when many different screens need different shapes of data.
+    catch: |
+      Once clients depend on an API, you can't take things back. Adding an optional field or a new endpoint is safe. Removing or renaming a field, changing its type or meaning, or making an optional field required breaks someone.
+    remember: |
+      PATCH isn't idempotent by definition. Send the target state, a version check or an idempotency key if it might be retried.
+    use: api-contracts/b3
+    check: api-contracts/b7
+    later: [Structured error bodies, ETags and optimistic concurrency, Choosing between REST and gRPC and GraphQL, Versioning and deprecation]
+    recap: Methods and status codes say what's safe and what happened. Page with cursors, bound every list, and only make additive changes.
+
+  - lesson: stateless-balancing
+    title: Any server can take any request
+    minutes: 7
+    problem: |
+      Ripple's API keeps login sessions in each server's memory, so the load balancer has to send each user back to the same server. Every deploy logs a third of creators out. And when one server's disk went bad and it slowed down, it kept getting its full share of traffic.
+    answer: |
+      A service is **stateless** when any copy can serve any request, because nothing a later request needs is kept in one process's memory. Sessions go either in a shared store such as Redis (one lookup per request, and easy to revoke) or in a **signed token** such as a JWT (no lookup, but hard to revoke before it expires, so keep it short-lived). Uploads and jobs go to shared storage and queues, not local disk.
+
+      Then a **load balancer** can spread the work:
+      - **L4** balancers route TCP connections and are fast but can't see HTTP. **L7** balancers read each HTTP request, so they can route by path, retry safe requests and handle TLS.
+      - **Round robin** gives every server the same share, however slow it is. **Least outstanding requests** sends each request to the server with the fewest in progress, so a slow server gets less.
+      - A **readiness check** takes a server out of rotation while it can't serve. A **liveness check** restarts a process that's stuck.
+      - On a deploy, a server stops taking new requests, finishes the ones in progress, then exits (**draining**).
+    catch: |
+      Passing a health check isn't the same as being healthy: a server that's five times slower still passes, and with round robin its 5% of requests become your p99. And a liveness check that depends on the database restarts every server at once when the database has a blip, turning a small problem into an outage.
+    remember: |
+      Liveness asks "is this process stuck?", readiness asks "should it get traffic right now?". Keep the database out of the liveness check.
+    use: stateless-balancing/b1
+    use_note: The first two challenges are enough for now (a slow server under round robin, then least outstanding requests).
+    check: stateless-balancing/b2
+    later: [Power of two choices and consistent hashing, Probe settings that don't cause restart loops, Graceful shutdown step by step, Balancing across regions]
+    recap: Keep state out of the process. Balance on load rather than in turn, and keep the database out of liveness checks.
+
+  - lesson: sync-async
+    title: Answer now, or accept and finish later
+    minutes: 6
+    problem: |
+      Creators can export every click as a CSV. A big export takes 90 seconds, the gateway gives up after 30, and the creator gets an error even though the server carries on building the file.
+    answer: |
+      Keep work in the request when the user needs the answer to carry on, it's quick and bounded, and its dependencies are reliable: logging in, or checking a free-plan limit before creating a link. Move it out of the request when it's slow, calls a flaky dependency, fans out to many recipients, or arrives in bursts.
+
+      Asynchronous work has a two-part contract:
+      - **Accept**: validate the request, write a job record durably (in the same transaction as anything else the request changes), then return **202 Accepted** with the job's ID and a URL to check.
+      - **Observe**: the job moves through states the client can see (queued, running, succeeded, failed), and the client finds out by polling, a **webhook** (an HTTP call to the client's server, signed and retried), or a push.
+    catch: |
+      A queue changes when work happens, not how much work you can do. If jobs arrive faster than workers finish them, the backlog grows and every job waits longer. Asynchronous work also means retries, a lifecycle to build, and users who now wait for a notification.
+    remember: |
+      202 means the request is valid and durably recorded and will reach an outcome the client can see. It doesn't mean done, and it must never mean "in a list in memory".
+    check: sync-async/b1
+    later: [Where acceptance can be lost, Making webhooks safe, How many workers a queue needs, When async only moves the problem]
+    recap: Keep quick, needed-now work in the request. Accept the rest durably with 202 and a job the client can watch.
+
+  - lesson: retry-identity
+    title: Retry without doing things twice
+    minutes: 8
+    problem: |
+      A partner's nightly import creates 10,000 links. During a 30-second blip, some responses are lost and the script retries them, so the creator wakes up to 600 duplicate links. Meanwhile every partner retried every 100 ms, which kept the API overloaded for minutes after it recovered.
+    answer: |
+      A timeout tells you that you didn't hear back, not that nothing happened. So:
+      - **Decide what to retry.** Retry errors that are likely to pass: 503, 429 (after the Retry-After delay), timeouts on GETs. Don't retry 400, 403 or 409; the same request will fail the same way. Retry a POST after a timeout only if the server deduplicates it.
+      - **Back off with jitter.** Wait a random time between zero and a limit that doubles with each attempt. The randomness stops clients that failed together from coming back together.
+      - **Give each operation an identity.** The client sends an **idempotency key**, a random ID made once per operation and reused on every retry. The server records the key with the result in the same transaction as the change, with a unique constraint so two copies arriving at once can't both succeed. A retry then gets the stored result back.
+    catch: |
+      The key only works if it's stored with the effect: save it in a separate step and a crash between the two loses either the key or the link. When the side effect is in another system, such as a card payment, your own table can't help; you have to pass a key to that provider too.
+    remember: |
+      Networks give "at least once" or "at most once". Exactly once is at-least-once delivery plus an idempotent effect at every step that matters.
+    use: retry-identity/b5
+    use_note: The first two challenges are enough for now (fixed retries, then backoff with jitter).
+    check: retry-identity/b3
+    later: [Retry budgets, Handling a reused key with a different body, How long to keep keys, Operations that are idempotent by nature]
+    recap: A timeout leaves the outcome unknown. Retry the right errors with jittered backoff, and deduplicate with an idempotency key stored with the change.
+
+  - lesson: realtime-push
+    title: Pushing updates to clients
+    minutes: 6
+    problem: |
+      Sam wants creators to see clicks arrive on the dashboard as they happen, and to get a notification on their phone when a link takes off. Ripple's API only answers requests, so the server can't speak first.
+    answer: |
+      Pick the transport from the direction and frequency of updates:
+      - **Polling**: ask every few seconds. Simple, but slow to notice changes and wasteful. Fine for rare updates.
+      - **Server-Sent Events (SSE)**: one long HTTP response the server keeps writing to, with reconnect built in. Good for one-way feeds, dashboards and LLM token streams.
+      - **WebSockets**: a two-way connection with the lowest latency. For chat, games and shared editing.
+      - **Mobile push** (APNs, FCM): the only way to reach an app that's closed, but best effort, so use it to wake the app and let the app fetch what's new.
+
+      Each open connection lives on one machine in a **gateway** tier. A **pub/sub** system (Redis, NATS, Kafka) routes each update to whichever gateways hold the recipient's connections.
+    catch: |
+      Connections drop all the time, so the socket can't be what guarantees delivery. Store updates durably with **sequence numbers**; on reconnect the client asks for everything after the last number it saw. And when a gateway with 500,000 connections dies, they all reconnect at once, so clients need jittered backoff before reconnecting.
+    remember: |
+      Delivery is guaranteed by sequence numbers and replay from storage, not by keeping the connection open.
+    check: realtime-push/b1
+    later: [Long polling, Sizing a gateway fleet, Acknowledgements and resume, Draining connections during a deploy]
+    recap: Polling for rare updates, SSE for one-way streams, WebSockets for two-way, push for closed apps. Sequence numbers make delivery reliable.
+finish:
+  check:
+    type: arch
+    title: Back to Ripple
+    prompt: Exports are moving off the request path. Which component belongs in the empty box?
+    nodes:
+      - {id: app, label: Creator dashboard, kind: client, x: 0, y: 1}
+      - {id: lb, label: Load balancer, kind: lb, x: 1, y: 1}
+      - {id: api, label: Ripple API, kind: service, x: 2, y: 1}
+      - {id: db, label: Postgres, kind: db, x: 3, y: 0}
+      - {id: queue, label: Job queue, kind: queue, x: 3, y: 1}
+      - {id: worker, label: Workers, kind: worker, x: 4, y: 1}
+    edges:
+      - [app, lb]
+      - [lb, api]
+      - [api, db]
+      - [api, queue]
+      - [queue, worker]
+    missing: queue
+    choices:
+      - A list in the API server's memory that a background thread works through
+      - A durable job queue, with the job row written before the API replies 202
+      - A longer gateway timeout, so the export finishes inside the request
+      - A WebSocket from the dashboard to the API server
+    answer: 1
+    explain: |
+      The API accepts the export, records the job durably and replies 202 with a URL to check. Workers take jobs from the queue. A list in memory is lost when that server restarts or is deployed, and the API is meant to be stateless. A longer timeout keeps a connection and a server busy for minutes and still fails on a slow day. A WebSocket can tell the dashboard when the export is ready, but something still has to hold the work.
+  play: [r2, r3]
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

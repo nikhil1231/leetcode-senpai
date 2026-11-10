@@ -173,7 +173,7 @@ nodes:
 
 ```sort
 prompt: For each piece of data, should you collect and keep it?
-buckets: [Collect and keep for a defined period, Don't collect, or drop quickly]
+buckets: [Collect and keep for a defined period, "Don't collect, or drop quickly"]
 items:
   - {text: 'A shipping address, needed to deliver the order', bucket: 0, why: 'Necessary for the stated purpose. Keep only as long as needed (and as the law requires for records).'}
   - {text: 'The full date of birth, when you only need to know the user is an adult', bucket: 1, why: 'Store an "over 18" flag instead of the date.'}

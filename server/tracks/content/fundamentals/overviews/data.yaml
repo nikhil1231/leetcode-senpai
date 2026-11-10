@@ -1,0 +1,156 @@
+# The overview of one area of the fundamentals course. Format and rules: server/tutor/overviews.py and the system
+# design overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: data
+title: Databases in depth
+minutes: 35
+intro: |
+  This tour covers the four topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step has something to try and ends with a quick check.
+
+  Postgres holds Ripple's money: creators' balances and payouts. Every query, table design and setting decides whether the numbers come out right and whether the database stalls at the wrong moment. The area goes from writing correct SQL, through designing tables, to what Postgres does underneath. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple's payouts database
+  plain: true
+  nodes:
+    - {id: migration, label: Migration, kind: process, x: 0, y: 0, note: 'ALTER TABLE'}
+    - {id: app, label: Payouts service, kind: service, x: 0, y: 1}
+    - {id: analyst, label: Analyst, kind: user, x: 0, y: 2, note: 'monthly reports'}
+    - {id: pool, label: PgBouncer, kind: lb, x: 1, y: 1, note: 'pools connections'}
+    - {id: pg, label: Postgres, kind: db, x: 2, y: 1, note: 'row versions'}
+    - {id: vac, label: Autovacuum, kind: process, x: 3, y: 0, note: 'clears old versions'}
+    - {id: replica, label: Replica, kind: db, x: 3, y: 2, note: 'for reports'}
+  edges:
+    - [migration, pg]
+    - [app, pool]
+    - [pool, pg]
+    - [vac, pg]
+    - [pg, replica]
+    - [analyst, replica]
+  paths:
+    - label: Pay a creator
+      steps:
+        - [app, pool, 'The payouts service borrows one of a few dozen pooled connections. Each Postgres connection is a whole process, so hundreds of them would cost real memory (step 4).']
+        - [pool, pg, '`UPDATE balances SET amount = amount - 30 WHERE creator_id = 7 AND amount >= 30`: the check and the change in one statement, so two payouts at once can''t both spend the same money (step 4).']
+        - [vac, pg, 'The update wrote a new version of the row and left the old one for readers who started earlier. Autovacuum clears the old version once nobody can see it.']
+    - label: The monthly report
+      steps:
+        - [analyst, replica, 'An analyst runs the earnings report on the replica, so it doesn''t compete with payouts.']
+        - [pg, replica, 'A LEFT JOIN keeps creators with no payouts in the list (step 1), the tables'' constraints guarantee every payout belongs to a real creator (step 2), and a window function ranks each creator''s links (step 3).']
+    - label: Add a column
+      steps:
+        - [migration, pg, 'ALTER TABLE needs an exclusive lock on the table. If it waits behind a long-running query, every new query waits behind it, and the site stops. A short lock_timeout makes it give up and retry instead (step 4).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. Steps 1 and 3 are about the queries the payouts service and the analyst write, step 2 about the tables they run against, and step 4 about what Postgres does underneath to keep many of them apart at once.
+steps:
+  - lesson: sql-queries
+    title: Joins, NULLs and grouping
+    minutes: 8
+    problem: |
+      Ripple's "creators with no payout this month" query returns nothing at all, and the revenue report counts some creators twice.
+    answer: |
+      SQL runs in a different order from how it reads: `FROM` and `JOIN` first, then `WHERE`, `GROUP BY`, `HAVING`, `SELECT`, `ORDER BY` and `LIMIT`. That explains most surprises, such as why `WHERE` can't use an alias defined in `SELECT`.
+
+      **Joins** decide which rows survive. An **inner join** keeps only matching pairs. A **left join** keeps every left row, with NULLs where nothing matched. `EXISTS` returns left rows with at least one match (a **semi-join**), and `NOT EXISTS` rows with none (an **anti-join**). A join to a one-to-many table multiplies rows: a creator with three payouts appears three times, so summing a creator column afterwards counts it three times. A condition on the right-hand table in `WHERE` quietly turns a left join back into an inner one; put it in `ON` instead.
+
+      **NULL** means unknown. Any comparison with NULL is unknown, and `WHERE` keeps only rows where the condition is true. `COUNT(*)` counts rows, `COUNT(column)` skips NULLs, and `SUM` and `AVG` ignore them. `WHERE` filters rows before grouping; `HAVING` filters groups after.
+    catch: |
+      `NOT IN` against a list that contains a single NULL returns no rows at all, because `id <> NULL` is never true. The bug only appears once a NULL sneaks in, so tests rarely catch it. Use `NOT EXISTS`.
+    remember: |
+      `NOT IN` with a NULL in the list returns nothing. Use `NOT EXISTS`.
+    use: sql-queries/b3
+    use_note: The first and third challenges are enough for now (keep users with no orders, then find users with no paid order).
+    check: sql-queries/b5
+    later: [The logical order of a SELECT, Semi-joins and anti-joins, Grouping rules, Correlated subqueries]
+    recap: Joins decide which rows survive and can multiply them. NULL makes comparisons unknown, so prefer NOT EXISTS to NOT IN.
+
+  - lesson: sql-schema
+    title: Keys, constraints and normalisation
+    minutes: 7
+    problem: |
+      The payouts table stores the creator's email on every payout. When a creator changes their email, some rows keep the old one. And a bug inserted a negative payout for a creator who doesn't exist, and nothing stopped it.
+    answer: |
+      The schema is the cheapest place to enforce correctness, because it applies to every code path:
+      - A **primary key** identifies each row. Usually a surrogate key (a `bigint` identity or a time-ordered UUIDv7) plus a **UNIQUE** constraint on the natural key, such as the email, so duplicates are still impossible.
+      - **NOT NULL** for values that must exist, **CHECK** for rules on a row (amount positive, end after start), **FOREIGN KEY** so a reference must point at a real row. `ON DELETE` says what happens to children: refuse (the safe default for money), cascade (for parts such as an order's lines) or set to NULL.
+
+      **Normalisation** stores each fact once. **1NF**: one value per column, so no lists in strings. **2NF**: no column depends on only part of a composite key. **3NF**: no column depends on another non-key column, such as a creator's email on a payout. Breaking it causes **anomalies**: an update that misses copies, a fact you can't record without an unrelated row, a fact lost when a row is deleted. Many-to-many relationships get a join table with a key made of both sides.
+    catch: |
+      Not every repeated column is a normalisation problem. The price at the time of an order is a different fact from today's price, so store it on the order. And sometimes you denormalise on purpose for speed, such as a reply count kept on the thread, updated in the same transaction as each new reply.
+    remember: |
+      A constraint holds for every code path and every race. Application checks only hold for the code that remembers them.
+    use: sql-schema/b5
+    check: sql-schema/b1
+    later: [Surrogate and natural keys, ON DELETE choices, Spotting 2NF and 3NF violations, Denormalising on purpose]
+    recap: Use keys and constraints to make bad data impossible, store each fact once, and denormalise deliberately when a read needs it.
+
+  - lesson: sql-windows
+    title: Window functions and query plans
+    minutes: 7
+    problem: |
+      Marcus wants each creator's top three links by clicks, and a seven-day moving average of daily clicks. The first attempt uses self-joins and takes 40 seconds.
+    answer: |
+      A **window function** computes over related rows but returns a value for every row, instead of collapsing them like `GROUP BY`:
+      - `PARTITION BY` says which rows belong together, `ORDER BY` gives their sequence, and the **frame** says which rows around the current one to include.
+      - `ROW_NUMBER()` numbers rows uniquely, `RANK()` gives ties the same number and skips the next, `DENSE_RANK()` doesn't skip. For the top three per creator, number the rows per creator in a CTE and keep those numbered 1 to 3.
+      - `LAG` and `LEAD` read the previous and next rows. `AVG(clicks) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)` is the seven-day moving average.
+
+      A **CTE** (`WITH name AS (...)`) names a step so a long query reads top to bottom, and a recursive CTE walks a hierarchy.
+
+      When a query is slow, read `EXPLAIN ANALYZE`. Look at how each table is read (a sequential scan, or an index scan) and how tables are joined, and above all compare the **estimated rows with the actual rows**. A large gap means the planner chose its plan from bad information.
+    catch: |
+      With `ORDER BY` and no frame, the default frame includes every row tied on the ordering value, so two rows on the same day share one running total. Write `ROWS` explicitly. And a plan built on a wrong estimate (12 rows expected, 1.8 million found) picks a nested loop that does 1.8 million lookups; fresh statistics (`ANALYZE`) usually fix it.
+    remember: |
+      In a slow plan, compare estimated rows with actual rows first.
+    use: sql-windows/b1
+    check: sql-windows/b5
+    later: [ROWS versus RANGE frames, Gaps and islands, Recursive CTEs, Reading scans and joins in a plan]
+    recap: Window functions rank, compare and total without collapsing rows. For a slow query, a gap between estimated and actual rows is the first clue.
+
+  - lesson: postgres-internals
+    title: What Postgres does underneath
+    minutes: 8
+    problem: |
+      Two payouts to the same creator at the same moment leave the balance wrong. A migration that should have taken two seconds took the whole site down. And one table has tripled in size with no new data in it.
+    answer: |
+      Postgres keeps transactions apart with **MVCC** (multi-version concurrency control). An update writes a new version of the row and marks the old one dead; each query reads a **snapshot** of committed versions. So readers never block writers, and writers block each other only on the same row. **Vacuum** later reclaims dead versions.
+
+      **Isolation levels** decide which anomalies can still happen:
+      - **Read committed** (the default) takes a new snapshot per statement. It allows **lost updates**: two requests read a balance of 100, each subtract 30 in code and write 70.
+      - **Repeatable read** uses one snapshot per transaction, and a conflicting update to the same row fails with an error to retry.
+      - **Serializable** also catches **write skew**: two admins each check that another admin remains, then both remove themselves, updating different rows. Transactions can fail and must be retried.
+
+      The simplest fix for lost updates is one guarded statement (`SET amount = amount - 30 WHERE amount >= 30`), or `SELECT … FOR UPDATE` to lock the row first.
+
+      Many `ALTER TABLE` statements need an exclusive lock. If one waits behind a long query, every new query queues behind it. Run migrations with a short `lock_timeout`, and build indexes with `CREATE INDEX CONCURRENTLY`.
+    catch: |
+      A transaction left open, or a session sitting "idle in transaction", holds an old snapshot, and vacuum can't remove anything that snapshot might still see, anywhere in the database. Tables and indexes bloat, and in the extreme Postgres stops accepting writes to protect itself. Each connection is also a separate process, so many idle ones cost memory; a pooler such as PgBouncer helps.
+    remember: |
+      One long-open transaction stops vacuum for the whole database.
+    use: postgres-internals/b910
+    use_note: The first and third challenges are enough for now (lose an update, then vacuum the dead versions).
+    check:
+      type: sort
+      prompt: What prevents each problem?
+      buckets: ['A guarded UPDATE or a row lock', 'A short lock_timeout on the migration', 'Ending the long transaction', 'Serializable isolation']
+      items:
+        - {text: 'Two payouts both read a balance of 100 and both write back 70', bucket: 0, why: 'Do the check and the change in one statement, or lock the row with SELECT … FOR UPDATE.'}
+        - {text: 'Two workers pick up the same job from a jobs table', bucket: 0, why: 'Claim it with a guarded UPDATE, or SELECT … FOR UPDATE SKIP LOCKED.'}
+        - {text: 'An ALTER TABLE waits behind a long report, and every request queues behind the ALTER', bucket: 1, why: 'With a short lock_timeout the ALTER gives up and retries, instead of blocking everyone.'}
+        - {text: 'A table keeps growing though its row count doesn''t, and one session has been idle in a transaction for two days', bucket: 2, why: 'Its old snapshot stops vacuum removing dead versions.'}
+        - {text: 'Two admins each check another admin remains, then both remove themselves', bucket: 3, why: 'Write skew: they update different rows, so row locks don''t conflict. Serializable catches it.'}
+    later: [Row versions and snapshots, Which anomaly each isolation level allows, Migrations that don't block, Vacuum and transaction ID wraparound]
+    recap: MVCC keeps row versions so readers don't block writers. Guard updates against lost writes, give migrations a lock timeout, and don't leave transactions open.
+finish:
+  check:
+    type: predict
+    prompt: |
+      The payouts service reads a creator's balance, checks in code that it covers the payout, then writes the new balance. Under load, two payouts sometimes both succeed and the balance goes below zero. What do you change?
+    choices:
+      - Add an index on creator_id, so the read is faster
+      - Make it one guarded UPDATE (`amount = amount - 30 WHERE amount >= 30`), and add `CHECK (amount >= 0)` as a backstop
+      - Put a cache in front of the balances table
+      - Run vacuum more often
+    answer: 1
+    reveal: |
+      This is a lost update: both requests read the same balance under read committed and each write their own result. A single guarded UPDATE does the check and the change atomically, and the CHECK constraint makes a negative balance impossible from any code path. A faster read only narrows the race, a cache makes the stale read more likely, and vacuum has nothing to do with it.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

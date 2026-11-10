@@ -1,0 +1,142 @@
+# The overview of one area (pass one). Format and rules: storage.yaml and server/tutor/overviews.py.
+# Copy follows the Writing rules in CLAUDE.md.
+area: specialised
+title: Search, geo and feeds
+minutes: 30
+intro: |
+  This tour covers the three topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step has something to try and ends with a quick check.
+
+  Ripple is becoming a social product: people search for creators, look for ones nearby, and scroll a home feed of everyone they follow. None of these fit an ordinary database index, and each has a standard design that interviewers expect you to know. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Social Ripple
+  plain: true
+  nodes:
+    - {id: app, label: Ripple app, kind: client, x: 0, y: 1}
+    - {id: api, label: Ripple API, kind: service, x: 1, y: 1}
+    - {id: geo, label: Location grid, kind: cache, x: 2, y: 0, note: 'in memory, by cell'}
+    - {id: db, label: Postgres, kind: db, x: 2, y: 1, note: 'posts, follows, places'}
+    - {id: timelines, label: Timelines, kind: cache, x: 2, y: 2, note: 'post IDs per user'}
+    - {id: search, label: Search index, kind: db, x: 3, y: 0, note: 'words to posts'}
+    - {id: log, label: Change log, kind: stream, x: 3, y: 1}
+    - {id: fanout, label: Fan-out workers, kind: worker, x: 3, y: 2}
+  edges:
+    - [app, api]
+    - [api, geo]
+    - [api, db]
+    - [api, timelines]
+    - [api, search, 'queries']
+    - [db, log]
+    - [log, search]
+    - [log, fanout]
+    - [fanout, timelines]
+  paths:
+    - label: Search for "vegan baking"
+      steps:
+        - [app, api, 'A user types "vegan baking".']
+        - [api, search, 'The query is lowercased and reduced to word stems ("baking" becomes "bake"), each stem''s list of matching posts is looked up, and the lists are combined and ranked (step 1).']
+        - [db, log, 'New posts reach the search index from Postgres''s change log, usually within a second or two, so search is always slightly behind.']
+        - [log, search, 'The index is a derived copy: if it''s lost, it can be rebuilt from Postgres.']
+    - label: Creators near me
+      steps:
+        - [app, api, 'A user in Leeds opens "creators near me".']
+        - [api, geo, 'The API finds the grid cell the user is in and its eight neighbours, collects the creators in those nine cells, then sorts them by exact distance (step 2).']
+    - label: A post reaches followers
+      steps:
+        - [api, db, 'A creator posts. The post is stored once.']
+        - [log, fanout, 'Fan-out workers pick it up from the change log.']
+        - [fanout, timelines, 'They add the post''s ID to the timeline of each of the creator''s 300 followers (step 3).']
+        - [api, timelines, 'Opening the feed is one lookup of post IDs, merged with recent posts from the few celebrities this user follows, which are never pushed.']
+        - [api, db, 'The post bodies are fetched for those IDs, so a post deleted since simply drops out.']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. All three are read paths built for one kind of question: by words, by place, and by "who do I follow". Postgres stays the source of truth, and the search index and timelines are copies fed from its change log.
+steps:
+  - lesson: search-index
+    title: Searching by the words inside
+    minutes: 7
+    problem: |
+      Users want to search posts and creators by words, such as "vegan baking". The first version runs `WHERE body ILIKE '%vegan%'`, which reads every row, and at busy times it pins Postgres's CPU and slows down everything else.
+    answer: |
+      A search engine keeps an **inverted index**: for each term, a sorted list of the documents that contain it (a **postings list**), with positions for phrase matching. Text goes through an **analyzer** first: split into words, lowercase them, reduce them to stems ("running" becomes "run") and drop very common words. A query goes through the same analyzer, then the engine looks up each term's list and intersects them (all terms) or merges them (any term).
+
+      Results are ranked, usually with **BM25**: a term counts for more when it's rare across all documents, extra repeats of a term count for less and less, and matches in shorter documents count a little more.
+
+      A large index is split into shards. Each shard returns its own top results, and a coordinator merges them. The index is **derived data**, fed from the database's change log or an outbox by an indexing worker that writes each document with a version number, so replays can't bring back an old version.
+    catch: |
+      The index is always a little behind the database (a second or so), and it isn't the source of truth: keep the database authoritative so the index can be rebuilt. Changing how a field is analysed means building a new index in the background and switching to it. And asking for page 1,000 makes every shard find its top 10,000 results.
+    remember: |
+      The analyzer must match at index time and query time. Most "search is broken" bugs are analyzer mismatches, not ranking problems.
+    use: search-index/b1
+    check: search-index/b7
+    later: [BM25 and the tuning levers, The scatter-gather query path, Refresh lag, Reindexing behind an alias]
+    recap: An inverted index maps each word to the documents containing it. Analyse text the same way on both sides, and feed the index from the change log.
+
+  - lesson: geo-index
+    title: Finding things nearby
+    minutes: 6
+    problem: |
+      Ripple adds "creators near me". With one index on latitude and one on longitude, a query for everything within 1 km uses one of them to pick a thin strip running round the whole world, then checks every row in it.
+    answer: |
+      Map the two dimensions onto **cells**, so nearness becomes a lookup:
+      - **Geohash** halves the world again and again, alternating longitude and latitude, and writes the path as base-32 characters. Each extra character splits a cell into 32, and a shared prefix means the same cell, so an ordinary index (or a Redis sorted set) can find a cell's contents.
+      - **Quadtrees** split cells only where things are dense. **S2** and **H3** use cells on a sphere; H3 cells are hexagons.
+
+      To find what's within 1 km, choose a cell size about the search radius, fetch the home cell and its 8 neighbours, then filter and sort the candidates by exact distance. Cells also make good shard keys (nearby places stay together) and good buckets for counting things per area.
+
+      For shapes such as delivery zones, an **R-tree** (PostGIS) indexes nested rectangles and answers "is this point inside any of these polygons?". For things that move every few seconds, such as drivers, keep the latest position in memory, grouped by cell, with an expiry, rather than writing every update to a table on disk.
+    catch: |
+      Cells are hard boundaries: two points a few metres apart can be in different cells with unrelated codes, which is why you always search the neighbours too. And density varies hugely (central London against the Scottish Highlands), so a fixed cell size is too big in one place and too small in another.
+    remember: |
+      Search the home cell plus its 8 neighbours, then filter by exact distance.
+    use: geo-index/b1
+    check: geo-index/b3
+    later: [Why two separate indexes perform poorly, Adapting to uneven density, PostGIS queries, Location updates at scale]
+    recap: Turn location into cells, search the 3×3 block around the user, then filter by distance. Moving things live in memory.
+
+  - lesson: feed-fanout
+    title: Building a home feed
+    minutes: 7
+    problem: |
+      The home feed shows recent posts from everyone you follow. Ripple gets 6,000 posts a second, a typical creator has 300 followers, and a few celebrities have 20 million.
+    answer: |
+      The work of merging posts can happen when someone posts or when someone reads:
+      - **Fan-out on write (push)**: when someone posts, add the post's ID to every follower's timeline. Reading is a single lookup, but each post costs one insert per follower: 6,000 posts × 300 followers is 1.8 million inserts a second.
+      - **Fan-out on read (pull)**: store each post once, and at read time fetch recent posts from everyone the reader follows and merge them. Writes are cheap, but every feed load does a lot of work.
+
+      Large products use a **hybrid**: push posts from ordinary accounts, and skip fan-out for accounts above a follower threshold (somewhere around half a million to a million). At read time, merge the pushed timeline with recent posts from the few celebrities the reader follows. Timelines are capped lists of post IDs (say the latest 800) kept in memory, **hydrated** with the post contents at read time. Users who haven't logged in for weeks can be skipped and rebuilt when they return.
+    catch: |
+      Copies are hard to take back. If full posts were copied into timelines, deleting or editing one means rewriting millions of copies, and followers see the old version until that's done. Storing only IDs and checking each post when the feed is read makes deletes and privacy changes take effect straight away.
+    remember: |
+      Push costs grow with the size of the audience; pull costs grow with how many accounts each reader follows.
+    use: feed-fanout/b1
+    use_note: Try all three challenges if you have time; the third (finding the hybrid threshold) is the main point.
+    check: feed-fanout/b7
+    later: [Working out fan-out load, Storing and hydrating timelines, Ranking a feed, Inactive users]
+    recap: Push makes reads cheap and celebrity posts expensive, pull the reverse. Use a hybrid, and store IDs rather than copies.
+finish:
+  check:
+    type: arch
+    title: Back to Ripple
+    prompt: New posts must reach both the search index and followers' timelines, without slowing down posting. Which component belongs in the empty box?
+    nodes:
+      - {id: api, label: Ripple API, kind: service, x: 0, y: 1}
+      - {id: db, label: Postgres, kind: db, x: 1, y: 1}
+      - {id: log, label: Change log, kind: stream, x: 2, y: 1}
+      - {id: search, label: Search index, kind: db, x: 3, y: 0}
+      - {id: fanout, label: Fan-out workers, kind: worker, x: 3, y: 2}
+    edges:
+      - [api, db]
+      - [db, log]
+      - [log, search]
+      - [log, fanout]
+    missing: log
+    choices:
+      - A stream of Postgres's committed changes (change data capture or an outbox), read by both
+      - The API writing to the search index and every timeline before it replies
+      - A nightly batch job that copies the day's posts
+      - A Redis cache in front of Postgres
+    answer: 0
+    explain: |
+      A change log carries every committed post, in order, to each derived copy, which can replay it after a failure. Writing to search and timelines inside the request is a dual write that can diverge and makes posting as slow as its slowest copy. A nightly job leaves feeds and search a day behind, and a cache speeds up reads but doesn't move anything to search or timelines.
+  play: [r1, r3]
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

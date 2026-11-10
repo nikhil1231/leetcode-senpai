@@ -1,0 +1,180 @@
+# The overview of one area (pass one). Format and rules: storage.yaml and server/tutor/overviews.py.
+# Copy follows the Writing rules in CLAUDE.md.
+area: foundations
+title: Foundations
+minutes: 35
+intro: |
+  This tour covers the six topics every design conversation rests on, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Most steps end with a quick check, and a couple have a simulator to try.
+
+  Ripple is still small here: a link shortener with one API, one Postgres server and a cache. That's a good place to learn how to describe a system, what it promises, and how to tell with a few numbers whether it will cope. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple in its early days
+  plain: true
+  nodes:
+    - {id: app, label: Phone or browser, kind: client, x: 0, y: 1}
+    - {id: edge, label: Edge, kind: cdn, x: 1, y: 1, note: 'TLS, abuse checks'}
+    - {id: lb, label: Load balancer, kind: lb, x: 2, y: 1}
+    - {id: api, label: Ripple API, kind: service, x: 3, y: 1, note: 'stateless, 3 copies'}
+    - {id: cache, label: Redis, kind: cache, x: 4, y: 0, note: 'hot short codes'}
+    - {id: db, label: Postgres, kind: db, x: 4, y: 1, note: 'primary and a replica'}
+    - {id: stats, label: Analytics services, kind: service, x: 4, y: 2, note: 'one call per chart'}
+  edges:
+    - [app, edge, 'HTTPS']
+    - [edge, lb]
+    - [lb, api]
+    - [api, cache]
+    - [api, db, 'SQL']
+    - [api, stats]
+  paths:
+    - label: Open a short link
+      steps:
+        - [app, edge, 'The phone looks up the address (DNS), then opens a TCP and a TLS connection to the nearest edge. On a fresh mobile connection that setup can take longer than everything after it (step 1).']
+        - [edge, lb, 'The edge turns away abusive traffic and forwards the request over a connection it keeps open.']
+        - [lb, api, 'Any copy of the API will do, because none of them keeps state between requests.']
+        - [api, cache, 'It looks the short code up in Redis. A small share of links gets most of the clicks, so most lookups are hits (step 4).']
+        - [api, db, 'On a miss it reads Postgres. At 100 million redirects a day this is about 1,200 requests a second on average (step 5).']
+    - label: Create a link
+      steps:
+        - [app, edge, 'The app sends the new link with an idempotency key, a random ID it made for this one attempt.']
+        - [lb, api, 'The API checks who the creator is and that they may add links to this workspace (step 1).']
+        - [api, db, 'It inserts the link. A unique constraint guarantees no two links share a short code, even if two requests race (step 2).']
+        - [edge, app, 'If the response is lost and the app retries, the server sees the same key and returns the first link instead of making a second.']
+    - label: Load the dashboard
+      steps:
+        - [app, edge, 'The creator opens the dashboard.']
+        - [api, stats, 'The API calls 40 analytics services at once and can only answer when the slowest has replied (step 3).']
+        - [api, stats, 'If each service is slow 1% of the time, a third of dashboard loads hit at least one slow call.']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. Three topics don't have a box of their own. What Ripple promises (step 2) decides which of these requests must never go wrong and which may sometimes be slow. The numbers to know (step 4) and estimation (step 5) tell you whether each box can carry its load. And whether Ripple needs more than these few machines at all is step 6.
+steps:
+  - lesson: request-flow
+    title: Follow one request end to end
+    minutes: 6
+    problem: |
+      A creator in Sydney says saving a link sometimes takes two seconds and sometimes creates it twice. Ripple's server logs say every request took about 40 ms. Neither problem shows up in the logs, so you need to look at the whole trip, not just the part the server sees.
+    answer: |
+      Trace one request through every hop and give each a share of the time:
+      - **DNS** turns the name into an address, then the client opens a **TCP** connection and a **TLS** session (encryption) to the nearest **edge**. Each costs one or more round trips before the server sees anything.
+      - The **edge** (a CDN or gateway) turns away oversized or abusive requests and can check that a login token is valid.
+      - The **load balancer** picks a copy of the service.
+      - The **owning service** checks the business rules, including whether this user may touch this particular record: only it has the data to know who owns link 9001.
+      - The **database** stores the change, last, after every check. Rules that must hold even when requests race, such as unique keys and foreign keys, are enforced here as constraints.
+
+      Distance sets a floor you can't remove. Light in fibre covers about 200 km per millisecond, so a London to New York round trip is about 75 ms and Sydney to London about 270 ms. You can only make fewer round trips or move the endpoint closer.
+    catch: |
+      When a client times out, it doesn't know what happened: the work may have finished, still be running, or failed. If it simply retries, it can create the link twice. The fix is an **idempotency key**: the client sends the same random key with the retry and the server returns the first result. Timeouts should also get shorter further down the chain, so an inner call never runs on after its caller has given up.
+    remember: |
+      A client timeout means the outcome is unknown, not that the request failed. And the server's timings start when the request arrives, so measure latency from the client as well.
+    check: request-flow/b6
+    later: [A latency budget for every hop, Why the first request on a new connection is slow, Timeouts that shrink down the chain, Passing deadlines and cancelling work]
+    recap: Trace one request through every hop. The edge, the service and the database each own different checks, and a timeout leaves the outcome unknown.
+
+  - lesson: guarantees
+    title: Turn a vague request into promises
+    minutes: 5
+    problem: |
+      Marcus wants link analytics to be "fast, reliable and scalable". None of those words can be tested, so there's no way to say whether a design meets them, or to choose between two designs.
+    answer: |
+      Sort every requirement into one of four kinds:
+      - **Functional**: what users can do. "Creators see clicks per link per day."
+      - **Non-functional targets**: a measured quality with a number. "The dashboard loads in under 300 ms for 99% of requests", "2,000 clicks a second at peak".
+      - **Invariants**: what must always be true, even with concurrent requests, retries and crashes. "A click is never counted twice", "no two links share a short code".
+      - **Non-goals**: what you deliberately leave out. "Counts may be a minute behind; no live view."
+
+      To make "fast" testable, define an **SLI** (service level indicator, what you measure: the share of valid requests that succeed within 300 ms, measured at the load balancer) and an **SLO** (service level objective, the target for it over a window: 99.9% over 30 days). 99.9% over 30 days allows about 43 minutes of failure.
+    catch: |
+      A target can be missed by a little and recovered next month. An invariant can't: it has to hold for every request. Invariants are where most of the hard design work is, and they're the requirement people most often forget to state. Reading a value, checking it in code and then writing isn't enough to keep one when requests race. The check has to be part of the write.
+    remember: |
+      In an interview, spend the first five minutes on scope, scale and the key guarantees, write them where the interviewer can see them, and state assumptions for the rest.
+    check: guarantees/b1
+    later: [Choosing where an SLI is measured, Invariants written like tests, Error budgets, Running the clarifying conversation]
+    recap: Separate what users can do, measured targets, invariants and non-goals. Invariants are the hard part.
+
+  - lesson: service-quality
+    title: Latency, throughput and availability
+    minutes: 7
+    problem: |
+      Ripple's dashboard calls 40 analytics services in parallel. Each one is fast 99% of the time, and the average latency graph looks fine. Creators still say the dashboard is often slow.
+    answer: |
+      Three numbers describe how a service behaves, and each has a trap:
+      - **Latency** is a distribution. The **p50** (median) is the time half of requests beat. The **p99** is the time 1 in 100 requests is slower than. An average hides the slow ones. When a page calls N services and waits for all of them, the chance that at least one is slower than its p99 is 1 − 0.99ᴺ: a third of page loads at 40 calls.
+      - **Throughput** is completed work per second, capped by the most constrained resource. **Little's Law** links them: requests in flight = throughput × latency. At 1,000 requests a second taking 50 ms each, 50 are in progress at once, which is what a connection pool must hold.
+      - **Availability** is the share of requests that get the promised result. Required dependencies called one after another multiply: five services at 99.9% give about 99.5%. A dependency with a timeout and a fallback, or one moved off the request path, no longer takes the page down with it.
+    catch: |
+      Waiting time rises steeply as a server approaches 100% busy, so plan to run at about 50 to 70% at peak and accept the idle capacity. A second copy of a service only helps if the two fail independently: two replicas in the same rack, deployed by the same pipeline, mostly fail together. And retrying failed calls straight away adds load during an outage and can turn a blip into a full one.
+    remember: |
+      Report percentiles, not averages. With fan-out, a backend's p99 becomes what a typical user sees.
+    use: service-quality/b1
+    use_note: Do the first two challenges (raise the slow share, then the fan-out). Hedging is for the full lesson.
+    check: service-quality/b9
+    later: ['Sizing pools with Little''s Law', Hedged requests, The utilisation knee, Alerting on error-budget burn rate]
+    recap: Read percentiles, not averages. Fan-out makes the tail common, queues grow fast near full load, availability multiplies.
+
+  - lesson: numbers
+    title: Numbers worth knowing
+    minutes: 5
+    problem: |
+      In a design review Marcus asks whether one Redis node can take all the redirect traffic. "I'd need to look it up" stops the conversation. You need the rough number in your head, to the nearest power of ten.
+    answer: |
+      A few dozen constants cover most questions:
+      - **Time**: a day is 86,400 seconds, about 10⁵. So 1 million a day is about 12 a second and 100 million a day about 1,200. Peak traffic is usually 2 to 3 times the average, and up to 10 times for spiky products.
+      - **Latency**: a memory read takes about 100 ns. A random SSD read takes 20 to 100 µs, about 1,000 times slower. A round trip within a datacentre takes about 0.5 ms, between availability zones 1 to 2 ms, and New York to London 70 to 80 ms. Light in fibre covers about 200 km per millisecond, so every 100 km of distance adds about 1 ms of round trip.
+      - **One machine**: a stateless app server handles roughly 1,000 to 10,000 simple requests a second, one Redis node about 100,000 operations a second, and a Postgres primary 5,000 to 20,000 simple writes a second and a few TB of data comfortably.
+      - **Traffic shape**: about 20% of items get 80% of requests, and content products read 10 to 100 times more often than they write.
+    catch: |
+      These are rough and vary with hardware and request size. Their job is to tell you whether you need one machine or fifty, not to be exact, so quote them as orders of magnitude and say what you assumed.
+    remember: |
+      Divide a daily total by 10⁵ to get the average per second, then multiply by a peak factor.
+    check: numbers/b1
+    later: [Downtime allowed by each nine of availability, Token and GPU numbers for LLM systems, Rules of thumb you can do without a calculator]
+    recap: A day is about 10⁵ seconds. Know the latency ladder and what one machine can do, to the nearest power of ten.
+
+  - lesson: estimates
+    title: Estimate to make a decision
+    minutes: 6
+    problem: |
+      Ripple expects 100 million redirects and 1 million new links a day by next year. Marcus wants to know whether the single Postgres server will cope or whether it's time to split the data across several (sharding).
+    answer: |
+      Work through it in order: state the assumptions, convert daily totals to per-second rates, apply a peak factor and growth, work out storage (items × size × retention × copies, plus indexes), then servers and bandwidth with headroom. Finish by saying which decision the numbers support.
+
+      For Ripple: 100 million redirects a day is about 1,200 a second, or 3,500 at a 3× peak. They're reads of a small set of popular links, so a cache in front of Postgres absorbs most of them. 1 million new links a day is about 12 writes a second, far below what one primary handles. At 500 bytes a link that's about 180 GB a year. So: one primary with a replica, a cache for the hot links, no sharding, and a named trigger for when to revisit it (say, writes passing 5,000 a second).
+    catch: |
+      Pages of arithmetic with no conclusion don't help anyone. An estimate that shows you don't need something is just as useful as one that shows you do. Find the largest term early (usually media bytes for storage, and reads for request rate), keep one significant figure, and don't spend time on the small terms.
+    remember: |
+      An estimate earns its place when it ends in a decision: one database or twenty, a CDN or not.
+    check: estimates/b10
+    later: [Storage with replication and indexes, Recovery capacity for a backlog, Counting servers and shards, Presenting estimates in an interview]
+    recap: Assumptions, per-second rates, peak, storage, then the decision the numbers support.
+
+  - lesson: distribute-or-not
+    title: Do you need more than one machine?
+    minutes: 5
+    problem: |
+      Jo has read that large companies run microservices, Kafka and sharded databases, and asks why Ripple is still one API and one Postgres server with a replica.
+    answer: |
+      Decide what you need first. **Reliability** means the system keeps working when parts of it go wrong. A **fault** is one part going wrong; a **failure** is the whole system stopping for users, and good design stops one turning into the other. **Scalability** means coping as load grows, described with numbers such as requests a second or reads per write. **Maintainability** means people can run and change it.
+
+      One well-run machine goes a long way: a large Postgres server handles tens of thousands of simple queries a second and several TB of data. Add machines when a measured limit forces it, such as a primary at its CPU limit after tuning, many users far away who need lower latency, or one machine being a single point of failure for something that earns money. Grow one step at a time (backups and a replica, a cache, read replicas, splitting out a service, sharding), each step justified by a number.
+    catch: |
+      Each extra machine brings network failures, partial outages, questions about which copy is current, and more to operate. Managed services take much of that work away, but they cost more and give you less control.
+    remember: |
+      Faults are routine at scale: with 10,000 disks that each last about 27 years on average, one fails every day. Plan for parts failing, but distribute because a number forces it, not because you might need it one day.
+    check: distribute-or-not/b7
+    later: [Describing load with load parameters, Managed versus self-run, How a system grows step by step, Faults versus failures in practice]
+    recap: Start with one machine and a replica. Add machines when a measured limit forces it, knowing what they cost.
+finish:
+  check:
+    type: predict
+    prompt: |
+      Marcus expects ten times today's traffic next year: about 12,000 redirects a second and 120 new links a second at peak. Postgres sits at 30% CPU today. What do you propose?
+    choices:
+      - Shard Postgres by creator now, because migrating later is risky
+      - Put a cache in front for the hot links, add a read replica, keep one primary, and say which number would make you shard
+      - Split the API into microservices so each part can scale on its own
+      - Do nothing, since one machine can handle anything at this size
+    answer: 1
+    reveal: |
+      Redirects are reads of a small set of popular links, so a cache absorbs most of them, and a replica takes the reads that miss. 120 writes a second is far below what one primary handles, so sharding would add cost and failure modes for nothing. Naming the trigger (for example, sustained writes above 5,000 a second) shows you've thought about the next step without taking it early. Microservices don't add capacity on their own, and doing nothing ignores that 12,000 reads a second at peak is more than you'd want on one database.
+  play: [r1, r5]
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

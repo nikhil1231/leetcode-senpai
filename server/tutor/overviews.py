@@ -1,6 +1,7 @@
-"""Area overviews (pass one): a short guided tour of a system design area, one step per lesson.
+"""Area overviews (pass one): a short guided tour of one area of a course, one step per lesson.
 
-Authored in system_design_lessons/overviews/<area>.yaml. Every step has the same shape: the problem,
+Authored in system_design_lessons/overviews/<area>.yaml for system design, and in
+tracks/content/<track>/overviews/<category>.yaml for the AI and fundamentals courses. Every step has the same shape: the problem,
 the usual answer, the catch, one thing to remember, then a check or something to try (`check` /
 `use`) and what the full lesson adds (`later`); a wrap-up can end on a check of its own. A check is
 either a block of that step's lesson ("lesson/key") or a block written in the overview. The page shows
@@ -17,8 +18,10 @@ import yaml
 
 from .. import system_design_lessons as rich
 from ..system_design_curriculum import LESSONS as SD_LESSONS
+from ..tracks import courses
 
-HERE = os.path.join(os.path.dirname(rich.__file__), 'overviews')
+SD = 'system-design'
+TRACKS = ('fundamentals', 'ai')
 STEP_FIELDS = ('lesson', 'title', 'minutes', 'problem', 'answer', 'catch', 'remember', 'later', 'recap')
 
 
@@ -26,7 +29,22 @@ class OverviewError(ValueError):
     pass
 
 
-def _block(ref, lesson, where):
+def folder(section):
+    if section == SD:
+        return os.path.join(os.path.dirname(rich.__file__), 'overviews')
+    return os.path.join(courses.HERE, section, 'overviews')
+
+
+def order(section):
+    """{area: [lesson ids in course order]} for a section."""
+    return rich.ORDER if section == SD else courses.COURSES[section]['order']
+
+
+def all_lessons(section):
+    return SD_LESSONS if section == SD else courses.lessons(section)
+
+
+def _block(ref, lesson, where, section=SD):
     """A step's activity: a block written here ({type, …}) or one borrowed from its lesson ("lesson/key")."""
     if isinstance(ref, dict):
         own = dict(ref)
@@ -38,15 +56,15 @@ def _block(ref, lesson, where):
     owner, _, key = str(ref).partition('/')
     if owner != lesson:
         raise OverviewError(f'{where}: {ref} is not a block of {lesson}')
-    b = next((x for x in SD_LESSONS[lesson]['blocks'] if x.get('key') == key), None)
+    b = next((x for x in all_lessons(section)[lesson]['blocks'] if x.get('key') == key), None)
     if not b or b['type'] == 'md':
         raise OverviewError(f'{where}: no block {ref}')
     return b
 
 
-def parse(data, name):
+def parse(data, name, section=SD):
     area = data.get('area')
-    keys = rich.ORDER.get(area)
+    keys = order(section).get(area)
     if not keys:
         raise OverviewError(f'{name}: unknown area {area!r}')
     for f in ('title', 'minutes', 'intro', 'steps'):
@@ -64,38 +82,46 @@ def parse(data, name):
             raise OverviewError(f'{where}: needs a check or something to use')
         for f in ('check', 'use'):
             if s.get(f):
-                _block(s[f], s['lesson'], where)
+                _block(s[f], s['lesson'], where, section)
     if data.get('picture'):
         rich._check_block(name, 'arch', data['picture'], 0)
     if (data.get('finish') or {}).get('check'):
-        _block(data['finish']['check'], None, f'{name} finish')
+        _block(data['finish']['check'], None, f'{name} finish', section)
     return data
 
 
 def load():
+    """{(section, area): overview} for every authored overview."""
     out = {}
-    if not os.path.isdir(HERE):
-        return out
-    for f in sorted(os.listdir(HERE)):
-        if f.endswith('.yaml'):
-            with open(os.path.join(HERE, f), encoding='utf-8') as fh:
-                o = parse(yaml.safe_load(fh), f)
-            if o['area'] + '.yaml' != f:
-                raise OverviewError(f'{f} declares area {o["area"]}')
-            out[o['area']] = o
+    for section in (SD, *TRACKS):
+        here = folder(section)
+        if not os.path.isdir(here):
+            continue
+        for f in sorted(os.listdir(here)):
+            if f.endswith('.yaml'):
+                with open(os.path.join(here, f), encoding='utf-8') as fh:
+                    o = parse(yaml.safe_load(fh), f'{section}/{f}', section)
+                if o['area'] + '.yaml' != f:
+                    raise OverviewError(f'{section}/{f} declares area {o["area"]}')
+                out[(section, o['area'])] = o
     return out
 
 
 OVERVIEWS = load()
 
 
-def get(area):
-    return OVERVIEWS.get(area)
+def get(area, section=SD):
+    return OVERVIEWS.get((section, area))
 
 
-def lesson(area):
+def areas(section):
+    """Areas of a section that have an authored overview, in course order."""
+    return [a for a in order(section) if (section, a) in OVERVIEWS]
+
+
+def lesson(area, section=SD):
     """The overview as a lesson: {steps, blocks, objectives, picture} with each step's block keys, or None."""
-    o = get(area)
+    o = get(area, section)
     if not o:
         return None
     blocks, steps = [], []
@@ -105,7 +131,7 @@ def lesson(area):
         step = {k: s.get(k) for k in (*STEP_FIELDS, 'use_note')}
         for f in ('use', 'check'):
             if s.get(f):
-                b = _block(s[f], s['lesson'], area)
+                b = _block(s[f], s['lesson'], area, section)
                 key = f'b{len(blocks) + 1}'
                 blocks.append({**b, 'key': key, **({'from': {'lesson': s['lesson'], 'key': b['key']}} if 'key' in b else {})})
                 step[f] = key
@@ -113,16 +139,16 @@ def lesson(area):
     finish = dict(o.get('finish') or {})
     if finish.get('check'):
         key = f'b{len(blocks) + 1}'
-        blocks.append({**_block(finish['check'], None, area), 'key': key})
+        blocks.append({**_block(finish['check'], None, area, section), 'key': key})
         finish['check'] = key
     return {'title': o['title'], 'minutes': o['minutes'], 'intro': o['intro'], 'picture_note': o.get('picture_note', ''),
             'picture': 'b1' if o.get('picture') else None, 'steps': steps, 'blocks': blocks, 'finish': finish,
             'objectives': [s['title'] for s in o['steps']]}
 
 
-def notes(area):
+def notes(area, section=SD):
     """The overview as the tutor's private notes: each step's content in order, with its block marked."""
-    ov = lesson(area)
+    ov = lesson(area, section)
     parts = [ov['intro'].strip()]
     if ov['picture']:
         parts.append(f"[BLOCK {ov['picture']} · arch] The big picture. {ov['picture_note'].strip()}")

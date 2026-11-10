@@ -1,0 +1,149 @@
+# The overview of one area of the fundamentals course. Format and rules: server/tutor/overviews.py and the system
+# design overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: infrastructure
+title: Cloud and delivery
+minutes: 35
+intro: |
+  This tour covers the four topics in this area, one short step each. Every step follows the same pattern: a problem, the usual answer, its main drawback, and one fact worth keeping. Each step has a simulator to try and ends with a quick check.
+
+  Ripple is moving onto Kubernetes on AWS, with a real pipeline from commit to production, and the platform is now part of your job. The last step is a case study of a smaller production system you know well: your own home server, the box this app is deployed to. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Ripple on Kubernetes and AWS
+  plain: true
+  nodes:
+    - {id: dev, label: Engineer, kind: user, x: 0, y: 0}
+    - {id: ci, label: CI pipeline, kind: process, x: 1, y: 0, note: 'one image per commit'}
+    - {id: tf, label: Terraform, kind: process, x: 2, y: 0, note: 'reviewed plans'}
+    - {id: users, label: Creators, kind: client, x: 0, y: 1}
+    - {id: alb, label: Load balancer, kind: lb, x: 1, y: 1, note: 'public subnet'}
+    - {id: pods, label: Ripple pods, kind: service, x: 2, y: 1, note: 'EKS, private subnets'}
+    - {id: rds, label: RDS Postgres, kind: db, x: 3, y: 1, note: 'Multi-AZ'}
+    - {id: s3, label: S3, kind: storage, x: 3, y: 2, note: 'through a VPC endpoint'}
+  edges:
+    - [dev, ci]
+    - [ci, pods, 'canary']
+    - [tf, pods]
+    - [users, alb]
+    - [alb, pods]
+    - [pods, rds]
+    - [pods, s3]
+  paths:
+    - label: Ship a change
+      steps:
+        - [dev, ci, 'A merge runs lint, tests and the build in under ten minutes, and produces one image tagged with the commit (step 3).']
+        - [ci, pods, 'That same image goes to staging, then to production as a canary on 5% of traffic, and rolls back on its own if errors rise (step 3).']
+        - [ci, pods, 'Kubernetes replaces pods a few at a time and only sends traffic to new ones once their readiness probe passes (step 1).']
+    - label: A creator's request
+      steps:
+        - [users, alb, 'Only the load balancer can be reached from the internet (step 2).']
+        - [alb, pods, 'It forwards to pods in private subnets across two availability zones. Kubernetes keeps the number of pods at what was declared (step 1).']
+        - [pods, rds, 'Each tier admits only the tier in front of it: the database accepts connections on port 5432 from the pods'' security group and nothing else (step 2).']
+        - [pods, s3, 'Uploads go to S3 through a VPC endpoint, which keeps them off the internet and avoids NAT gateway data charges.']
+    - label: Change the infrastructure
+      steps:
+        - [tf, pods, 'An infrastructure change is a Terraform plan, reviewed in the pull request and applied from CI. A plan that would replace the database gets stopped at review (step 3).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. The top row is how changes reach production; the bottom row is what serves creators. Step 4 is the same ideas on a single machine: pull-based deploys with automatic rollback, a tunnel instead of open ports, and backups that get restored.
+steps:
+  - lesson: kubernetes
+    title: Containers and Kubernetes
+    minutes: 9
+    problem: |
+      Ripple's first week on Kubernetes: one pod stays Pending, the API's latency spikes even though its node has idle CPU, and a broken image rolls out to every pod.
+    answer: |
+      A **container** isn't a virtual machine. It's an ordinary Linux process, given its own view of processes, network and files (**namespaces**) and capped in CPU and memory (**cgroups**), started from a layered **image**. It shares the host's kernel.
+
+      **Kubernetes** works by reconciliation: you declare the state you want, and controllers keep comparing it with what's running and closing the gap. A **Deployment** keeps N identical pods and rolls out new versions; a **Service** gives them a stable name and address; StatefulSets, DaemonSets and Jobs cover the other shapes.
+      - **Requests** decide where a pod can be placed: the scheduler needs a node with that much unreserved capacity, or the pod stays **Pending**. **Limits** apply at runtime: over the CPU limit, the container is paused for the rest of each 100 ms period (latency, not errors); over the memory limit, it's killed. A common choice is memory request equal to its limit, and a CPU request with no CPU limit.
+      - **Probes**: **readiness** decides whether a pod gets traffic, **liveness** restarts a process that's stuck, and **startup** holds off liveness while a slow app starts.
+      - A **rolling update** replaces pods gradually and waits for each new one to be ready; `kubectl rollout undo` rolls back.
+    catch: |
+      Without a readiness probe, "running" counts as ready, so a broken version rolls out everywhere. A liveness probe that checks the database restarts every pod at once when the database blips. And Secrets are only base64-encoded unless you turn on encryption at rest.
+    remember: |
+      Requests decide placement, limits decide runtime. Readiness controls traffic; liveness only restarts a stuck process.
+    use: kubernetes/b910
+    check: kubernetes/b1
+    later: [Image layers and caching, The control plane, QoS classes and eviction, Debugging Pending and CrashLoopBackOff]
+    recap: Containers are isolated processes. Kubernetes reconciles to declared state; requests place pods, limits throttle or kill, readiness gates traffic.
+
+  - lesson: aws-core
+    title: Cloud building blocks on AWS
+    minutes: 9
+    problem: |
+      Ripple's AWS account has three problems: an access key was committed to GitHub, the database has a public address, and the monthly bill has a $4,000 line for "NAT gateway".
+    answer: |
+      **IAM** decides who can do what. Everything is denied unless a policy allows it, and an explicit deny beats any allow. Grant specific actions on specific resources. Give workloads **roles**, which hand out short-lived credentials (to an EC2 instance, an ECS task, a Kubernetes pod), and people single sign-on, so there are no long-lived keys to leak.
+
+      A **VPC** is your private network, split into **subnets**, each in one availability zone. **Public subnets** route to the internet and hold only load balancers. **Private subnets** hold app servers and databases, and reach out through a **NAT gateway**. **Security groups** are allow lists per instance; each tier admits only the tier in front of it. **VPC endpoints** let private subnets reach S3 and DynamoDB without the NAT gateway.
+
+      For compute: **Lambda** for short, spiky, event-driven work (up to 15 minutes); containers or EC2 for steady traffic, long connections and long jobs. For storage: **S3** for objects, **EBS** for disks attached to one instance, **RDS Multi-AZ** for a database with a standby in another zone (read replicas are for scaling reads), **DynamoDB** when you can design around fixed access patterns. To survive losing a zone, run every tier in at least two.
+    catch: |
+      Cost traps are easy to miss: NAT gateway data processing (fixed with free gateway endpoints for S3 and DynamoDB), traffic between zones and out to the internet, idle instances, forgotten volumes and snapshots, and log ingestion. Going multi-region costs far more than multi-zone, so it needs a recovery target that justifies it.
+    remember: |
+      Anything not explicitly allowed is denied, and an explicit deny beats any allow.
+    use: aws-core/b911
+    check: aws-core/b3
+    later: [How IAM evaluates policies, A three-tier VPC across two zones, 'SQS, SNS, EventBridge and Kinesis', Savings Plans and Spot]
+    recap: Roles instead of keys, least privilege, private subnets behind a public load balancer, two zones per tier, and watch the NAT bill.
+
+  - lesson: cicd-iac
+    title: Pipelines, deploys and infrastructure as code
+    minutes: 8
+    problem: |
+      A release renamed a database column, and the old version, still running during the rolling deploy, broke immediately. A week later, a Terraform change came within one approval of replacing the production database.
+    answer: |
+      **CI** runs lint, type checks, unit tests and the build on every change, in under about ten minutes. It builds **one immutable artifact** (an image tagged with the commit) and that same artifact is promoted through staging to production. Credentials come from short-lived federation, not keys pasted into CI settings.
+
+      **Deployment strategies**:
+      - **Rolling**: replace a few instances at a time. Cheap, but old and new versions run together.
+      - **Blue-green**: bring up a full new copy and switch traffic. Instant switch back, but double capacity for a while.
+      - **Canary**: send a small share of traffic to the new version, compare metrics, roll back automatically.
+      - **Feature flags**: deploy code switched off and turn it on per user, so deploying and releasing are separate. Stale flags pile up unless removed.
+
+      Since two versions always overlap, change schemas with **expand and contract**: add the new column, write to both, backfill, switch reads, stop writing the old one, then drop it.
+
+      **Terraform** compares your configuration with its state file and the real infrastructure and shows a **plan**. Keep state remote, locked and encrypted, review plans in pull requests, and apply from CI.
+    catch: |
+      A plan line marked `-/+` with "forces replacement" on a database means destroy and recreate: an empty database. Protect stateful resources with `prevent_destroy`. And changes made by hand in the console (**drift**) show up in the next plan, where you either import them or undo them.
+    remember: |
+      During any deploy two versions run side by side, so every change must work with both.
+    use: cicd-iac/b911
+    check: cicd-iac/b3
+    later: [A good pipeline from commit to production, Rollback for each strategy, Remote state and locking, Import and drift]
+    recap: One tested artifact promoted through environments, a progressive rollout, schema changes by expand and contract, and Terraform plans reviewed before apply.
+
+  - lesson: home-lab
+    title: 'Case study: your own box'
+    minutes: 7
+    problem: |
+      Interviewers ask about something you've run in production. Your home server, the box this app deploys to, is a small production system: it deploys itself from GitHub, serves through a tunnel, runs many agent sessions, and keeps backups.
+    answer: |
+      Each part is an interview story:
+      - **Deploys that undo themselves**: the box polls GitHub every two minutes, builds an image tagged with the commit and keeps the running one as `:previous`. A deploy counts only once `/api/health` reports healthy within 90 seconds; otherwise the previous image comes straight back.
+      - **No open ports**: `cloudflared` makes an outbound connection to Cloudflare and requests come back down it, so the router has nothing open. Cloudflare Access signs people in at the edge and adds a signed JWT, which the app verifies itself (signature, issuer, audience, expiry).
+      - **Load shedding by memory**: idle sessions are cleared sooner the less memory is free, in bounded batches, rather than on one fixed schedule. A memory cap per service protects the others but reserves nothing for the machine as a whole.
+      - **Backups you've restored**: nightly encrypted, deduplicated snapshots sent off the box, live SQLite copied with its own backup command (not `cp`), and a monthly restore test.
+      - **Self-healing that knows when to stop**: wait for a problem to persist, try one cheap fix, then one diagnosis, then tell a human; a problem that returns within a day goes straight to a human.
+    catch: |
+      The deploy only records a commit once it succeeds, so a broken commit is retried on every poll and the site flaps until a fix lands. Automatic recovery that repeats the failure is a retry storm; remembering the commit that failed would make it one short outage and an alert.
+    remember: |
+      A deploy counts only once the new version is healthy, and keeping the previous image makes rollback take seconds.
+    use: home-lab/b910
+    check: home-lab/b1
+    later: [Verifying Cloudflare Access tokens, Machine access through service tokens, The memory reaper's levels, Retention and restore drills]
+    recap: Pull-based deploys gated on health with instant rollback, a tunnel instead of open ports, load shedding by memory, and backups you've restored.
+finish:
+  check:
+    type: predict
+    prompt: |
+      A new release passes CI and starts a rolling update, but it crashes on startup because an environment variable is missing in production. What keeps creators from seeing errors?
+    choices:
+      - Nothing; a rolling update replaces the pods whatever happens
+      - The readiness probe. New pods never become ready, so the rollout stalls with the old pods still serving, and you roll back
+      - A liveness probe that checks the database
+      - A higher CPU limit on the new pods
+    answer: 1
+    reveal: |
+      A rolling update only moves on when new pods are ready, so with a readiness probe a crashing version never takes traffic and the old pods keep serving. It's the same idea as the home server's health check before a deploy counts. A liveness probe that checks the database would make things worse during a database blip, and CPU limits have nothing to do with a missing variable.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

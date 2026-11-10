@@ -11,6 +11,10 @@ objectives, blocks and notes. Without one: one objective per lesson in the area,
 simulators, outages and diagrams as its blocks (renumbered, each with `from` naming its lesson and
 key so answers land on the real ledger item), and the map-layer ideas of every lesson as its notes.
 Either way its points are the map-layer ideas of every lesson in the area.
+
+The AI and fundamentals courses have overviews too ("map-<category>" in their section), but only
+where one is authored; there is no fallback page, and their points are every idea in the area
+(those courses aren't layered).
 """
 import re
 
@@ -33,12 +37,26 @@ def map_areas():
     return [(c, t, d) for c, t, d in SD_CATEGORIES if c not in DESIGN_AREAS]
 
 
-def area_lessons(area):
+def area_lessons(area, section='system-design'):
+    if section != 'system-design':
+        return list(courses.COURSES[section]['order'].get(area, []))
     return [k for k, l in SD_LESSONS.items() if l['category'] == area]
 
 
-def area_map(area):
+def track_area(section, area):
+    """(title, description) of a course category, or None."""
+    return next(((t, d) for c, t, d in courses.COURSES[section]['categories'] if c == area), None) if section in courses.COURSES else None
+
+
+def area_map(area, section='system-design'):
     """The lesson for mapping one area with the tutor, or None."""
+    if section != 'system-design':
+        found, ov = track_area(section, area), overviews.lesson(area, section)
+        if not found or not ov:
+            return None
+        return {'section': section, 'id': MAP_PREFIX + area, 'title': f'Overview: {found[0]}', 'category': area,
+                'summary': found[1], 'blocks': ov['blocks'], 'map': {'area': area, 'lessons': area_lessons(area, section)},
+                'overview': ov, 'objectives': ov['objectives']}
     found = next(((t, d) for c, t, d in map_areas() if c == area), None)
     if not found:
         return None
@@ -59,8 +77,8 @@ def area_map(area):
 
 def get(section, key):
     """-> {section, id, title, category, summary, objectives, blocks} or None."""
-    if section == 'system-design' and key.startswith(MAP_PREFIX):
-        return area_map(key[len(MAP_PREFIX):])
+    if section in SECTIONS and key.startswith(MAP_PREFIX):
+        return area_map(key[len(MAP_PREFIX):], section)
     if section == 'system-design':
         l = SD_LESSONS.get(key)
         summary = (l or {}).get('principle', '')
@@ -128,7 +146,7 @@ def map_notes(lesson, catalog=None):
 def notes(lesson, limit=NOTES_LIMIT):
     """The lesson as the tutor's private notes: prose in order, with blocks marked in place."""
     if lesson.get('map'):
-        text = overviews.notes(lesson['map']['area']) if lesson.get('overview') else map_notes(lesson)
+        text = overviews.notes(lesson['map']['area'], lesson['section']) if lesson.get('overview') else map_notes(lesson)
         return text if len(text) <= limit else text[:limit] + '\n…(notes truncated)'
     parts = []
     for b in lesson['blocks']:
@@ -149,6 +167,9 @@ def points(section, key, catalog=None):
     if section == 'system-design' and key.startswith(MAP_PREFIX):
         area = set(area_lessons(key[len(MAP_PREFIX):]))
         return [p for p in kcat.active(c) if p['section'] == section and p['lesson'] in area and p['layer'] == kcat.MAP], []
+    if key.startswith(MAP_PREFIX):
+        area = set(area_lessons(key[len(MAP_PREFIX):], section))
+        return [p for p in kcat.active(c) if p['section'] == section and p['lesson'] in area], []
     own = [p for p in kcat.active(c) if p['section'] == section and p['lesson'] == key]
     ids = {p['id'] for p in own}
     needed = [c['points'][r] for p in own for r in p['requires'] if r not in ids]
@@ -162,6 +183,7 @@ def titles():
     out.update({('system-design', MAP_PREFIX + c): f'Overview: {t}' for c, t, _ in map_areas()})
     for section in SECTIONS[1:]:
         out.update({(section, k): l['title'] for k, l in courses.lessons(section).items()})
+        out.update({(section, MAP_PREFIX + c): f'Overview: {track_area(section, c)[0]}' for c in overviews.areas(section)})
     return out
 
 

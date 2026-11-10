@@ -1,0 +1,231 @@
+# The overview of one area (pass one). Format and rules: storage.yaml and server/tutor/overviews.py.
+# Copy follows the Writing rules in CLAUDE.md.
+area: queues
+title: Queues and background processing
+minutes: 40
+intro: |
+  This tour covers the eight topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step ends with a quick check, and a few have a simulator to try first.
+
+  Ripple now renders link previews, sends emails and counts every click. None of that should make a creator wait, so the work moves off the request path into queues and logs. The area is about keeping the guarantees when it does: nothing lost, nothing done twice by accident, and every copy of the data eventually agreeing. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Work that happens after the request
+  plain: true
+  nodes:
+    - {id: app, label: Creators and visitors, kind: client, x: 0, y: 1}
+    - {id: api, label: Ripple API, kind: service, x: 1, y: 1}
+    - {id: queue, label: Work queue, kind: queue, x: 2, y: 0}
+    - {id: workers, label: Workers, kind: worker, x: 3, y: 0, note: 'previews, emails'}
+    - {id: dlq, label: Dead letters, kind: queue, x: 4, y: 0, note: 'for a person to look at'}
+    - {id: db, label: Postgres, kind: db, x: 2, y: 1, note: 'links, outbox table'}
+    - {id: log, label: Event log, kind: stream, x: 3, y: 1, note: 'Kafka, kept 7 days'}
+    - {id: stream, label: Stream processor, kind: process, x: 4, y: 1, note: 'live click counts'}
+    - {id: batch, label: Nightly batch, kind: worker, x: 3, y: 2, note: 'monthly reports'}
+    - {id: search, label: Search index, kind: db, x: 4, y: 2, note: 'derived copy'}
+  edges:
+    - [app, api]
+    - [api, queue]
+    - [queue, workers]
+    - [workers, dlq, 'after 5 tries']
+    - [api, db]
+    - [db, log, 'outbox relay']
+    - [log, stream]
+    - [log, batch]
+    - [log, search]
+  paths:
+    - label: Render a link preview
+      steps:
+        - [app, api, 'A creator saves a new link.']
+        - [api, queue, 'The API queues a job to fetch the page and render a preview, and replies straight away (step 1).']
+        - [queue, workers, 'A worker takes the job, renders the preview, and only then acknowledges it. If it crashes first, the job comes back for another worker (step 2).']
+        - [workers, dlq, 'A page that crashes the parser every time goes to the dead-letter queue after five tries, so it stops holding up the others (step 3).']
+    - label: Count a click
+      steps:
+        - [app, api, 'A visitor clicks a link.']
+        - [api, db, 'The click and an outbox row describing it are written in one transaction (step 4).']
+        - [db, log, 'A relay publishes the outbox row to the event log, keyed by link ID so each link''s clicks stay in order (step 5).']
+        - [log, stream, 'A stream processor adds it to that minute''s count, which the live dashboard shows (step 7).']
+    - label: Keep the copies in step
+      steps:
+        - [api, db, 'A creator renames a link. The API writes only to Postgres.']
+        - [db, log, 'The change goes onto the log, in order, like every other change.']
+        - [log, search, 'The search index applies the log in the same order, so it ends up matching Postgres (step 8).']
+        - [log, batch, 'Overnight, a batch job reads the day''s events and builds the monthly reports (step 6).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. The top row is a work queue: each job goes to one worker and is gone once done. The middle row is a log: events are kept for days, and the stream processor, the batch job and the search index each read all of them at their own pace. Postgres stays the source of truth, and everything to the right of the log can be rebuilt from it.
+steps:
+  - lesson: queue-basics
+    title: What a queue is for
+    minutes: 5
+    problem: |
+      Saving a link now also renders a preview, sends a welcome email and updates analytics, all inside the request. When the email provider is slow, saving a link takes eight seconds. When it's down, saving a link fails.
+    answer: |
+      Put the work on a queue and let the request return. There are three shapes, for different jobs:
+      - A **work queue**: each message goes to one of many workers and is removed when done. For tasks such as rendering previews.
+      - **Pub/sub**: each subscriber gets its own copy of every message, so email, analytics and search can each react to "link created" at their own pace.
+      - A **retained log** (Kafka, Kinesis): messages are kept for days, and each reader keeps its own position, so a new reader can start from the beginning and a broken one can go back and reprocess.
+
+      A queue **absorbs bursts**: if 10,000 jobs arrive in a minute and workers handle 100 a second, the backlog grows during the burst and drains afterwards. It also **isolates** the two sides: a slow or failed consumer no longer slows or fails the producer.
+    catch: |
+      A queue doesn't add capacity. If jobs arrive faster than workers finish them for long enough, the backlog never drains. It also adds waiting time, another system to run, messages that can arrive twice, and "accepted" no longer meaning "done". On a shared queue, one customer's bulk import can make everyone else wait unless work is shared out fairly per customer.
+    remember: |
+      Alert on the age of the oldest message, not the number waiting. 10,000 messages might be two seconds of work or two hours.
+    use: queue-basics/b5
+    use_note: The first two challenges are enough for now (drain the burst, then see a backlog that never drains).
+    check: queue-basics/b1
+    later: [Working out drain time, 'Prefetch, priorities and fairness per customer', Autoscaling on lag, Bounded queues that reject work]
+    recap: A work queue hands each job to one worker, pub/sub gives every subscriber a copy, a log keeps events to replay. Queues absorb bursts but add no capacity.
+
+  - lesson: acknowledgements
+    title: When to say "done"
+    minutes: 4
+    problem: |
+      A preview worker takes a job, acknowledges it straight away, then crashes. The job is gone and the preview never appears. The team moves the acknowledgement to after the work, and now a crash at the wrong moment renders some previews twice.
+    answer: |
+      Where the consumer acknowledges decides what a crash costs:
+      - **Acknowledge before the work**: a crash loses the message (**at-most-once**). Acceptable only for data you can afford to lose, such as sampled telemetry or live cursor positions.
+      - **Acknowledge after the work**: a crash means the message is delivered again (**at-least-once**). This is the usual choice.
+
+      So consumers must be **idempotent**: safe to run twice. For database effects, record the message ID with a unique constraint in the same transaction as the change, and skip any message whose ID is already there.
+
+      While a worker holds a message, the queue hides it from others for a **visibility timeout**. If the worker doesn't acknowledge in time, the message reappears for someone else, so set the timeout longer than the work and extend it for long jobs.
+    catch: |
+      Even with the acknowledgement in the right place, duplicates still happen: network blips, restarts and broker failovers all cause redelivery. And a publisher confirm only means the broker has stored the message, not that anyone has processed it.
+    remember: |
+      Acknowledge after the work, and make the work safe to repeat.
+    check: acknowledgements/b2
+    later: [Sizing visibility timeouts, Idempotent consumers in SQL, Publisher confirms and durable queues, Committing offsets in a log]
+    recap: Ack before the work loses messages on a crash, ack after repeats them. Ack after and make consumers idempotent.
+
+  - lesson: dead-letters
+    title: Messages that will never succeed
+    minutes: 4
+    problem: |
+      One creator's link points at a page whose HTML crashes the preview parser. The worker retries it again and again, and the previews queued behind it wait.
+    answer: |
+      Sort failures into three kinds, because each needs a different response:
+      - **Transient** (a 503, a lock timeout): retry with backoff, through a delayed retry so the main queue keeps moving.
+      - **Permanent** (invalid data, a record that doesn't exist): retrying won't help. Move the message to a **dead-letter queue** (DLQ) quickly, with the error attached, for a person or a code fix.
+      - **The dependency is down** (every message fails because the database is unreachable, or the email provider is rate limiting): don't fail messages one by one. Pause or slow the whole consumer.
+
+      Every retry loop needs a limit and a destination, such as "after 5 attempts, move it to the DLQ". Once the bug is fixed, the dead-lettered messages are fed back in (**redriven**) gradually.
+    catch: |
+      In an ordered log such as a Kafka partition, a message that never succeeds blocks everything behind it in that partition: its lag climbs while the others look fine and health checks still pass. And if a dependency outage is treated as permanent failure, the DLQ fills with thousands of good messages.
+    remember: |
+      A DLQ is only useful if someone owns it and gets alerted when messages land in it.
+    check: dead-letters/b1
+    later: [Delayed retries without blocking a partition, Owning and alerting on a DLQ, Redriving safely, Circuit breakers on consumers]
+    recap: Retry transient failures with backoff, dead-letter permanent ones, pause the consumer when a dependency is down. Someone must own the DLQ.
+
+  - lesson: outbox
+    title: Save and publish without losing either
+    minutes: 4
+    problem: |
+      The API inserts a new link into Postgres, then publishes "link created" to the event log. A deploy kills the process between the two. The link exists, but search, email and analytics never hear about it, and nothing reports an error.
+    answer: |
+      A database and a message broker can't share a transaction, so two separate writes can always be split by a crash. Changing the order doesn't help: publish first and a failed insert leaves an event for a link that doesn't exist. Publishing inside the transaction just before the commit doesn't help either, because the broker knows nothing about the transaction: if the commit then fails, the event is already out.
+
+      The **transactional outbox** fixes it. In the same transaction as the business change, insert the event into an `outbox` table. Both commit or neither does. A separate **relay** then publishes pending outbox rows to the broker and marks them sent, either by polling the table or by reading the database's change log.
+    catch: |
+      The relay delivers at least once (it can crash after publishing and before marking a row sent), so consumers must still deduplicate, typically with an "inbox" table of message IDs they've processed. The relay is another moving part that adds a little delay, and old outbox rows need cleaning up.
+    remember: |
+      A transaction only covers one system, so put the intent to publish inside the database.
+    check: outbox/b3
+    later: [Polling relay versus change data capture, Keeping order per entity, The inbox table, 'Alternatives: change data capture on business tables, event sourcing']
+    recap: A write and a publish can't be atomic. Write the event to an outbox table in the same transaction and let a relay publish it.
+
+  - lesson: event-streams
+    title: Partitions and ordering in a log
+    minutes: 5
+    problem: |
+      Every click goes onto a Kafka topic. The analytics team needs each link's clicks in order, and one large customer, with 40% of all traffic, is always minutes behind however many consumers they add.
+    answer: |
+      A topic is split into **partitions**. The producer picks one with `hash(key) % partitions`, so every event with the same key goes to the same partition. Each partition is an ordered sequence, and within a **consumer group** each partition is read by exactly one consumer. Different groups read independently, each keeping its own position (**offset**).
+
+      That one design decides three things:
+      - **Ordering** exists only within a partition, so events that must stay in order need the same key (the link ID, the order ID). Events with no ordering need can have no key, which spreads them evenly.
+      - **Parallelism** is capped by the partition count: with 6 partitions, a seventh consumer sits idle.
+      - **Retention** keeps events for days after they're read, so a consumer can be rewound to reprocess.
+    catch: |
+      A key with a large share of traffic sends all of it to one partition and one consumer, and adding consumers doesn't help. And increasing the partition count later changes where keys hash to, so for a while a key's new events can be processed before its old ones.
+    remember: |
+      Order is per key, never across the whole topic.
+    use: event-streams/b1
+    use_note: Try the first and third challenges (idle consumers, then one tenant with 40% of traffic).
+    check: event-streams/b3
+    later: [Choosing a partition count, Rebalancing and lag, Log compaction, Event schemas that can change]
+    recap: The key picks the partition, a partition is ordered and read by one consumer per group. Order is per key; one hot key goes to one consumer.
+
+  - lesson: batch-processing
+    title: Batch jobs over all the data
+    minutes: 4
+    problem: |
+      Marcus wants a monthly report of clicks per creator, joined with each creator's plan and country. That's 30 billion clicks, far too many to query live.
+    answer: |
+      A **batch job** reads a large, fixed input and writes a new output, and is judged on throughput rather than response time. Its inputs never change, so a failed task can simply be run again. **MapReduce** is the classic shape: **map** reads records and emits a key with each, **shuffle** moves all records with the same key to the same machine, and **reduce** combines them. Newer engines such as Spark do the same with less writing to disk in between.
+
+      Most of the cost is in **joins**, and the strategy depends on the sizes:
+      - **Broadcast hash join**: one side is small enough to copy to every worker (a 50 MB country list), so the large side never moves.
+      - **Sort-merge join**: both sides are large, so shuffle both by the key and join matching groups.
+      - **Partitioned hash join**: both sides are already split the same way by the key, so each worker joins its own partition locally.
+    catch: |
+      **Skew**: if one creator has 60% of the clicks, one worker gets 60% of the data instead of 1%, and the whole job waits about 60 times longer for it. The fix is to split the hot key across several workers. And write the output as a new file or table and switch over to it, rather than row by row into a live database.
+    remember: |
+      A batch job is only as fast as its largest partition.
+    check: batch-processing/b9
+    later: [How much data a shuffle moves, Splitting hot keys, Writing batch output safely, Dataflow engines]
+    recap: Batch jobs read fixed inputs, so failed tasks just rerun. Broadcast small tables, sort-merge large ones, and watch for one hot key.
+
+  - lesson: stream-processing
+    title: Processing events as they arrive
+    minutes: 4
+    problem: |
+      Sam wants creators to see clicks per minute as they happen, not in tomorrow's report. Some clicks come from phones that were offline and arrive minutes late.
+    answer: |
+      A **stream processor** reads the log continuously and keeps running results. Group events by **event time** (when the click happened), not processing time (when it arrived), or late clicks land in the wrong minute. Pick the window to fit the question:
+      - **Tumbling**: fixed and non-overlapping, such as each clock minute.
+      - **Hopping**: fixed length but overlapping, such as a 10-minute average recomputed every minute.
+      - **Sliding**: relative to each event, such as "two clicks from the same IP within 5 seconds".
+      - **Session**: ends after a gap of inactivity, such as a visit that ends after 30 idle minutes.
+
+      To survive a crash, the processor saves **checkpoints** of its state and its position in the log, and on restart replays from the last checkpoint.
+    catch: |
+      Replaying after a crash means some events are processed again, so "exactly once" really means each event affects the result once. That needs idempotent writes (overwrite the count for a window rather than adding to it) or committing the output and the log position together. Late events force a choice between waiting longer before closing a window and correcting results afterwards.
+    remember: |
+      Exactly once in streaming comes from replay plus idempotent or atomic writes, not from delivering each event once.
+    check: stream-processing/b3
+    later: [Joining streams with tables, Watermarks and late events, Micro-batching versus checkpointing, Reprocessing from the log]
+    recap: Group by when events happened, in a window that fits the question. Checkpoints and idempotent writes make results correct across crashes.
+
+  - lesson: derived-data
+    title: Keeping copies of the data in step
+    minutes: 5
+    problem: |
+      The API writes each link to Postgres and then to the search index, in two calls. Search sometimes shows a link's old title, and once showed a link the creator had deleted.
+    answer: |
+      Pick one **system of record**, the authoritative copy that's written first. Everything else (caches, search indexes, the warehouse, precomputed views) is **derived data**: it can be thrown away and rebuilt from the source.
+
+      Writing to two stores from the application diverges in two ways: two writers can reach the stores in different orders, and a crash between the writes updates one and not the other. The sturdy fix is to write only to the system of record and send every change through **one ordered log** (change data capture or an outbox) that each derived store applies in the same order. When a derived store's logic changes, rebuild it by replaying the log.
+    catch: |
+      Derived stores lag behind the source, so readers can see slightly old data. Every step must be idempotent, which means carrying an operation ID from end to end. And copies drift for reasons nobody predicted, so run regular checks that compare them with the source.
+    remember: |
+      If you could delete a store and rebuild it from somewhere else, it's derived data.
+    use: derived-data/b1
+    check: derived-data/b8
+    later: [Batch and stream layers versus one log, Doing work on write or on read, Uniqueness through a partitioned log, Checking that copies agree]
+    recap: One system of record; everything else is derived. Feed derived stores from one ordered log instead of writing to each.
+finish:
+  check:
+    type: predict
+    prompt: |
+      Every new link must appear in search, and new creators should get a welcome email. Neither may slow down or break saving a link. Which design do you propose?
+    choices:
+      - The API saves the link, then calls the search index and the email provider before replying
+      - The API publishes "link created" to the log first, then saves the link
+      - The API saves the link and an outbox row in one transaction; a relay publishes to the log; search and email each consume it idempotently, with retries and a dead-letter queue
+      - A nightly batch job copies the day's new links to search and sends the emails
+    answer: 2
+    reveal: |
+      The outbox makes saving and publishing atomic, and the log lets search and email each work at their own pace without affecting the request. Consumers acknowledge after the work and deduplicate, so redelivery is harmless, and a broken message ends up in the DLQ instead of blocking the rest. Calling both systems inside the request ties link creation to their speed and availability. Publishing first can announce a link that was never saved. A nightly batch works, but leaves new links out of search and creators without their email for up to a day.
+  play: [r1, r4]
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

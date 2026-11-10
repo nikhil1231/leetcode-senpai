@@ -1,0 +1,128 @@
+# The overview of one area of the fundamentals course. Format and rules: server/tutor/overviews.py and the system
+# design overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: security
+title: Security
+minutes: 30
+intro: |
+  This tour covers the three topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step has a simulator to try and ends with a quick check.
+
+  Ripple's first penetration test report has landed on Marcus's desk, and enterprise customers won't sign until they can log in with their company accounts. The area covers proving who someone is and deciding what they may do, signing in through another provider, and the handful of web attacks that cause most real breaches. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: Who can do what at Ripple
+  plain: true
+  nodes:
+    - {id: evil, label: Another website, kind: external, x: 0, y: 0, note: 'tries a forged request'}
+    - {id: browser, label: "Creator's browser", kind: client, x: 0, y: 1}
+    - {id: idp, label: Identity provider, kind: service, x: 1, y: 0, note: 'company SSO'}
+    - {id: api, label: Ripple API, kind: service, x: 1, y: 1, note: 'checks every object'}
+    - {id: db, label: Postgres, kind: db, x: 2, y: 1, note: 'password hashes'}
+    - {id: fetch, label: Preview fetcher, kind: worker, x: 2, y: 2, note: 'fetches user URLs'}
+    - {id: meta, label: Cloud metadata, kind: external, x: 3, y: 2, note: '169.254.169.254'}
+  edges:
+    - [evil, browser]
+    - [browser, idp, 'SSO']
+    - [browser, api, 'session cookie']
+    - [idp, api]
+    - [api, db]
+    - [api, fetch]
+    - [fetch, meta, 'blocked']
+  paths:
+    - label: Log in with a password
+      steps:
+        - [browser, api, 'A creator types their password.']
+        - [api, db, 'It''s checked against a slow, salted hash (Argon2id or bcrypt), never a fast one like SHA-256 (step 1).']
+        - [api, browser, 'The browser gets a random session ID in a cookie marked HttpOnly, Secure and SameSite. The session lives on the server, so logging out ends it at once.']
+    - label: Sign in with company SSO
+      steps:
+        - [browser, idp, 'An enterprise user is sent to their company''s identity provider, with a PKCE challenge and a random state value (step 2).']
+        - [idp, api, 'The provider redirects back with a short-lived code. Ripple exchanges it directly with the provider for tokens, then checks the ID token''s signature, issuer, audience, expiry and nonce.']
+    - label: Three attacks
+      steps:
+        - [evil, browser, 'A page on another site submits a hidden form to Ripple. With SameSite cookies, the browser doesn''t send the creator''s session with it (step 3).']
+        - [browser, api, 'A logged-in creator changes /invoices/1001 to /invoices/1002. The API loads the invoice, sees it isn''t theirs and returns 404 (steps 1 and 3).']
+        - [fetch, meta, 'Someone asks for a preview of http://169.254.169.254/. The fetcher resolves the address, sees it''s internal and refuses (step 3).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the system. Every arrow into the API carries a claim about who is asking. The API's job is to check that claim (step 1, step 2) and then, separately, to check that this person may do this to this particular thing, which is where most real breaches happen (step 3).
+steps:
+  - lesson: auth-basics
+    title: Who you are, and what you may do
+    minutes: 8
+    problem: |
+      The penetration test found three things: passwords stored as unsalted SHA-256, a logged-in user who can read any invoice by changing its ID, and an API that accepts a token whose header says `"alg": "none"`.
+    answer: |
+      **Authentication** proves who someone is. **Authorisation** decides what they may do, to which thing. HTTP returns **401** when there are no valid credentials and **403** when the caller is known but not allowed (or **404**, so IDs can't be probed).
+
+      **Passwords**: never store them, and never store a fast hash. A GPU computes billions of SHA-256 hashes a second. Use a deliberately slow password hash (**Argon2id**, scrypt or bcrypt) with a unique salt per password, tuned to take tens to hundreds of milliseconds. Add rate limits, checks against breached passwords and multi-factor login, and give the same error for "no such user" and "wrong password".
+
+      **Sessions or tokens**: a server-side session is a random ID in a cookie, looked up on each request, and easy to end. A **JWT** is a signed set of claims any service can verify without a lookup, but it's hard to revoke before it expires. A JWT verifier must check the signature with a trusted key, **pin the algorithm**, and check expiry, issuer and audience.
+
+      **Authorisation models**: roles (RBAC), rules over attributes (ABAC), or relationships (ReBAC, as in Google's Zanzibar).
+    catch: |
+      Most real breaches are authorisation bugs, not broken logins. "Is the user logged in?" and "does the user have the invoice:read role?" both pass for someone else's invoice. Load the object and check it belongs to the caller, deny by default, and take the user's identity and role from the verified session, never from the request body.
+    remember: |
+      Logged in with the right role isn't enough. Check that this object belongs to this caller.
+    use: auth-basics/b5
+    use_note: The first and third challenges are enough for now (forge a token, then find the checks that stop every attack).
+    check: auth-basics/b1
+    later: [Why slow hashes matter, Sessions versus JWTs, 'RBAC, ABAC and ReBAC', Deny by default]
+    recap: Hash passwords slowly with a salt, verify tokens fully, and check every object belongs to the caller. Most breaches are authorisation bugs.
+
+  - lesson: oauth-oidc
+    title: OAuth and signing in with another provider
+    minutes: 7
+    problem: |
+      Enterprise customers want their staff to sign in to Ripple with their company accounts. Separately, a scheduling app wants to post to creators' Ripple accounts without ever seeing their passwords.
+    answer: |
+      **OAuth 2.0** is delegated authorisation: instead of a password, an app gets a **token** granting specific access (**scopes**, such as `links.write`) for a limited time. The **authorisation server** signs the user in and issues tokens; the **resource server** is the API that accepts them.
+
+      The default for any client with a user is the **authorisation code flow with PKCE**: the app sends the user to the authorisation server with a `code_challenge` and a random `state`; the user signs in and agrees; the server redirects back with a short-lived, single-use **code**; the app exchanges the code plus its `code_verifier` for tokens directly with the server. The browser never sees a token, a stolen code is useless without the verifier, and `state` ties the reply to a request this browser made.
+
+      Other grants: **client credentials** for a service acting as itself, with no user; the **device grant** for TVs and command-line tools. Access tokens are short-lived and name the API they're for; refresh tokens are rotated on every use.
+
+      **OpenID Connect** adds login on top: with the `openid` scope, the response also includes an **ID token**, a JWT for the app saying who signed in. Check its signature, issuer, audience (your own client ID), expiry and nonce.
+    catch: |
+      OAuth on its own isn't login. An app that treats any valid access token as proof of who someone is can be fooled by a token issued to a different app; check the ID token's audience. And PKCE doesn't stop an attacker sending the code to their own page; only exact matching of the redirect URI on the server does.
+    remember: |
+      Use the authorisation code flow with PKCE for every client that has a user.
+    use: oauth-oidc/b3
+    use_note: The first two challenges are enough for now (steal a token from the old implicit flow, then find what PKCE alone doesn't stop).
+    check: oauth-oidc/b5
+    later: [The four roles, Refresh token rotation, Validating an ID token, Sender-constrained tokens]
+    recap: OAuth delegates access with scoped tokens; OIDC adds an ID token for login. Code flow with PKCE, exact redirect URIs, and check the audience.
+
+  - lesson: web-attacks
+    title: Web attacks and their defences
+    minutes: 8
+    problem: |
+      The report goes on: a comment containing a script runs in every reader's browser; a page on another site can make a logged-in creator delete their links; and the link preview feature fetched `http://169.254.169.254/` and returned the server's cloud credentials.
+    answer: |
+      Browsers keep sites apart with the **same-origin policy**: a script from one origin (scheme, host and port) can't read another origin's responses, though it can still send requests. Most attacks work around that:
+      - **Cross-site scripting (XSS)**: data rendered as code. Escape output for where it goes (templates do this by default; the risk is in their escape hatches), add a **Content-Security-Policy** so injected scripts don't run, and mark cookies **HttpOnly** so scripts can't read them.
+      - **Cross-site request forgery (CSRF)**: the browser attaches your cookies to a request another site started. **SameSite** cookies, a CSRF token in your own forms, and checking the `Origin` header stop it. Never change state on GET.
+      - **SQL injection**: use parameterised queries, and allow-list anything that can't be a parameter, such as a column to sort by.
+      - **Server-side request forgery (SSRF)**: a feature that fetches user-supplied URLs runs inside your network. Allow-list destinations, or block private and internal addresses after resolving the name and on every redirect, and run fetchers somewhere with no route to internal services.
+      - **CORS** lets a server say which other origins may read its responses. It relaxes the policy, so be exact about which origins.
+    catch: |
+      A defence against one attack doesn't stop another: a CSRF token does nothing against XSS, because a script running on your page can read the token. And some measures only limit the damage: HttpOnly stops a script stealing the cookie, but the script can still act as the user from inside the page.
+    remember: |
+      Each attack has its own root defence: escaping for XSS, SameSite and tokens for CSRF, parameters for SQL injection, egress control for SSRF.
+    use: web-attacks/b1
+    use_note: The first two challenges are enough for now (stop the stored XSS, then see what HttpOnly does and doesn't do).
+    check: web-attacks/b2
+    later: [Origins and sites, 'Stored, reflected and DOM XSS', CORS preflights, Broken access control]
+    recap: XSS is data run as code, CSRF is a request another site starts, SSRF is your server fetching for an attacker. Each has its own root defence.
+finish:
+  check:
+    type: predict
+    prompt: |
+      Ripple's partner API accepts JWTs. A token a partner was issued for a different Ripple service also works against the payouts API, and a logged-in partner can read other partners' payouts by changing an ID. What fixes both?
+    choices:
+      - A longer signing key
+      - Check that each token's audience is the payouts API, and load each payout to check it belongs to the caller
+      - A Content-Security-Policy on the partner dashboard
+      - Moving the API to HTTPS only
+    answer: 1
+    reveal: |
+      The first problem is a missing audience check: a correctly signed token for another service shouldn't be accepted here. The second is broken object-level authorisation: being a valid partner doesn't make every payout yours. A longer key doesn't help when the signature is already valid, a CSP is for XSS, and HTTPS protects tokens in transit but doesn't decide who may use them.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.
