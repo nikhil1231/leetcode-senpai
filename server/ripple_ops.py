@@ -37,7 +37,7 @@ CAMPAIGN_PATH = os.path.join(HERE, '..', 'static', 'simulators', 'ripple.json')
 ECON_PATH = os.path.join(HERE, '..', 'static', 'simulators', 'economics.json')
 SOURCE = 'ripple'
 RUNS, DRAFTS, GENERATED, REVIEWS = 'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews'
-PROMPT_VERSION = 3
+PROMPT_VERSION = 4
 KEY = r'^[A-Za-z0-9_-]{1,80}$'
 UNAVAILABLE = 'This needs the model, which is not connected. The simulator itself still works.'
 FAILED = 'The model could not answer just now. Try again in a moment.'
@@ -611,8 +611,9 @@ async def debrief(rid: str, store=Depends(store_for)):
               "capacity with the peak load, don't confuse the two.\n\n"
               "His reasoning is what he said or typed while designing; it may be dictated and rough. Use it: when a choice rests on a "
               "reason he gave, address that reason directly.\n\n"
-              + ("Reference: 'reference_diff' compares his design with the level's reference design, which he can now see. Fill "
-                 "'reference' with one entry per difference that matters: why the reference does it that way, and where his stated "
+              + ("Reference: 'reference_diff' compares his design with the level's reference design, which he can now see. The cast "
+                 "don't know the reference exists: priya, marcus and jo must never mention or allude to a reference design, only judge his design on "
+                 "its own merits. Fill 'reference' (a separate, neutral comparison shown elsewhere) with one entry per difference that matters: why the reference does it that way, and where his stated "
                  "reasoning was right, partly right or off. Be precise and fair (for example, DNS round-robin does spread load, but "
                  "it can't health-check, drain or react in seconds, and caches hide changes). Extras that cost little are still worth "
                  "explaining: every box is something to run, monitor and pay for, and the habit is to add only what a requirement needs."

@@ -31,7 +31,7 @@
   }
 
   function mount(el, o = {}) {
-    let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false;
+    let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false, refView = false, mineG = null;
     let casePage = null;
     let est = {}, graded = null, notes = '', editing = false, mic = 'idle', voice = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
     const levels = () => camp.levels;
@@ -175,6 +175,7 @@
           <button type="button" class="button" data-step="brief">Brief</button></div></div>
         ${h.length || aiHint ? `<div class="rp-hints">${h.map((x, i) => `<p><b>Hint ${i + 1}.</b> ${esc(x)}</p>`).join('')}${aiHint ? `<div class="rp-msg">${B().avatar('priya')}<div><b>Priya</b><p>${esc(aiHint)}</p></div></div>` : ''}</div>` : ''}
         ${notesHtml()}
+        <div data-reftabs>${refTabsHtml(l)}</div>
         <div class="rp-stage" data-stage></div>
         <section class="rp-results" data-results>${resultsHtml(l)}</section></div>`;
     }
@@ -223,24 +224,58 @@
     function resultsHtml(l) {
       if (!res || !revealed) return '';
       const s = res.summary, prog = posted?.progress, nextL = levels().find(x => x.after === l.id && (!x.side || x.chapter === l.chapter) && (prog || ov.progress).unlocked.includes(x.id));
-      const showRef = l.solution && (s.stars >= 2 || attempts >= 2);
       return `<h3>How the day went</h3>
         ${posted?.first_clear ? `<div class="rp-banner">🎉 Chapter cleared. Ripple made it through “${esc(l.title)}”, and the team will remember it.</div>` : ''}
         ${posted?.unlocked?.length ? `<div class="rp-banner">🔓 Unlocked: ${posted.unlocked.map(id => `<button type="button" class="sim-link" data-open="${esc(id)}">${esc(byId(id)?.title || id)}</button>`).join(', ')}</div>` : ''}
         ${posted?.gaps ? `<p class="bd-fine">${posted.gaps} thing${posted.gaps === 1 ? '' : 's'} you missed will come back in your reviews and with the tutor.</p>` : ''}
         <div class="rp-res-grid"><div>${B().reportHtml(res, { labelOf: builder?.labelOf, conceptLink: conceptChip })}</div>
           <div class="rp-debrief">${debriefHtml()}${s.stars >= 2 && l.debrief ? `<div class="rp-lesson"><h4>The lesson</h4><p>${esc(l.debrief)}</p></div>` : ''}
-            <div class="rp-go">${showRef ? '<button type="button" class="button" data-ref>Compare with the reference design</button>' : ''}
+            <div class="rp-go">${canCompare(l) ? '<button type="button" class="button" data-ref>Compare with the reference design</button>' : ''}
             ${nextL ? `<button type="button" class="button is-primary" data-open="${esc(nextL.id)}">Next: ${esc(nextL.title)} →</button>` : '<button type="button" class="button" data-hub>Back to Ripple Ops</button>'}</div></div></div>`;
+    }
+    // ---------- your design vs the reference ----------
+    // Once the level is passed (or tried twice) two tabs flip the canvas between his design and the reference, with the boxes that differ outlined.
+    const canCompare = l => !!(l.solution && res && revealed && (res.summary.stars >= 2 || attempts >= 2));
+    const cfgKey = n => JSON.stringify(Object.entries(n.cfg || {}).filter(([, v]) => v !== null && v !== undefined && v !== false && v !== '' && v !== 0).sort());
+    // Mark the nodes of `a` that have no counterpart in `b`, matched by component kind (ids and positions don't matter).
+    function diffMarks(a, b, other) {
+      const out = {}, kinds = {};
+      for (const n of b?.nodes || []) (kinds[n.defId] ||= []).push(n);
+      const mine = {};
+      for (const n of a?.nodes || []) (mine[n.defId] ||= []).push(n);
+      for (const [k, list] of Object.entries(mine)) {
+        const pool = [...(kinds[k] || [])], rest = [];
+        for (const n of list) { const i = pool.findIndex(m => cfgKey(m) === cfgKey(n)); if (i >= 0) pool.splice(i, 1); else rest.push(n); }
+        for (const n of rest) { if (pool.length) { pool.shift(); out[n.id] = { kind: 'sized', text: 'Sized differently from ' + other }; } else out[n.id] = { kind: 'new', text: 'Not in ' + other }; }
+      }
+      return out;
+    }
+    function refTabsHtml(l) {
+      if (!canCompare(l)) return '';
+      const pts = refView && debrief?.reference?.length ? `<ul class="rp-ref">${debrief.reference.map(p => `<li><b>${esc(p.point)}</b> <span class="rp-ref-tag is-${esc(p.verdict)}">${esc(REF_TAG[p.verdict] || p.verdict)}</span> ${esc(p.why)}</li>`).join('')}</ul>` : '';
+      return `<div class="rp-reftabs"><div class="rp-tabs" role="tablist"><button type="button" role="tab" class="rp-tab${refView ? '' : ' is-on'}" aria-selected="${!refView}" data-view="mine">Your design</button><button type="button" role="tab" class="rp-tab${refView ? ' is-on' : ''}" aria-selected="${refView}" data-view="ref">Reference design</button>
+        <span class="rp-tabs-key"><i class="rp-key is-new"></i>${refView ? 'not in yours' : 'not in the reference'} <i class="rp-key is-sized"></i>sized differently</span></div>${pts}</div>`;
+    }
+    function paintTabs() { const box = el.querySelector('[data-reftabs]'); if (box) box.innerHTML = refTabsHtml(L); }
+    function applyView() {
+      paintTabs();
+      if (!builder) return;
+      if (!canCompare(L)) { refView = false; builder.show(null); return; }
+      if (refView) builder.show(L.solution, diffMarks(L.solution, mineG, 'yours'));
+      else builder.show(null, diffMarks(builder.graph(), L.solution, 'the reference'));
+    }
+    function setView(ref) {
+      if (!builder || !canCompare(L)) return;
+      if (ref && !refView) mineG = builder.graph();
+      refView = ref; applyView();
     }
     function debriefHtml() {
       if (!ov.enabled) return '';
-      if (dbState === 'busy') return '<div class="rp-msg rp-typing">' + B().avatar('priya') + '<div><b>Priya</b><p>Writing up the post-mortem…</p></div></div>';
+      if (dbState === 'busy') return '<div class="rp-msg rp-typing">' + B().avatar('priya') + '<div><b>Priya</b><p>Writing up the debrief…</p></div></div>';
       if (dbState && dbState !== 'done') return `<p class="rp-err">${esc(dbState)} <button type="button" class="sim-link" data-debrief>Try again</button></p>`;
       if (!debrief) return posted?.id ? '<button type="button" class="button" data-debrief>Get the team\'s debrief</button>' : '';
       const bubble = (who, text) => text ? `<div class="rp-msg">${B().avatar(who)}<div><b>${B().CAST[who][0]} <small>${B().CAST[who][1]}</small></b><p>${esc(text)}</p></div></div>` : '';
-      return `<h4>The post-mortem</h4>${bubble('priya', debrief.priya)}${bubble('marcus', debrief.marcus)}${bubble('jo', debrief.jo)}
-        ${debrief.reference?.length ? `<h4>Against the reference design</h4><ul class="rp-ref">${debrief.reference.map(p => `<li><b>${esc(p.point)}</b> <span class="rp-ref-tag is-${esc(p.verdict)}">${esc(REF_TAG[p.verdict] || p.verdict)}</span> ${esc(p.why)}</li>`).join('')}</ul>` : ''}
+      return `<h4>${res?.summary?.stars >= 2 ? 'The team\'s take' : 'The post-mortem'}</h4>${bubble('priya', debrief.priya)}${bubble('marcus', debrief.marcus)}${bubble('jo', debrief.jo)}
         ${debrief.next?.length ? `<h4>Try next</h4><ul class="rp-next">${debrief.next.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
         ${debrief.weak?.length ? `<div class="rp-chips">${debrief.weak.map(conceptChip).join('')}</div>` : ''}`;
     }
@@ -340,7 +375,7 @@
     }
     async function onRun(r, g, info) {
       if (info.whatif) return;
-      res = r; attempts++; debrief = null; dbState = ''; posted = null; revealed = false; modalPlayed = false; closeModal();
+      res = r; attempts++; debrief = null; dbState = ''; posted = null; revealed = false; modalPlayed = false; closeModal(); refView = false; applyView();
       paintResults();
       // The day is over: stop the mic and wait for the last words, so the debrief grades everything he said.
       const said = window.Dictate?.settle(el);
@@ -364,10 +399,12 @@
       if (!L) return;
       const r = el.querySelector('[data-results]'); if (r) r.innerHTML = modalOpen ? '' : resultsHtml(L);
       const m = el.querySelector('[data-modal-body]'); if (m) fillModal(m);
+      paintTabs();
     }
     function onDayEnd(info) {
       if (dead || info.whatif || !res || revealed) return;
       revealed = true;
+      applyView();
       if (info.finished) openModal(); else paintResults();
     }
     function fillModal(body) {
@@ -460,7 +497,7 @@
     }
     async function paint() {
       if (dead) return;
-      modalOpen = false;
+      modalOpen = false; refView = false;
       stopBuilder();
       o.onRoute?.();
       if (view === 'hub') { el.innerHTML = hubHtml(); return; }
@@ -512,9 +549,8 @@
       else if (d.chatClose !== undefined) { keepChat(); chat = null; clearInterval(clock); paintChat(); }
       else if (d.chatEnd !== undefined) await chatEnd().then(keepChat);
       else if (d.debrief !== undefined) getDebrief();
-      else if (d.ref !== undefined && builder && L.solution) {
-        if (confirm('Load the reference design? Yours stays one Undo away.')) { builder.setGraph(L.solution); el.querySelector('[data-stage]')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
-      }
+      else if (d.view !== undefined) setView(d.view === 'ref');
+      else if (d.ref !== undefined && builder && L.solution) { closeModal(); setView(true); el.querySelector('[data-reftabs]')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
     };
     function rerenderStrip() {      // hints and notes sit above the builder: redraw them without remounting it
       const wrap = el.querySelector('.rp-build');

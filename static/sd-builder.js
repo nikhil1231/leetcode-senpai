@@ -74,9 +74,10 @@
     const game = opts.mode === 'game', key = opts.storageKey || KEY;
     let defs = null, S = null, sel = null, group = new Set(), box = null, undo = [], drag = null, link = null, dead = false, saveTimer = null;
     let play = null;           // {res, h, timer} while a simulated day is on screen
+    let held = null, marks = null;   // held: his design, set aside while a reference is on show (view-only, never saved); marks: node id -> diff tag
     const def = id => defs.find(d => d.id === id) || { label: id, icon: '▫️', border: '#444c56' };
     const labelOf = id => def(id).label;
-    const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { writeLocal(key, S); opts.onChange?.(graph()); }, 250); };
+    const save = () => { if (held) return; clearTimeout(saveTimer); saveTimer = setTimeout(() => { writeLocal(key, S); opts.onChange?.(graph()); }, 250); };
     const snapshot = () => { undo.push(JSON.stringify({ nodes: S.nodes, edges: S.edges, settings: S.settings })); if (undo.length > 60) undo.shift(); };
     const touch = () => { stopPlay(false); save(); paintCanvas(); paintPanel(); paintBar(); };
     const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -133,7 +134,8 @@
       nodes.innerHTML = S.nodes.map(n => {
         const d = def(n.defId), on = (sel?.kind === 'node' && sel.id === n.id) || group.has(n.id), st = tick?.nodes[n.id];
         const heat = st ? ` is-${st.status}` : '';
-        return `<div class="bd-node${on ? ' is-sel' : ''}${heat}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px;width:${W}px;height:${H}px;--b:${esc(d.border)}${st ? `;--u:${Math.min(1, st.util)}` : ''}">
+        const mk = marks?.[n.id];
+        return `<div class="bd-node${on ? ' is-sel' : ''}${heat}${mk ? ' is-diff is-diff-' + mk.kind : ''}" ${mk ? `title="${esc(mk.text)}" ` : ''}data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px;width:${W}px;height:${H}px;--b:${esc(d.border)}${st ? `;--u:${Math.min(1, st.util)}` : ''}">
           ${['top', 'right', 'bottom', 'left'].map(s => `<i class="bd-h bd-h-${s}" data-handle="${s}"></i>`).join('')}<span class="bd-icon">${d.icon}</span><span class="bd-label">${esc(d.label)}</span>
           ${st && n.defId !== 'client' ? `<span class="bd-util">${st.status === 'down' ? 'DOWN' : st.util < 0.01 ? '<1%' : Math.round(st.util * 100) + '%'}</span>` : `<span class="bd-badge">${esc(nodeBadge(n))}</span>`}</div>`;
       }).join('');
@@ -202,6 +204,7 @@
       if (repaint) { paintCanvas(); paintPlay(); paintPanel(); } else paintPlay();
     }
     function runDay(extra) {
+      if (held) return status('Switch back to your design to run the day');
       if (!S.nodes.length) return status('Draw something first');
       const scn = extra ? { ...scenario(), events: [...(scenario().events || []), ...extra] } : scenario();
       const res = Sim.run(scn, graph(), econ);
@@ -510,9 +513,19 @@
     }).catch(err => { if (!dead) el.innerHTML = `<p class="bd-note">Could not load the builder (${esc(err.message)}).</p>`; });
     return {
       ready,
-      destroy() { dead = true; clearTimeout(saveTimer); stopPlay(false); if (S) writeLocal(key, S); (el._bdOffs || []).forEach(f => f()); },
+      // View another graph (the reference) without touching his: show(g, marks) swaps it in, show(null) restores his.
+      show(g, m) {
+        if (!S) return;
+        if (g && !held) held = { nodes: S.nodes, edges: S.edges, settings: S.settings };
+        if (!g && !held) { marks = m || null; paintCanvas(); return; }
+        if (g) { S.nodes = (g.nodes || []).map(n => ({ ...n, cfg: n.cfg ? { ...n.cfg } : undefined })); S.edges = (g.edges || []).map(e => ({ ...e })); S.settings = { regions: 1, crossRegion: 'async', ...(g.settings || {}) }; }
+        else { S.nodes = held.nodes; S.edges = held.edges; S.settings = held.settings; held = null; }
+        marks = m || null; sel = null; group.clear(); stopPlay(false); paintCanvas(); paintPanel(); paintBar();
+        el.classList.toggle('is-viewing', !!held);
+      },
+      destroy() { dead = true; clearTimeout(saveTimer); stopPlay(false); if (S && !held) writeLocal(key, S); (el._bdOffs || []).forEach(f => f()); },
       state: () => S, graph, setGraph, run: runDay, labelOf, econ: () => econ,
-      flush() { clearTimeout(saveTimer); if (S) { writeLocal(key, S); opts.onChange?.(graph()); } },
+      flush() { clearTimeout(saveTimer); if (S && !held) { writeLocal(key, S); opts.onChange?.(graph()); } },
     };
   }
 
