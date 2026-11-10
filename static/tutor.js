@@ -91,7 +91,7 @@
       t.info = info; t.overview = overview;
       if (info.active) t.session = info.active;
       // A conversation waiting on this lesson opens by itself: the tutor is the default way in.
-      if (info.active && info.enabled && !t.notes && !queued) t.open = true;
+      if (info.active && info.enabled && !t.notes && !queued && !t.ctx.lesson.overview) t.open = true;   // an overview page shows itself first
     } catch (e) { if (T === t) t.host.innerHTML = ''; return; }
     paint();
     takeQueued();
