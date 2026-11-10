@@ -394,6 +394,7 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
   border-right: 1px solid var(--line);
   backdrop-filter: blur(20px) saturate(1.3);
   transition: opacity .3s var(--ease), filter .3s var(--ease);
+  z-index: 30;   /* above positioned page content, so the section menu is never painted under a card */
 }
 
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 8px 20px; min-width: 0; }
@@ -3059,7 +3060,7 @@ body.section-track .foot-chips { display: none; }
 /* Phone: in System Design and the tracks the sidebar is three rows tall (brand, section nav, tools), so pinning it
    would hide a quarter of the screen. It scrolls away; the topbar stays pinned. */
 @media (max-width: 960px) {
-  body.section-design .sidebar, body.section-track .sidebar { position: static; }
+  body.section-design .sidebar, body.section-track .sidebar { position: relative; }   /* still above the page, for the section menu */
 }
 
 /* Settings > Usage */

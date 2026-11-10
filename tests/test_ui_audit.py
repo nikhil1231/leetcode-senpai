@@ -86,3 +86,15 @@ def test_section_accents_are_legible():
         panel = _hsl_hex(float(p['h']), 13, 10.5)
         assert _contrast(p['accent'].strip(), panel) >= 4.5, f'{sid}: accent text on its panel is too faint'
         assert _contrast(p['on-accent'].strip(), p['accent'].strip()) >= 4.5, f'{sid}: button label on accent is too faint'
+
+
+def test_the_sidebar_stacks_above_home_cards():
+    """The section menu opens out of the sidebar over the page; Home cards are positioned, so the sidebar needs a
+    z-index in every section or the cards paint over the menu."""
+    css = open('static/style.css', encoding='utf-8').read()
+    base = re.search(r'\n\.sidebar \{([^}]*)\}', css).group(1)
+    z = int(re.search(r'z-index:\s*(\d+)', base).group(1))
+    for f in ('static/hub.css', 'static/readiness.css', 'static/next-up.css', 'static/tutor.css'):
+        for m in re.finditer(r'z-index:\s*(\d+)', open(f, encoding='utf-8').read()):
+            assert int(m.group(1)) < z, f'{f} puts page content (z-index {m.group(1)}) at or above the sidebar ({z})'
+    assert 'body.section-track .sidebar { position: static' not in css and 'section-design .sidebar { position: static' not in css
