@@ -6,7 +6,10 @@
    are still talking; the better text swaps in moments after you stop, unless
    you've edited inside it. Submit handlers await Dictate.settle(field) so
    grading reads that text — bounded, and instant when nothing is pending.
-   The button or Esc stops listening; typing in the field takes over at once. */
+   The button or Esc stops listening; typing in the field takes over at once.
+   Dictate.listen(sink) is the same engine without a field, for a view that
+   shows the words itself (Ripple Ops' reasoning log): sink is
+   { el, get(), set(text), live(), ui(state), idleMs? }, el scopes settle(). */
 (function () {
   "use strict";
 
@@ -42,7 +45,7 @@
     // Stop dictation in `scope` (a field, a container, or everything) and wait for its text.
     // Null when nothing is pending, so a caller can skip the await and stay synchronous.
     settle(scope) {
-      const mine = [...pending].filter((s) => !scope || scope === s.field || (scope.contains && scope.contains(s.field)));
+      const mine = [...pending].filter((s) => !scope || scope === s.el || (scope.contains && scope.contains(s.el)));
       if (!mine.length) return null;
       mine.forEach((s) => { if (!s.halted) stop(s); });
       const timeout = new Promise((r) => setTimeout(r, SETTLE_MS));
@@ -68,7 +71,7 @@
   const MIC = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v2.5"/></svg>';
 
   const notify = (msg) => { if (typeof toast === "function") toast(msg); };
-  const live = (s) => s.field.isConnected && !s.field.disabled;
+  const live = (s) => s.sink.live();
   const wantAudio = () => Boolean(FORMAT && navigator.mediaDevices && typeof llmEnabled !== "undefined" && llmEnabled);
 
   // ---- server re-transcription -----------------------------------------------------
@@ -116,32 +119,44 @@
 
   // ---- live recognition --------------------------------------------------------------
   function render(s) {
-    const f = s.field;
-    f.value = compose(s.prefix, [...s.done, ...s.run], s.interim);
-    f.scrollTop = f.scrollHeight;
-    f.dispatchEvent(new Event("input", { bubbles: true }));
+    s.sink.set(compose(s.prefix, [...s.done, ...s.run], s.interim));
   }
 
-  function setUi(btn, state) {
+  const setUi = (s, state) => s.sink.ui(state);
+
+  function buttonUi(btn, state) {
     btn.classList.toggle("is-listening", state === "listening");
     btn.classList.toggle("is-transcribing", state === "transcribing");
     btn.setAttribute("aria-pressed", String(state === "listening"));
     btn.title = state === "listening" ? "Stop dictation (Esc)" : state === "transcribing" ? "Improving the transcript…" : "Dictate";
   }
 
-  async function start(field, btn) {
+  // A textarea as a sink: the words go into it as if typed.
+  const fieldSink = (field, btn) => ({
+    el: field,
+    get: () => field.value,
+    set(v) {
+      field.value = v;
+      field.scrollTop = field.scrollHeight;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    live: () => field.isConnected && !field.disabled,
+    ui: (state) => buttonUi(btn, state),
+  });
+
+  async function start(sink) {
     if (active) stop(active);
     const rec = new Recognition();
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = LANG;
-    const s = { field, btn, rec, prefix: field.value, done: [], run: [], interim: "", parts: [],
+    const s = { sink, el: sink.el, rec, prefix: sink.get(), done: [], run: [], interim: "", parts: [],
                 stream: null, mr: null, segStart: 0, halted: false, finished: false, abandoned: false,
                 error: null, heard: Date.now() };
     s.settled = new Promise((r) => { s.resolve = r; });
     active = s;
     pending.add(s);
-    setUi(btn, "listening");
+    setUi(s, "listening");
 
     rec.onresult = (e) => {
       if (!live(s)) { cancel(s); return; }
@@ -166,7 +181,7 @@
       s.done.push(...s.run, s.interim);
       s.run = [];
       s.interim = "";
-      const again = !s.halted && !FATAL[s.error] && live(s) && Date.now() - s.heard < IDLE_MS;
+      const again = !s.halted && !FATAL[s.error] && live(s) && Date.now() - s.heard < (s.sink.idleMs || IDLE_MS);
       s.error = null;
       if (again) { try { rec.start(); return; } catch (err) { /* fall through */ } }
       finish(s);
@@ -177,10 +192,11 @@
       try {
         s.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       } catch (e) { s.stream = null; }
-      if (s.halted) { releaseMic(s); finish(s); return; }  // stopped while the mic opened
+      if (s.halted) { releaseMic(s); finish(s); return s; }  // stopped while the mic opened
       if (s.stream) record(s);
     }
     try { rec.start(); } catch (err) { finish(s); }
+    return s;
   }
 
   // Graceful: the recogniser delivers its last words; the audio is sent at once.
@@ -188,7 +204,7 @@
     s.halted = true;
     if (active === s) active = null;
     releaseMic(s);
-    setUi(s.btn, s.parts.length ? "transcribing" : "idle");
+    setUi(s, s.parts.length ? "transcribing" : "idle");
     try { s.rec.stop(); } catch (e) { finish(s); }
   }
 
@@ -198,7 +214,7 @@
     s.rec.onresult = null;
     if (active === s) active = null;
     releaseMic(s);
-    setUi(s.btn, s.parts.length ? "transcribing" : "idle");
+    setUi(s, s.parts.length ? "transcribing" : "idle");
     try { s.rec.abort(); } catch (e) { finish(s); }
   }
 
@@ -212,20 +228,18 @@
     const rough = compose("", s.done, "");
     const done = () => {
       pending.delete(s);
-      if (active?.btn !== s.btn) setUi(s.btn, "idle");
+      if (active?.el !== s.el) setUi(s, "idle");
       s.resolve();
     };
     if (!s.parts.length || !rough) { done(); return; }
-    setUi(s.btn, "transcribing");
+    setUi(s, "transcribing");
     Promise.all(s.parts).then((texts) => {
-      const f = s.field;
       if (!s.abandoned && texts.every((t) => t !== null) && live(s)) {
         const accurate = texts.filter(Boolean).join(" ");
-        const next = upgrade(f.value, rough, accurate);
-        if (next !== f.value) {
-          if (active && active.field === f) active.prefix = upgrade(active.prefix, rough, accurate);
-          f.value = next;
-          f.dispatchEvent(new Event("input", { bubbles: true }));
+        const now = s.sink.get(), next = upgrade(now, rough, accurate);
+        if (next !== now) {
+          if (active && active.el === s.el) active.prefix = upgrade(active.prefix, rough, accurate);
+          s.sink.set(next);
         }
       }
       done();
@@ -245,18 +259,18 @@
     btn.className = "dictate-btn";
     btn.setAttribute("aria-label", "Dictate");
     btn.innerHTML = MIC;
-    setUi(btn, "idle");
+    buttonUi(btn, "idle");
     wrap.appendChild(btn);
     if (focused) field.focus();
 
     btn.addEventListener("mousedown", (e) => e.preventDefault());  // keep the caret in the field
     btn.addEventListener("click", () => {
-      if (active && active.field === field) stop(active);
-      else start(field, btn);
+      if (active && active.el === field) stop(active);
+      else start(fieldSink(field, btn));
       field.focus();
     });
     field.addEventListener("keydown", (e) => {
-      if (!active || active.field !== field) return;
+      if (!active || active.el !== field) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stop(active); return; }
       if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
       cancel(active);
@@ -270,6 +284,14 @@
   scan(document);
   new MutationObserver((records) => {
     for (const r of records) r.addedNodes.forEach((n) => { if (n.nodeType === 1) scan(n); });
-    if (active && !active.field.isConnected) stop(active);  // view re-rendered: release the mic
+    if (active && !live(active)) stop(active);  // view re-rendered: release the mic
   }).observe(document.body, { childList: true, subtree: true });
+
+  window.Dictate.supported = true;
+  // Listen into a sink until stop(); the handle reports whether it is still the one listening.
+  window.Dictate.listen = (sink) => {
+    start(sink);
+    const s = active;  // start() registers the session before its first await
+    return { stop: () => { if (!s.halted) stop(s); }, get listening() { return active === s; } };
+  };
 })();

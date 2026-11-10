@@ -18,6 +18,7 @@
     distributed: 'Distributed', specialised: 'Specialised', casebook: 'Casebook', assist: 'Ripple Assist', generated: 'Generated' };
   const UNITS = { peakReadRps: 'req/s', peakWriteRps: 'req/s', storageGbYear: 'GB', egressTbMonth: 'TB', cacheGb: 'GB',
     questionsPerDay: 'a day', peakQps: 'per second', tokensPerQuestion: 'tokens', largeModelMonthUsd: '$ a month' };
+  const REF_TAG = { extra: 'Not in the reference', missing: 'Reference has it', different: 'Sized differently', same: 'Matches' };
   const MIC = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v2.5"/></svg>';
   let camp = null, sims = null, pending = null, outages = [];
   const readLocal = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
@@ -32,7 +33,7 @@
   function mount(el, o = {}) {
     let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false;
     let casePage = null;
-    let est = {}, graded = null, notes = '', notesOpen = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
+    let est = {}, graded = null, notes = '', editing = false, mic = 'idle', voice = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
     const levels = () => camp.levels;
     const byId = id => levels().find(l => l.id === id);
     el.classList.add('rp-root');
@@ -173,10 +174,52 @@
           ${ov.enabled ? `<button type="button" class="button" data-ai-hint>🫖 Ask Priya</button><button type="button" class="button" data-chat="review">🗣 Review with Marcus</button><button type="button" class="button" data-chat="interview">🎤 Mock interview</button>` : ''}
           <button type="button" class="button" data-step="brief">Brief</button></div></div>
         ${h.length || aiHint ? `<div class="rp-hints">${h.map((x, i) => `<p><b>Hint ${i + 1}.</b> ${esc(x)}</p>`).join('')}${aiHint ? `<div class="rp-msg">${B().avatar('priya')}<div><b>Priya</b><p>${esc(aiHint)}</p></div></div>` : ''}</div>` : ''}
-        <details class="rp-notes" ${notesOpen ?? notes ? 'open' : ''}><summary><span>Your reasoning (Marcus and the debrief read this)</span><button type="button" class="rp-notes-mic" data-notes-mic title="Talk it through: the words are written down, even folded away" aria-label="Dictate your reasoning">${MIC}</button><span class="rp-notes-live">Listening</span></summary><textarea data-notes data-dictate rows="3" placeholder="Why this many servers? Why this database? What happens when a zone dies? Press the mic and talk it through.">${esc(notes)}</textarea></details>
+        ${notesHtml()}
         <div class="rp-stage" data-stage></div>
         <section class="rp-results" data-results>${resultsHtml(l)}</section></div>`;
     }
+    // ---------- your reasoning: talk while you draw ----------
+    // The mic writes into a read-only log that keeps the newest words in view; it needs no focus, so you can
+    // keep dragging boxes while you talk. Editing is for when the mic is off.
+    const canTalk = () => !!window.Dictate?.listen;
+    const NOTES_HINT = 'Why this many servers? Why this database? What happens when a zone dies? Press Talk and think out loud while you draw.';
+    function notesHtml() {
+      const typing = editing || !canTalk(), live = mic === 'listening';
+      const talk = !canTalk() ? '' : mic === 'transcribing'
+        ? '<span class="rp-notes-state">Tidying the transcript…</span>'
+        : `<button type="button" class="button rp-notes-talk${live ? ' is-live' : ''}" data-voice aria-pressed="${live}">${live ? '<span class="rp-notes-dot" aria-hidden="true"></span>Stop' : `${MIC}Talk it through`}</button>`;
+      const edit = canTalk() && mic === 'idle' ? `<button type="button" class="sim-link" data-notes-edit>${editing ? 'Done' : 'Edit'}</button>` : '';
+      return `<section class="rp-notes${live ? ' is-live' : ''}" data-notes-box><div class="rp-notes-head"><span class="rp-notes-title">Your reasoning <small>Marcus and the debrief read this${live ? ' · listening, Esc stops' : ''}</small></span>
+        <span class="rp-notes-tools">${edit}${talk}</span></div>
+        ${typing ? `<textarea data-notes rows="4" aria-label="Your reasoning" placeholder="${esc(NOTES_HINT)}">${esc(notes)}</textarea>`
+          : `<div class="rp-notes-log" data-notes-log role="log" aria-live="polite" data-hint="${esc(NOTES_HINT)}">${esc(notes)}</div>`}</section>`;
+    }
+    function paintNotes() {
+      const box = el.querySelector('[data-notes-box]');
+      if (!box) return;
+      const tmp = document.createElement('div'); tmp.innerHTML = notesHtml();
+      box.replaceWith(tmp.firstElementChild);
+      scrollNotes();
+      if (editing) el.querySelector('[data-notes]')?.focus();
+    }
+    function scrollNotes() { const log = el.querySelector('[data-notes-log]'); if (log) log.scrollTop = log.scrollHeight; }
+    function notesChanged() {
+      clearTimeout(logTimer); logTimer = setTimeout(() => { logNotes(); if (builder) saveDraft(builder.graph()); }, 3000);
+      if (builder) saveDraft(builder.graph());
+    }
+    function startVoice() {
+      editing = false;
+      const lvl = L;                // words still in flight never land in another level's notes
+      voice = window.Dictate.listen({
+        el, idleMs: 10 * 60000,     // a long think while drawing is not the end of the session
+        get: () => notes,
+        set: v => { if (L !== lvl) return; notes = v; const log = el.querySelector('[data-notes-log]'); if (log) { log.textContent = v; scrollNotes(); } notesChanged(); },
+        live: () => !dead && L === lvl,
+        ui: st => { mic = st; if (st === 'idle') voice = null; paintNotes(); },
+      });
+    }
+    function stopVoice() { voice?.stop(); }
+
     function resultsHtml(l) {
       if (!res || !revealed) return '';
       const s = res.summary, prog = posted?.progress, nextL = levels().find(x => x.after === l.id && (!x.side || x.chapter === l.chapter) && (prog || ov.progress).unlocked.includes(x.id));
@@ -197,6 +240,7 @@
       if (!debrief) return posted?.id ? '<button type="button" class="button" data-debrief>Get the team\'s debrief</button>' : '';
       const bubble = (who, text) => text ? `<div class="rp-msg">${B().avatar(who)}<div><b>${B().CAST[who][0]} <small>${B().CAST[who][1]}</small></b><p>${esc(text)}</p></div></div>` : '';
       return `<h4>The post-mortem</h4>${bubble('priya', debrief.priya)}${bubble('marcus', debrief.marcus)}${bubble('jo', debrief.jo)}
+        ${debrief.reference?.length ? `<h4>Against the reference design</h4><ul class="rp-ref">${debrief.reference.map(p => `<li><b>${esc(p.point)}</b> <span class="rp-ref-tag is-${esc(p.verdict)}">${esc(REF_TAG[p.verdict] || p.verdict)}</span> ${esc(p.why)}</li>`).join('')}</ul>` : ''}
         ${debrief.next?.length ? `<h4>Try next</h4><ul class="rp-next">${debrief.next.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
         ${debrief.weak?.length ? `<div class="rp-chips">${debrief.weak.map(conceptChip).join('')}</div>` : ''}`;
     }
@@ -298,6 +342,10 @@
       if (info.whatif) return;
       res = r; attempts++; debrief = null; dbState = ''; posted = null; revealed = false; modalPlayed = false; closeModal();
       paintResults();
+      // The day is over: stop the mic and wait for the last words, so the debrief grades everything he said.
+      const said = window.Dictate?.settle(el);
+      if (said) await said;
+      if (dead) return;
       posted = await postRun(r);
       if (dead) return;
       if (posted?.progress) { ov.progress = posted.progress; }
@@ -391,7 +439,7 @@
     async function openLevel(l) {
       stopBuilder();
       L = l; step = readLocal(`rp-step-${l.id}`) || 'brief'; res = null; posted = null; debrief = null; dbState = ''; graded = null; est = readLocal(`rp-est-${l.id}`) || {};
-      hints = 0; aiHint = ''; chat = null; notes = ''; notesOpen = null; timeline = []; logged = ''; lastSig = ''; clearTimeout(logTimer); attempts = ov.progress.levels[l.base || l.id]?.attempts || 0;
+      hints = 0; aiHint = ''; chat = null; notes = ''; editing = false; timeline = []; logged = ''; lastSig = ''; clearTimeout(logTimer); attempts = ov.progress.levels[l.base || l.id]?.attempts || 0;
       view = 'level';
       await paint();
     }
@@ -399,14 +447,13 @@
       try { const s = await call(`/scenarios/${encodeURIComponent(id)}`); s.generated = true; await openLevel(s); }
       catch (e) { err = e.message; paint(); }
     }
-    function stopBuilder() { if (builder) { builder.flush(); builder.destroy(); builder = null; } casePage?.destroy(); casePage = null; clearInterval(clock); keepChat(); }
+    function stopBuilder() { stopVoice(); if (builder) { builder.flush(); builder.destroy(); builder = null; } casePage?.destroy(); casePage = null; clearInterval(clock); keepChat(); }
     async function mountBuilder() {
       const stage = el.querySelector('[data-stage]');
       if (!stage || !L) return;
       const initial = await initialGraph(L);
       if (dead || !el.contains(stage)) return;
-      const ta = el.querySelector('[data-notes]');
-      if (ta && !ta.value && notes) { ta.value = notes; if (notesOpen == null) ta.closest('details').open = true; }
+      if (notes) paintNotes();      // the draft's reasoning arrived after the first paint
       const scn = L;
       builder = B().mount(stage, { mode: 'game', scenario: scn, toolbox: L.toolbox, storageKey: `rp-canvas-${L.id}`, initial, onChange: saveDraft, onRun, onDayEnd });
       await builder.ready;
@@ -459,7 +506,8 @@
         catch (e) { aiHint = `(Priya couldn't look just now: ${e.message})`; }
         rerenderStrip();
       }
-      else if (d.notesMic !== undefined) { ev.preventDefault(); el.querySelector('.rp-notes .dictate-btn')?.click(); }
+      else if (d.voice !== undefined) { if (voice) stopVoice(); else if (canTalk()) startVoice(); }
+      else if (d.notesEdit !== undefined && mic === 'idle') { editing = !editing; if (!editing) logNotes(); paintNotes(); }
       else if (d.chat) openChat(d.chat);
       else if (d.chatClose !== undefined) { keepChat(); chat = null; clearInterval(clock); paintChat(); }
       else if (d.chatEnd !== undefined) await chatEnd().then(keepChat);
@@ -480,8 +528,7 @@
       const t = ev.target;
       if (t.dataset.est) { est[t.dataset.est] = t.value; writeLocal(`rp-est-${L.id}`, est); }
       else if (t.dataset.notes !== undefined) {
-        notes = t.value; clearTimeout(logTimer); logTimer = setTimeout(() => { logNotes(); if (builder) saveDraft(builder.graph()); }, 3000);
-        if (builder) saveDraft(builder.graph());
+        notes = t.value; notesChanged();
       }
     };
     const onSubmit = ev => {
@@ -494,11 +541,10 @@
     };
     const onKey = ev => {
       if (ev.key === 'Escape' && modalOpen) { ev.preventDefault(); closeModal(); return; }
+      if (ev.key === 'Escape' && voice) { ev.preventDefault(); stopVoice(); return; }
       if (ev.target.matches('[data-chat-text]') && ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ev.target.form?.requestSubmit(); }
       if (ev.target.matches('[data-est]') && ev.key === 'Enter') { ev.preventDefault(); graded = Sim().grade(L, est, L.estimate); paint(); }
     };
-    const onToggle = ev => { if (ev.target.matches?.('.rp-notes')) notesOpen = ev.target.open; };
-    el.addEventListener('toggle', onToggle, true);
     el.addEventListener('click', onClick); el.addEventListener('input', onInput); el.addEventListener('submit', onSubmit); el.addEventListener('keydown', onKey);
 
     (async () => {
@@ -509,7 +555,7 @@
       if (want && byId(want) && unlocked(want)) await openLevel(byId(want)); else paint();
     })();
 
-    return { route: () => (view === 'level' && L && byId(L.id) ? L.id : ''), destroy() { dead = true; stopBuilder(); clearTimeout(draftTimer); clearTimeout(logTimer); el.removeEventListener('toggle', onToggle, true); el.removeEventListener('click', onClick); el.removeEventListener('input', onInput); el.removeEventListener('submit', onSubmit); el.removeEventListener('keydown', onKey); } };
+    return { route: () => (view === 'level' && L && byId(L.id) ? L.id : ''), destroy() { dead = true; stopBuilder(); clearTimeout(draftTimer); clearTimeout(logTimer); el.removeEventListener('click', onClick); el.removeEventListener('input', onInput); el.removeEventListener('submit', onSubmit); el.removeEventListener('keydown', onKey); } };
   }
 
   // Lessons and the home page link straight into a level.

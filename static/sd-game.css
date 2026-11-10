@@ -150,25 +150,30 @@
 .rp-tools { display:flex; flex-wrap:wrap; gap:6px; }
 .rp-hints { display:grid; gap:6px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
 .rp-hints p { margin:0; font-size:13px; line-height:1.5; }
-.rp-notes { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:6px 10px; }
-.rp-notes summary { cursor:pointer; color:var(--text-2); font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; min-height:30px; }
-.rp-notes summary::before { content:'▸'; color:var(--muted); transition:transform .15s; } .rp-notes[open] summary::before { transform:rotate(90deg); }
-.rp-notes summary::-webkit-details-marker { display:none; } .rp-notes summary { list-style:none; }
-.rp-notes textarea { width:100%; margin:4px 0 4px; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 40px 8px 8px; font:13px var(--font); line-height:1.5; resize:vertical; box-sizing:border-box; }
-.rp-notes-mic { display:grid; place-items:center; width:28px; height:28px; border:1px solid var(--line); border-radius:8px; background:var(--panel2); color:var(--muted); cursor:pointer; padding:0; }
-.rp-notes-mic svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
-.rp-notes-mic:hover { color:var(--text); background:var(--panel3); }
-.rp-notes[open] .rp-notes-mic, .rp-notes:not(:has(.dictate-btn)) .rp-notes-mic { display:none; }
-.rp-notes-live { display:none; font-size:12px; font-weight:500; color:var(--red); }
-.rp-notes:not([open]):has(.dictate-btn.is-listening) .rp-notes-live { display:inline; }
-.rp-notes:has(.dictate-btn.is-listening) .rp-notes-mic { color:var(--red); border-color:rgba(251,113,133,.5); background:rgba(251,113,133,.14); animation:dictate-pulse 1.4s ease-in-out infinite; }
-.rp-notes:has(.dictate-btn.is-transcribing) .rp-notes-mic { color:var(--accent); animation:dictate-fade 1s ease-in-out infinite; }
+.rp-notes { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
+.rp-notes.is-live { border-color:rgba(251,113,133,.45); }
+.rp-notes-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; min-height:30px; }
+.rp-notes-title { color:var(--text-2); font-size:13px; font-weight:600; }
+.rp-notes-title small { font-weight:500; color:var(--muted); margin-left:6px; font-size:12px; }
+.rp-notes-tools { display:flex; align-items:center; gap:10px; }
+.rp-notes-talk { display:inline-flex; align-items:center; gap:6px; }
+.rp-notes-talk svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
+.rp-notes-talk.is-live { color:var(--red); border-color:rgba(251,113,133,.5); background:rgba(251,113,133,.14); }
+.rp-notes-dot { width:8px; height:8px; border-radius:50%; background:var(--red); animation:dictate-pulse 1.4s ease-in-out infinite; }
+.rp-notes-state { font-size:12px; color:var(--accent); animation:dictate-fade 1s ease-in-out infinite; }
+.rp-notes-log { margin:6px 0 2px; max-height:7.5em; overflow-y:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:8px; font:13px var(--font); line-height:1.5; color:var(--text); }
+.rp-notes-log:empty::before { content:attr(data-hint); color:var(--muted); }
+.rp-notes textarea { width:100%; margin:6px 0 2px; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; font:13px var(--font); line-height:1.5; resize:vertical; box-sizing:border-box; }
 .rp-results:empty { display:none; }
 .rp-results { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); padding:16px; display:grid; gap:10px; }
 .rp-results h3 { margin:0; font-size:17px; }
 .rp-res-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; align-items:start; }
 .rp-debrief { display:grid; gap:8px; }
 .rp-next { margin:0; padding-left:18px; font-size:13px; line-height:1.5; display:grid; gap:3px; }
+.rp-ref { margin:0; padding:0; list-style:none; font-size:13px; line-height:1.5; display:grid; gap:8px; }
+.rp-ref-tag { display:inline-block; margin:0 4px; padding:0 6px; border-radius:999px; font-size:12px; background:var(--panel2); color:var(--text-2); }
+.rp-ref-tag.is-extra, .rp-ref-tag.is-missing { color:var(--amber); }
+.rp-ref-tag.is-same { color:var(--green); }
 .rp-lesson { background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:10px; padding:10px 12px; } .rp-lesson p { margin:0; font-size:13px; line-height:1.5; }
 .rp-banner { padding:9px 12px; border-radius:10px; background:rgba(53,211,154,.12); border:1px solid rgba(53,211,154,.4); font-size:13px; }
 

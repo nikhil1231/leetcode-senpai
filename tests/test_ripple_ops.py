@@ -117,6 +117,32 @@ def test_reasoning_reads_as_what_he_said_when_with_the_design_then():
     assert ro.reasoning_text('just notes', []) == 'just notes' and ro.reasoning_text('', None) == 'None written.'
 
 
+V0 = {'nodes': [{'id': 'n1', 'defId': 'client'}, {'id': 'd', 'defId': 'dns'}, {'id': 'a', 'defId': 'app-server', 'cfg': {'tier': 's'}},
+                {'id': 'b', 'defId': 'db-sql', 'cfg': {'tier': 's'}}],
+      'edges': [{'from': 'n1', 'to': 'd'}, {'from': 'd', 'to': 'a'}, {'from': 'a', 'to': 'b'}]}
+
+
+def test_sizes_say_when_a_component_is_already_the_cheapest_it_can_be():
+    t = ro.sizing_text(V0, ro.ECON)
+    assert '- b db-sql: 2 vCPU · 8 GB at $140 a month each, about 3,000 reads/s, 800 writes/s each; the smallest size there is' in t
+    assert 'about 500 requests/s each' in t and '- d dns: Managed DNS with geo routing at $5 a month each; the only option' in t
+    big = ro.sizing_text({'nodes': [{'id': 'a', 'defId': 'app-server', 'cfg': {'tier': 'l', 'count': 3}}]}, ro.ECON)
+    assert '× 3' in big and 'smaller sizes exist: s, m' in big
+    assert 'n1' not in t                                   # the client has no size
+
+
+def test_a_design_is_compared_with_the_reference_by_kind_not_by_id():
+    d = ro.reference_diff(V0, ro.LEVELS['garage']['solution'])
+    assert d['extra'] == ['dns'] and d['missing'] == [] and d['sized'] == []
+    assert d['links_extra'] == ['client->dns', 'dns->app-server'] and d['links_missing'] == ['client->app-server']
+    t = ro.reference_text(d)
+    assert '- He added dns; the reference has no dns.' in t and 'client->app-server is only in the reference' in t
+    big = {'nodes': [{'id': 'x', 'defId': 'client'}, {'id': 'y', 'defId': 'app-server', 'cfg': {'tier': 'm'}}], 'edges': [{'from': 'x', 'to': 'y'}]}
+    d = ro.reference_diff(big, ro.LEVELS['garage']['solution'])
+    assert d['missing'] == ['db-sql'] and d['sized'] == [('app-server', {'tier': 'm'}, {'tier': 's'})]
+    assert ro.reference_text(ro.reference_diff(ro.LEVELS['garage']['solution'], ro.LEVELS['garage']['solution'])).startswith('Same components')
+
+
 # ---- HTTP ------------------------------------------------------------------------------
 
 @pytest.fixture
@@ -189,6 +215,28 @@ def test_the_debrief_is_written_once_and_kept_with_the_run(client):
     schema, prompt = client.gens[0]
     assert schema is ro.Debrief and 'app-server' in prompt['design'] and 'Stars: 1/3' in prompt['result']
     assert client.post(f'/api/ripple/runs/{rid}/debrief').json()['jo'] == 'Why small?' and len(client.gens) == 1
+
+
+def test_the_debrief_grades_against_the_reference_once_he_has_beaten_the_level(client):
+    rid = client.post('/api/ripple/runs', json=run(stars=3, key='k4', graph=V0, notes='DNS is cheap and can load balance.')).json()['id']
+    ref = [{'point': 'DNS', 'verdict': 'extra', 'why': 'Round-robin DNS spreads load — but cannot health-check.'}]
+    client.generated.append({'priya': 'Fine.', 'marcus': 'Floor price.', 'jo': 'Why?', 'reference': ref})
+    d = client.post(f'/api/ripple/runs/{rid}/debrief').json()
+    assert d['reference'][0]['why'] == 'Round-robin DNS spreads load: but cannot health-check.'
+    _, prompt = client.gens[0]
+    assert 'He added dns' in prompt['reference_diff'] and 'db-sql' in prompt['reference_design']
+    assert 'the smallest size there is' in prompt['sizes'] and 'can load balance' in prompt['his_reasoning']
+
+
+def test_a_first_failed_attempt_gets_no_reference_comparison(client):
+    rid = client.post('/api/ripple/runs', json=run(stars=0, key='k5', graph=V0)).json()['id']
+    client.generated.append({'priya': 'Down.', 'marcus': 'Over.', 'jo': 'Why?', 'reference': [{'point': 'x', 'verdict': 'same', 'why': 'leak'}]})
+    d = client.post(f'/api/ripple/runs/{rid}/debrief').json()
+    assert d['reference'] == [] and 'reference_diff' not in client.gens[0][1]
+    rid = client.post('/api/ripple/runs', json=run(stars=0, key='k6', graph=V0)).json()['id']   # second try: he can see it now
+    client.generated.append({'priya': 'Down.', 'marcus': 'Over.', 'jo': 'Why?'})
+    client.post(f'/api/ripple/runs/{rid}/debrief')
+    assert 'reference_diff' in client.gens[1][1]
 
 
 def test_the_review_passes_the_design_and_returns_a_whatif(client):

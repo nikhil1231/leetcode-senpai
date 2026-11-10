@@ -34,9 +34,10 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/ripple', tags=['ripple'])
 HERE = os.path.dirname(os.path.abspath(__file__))
 CAMPAIGN_PATH = os.path.join(HERE, '..', 'static', 'simulators', 'ripple.json')
+ECON_PATH = os.path.join(HERE, '..', 'static', 'simulators', 'economics.json')
 SOURCE = 'ripple'
 RUNS, DRAFTS, GENERATED, REVIEWS = 'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews'
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 KEY = r'^[A-Za-z0-9_-]{1,80}$'
 UNAVAILABLE = 'This needs the model, which is not connected. The simulator itself still works.'
 FAILED = 'The model could not answer just now. Try again in a moment.'
@@ -49,12 +50,13 @@ COMPONENTS_LATE = ['client', 'app-server', 'db-sql', 'dns', 'load-balancer', 'ca
                    'websocket-server', 'db-graph', 'payment', 'reconciliation', 'spam-filter', 'matching-engine']
 
 
-def _load():
-    with open(CAMPAIGN_PATH, encoding='utf-8') as fh:
+def _load(path=CAMPAIGN_PATH):
+    with open(path, encoding='utf-8') as fh:
         return json.load(fh)
 
 
 CAMPAIGN = _load()
+ECON = _load(ECON_PATH)['components']
 LEVELS = {l['id']: l for l in CAMPAIGN['levels']}
 CONCEPTS = CAMPAIGN['concepts']
 
@@ -153,6 +155,62 @@ def graph_text(graph, limit=60):
     st = (graph or {}).get('settings') or {}
     tail = f"\nRegions: {st.get('regions', 1)}, cross-region replication: {st.get('crossRegion', 'async')}" if st.get('regions', 1) > 1 else ''
     return '\n'.join(out) + ('\nConnections: ' + ', '.join(edges) if edges else '\nNo connections.') + tail
+
+
+def _tier(spec, cfg):
+    """The tier a node runs on, as sd-sim.js picks it: its chosen one, else the default, else the second."""
+    tiers = spec.get('tiers') or []
+    pick = next((t for t in tiers if t['id'] == (cfg or {}).get('tier')), None)
+    return pick or next((t for t in tiers if t['id'] == spec.get('default')), None) or (tiers[min(1, len(tiers) - 1)] if tiers else None)
+
+
+def sizing_text(graph, econ):
+    """Each node's size, price and capacity, and whether anything cheaper exists, so feedback never asks him to shrink the floor."""
+    out = []
+    for n in (graph or {}).get('nodes', [])[:60]:
+        spec = econ.get(n.get('defId')) or {}
+        t = _tier(spec, n.get('cfg'))
+        if not t:
+            continue
+        count = int((n.get('cfg') or {}).get('count') or 1)
+        cap = ', '.join(f"{t[k]:,} {u}" for k, u in (('rps', 'requests/s'), ('reads', 'reads/s'), ('writes', 'writes/s')) if t.get(k))
+        cheaper = [x for x in spec.get('tiers') or [] if (x.get('usd') or 0) < (t.get('usd') or 0)]
+        floor = ('the only option' if len(spec.get('tiers') or []) == 1 else 'the smallest size there is') if not cheaper and count == 1 else \
+            (f"{count} of them" if not cheaper else f"smaller sizes exist: {', '.join(x['id'] for x in cheaper)}")
+        out.append(f"- {n['id']} {n['defId']}: {t.get('label') or t['id']} at ${t.get('usd', 0):,} a month each"
+                   + (f" × {count}" if count > 1 else '') + (f", about {cap} each" if cap else '') + f"; {floor}")
+    return '\n'.join(out) or 'Nothing sized.'
+
+
+def reference_diff(graph, solution):
+    """His design against the level's reference, by component kind (ids and positions don't matter).
+    -> {'extra': [defId], 'missing': [defId], 'sized': [(defId, his cfg, reference cfg)], 'links_extra': [...], 'links_missing': [...]}"""
+    def kinds(g):
+        by = {}
+        for n in (g or {}).get('nodes', []):
+            by.setdefault(n.get('defId'), []).append({k: v for k, v in (n.get('cfg') or {}).items() if v not in (None, False, '', 0)})
+        return by
+
+    def links(g):
+        ids = {n['id']: n.get('defId') for n in (g or {}).get('nodes', [])}
+        return {(ids[e['from']], ids[e['to']]) for e in (g or {}).get('edges', []) if e.get('from') in ids and e.get('to') in ids}
+
+    mine, ref = kinds(graph), kinds(solution)
+    extra = [k for k in mine for _ in range(len(mine[k]) - len(ref.get(k, [])))]
+    missing = [k for k in ref for _ in range(len(ref[k]) - len(mine.get(k, [])))]
+    sized = [(k, a, b) for k in mine if k in ref for a, b in zip(mine[k], ref[k]) if a != b]
+    lm, lr = links(graph), links(solution)
+    return {'extra': extra, 'missing': missing, 'sized': sized,
+            'links_extra': sorted(f"{a}->{b}" for a, b in lm - lr), 'links_missing': sorted(f"{a}->{b}" for a, b in lr - lm)}
+
+
+def reference_text(diff):
+    d, cfg = diff, lambda c: json.dumps(c, separators=(',', ':')) if c else 'defaults'
+    lines = [f"- He added {k}; the reference has no {k}." for k in d['extra']] + \
+            [f"- The reference has {k}; his design doesn't." for k in d['missing']] + \
+            [f"- {k}: his {cfg(a)}, the reference {cfg(b)}." for k, a, b in d['sized']] + \
+            [f"- Connection {x} is his only." for x in d['links_extra']] + [f"- Connection {x} is only in the reference." for x in d['links_missing']]
+    return '\n'.join(lines) or 'Same components, sizes and connections as the reference.'
 
 
 def level_text(l):
@@ -284,10 +342,17 @@ class DraftIn(BaseModel):
     timeline: list[Said] = Field(default_factory=list, max_length=40)
 
 
+class RefPoint(BaseModel):
+    point: str = Field(max_length=60, description='The component or choice, e.g. "DNS" or "Database size".')
+    verdict: Literal['extra', 'missing', 'different', 'same']
+    why: str = Field(max_length=600, description='Why the reference does it that way. Where his reasoning covers this choice, name his reason and say exactly where it holds or breaks. 1-3 sentences.')
+
+
 class Debrief(BaseModel):
     priya: str = Field(description="Priya's incident review: what failed first, why, and what it cost users. 2-4 sentences.")
     marcus: str = Field(description="Marcus on the money: what the bill says about the design, what is oversized or missing. 1-3 sentences.")
-    jo: str = Field(description="Jo's honest 'wait, why?' question that checks Nikhil understands the key concept of this run. One question.")
+    jo: str = Field(description="Jo's honest 'wait, why?' question that checks Nikhil understands the key concept of this run, for him to think over (he can't reply here). One question.")
+    reference: list[RefPoint] = Field(default_factory=list, max_length=6, description='Only when a reference comparison is given: one entry per difference, biggest first; one "same" entry if there are none. Otherwise empty.')
     next: list[str] = Field(default_factory=list, max_length=3, description='Up to three concrete things to try next, without handing over a full design.')
     weak: list[str] = Field(default_factory=list, max_length=4, description='Concept ids from the list given that this run shows are weak.')
 
@@ -532,23 +597,40 @@ async def debrief(rid: str, store=Depends(store_for)):
         raise HTTPException(503, UNAVAILABLE)
     level = _level(store, r['level'], {'id': r['level'], 'title': r.get('title'), 'concepts': []})
     history = [x for x in _runs(store) if x.get('level') == r['level'] and x['_key'] != rid][-5:]
+    solution = None if r.get('daily') or r.get('generated') else level.get('solution')
+    earlier = any(not x.get('whatif') and not x.get('daily') and (x.get('at') or 0) <= (r.get('at') or 0) for x in history)
+    reveal = bool(solution) and ((r.get('stars') or 0) >= 2 or earlier)   # as the browser shows the reference button
     system = (f"{voice.FEEDBACK}\n\nYou write the post-run debrief in Ripple Ops, a system design game set at Ripple, the startup where "
               f"Nikhil is lead engineer. Three of the cast speak, each in character and always on his side:\n{_cast()}\n\n"
               "Ground every claim in the simulation results given; never invent numbers. Explain the mechanism (why that component broke, "
               "why that line of the bill is big) so he learns the concept, not just the fix. If he beat the level, say what was good and "
-              "push on cost or a trade-off. Don't hand him a complete design.")
-    prompt = json.dumps({'level': level_text(level), 'design': graph_text(r.get('graph')), 'result': run_text(r),
+              "push on cost or a trade-off. Don't hand him a complete design.\n\n"
+              "Sizing: 'sizes' says what each component costs, what it can carry and whether anything cheaper exists. Never suggest "
+              "shrinking a component that is already the smallest size there is: if it is still the biggest line on the bill, say that is "
+              "the floor price of having one at all. A capacity he mentions (\"handles 500 a second\") is not a traffic estimate: compare "
+              "capacity with the peak load, don't confuse the two.\n\n"
+              "His reasoning is what he said or typed while designing; it may be dictated and rough. Use it: when a choice rests on a "
+              "reason he gave, address that reason directly.\n\n"
+              + ("Reference: 'reference_diff' compares his design with the level's reference design, which he can now see. Fill "
+                 "'reference' with one entry per difference that matters: why the reference does it that way, and where his stated "
+                 "reasoning was right, partly right or off. Be precise and fair (for example, DNS round-robin does spread load, but "
+                 "it can't health-check, drain or react in seconds, and caches hide changes). Extras that cost little are still worth "
+                 "explaining: every box is something to run, monitor and pay for, and the habit is to add only what a requirement needs."
+                 if reveal else "No reference comparison this time: leave 'reference' empty and don't describe the reference design."))
+    prompt = json.dumps({'level': level_text(level), 'design': graph_text(r.get('graph')), 'sizes': sizing_text(r.get('graph'), ECON),
+                         'result': run_text(r), **({'reference_design': graph_text(solution), 'reference_diff': reference_text(reference_diff(r.get('graph'), solution))} if reveal else {}),
                          'his_reasoning': reasoning_text(r.get('notes'), r.get('timeline')), 'estimates': r.get('estimates') or [],
                          'earlier_attempts': [{'stars': h.get('stars'), 'cost': round(h.get('cost') or 0)} for h in history],
                          'concepts': {k: v['label'] for k, v in CONCEPTS.items()}}, ensure_ascii=False)
     try:
         raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_NOTES_MODEL, system, prompt, Debrief,
-                                      options={'effort': 'low', 'max_tokens': 2500, 'timeout': 60})
+                                      options={'effort': 'low', 'max_tokens': 3500, 'timeout': 60})
         d = Debrief.model_validate_json(raw).model_dump()
     except Exception as exc:
         log.warning('Ripple debrief failed: %s', type(exc).__name__)
         raise HTTPException(502, FAILED)
     d = {**{k: voice.plain(v) if isinstance(v, str) else v for k, v in d.items()}, 'weak': [c for c in d['weak'] if c in CONCEPTS],
+         'reference': [{**p, 'point': voice.plain(p['point']), 'why': voice.plain(p['why'])} for p in d['reference']] if reveal else [],
          'prompt_version': PROMPT_VERSION, 'at': time.time()}
     store.put_knowledge(RUNS, rid, {**{k: v for k, v in r.items() if k != '_key'}, 'debrief': d})
     return d
