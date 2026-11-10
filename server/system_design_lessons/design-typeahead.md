@@ -169,8 +169,8 @@ followups:
     a: Both precompute top-k per prefix. A trie saves space by sharing paths and supports walking; a flat prefix table in a key-value store is simpler to shard and replicate. At scale many systems use the table.
   - q: How do trends show up quickly?
     a: A streaming aggregation over the last hour with time decay produces deltas that are merged with the batch baseline at serve time, without rebuilding the table.
-  - q: How do you remove a suggestion immediately?
-    a: Filter against a blocklist at serve time (pushed to all servers within minutes), purge affected edge cache entries, and remove it in the next build.
+  - q: How do you personalise suggestions without slowing every request?
+    a: 'Merge two short lists at query time: the global top suggestions for the prefix from the precomputed, cached index, and a small per-user list (recent searches) from a fast store keyed by user. Re-rank the merged handful with a cheap score. The heavy work stays offline; the request adds one small key lookup.'
 weak: |
   Queries the log with LIKE and GROUP BY per keystroke, has no caching or debouncing, and can only remove suggestions with a full rebuild.
 strong: |

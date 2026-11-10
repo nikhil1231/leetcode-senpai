@@ -173,8 +173,8 @@ ask: How would you design a web crawler that fetches one billion pages per day?
 say: |
   "1B pages a day is about 12k fetches/s and ~12k concurrent connections. URLs are normalised and checked against a Bloom-filter seen-set backed by a store, then enter a Mercator-style frontier — priority front queues feeding per-host back queues, with a heap of next-allowed times enforcing a delay per host from robots.txt and server health. Hosts hash to crawler nodes, so politeness state, DNS and robots caches are local. Fetchers have timeouts and size limits and write raw pages to WARC batches in object storage; parsers extract links and compute SimHash fingerprints for near-duplicate detection. Recrawl intervals follow each page's estimated change rate and importance, traps are bounded by depth and per-host budgets, and the frontier is checkpointed."
 followups:
-  - q: How do you enforce politeness across thousands of fetchers?
-    a: Partition by host so one node owns each host's queue and next-allowed time; fetchers only take hosts whose time has come.
+  - q: How do you avoid crawling the same content under different URLs?
+    a: 'Normalise URLs before the seen-check: lowercase the host, drop fragments and tracking parameters, sort query strings, follow canonical links. Then dedupe on content: hash each page (SimHash for near-duplicates) and don''t store or expand pages you have already seen. Mirrors and session-ID URLs are the usual culprits.'
   - q: How do you check whether a URL is new at 20 billion URLs?
     a: Normalise it, check a Bloom filter in memory (definitely new versus maybe seen), and confirm "maybe" against a persistent store. Accept a tiny false-positive rate.
   - q: How do you decide when to recrawl a page?

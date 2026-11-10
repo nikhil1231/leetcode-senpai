@@ -177,8 +177,8 @@ followups:
     a: No. It ensures read and write sets overlap, but concurrent writes, sloppy quorums with hinted handoff, and LWW conflicts can still yield anomalies. Use consensus-backed operations for linearizable compare-and-set.
   - q: What happens when you add a node?
     a: It takes ownership of ranges from its ring neighbours (small slices from many nodes, with virtual nodes) and streams those ranges in while still serving. Only about 1/N of the data moves.
-  - q: How do replicas converge if a key is never read?
-    a: Anti-entropy. Nodes compare Merkle trees of their ranges in the background and sync only the differing subtrees.
+  - q: How do you handle a replica that is slow rather than dead?
+    a: 'Don''t wait for it: send to all N replicas and return as soon as W (or R) answer, so one slow replica doesn''t add its latency. Hedge reads for the tail, and detect failure from latency as well as liveness so routing avoids it. If it stays slow, mark it down and let hinted handoff and anti-entropy repair cover its writes.'
 weak: |
   "Hash keys mod N to servers and replicate to a backup." No virtual nodes, quorums, failure handling, conflict resolution or storage engine.
 strong: |

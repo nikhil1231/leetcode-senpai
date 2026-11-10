@@ -151,8 +151,8 @@ ask: How would you design a social network’s home feed to support accounts wit
 say: |
   "Hybrid fan-out. Posts are stored once; an outbox event triggers fan-out workers that push post IDs onto capped 800-entry Redis timelines for each active follower, in batches. Accounts above about 500k followers skip fan-out; their recent posts are fetched and merged at read time — most users follow only a handful of them. Feed reads take the timeline IDs plus the celebrity candidates, rank them, and hydrate the top 50 from post and user caches, applying deletes, blocks and privacy checks then. Inactive users' timelines are rebuilt on demand when they return."
 followups:
-  - q: Why not pure push?
-    a: Write amplification is proportional to audience size. A celebrity post means tens of millions of inserts and minutes of fan-out lag, plus wasted work for inactive followers.
+  - q: How do you rank the feed without making reads slow?
+    a: 'Do the expensive work before the read: fan-out builds candidate lists, and features (author affinity, engagement counts) are computed asynchronously. At read time take a few hundred candidates, score them with a light model or formula, and cache the ranked page briefly. Bound the ranking step in time and fall back to chronological if it overruns.'
   - q: Why not pure pull?
     a: Every feed read would query hundreds of accounts and merge, which is expensive and slow given reads outnumber writes by orders of magnitude.
   - q: How do deletes work?

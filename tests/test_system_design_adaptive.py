@@ -219,6 +219,67 @@ def test_tutor_results_are_stored_beside_raw_text(client, monkeypatch):
     assert next(s for s in notes['sections'] if s['id'] == 's1')['mode'] == 'known'
 
 
+def test_follow_ups_are_written_from_the_answer_and_chain_through_the_interview(client, monkeypatch):
+    monkeypatch.setattr(session_api.llm, 'enabled', lambda settings=None: True)
+    seen = []
+    async def fake_ask(schema, system, payload, settings=None, what=''):
+        seen.append((schema, payload))
+        grade = {'verdict': 'adequate', 'covered': ['a'], 'missing': ['b'], 'feedback': 'f'}
+        if schema is tutor.PitchTurn:
+            n = len(payload['conversation'])
+            grade['next'] = {'question': f'Live question {"one two three four five"[:4 + n]} about tenants number{n}?', 'model': f'model {n}'}
+        return {**grade, 'model': 'm', 'prompt_version': 1}, None
+    monkeypatch.setattr(tutor, 'ask', fake_ask)
+    lesson = LESSONS['api-contracts']
+    block = next(b for b in lesson['blocks'] if b['type'] == 'interview')
+    first = call(client, 'POST', '/course/lessons/api-contracts/pitch', block=block['key'], text='Orders, POST with keys.')
+    assert first['next']['q'].startswith('Live question') and first['model'] == block['say']
+    # The interviewer is told what the rest of the finale asks, so it can avoid repeating it.
+    recall = next(b['prompt'] for b in lesson['blocks'] if b['type'] == 'recall')
+    assert recall in seen[0][1]['other_lesson_questions'] and seen[0][1]['conversation'] == []
+    second = call(client, 'POST', '/course/lessons/api-contracts/pitch', block=block['key'], followup=0, text='Tenant ids.',
+                  after=first['id'])
+    assert second['question'] == first['next']['q'] and second['model'] == 'model 0'
+    assert seen[-1][1]['question_asked'] == first['next']['q'] and len(seen[-1][1]['conversation']) == 1
+    # Without a live follow-up to answer (grading failed, or skipped), the authored one stands.
+    fallback = call(client, 'POST', '/course/lessons/api-contracts/pitch', block=block['key'], followup=1, text='Versions.')
+    assert fallback['question'] == block['followups'][1]['q']
+    last = call(client, 'POST', '/course/lessons/api-contracts/pitch', block=block['key'], followup=len(block['followups']) - 1,
+                text='Last one.', after=second['id'])
+    assert seen[-1][0] is tutor.PitchGrade and last['next'] is None
+    stored = client.store.get_design_record(second['id'])
+    assert stored['question'] == first['next']['q'] and stored['text'] == 'Tenant ids.'
+    found = adaptive.mistakes(lesson, client.store.list_design_records(), since=0)
+    assert first['next']['q'] in [m.get('question') for m in found]
+
+
+def test_a_follow_up_that_repeats_an_earlier_question_is_dropped():
+    assert tutor.same_question('Why cursor rather than offset pagination?', 'Why use cursor pagination rather than offset?')
+    assert not tutor.same_question('How do you stop two users overwriting edits?', 'Why cursor rather than offset pagination?')
+
+
+def test_a_curveball_waits_ready_for_each_lesson(client, monkeypatch):
+    call(client, 'POST', '/course/lessons/cache-aside/twist/ready', 503)
+    monkeypatch.setattr(session_api.llm, 'enabled', lambda settings=None: True)
+    writes = []
+    async def fake_ask(schema, system, payload, settings=None, what=''):
+        writes.append(payload)
+        return {'scenario': f's{len(writes)}', 'question': f'q{len(writes)}', 'points': ['a', 'b', 'c'], 'model': 'm',
+                'prompt_version': 1}, None
+    monkeypatch.setattr(tutor, 'ask', fake_ask)
+    first = call(client, 'POST', '/course/lessons/cache-aside/twist/ready')
+    assert call(client, 'POST', '/course/lessons/cache-aside/twist/ready')['id'] == first['id'] and len(writes) == 1
+    interview = next(b for b in LESSONS['cache-aside']['blocks'] if b['type'] == 'interview')
+    assert interview['ask'] in writes[0]['already_asked']
+    async def grade(block, text, settings=None):
+        return {'points': [{'point': p, 'status': 'covered', 'note': ''} for p in block['points']], 'feedback': 'f'}, None
+    monkeypatch.setattr(session_api.coach, 'grade_recall', grade)
+    call(client, 'POST', f'/course/twists/{first["id"]}/answer', text='Shard the hot key.')
+    assert len(writes) == 2  # the next one is written after answering, before it is asked for
+    another = call(client, 'POST', '/course/lessons/cache-aside/twist/ready', exclude=first['id'])
+    assert another['id'] != first['id'] and another['scenario'] == 's2' and len(writes) == 2
+
+
 def test_redesign_is_a_scheduled_ledger_item_with_self_marking(client):
     assert 'redesign:design-chat' in items.BY_ID and 'redesign:tradeoffs' not in items.BY_ID
     brief = call(client, 'GET', '/redesign/design-chat')
@@ -392,3 +453,12 @@ def test_numeric_blanks_and_estimate_ranges():
     assert calc_bounds({'answer': 30}) == (20, 45)
     from server.system_design_tutor import estimate_gap
     assert estimate_gap({'type': 'calc', 'answer': 14, 'range': [14, 16]}, '13')['accepted_range'] == [14, 16]
+
+
+def test_no_interview_follow_up_repeats_a_written_question_in_the_same_lesson():
+    # Both sit on the same "Put it together" page; asking the same thing twice wastes it.
+    for key, lesson in LESSONS.items():
+        recall = [b['prompt'] for b in lesson.get('blocks', []) if b['type'] == 'recall']
+        for b in lesson.get('blocks', []):
+            if b['type'] == 'interview':
+                assert not [f['q'] for f in b['followups'] for r in recall if tutor.same_question(f['q'], r)], key

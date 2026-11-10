@@ -154,8 +154,8 @@ say: |
 followups:
   - q: Why not put locations in the trips database?
     a: 200k writes a second of data that's useless after seconds would overload a transactional store for no benefit. Keep the latest in memory, and history in a log.
-  - q: What if the geo index says a driver is free but they just took another trip?
-    a: The index is a hint. The conditional reservation on the authoritative driver record fails, and matching moves to the next candidate.
+  - q: How do you keep the rider's map updated with the driver's position during the trip?
+    a: 'Push rather than poll: the rider''s app holds a connection and the trip service forwards that trip''s driver updates, throttled to a few a second. On reconnect the app asks for the latest position. Only a trip''s participants subscribe, so the cost grows with active trips, not with all drivers.'
   - q: How do you handle a stadium emptying?
     a: Finer cells and dedicated shards for the area, surge pricing to attract supply, batched matching to optimise assignments, and admission control on requests if needed.
 weak: |

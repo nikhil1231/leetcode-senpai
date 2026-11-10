@@ -194,8 +194,8 @@ ask: How would you design a payment system that prevents duplicate charges and k
 say: |
   "Each payment is a state machine persisted before every external call: CREATED → AUTHORIZING → AUTHORIZED → CAPTURED, plus FAILED, UNKNOWN and REFUNDED. Checkout carries an idempotency key unique per order; calls to the processor carry a deterministic key per payment step, so a timeout is resolved by retrying with the same key, querying, or the webhook — never by charging again. Every state change writes balanced double-entry ledger rows in integer cents in the same transaction, plus an outbox event. Webhooks are signature-verified, deduplicated and applied as conditional transitions. A recovery job sweeps stuck AUTHORIZING and UNKNOWN payments, and nightly reconciliation matches processor settlement files against the ledger."
 followups:
-  - q: The processor call timed out. Now what?
-    a: Mark the payment UNKNOWN, tell the user it's processing, and resolve by retrying with the same idempotency key or querying the processor; the webhook also arrives. Never issue a fresh charge.
+  - q: The processor's webhook arrives before your own call has returned. What do you do?
+    a: 'Treat the webhook as another input to the same payment state machine, keyed by the payment''s ID: verify its signature, record it, and apply it only if it moves the payment forward (pending → succeeded). When the slow call returns, it finds the payment already succeeded and changes nothing. Idempotent, forward-only transitions make arrival order irrelevant.'
   - q: Why a ledger instead of a balance column?
     a: An append-only, balanced ledger records why every cent moved, makes corrections auditable as new entries, enables reconciliation and catches bugs through the zero-sum invariant. A mutable balance loses history.
   - q: How do order placement and payment stay consistent?

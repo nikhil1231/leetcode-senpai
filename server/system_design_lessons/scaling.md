@@ -128,8 +128,8 @@ say: |
 followups:
   - q: How do you find the bottleneck?
     a: Look for saturation — queues, waits, run-queue length, pool exhaustion — per resource (USE), and follow where latency accumulates per service (RED and traces). CPU alone misleads for I/O-bound work.
-  - q: Why might adding servers reduce throughput?
-    a: Coordination and contention costs grow with N — connection limits, lock contention, cache coherency. The Universal Scalability Law captures that retrograde region.
+  - q: Reads are 95% of the traffic. What do you add first, and how do you know it worked?
+    a: 'Cache the hot catalogue reads (a CDN for public pages, Redis for product lookups) and add read replicas for what misses, keeping the primary for orders. Prove it with numbers: cache hit ratio, primary CPU and connections, and p99 at the same load, then load-test the next target (say 16k req/s) to find the new bottleneck.'
   - q: Vertical or horizontal for the database?
     a: Vertical first, because it's simple and reversible, along with efficiency fixes, caching and replicas. Partition when a single primary's write or storage limits are in sight, choosing the shard key from access patterns.
 weak: |

@@ -6,11 +6,12 @@ PLAN_DAYS, so revisiting a lesson later re-tailors it. Tutor notes refine the pl
 model is available; every tutor moment saves the learner's text first and degrades to the
 authored content without the model. Redesign-from-memory is a scheduled ledger item.
 """
+import asyncio
 import json
 import secrets
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from . import auth, knowledge, llm, system_design_adaptive as adaptive, system_design_coach as coach
@@ -259,27 +260,65 @@ class PitchBody(BaseModel):
     block: str = Field(pattern=r'^b\d{1,3}$')
     followup: int | None = Field(default=None, ge=0, le=9)
     text: str = Field(min_length=1, max_length=4000)
+    after: str = Field(default='', pattern=r'^(pitch_[a-f0-9]{32})?$')
+
+
+def asked_elsewhere(lesson, records=()):
+    """What the lesson's finale already asks outside the interview: written answers and its curveballs."""
+    out = [b['prompt'] for b in lesson['blocks'] if b['type'] == 'recall']
+    out += [r['twist']['question'] for r in records if r.get('kind') == 'twist' and r.get('lesson_id') == lesson['id']][-3:]
+    return out
 
 
 @router.post('/course/lessons/{key}/pitch')
 async def pitch(key: str, body: PitchBody, store=Depends(store_for)):
-    """Grade a typed interview pitch or follow-up answer against the authored model."""
+    """Grade an interview pitch or follow-up answer. With the tutor on, grading also writes the next
+    follow-up from what you said (saved on this answer's record); the authored follow-ups are the fallback."""
     lesson = lesson_or_404(key)
     block = next((b for b in lesson['blocks'] if b.get('key') == body.block and b['type'] == 'interview'), None)
-    if not block or (body.followup is not None and body.followup >= len(block['followups'])):
+    n = len(block['followups']) if block else 0
+    if not block or (body.followup is not None and body.followup >= n):
         raise HTTPException(404, 'Unknown interview prompt')
+    prev = store.get_design_record(body.after) if body.after else None
+    if not prev or prev.get('kind') != 'pitch' or prev.get('lesson_id') != key or prev.get('block') != body.block:
+        prev = None
+    if body.followup is None:
+        q, a, asked = block.get('ask') or 'Give a 30-second pitch.', block['say'], None
+    else:
+        live = (prev or {}).get('next')
+        asked = {'q': live['question'], 'a': live['model']} if live else block['followups'][body.followup]
+        q, a = asked['q'], asked['a']
+    history = (prev or {}).get('history', []) if body.followup is not None else []
     doc = put(store, 'pitch_' + secrets.token_hex(16), {'kind': 'pitch', 'lesson_id': key, 'block': body.block,
-                                                       'followup': body.followup, 'text': body.text,
+                                                       'followup': body.followup, 'question': q, 'text': body.text,
                                                        'created_at': time.time()})
-    result, message = await tutor.grade_pitch(block, body.text, body.followup, store.get_settings(), lesson['title'])
+    more = (0 if body.followup is None else body.followup + 1) < n
+    result, message = await tutor.grade_pitch(block, body.text, body.followup, store.get_settings(), lesson['title'],
+                                              asked=asked, history=history,
+                                              avoid=asked_elsewhere(lesson, store.list_design_records()), more=more)
+    nxt = result.pop('next', None) if result else None
     if result:
-        put(store, doc['id'], {**doc, 'grade': result}, doc['revision'])
-    return {'grade': result, 'message': message}
+        doc = put(store, doc['id'], {**doc, 'grade': result, 'next': nxt,
+                                     'history': [*history, {'q': q, 'answer': body.text}]}, doc['revision'])
+    return {'id': doc['id'], 'grade': result, 'message': message, 'question': q, 'model': a,
+            'next': {'q': nxt['question'], 'a': nxt['model']} if nxt else None}
 
 
 class TwistBody(BaseModel):
     request_id: str = Field(pattern=r'^[a-f0-9]{32}$')
     section: str = Field(default='', max_length=8)
+
+
+async def new_twist(store, lesson, focus=None, rid=None):
+    """Write a curveball and save it; (doc, None) or (None, message)."""
+    interview = [x for b in lesson['blocks'] if b['type'] == 'interview' for x in [b.get('ask', ''), *(f['q'] for f in b['followups'])]]
+    result, message = await tutor.twist(lesson, adaptive.sections(lesson)['sections'], focus, store.get_settings(),
+                                        avoid=[q for q in interview if q] + asked_elsewhere(lesson, store.list_design_records()))
+    if not result:
+        return None, message
+    return put(store, rid or 'twist_' + secrets.token_hex(16), {'kind': 'twist', 'lesson_id': lesson['id'],
+                                                                'section': focus['id'] if focus else '',
+                                                                'created_at': time.time(), 'twist': result}), None
 
 
 @router.post('/course/lessons/{key}/twist')
@@ -290,12 +329,50 @@ async def make_twist(key: str, body: TwistBody, store=Depends(store_for)):
     old = store.get_design_record(rid)
     if old:
         return twist_public(old)
-    focus = section_or_404(lesson, body.section) if body.section else None
-    result, message = await tutor.twist(lesson, adaptive.sections(lesson)['sections'], focus, store.get_settings())
-    if not result:
+    doc, message = await new_twist(store, lesson, section_or_404(lesson, body.section) if body.section else None, rid)
+    if not doc:
         raise HTTPException(503, message)
-    doc = put(store, rid, {'kind': 'twist', 'lesson_id': key, 'section': body.section, 'created_at': time.time(),
-                           'twist': result})
+    return twist_public(doc)
+
+
+# One curveball per lesson is kept written ahead, so the finale never waits on the model. The lesson asks
+# for it when it opens; answering one writes the next in the background. In-flight writes are shared.
+_writing: dict = {}
+
+
+def spare_twist(store, key, exclude=''):
+    waiting = [r for r in store.list_design_records()
+               if r.get('kind') == 'twist' and r.get('lesson_id') == key and not r.get('answer') and r.get('id') != exclude]
+    return min(waiting, key=lambda r: r.get('created_at') or 0) if waiting else None
+
+
+async def ensure_twist(uid, store, key, exclude=''):
+    spare = spare_twist(store, key, exclude)
+    if spare:
+        return spare, None
+    if not llm.enabled(store.get_settings()):
+        return None, tutor.UNAVAILABLE
+    task = _writing.get((uid, key))
+    if not task:
+        task = _writing[(uid, key)] = asyncio.ensure_future(new_twist(store, LESSONS[key]))
+        task.add_done_callback(lambda _: _writing.pop((uid, key), None))
+    try:
+        return await asyncio.shield(task)
+    except Exception:  # noqa: BLE001 - a failed write is just "try again"
+        return None, 'The tutor could not write a curveball just now. Try again.'
+
+
+class ReadyBody(BaseModel):
+    exclude: str = Field(default='', pattern=r'^(twist_[a-zA-Z0-9_]{1,64})?$')
+
+
+@router.post('/course/lessons/{key}/twist/ready')
+async def ready_twist(key: str, body: ReadyBody, uid: str = Depends(auth.require_user), store=Depends(store_for)):
+    """The lesson's waiting curveball (other than `exclude`), written now only if none is waiting."""
+    lesson_or_404(key)
+    doc, message = await ensure_twist(uid, store, key, body.exclude)
+    if not doc:
+        raise HTTPException(503, message)
     return twist_public(doc)
 
 
@@ -312,13 +389,16 @@ class TextBody(BaseModel):
 
 
 @router.post('/course/twists/{tid}/answer')
-async def answer_twist(tid: str, body: TextBody, store=Depends(store_for)):
+async def answer_twist(tid: str, body: TextBody, background: BackgroundTasks, uid: str = Depends(auth.require_user),
+                       store=Depends(store_for)):
     doc = store.get_design_record(tid)
     if not doc or doc.get('kind') != 'twist':
         raise HTTPException(404, 'Unknown curveball')
     if doc.get('answer'):
         return twist_public(doc)
     doc = put(store, tid, {**doc, 'answer': body.text, 'answered_at': time.time()}, doc['revision'])
+    if doc.get('lesson_id') in LESSONS:
+        background.add_task(ensure_twist, uid, store, doc['lesson_id'])  # "Another curveball" is then instant
     t = doc['twist']
     result, message = await coach.grade_recall({'prompt': t['scenario'] + '\n\n' + t['question'],
                                                 'points': t['points'], 'model': t['model']},

@@ -194,8 +194,8 @@ ask: How would you design an enterprise data export service, from accepting an e
 say: |
   "Export is async: POST validates, inserts a job row with the idempotency key in the same transaction plus an outbox row, and returns 202 with /jobs/{id}. A relay publishes to the queue; workers lease jobs, write output under a deterministic key, mark the job succeeded and then ack. States are queued, running, succeeded and failed, with an error message for failures. Clients poll with Retry-After, and enterprise customers can register signed webhooks — at-least-once, so their receivers must dedupe on event ID. We alert on oldest-job age."
 followups:
-  - q: What does 202 promise?
-    a: That the request is valid and durably accepted, and that the outcome will become observable — not that the work is done. Respond only after the job and its intent to run are committed.
+  - q: An export of 50 million rows fails halfway. What does the customer see, and what happens next?
+    a: The job moves to failed or retrying with a reason, and the status endpoint and notification say so instead of leaving it 'processing' forever. Workers write the export in checkpointed chunks, so a retry resumes from the last finished chunk rather than starting over, with a bounded number of attempts. After the last one the customer gets a clear failure with a retry option, and partial files are cleaned up.
   - q: Polling or webhooks?
     a: Offer polling as the source of truth (simple and robust), and webhooks or push as an optimisation. Webhooks need signing, retries with backoff, idempotent receivers, and a way to replay missed events.
   - q: How do you stop users waiting forever?

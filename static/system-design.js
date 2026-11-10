@@ -485,7 +485,7 @@
     const form=box.closest('form');
     if(form){event.preventDefault();form.requestSubmit();return;}
     const scope=box.closest('.sd-pitch-step,.sd-attempt,.sd-twist,.sd-gap-q,.sd-callback-q,.sd-block,.sd-panel,.sd-warmup,.sd-chat-form,section');
-    const target=scope?.querySelector('.button.is-primary:not(:disabled), [data-b="check"]:not(:disabled)');
+    const target=scope?.querySelector('.button.is-primary:not(:disabled), .button[data-primary]:not(:disabled), [data-b="check"]:not(:disabled)');
     if(target){event.preventDefault();target.click();}
   });
   window.SystemDesign={onTab,diagram,openView,isBusy:()=>busy||window.DesignLearning.isBusy()||window.DesignPapers.isBusy()||window.DesignDrills.isBusy(),

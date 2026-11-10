@@ -180,8 +180,8 @@ ask: How would you choose consistency guarantees for an event ticketing system�
 say: |
   "Different operations get different guarantees. Seat confirmation is linearizable — a single leader per event partition with a conditional write — so during a partition, the minority side refuses confirmations with a retry message. Seat maps and counts are eventually consistent from replicas and caches, up to about 10 seconds stale. Users always see their own holds, via session routing to the leader. If we used a leaderless store for anything critical, it'd be quorum reads and writes with R + W > N plus lightweight transactions for compare-and-set; everything else runs at ONE for latency."
 followups:
-  - q: Is your system CP or AP?
-    a: Neither label is useful on its own. Confirmation chooses consistency under partition; browsing chooses availability. I'd describe the behaviour of each operation.
+  - q: During a partition between regions, what does a user trying to hold a seat see?
+    a: 'Holds need one authority per event, so the side that can''t reach the event''s home region can''t take a hold: it says ''try again shortly'' or queues the request rather than risk two people holding one seat. Browsing keeps working on both sides from slightly stale caches. That is choosing consistency for holds and availability for the seat map, operation by operation.'
   - q: What does R + W > N give you?
     a: Read and write sets overlap, so a read contacts at least one replica that has the latest acknowledged write. On its own it doesn't guarantee linearizability under concurrency or sloppy quorums.
   - q: What's PACELC adding to CAP?

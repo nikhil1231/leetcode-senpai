@@ -1,8 +1,9 @@
 // Adaptive lesson player. A short warm-up finds what you already know; the lesson then folds
 // known sections away, trims prose to its key point and puts activities first. Walkthroughs are
 // attempt-first. A lesson with an outage case opens on it (watch it break, before the warm-up) and
-// asks you to fix it in the finale. The tutor explains mistakes, answers questions and throws curveballs when it is
-// connected; without it every section, activity and check still works.
+// asks you to fix it in the finale. The tutor explains mistakes, answers questions and throws curveballs (written
+// ahead, so the finale never waits) when it is connected; without it every section, activity and check still works.
+// Each page has one primary button, the lesson's next step (oneNext).
 (function () {
   'use strict';
   const {api, escapeHtml: esc} = window.H;
@@ -59,8 +60,8 @@
   }
 
   // ---------- Pieces ----------
-  // Free recall is already marked point by point; the tutor can't see the typed answer, so no extra diagnosis.
-  const selfMarked = key => S.lesson?.blocks.find(x => x.key === key)?.type === 'recall';
+  // Free recall and interview answers are already marked on the card, so no extra diagnosis below them.
+  const selfMarked = key => ['recall', 'interview'].includes(S.lesson?.blocks.find(x => x.key === key)?.type);
   const slot = key => `<div data-slot="${esc(key)}"></div>${wrongHtml(key)}`;
   function wrongHtml(key) {
     if (!(key in S.wrong) || !S.session?.tutor || selfMarked(key)) return '';
@@ -90,7 +91,7 @@
   }
   function stageHint(s) { return (STAGE_HINT.find(([re]) => re.test(s.title || '')) || [null, 'Write what you would say or draw for this stage.'])[1]; }
   function attemptHtml(s) {
-    return `<div class="sd-attempt"><span class="sd-say-label">Your turn first</span><p>${esc(stageHint(s))} Then compare with the walkthrough.</p><textarea class="textarea" rows="6" maxlength="6000" data-draft="attempt:${s.id}" placeholder="Write it as you would on the whiteboard…"></textarea>
+    return `<div class="sd-attempt"><span class="sd-say-label">Your turn first</span><p>${esc(stageHint(s))} Then compare with the walkthrough.</p><textarea class="textarea" data-dictate rows="6" maxlength="6000" data-draft="attempt:${s.id}" placeholder="Write it as you would on the whiteboard…"></textarea>
       <div class="sd-actions">${btn(S.busy['attempt:' + s.id] ? 'Comparing…' : S.session.tutor ? 'Compare with the walkthrough →' : 'Show the walkthrough →', 'attempt', `data-sec="${s.id}" ${S.busy['attempt:' + s.id] ? 'disabled' : ''}`, true)}${btn('Skip: just show me', 'attempt-skip', `data-sec="${s.id}"`)}</div></div>`;
   }
   function attemptResultHtml(s) {
@@ -139,12 +140,11 @@
   function twistHtml() {
     if (!S.session.tutor) return '';
     const t = S.twist;
-    if (!t) return `<section class="sd-twist"><span class="sd-say-label">Curveball</span><p>Interviewers change a requirement halfway through to see whether you can adapt. Ask for one written for this lesson.</p>${btn('Throw me a curveball', 'twist', '', true)}</section>`;
-    if (t.loading) return `<section class="sd-twist"><span class="sd-say-label">Curveball</span><p class="sd-muted">Writing one for you…</p></section>`;
+    if (!t || t.loading) return `<section class="sd-twist"><span class="sd-say-label">Curveball</span><p class="sd-muted">Writing one for you…</p></section>`;
     if (t.error) return `<section class="sd-twist"><span class="sd-say-label">Curveball</span><p class="sd-muted">${esc(t.error)}</p>${btn('Try again', 'twist')}</section>`;
     const status = {covered: ['✓', 'is-right'], partial: ['◐', 'is-partial'], missing: ['○', 'is-missing'], incorrect: ['✗', 'is-wrong']};
-    const done = t.answer ? `<div class="sd-twist-answer">${esc(t.answer)}</div>${t.grade ? `<ul class="sd-rubric">${t.grade.points.map(p => `<li class="${status[p.status][1]}"><span>${status[p.status][0]}</span><div><b>${inline(p.point)}</b><p>${inline(p.note)}</p></div></li>`).join('')}</ul><p>${inline(t.grade.feedback)}</p>` : `<ul>${(t.points || []).map(p => `<li>${inline(p)}</li>`).join('')}</ul>`}<details class="sd-model"><summary>A strong answer</summary>${md(t.model)}</details>${btn('Another curveball', 'twist')}` : '';
-    return `<section class="sd-twist"><span class="sd-say-label">Curveball</span><div class="sd-prompt">${md(t.scenario)}</div><p><b>${inline(t.question)}</b></p>${t.answer ? done : `<textarea class="textarea" rows="5" maxlength="6000" data-draft="twist" placeholder="What changes in your design, and why?"></textarea><div class="sd-actions">${btn(S.busy.twist ? 'Grading…' : 'Answer', 'twist-answer', S.busy.twist ? 'disabled' : '', true)}</div>`}</section>`;
+    const done = t.answer ? `<div class="sd-twist-answer">${esc(t.answer)}</div>${t.grade ? `<ul class="sd-rubric">${t.grade.points.map(p => `<li class="${status[p.status][1]}"><span>${status[p.status][0]}</span><div><b>${inline(p.point)}</b><p>${inline(p.note)}</p></div></li>`).join('')}</ul><p>${inline(t.grade.feedback)}</p>` : `<ul>${(t.points || []).map(p => `<li>${inline(p)}</li>`).join('')}</ul>`}<details class="sd-model"><summary>A strong answer</summary>${md(t.model)}</details>${btn(S.twistLoading ? 'Writing another…' : 'Another curveball', 'twist', S.twistLoading ? 'disabled' : '')}` : '';
+    return `<section class="sd-twist"><span class="sd-say-label">Curveball</span><div class="sd-prompt">${md(t.scenario)}</div><p><b>${inline(t.question)}</b></p>${t.answer ? done : `<p class="sd-muted">Interviewers change a requirement halfway through to see whether you can adapt.</p><textarea class="textarea" data-dictate rows="5" maxlength="6000" data-draft="twist" placeholder="What changes in your design, and why?"></textarea><div class="sd-actions">${btn(S.busy.twist ? 'Grading…' : 'Answer', 'twist-answer', S.busy.twist ? 'disabled' : '', true)}</div>`}</section>`;
   }
   function planBanner() {
     const ss = S.session.sections, n = m => ss.filter(s => s.mode === m).length;
@@ -164,8 +164,10 @@
   }
   const openerHtml = () => (S.session.opener || []).map(slot).join('');
   function finaleHtml() {
+    const kind = k => S.lesson.blocks.find(b => b.key === k)?.type;
     const fin = S.session.finale, fixes = (S.session.opener || []).filter(k => S.nodes['fix:' + k]);
-    return `<section class="sd-finale"><span class="sd-eyebrow">PUT IT TOGETHER</span><h3 id="sd-sec-finale" tabindex="-1">${fixes.length ? 'Fix what broke, then use it as you would in an interview' : 'Use it as you would in an interview'}</h3>${fixes.map(k => slot('fix:' + k)).join('')}${twistHtml()}${fin.map(slot).join('')}
+    const talk = fin.filter(k => kind(k) === 'interview'), rest = fin.filter(k => kind(k) !== 'interview');
+    return `<section class="sd-finale"><span class="sd-eyebrow">PUT IT TOGETHER</span><h3 id="sd-sec-finale" tabindex="-1">${fixes.length ? 'Fix what broke, then use it as you would in an interview' : 'Use it as you would in an interview'}</h3>${fixes.map(k => slot('fix:' + k)).join('')}${talk.map(slot).join('')}${twistHtml()}${rest.map(slot).join('')}
       ${S.session.redesign ? `<div class="sd-redesign-note"><b>Coming back later:</b> in a few days this design returns as a blank-page redesign from memory, scheduled with the rest of your reviews. ${btn('Try it now', 'redesign')}</div>` : ''}</section>`;
   }
   function gapsHtml() {
@@ -180,7 +182,7 @@
     return `<section class="sd-gaps">${head}<div class="sd-callout is-tip"><b class="sd-callout-title">The pattern</b><p>${inline(g.theme)}</p></div>
       ${g.questions.map(q => `<div class="sd-gap-q"><span class="sd-say-label">Question ${q.n + 1} of ${g.questions.length}</span><div class="sd-prompt">${md(q.question)}</div>${q.answer
         ? `<div class="sd-twist-answer">${esc(q.answer)}</div>${q.grade ? `<ul class="sd-rubric">${q.grade.points.map(p => `<li class="${status[p.status][1]}"><span>${status[p.status][0]}</span><div><b>${inline(p.point)}</b><p>${inline(p.note)}</p></div></li>`).join('')}</ul><p>${inline(q.grade.feedback)}</p>` : `${q.message ? `<p class="sd-muted">${esc(q.message)}</p>` : ''}<ul>${q.points.map(p => `<li>${inline(p)}</li>`).join('')}</ul>`}<p class="sd-muted">This tested: ${inline(q.targets)}</p><details class="sd-model"><summary>A strong answer</summary>${md(q.model)}</details>`
-        : `<textarea class="textarea" rows="4" maxlength="4000" data-draft="gap:${q.n}" placeholder="Two to four sentences"></textarea><div class="sd-actions">${btn(S.busy['gap:' + q.n] ? 'Grading…' : 'Answer', 'gap-answer', `data-n="${q.n}" ${S.busy['gap:' + q.n] ? 'disabled' : ''}`, true)}</div>`}</div>`).join('')}
+        : `<textarea class="textarea" data-dictate rows="4" maxlength="4000" data-draft="gap:${q.n}" placeholder="Two to four sentences"></textarea><div class="sd-actions">${btn(S.busy['gap:' + q.n] ? 'Grading…' : 'Answer', 'gap-answer', `data-n="${q.n}" ${S.busy['gap:' + q.n] ? 'disabled' : ''}`, true)}</div>`}</div>`).join('')}
       ${all ? `<div class="sd-actions">${btn('Give me new ones', 'gaps-new')}</div>` : ''}</section>`;
   }
   // The lesson as pages: one section each, known sections grouped, then the finale, check and gaps.
@@ -219,14 +221,44 @@
     const P = pages(), i = pageIndex(P), icon = x => x.kind === 'sec' ? MODE[x.s.mode][0] : {known: '✓', callback: '↺', finale: '★', check: '?', gaps: '◎'}[x.kind];
     return `<span class="sd-eyebrow">YOUR PATH</span>${P.map((x, j) => `<a href="#" data-lp="page" data-page="${j}" class="${x.kind === 'sec' ? 'is-' + x.s.mode : x.kind === 'known' ? 'is-known' : ''} ${j === i ? 'is-current' : ''}"><i>${icon(x)}</i>${inline(x.label)}</a>`).join('')}`;
   }
-  // Only the check page shows the lesson check and footer, which live outside the player.
+  // Only the check page shows the lesson check, and only the last page the footer (finish, and where else to go):
+  // both live outside the player.
   function applyPage() {
     const article = S.host.closest('.sd-rich');
-    if (!article) return;
-    const P = S.session?.planned ? pages() : null, kind = P ? P[pageIndex(P)].kind : null;
-    const check = article.querySelector('#sd-check'), foot = article.querySelector('.sd-lesson-foot');
-    if (check) check.hidden = kind !== 'check';
-    if (foot) foot.hidden = !(kind === 'check' || kind === 'gaps');
+    if (article) {
+      const P = S.session?.planned ? pages() : null, kind = P ? P[pageIndex(P)].kind : null;
+      const check = article.querySelector('#sd-check'), foot = article.querySelector('.sd-lesson-foot');
+      if (check) check.hidden = kind !== 'check';
+      if (foot) foot.hidden = kind !== 'gaps';
+      watch(article);
+    }
+    oneNext();
+  }
+  // One filled button per page: the next step of the lesson as it is meant to be done. That is the first
+  // unfinished activity on the page, then the lesson check on its page, then "Next" (or "Finish" on the last
+  // page). Every other button that would be primary is drawn as a plain one; data-primary remembers which
+  // were, so the role moves on as you work. Activities change their own buttons, so a DOM watch re-runs it.
+  function oneNext() {
+    if (!S?.host) return;
+    const root = S.host.closest('.sd-rich') || S.host;
+    root.querySelectorAll('.button.is-primary').forEach(b => { b.dataset.primary = '1'; });
+    const done = b => { const k = b.closest('[data-block]')?.dataset.block; return !!k && k in S.answered; };
+    const live = b => !b.disabled && !b.closest('[hidden]') && !b.closest('details:not([open]) > :not(summary)') && !done(b);
+    const areas = [...(S.session?.planned ? S.host.querySelectorAll('.sd-page') : [S.host]),
+      root.querySelector('#sd-check:not([hidden])'), S.host.querySelector('.sd-pager'), root.querySelector('.sd-lesson-foot:not([hidden])')];
+    let pick = null;
+    for (const area of areas.filter(Boolean)) { pick = [...area.querySelectorAll('.button[data-primary]')].find(live); if (pick) break; }
+    root.querySelectorAll('.button[data-primary]').forEach(b => { if (b.classList.contains('is-primary') !== (b === pick)) b.classList.toggle('is-primary', b === pick); });
+  }
+  function watch(article) {
+    if (article._oneNext) return;
+    let queued = false;
+    article._oneNext = new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      setTimeout(() => { queued = false; if (S?.host && article.contains(S.host)) oneNext(); }, 0);
+    });
+    article._oneNext.observe(article, {subtree: true, childList: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'open']});
   }
   function goPage(n) {
     S.page = n;
@@ -262,6 +294,7 @@
     S.rail.querySelectorAll('[data-lp=page]').forEach(n => n.addEventListener('click', e => { e.preventDefault(); goPage(Number(n.dataset.page)); }));
     applyPage();
     if (window.scrollY !== y) window.scrollTo(0, y);
+    if (S.session?.tutor && !S.twist && !S.twistLoading) setTimeout(() => loadTwist(), 0);
     if (S.session?.planned) {
       loadCallbacks();
       const P = pages();
@@ -322,12 +355,7 @@
       catch (e) { Object.assign(msg, {loading: false, message: e.message}); }
       return paint();
     }
-    if (action === 'twist') {
-      S.twist = {loading: true}; paint();
-      try { S.twist = await call(`/course/lessons/${id}/twist`, 'POST', {request_id: rid()}); }
-      catch (e) { S.twist = {error: e.message}; }
-      return paint();
-    }
+    if (action === 'twist') return loadTwist(S.twist?.answer ? S.twist.id : '');
     if (action === 'twist-answer') {
       const text = (S.drafts.twist || '').trim();
       if (text.length < 10) { S.host.querySelector('[data-draft="twist"]')?.focus(); return; }
@@ -373,6 +401,23 @@
     if (S?.id !== lesson) return;
     S.gaps = res; paint();
   }
+  // The lesson's curveball is written ahead on the server; asking for it as the lesson opens means the finale
+  // shows it at once. "Another curveball" takes the next one, which answering this one has already started.
+  async function loadTwist(exclude = '') {
+    if (!S.session?.tutor || S.twistLoading) return;
+    const lesson = S.id, keep = S.twist?.answer ? S.twist : null;
+    S.twistLoading = true;
+    if (!keep) S.twist = {loading: true};
+    if (onFinale()) paint();
+    let t;
+    try { t = await call(`/course/lessons/${lesson}/twist/ready`, 'POST', {exclude}); }
+    catch (e) { t = keep || {error: e.message}; }
+    if (S?.id !== lesson) return;
+    S.twistLoading = false; S.twist = t;
+    scheduleSave();
+    if (onFinale()) paint();
+  }
+  const onFinale = () => { if (!S.session?.planned) return false; const P = pages(); return P[pageIndex(P)].kind === 'finale'; };
   function loadCallbacks() {
     for (const c of S.session.callbacks) {
       if (c.id in S.fire) continue;
@@ -401,7 +446,7 @@
     SAVED.forEach(k => { out[k] = S[k]; });
     out.explain = Object.fromEntries(Object.entries(S.explain).filter(([, v]) => !v.loading));
     out.threads = Object.fromEntries(Object.entries(S.threads).map(([k, v]) => [k, v.filter(m => !m.loading)]));
-    if (S.twist?.id) out.twist = S.twist;
+    if (S.twist?.id) out.twist = S.twist;  // the server keeps it too; this restores the answer view
     if (S.gaps?.id) out.gaps = S.gaps;
     return out;
   }

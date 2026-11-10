@@ -267,8 +267,8 @@ ask: How would you design caching and freshness guarantees for a catalogue syste
 say: |
   "I'd define freshness per data type: most catalogue reads can be a few seconds stale, the author needs read-your-writes, and permission checks must be authoritative. For the cached data I'd invalidate on write — ideally driven by CDC from the database log so we never miss a write from another path — keep a TTL as a safety net, and protect against the stale-refill race with leases or version-checked fills. Worst-case staleness is the sum of TTLs along the read path plus replica lag, so I'd make sure that sum fits the requirement."
 followups:
-  - q: Why isn't delete-on-write enough?
-    a: A reader that loaded the old value before the commit can write it into the cache after the delete. Deletes can't protect against a fill that hasn't happened yet. Leases or versioned fills close it; a delayed second delete and a TTL limit the damage.
+  - q: An author edits an entry. How soon do readers see it, and what do you promise?
+    a: 'State a bound: readers see the edit within the cache TTL at worst, and usually within a second through invalidation. The author sees their own edit immediately (read-your-writes: skip or refresh the cache for their session). For a stricter promise, version the entry and put the version in the cache key, so every edit is a new key.'
   - q: How do you guarantee the invalidation happens?
     a: Application-side deletes can be lost to crashes and network errors and miss other writers. Driving invalidation from the database's change log (CDC) makes it at-least-once and ordered, and deletes are idempotent, so replays are safe. The trade is pipeline lag and another system to operate.
   - q: A user's permission is revoked. How quickly does it take effect?

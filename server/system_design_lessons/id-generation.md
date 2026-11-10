@@ -151,8 +151,8 @@ ask: How would you design unique ID generation at scale for a distributed applic
 say: |
   "Internally, primary keys are Snowflake-style 64-bit IDs: a 41-bit millisecond timestamp from a 2024 epoch, 10 bits of worker ID leased from etcd, and a 12-bit sequence. That's compact, time-sortable, and needs no per-insert coordination. The generator waits on sequence exhaustion and refuses to go backwards in time. Public URLs use a separate random base62 code with a unique constraint and retry, so nothing leaks order volume or invites enumeration. Where clients must create IDs offline, they use UUIDv7."
 followups:
-  - q: Why not UUIDv4 everywhere?
-    a: It's 16 bytes, not time-sortable, and random keys scatter B-tree inserts across the index, hurting cache locality and write throughput on big tables. UUIDv7 keeps decentralisation and gains locality.
+  - q: Public URLs must not reveal how many records you have. What do you put in them?
+    a: 'Not the internal sequential or time-ordered ID: it leaks volume and invites enumeration. Use a separate random public ID (10 or more random base62 characters, or a UUID) mapped to the internal key, or encrypt the internal ID with a keyed permutation. Keep the compact, index-friendly ID for joins inside the system.'
   - q: What breaks Snowflake IDs?
     a: Duplicate worker IDs, clocks moving backwards, and more than 4,096 IDs per millisecond per worker. Lease worker IDs, refuse or wait on clock regression, wait out exhausted sequences, and monitor clock skew.
   - q: How long should a short code be?

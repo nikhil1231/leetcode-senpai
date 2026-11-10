@@ -180,8 +180,8 @@ ask: How would you design the API contract for an order management system servin
 say: |
   "Resources are orders and their line items. Create is `POST /orders` with an `Idempotency-Key` header, returning 201 and the order. Reads are GETs; lists are cursor-paginated by `(created_at, id)` with a max page size of 100. Updates are PUTs guarded by `If-Match` on a version, so concurrent edits get a 412 instead of a lost update. Errors use problem-details JSON with a stable code and a request ID. Internally the services talk gRPC with deadlines. Changes are additive within v1; anything breaking goes to v2 with a deprecation window."
 followups:
-  - q: Why cursor rather than offset pagination?
-    a: Offsets address positions in a moving list, so inserts cause skips and duplicates, and deep offsets scan discarded rows. Cursors address keys, are stable under inserts, and become index range seeks.
+  - q: How should the contract differ for external clients and internal services?
+    a: 'External clients get a stable, versioned REST/JSON contract: OAuth scopes, per-client rate limits, problem-details errors and long deprecation windows, because you can''t make them upgrade. Internal services can use gRPC with protobuf schemas, deadlines and generated clients, authenticate with mTLS service identity, and evolve faster because releases can be coordinated. Both share the same resource model and idempotency rules.'
   - q: How do you stop two users overwriting each other's edits?
     a: Optimistic concurrency. The response carries a version (ETag); updates send `If-Match`; the server applies a conditional update and returns 412 if the version moved. Clients reload and merge.
   - q: When would you pick GraphQL?

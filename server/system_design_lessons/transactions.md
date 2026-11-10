@@ -205,8 +205,8 @@ ask: How would you maintain correctness in an event ticketing system when users 
 say: |
   "For the seat invariant I'd let the database enforce it: a unique index on (event_id, seat_id) for confirmed bookings, and holds via a conditional update — `UPDATE seats SET held_by = ?, hold_expires = now() + interval '5 min' WHERE id = ? AND (held_by IS NULL OR hold_expires < now())` — checking the row count. Transactions stay short, with no external calls inside; notifications go through an outbox. Where an invariant spans rows, like a per-event allocation limit, I'd use SERIALIZABLE with retries or lock a single limit row."
 followups:
-  - q: Isn't wrapping it in a transaction enough?
-    a: Not at Read Committed. Two transactions can both read the old value and both write. You need the check and the write to be atomic — a conditional update, a lock, a version check — or a stronger isolation level.
+  - q: How do you enforce the per-event allocation limit when thousands of holds arrive at once?
+    a: 'Make the check and the increment one atomic statement: `UPDATE allocations SET held = held + n WHERE event_id = ? AND held + n <= cap`, treating zero rows updated as sold out. That removes the read-check-write race without serialising everything. If that one row becomes a hot spot, split the allocation across several counter rows and try another on failure.'
   - q: What's write skew?
     a: Two transactions read overlapping data, each writes a different row based on what it read, and together they violate an invariant. Snapshot isolation doesn't catch it, because there's no write–write conflict. Serializable does.
   - q: How do you handle deadlocks?

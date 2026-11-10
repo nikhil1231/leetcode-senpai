@@ -191,7 +191,7 @@ def mistakes(lesson, records, since):
                             'learner_answer': r['text'], 'missed_points': missed})
         elif kind == 'pitch' and r.get('grade') and r['grade']['verdict'] != 'strong':
             b = blocks.get(r['block'], {})
-            q = b.get('ask', 'Pitch the design') if r.get('followup') is None else b['followups'][r['followup']]['q']
+            q = r.get('question') or (b.get('ask', 'Pitch the design') if r.get('followup') is None else b['followups'][r['followup']]['q'])
             out.append({'source': 'interview answer', 'question': q, 'learner_answer': r['text'],
                         'missed_points': r['grade']['missing']})
         elif kind == 'twist' and r.get('grade'):

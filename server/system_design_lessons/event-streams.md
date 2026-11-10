@@ -193,8 +193,8 @@ ask: How would you design an event-streaming platform for order lifecycle events
 say: |
   "Order events go to a topic keyed by order_id, so each order's lifecycle stays ordered while load spreads across 48 partitions — sized for twice today's 240 MB/s at about 12 MB/s per consumer. Each downstream system is its own consumer group, committing after processing and deduplicating by event ID. We alert on lag in minutes per partition. Retention is 7 days for replay, and the customer-profile topic is compacted so new services can rebuild state. Schemas are Avro in a registry with backward compatibility enforced."
 followups:
-  - q: How do you guarantee ordering?
-    a: Only per partition. Put events that must be ordered under the same key, keep a single writer path per key, and consume each partition sequentially.
+  - q: A downstream team wants every order event to carry the full customer profile. What do you say?
+    a: 'Keep each event about one entity and reference others by ID: embedding the profile bloats every message, goes stale and couples the order stream to the profile schema. A consumer that needs profiles builds its own view from a compacted customer-profile topic keyed by customer ID and joins locally. If a value matters as of the order (the shipping address used), copy that snapshot into the order event on purpose.'
   - q: Why didn't adding consumers fix lag?
     a: Either there were more consumers than partitions, so the extras sat idle, or a hot key made one partition the bottleneck. Fix the partition count or the key, not the consumer count.
   - q: What's log compaction for?

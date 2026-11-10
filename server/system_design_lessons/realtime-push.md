@@ -191,8 +191,8 @@ followups:
     a: They're stateful, need upgrade support through every proxy and LB, and you must build heartbeats and resume yourself. For server-to-client streams, SSE is simpler and resumes natively. For wake-ups, only mobile push reaches a closed app.
   - q: How do you route a message to the right gateway?
     a: Gateways subscribe to channels for the users or rooms they hold (or register in a presence registry). Publishers send to the channel; only interested gateways receive it.
-  - q: How do you guarantee nothing is lost?
-    a: The socket is never the source of truth. Persist with a sequence number before delivering, ack by sequence, replay from the last ack on reconnect, and deduplicate on the client.
+  - q: How do you deploy new gateways without dropping everyone's connections at once?
+    a: 'Drain gradually: take a gateway out of the load balancer, tell its clients to reconnect (a close frame with a retry hint), spread reconnects with jittered backoff, and stop it only when its connections reach zero or a deadline passes. Clients resume from their last seen message ID, so nothing is lost, and the jitter stops a reconnect storm hitting the other gateways and the session store.'
 weak: |
   "Use WebSockets and send the message to the other user." No routing across servers, no persistence, no story for disconnects or reconnect storms.
 strong: |

@@ -75,6 +75,17 @@ place 11px is the default.
   full contrast.
 - Verdicts: say the word ("Correct", "Not quite", "Answer revealed"), do not rely on colour alone.
 
+## Lesson pages: one way on
+Every page of a lesson (warm-up, each part, Put it together, the check, your gaps) has exactly one filled (primary)
+button: the next step of the lesson as it is meant to be done. It is the first unfinished activity on the page, then
+the lesson check on its page, then the pager's "Next", and on the last page "Finish: next lesson" (which also marks
+the lesson read). `oneNext()` in `static/sd-lesson.js` enforces it, so an activity can mark its own submit button
+primary and the role moves on as you work. Ways to go somewhere else (the tutor, Ripple Ops, practise this topic, the
+related case, further reading) are plain buttons, grouped under "Elsewhere" in the last page's footer.
+
+In an interview card each question (the opening question, each follow-up, then weak vs strong) is its own tab; an
+answered step offers "Next: follow-up n" rather than stacking the next question below it.
+
 ## Long text
 Summaries over ~3 lines are clamped with a "Show more" control. Explanations are one short paragraph first, detail
 after a click. Lists of more than ~8 facts become a table or a grid, not paragraphs.

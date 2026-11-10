@@ -208,12 +208,12 @@ ask: How would you design a chat system supporting 150 million concurrent connec
 say: |
   "Clients hold WebSockets to a gateway tier, about 300 gateways at 150M concurrent connections. A send goes to a stateless chat service that assigns the next per-conversation sequence, appends to a Cassandra-style table partitioned by (conversation, time bucket), deduplicates by the client message_id, and acks the sender. It then publishes to member channels on a backplane; gateways holding those devices push frames, and clients ack seqs for delivery receipts. Offline members get APNs/FCM pushes and resume by seq when they reconnect. Receipts are monotonic per-member counters, presence is heartbeats with TTL fanned out only to viewers, and big channels use per-channel subscriptions."
 followups:
-  - q: How do you guarantee ordering?
-    a: A server-assigned sequence per conversation from a single serialisation point — the partition leader or a conditional counter — never client timestamps. Clients render by seq and detect gaps.
+  - q: How does presence work for 150 million connected users without flooding everyone?
+    a: The gateway knows who is connected; heartbeats keep a presence entry with a TTL in a sharded in-memory store. Push changes only to people who are looking (an open contact list or conversation), debounce short disconnects so status doesn't flicker, and for large groups show a count or fetch presence on demand instead of broadcasting.
   - q: What does end-to-end encryption change?
     a: The server stores and routes ciphertext and can't index or search contents. Per-device keys mean messages are encrypted for each recipient device, so multi-device delivery and history sync need device key management (as in the Signal protocol).
-  - q: How do you avoid losing a message the sender saw as sent?
-    a: "Sent" is shown only after the message is durably stored with a seq. Everything else — live push, notifications — is a delivery optimisation recoverable through resume.
+  - q: How do delivery receipts work in a group of 500 people?
+    a: Each member's client acks 'delivered' and 'read' as a high-water mark (the last message ID it has), not per message. The server stores one mark per member and aggregates them. The sender sees an aggregate such as 'read by 312' and fetches details on demand, so receipts never cost more than the messages.
 weak: |
   Delivers over the socket and stores later, orders by client timestamps, one table per user's inbox with full copies, broadcasts presence to everyone.
 strong: |

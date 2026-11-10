@@ -198,8 +198,8 @@ followups:
     a: A majority of 4 is 3, so 4 nodes tolerate one failure — the same as 3 — while every write waits for one more node. Odd sizes maximise tolerance per node.
   - q: How does Raft avoid two leaders?
     a: A leader needs a majority of votes in a term, and each node votes once per term, so two candidates can't both win the same term. An old leader can't commit without a majority, and steps down on seeing a higher term.
-  - q: Is a Redis lock with a TTL enough?
-    a: For efficiency, often yes. For correctness, no — a paused holder can outlive its lease. Use a consensus-backed lock, and have the protected resource check fencing tokens, or make the operation idempotent.
+  - q: How long should the scheduler's leader lease be, and what does that choice cost?
+    a: Short leases (a few seconds) replace a dead leader quickly, but a GC pause or network blip can lose leadership and cause churn; long leases mean fewer false failovers but a longer gap with no scheduler after a real crash. Pick it from the dispatch gap you can tolerate, renew well before expiry (say every third of the lease), have the old leader stop dispatching before its lease could have expired, and keep fencing tokens as the backstop.
 weak: |
   "Use a distributed lock in Redis so only one instance runs it." No awareness of lease expiry, pauses, fencing or majorities.
 strong: |

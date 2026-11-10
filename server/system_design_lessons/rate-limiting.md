@@ -135,8 +135,8 @@ ask: How would you design rate limiting for a distributed API gateway serving pu
 say: |
   "Two layers. At the edge, per-IP limits stop floods before they reach us. In the gateway, per-API-key limits use a sliding-window counter in Redis — an atomic Lua script, about 0.5 ms — with cost weights for expensive endpoints. Responses are 429 with Retry-After and RateLimit headers. Each gateway instance keeps a local token bucket as a fallback, so if Redis is down we fail open to approximate limits, except login and SMS, which fail closed. Monthly quotas are tracked separately in the billing database."
 followups:
-  - q: Why not a fixed window?
-    a: It lets up to 2× the limit through around window boundaries. A sliding-window counter fixes that with two counters per key and a small, bounded error.
+  - q: Why do login and SMS endpoints need different limits from the rest of the API, and what do you key them on?
+    a: 'They guard against abuse, not just load: credential stuffing takes over accounts and SMS pumping costs money. Key login limits on account and on IP (or device), with tight bursts and growing delays; key SMS on phone number, account and destination country, with daily caps. These fail closed if the counter store is down, unlike general API limits, which usually fail open.'
   - q: How do you limit across 50 instances?
     a: A shared counter with atomic operations (Redis plus Lua), or local buckets that sync periodically. Per-instance limits alone multiply the effective limit by the instance count.
   - q: Token bucket or leaky bucket?

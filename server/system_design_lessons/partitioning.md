@@ -172,8 +172,8 @@ ask: How would you design partitioning for a multi-tenant business platform supp
 say: |
   "Almost every query is per company, so I'd shard by company_id: dashboards, permissions and transactions stay on one shard. Keys hash to 4,096 logical partitions mapped onto physical nodes, so rebalancing moves partitions rather than rehashing keys. Three enormous customers get dedicated shards through a directory. Cross-company queries are admin-only and go to the warehouse via CDC. If we ever change the key, we'd dual-write, backfill and shift reads gradually."
 followups:
-  - q: Why not shard by user_id?
-    a: Company-scoped queries and transactions would scatter across shards and need distributed transactions. The shard key should match the unit of access and atomicity.
+  - q: How do you move one tenant to another shard without downtime?
+    a: 'Copy, then cut over: bulk-copy the tenant''s rows to the new shard, stream ongoing changes (CDC) until it has caught up, briefly pause that tenant''s writes, verify, and flip its entry in the tenant-to-shard directory. Routers re-read the directory, so only that tenant pauses, for seconds. Delete the old copy after a grace period. This is why a directory beats hashing tenant_id for multi-tenant systems.'
   - q: How do you handle one tenant that's bigger than a shard?
     a: Give it a dedicated shard, or sub-shard it by a finer key inside the tenant (e.g. company_id + project_id), with a directory routing that tenant.
   - q: What's the cost of a global secondary index?

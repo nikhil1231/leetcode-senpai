@@ -134,8 +134,8 @@ say: |
 followups:
   - q: Why reject requests rather than queue them?
     a: Queued requests that outlive their client's timeout are wasted work that delays everyone else. Fast rejections keep goodput high and let clients back off or go elsewhere.
-  - q: How does a circuit breaker help a dependency recover?
-    a: Failing fast stops the flood of requests and retries against it, giving it room to recover, while half-open probes detect when it's healthy again.
+  - q: During the surge, which requests do you drop first, and how do you decide?
+    a: 'Shed by priority: keep checkout and payment, and degrade or drop recommendations, reviews and analytics first. Tag requests with a priority at the edge, give each class its own concurrency limit, and when latency or queue depth crosses a threshold reject the low classes fast with 503 and Retry-After. Agree the order with the business in advance; mid-incident is too late.'
   - q: What's a metastable failure?
     a: An overloaded state that sustains itself after the trigger is gone — usually through retries, timeouts and cold caches — and needs deliberate load reduction to escape.
 weak: |

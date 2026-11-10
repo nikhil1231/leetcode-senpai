@@ -203,8 +203,8 @@ ask: Which storage engine would you choose, and why, for a device-event system i
 say: |
   "The workload is about 300k writes/s of append-mostly events, read by device and recent time window — that's LSM territory: Cassandra or ScyllaDB partitioned by (device_id, day), clustered by timestamp. Writes are sequential memtable appends; reads hit the newest SSTables with Bloom filters skipping the rest. I'd use time-window compaction since data arrives in time order and expires by TTL, and keep disks under about 50% for compaction headroom. Analytics doesn't hit this store — it's exported to Parquet and queried in a columnar warehouse."
 followups:
-  - q: Why are LSM writes fast?
-    a: A write is a WAL append plus a memtable insert. Disk writes happen later, sequentially, in large immutable files. The cost is paid in compaction, which rewrites data in the background.
+  - q: How do you expire old events automatically without hurting write throughput?
+    a: Lay data out by time (daily partitions, or time-window compaction) so expired data is whole files or partitions dropped at once, instead of per-row deletes that create tombstones and compaction work. Per-row TTLs also work but still leave tombstones to compact; the time-bucketed layout makes expiry nearly free.
   - q: What's a tombstone and why does it matter?
     a: In an LSM store a delete writes a marker that hides older versions. Data isn't removed until compaction, so deletes cost space, and many tombstones slow reads that must skip over them.
   - q: When would you pick a B-tree engine instead?

@@ -506,53 +506,85 @@
   };
 
   // ---------- Interview card ----------
-  // Active: you pitch, then answer each follow-up in turn, before any model answer is shown.
-  R.interview = b => frame(b, `<div class="sd-pitch-step" data-step="pitch">${b.ask ? `<div class="sd-interview-ask"><span class="sd-say-label">The interviewer asks</span>${md(b.ask)}</div>` : ''}<div class="sd-prompt"><b>Your turn: answer in about 30 seconds.</b> Type what you would say out loud, then compare.</div><textarea class="textarea sd-pitch-text" data-dictate rows="5" maxlength="4000" placeholder="I'd start with…"></textarea><div class="sd-actions">${button('Grade my pitch', 'pitch', '', true)}${button('Skip: show the model', 'skip')}</div><div class="sd-pitch-out" hidden></div></div><div class="sd-followups-live"></div><div class="sd-weak-strong" hidden><div class="is-weak"><span>Weak answer</span>${md(b.weak)}</div><div class="is-strong"><span>Strong answer</span>${md(b.strong)}</div></div>`, b.title);
+  // Active: you pitch, then answer each follow-up in turn, before any model answer is shown. One question per tab.
+  // With the tutor on, grading an answer also returns the next follow-up, written from what you said; otherwise the
+  // authored follow-ups are asked in order.
+  R.interview = b => {
+    const n = b.followups.length;
+    const tab = (id, label, on) => `<button type="button" role="tab" class="sd-iv-tab${on ? ' is-on' : ''}" data-tab="${id}" aria-selected="${on}" ${on ? '' : 'disabled'}><i></i>${esc(label)}</button>`;
+    return frame(b, `<div class="sd-iv-tabs" role="tablist" aria-label="Interview questions">${tab(0, 'Question', true)}${b.followups.map((_, i) => tab(i + 1, n === 1 ? 'Follow-up' : `Follow-up ${i + 1}`, false)).join('')}${tab('end', 'Weak vs strong', false)}</div>
+      <div class="sd-pitch-step" data-step="pitch" data-panel="0" role="tabpanel">${b.ask ? `<div class="sd-interview-ask"><span class="sd-say-label">The interviewer asks</span>${md(b.ask)}</div>` : ''}<div class="sd-prompt"><b>Your turn: answer in about 30 seconds.</b> Type or say what you would say out loud, then compare.</div><textarea class="textarea sd-pitch-text" data-dictate rows="5" maxlength="4000" placeholder="I'd start with…"></textarea><div class="sd-actions">${button('Grade my pitch', 'pitch', '', true)}${button('Skip: show the model', 'skip')}</div><div class="sd-pitch-out" hidden></div></div>
+      <div class="sd-followups-live"></div><div class="sd-weak-strong" data-panel="end" role="tabpanel" hidden><div class="is-weak"><span>Weak answer</span>${md(b.weak)}</div><div class="is-strong"><span>Strong answer</span>${md(b.strong)}</div></div>`, b.title);
+  };
   W.interview = (el, b, ctx) => {
     const VERDICT = { strong: ['sd-ok', 'Strong answer.'], adequate: ['sd-mid', 'Solid start.'], weak: ['sd-mid', 'Needs more.'] };
-    // st records every step so a reload replays it: {pitch: {text, skipped, res, self}, fu: [same per follow-up]}.
-    let pitchOk = null, replay = null;
+    const n = b.followups.length;
+    // st records every step so a reload replays it: {pitch: {text, skipped, res, self}, fu: [{q, a, ...same}]}.
+    let pitchOk = null, replay = null, finished = false;
     const st = { pitch: null, fu: [] };
+    const show = id => {
+      id = String(id);
+      el.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== id; });
+      el.querySelectorAll('.sd-iv-tab').forEach(t => { const on = t.dataset.tab === id; t.classList.toggle('is-on', on); t.setAttribute('aria-selected', String(on)); });
+    };
+    const tabOf = id => el.querySelector(`.sd-iv-tab[data-tab="${id}"]`);
+    el.querySelectorAll('.sd-iv-tab').forEach(t => t.addEventListener('click', () => { if (!t.disabled) show(t.dataset.tab); }));
     const gradeHtml = (res, model, label) => {
       const g = res?.grade;
       const head = g ? `<p><b class="${VERDICT[g.verdict][0]}">${VERDICT[g.verdict][1]}</b> ${inline(g.feedback)}</p>${g.covered.length ? `<p class="sd-muted">You covered: ${g.covered.map(inline).join(' · ')}</p>` : ''}${g.missing.length ? `<p class="sd-muted">To strengthen it: ${g.missing.map(inline).join(' · ')}</p>` : ''}` : res?.message ? `<p class="sd-muted">${esc(res.message)}</p>` : '';
-      return `${head}<details class="sd-model" ${g ? '' : 'open'}><summary>${label}</summary>${md(model)}</details>`;
+      return `${head}${model ? `<details class="sd-model" ${g ? '' : 'open'}><summary>${label}</summary>${md(model)}</details>` : ''}`;
     };
     const selfCheck = (out, rec, then) => {
       const done = yes => { rec.self = yes; ctx.save(b, st); return then(yes); };
       if (replay && rec.self !== undefined && rec.self !== null) return done(rec.self);
-      out.insertAdjacentHTML('beforeend', `<div class="sd-actions sd-self">${button('I covered it', 'yes')}${button('I missed parts', 'no')}</div>`);
+      out.insertAdjacentHTML('beforeend', `<div class="sd-actions sd-self">${button('I covered it', 'yes', '', true)}${button('I missed parts', 'no')}</div>`);
       out.querySelectorAll('.sd-self button').forEach(x => x.addEventListener('click', () => { out.querySelector('.sd-self').remove(); done(x.dataset.b === 'yes'); }));
       return null;
     };
-    const send = async (text, followup, saved) => {
+    const send = async (text, followup, saved, after) => {
       if (saved) return saved.res;
       if (!ctx.pitch) return null;
-      try { return await ctx.pitch(b, text, followup); } catch (e) { return { message: 'Saved locally only: ' + e.message }; }
+      try { return await ctx.pitch(b, text, followup, after); } catch (e) { return { message: 'Saved locally only: ' + e.message }; }
     };
-    const finish = () => { el.querySelector('.sd-weak-strong').hidden = false; ctx.done(b, pitchOk); };
-    const followup = async i => {
-      const live = el.querySelector('.sd-followups-live');
-      if (i >= b.followups.length) return finish();
-      const f = b.followups[i];
-      live.insertAdjacentHTML('beforeend', `<div class="sd-pitch-step" data-fu="${i}"><div class="sd-prompt"><span class="sd-say-label">Interviewer · follow-up ${i + 1} of ${b.followups.length}</span>${md(f.q)}</div><textarea class="textarea sd-pitch-text" data-dictate rows="3" maxlength="4000" placeholder="Your answer"></textarea><div class="sd-actions">${button('Answer', 'answer', '', true)}${button('Skip', 'skip')}</div><div class="sd-pitch-out" hidden></div></div>`);
+    // After a step: unlock the next tab and offer it; the reader moves on when they have read the feedback.
+    const onward = (out, i, prev) => {
+      const last = i >= n;
+      const next = last ? 'end' : i + 1;
+      tabOf(next).disabled = false;
+      if (last && !finished) { finished = true; ctx.done(b, pitchOk); }
+      out.insertAdjacentHTML('beforeend', `<div class="sd-actions sd-iv-next">${button(last ? 'See weak vs strong →' : `Next: follow-up ${i + 1} →`, 'next', '', true)}</div>`);
+      const go = () => { if (!last && !el.querySelector(`[data-fu="${i}"]`)) followup(i, prev); show(next); };
+      out.querySelector('[data-b=next]').addEventListener('click', go);
+      if (replay && !last && replay.fu?.[i]) return followup(i, prev);
+      return null;
+    };
+    // The question for follow-up i: the one the tutor wrote from the previous answer, else the authored one.
+    const question = (i, prev) => {
+      const saved = replay?.fu?.[i];
+      if (saved?.q) return { q: saved.q, a: saved.a };
+      const live = prev?.res?.next;
+      return live?.q ? { q: live.q, a: live.a || '' } : { q: b.followups[i].q, a: b.followups[i].a };
+    };
+    const followup = (i, prev) => {
+      const live = el.querySelector('.sd-followups-live'), f = question(i, prev);
+      live.insertAdjacentHTML('beforeend', `<div class="sd-pitch-step" data-fu="${i}" data-panel="${i + 1}" role="tabpanel" hidden><div class="sd-interview-ask"><span class="sd-say-label">The interviewer follows up${n > 1 ? ` · ${i + 1} of ${n}` : ''}</span>${md(f.q)}</div><textarea class="textarea sd-pitch-text" data-dictate rows="4" maxlength="4000" placeholder="Your answer"></textarea><div class="sd-actions">${button('Answer', 'answer', '', true)}${button('Skip: show the model', 'skip')}</div><div class="sd-pitch-out" hidden></div></div>`);
       const step = live.querySelector(`[data-fu="${i}"]`), area = step.querySelector('textarea'), out = step.querySelector('.sd-pitch-out');
       const go = async (skipped, saved) => {
         if (area.disabled || area.dataset.settling) return;
         if (!saved) { area.dataset.settling = '1'; await window.Dictate?.settle(area); delete area.dataset.settling; }
         const text = area.value.trim(); if (!skipped && text.length < 5) { area.focus(); return; }
         step.querySelectorAll('button').forEach(x => { x.disabled = true; }); area.disabled = true;
-        const res = skipped ? null : (out.hidden = false, out.innerHTML = '<p class="sd-muted">Grading…</p>', await send(text, i, saved));
-        const rec = st.fu[i] = { text, skipped, res, self: saved?.self ?? null };
+        const res = skipped ? null : (out.hidden = false, out.innerHTML = '<p class="sd-muted">Grading…</p>', await send(text, i, saved, prev?.res?.id || ''));
+        const rec = st.fu[i] = { q: f.q, a: res?.model || f.a, text, skipped, res, self: saved?.self ?? null };
         ctx.save(b, st);
-        out.hidden = false; out.innerHTML = gradeHtml(res, f.a, 'Model answer');
-        if (!skipped && !res?.grade) await selfCheck(out, rec, () => followup(i + 1)); else await followup(i + 1);
+        tabOf(i + 1).classList.add('is-done');
+        out.hidden = false; out.innerHTML = gradeHtml(res, rec.a, 'Model answer');
+        if (!skipped && !res?.grade) await selfCheck(out, rec, () => onward(out, i + 1, rec)); else await onward(out, i + 1, rec);
       };
       step.querySelector('[data-b=answer]').addEventListener('click', () => go(false));
       step.querySelector('[data-b=skip]').addEventListener('click', () => go(true));
       const saved = replay?.fu?.[i];
       if (saved) { area.value = saved.text || ''; return go(saved.skipped, saved); }
-      if (!replay) area.focus({ preventScroll: true });
     };
     const pitchStep = el.querySelector('[data-step=pitch]'), area = pitchStep.querySelector('textarea'), out = pitchStep.querySelector('.sd-pitch-out');
     const go = async (skipped, saved) => {
@@ -561,13 +593,14 @@
       const text = area.value.trim(); if (!skipped && text.length < 15) { area.focus(); return; }
       pitchStep.querySelectorAll('button').forEach(x => { x.disabled = true; }); area.disabled = true;
       out.hidden = false; out.innerHTML = skipped ? '' : '<p class="sd-muted">Grading…</p>';
-      const res = skipped ? null : await send(text, null, saved);
+      const res = skipped ? null : await send(text, null, saved, '');
       const rec = st.pitch = { text, skipped, res, self: saved?.self ?? null };
       ctx.save(b, st);
       el.dataset.answer = text;
+      tabOf(0).classList.add('is-done');
       out.innerHTML = gradeHtml(res, b.say, 'Model pitch');
       if (res?.grade) pitchOk = res.grade.verdict !== 'weak';
-      if (!skipped && !res?.grade) await selfCheck(out, rec, ok => { pitchOk = ok; return followup(0); }); else await followup(0);
+      if (!skipped && !res?.grade) await selfCheck(out, rec, ok => { pitchOk = ok; return onward(out, 0, rec); }); else await onward(out, 0, rec);
     };
     pitchStep.querySelector('[data-b=pitch]').addEventListener('click', () => go(false));
     pitchStep.querySelector('[data-b=skip]').addEventListener('click', () => go(true));
@@ -576,6 +609,8 @@
       // replay stays set: later steps of the chain read it, and new live steps simply find no saved entry.
       replay = saved; area.value = saved.pitch.text || '';
       await go(saved.pitch.skipped, saved.pitch);
+      const reached = [...el.querySelectorAll('.sd-iv-tab:not(:disabled)')].pop();
+      show(reached?.dataset.tab || 0);
     } };
   };
 

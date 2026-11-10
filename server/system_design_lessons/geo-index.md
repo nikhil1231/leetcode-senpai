@@ -140,8 +140,8 @@ say: |
 followups:
   - q: Why not geohash prefix queries for everything?
     a: They're simple and work well on ordinary indexes, but cells vary in size with latitude, neighbours can have unrelated prefixes, and polygons need R-trees. S2 and H3 give more uniform cells and better neighbour handling.
-  - q: How do you handle the cell-edge problem?
-    a: Always search the home cell and its neighbours (a ring), then filter by true distance. Pick a resolution whose cells are about the search radius.
+  - q: Driver locations arrive 200,000 times a second. How do you stop the index being the bottleneck?
+    a: 'Keep live locations in memory, sharded by cell or city, not in a disk database: each update replaces the driver''s position and moves them between cells only when they cross a boundary. Drop updates older than a few seconds, batch writes, and let stationary drivers report less often. Write the raw stream to a log separately for trip history and analytics.'
   - q: Where do you store driver locations?
     a: The latest position in memory (Redis GEO or a custom grid service), sharded by region, with TTL expiry. History goes to a log or column store, not to the query index.
 weak: |

@@ -99,12 +99,13 @@
     if (T.warming) return out + `<section class="tu-entry tu-compact"><span><b>Quick check first.</b> Answer what you can below; the tutor starts from what you miss.</span>${btn('Skip it: start the tutor', 'start-now')}</section>`;
     if (T.passed) return out + `<section class="tu-entry"><span class="sd-eyebrow">FULL MARKS</span><p>You got every warm-up question right, so this lesson counts as done and Home moves you on.</p>
       <div class="sd-actions">${btn('Next lesson →', 'home', '', true)}${btn('Talk it through anyway', 'start-now')}${btn('Read the notes', 'notes')}</div></section>`;
-    const go = active ? btn('Continue your session', 'resume', '', true) : btn(T.notes ? 'Learn this with the tutor' : 'Start', 'start', '', true);
+    // Reading the notes, the lesson's own next step is the page's one primary button; the tutor is the other way in.
+    const go = active ? btn('Continue your session', 'resume', '', !T.notes) : btn(T.notes ? 'Learn this with the tutor' : 'Start', 'start', '', !T.notes);
     if (T.notes) return out + `<section class="tu-entry tu-compact"><span>Rather be taught? The tutor asks the questions and brings in this lesson's activities.</span>${go}</section>`;
     const mode = o.modes.find(m => m.id === T.mode);
     const style = active ? '' : `<label class="tu-style">Style <select data-tu-mode aria-label="Session style">${o.modes.map(m => `<option value="${m.id}" ${T.mode === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>`;
     const fresh = i.outside?.picks_up && !active;
-    const nx = !active && i.next ? `<p class="tu-previously"><b>Your tutor suggested next:</b> ${esc(i.next.title)}${i.next.why ? `, to ${esc(i.next.why)}` : ''}. ${btn('Go there →', 'go-next', '', true)}</p>` : '';
+    const nx = !active && i.next ? `<p class="tu-previously"><b>Your tutor suggested next:</b> ${esc(i.next.title)}${i.next.why ? `, to ${esc(i.next.why)}` : ''}. ${btn('Go there →', 'go-next')}</p>` : '';
     return out + `<section class="tu-entry"><span class="sd-eyebrow">LEARN THIS WITH THE TUTOR</span>
       <p class="tu-scene">${esc(i.scene)}</p>${fresh ? `<p class="tu-previously">Your next session picks up where you got to with the outside tutor.</p>` : i.previously && i.previously !== i.outside?.summary ? `<p class="tu-previously"><b>Last time:</b> ${inline(i.previously)}</p>` : ''}
       ${nx}<p class="sd-muted tu-hint">${active ? 'Your session is waiting where you left it.' : esc(mode?.blurb || '')} Talk or type.</p>

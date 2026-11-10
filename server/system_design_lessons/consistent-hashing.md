@@ -143,8 +143,8 @@ ask: How would you distribute keys and replicas across a 20-node distributed cac
 say: |
   "Cache nodes are chosen with consistent hashing — a ring with about 150 virtual nodes per server — so adding the 21st node moves around 5% of keys instead of 95%, and a failure spreads its load evenly over the survivors. Bigger nodes get proportionally more virtual nodes. For replicated storage we walk clockwise to the next three distinct servers in different zones. If we needed tighter balance under skew, I'd use consistent hashing with bounded loads; hot individual keys are handled separately, by splitting them."
 followups:
-  - q: Why virtual nodes?
-    a: With one point per server, random arcs are very uneven, and a failure dumps all its load on one neighbour. Many points per server balance ownership, spread changes across all servers, and allow weighting.
+  - q: One server has twice the memory of the others. How do you give it a fair share?
+    a: 'Give it proportionally more virtual nodes on the ring, about twice as many, so it owns about twice the key space; rendezvous hashing does the same with a weight per node. Then check the cost: when that node fails, twice as many keys move onto the others, so they need headroom for it.'
   - q: How is rendezvous hashing different?
     a: Each key scores every server with a hash and picks the highest — no ring, naturally balanced, and only the keys whose winner changes move. It costs O(N) per lookup, which is fine for tens to hundreds of servers.
   - q: Does consistent hashing solve hot keys?

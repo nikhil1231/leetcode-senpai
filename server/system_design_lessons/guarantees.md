@@ -188,8 +188,8 @@ ask: How would you define the requirements and guarantees for a seat-booking sys
 say: |
   "Before drawing anything: in scope are holding and confirming seats; payments and seat-map rendering are out. Targets — 2,000 holds/s at peak, p99 under 300 ms, 99.95% of confirmations succeed monthly. The invariant is at most one confirmed booking per seat, and a hold is confirmable only by its owner before expiry, even under concurrent requests and retries. Browsing can be about 10 seconds stale; holds and confirmations must be authoritative. I'll design the write path for the invariant first, then optimise reads."
 followups:
-  - q: Why distinguish invariants from SLOs?
-    a: SLOs can be missed occasionally and you spend error budget. Invariants can't be violated at all without corrupting data, so they need mechanisms (constraints, conditional writes, idempotency) rather than capacity.
+  - q: Which requirement here would you refuse to trade away under load, and which would you relax?
+    a: 'Never trade away the invariants: a seat is sold at most once and a confirmed booking is never lost. Relax the soft targets instead: seat-map freshness, browse latency, even availability of browsing during a surge. Saying which is which tells the interviewer where the design needs strong consistency and where caching and degradation are allowed.'
   - q: How do you pick an SLO?
     a: From user impact and cost. Measure where users feel it, set a target a bit tighter than the contract, and choose the window. A higher target costs disproportionately more, so ask what the product needs.
   - q: What if the interviewer won't give numbers?
