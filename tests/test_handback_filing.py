@@ -153,7 +153,8 @@ def test_a_detailed_handback_files_tangents_and_the_next_tutor_session_picks_up(
     system = client.chats[-1][0]['content']
     assert new['pickup']['session'] == h['session'] and "He's just come from his other tutor" in system
     assert 'Then a long tangent into transactions.' in system and 'What it suggested next: Start with invalidation.' in system
-    assert 'talking about that session like someone who read the notes' in system
+    assert "Don't mention reading notes" in system and "don't set him a test or conditions" in system
+    assert 'like someone who read the notes' not in system and "don't re-teach it unless he asks" not in system
     assert not http.get('/api/tutor/lessons/system-design/cache-aside').json()['outside']['picks_up']
     http.post(f"/api/tutor/sessions/{new['id']}/end")
     later = http.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'cache-aside', 'key': 'sess-after2'}).json()

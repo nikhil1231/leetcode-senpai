@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import board, lessons, rig, story
 
-PROMPT_VERSION = 11
+PROMPT_VERSION = 12
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -277,8 +277,8 @@ PICKUP = """## He's just come from his other tutor
 Since his last session with you, Nikhil studied this lesson with another tutor (often for an hour or more). Its report:
 {summary}{next}{notes}
 
-He has been through what the report says he covered: don't start the lesson over and don't re-teach it unless he asks."""
-PICKUP_OPENING = """ Open by talking about that session like someone who read the notes: what it covered, what seemed to stick, what was left open, and ask how it went or what he wants from today. Then go where he wants, or offer the natural next step. Check one shaky foundation only if he's up for it."""
+He has been through what the report says he covered, so don't start the lesson over. Build on it, and if an answer later shows a hole, fill it then."""
+PICKUP_OPENING = """ Open in a couple of plain sentences on what that session covered and what it left open, then ask how it went or what he wants from today. Don't mention reading notes, don't announce what you're about to do, and don't set him a test or conditions. If he says it's covered, believe him and go where he wants, or suggest the natural next step. A shaky foundation can come up in the middle of the work, when it matters."""
 
 
 def pickup(p, mode):
