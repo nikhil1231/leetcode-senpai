@@ -37,37 +37,19 @@
     const k=catalog.known?.[l.id];
     return l.status==='completed'?(l.tested_out?'Known':'Completed'):k?.state==='covered'?'Covered':l.status==='in_progress'||k?.state==='started'?'In progress':'Not started';
   };
-  // Ideas, two layers: solid is what you would recall today, dim is everything you have covered (tested or taught).
-  function ideaBar(held,seen,total,label) {
-    const pc=n=>total?Math.min(100,100*n/total):0;
-    return `<div class="sd-course-bar sd-idea-bar" role="img" aria-label="${esc(label)}" title="${esc(label)}"><span class="is-seen" style="width:${pc(seen)}%"></span><span style="width:${pc(held)}%"></span></div>`;
-  }
-  const ideaLabel=(held,seen,total)=>`${seen} of ${total} ideas covered; ${held} of them you would recall today`;
-  // The same, per layer (map, interview-ready, depth): three thin bars.
-  const LAYER={1:'Map',2:'Interview-ready',3:'Depth'};
-  function layerBars(ls) {
-    if(!ls)return '';
-    return `<span class="sd-layers">${[1,2,3].map(n=>{const t=ls[n]||{total:0},pc=x=>t.total?Math.min(100,100*x/t.total):0,label=`${LAYER[n]}: ${ideaLabel(t.held||0,t.seen||0,t.total)}`;
-      return `<span class="sd-layer is-l${n}" role="img" title="${esc(label)}" aria-label="${esc(label)}"><i style="width:${pc(t.seen||0)}%"></i><b style="width:${pc(t.held||0)}%"></b></span>`;}).join('')}</span>`;
-  }
+  // Per layer (map, interview-ready, depth), from every source (tutors, ChatGPT, checks): rings in a lesson row,
+  // a labelled ladder at the head of an area. Blank until the knowledge model has the lesson.
   function areaLayers(c) {
     const out={1:{total:0,seen:0,held:0},2:{total:0,seen:0,held:0},3:{total:0,seen:0,held:0}};
     c.lessons.forEach(l=>{const ls=catalog.known?.[l.id]?.layers;if(ls)[1,2,3].forEach(n=>['total','seen','held'].forEach(f=>{out[n][f]+=ls[n]?.[f]||0;}));});
     return out;
   }
   const MAPPABLE=c=>!['designs','casebook'].includes(c.id);
-  // What the knowledge model holds for a lesson, from every source (tutors, ChatGPT, checks); blank until something is tested.
-  function known(l) {
-    const k=catalog.known?.[l.id];
-    return `<span class="sd-known">${k?.layers?layerBars(k.layers):k&&k.seen?ideaBar(k.held,k.seen,k.total,ideaLabel(k.held,k.seen,k.total)):''}</span>`;
-  }
-  function ideas(c) {
-    const ks=c.lessons.map(l=>catalog.known?.[l.id]).filter(Boolean), sum=f=>ks.reduce((a,k)=>a+k[f],0);
-    return {held:sum('held'),seen:sum('seen'),total:sum('total')||1};
-  }
+  const rings=l=>window.DesignMap.rings(catalog.known?.[l.id]?.layers);
   function lessonRow(l,index) {
-    return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}${window.StudyPrompt?.button({section:'system-design',lesson:l.id},l.title)||''}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span>${known(l)}<span class="sd-muted">${l.minutes} min</span></a>`;
+    return `<a class="sd-curriculum-topic hub-learn-row" href="#/system-design/lesson/${l.id}"><span class="sd-row-number">${String(index+1).padStart(2,'0')}</span><span class="hub-learn-title">${esc(l.title)}${window.StudyPrompt?.button({section:'system-design',lesson:l.id},l.title)||''}</span><span class="sd-status ${l.completed?'is-done':''}">${statusText(l)}</span>${catalog.known?rings(l):''}<span class="sd-muted">${l.minutes} min</span></a>`;
   }
+  const lessonHead=()=>`<div class="sd-lesson-head hub-learn-row" aria-hidden="true"><span></span><span>Lesson</span><span>Status</span>${catalog.known?'<span class="sd-rings"><span>Map</span><span>Interview</span><span>Depth</span></span>':''}<span>Time</span></div>`;
   function matches(l) {
     return (!category || l.category===category) && (!search || (l.title+' '+l.objectives.join(' ')).toLowerCase().includes(search.toLowerCase())) &&
       (filter==='all' || filter==='unfinished'&&!l.completed || filter==='review'&&l.needs_review || filter==='completed'&&l.completed);
@@ -75,6 +57,7 @@
   function mapHtml() {
     const t=catalog.course.totals;
     return intro('LEARN','The course, in order.',`${catalog.course.categories.length} areas, ${t.lessons} lessons, from your first request to full interview designs. Home picks the next one for you; open any lesson here when you want to choose.`)+
+      (catalog.known?`<p class="sd-layer-key"><span>Each area is learned in three passes: <b>map</b>, then <b>interview-ready</b>, then <b>depth</b>.</span><span><i class="sd-ring" style="--seen:100%;--held:0%"></i> covered</span><span><i class="sd-ring" style="--seen:100%;--held:100%"></i> you'd recall today</span></p>`:'')+
       `<div id="sd-course-results">${mapResults()}</div>`;
   }
   function mapResults() {
@@ -82,8 +65,8 @@
     const html=catalog.course.categories.map((c,i)=>{
       const numbered=c.lessons.map(l=>({l,n:number++})).filter(({l})=>matches(l));
       if(!numbered.length)return '';
-      const current=catalog.course.lessons.find(l=>l.id===catalog.course.next_lesson)?.category;
-      return `<details class="sd-course-category" ${filter!=='all'||category||search||c.id===current?'open':''}><summary><span class="sd-course-stage">${String(i+1).padStart(2,'0')}</span><span><strong>${esc(c.title)}${window.StudyPrompt?.button({section:'system-design',category:c.id},c.title)||''}</strong><small>${esc(c.description)}</small></span><span class="sd-category-total">${c.completed}/${c.total} lessons done${(L=>L[1].total?` · map ${L[1].seen}/${L[1].total} · interview ${L[2].seen}/${L[2].total} · depth ${L[3].seen}/${L[3].total}`:'')(areaLayers(c))}</span>${(L=>L[1].total?layerBars(L):(i=>ideaBar(i.held,i.seen,i.total,ideaLabel(i.held,i.seen,i.total)))(ideas(c)))(areaLayers(c))}</summary><div>${MAPPABLE(c)&&catalog.known?`<a class="sd-map-link" href="#/system-design/map/${esc(c.id)}">Map this area: the big picture in one sitting →</a>`:''}${numbered.map(({l,n})=>lessonRow(l,n)).join('')}</div></details>`;
+      const current=catalog.course.lessons.find(l=>l.id===catalog.course.next_lesson)?.category, L=areaLayers(c);
+      return `<details class="sd-course-category" ${filter!=='all'||category||search||c.id===current?'open':''}><summary><span class="sd-course-stage">${String(i+1).padStart(2,'0')}</span><span><strong>${esc(c.title)}${window.StudyPrompt?.button({section:'system-design',category:c.id},c.title)||''}</strong><small>${esc(c.description)}</small></span><span class="sd-category-total">${c.completed}/${c.total} lessons done</span>${L[1].total?window.DesignMap.ladder(L,MAPPABLE(c)?`<a class="sd-map-link" href="#/system-design/map/${esc(c.id)}">${L[1].seen<L[1].total?'Map it in one sitting →':'Revisit the map →'}</a>`:''):''}</summary><div class="sd-course-lessons ${catalog.known?'has-layers':''}">${lessonHead()}${numbered.map(({l,n})=>lessonRow(l,n)).join('')}</div></details>`;
     }).join('');
     return html || '<div class="sd-panel">No lessons match these filters. Try another category or show all lessons.</div>';
   }

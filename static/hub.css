@@ -122,7 +122,6 @@
 
 .hub-learn-row { display: grid !important; grid-template-columns: 34px minmax(0, 1fr) auto auto auto; gap: 14px; align-items: center; text-decoration: none; color: var(--text); padding: 12px 6px; }
 .hub-learn-row:hover .hub-learn-title { color: var(--accent); }
-.sd-known { color: var(--muted); font-size: 13px; white-space: nowrap; min-width: 64px; text-align: right; }
 
 @media (max-width: 1000px) { .sh-layout { grid-template-columns: 1fr; } .sh-stand { position: static; min-height: 0; } }
 @media (max-width: 760px) {

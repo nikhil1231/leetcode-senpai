@@ -15,13 +15,27 @@
     catch (e) { M = null; error = e.message; }
   }
 
-  // Three thin bars, one per layer: dim is covered (tested or taught), solid is what you'd recall today.
-  function layers(l) {
-    return `<span class="sd-layers">${[1, 2, 3].map(n => {
-      const t = l[n] || {total: 0}, pc = x => t.total ? Math.min(100, 100 * x / t.total) : 0;
-      const label = `${LAYER[n]}: ${t.seen || 0} of ${t.total} ideas covered, ${t.held || 0} you'd recall today`;
-      return `<span class="sd-layer is-l${n}" title="${esc(label)}" aria-label="${esc(label)}" role="img"><i style="width:${pc(t.seen || 0)}%"></i><b style="width:${pc(t.held || 0)}%"></b></span>`;
-    }).join('')}</span>`;
+  // One ring per layer (map, interview-ready, depth): the dim arc is covered (tested or taught), the solid arc
+  // is what you'd recall today. `rings` sits in a lesson row; `ladder` heads an area, one labelled step per layer.
+  const pct = (t, x) => t.total ? Math.min(100, Math.round(100 * (x || 0) / t.total)) : 0;
+  const said = (n, t) => `${LAYER[n]}: ${t.seen || 0} of ${t.total} ideas covered, ${t.held || 0} you'd recall today`;
+  const ring = (t, label, cls = '') => `<i class="sd-ring ${cls}" role="img" title="${esc(label)}" aria-label="${esc(label)}" style="--seen:${pct(t, t.seen)}%;--held:${pct(t, t.held)}%"></i>`;
+  function rings(l) {
+    return `<span class="sd-rings">${l ? [1, 2, 3].map(n => {
+      const t = l[n] || {total: 0};
+      return t.total ? `<span>${ring(t, said(n, t))}</span>` : '<span></span>';
+    }).join('') : ''}</span>`;
+  }
+  // The pass you're on is the first layer with ideas still to cover. `action` (an HTML link) goes in the map step.
+  function ladder(l, action = '') {
+    const now = [1, 2, 3].find(n => (l[n]?.total || 0) > (l[n]?.seen || 0));
+    return `<div class="sd-ladder">${[1, 2, 3].map(n => {
+      const t = l[n] || {total: 0}, done = t.total && t.seen >= t.total;
+      return `<div class="sd-step${n === now ? ' is-now' : ''}${done ? ' is-done' : ''}">${ring(t, said(n, t), 'is-lg')}
+        <span class="sd-step-text"><span class="sd-step-name">${n} · ${LAYER[n]}${n === now ? ' <b>now</b>' : done ? ' ✓' : ''}</span>
+        <span class="sd-step-num">${t.seen || 0}<small> / ${t.total} covered</small></span><span class="sd-step-sub">${t.held || 0} you'd recall today</span>
+        ${n === 1 ? action : ''}</span></div>`;
+    }).join('')}</div>`;
   }
 
   function resourceRow(r) {
@@ -39,8 +53,8 @@
         <p>${esc(l.summary)} One sitting with the tutor covers every piece at map depth: what it is for, the standard answer and its main tradeoff, and how the pieces fit. The rest waits for the interview pass.</p></div>
       <div id="sd-map-tutor"></div>
       <div class="sd-map-body">
-        <section class="sd-panel"><h3>The lessons in this area</h3><p class="sd-muted">${t.seen} of ${t.total} map ideas covered. Bars: map, interview-ready, depth.</p>
-          <ol class="sd-map-lessons">${M.lessons.map(x => `<li><a href="#/system-design/lesson/${esc(x.id)}">${esc(x.title)}</a>${layers(x.layers)}</li>`).join('')}</ol></section>
+        <section class="sd-panel"><h3>The lessons in this area</h3><p class="sd-muted">${t.seen} of ${t.total} map ideas covered. Rings: map, interview-ready, depth.</p>
+          <ol class="sd-map-lessons">${M.lessons.map(x => `<li><a href="#/system-design/lesson/${esc(x.id)}">${esc(x.title)}</a>${rings(x.layers)}</li>`).join('')}</ol></section>
         ${use.length ? `<section class="sd-panel"><h3>Put it to work</h3><p class="sd-muted">Use the pieces in a whole system. No internals needed.</p><div class="sd-map-grid">${use.map(resourceRow).join('')}</div></section>` : ''}
         ${sims.length ? `<section class="sd-panel"><h3>Look inside</h3><p class="sd-muted">Simulators of how the pieces work. Mostly depth: for later, or when you're curious.</p><div class="sd-map-grid">${sims.map(resourceRow).join('')}</div></section>` : ''}
       </div>`;
@@ -61,5 +75,5 @@
     window.Tutor?.mount(s, {section: 'system-design', lesson: M.lesson, layout: root.querySelector('.sd-map-body'), done});
   }
 
-  window.DesignMap = {open, render, wire, stop() {}, route: () => 'map/' + area, layers};
+  window.DesignMap = {open, render, wire, stop() {}, route: () => 'map/' + area, rings, ladder};
 })();

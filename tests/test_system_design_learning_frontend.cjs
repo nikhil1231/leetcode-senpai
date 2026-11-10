@@ -11,7 +11,8 @@ function harness(saved={}) {
    setInterval:()=>{const n=++counter;timers.add(n);return n;},clearInterval:n=>timers.delete(n),
    document:{visibilityState:'visible',body:{classList:{contains:()=>true}},addEventListener:(k,v)=>{events[k]=v;}},
    window:{H:{$:s=>s==='#tab-design'?root:null,api:()=>{throw new Error('Unexpected request');},escapeHtml:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')},addEventListener:(k,v)=>{events[k]=v;},SystemDesign:{diagram:()=>'',repaint(){}}}};
- vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../static/system-design-learning.js'),'utf8'),context);
+ vm.createContext(context);
+ for(const f of ['sd-map.js','system-design-learning.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../static',f),'utf8'),context);
  return {ui:context.window.DesignLearning,storage,events,timers,root,context};
 }
 function catalog(scope='alice') {
@@ -21,12 +22,25 @@ function catalog(scope='alice') {
  return {storage_scope:scope,course:{categories:[{id:'foundations',title:'Foundations',description:'Start here',total:1,completed:0,lessons:[lesson]}],lessons:[lesson],next_lesson:'request-flow',history:[],
    totals:{completed:0,lessons:32,passed:0,due:0,independent_attempts:0,independent_correct:0,supported_attempts:0,quickfire_questions:96,quickfire_attempts:0}}};
 }
-test('curriculum exposes coverage, per-objective checks and a direct lesson link',()=>{
+test('curriculum rows link to their lesson and line up without knowledge data',()=>{
  const h=harness(),c=catalog();h.ui.setCatalog(c,'curriculum');
  const html=h.ui.render('curriculum',c);
- assert.match(html,/0<small> \/ 32/);assert.match(html,/Not checked/);
- assert.match(html,/#\/system-design\/lesson\/request-flow/);
- assert.match(html,/Learning objectives & practice/);
+ assert.match(html,/href="#\/system-design\/lesson\/request-flow"/);
+ assert.match(html,/Not started/);
+ assert.doesNotMatch(html,/sd-ladder|sd-ring|has-layers/);
+});
+test('layer progress: a ladder per area with the current pass marked, a ring per layer per lesson',()=>{
+ const h=harness(),c=catalog();
+ c.known={'request-flow':{held:1,seen:4,total:12,state:'started',layers:{1:{total:3,seen:3,held:1},2:{total:5,seen:1,held:0},3:{total:4,seen:0,held:0}}}};
+ h.ui.setCatalog(c,'curriculum');const html=h.ui.render('curriculum',c);
+ assert.equal((html.match(/class="sd-step(?: is-[a-z]+)*"/g)||[]).length,3);
+ assert.match(html,/sd-step is-done">.*?1 · Map ✓/s);
+ assert.match(html,/sd-step is-now">.*?2 · Interview-ready <b>now<\/b>/s);
+ assert.match(html,/Revisit the map →/);assert.match(html,/href="#\/system-design\/map\/foundations"/);
+ assert.match(html,/--seen:100%;--held:33%/);assert.match(html,/--seen:20%;--held:0%/);
+ assert.match(html,/aria-label="Map: 3 of 3 ideas covered, 1 you'd recall today"/);
+ assert.match(html,/class="sd-lesson-head hub-learn-row"/);
+ assert.doesNotMatch(html,/NaN|undefined/);
 });
 test('unknown topic performance is visibly unassessed with no invented accuracy',()=>{
  const h=harness(),c=catalog();h.ui.setCatalog(c,'progress');
