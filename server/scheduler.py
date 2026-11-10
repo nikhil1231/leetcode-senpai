@@ -13,7 +13,9 @@ from . import config, plans, curriculum
 from .neetcode150 import CATEGORY_FAMILIES, CATEGORY_ORDER, FAMILY_ORDER
 
 CONF_TO_Q = {1: 3, 2: 4, 3: 5}  # low / medium / high on SM-2's 0..5 scale
-RECALL_TO_Q = {0: 1, 1: 3, 2: 4, 3: 5}  # recall grade -> quality
+# Recall grade -> quality. A vague gist is a lapse and a missing key step is Hard:
+# only a recall you could code from moves the card on as Good or better.
+RECALL_TO_Q = {0: 1, 1: 2, 2: 3, 3: 5}
 SOLUTION_TO_Q = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 5}  # LLM /5 solution score -> quality
 RECALL_INTERVAL_CAP = 21  # cards shorter than this are reviewed by recall, not full solve
 # A recall is a paragraph of approach, not code: it can carry a card at most to

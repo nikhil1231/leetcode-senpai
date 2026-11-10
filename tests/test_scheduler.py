@@ -54,6 +54,8 @@ def test_seed_review_is_due_soon():
 def test_recall_grade_mapping():
     # grade 0 -> failing quality, grade 3 -> strong quality
     assert scheduler.recall_quality(0) < 3
+    assert scheduler.recall_quality(1) < 3   # a vague gist is a lapse
+    assert scheduler.recall_quality(2) == 3  # missing the key step is Hard
     assert scheduler.recall_quality(3) >= 4
 
 

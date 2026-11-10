@@ -197,6 +197,9 @@ async def grade_prediction(store, slug, predicted_category, predicted_approach=N
 
 
 # ---- recall grading -------------------------------------------------------------
+RECALL_RUBRIC_VERSION = 2
+
+
 async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=None, hints=None):
     """Grade an approach-recall against the user's past code + canonical ideas.
 
@@ -213,16 +216,17 @@ async def grade_recall(store, slug, recall_text, recall_time=None, recall_space=
     canonical = await ensure_canonical(store, slug)
     canon_ideas = ", ".join((canonical or {}).get("key_ideas", [])) if canonical else None
     p = store.get_problem(slug) or {}
-    return await llm.extract_or_error("grade_recall", {
+    res, err = await llm.extract_or_error("grade_recall", {
         "title": p.get("title", slug), "category": p.get("neetcode_category"),
         "canonical": canon_ideas, "past_code": past_code,
         "statement": statement_text(p.get("content_html"), limit=12000),
-        "objective": "Explain the approach and recurrence; storage optimisation is optional unless explicitly required.",
         "canon_time": (canonical or {}).get("time"),
         "canon_space": (canonical or {}).get("space"),
         "recall_text": recall_text, "recall_time": recall_time, "recall_space": recall_space,
         "hints": hints,
     }, settings=settings)
+    # Which rubric graded it: 2 is "ready to code", the same as plan grading.
+    return ({**res, "rubric": RECALL_RUBRIC_VERSION} if res else None), err
 
 
 async def recall_hint(store, slug, recall_text, previous):

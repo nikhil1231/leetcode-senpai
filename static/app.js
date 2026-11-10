@@ -2240,8 +2240,6 @@ async function openRecall(slug, title, category, attemptId = null, gradingStatus
   renderRecallHints();
   $("#recall-problem").textContent = title || slug;
   $("#recall-statement").innerHTML = loader("Loading problem prompt...");
-  const help = $("#recall-statement").nextElementSibling;
-  if (help) help.textContent = "No coding. Read the prompt, identify the pattern, then recall the method.";
   $("#recall-text").value = "";
   $("#recall-text").disabled = false;
   setComplexityDisabled("recall-time", false);
@@ -2393,6 +2391,16 @@ function setRecallInputsDisabled(disabled) {
   setComplexityDisabled("recall-space", disabled);
 }
 
+// The recall rubric (coach.RECALL_RUBRIC_VERSION 2) matches plan grading: could
+// you start coding from it? Older grades keep their bare n/3.
+const RECALL_VERDICTS = { 3: "Ready to code", 2: "Missing the key step", 1: "Too vague to code from", 0: "Wouldn't work" };
+
+function recallScoreHtml(g) {
+  if (g.grade == null) return "Recall";
+  const word = (g.rubric || 0) >= 2 ? RECALL_VERDICTS[g.grade] : null;
+  return word ? `Recall: <b>${word}</b> <span class="small">${escapeHtml(g.grade)}/3</span>` : `Recall grade: <b>${escapeHtml(g.grade)}/3</b>`;
+}
+
 function renderRecallGrade(g) {
   g = g || {};
   stopRecallGrading();
@@ -2401,12 +2409,12 @@ function renderRecallGrade(g) {
   const analysis = g.analysis || g.feedback || "";
   $("#recall-grade").classList.remove("hidden");
   $("#recall-grade").innerHTML = `
-    <div class="grade-score">Recall grade: <b>${g.grade}/3</b>${
+    <div class="grade-score">${recallScoreHtml(g)}${
       g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
     ${analysis ? `<p class="grade-analysis">${escapeHtml(analysis)}</p>` : ""}
-    ${positives.length ? `<div class="grade-bullets grade-positives"><b>Positives</b><ul>${
+    ${positives.length ? `<div class="grade-bullets grade-positives"><b>What you had</b><ul>${
       positives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
-    ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>Negatives</b><ul>${
+    ${negatives.length ? `<div class="grade-bullets grade-negatives"><b>What was missing</b><ul>${
       negatives.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
     ${currentRecall.category ? `<p class="small"><b>Category:</b> ${escapeHtml(currentRecall.category)}</p>` : ""}
     <p class="small">Scheduled next review accordingly.</p>
@@ -2446,7 +2454,7 @@ async function askRecallClarification() {
   if (!currentRecall.attempt_id) return;
   btn.disabled = true;
   reply.classList.remove("hidden");
-  reply.textContent = "Asking Gemini...";
+  reply.textContent = "Asking…";
   try {
     const r = await api(`/review/recall/${currentRecall.attempt_id}/clarify`, "POST", { question });
     reply.textContent = r.reply || "No clarification returned.";
@@ -2887,11 +2895,11 @@ function recallDetailGradeHtml(g, status, err) {
     return gradeStatusHtml(status, err);
   }
   return `<div class="recall-grade detail-grade">
-    <div class="grade-score">Recall grade${hasGrade ? `: <b>${escapeHtml(g.grade)}/3</b>` : ""}${
+    <div class="grade-score">${recallScoreHtml(g)}${
       g.optimal ? ` <span class="tag grade-optimal">optimal</span>` : ""}</div>
     ${g.analysis || g.feedback ? `<p class="grade-analysis">${escapeHtml(g.analysis || g.feedback)}</p>` : ""}
-    ${gradeListHtml("Positives", positives, "grade-positives")}
-    ${gradeListHtml("Negatives", negatives, "grade-negatives")}
+    ${gradeListHtml("What you had", positives, "grade-positives")}
+    ${gradeListHtml("What was missing", negatives, "grade-negatives")}
   </div>`;
 }
 

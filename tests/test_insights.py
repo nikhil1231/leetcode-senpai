@@ -341,7 +341,7 @@ def test_confidence_calibration_uses_recall_grade_mapping():
     arrays = next(r for r in cal["categories"] if r["category"] == "Arrays & Hashing")
     assert arrays["objective_quality"] == 3.0
     two_pointers = next(r for r in cal["categories"] if r["category"] == "Two Pointers")
-    assert two_pointers["objective_quality"] == 4.0
+    assert two_pointers["objective_quality"] == 3.0  # missing the key step reads as Hard
 
 
 def test_confidence_calibration_averages_multiple_objective_signals_per_attempt():

@@ -90,11 +90,11 @@ class CodeAnalysis(BaseModel):
 
 
 class RecallResult(BaseModel):
-    grade: int = Field(0, ge=0, le=3, description="0 blank/no valid method, 1 vague gist, 2 valid-but-suboptimal or missing the crucial trick, 3 optimal time and space complexity incl. trick")
+    grade: int = Field(0, ge=0, le=3, description="0 blank, wouldn't work or a different problem; 1 vague gist; 2 right family but missing the key step, or suboptimal time; 3 ready to code: the key step at optimal complexity")
     optimal: bool = Field(False, description="true when their recalled method matches the canonical optimal time and space complexity")
     analysis: str = Field("", description="1-2 sentence read of the recall; ALWAYS fill this, even for a flawless recall")
     positives: list[str] = Field(default_factory=list, description="what they recalled correctly, as concepts; at least one item for any non-blank answer")
-    negatives: list[str] = Field(default_factory=list, description="gaps or the better/target approach to learn; empty ONLY for a flawless optimal recall")
+    negatives: list[str] = Field(default_factory=list, description="the missing key step, a stated follow-up they missed, or the better approach to learn; empty when nothing useful to add")
 
 
 class CorrectnessObjection(BaseModel):
@@ -529,35 +529,34 @@ TASKS: dict[str, Task] = {
     ),
     "grade_recall": Task(
         RecallResult,
-        "Assess only the stated objective. A correct recurrence earns full credit when storage optimisation "
-        "is optional. Do not require code-level detail for an explanatory answer. "
         "You grade a from-memory recall of the METHOD for a problem the solver has "
-        "seen before. This is a NO-CODE exercise — grade the approach's gist, not "
-        "an implementation; IGNORE pseudocode syntax, variable names, and off-by-one "
-        "/ boundary bugs — they were told not to write code. A correct method that "
-        "actually solves the problem EARNS CREDIT even when it is not the canonical "
-        "optimal one; do NOT zero a valid alternative just because you expected a "
-        "different approach. Grade by the recalled method's time and space complexity "
-        "against the canonical optimum, not by whether it uses the canonical technique: "
-        "a non-canonical method with optimal time and space can earn 3/3. grade: 0 "
-        "only for a blank answer or a method that would not produce correct results; "
-        "1 vague gist; 2 a valid method that solves it but is suboptimal in time or "
-        "space when optimality is explicitly the objective, OR an approach missing its crucial trick; 3 a correct "
-        "method meeting the stated retrieval objective, including a correct recurrence without rolling storage. Set "
-        "optimal=true when their recalled method matches the canonical optimal time "
-        "and space, even if it is a different approach. Write a 1-2 sentence analysis. In "
-        "positives, credit what they got right as CONCEPTS (the working idea, a "
-        "valid alternative approach, correct complexity). In negatives, name the "
-        "gaps as CONCEPTS — and when their method is valid but suboptimal or differs "
-        "from the canonical approach, you may describe the better/target or alternate "
-        "canonical approach and its key trick so they can learn it; do not mark down "
-        "solely for being non-canonical. ALWAYS "
-        "write the analysis and at least one positive for any non-blank answer — a "
-        "flawless 3/3 still gets its strengths named; leave negatives empty only "
-        "when the recall is already optimal with nothing useful to add. Use "
-        "the canonical ideas and their past solution ONLY to identify the intended "
-        "method, never as text to reproduce. If they asked for hints first, the "
-        "recall wasn't fully from memory: grade at most 2.",
+        "solved before. They say how they would solve it, as they would to an "
+        "interviewer: the key idea and why it works. Many write a rough code sketch "
+        "instead; read it for the method. Judge it the way an interviewer would decide "
+        "whether to let them start coding. grade 3 = ready to code: the recall names "
+        "the key step that makes the problem work at the optimal time complexity (for "
+        "example, in Trapping Rain Water, moving the side with the smaller running "
+        "max). grade 2 = the right family of approach but the key step is missing or "
+        "wrong, or a working method with worse time complexity than the optimum. "
+        "grade 1 = a vague gist with no method you could code from. grade 0 = blank, "
+        "a method that would not work, or the method for a different problem. "
+        "Judge by meaning, not wording, and read dictated or rough text generously. "
+        "Do NOT mark down for implementation detail: syntax, variable names, index "
+        "bounds, base cases, off-by-one slips or a typo in a recurrence whose idea is "
+        "clear. A valid non-canonical method at the optimal complexity earns 3. Space: "
+        "a storage refinement of an optimal method (a rolling array instead of a full "
+        "DP table, say) is not required. A follow-up in the statement (such as 'can "
+        "you do it in O(1) space?') is not required for 3, but if they missed it, name "
+        "it in negatives. Set optimal=true when the recalled method matches the "
+        "canonical optimal time and space, even if it is a different approach. Write "
+        "a 1-2 sentence analysis in plain words. In positives, name what they got "
+        "right as concepts; at least one for any non-blank answer. In negatives, name "
+        "the missing key step, a missed follow-up, or the better approach and its key "
+        "idea so they can learn it; leave it empty when there is nothing useful to "
+        "add. Use the canonical ideas and their past solution only to identify the "
+        "intended method, never as text to reproduce. If they asked for hints first, "
+        "the recall wasn't fully from memory: grade at most 2. British English, no "
+        "em dashes.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('category')}).\n"
             f"Canonical optimal key ideas: {p.get('canonical') or '(unknown)'}\n"
@@ -565,7 +564,6 @@ TASKS: dict[str, Task] = {
             f"space={p.get('canon_space') or '?'}.\n"
             f"Their own past solution (reference only, to identify the intended "
             f"method — do NOT grade its syntax):\n{_trunc(p.get('past_code'), 1200)}\n"
-            f"Objective: {p.get('objective') or 'Explain the method; optional storage optimisation is not required.'}\n"
             f"Statement and constraints: {p.get('statement') or '(unknown)'}\n"
             f"--- their recall now ---\n{p.get('recall_text')}\n"
             f"Stated complexity: time={p.get('recall_time') or '?'}, space={p.get('recall_space') or '?'}\n"

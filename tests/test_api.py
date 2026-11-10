@@ -1063,6 +1063,25 @@ def test_recall_grading_waits_and_schedules(client, monkeypatch):
     assert client.post(f"/api/review/recall/{aid}/ack").status_code in (404, 405)
 
 
+def test_recall_grade_is_stamped_with_its_rubric_and_sends_no_dp_objective(client, monkeypatch):
+    seen = {}
+
+    async def fake_extract_or_error(task_name, payload, settings=None):
+        seen[task_name] = payload
+        return {"grade": 2, "optimal": False, "analysis": "Right family."}, None
+
+    async def fake_canonical(store, slug):
+        return {"key_ideas": ["complements"], "time": "O(n)", "space": "O(n)"}
+
+    monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(main.llm, "extract_or_error", fake_extract_or_error)
+    monkeypatch.setattr(main.coach, "ensure_canonical", fake_canonical)
+    graded, err = asyncio.run(main.coach.grade_recall(client.store, "two-sum", "hash it"))
+    assert err is None
+    assert graded["grade"] == 2 and graded["rubric"] == main.coach.RECALL_RUBRIC_VERSION
+    assert "objective" not in seen["grade_recall"]
+
+
 def test_recall_clarification_requires_llm(client):
     aid = client.store.add_attempt({
         "slug": "two-sum", "solved_at": 1, "source": "recall", "kind": "recall",

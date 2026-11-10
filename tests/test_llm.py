@@ -165,11 +165,8 @@ async def test_recall_grades_noncanonical_optimal_by_complexity(enable_llm, monk
     })
 
     assert out["grade"] == 3
-    assert "not by whether it uses the canonical technique" in seen["system"]
-    assert (
-        "non-canonical method with optimal time and space can earn 3/3"
-        in seen["system"]
-    )
+    assert "A valid non-canonical method at the optimal complexity earns 3" in seen["system"]
+    assert "Do NOT mark down for implementation detail" in seen["system"]
     assert "Canonical optimal complexity: time=O(n), space=O(1)." in seen["prompt"]
 
 

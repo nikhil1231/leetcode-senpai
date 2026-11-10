@@ -135,6 +135,15 @@ test('recall request failure preserves the draft and restores usable actions', a
   assert.equal(ui.intervals.size, 0);
 });
 
+test('a recall grade says whether you could code from it; older grades keep n/3', () => {
+  const ui = app(async () => response({}));
+  assert.match(ui.run('recallScoreHtml({ grade: 2, rubric: 2 })'), /Missing the key step/);
+  assert.match(ui.run('recallScoreHtml({ grade: 3, rubric: 2 })'), /Ready to code/);
+  const old = ui.run('recallScoreHtml({ grade: 3 })');
+  assert.match(old, /3\/3/);
+  assert.doesNotMatch(old, /Ready to code/);
+});
+
 test('a recall marks its row while grading and redraws the page once graded', async () => {
   let resolveRecall;
   const urls = [];
