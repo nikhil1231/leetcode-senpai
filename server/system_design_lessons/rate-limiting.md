@@ -98,7 +98,7 @@ fix: |
 
 - **What to limit on:** API key or account (fairness between customers), user, IP (anonymous traffic; beware shared IPs behind NAT), endpoint (expensive endpoints get tighter limits), or a combination. Often several layers at once.
 - **Where:** coarse limits at the edge or gateway (cheap, protects everything); fine-grained limits in the service that knows the cost of each operation.
-- **Respond with `429 Too Many Requests`**, a `Retry-After` header, and ideally rate-limit headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`) so well-behaved clients can pace themselves.
+- **Respond with `429 Too Many Requests`**, a `Retry-After` header, and ideally rate-limit headers so well-behaved clients can pace themselves. The long-deployed convention is `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (often with an `X-` prefix); the IETF draft is still evolving, and recent versions replace them with structured `RateLimit` and `RateLimit-Policy` fields, so check what your clients expect.
 - **Quotas** (10,000 calls per month, a billing concept) differ from **rate limits** (100 per second, a capacity concept). Many APIs have both.
 
 ```sort

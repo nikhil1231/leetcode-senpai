@@ -14,6 +14,7 @@ sources:
   - ['Google SRE Book: Service Level Objectives', 'https://sre.google/sre-book/service-level-objectives/']
   - ['Google SRE Workbook: Implementing SLOs', 'https://sre.google/workbook/implementing-slos/']
   - ['PostgreSQL: Constraints', 'https://www.postgresql.org/docs/current/ddl-constraints.html']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 12', 'https://dataintensive.net/']
 case: seats
 ---
 
@@ -30,6 +31,15 @@ case: seats
 | **Non-goal / out of scope** | What are we deliberately not designing? | Payments, refunds, seat maps rendering, fraud |
 
 Invariants are the ones candidates forget, and they are what make designs hard. "Users can book seats" is easy. "**No seat is ever sold twice, even when 10,000 people click the last seat at the same instant**" is the actual problem.
+
+When you write an invariant, ask which kind of "consistency" it really is, because the word hides two different requirements:
+
+- **Timeliness:** users see an up-to-date view. A violation is temporary and heals if you wait and try again (the "eventual consistency" of a stale replica or a lagging search index).
+- **Integrity:** nothing is lost, duplicated, contradictory or wrongly derived. A violation is permanent: waiting doesn't fix a missing record or a balance that no longer equals the sum of its transactions, and only checking and repair does.
+
+In most systems integrity matters far more. A bank statement that omits yesterday's purchase is normal, since settlement is asynchronous; one whose total doesn't add up, or that charges you without paying the merchant, is a disaster. This frees you to relax timeliness (caches, asynchronous derived views, stale reads on the browse path) while holding integrity firm with constraints, idempotent writes, atomic commits and reconciliation. Asynchronous, event-driven designs fit that split: consumers may be late, but duplicate suppression and effectively-once processing keep integrity. Say which one each invariant needs.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 12, "Aiming for Correctness".*
 
 ```sort
 prompt: Classify each statement from a ride-hailing prompt.

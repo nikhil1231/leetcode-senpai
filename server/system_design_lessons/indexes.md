@@ -14,6 +14,7 @@ sources:
   - ['PostgreSQL: Indexes', 'https://www.postgresql.org/docs/current/indexes.html']
   - ['Use The Index, Luke — SQL indexing and tuning', 'https://use-the-index-luke.com/']
   - ['PostgreSQL: Using EXPLAIN', 'https://www.postgresql.org/docs/current/using-explain.html']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 3', 'https://dataintensive.net/']
 ---
 
 > [!story] The 9-second order history
@@ -22,6 +23,10 @@ sources:
 ## How a B-tree finds a row
 
 A B-tree index keeps keys **sorted** in pages (typically 8–16 KB). Inner pages point to child pages; leaf pages hold keys and pointers to table rows (or, in clustered stores, the rows themselves). Because each page holds hundreds of keys, the tree is very shallow.
+
+**Where does the row itself live?** Either in a **heap file** (rows in no particular order, with every index holding a pointer into it, as in Postgres) or **inside the index** (a *clustered* index, as with InnoDB's primary key, whose secondary indexes then point at the primary key rather than a physical location). The heap avoids duplicating row data across several indexes, but a row that outgrows its slot must move, so indexes are updated or a forwarding pointer is left. A clustered index saves a hop on reads but ties the row's position to its key. A **covering** index sits between the two: it stores a few extra columns so some queries never touch the table. Each choice speeds reads and costs storage and write work. A secondary index is just a key-value index whose keys aren't unique: store a list of row IDs per key, or append the row ID to make each key unique.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 3, "Other Indexing Structures".*
 
 ```calc
 title: How deep is the tree?

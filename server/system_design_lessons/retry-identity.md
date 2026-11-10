@@ -14,6 +14,7 @@ sources:
   - ['AWS Builders Library: Making retries safe with idempotent APIs', 'https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/']
   - ['AWS Builders Library: Timeouts, retries and backoff with jitter', 'https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/']
   - ['Stripe API: Idempotent requests', 'https://docs.stripe.com/api/idempotent_requests']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 8', 'https://dataintensive.net/']
 case: jobs
 ---
 
@@ -34,6 +35,10 @@ When a call times out, one of three things happened:
 3. **It arrived and succeeded, but the response was lost** — retrying causes a duplicate.
 
 The client can't tell these apart. So either the operation must be **naturally idempotent**, or the server must **deduplicate**.
+
+The ambiguity is wider than three cases. The request may be waiting in a queue (a switch buffer, the receiver's network stack, a busy CPU), the remote node may have crashed or be paused for a garbage collection or VM migration, or the response may be queued or lost on the way back. From the sender's side they all look the same: silence. In an asynchronous network such as the internet, which gives no upper bound on delivery time, there is no "correct" timeout. Too short, and a slow but healthy node is declared dead, and shifting its work onto others can tip a loaded system into cascading failure. Too long, and users wait on a node that really is dead. Most of the variability in delay comes from **queueing**, and packet-switched networks and shared servers trade guaranteed latency for utilisation. A fixed constant is therefore a weak choice; better is to measure response times and their jitter continuously and adapt the timeout to them, as the accrual failure detectors used by some databases do. Network partitions also happen in practice, even in well-run datacentres, so design for them rather than hoping they are rare.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 8, "Unreliable Networks".*
 
 ```timeline
 title: The lost response

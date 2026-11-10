@@ -14,6 +14,7 @@ sources:
   - ['microservices.io: Transactional outbox', 'https://microservices.io/patterns/data/transactional-outbox.html']
   - ['Debezium: Outbox event router', 'https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html']
   - ['PostgreSQL: SELECT … FOR UPDATE SKIP LOCKED', 'https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapters 5 and 11', 'https://dataintensive.net/']
 case: jobs
 ---
 
@@ -21,6 +22,8 @@ case: jobs
 > An order service committed each order to Postgres and then published `OrderPlaced` to Kafka. Every few days a handful of customers complained that their orders never shipped. The cause was mundane: deploys sent SIGTERM to pods mid-request. If the kill landed after the commit but before the publish, the order existed and the event didn't. Nobody noticed until a customer did, because the database said everything was fine.
 
 ## Two writes, no shared transaction
+
+Crashes aren't the only hazard. Even with no failure, two clients writing the same record through two separate paths (the database, then a search index or cache) can have their updates reach the second system in a different order than the first, leaving the copies permanently disagreeing with no error anywhere. Making every derived copy follow **one ordered log of changes** removes that race. It is the idea behind change-data capture, and the reason the options below funnel everything through the database's own commit order.
 
 ```timeline
 title: Commit, then publish
@@ -171,9 +174,9 @@ fix: |
 
 ## Alternatives, briefly
 
-- **CDC on business tables** (no outbox): emit changes straight from the `orders` table's log. Fewer moving parts, but you publish your internal schema as your public event contract, and you can't easily emit events that don't map to row changes.
+- **CDC on business tables** (no outbox): emit changes straight from the `orders` table's log. Fewer moving parts, but you publish your internal schema as your public event contract, and you can't easily emit events that don't map to row changes. A new consumer first needs a consistent snapshot of the table, then the changes after the snapshot's log position; or the log is compacted to keep the latest value per key so a new consumer can replay from the start. Delivery is asynchronous, so the derived copy lags the database.
 - **Listen to yourself:** publish first, and have the service consume its own event to update its database. Simple, but the user's request no longer sees its own write immediately.
-- **Event sourcing:** the event log *is* the source of truth, so there's no dual write — at the cost of a very different programming model.
+- **Event sourcing:** the event log *is* the source of truth, so there's no dual write — at the cost of a very different programming model. It differs from CDC in what an event means: CDC records low-level state changes ("this row was updated") that an application mutated in place, whereas event sourcing has the application record immutable, intent-level facts ("the order was cancelled") and derive current state by replaying them. That makes history and audit natural and lets you rebuild a read model for a new question, but you need snapshots so replay stays fast, and correcting or deleting data (privacy rules, mistakes) needs deliberate design because the log is append-only. Its usual partner is **CQRS**: separate write and read models, with several read-optimised views derived from the same events.
 
 ```calc
 title: Outbox relay lag

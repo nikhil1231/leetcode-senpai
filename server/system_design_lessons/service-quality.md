@@ -14,6 +14,7 @@ sources:
   - ['Dean & Barroso, The Tail at Scale (CACM 2013)', 'https://research.google/pubs/the-tail-at-scale/']
   - ['Google SRE Book: Monitoring distributed systems', 'https://sre.google/sre-book/monitoring-distributed-systems/']
   - ['Google SRE Workbook: Alerting on SLOs', 'https://sre.google/workbook/alerting-on-slos/']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 1', 'https://dataintensive.net/']
 ---
 
 ```outage
@@ -31,6 +32,10 @@ case: s3-2017
 - **Mean:** pulled up by outliers, yet still hides how bad they are. A mean of 60 ms can coexist with a p99 of 2 s.
 
 Always ask: which percentile, measured where, over which window, and do failed and timed-out requests count?
+
+Three precision points. **Response time** is what the client sees: service time plus network and queueing delay. **Latency**, strictly, is the time a request spends waiting to be handled. Queueing often dominates the tail, because a server can run only so many requests in parallel and a few slow ones block the rest behind them (head-of-line blocking). So measure response time at the *client*, and in load tests keep sending requests without waiting for earlier ones to finish, or you hide the queue. **You can't average percentiles** across machines or time windows; merge the underlying histograms instead. And a **fault** (one component deviating from spec) isn't a **failure** (the service as a whole stops serving users): reliability work is about stopping faults from becoming failures, and deliberately injecting faults, as chaos testing does, keeps that machinery exercised. One study of large internet services found operator configuration errors to be the leading cause of outages, with hardware faults involved in only 10–25%.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 1.*
 
 ```sim
 name: percentile

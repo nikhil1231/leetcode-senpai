@@ -182,7 +182,7 @@ These move faster than anything above, so quote them as "roughly, as of now". Th
 | H100 | 80 GB HBM, ~3.35 TB/s, ~1,000 dense BF16 TFLOPS |
 | H200 / B200 | ~141 GB at ~4.8 TB/s / ~180 GB at ~8 TB/s |
 | Consumer GPUs | 8–32 GB (an RTX 4090 has 24 GB) |
-| NVLink (H100) vs PCIe 5 x16 | ~900 GB/s vs ~64 GB/s per direction |
+| NVLink (H100) vs PCIe 5 x16 | ~450 GB/s per direction (900 GB/s total) vs ~64 GB/s per direction |
 
 | Retrieval | Rough value |
 |---|---|

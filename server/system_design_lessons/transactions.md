@@ -14,6 +14,7 @@ sources:
   - ['PostgreSQL: Transaction isolation', 'https://www.postgresql.org/docs/current/transaction-iso.html']
   - ['PostgreSQL: Explicit locking', 'https://www.postgresql.org/docs/current/explicit-locking.html']
   - ['Berenson et al., A Critique of ANSI SQL Isolation Levels', 'https://www.microsoft.com/en-us/research/publication/a-critique-of-ansi-sql-isolation-levels/']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 7', 'https://dataintensive.net/']
 case: seats
 ---
 
@@ -30,6 +31,12 @@ case: seats
 > [!mistake] Transactions don't cover the outside world
 > Calling a payment API or sending an email inside a transaction that later rolls back doesn't un-send the email. External side effects need idempotency, outbox patterns or sagas — not `BEGIN … COMMIT`.
 
+Treat "ACID" as a loose label, not a specification. "Atomicity" really means *abortability*: if something fails halfway, everything can be safely discarded and retried. "Isolation" in the textbook means serializability, but databases mostly ship weaker levels under the same name. "Durability" is never absolute: it depends on a flush to disk and on replicas, and a correlated failure (a whole datacentre, a firmware bug in a disk) can still lose data. When a vendor says "ACID", ask which isolation level and which durability guarantee you get.
+
+**Single-object versus multi-object.** Even a single-row write needs atomicity and isolation (a crash halfway through writing a large value, or a reader seeing half of it). Most stores give you that per object, plus helpers such as atomic increment and compare-and-set. That is not a transaction: you need real multi-object transactions whenever a foreign key, a denormalised copy or a secondary index must change together with the row. Without them, a failure leaves the copies disagreeing.
+
+**Retrying an aborted transaction is not free of traps.** If the commit succeeded but the acknowledgement was lost, a retry runs it twice unless it is idempotent. If the failure was overload, retrying piles on. Retrying makes sense for transient errors (deadlocks, serialisation failures) but not for permanent ones (a constraint violation), and any side effect outside the database happens again.
+
 ## The anomalies
 
 | Anomaly | What happens | Read Committed (PG default) | Repeatable Read / Snapshot | Serializable |
@@ -41,6 +48,13 @@ case: seats
 | Write skew | Two transactions read overlapping data, write *different* rows, and break an invariant | **Possible** | **Possible** | Prevented (Postgres SSI aborts one) |
 
 Defaults differ: Postgres and Oracle default to **Read Committed**; MySQL InnoDB defaults to **Repeatable Read** (with different semantics from Postgres's). Always check rather than assume.
+
+### How the weaker levels are built
+
+- **Read Committed** forbids two things. *Dirty writes* are stopped with row-level write locks held until commit. *Dirty reads* are stopped not with read locks (a long write would block every reader) but by keeping the old committed value around: readers get it until the writer commits.
+- **Snapshot isolation** (what Postgres calls Repeatable Read) gives each transaction a consistent snapshot of the database as of its start, built with **multi-version concurrency control (MVCC)**: the database keeps several versions of each row, each tagged with the transaction that created it and the one that deleted it. A transaction ignores versions created by transactions still running when it started, by aborted ones, or by later ones. The motto is that readers never block writers and writers never block readers, which is why long read-only queries (backups, analytics) are safe. Old versions are cleaned up in the background (vacuum in Postgres).
+- **Why a snapshot matters.** At Read Committed, a transaction that reads one account, then another, while a transfer commits in between can see money vanish (**read skew**). That is harmless for a page refresh but corrupts a backup or a consistency check, which is where you want a snapshot.
+- **Naming is a mess.** The SQL standard's levels were written before snapshot isolation was common, so what one database calls "repeatable read" or even "serializable" may be snapshot isolation (Oracle's "serializable" is). Judge a level by the anomalies it allows, not its name.
 
 ```sim
 name: isolation
@@ -166,6 +180,22 @@ fix: |
           db.execute("UPDATE accounts SET balance = balance + %s WHERE id=%s", amount, dst)
           outbox.add("transfer_completed", src=src, dst=dst, amount=amount)   # same transaction
 ```
+
+## Three real ways to get serializability
+
+Serializable means the outcome is as if the transactions had run one at a time. Databases get there in one of three ways, and the choice shapes performance:
+
+| Technique | How | Cost | Examples |
+|---|---|---|---|
+| **Actual serial execution** | Literally run transactions one at a time on a single thread. This only works if each transaction is a short **stored procedure** submitted whole (no round trips to an application mid-transaction), the data fits in memory, and write throughput fits one CPU core. Scale out by partitioning so each transaction touches one partition | Cross-partition transactions are much slower, and one slow transaction stalls everything | VoltDB, Redis (single-threaded commands) |
+| **Two-phase locking (2PL)** | A reader takes a shared lock, a writer an exclusive lock, and locks are held until commit. Writers block readers and readers block writers, the opposite of snapshot isolation. Phantoms are prevented with **predicate locks** (lock all rows matching a condition, including rows not yet inserted) or, more cheaply, **index-range locks** on a broader range | Frequent deadlocks (the database aborts one and you retry), and unpredictable tail latency because a transaction can queue behind a slow one | MySQL InnoDB and SQL Server at their serializable levels |
+| **Serializable snapshot isolation (SSI)** | Optimistic: run on snapshots without blocking, track which reads might have been invalidated by concurrent writes, and abort at commit if a transaction acted on a premise that is no longer true. Detects reads of data another transaction has since changed, and writes that affect something another transaction already read | Read-only queries stay unblocked, but contention causes aborts, and long read-write transactions are likely to be aborted | PostgreSQL (since 9.1); FoundationDB uses similar optimistic conflict detection |
+
+Two practical rules follow: transactions at any level should be **short** (long ones hold locks, retain old versions, or collide), and when an invariant spans rows, prefer encoding it as a constraint or a single contended row before reaching for serializable isolation everywhere.
+
+Phantoms are the awkward case for locking tricks. `SELECT … FOR UPDATE` can only lock rows that exist, so "check that no booking overlaps, then insert" has nothing to lock when the check returns zero rows. One workaround is to **materialise the conflict**: create a row for every room and time slot ahead of time, so the check can lock a real row. It is ugly, leaks concurrency control into the data model, and is a last resort next to a unique or exclusion constraint, or serializable isolation.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 7.*
 
 > [!senior] Serializable isn't free, but it's cheaper than you think
 > Postgres's serialisable snapshot isolation (SSI) doesn't lock everything: it tracks read–write dependencies and aborts a transaction when a dangerous pattern appears. You pay some overhead and a higher abort rate under contention, and your code **must retry** serialisation failures (SQLSTATE 40001). For complex invariants that's often simpler and safer than hand-placing locks.

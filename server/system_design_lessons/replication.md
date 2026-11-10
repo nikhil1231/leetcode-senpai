@@ -45,18 +45,38 @@ takeaway: |
   Waiting for **one** nearby replica removes the "lost acknowledged write" window for the price of one round trip. Waiting for all replicas ties every write to the slowest, least available one. Most production systems wait for one replica in another zone (or a majority), and replicate asynchronously to anything farther away.
 ```
 
+### What the leader ships
+
+"Streams its change log" hides a design choice, and it decides what you can do operationally:
+
+| Log format | What followers receive | Catch |
+|---|---|---|
+| **Statement-based** | The SQL statements themselves, re-executed | Breaks on anything non-deterministic (`NOW()`, `RAND()`), on statements whose effect depends on execution order, and on side effects such as triggers. Compact, but most databases now avoid it or fall back from it |
+| **Physical (WAL shipping)** | The storage engine's own write-ahead log: which bytes changed in which page | Tied to the engine's on-disk format, so leader and follower usually must run the same version, which makes zero-downtime upgrades by "upgrade followers, then fail over" hard |
+| **Logical (row-based)** | Row-level records: new values for an insert, the key for a delete, key plus new values for an update, then a commit marker | Decoupled from the engine, so versions can differ, and external systems can read it. That is the basis of **change data capture** into search indexes, caches and warehouses |
+| **Trigger- or application-level** | Changes captured by triggers or tooling and applied by your own code | Flexible (subsets, other databases, custom conflict rules) but slower and more bug-prone than the built-in mechanisms |
+
+**Adding a follower** without freezing writes: take a consistent snapshot of the leader, copy it over, then have the follower request every change after the snapshot's exact position in the log (an LSN in Postgres, binlog coordinates in MySQL) until it has caught up. A follower that merely restarts does the same from its own last-applied position.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 5, "Leaders and Followers".*
+
 ## Lag and the anomalies it causes
 
 Asynchronous followers are usually milliseconds behind — and occasionally seconds or minutes, during load spikes, long transactions or network trouble. Users then see:
 
 - **Read-your-writes violations:** you update your profile, refresh, and see the old version (the refresh hit a lagging replica).
 - **Non-monotonic reads:** you see a comment, refresh, and it disappears (the second read hit a replica further behind).
+- **Consistent-prefix violations:** causally linked writes appear out of order, such as an answer showing up before the question it replies to. This needs sharding: if the two writes land on partitions that replicate at different speeds, there is no single order for a reader to follow.
 
 Fixes:
 
 - Read **your own** recent writes from the leader (for a short window, or for data only you edit).
 - **Track positions:** the client remembers the log position (LSN) of its last write and reads only from replicas that have applied at least that position.
-- **Sticky replica per session** to get monotonic reads.
+- **Sticky replica per session** to get monotonic reads (for example, choose the replica by hashing the user ID, and reroute if it dies).
+- **Keep causally related writes on one partition**, or track causal dependencies explicitly, to preserve a consistent prefix.
+- **Mind multiple devices:** "my last write" metadata must be shared across a user's phone and laptop, and requests from both may need routing to the same datacentre if the leader lives in one.
+
+*Source: Kleppmann, ch. 5, "Problems with Replication Lag".*
 
 ```sim
 name: replag
@@ -84,6 +104,8 @@ When the leader fails, a follower is promoted. Each step hides a trap:
 1. **Detecting failure** relies on timeouts. Too short and you fail over on a GC pause; too long and you're down for longer.
 2. **Choosing the new leader** — the most up-to-date replica — but with async replication even it may lack the last acknowledged writes.
 3. **Redirecting clients and fencing the old leader.** If the old leader was only partitioned, not dead, it may keep accepting writes: **split brain**.
+
+A lagging promoted follower can also hand out identifiers the old leader already used. Kleppmann recounts a failover in which a stale MySQL replica reissued auto-increment primary keys that a separate Redis store was already using, so some users' private data went to the wrong people. Anything that is keyed off database-generated IDs outside the database makes failover riskier, which is one argument for IDs that are not a per-node counter (see the ID generation lesson). Because of these traps, some teams keep failover manual.
 
 ```timeline
 title: Async failover loses an acknowledged write
@@ -125,7 +147,15 @@ takeaway: |
 
 ## Multi-leader and leaderless
 
-- **Multi-leader** (e.g. one leader per region): each region accepts writes locally, with low latency and regional autonomy, and replicates asynchronously to the others. The hard part is **conflicts** — two regions edit the same record. Last-write-wins silently drops one; better options are conflict-free data types (CRDTs), application merge logic, or avoiding conflicts by giving each record a home region.
+- **Multi-leader** (e.g. one leader per region): each region accepts writes locally, with low latency and regional autonomy, and replicates asynchronously to the others. It rarely pays off inside a single datacentre. Beyond regions, the same shape appears in offline-first apps (every device is a leader that syncs later) and in real-time collaborative editing. The hard part is **conflicts** — two regions edit the same record, and because replication is asynchronous the conflict is only noticed after both writes were acknowledged. Options:
+  - **Avoid them:** route every write for a record through one home leader. This breaks down when a region fails or a user moves.
+  - **Converge deterministically:** every replica must end at the same value whatever order it saw the writes in. Last-write-wins (highest timestamp or ID) and "higher replica ID wins" both silently discard a write. Merging values, or storing all conflicting versions for the application or user to resolve (on write or on read), keeps information.
+  - **Use types or algorithms built for it:** CRDTs, mergeable structures with three-way merge, or operational transformation (what collaborative text editors use).
+  - **Beware domain-level conflicts:** two bookings of one room made on two leaders can each pass an availability check. Even a hand-written resolver can misbehave: an old shopping-cart merge that kept additions but not removals made deleted items reappear.
+- **Topology matters with three or more leaders.** Circular and star topologies forward writes and tag each with the node IDs it has passed (so loops are ignored), but one failed node cuts the flow. All-to-all is more fault tolerant but lets messages overtake each other: an update can reach a replica before the insert it depends on. Timestamps can't fix that because clocks aren't trustworthy enough; version vectors can.
+- Multi-leader is often bolted on to databases, and interacts badly with auto-increment keys, triggers and integrity constraints. Test the guarantees you think you have.
+
+*Source: Kleppmann, ch. 5, "Multi-Leader Replication".*
 - **Leaderless** (Dynamo-style: Cassandra, Riak): clients write to and read from several replicas, with quorums deciding success. Covered in the consistency lesson.
 
 ```sim

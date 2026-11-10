@@ -11,6 +11,7 @@ objectives:
   - Reason about quorums (R + W > N), sloppy quorums, hinted handoff, read repair and anti-entropy
   - Choose consistency levels for real operations and explain the failure behaviour to users
 sources:
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapters 5 and 9', 'https://dataintensive.net/']
   - ['Martin Kleppmann: Please stop calling databases CP or AP', 'https://martin.kleppmann.com/2015/05/11/please-stop-calling-databases-cp-or-ap.html']
   - ['Daniel Abadi: Consistency tradeoffs in modern distributed database system design (PACELC)', 'https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf']
   - ['Jepsen: Consistency models', 'https://jepsen.io/consistency']
@@ -79,6 +80,20 @@ takeaway: |
   During a partition you choose between refusing some requests and risking divergent answers. With no partition you don't have to.
 ```
 
+CAP only covers one consistency model (linearizability) and one fault (a network partition), so it says nothing about delays or crashed nodes. Treat it as a reminder, not a design method.
+
+**Linearizability is often dropped for speed, not for fault tolerance.** Even RAM on a multi-core CPU isn't linearizable without memory barriers, because each core has its own cache and store buffer. The response time of linearizable reads and writes is bounded below by network delay and its uncertainty, which is why many systems give it up even when no partition is in sight.
+
+Where it is genuinely needed:
+
+- **Locks and leader election.** Every node must agree who holds the lock, or you get two leaders. Coordination services such as ZooKeeper and etcd exist for this.
+- **Uniqueness and similar constraints.** Two people registering the same username, two bookings of one seat, an account balance that must stay non-negative. All need a single up-to-date view.
+- **Hidden communication channels.** If one component writes a file to storage and then sends a message to another component to process it, a lagging storage replica can make the consumer read a missing or older file. Real-time recency between two systems needs linearizable reads.
+
+Which replication gives it? A single leader, if reads also go to the leader (or a synchronous follower) and failover is safe. Consensus algorithms (Raft, Paxos, Zab). Multi-leader replication doesn't, and leaderless quorums usually don't, even with R + W > N.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 9, "Linearizability".*
+
 ## Quorums in leaderless systems
 
 Dynamo-style stores (Cassandra, Riak, DynamoDB internally) write to **N** replicas and consider a write successful after **W** acknowledgements. A read asks **R** replicas and returns the newest version among them.
@@ -100,6 +115,24 @@ takeaway: |
 
 > [!senior] Quorums aren't automatically linearizable
 > Even with R + W > N, concurrent writes, clock-based last-write-wins conflict resolution, **sloppy quorums** (writing to stand-in nodes during failures) and partial write failures can produce non-linearizable results. Cassandra's lightweight transactions (Paxos) exist for operations such as compare-and-set that truly need linearizability. When an invariant matters, use a single leader or consensus for that operation.
+
+More ways a "correct" quorum still returns stale data:
+
+- A write that reached fewer than W replicas is reported as failed but is **not rolled back** where it did land, so later reads may or may not return it.
+- A node holding the newest value dies and is restored from a replica with an older one, which can drop the number of copies of the new value below W.
+- A read that races a write may see it on only some replicas, so old or new is undefined.
+- A **sloppy quorum** accepts writes on stand-in nodes outside the key's usual N during an outage, then hands them back (hinted handoff). It buys write availability, but it isn't a quorum in the overlap sense: it only promises the data is stored on W nodes *somewhere*, and a read may miss it until the handoff finishes. Many stores leave it off by default; check yours.
+- Quorums don't give you read-your-writes, monotonic reads or consistent-prefix reads either (see the replication lesson). W and R tune the probability of staleness, not a guarantee.
+
+**Measure staleness.** With a single leader, replication lag is just the difference in log position. A leaderless store has no global write order, so lag is hard to measure, and if you rely on read repair alone a rarely read value can stay stale indefinitely, which also lowers its durability. Anti-entropy bounds that. "Eventual" is vague, so quantify it with whatever staleness metric your database offers.
+
+## Concurrent writes: what "concurrent" means
+
+Two writes are **concurrent** when neither one knew about the other, and that is about knowledge, not about overlapping in wall-clock time. If B read A's result and then wrote, B happened after A; if two clients write the same key without having seen each other's write, they're concurrent even seconds apart. Three cases exist for any pair: A before B, B before A, or concurrent. The first two let the later write overwrite; the third is a conflict.
+
+Picking a winner by timestamp (last-write-wins) makes replicas converge but silently discards some concurrent writes, even though each was acknowledged to its client, and clock skew can even discard writes that weren't concurrent. It is Cassandra's only built-in conflict rule. It's acceptable for caches, and otherwise safe only if each key is written once and then treated as immutable (for example, a fresh UUID per write). To keep both writes, use **version numbers**: the server stamps each value with a version and returns it on reads; a client must include the version it last read with its next write. The server can then tell "builds on what I have" (overwrite) from "concurrent" (keep both values as siblings). The client merges the siblings and writes the result back; for a shopping cart, merge by union, and record deletions with a tombstone so a removed item isn't resurrected. With several replicas you need one version counter per replica, giving a **version vector**, which lets the system tell an overwrite from a concurrent write across replicas and during read repair.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 5, "Leaderless Replication".*
 
 ```calc
 title: How many replicas can be down?

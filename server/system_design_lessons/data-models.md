@@ -64,6 +64,18 @@ takeaway: |
   Each model makes some queries trivial and others painful. Choose by access pattern.
 ```
 
+### Schema on write, schema on read, and locality
+
+"Schemaless" is misleading: the code reading the data still assumes a structure, it just isn't enforced by the database. More accurate terms are **schema-on-write** (the database rejects data that doesn't conform, like static typing) and **schema-on-read** (structure is implicit and interpreted when read, like dynamic typing). Neither is right in general. Schema-on-read helps when records are heterogeneous (many object types, or a shape controlled by an outside system that may change). Where all records share one shape, an enforced schema is useful documentation and protection. Changing a format shows the difference: a document store writes new-shaped documents and has readers handle old ones; a relational store runs a migration. Adding a column is a metadata-only change in many databases, and what hurts is rewriting every row, so large backfills should be done lazily or in batches (see the expand-contract section below).
+
+Documents also have **locality**: a whole document is stored contiguously, so rendering one costs one read instead of several lookups. The advantage holds only if you need most of the document at once; the database usually loads all of it, and an update typically rewrites all of it. Keep documents small and avoid writes that make them grow. You also can't address a nested item directly, only "the second entry in this user's positions". For tree-shaped data loaded as a whole, documents fit well. For many-to-many relationships they get awkward (denormalise and keep copies consistent yourself, or join in application code), the relational model copes, and highly interconnected data is most natural as a graph.
+
+### Graph data in a little more detail
+
+In the **property graph** model, a vertex has an ID, properties, and its incoming and outgoing edges; an edge has an ID, a tail and head vertex, a label naming the relationship, and properties. Any vertex can connect to any other, vertices of different kinds can share one graph, and you can follow edges forwards or backwards. You can model it in a relational database with a vertices table and an edges table (indexed on both endpoints), but variable-length traversals such as "everyone who lives in a place within the US" need recursive queries that are far longer than the equivalent in a graph language like Cypher. **Triple stores** (RDF, queried with SPARQL) and **Datalog** express the same idea with different building blocks; you will rarely need them for an interview.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 2.*
+
 ## Designing for the query: partition and sort keys
 
 Wide-column and key-value stores (Cassandra, DynamoDB, Bigtable) have no joins and little ad hoc querying. You design **one table per query pattern** around two keys:

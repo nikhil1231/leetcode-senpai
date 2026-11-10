@@ -14,6 +14,7 @@ sources:
   - ['Apache Kafka documentation: Design', 'https://kafka.apache.org/documentation/#design']
   - ['Confluent: How to choose the number of topics/partitions in a Kafka cluster', 'https://www.confluent.io/blog/how-choose-number-topics-partitions-kafka-cluster/']
   - ['Kafka: Log compaction', 'https://kafka.apache.org/documentation/#compaction']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapters 4 and 11', 'https://dataintensive.net/']
 ---
 
 > [!story] Twelve consumers, one doing all the work
@@ -139,6 +140,20 @@ takeaway: |
   Windows group events by when they happened, not when they arrived. The watermark is your bet on how late data can be, and it decides what you drop or correct.
 ```
 
+## Processing streams
+
+A stream processor consumes events and produces derived output: alerts, running aggregates, search-index updates, a materialised view kept current. Three ideas decide whether it is correct.
+
+**Time.** Use the time an event *happened*, not the time the processor saw it, or a backlog and a restart will distort every result. That brings stragglers (events that arrive after their window closed), so you either drop them and count the loss, or publish a correction. Device clocks can't be trusted either; one remedy is to record three timestamps (when the event happened and when it was sent, both by the device clock, and when the server received it), and subtract the device's apparent clock offset. Window shapes: **tumbling** (fixed, non-overlapping), **hopping** (fixed length, overlapping), **sliding** (all events within some interval of each other), and **session** (no fixed length: events grouped until a gap of inactivity).
+
+**Joins.** *Stream–stream* joins match events within a time window (a search followed by a click). *Stream–table* joins enrich events with reference data, such as a user profile; the processor keeps a local copy of the table, updated from its change log, and if the table changes over time you must decide which version an event joins against, since a re-run could otherwise give a different answer. *Table–table* joins maintain a materialised view of a join as both sides change.
+
+**Fault tolerance.** A batch job can simply re-run a failed task because its inputs are immutable and its output only becomes visible on success. A stream never finishes, so frameworks either cut it into **micro-batches** (about a second, as in Spark Streaming) or take periodic **checkpoints** of state (Flink) and restart from the last one, discarding output produced since. Inside the framework that gives "exactly-once" results, though *effectively-once* is the better name, because the work may run twice and only the visible effect happens once. Once output leaves the framework (a database write, an email), a restart repeats the side effect. Two ways to stop that: make the output **idempotent** (set a key to a value, not increment; or carry the event's offset or ID and ignore duplicates), or commit state changes, output and the input offset **atomically** (a restricted, internal form of transactions, as in Kafka transactions or Google Dataflow).
+
+The log-based broker you read from is also a *changelog*. Replaying it rebuilds a derived store, so you can fix a bug or add a new view by running the new code over the retained history, with no migration of the old store. Capacity planning should leave enough retention for that reprocessing.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 11.*
+
 ## Schemas and evolution
 
 Producers and consumers deploy independently, so event formats must evolve compatibly:
@@ -146,6 +161,20 @@ Producers and consumers deploy independently, so event formats must evolve compa
 - Use a schema (Avro, Protobuf or JSON Schema) with a **schema registry** enforcing compatibility rules.
 - **Backward compatible** changes let new consumers read old events; **forward compatible** changes let old consumers read new events. Adding optional fields with defaults is usually both; removing or renaming fields and changing types are not.
 - Treat events as a public API: version them, document them, and never reuse a field name for a different meaning.
+
+How the common formats handle change:
+
+| Format | How fields are identified | Safe changes | Traps |
+|---|---|---|---|
+| **JSON / XML / CSV** | By name (CSV by position) | Adding fields that readers ignore | No enforced schema. JSON has no integer type or precision, so 64-bit IDs above 2⁵³ lose precision in JavaScript (Twitter's API returns tweet IDs both as a number and as a string for that reason). No binary type, so bytes go through Base64 (about 33% larger) |
+| **Protocol Buffers / Thrift** | By a numeric **field tag** in the schema; names are not in the encoded data | Rename a field, add a field with a *new* tag, remove an optional field | Never change or reuse a tag. A field added after the first deployment cannot be required, or new code would reject old data. Widening a 32-bit integer to 64-bit lets old readers truncate. In Protobuf an optional field can become repeated, with old readers seeing only the last value |
+| **Avro** | By name, resolved by comparing the **writer's schema** with the **reader's schema** | Add or remove only fields that have a default. Reordering fields is harmless | Nothing in the bytes says which schema was used, so you must ship it: once per file, a version number per record that looks up a schema registry, or negotiation on a connection. Renaming (via aliases) and adding a union branch are backward compatible but not forward compatible |
+
+Avro needs no tag numbers, so a schema can be generated automatically from a database table. That is why it suits dumps and change streams, where the schema changes with the table. Tagged formats suit hand-maintained APIs. Language-native serialisation (Java `Serializable`, Python `pickle`) is a poor choice for stored or exchanged data: it locks you into one language, decoding arbitrary bytes can instantiate arbitrary classes (a classic remote-code-execution vector), and versioning and efficiency are an afterthought.
+
+Compatibility matters in more places than events. Stored data outlives code, so a database may hold records written years ago, and during a rolling upgrade old and new code run side by side. One trap: new code adds a field, old code reads the record, ignores the unknown field and writes the record back, silently dropping it. Make sure your serialisation layer preserves unknown fields on rewrite.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 4.*
 
 > [!senior] What Kafka's "exactly-once" actually covers
 > Idempotent producers stop duplicates caused by producer retries. Transactions make "consume from topic A, produce to topic B, commit offsets" atomic, so a stream processor's output reflects each input once. None of that covers side effects *outside* Kafka — a database write or an email — which still need idempotent handling.

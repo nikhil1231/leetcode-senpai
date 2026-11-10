@@ -14,6 +14,7 @@ sources:
   - ['RFC 9110: HTTP Semantics (methods and status codes)', 'https://www.rfc-editor.org/rfc/rfc9110']
   - ['RFC 9457: Problem Details for HTTP APIs', 'https://www.rfc-editor.org/rfc/rfc9457']
   - ['Google API Improvement Proposals (AIP) — pagination', 'https://google.aip.dev/158']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 4', 'https://dataintensive.net/']
 ---
 
 > [!story] The paginated export that lost rows
@@ -151,6 +152,12 @@ A common split: GraphQL or REST at the edge for apps, gRPC between services.
 - **Breaking changes need a new version:** removing or renaming fields, changing types or meaning, tightening validation.
 - **Version** in the path (`/v2/orders`) or a header; support old versions for a published deprecation window; measure who still calls them.
 - Write **tolerant readers**: ignore unknown fields, don't depend on field order.
+- **Think in directions.** When servers are upgraded before clients, requests must stay *backward* compatible (new servers read old requests) and responses *forward* compatible (old clients read new responses). You can't control when third-party clients upgrade, so you keep old versions alive.
+
+> [!mistake] A remote call is not a local call
+> An RPC library can make a network call look like a function call, but it differs: it can fail with no result, be slow with no bound, and when it times out you can't tell whether the work happened, so a retry may run it twice unless the operation is idempotent. Its arguments must be serialised, so large objects and language-specific types don't cross cleanly. Design the contract with timeouts, retries and idempotency in mind rather than hiding them.
+>
+> *Source: Kleppmann, Designing Data-Intensive Applications, ch. 4, "Dataflow Through Services".*
 
 ```bug
 title: API design review

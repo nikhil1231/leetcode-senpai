@@ -14,6 +14,7 @@ sources:
   - ['Vitess: Sharding', 'https://vitess.io/docs/reference/features/sharding/']
   - ['Citus: Choosing a distribution column', 'https://docs.citusdata.com/en/stable/sharding/data_modeling.html']
   - ['Amazon DynamoDB: Partitions and data distribution', 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.Partitions.html']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 6', 'https://dataintensive.net/']
 ---
 
 ```outage
@@ -33,6 +34,8 @@ case: notion-postgres
 | **Directory / lookup** | A mapping table says which shard holds each key (or tenant) | Moving individual tenants; placing big tenants on dedicated shards | The directory is a critical dependency that must be fast and highly available |
 
 Most large systems use **many small fixed partitions** (say 1,024) hashed from the key, and then map partitions onto physical nodes. Rebalancing then moves whole partitions rather than rehashing keys.
+
+Two practical notes on hashing. Use a hash function that is stable across processes and language versions (some built-in hash functions are randomised per process), and keep the key-to-partition rule independent of the node count. And hashing gives up range queries on the key, so some stores offer a **compound key**: only the first part is hashed to choose the partition, and the remaining parts form a sort order inside it, so "all updates by user 42 between two timestamps" is one range scan on one partition (the Cassandra approach).
 
 ```predict
 prompt: An events table is range-partitioned by `created_at`, with one shard per month. Writes are 20,000/s. What happens to the shards?
@@ -118,8 +121,17 @@ Even a good key has hot values: a celebrity account, a huge customer, a viral pr
 Data grows, and so must the cluster. Approaches:
 
 - **Fixed number of partitions** (many more than nodes), with whole partitions moved between nodes. Simple, used by Elasticsearch, Riak, Couchbase and others. The partition count needs choosing well up front.
-- **Dynamic splitting** — split a range or partition when it grows too big (HBase, Bigtable, CockroachDB, DynamoDB).
+- **Dynamic splitting** — split a range or partition when it grows too big (HBase, Bigtable, CockroachDB, DynamoDB). A new empty database starts with one partition, so a bursty load all lands on one node until the first splits; some stores let you **pre-split** an initial set of ranges. Merging shrinks partitions after deletes.
+- **Partitions proportional to nodes** — a fixed number of partitions *per node*, so partition count grows with the cluster. A new node splits some randomly chosen existing partitions and takes over half of each (the Cassandra style); with enough partitions per node, the randomness evens out.
 - **Consistent hashing** — next lesson.
+
+**Automatic or manual?** Fully automatic rebalancing is convenient but dangerous: moving partitions is expensive (network, disk, rerouting), and combined with automatic failure detection it can cascade. A node that is merely overloaded looks dead, the cluster shifts its load elsewhere, that adds load to everyone, and more nodes look dead. Many systems therefore generate a suggested plan and require a human to approve it.
+
+## Request routing
+
+Once partitions move, someone must know which node owns a key. There are three shapes: (1) clients contact any node, which forwards to the owner; (2) a partition-aware **routing tier** sits in front and forwards; (3) **clients know the partition map** and connect directly. All of them need a consistent, up-to-date view of the assignment, which is a consensus-flavoured problem, so many systems keep it in a coordination service (ZooKeeper, etcd, or a built-in Raft-based controller) and let routers or clients subscribe to changes. Others skip the external service and spread cluster state by **gossip**, letting any node forward a request (Cassandra and Riak). Plain service discovery, like DNS or a load balancer, is enough for finding the nodes but not for deciding which one owns a key.
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 6.*
 
 Changing the shard **key** is a migration, not a rebalance:
 

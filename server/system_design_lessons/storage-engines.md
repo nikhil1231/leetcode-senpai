@@ -14,6 +14,7 @@ sources:
   - ["O'Neil et al., The Log-Structured Merge-Tree (LSM-Tree)", 'https://www.cs.umb.edu/~poneil/lsmtree.pdf']
   - ['RocksDB wiki: Compaction', 'https://github.com/facebook/rocksdb/wiki/Compaction']
   - ['PostgreSQL: Write-Ahead Logging (WAL)', 'https://www.postgresql.org/docs/current/wal-intro.html']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapter 3', 'https://dataintensive.net/']
 ---
 
 > [!story] Why Cassandra writes were fast and reads weren't
@@ -42,6 +43,14 @@ A B-tree engine (Postgres, MySQL InnoDB, SQL Server) stores rows and indexes in 
 - **Writes:** a small change rewrites a whole page (later, at checkpoint), plus the WAL record, plus every affected index — real write amplification, and random I/O.
 - **Space:** pages run partly empty after splits; MVCC engines like Postgres also keep dead row versions until vacuum.
 
+Details worth knowing:
+
+- **Shallow by design.** With a branching factor in the hundreds, three or four levels cover almost any database. One textbook example: four levels of 4 KB pages with a branching factor of 500 address roughly 256 TB.
+- **Why the WAL is not optional.** A page split rewrites several pages (the two halves and the parent). A crash between those writes would leave an orphaned or inconsistent tree, so every change is logged first and replayed on restart. It also means a B-tree writes each change at least twice: once to the log, once to the page.
+- **Concurrency needs latches.** Because pages change in place, threads protect the tree with lightweight locks (latches). Log-structured engines avoid this by merging in the background and swapping files atomically.
+- **Common optimisations:** copy-on-write pages instead of a WAL (LMDB writes a new page and a new parent chain, which also gives cheap consistent snapshots), abbreviated keys in interior pages for a higher branching factor, sibling pointers between leaves for range scans, and efforts to lay leaves out sequentially on disk (hard to maintain as the tree grows, easier for LSM engines because they rewrite large runs).
+- **One home per key.** Each key lives in exactly one place, which lets transactional engines attach key-range locks directly to the tree. That is one reason relational databases stayed with B-trees (see the transactions lesson).
+
 ```sim
 name: btree
 key: b901
@@ -59,6 +68,20 @@ intro: Insert, delete and update variable-size records and watch the page fragme
 takeaway: |
   Slots let records move within a page without changing their addresses; deleted space is reclaimed by compaction.
 ```
+
+## The simplest log-structured engine: segments plus a hash index
+
+Start with a store that only appends. Keep an in-memory hash map from every key to the byte offset of its latest value in the file; a write appends and updates the map, a read is one lookup plus one seek. This is roughly what Bitcask (Riak's original engine) does, and it suits workloads with few distinct keys and many updates per key, such as a play counter per video.
+
+To stop the file growing forever, close it at a size limit and start a new **segment**; a background job rewrites old segments keeping only the newest value per key (and drops keys whose latest record is a **tombstone**), then swaps the compacted segment in and deletes the old ones. Real versions also need a binary format, checksums so a torn final record is detected and ignored, snapshots of the hash map so restart doesn't rescan every segment, and usually a single writer thread. Immutable append-only files make crash recovery and concurrent reads much simpler than overwriting in place.
+
+It has two hard limits: **every key must fit in memory**, and **range scans are impossible** (you would look up each key individually). Sorting each segment by key fixes both, which is the SSTable idea below:
+
+- Merging sorted segments is a streaming merge sort, even for files bigger than memory, and newer segments win for duplicate keys.
+- A lookup needs only a **sparse** in-memory index (one key per few KB), then scans that small range; records in that range can be compressed as a block, saving disk and I/O.
+- Range queries work because keys are in order.
+
+Lucene, behind Elasticsearch and Solr, keeps its term dictionary in a similar merged-sorted-file structure, which is why a search index behaves like an LSM tree (see the search index lesson).
 
 ## LSM trees: append, then merge
 
@@ -92,6 +115,8 @@ takeaway: |
 
 > [!senior] Compaction is a background workload you must budget for
 > Compaction competes with foreground traffic for disk and CPU. If writes outpace it, files pile up, reads slow down and engines throttle writes ("write stalls"). Capacity plans for LSM stores include compaction headroom — often keeping disks under ~50% full for size-tiered strategies.
+>
+> Two further consequences: compaction shows up at **high percentiles** (average latency looks fine while p99 spikes when a big merge hogs the disk), so B-trees are often more predictable; and some engines do not slow incoming writes when compaction falls behind at all, so unmerged files can grow until the disk fills. You need explicit monitoring of pending compaction and file counts. Benchmarks are workload-sensitive, so test with your own traffic before choosing.
 
 ```sort
 prompt: Which engine family fits better?
@@ -132,6 +157,18 @@ steps: |
 **Row-oriented** storage keeps each row's columns together: perfect for "fetch order 42 with all its fields" and for small transactional writes (OLTP).
 
 **Column-oriented** storage (ClickHouse, BigQuery, Snowflake, Redshift, Parquet files) stores each column separately: an analytical query that sums one column over a billion rows reads just that column, which compresses extremely well because the values are similar. Writes of individual rows are expensive, so data arrives in batches.
+
+This split mirrors **OLTP versus OLAP**. OLTP reads a few rows by key and writes small, random, low-latency updates, over the current state of the data, at gigabytes to terabytes. Analytics scans huge numbers of rows, touches a few columns, and aggregates; it loads in bulk (ETL) or from an event stream, over history, at terabytes to petabytes. Teams run analytics in a separate **data warehouse** so that heavy scans don't hurt the transactional database, and warehouses commonly model data as a **star schema**: a central fact table (one row per event, such as a sale) pointing at dimension tables (who, what, where, when). A "snowflake" schema normalises the dimensions further.
+
+How column stores get their speed, beyond reading fewer columns:
+
+- **Compression.** A column with few distinct values can be stored as one bitmap per value, which can be run-length encoded when sparse. A filter like `product IN (30, 68, 69)` becomes a bitwise OR of three bitmaps, and a two-column filter a bitwise AND, because the Nth bit of every column refers to the same row.
+- **Vectorised processing.** Chunks of compressed column data sit in the CPU cache and are processed in tight loops with SIMD instructions, so memory bandwidth and CPU efficiency matter as well as disk I/O.
+- **Sort order.** Rows are sorted as whole rows (never one column on its own) by chosen keys, such as date first and product second. That speeds up range filters, and the first sort key compresses extremely well with run-length encoding, the later keys progressively less. Some warehouses store the same data under several sort orders, using the replicas they keep anyway.
+- **Writes.** You can't update a compressed, sorted column in place, so column stores use the LSM idea: buffer writes in memory, then merge them into column files in bulk. Queries look at both and merge the results.
+- **Pre-aggregation.** A **materialised view** stores the result of a query on disk (unlike a virtual view, which re-runs it). It is a denormalised copy that must be refreshed when the base data changes, which is costly for OLTP writes but fine in a read-heavy warehouse. A **data cube** is the special case of aggregates grouped along several dimensions, such as sales by date and product.
+
+Don't confuse "column families" in Bigtable, HBase and Cassandra with column orientation: within a family, a row's columns are still stored together, and there is no columnar compression.
 
 ```sim
 name: rowcol

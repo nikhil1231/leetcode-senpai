@@ -14,6 +14,7 @@ sources:
   - ['Ongaro & Ousterhout, In Search of an Understandable Consensus Algorithm (Raft)', 'https://raft.github.io/raft.pdf']
   - ['The Raft consensus algorithm (interactive visualisation)', 'https://raft.github.io/']
   - ['Martin Kleppmann: How to do distributed locking', 'https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html']
+  - ['Martin Kleppmann, Designing Data-Intensive Applications — Chapters 8 and 9', 'https://dataintensive.net/']
 ---
 
 > [!story] The lock that wasn't
@@ -83,6 +84,34 @@ intro: Kill the coordinator and watch the survivors elect a new one by id.
 takeaway: |
   Simple, but it needs reliable failure detection and can elect two leaders across a partition. Raft solves this with terms and majorities.
 ```
+
+## Ordering: why wall clocks aren't enough
+
+Consensus exists to give nodes one agreed order of events. The tempting shortcut is to timestamp events with the time of day and sort, but clocks are weaker than they look:
+
+- **Two kinds of clock.** A *time-of-day* clock tells you the calendar time and is synchronised over NTP, so it can be reset and jump backwards. A *monotonic* clock only moves forward and is right for measuring a duration, such as a timeout, but its value means nothing on another machine. Use monotonic clocks for intervals and never compare time-of-day readings across machines for ordering.
+- **Accuracy is limited.** Quartz drifts (Google plans for 200 ppm, about 6 ms per 30 seconds between syncs, or 17 seconds a day), NTP over the internet is good to tens of milliseconds at best and can spike to a second or more, leap seconds break assumptions, and virtual machines pause for tens of milliseconds and look like clock jumps. Bad clocks fail quietly, as silent data loss, not as crashes.
+- **A reading is really an interval.** Few APIs say how uncertain a timestamp is. Google's Spanner exposes the uncertainty (TrueTime returns an earliest and latest bound, kept to a few milliseconds with GPS and atomic clocks in each datacentre) and deliberately waits out the interval before committing, so that two transactions whose intervals don't overlap are known to be in order.
+- **Last-write-wins on timestamps loses data.** A node with a lagging clock can't overwrite a value written by a node with a fast clock until the skew elapses. A write that happened later can get an earlier timestamp, and two writes can collide on one timestamp.
+- **Pauses break leases.** A leader that checks its lease and then stalls (GC, a VM migration, a swap storm) can act after the lease has expired. That is the fencing-token problem further down.
+
+The safe alternative is a **logical clock**, which orders events without measuring time. A **Lamport timestamp** is a pair (counter, node ID): each node increments its counter per operation, attaches it to every message, and on receiving a larger counter jumps its own forward. The resulting total order always agrees with causality (if A could have influenced B, A sorts first), but unlike a version vector it cannot tell you whether two events were concurrent.
+
+A total order isn't enough on its own for something like "usernames must be unique". A node deciding right now whether to accept a username can't know whether another node is concurrently claiming it with a lower timestamp, unless it asks every node and stalls when one is down. You need to know when the order is *final*. That is **total order broadcast**: every message is delivered to every node, in the same order, and a message's position can't be inserted retroactively once later ones have been delivered. It is effectively an append-only log that all nodes read identically, and it is what you need for state-machine replication (every replica applies the same writes in the same order), for serialisable transactions run as stored procedures, and for lock services that hand out fencing tokens. Raft's replicated log is a total order broadcast, and implementing total order broadcast is equivalent in difficulty to consensus.
+
+## Atomic commit across nodes: two-phase commit
+
+When one transaction spans several nodes (a multi-partition write, a term-partitioned index), you can't just tell each node to commit, because some may succeed and others fail. **Two-phase commit (2PC)** coordinates it with a **coordinator**:
+
+1. **Prepare.** The coordinator asks every participant whether it can commit. A participant that says yes has durably stored everything and promises it will commit if told to. It has surrendered the right to abort.
+2. **Commit point.** If every participant said yes, the coordinator writes "commit" to its own durable log. That decision is irrevocable.
+3. **Commit or abort.** The coordinator sends the outcome to everyone and retries forever until all acknowledge.
+
+The weak point is the coordinator. A participant that voted yes and then loses contact is **in doubt**: it can neither commit nor abort on its own, because the others may have chosen the opposite, so it holds its locks until the coordinator returns. If the coordinator's log is lost, in-doubt transactions may need a human. Hence 2PC is called a blocking protocol, and it is also slow (extra round trips and forced disk writes, with some distributed transactions reported many times slower than single-node ones). The fix for the blocking is to run the coordinator as a replicated state machine with consensus, which is what some distributed SQL databases do internally.
+
+Two kinds of "distributed transaction" are worth separating. **Database-internal** ones (all participants run the same software, as in a distributed SQL database) can be optimised and work well. **Heterogeneous** ones, across different systems or through XA, are fragile: a coordinator crash blocks real locks in real databases, and a message broker plus a database can't join one unless both support XA. That's why most architectures avoid cross-service 2PC and use an outbox, idempotent consumers or sagas instead. Don't confuse 2PC (atomic commit) with 2PL (a locking scheme for isolation).
+
+*Source: Kleppmann, Designing Data-Intensive Applications, ch. 8 and 9.*
 
 ## Use a coordination service
 

@@ -31,7 +31,7 @@ Object stores (Amazon S3, Google Cloud Storage, Azure Blob Storage, MinIO) store
 
 - **Flat namespace:** `photos/2026/03/abc.jpg` is one key; the slashes are a naming convention, not real directories.
 - **Whole-object writes:** you replace objects rather than editing bytes in place; appends need a new object (or multipart composition).
-- **Durability:** S3 is designed for 99.999999999% (eleven nines) durability by storing data redundantly across multiple availability zones.
+- **Durability:** S3 is designed for 99.999999999% (eleven nines) durability by storing data redundantly across multiple availability zones. Large object stores typically get there with **erasure coding** (for example 6 data + 3 parity chunks, about 1.5× storage overhead and tolerance of any 3 lost chunks) rather than 3× full replication.
 - **Consistency:** S3 now provides strong read-after-write consistency for PUTs and DELETEs. Older documentation and some other stores are weaker.
 - **Throughput scales by prefix:** S3 supports at least 3,500 writes and 5,500 reads per second **per prefix**, and scales out across many prefixes.
 - **Latency:** tens of milliseconds to first byte — fine for files, far too slow to replace a database row lookup.
