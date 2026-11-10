@@ -449,3 +449,23 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
   .sd-fire-side>div { position:static; }
 }
 .sd-objective-status { color:var(--muted); font-size:11px; margin-left:6px; white-space:nowrap; }
+
+/* Three layers: map, interview-ready, depth. Dim is covered, solid is held today. */
+.sd-layers { display:inline-flex; gap:3px; vertical-align:middle; }
+.sd-layer { position:relative; display:inline-block; width:22px; height:5px; border-radius:3px; background:var(--line); overflow:hidden; }
+.sd-layer>i, .sd-layer>b { position:absolute; left:0; top:0; height:100%; }
+.sd-layer>i { background:var(--accent); opacity:.32; }
+.sd-layer>b { background:var(--accent); }
+.sd-layer.is-l1 { width:28px; }
+.sd-course-category>summary .sd-layers { grid-column:2/4; }
+.sd-course-category>summary .sd-layer { width:auto; flex:1; height:6px; }
+.sd-course-category>summary .sd-layers { display:flex; }
+.sd-map-link { display:block; margin:6px 0 10px; font-size:14px; }
+.sd-map-body { display:grid; gap:16px; margin-top:16px; }
+.sd-map-lessons { margin:0; padding-left:20px; display:grid; gap:8px; }
+.sd-map-lessons li { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
+.sd-map-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; }
+.sd-map-res { display:grid; gap:4px; padding:12px; border:1px solid var(--line); border-radius:10px; color:inherit; text-decoration:none; }
+.sd-map-res:hover { border-color:var(--accent); }
+.sd-map-res small { color:var(--muted); font-size:13px; line-height:1.4; }
+.sd-map-res.is-locked { opacity:.65; }

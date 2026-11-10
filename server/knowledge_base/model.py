@@ -75,6 +75,7 @@ def view(point, state, exposure, misconceptions, now):
     """A point with what you hold of it. `misconceptions` are this point's open ones."""
     v = knowledge.item_view({k: point[k] for k in (
         'id', 'section', 'category', 'lesson', 'lesson_title', 'subtopic', 'kind', 'claim', 'prompt')}, state, now)
+    v['layer'] = point.get('layer', 2)
     v.update(depth=depth(state), confirmed=confirmed(state), unconfirmed=bool(state) and state['last_clean'] and not confirmed(state),
              depths=(state or {}).get('depths', {}), exposures=(exposure or {}).get('count', 0),
              last_exposed_at=(exposure or {}).get('last_at'), misconceptions=len(misconceptions))

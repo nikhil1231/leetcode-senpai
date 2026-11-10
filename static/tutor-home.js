@@ -11,7 +11,7 @@
 
   function open(pick) {
     window.Tutor?.queue({section: pick.section, lesson: pick.lesson, resume: pick.kind === 'resume'});
-    window.AppSections?.select(pick.section, 'lesson/' + pick.lesson);
+    window.AppSections?.select(pick.section, window.Tutor?.route(pick.lesson) || 'lesson/' + pick.lesson);
   }
 
   async function page(ctx) {

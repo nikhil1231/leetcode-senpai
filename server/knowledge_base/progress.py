@@ -6,6 +6,11 @@ how much has been tested, and of what has been tested, how much you would get ri
 for the section's home page, with the reason, and two alternatives.
 
 Levels need a few tested points to mean anything: below MIN_TESTED an area is "early".
+
+The course runs in passes over its layers (catalog.LAYERS). Pass one maps every area (an area map
+session with the tutor, or most of its map ideas tested), with each whole design practised as soon
+as the areas it needs are mapped; pass two takes lessons to interview-ready; depth is on demand.
+Sections without layered points (every point layer 2) skip pass one.
 """
 import re
 
@@ -18,6 +23,7 @@ STARTED = 4             # tested points for a lesson to count as started (a plac
 COVERED = 0.5            # share of a lesson's points tested for the lesson to count as covered
 STRONG = 85
 LEVELS = ((40, 'weak'), (70, 'patchy'), (STRONG, 'good'), (101, 'strong'))
+MAPPED = 0.6            # share of an area's map ideas tested for it to count as mapped without a map session
 HELD = ('solid', 'learning')
 SLIPPING = ('fading', 'shaky')
 WEEK = 7 * 86400
@@ -37,6 +43,25 @@ def level(score, tested):
     return next(name for cap, name in LEVELS if score < cap)
 
 
+def layer_tally(views):
+    """{layer: {total, seen, tested, held}}: seen counts ideas tested or explained though untested."""
+    out = {n: {'total': 0, 'seen': 0, 'tested': 0, 'held': 0} for n in (1, 2, 3)}
+    for v in views:
+        t = out[v.get('layer', 2)]
+        t['total'] += 1
+        t['tested'] += v['status'] != 'unseen'
+        t['seen'] += v['status'] != 'unseen' or bool(v.get('exposures'))
+        t['held'] += v['status'] in HELD
+    return out
+
+
+def mapped(area, sessions=()):
+    """An area is mapped after a map session on it, or once most of its map ideas are tested.
+    An area with no map ideas (an unlayered section) counts as mapped."""
+    m = area['layers'][1]
+    return area['id'] in sessions or not m['total'] or m['tested'] >= MAPPED * m['total']
+
+
 def _tally(views):
     tested = [v for v in views if v['status'] != 'unseen']
     score = round(100 * sum(v['r'] for v in tested) / len(tested)) if tested else None
@@ -47,7 +72,7 @@ def _tally(views):
     return {'total': len(views), 'tested': len(tested), 'held': sum(v['status'] in HELD for v in views),
             'slipping': sum(v['status'] in SLIPPING for v in views), 'score': score,
             'coverage': round(100 * len(tested) / len(views)) if views else 0,
-            'level': level(score, len(tested)), 'depths': depths,
+            'level': level(score, len(tested)), 'depths': depths, 'layers': layer_tally(views),
             'misconceptions': sum(v['misconceptions'] for v in views)}
 
 
@@ -62,7 +87,8 @@ def lessons(views):
     for k, vs in by.items():
         t = _tally(vs)
         out[k] = {x: t[x] for x in ('held', 'tested', 'total')} | {
-            'seen': sum(v['status'] != 'unseen' or bool(v.get('exposures')) for v in vs), 'state': _lesson_state(t)}
+            'seen': sum(v['status'] != 'unseen' or bool(v.get('exposures')) for v in vs), 'state': _lesson_state(t),
+            'layers': t['layers']}
     return out
 
 
@@ -145,14 +171,48 @@ def _pick(lessons, last_lesson, done):
     return (in_area or started or fresh or [None])[0]
 
 
-def next_step(rep, tutor=False, active=None, last_lesson=None, done=()):
+def _pass_one(rep, sessions, designs, play, done):
+    """Pass one's actions, or [] once every area is mapped: a design whose areas are all mapped and
+    which hasn't been worked yet, then the next area to map; the next Ripple Ops level beside them."""
+    areas = [a for a in rep['areas'] if a['id'] not in DESIGN_AREAS]
+    todo = [a for a in areas if not mapped(a, sessions)]
+    if not todo:
+        return []
+    ok = {a['id'] for a in areas if mapped(a, sessions)}
+    out = []
+    for d in designs:
+        if d['lesson'] not in sessions and d['lesson'] not in done and d['needs'] and d['needs'] <= ok:
+            out.append({'kind': 'learn', 'lesson': d['lesson'], 'title': f'Design it: {d["title"]}', 'layer': 1,
+                        'why': 'Every area this design needs is mapped, so put them together now, at map depth: the tutor walks the whole design with you, then you run it in the simulator.',
+                        'label': 'Design it with the tutor', 'tutor': True})
+            break
+    a = todo[0]
+    m = a['layers'][1]
+    out.append({'kind': 'map', 'area': a['id'], 'lesson': 'map-' + a['id'], 'title': f'Map the area: {a["title"]}', 'layer': 1,
+                'why': (f'Pass one: the big picture of every area first. {len(a["lessons"])} lessons in one 30 to 40 minute session: '
+                        f'what each piece is for, the standard answer and the main tradeoff. {len(areas) - len(todo)} of {len(areas)} areas mapped.'),
+                'label': 'Map it with the tutor', 'tutor': True})
+    if play and play.get('areas') and set(play['areas']) <= ok:
+        out.append({'kind': 'play', 'level': play['id'], 'href': play['href'], 'title': f'Play Ripple Ops: {play["title"]}',
+                    'why': 'Use what you have mapped: build Ripple for this level and live through its day. No internals needed.',
+                    'label': 'Play the level', 'tutor': False})
+    return out
+
+
+DESIGN_AREAS = ('designs', 'casebook')
+
+
+def next_step(rep, tutor=False, active=None, last_lesson=None, done=(), sessions=(), designs=(), play=None):
     """-> {'primary': action, 'alternatives': [action, ...]}. Actions, in priority order:
 
     resume a tutor session; clear an open misconception; review slipping points; a placement
     check before the first lesson of an untested area; the next lesson (continue a started one
     first, skip areas you are strong in); a mixed review. `active` is the lesson of an active
     tutor session ({lesson, lesson_title}); `last_lesson` the lesson worked on most recently; `done`
-    lessons finished outside the knowledge model (full marks on a warm-up).
+    lessons finished outside the knowledge model (full marks on a warm-up). With the tutor on, pass
+    one comes first (`_pass_one`): `sessions` are the area ids and design lessons already worked with
+    the tutor at map depth, `designs` [{lesson, title, needs: set of areas}] in course order, and
+    `play` the next Ripple Ops level ({id, title, href, areas}).
     """
     lessons = [(a, l) for a in rep['areas'] for l in a['lessons']]
     titles = {l['id']: l['title'] for _, l in lessons}
@@ -172,7 +232,10 @@ def next_step(rep, tutor=False, active=None, last_lesson=None, done=()):
         found.append({'kind': 'review', 'count': due, 'title': f'{due} ideas are slipping',
                       'why': 'Recalling them now, before they are gone, makes them stick far longer than relearning later.',
                       'label': 'Review them (about 5 minutes)', 'tutor': False})
-    pick = _pick(lessons, last_lesson, set(done))
+    first = _pass_one(rep, set(sessions), list(designs), play, set(done)) if tutor else []
+    found += first
+    layered = bool(rep.get('layers', {}).get(1, {}).get('total'))
+    pick = None if first else _pick(lessons, last_lesson, set(done))
     if pick:
         a, l = pick
         untested = [x for x in a['lessons'] if not x['tested']]
@@ -187,7 +250,10 @@ def next_step(rep, tutor=False, active=None, last_lesson=None, done=()):
                       'why': (f'You have been tested on {l["tested"]} of its {l["total"]} ideas so far. '
                               + ('The tutor will work through the rest with you.' if tutor else 'The lesson covers the rest.') if cont
                               else 'Next in the course.' + (' The tutor will ask you questions as you go; talk or type.' if tutor else '')),
-                      'label': ('Continue' if cont else 'Start') + (f' {via}' if via else ''), 'tutor': tutor})
+                      'label': ('Continue' if cont else 'Start') + (f' {via}' if via else ''), 'tutor': tutor,
+                      **({'layer': 2} if layered else {})})
+        if layered:
+            found[-1]['why'] = 'Interview pass: the choices, failure modes and fixes, now that you have the map. ' + found[-1]['why']
     if not found or (len(found) < 3 and rep['tested']):
         found.append({'kind': 'mixed', 'title': 'A mixed review', 'why': 'Ten questions across everything you have tested, weakest first.',
                       'label': 'Start Quickfire', 'tutor': False})

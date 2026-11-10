@@ -23,9 +23,12 @@
   const preferNotes = () => { try { return localStorage.getItem(PREFER_NOTES) === '1'; } catch (_) { return false; } };
   const setPreferNotes = on => { try { if (on) localStorage.setItem(PREFER_NOTES, '1'); else localStorage.removeItem(PREFER_NOTES); } catch (_) {} };
   let T = null, queued = null;
+  // Where a lesson id lives: an area map has its own page.
+  const route = id => (String(id).startsWith('map-') ? 'map/' + String(id).slice(4) : 'lesson/' + id);
 
-  // ctx: {section, lesson: {id, title, objectives, blocks}, layout: node hidden during a session,
-  //       done(key, correct), recall(block, text), pitch(block, text, followup)}
+  // ctx: {section, lesson: {id, title, objectives, blocks, map?}, layout: node hidden during a session,
+  //       done(key, correct), recall(block, text), pitch(block, text, followup)}. An area map's page
+  //       (lesson.map) keeps its layout in view until a session opens: it is the page, not notes.
   function mount(slot, ctx) {
     if (!slot) return;
     if (T?.id !== ctx.section + ':' + ctx.lesson.id) {
@@ -50,13 +53,15 @@
     if (q.mode && T.info.modes?.some(m => m.id === q.mode)) T.mode = q.mode;
     T.focus = q.focus || '';
     T.carry = q.carry || null;
+    T.layer = q.layer || 0;
     act(T.session?.status === 'active' && !q.mode && !q.focus && !q.carry ? 'resume' : 'start');
   }
 
   // Notes stay hidden until chosen when the tutor is on. The lesson body's own display rule beats
   // [hidden], so hide it inline.
   function hideLesson() {
-    if (T.ctx.layout) T.ctx.layout.style.display = !T.warming && (T.open || (T.info?.enabled && !T.notes)) ? 'none' : '';
+    const page = !!T.ctx.lesson.map;
+    if (T.ctx.layout) T.ctx.layout.style.display = !T.warming && (T.open || (!page && T.info?.enabled && !T.notes)) ? 'none' : '';
   }
 
   // The warm-up before a session: shown in the lesson body, then the tutor (or full marks) follows.
@@ -103,7 +108,7 @@
     return out + `<section class="tu-entry"><span class="sd-eyebrow">LEARN THIS WITH THE TUTOR</span>
       <p class="tu-scene">${esc(i.scene)}</p>${fresh ? `<p class="tu-previously">Your next session picks up where you got to with the outside tutor.</p>` : i.previously && i.previously !== i.outside?.summary ? `<p class="tu-previously"><b>Last time:</b> ${inline(i.previously)}</p>` : ''}
       ${nx}<p class="sd-muted tu-hint">${active ? 'Your session is waiting where you left it.' : esc(mode?.blurb || '')} Talk or type.</p>
-      <div class="sd-actions">${go}${active ? btn('End it and get the debrief', 'fresh') : ''}${btn('Read the notes instead', 'notes')}${style}</div>
+      <div class="sd-actions">${go}${active ? btn('End it and get the debrief', 'fresh') : ''}${T.ctx.lesson.map ? '' : btn('Read the notes instead', 'notes')}${T.ctx.lesson.map ? '' : style}</div>
       ${T.error ? `<p class="tu-error">${esc(T.error)}</p>` : ''}</section>`;
   }
 
@@ -190,8 +195,8 @@
         t.busy = true; t.error = ''; t.open = true;
         t.session = {id: null, mode: t.mode, status: 'active', turns: [], objectives: t.info.objectives.map(() => ({status: 'open'})), progress: {demonstrated: 0, total: t.info.objectives.length}};
         paint(); status(`${cast(firstSpeaker(t.mode))?.name || 'The tutor'} is getting ready…`);
-        const s = await api('/tutor/sessions', 'POST', {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid(), focus: t.focus || '', carry: t.carry || null});
-        t.focus = ''; t.carry = null;
+        const s = await api('/tutor/sessions', 'POST', {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid(), focus: t.focus || '', carry: t.carry || null, layer: t.layer || 0});
+        t.focus = ''; t.carry = null; t.layer = 0;
         if (T !== t) return;
         t.session = s; t.busy = false; paint();
       } else if (action === 'resume') {
@@ -211,7 +216,7 @@
       } else if (action === 'go-next' && t.info?.next) {
         const n = t.info.next;
         queue({section: n.section, lesson: n.lesson});
-        window.AppSections?.select(n.section, 'lesson/' + n.lesson);
+        window.AppSections?.select(n.section, route(n.lesson));
       } else if (action === 'again') {
         t.open = false; t.session = null; t.info = await api(`/tutor/lessons/${t.ctx.section}/${t.ctx.lesson.id}`); paint();
       }
@@ -298,9 +303,19 @@
       (turn.boards || []).forEach((d, i) => n.appendChild(boardNode(d, `wb${at}-${i}`)));
       (turn.designs || []).forEach(d => n.appendChild(designNode(d, at)));
       if (turn.show_block) n.appendChild(blockNode(turn.show_block, answered.has(turn.show_block)));
+      if (turn.links?.length) n.appendChild(linksNode(turn.links));
       if (turn.move) n.appendChild(moveNode(turn.move));
     }
     return n;
+  }
+
+  // Game levels, worked designs and simulators the tutor handed over: links to the Simulators page.
+  function linksNode(links) {
+    const wrap = document.createElement('div');
+    wrap.className = 'tu-links';
+    const TAG = {game: 'Play in Ripple Ops', design: 'Worked design', internals: 'Simulator'};
+    wrap.innerHTML = links.map(l => `<a class="tu-link is-${esc(l.kind)}" href="${esc(l.href)}"><span>${TAG[l.kind] || 'Open'}</span><b>${esc(l.title)} →</b></a>`).join('');
+    return wrap;
   }
 
   // The tutor suggests carrying the conversation into another lesson: one click, and the thread comes along.
@@ -311,7 +326,7 @@
     const from = T.session?.id;
     wrap.querySelector('button').addEventListener('click', () => {
       queue({section: m.section, lesson: m.lesson, carry: from});
-      window.AppSections?.select(m.section, 'lesson/' + m.lesson);
+      window.AppSections?.select(m.section, route(m.lesson));
     });
     return wrap;
   }
@@ -386,5 +401,5 @@
   }
 
   function reset() { T = null; }
-  window.Tutor = {mount, reset, queue, warming, warmed};
+  window.Tutor = {mount, reset, queue, warming, warmed, route};
 })();

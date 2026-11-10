@@ -222,6 +222,7 @@
     if (screen === 'drills') return window.DesignDrills.render();
     if (screen === 'simulators') return window.DesignSimulators.render();
     if (screen === 'redesign') return window.DesignRedesign.render();
+    if (screen === 'map') return window.DesignMap.render();
     if (screen === 'mistakes') return pageIntro('MISTAKES BOOK','Every miss, in one place.','Wrong, revealed and guessed answers land here. An item clears when you answer it correctly on a later day, so a same-day fix waits for confirmation.') + window.DesignLedger.slot('mistakes');
     return `<div class="hub-slot" data-hub-view="${['practise','progress'].includes(screen)?screen:'home'}"></div>`;
   }
@@ -270,13 +271,14 @@
     if (screen==='drills') window.DesignDrills.wire(root()); else window.DesignDrills.stop();
     if (screen==='simulators') window.DesignSimulators.wire(root()); else window.DesignSimulators.stop();
     if (screen==='redesign') window.DesignRedesign.wire(root()); else window.DesignRedesign.stop();
+    if (screen==='map') window.DesignMap.wire(root());
     window.DesignLedger.mount(root());
     const hub=root().querySelector('.hub-slot');
     if(hub)window.Hub.mount(hub,'system-design',hub.dataset.hubView);
     renderModelChip();
     if (document.body.classList.contains('section-design')) {
       window.AppSections?.setView(screen);
-      history.replaceState(null, '', '#/system-design' + (screen==='home'?'':'/'+(screen==='lesson'?window.DesignLearning.route():screen==='simulators'?window.DesignSimulators.route():screen==='redesign'?window.DesignRedesign.route():screen)));
+      history.replaceState(null, '', '#/system-design' + (screen==='home'?'':'/'+(screen==='lesson'?window.DesignLearning.route():screen==='simulators'?window.DesignSimulators.route():screen==='redesign'?window.DesignRedesign.route():screen==='map'?window.DesignMap.route():screen)));
     }
     if (screen==='workspace') {
       root().querySelectorAll('[role="tab"]').forEach(n=>n.addEventListener('keydown',event=>{
@@ -434,6 +436,10 @@
         await window.DesignLearning.openLesson(view.slice(7));
         if(navigation!==viewEpoch)return;
         screen='lesson';
+      } else if(view.startsWith('map/')) {
+        await window.DesignMap.open(view.slice(4));
+        if(navigation!==viewEpoch)return;
+        screen='map';
       } else if(view.startsWith('redesign/')) {
         await window.DesignRedesign.open(view.slice(9));
         if(navigation!==viewEpoch)return;

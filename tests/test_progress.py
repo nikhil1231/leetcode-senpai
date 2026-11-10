@@ -28,6 +28,9 @@ def rep(events, mis=(), section='system-design'):
     return progress.report(C, states, week_ago, seen, list(mis), NOW, section)
 
 
+ALL_MAPPED = {a for a, _, _ in __import__('server.tutor.lessons', fromlist=['map_areas']).map_areas()}
+
+
 def area(r, aid):
     return next(a for a in r['areas'] if a['id'] == aid)
 
@@ -87,7 +90,7 @@ def test_first_step_is_placement_then_learning():
 
 def test_started_lesson_continues_and_tutor_leads():
     events = [ans(p, NOW - DAY) for p in pids('guarantees', 5)]
-    step = progress.next_step(rep(events), tutor=True)
+    step = progress.next_step(rep(events), tutor=True, sessions=ALL_MAPPED)
     assert step['primary']['kind'] == 'learn' and step['primary']['lesson'] == 'guarantees'
     assert step['primary']['tutor'] and 'tutor' in step['primary']['label']
 
@@ -122,12 +125,45 @@ def test_gaps_in_the_area_you_are_working_in_come_before_lessons_elsewhere():
     assert progress.next_step(r, last_lesson='consensus', done={'replication'})['primary']['lesson'] == 'partitioning'
 
 
+def test_pass_one_maps_areas_in_order_and_designs_come_as_soon_as_their_areas_are_mapped():
+    r = rep([])
+    step = progress.next_step(r, tutor=True)
+    assert step['primary']['kind'] == 'map' and step['primary']['area'] == 'foundations' and step['primary']['lesson'] == 'map-foundations'
+    # Without the tutor there is no map session: the course goes on as before.
+    assert progress.next_step(r)['primary']['kind'] != 'map'
+    links = {'lesson': 'design-links', 'title': 'Design a link shortener', 'needs': {'foundations', 'apis', 'storage', 'caching'}}
+    play = {'id': 'garage', 'title': 'Ripple v0', 'href': '#/x', 'areas': ['foundations']}
+    s = progress.next_step(r, tutor=True, sessions={'foundations'}, designs=[links], play=play)
+    assert s['primary']['area'] == 'apis' and s['alternatives'][0]['kind'] == 'play'
+    s = progress.next_step(r, tutor=True, sessions={'foundations', 'apis', 'storage', 'caching'}, designs=[links], play=play)
+    assert s['primary']['kind'] == 'learn' and s['primary']['lesson'] == 'design-links' and s['primary']['layer'] == 1
+    assert s['alternatives'][0]['kind'] == 'map' and s['alternatives'][0]['area'] == 'queues'
+    # Once worked, the design steps aside; testing most of an area's map ideas also maps it.
+    s = progress.next_step(r, tutor=True, sessions={'foundations', 'apis', 'storage', 'caching', 'design-links'}, designs=[links])
+    assert s['primary']['area'] == 'queues'
+    m = [p['id'] for p in cat.active(C) if p['category'] == 'queues' and p['layer'] == cat.MAP]
+    r2 = rep([ans(p, NOW - DAY) for p in m])
+    assert progress.mapped(area(r2, 'queues')) and not progress.mapped(area(r2, 'storage'))
+    # All mapped: the interview pass, lesson by lesson.
+    s = progress.next_step(r, tutor=True, sessions=ALL_MAPPED)
+    learn = next(x for x in [s['primary'], *s['alternatives']] if x['kind'] == 'learn')
+    assert learn['layer'] == 2 and learn['why'].startswith('Interview pass') and not any(x['kind'] == 'map' for x in [s['primary'], *s['alternatives']])
+
+
+def test_layers_are_tallied_per_lesson_and_area():
+    r = rep([ans(p, NOW - DAY) for p in pids('replication')])
+    l = lesson(r, 'replication')
+    assert sum(l['layers'][n]['total'] for n in (1, 2, 3)) == l['total'] == l['layers'][1]['tested'] + l['layers'][2]['tested'] + l['layers'][3]['tested']
+    assert l['layers'][1]['total'] == 5 and l['layers'][3]['total'] == 4
+    assert area(r, 'distributed')['layers'][1]['total'] == 29
+
+
 def test_priorities_resume_fix_review():
     wrong = [ans(p, NOW - DAY, False) for p in pids('request-flow', 6)]
     mis = [{'_key': 'drip:g', 'kind': 'gap', 'point': pids('guarantees', 1)[0], 'text': 'name the invariant', 'status': 'open',
             'created_at': NOW}]
     r = rep(wrong, mis)
-    s = progress.next_step(r, tutor=True, active={'lesson': 'numbers'})
+    s = progress.next_step(r, tutor=True, active={'lesson': 'numbers'}, sessions=ALL_MAPPED)
     assert [s['primary']['kind']] + [a['kind'] for a in s['alternatives']] == ['resume', 'fix', 'review']
     s = progress.next_step(r, tutor=False, active={'lesson': 'numbers'})
     assert s['primary']['kind'] == 'fix' and not s['primary']['tutor'] and 'slippery: name the invariant.' in s['primary']['why']
@@ -204,5 +240,6 @@ def test_an_older_question_version_is_not_evidence_for_the_new_one(monkeypatch):
 def test_lessons_tally_held_tested_and_total_per_lesson():
     v = lambda lesson, status: {'lesson': lesson, 'status': status, 'r': 1.0 if status != 'unseen' else 0.0, 'depth': None, 'misconceptions': 0}
     out = progress.lessons([v('a', 'solid'), v('a', 'shaky'), v('a', 'unseen'), v('b', 'unseen'), {**v('b', 'unseen'), 'exposures': 2}])
-    assert out == {'a': {'held': 1, 'tested': 2, 'seen': 2, 'total': 3, 'state': 'new'},
+    assert out['a']['layers'][2] == {'total': 3, 'seen': 2, 'tested': 2, 'held': 1}
+    assert {k: {x: y for x, y in o.items() if x != 'layers'} for k, o in out.items()} == {'a': {'held': 1, 'tested': 2, 'seen': 2, 'total': 3, 'state': 'new'},
                    'b': {'held': 0, 'tested': 0, 'seen': 1, 'total': 2, 'state': 'new'}}

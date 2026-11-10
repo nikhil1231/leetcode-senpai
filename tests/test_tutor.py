@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server import auth, config, llm, main
-from server.tutor import api, lessons, session as ses, story
+from server.knowledge_base import catalog as kcat, model as kmodel
+from server.tutor import api, lessons, resources, session as ses, story
 from tests.fake_store import FakeStore
 
 L = lessons.get('system-design', 'cache-aside')
@@ -600,3 +601,77 @@ def test_the_tutor_hands_over_a_design_and_reads_the_run(client):
     assert '```design' in next(m['content'] for m in client.chats[-1] if m['role'] == 'assistant' and 'Run it' in m['content'])
     bad = dict(run, turn=0)   # the opener handed over nothing
     assert client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0003', 'run': bad}).status_code == 422
+
+
+# ---- layers, area maps and links ----------------------------------------------------------
+
+def test_an_area_map_is_a_lesson_made_of_its_area():
+    m = lessons.get('system-design', 'map-distributed')
+    keys = lessons.area_lessons('distributed')
+    assert m['map'] == {'area': 'distributed', 'lessons': keys} and len(m['objectives']) == len(keys)
+    assert all(b['type'] in lessons.MAP_BLOCKS and b['from']['lesson'] in keys for b in m['blocks'])
+    assert [b['key'] for b in m['blocks']] == [f'b{i + 1}' for i in range(len(m['blocks']))]
+    own, prereqs = lessons.points('system-design', 'map-distributed')
+    assert own and not prereqs and {p['layer'] for p in own} == {1} and {p['lesson'] for p in own} <= set(keys)
+    notes_ = lessons.notes(m)
+    assert 'Map ideas, the ones to cover' in notes_ and "Beyond the map (name, don't teach)" in notes_
+    assert lessons.get('system-design', 'map-casebook') is None and lessons.get('system-design', 'map-nope') is None
+    assert ('system-design', 'map-queues') in lessons.titles()
+
+
+def test_resources_link_game_levels_designs_and_simulators_to_lessons():
+    found = resources.for_lessons(['replication'])
+    assert [r['key'] for r in found] == [f'r{i + 1}' for i in range(len(found))]
+    kinds = [r['kind'] for r in found]
+    assert kinds == sorted(kinds, key=['game', 'design', 'internals'].index) and 'game' in kinds
+    assert all(r['href'].startswith('#/system-design/simulators/') for r in resources.ALL)
+    assert any(r['kind'] == 'design' and 'design-links' in r['lessons'] for r in resources.ALL)
+    line = resources.text(found, unlocked=set())
+    assert 'locked until he clears the one before' in line
+
+
+def test_the_tutor_prompt_is_layered_and_map_sessions_have_their_own_role():
+    cons = lessons.get('system-design', 'consensus')
+    s = {**ses.new('s', cons, 'teach', 0)}
+    views = kmodel.views(kcat.CATALOG, {}, {}, [], 0, lessons.points('system-design', 'consensus')[0])
+    text = ses.system(s, cons, views, [], {}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
+    assert '## Layers in this lesson' in text and 'Depth ideas are for later' in text and '[[play rN]]' in text
+    s['layer'] = 1
+    assert '## Pass one: map depth' in ses.system(s, cons, views, [], {}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
+    m = lessons.get('system-design', 'map-distributed')
+    text = ses.system(ses.new('m', m, 'teach', 0), m, [], [], {}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
+    assert "this is a map session" in text and '## Layers in this lesson' not in text
+
+
+def test_links_come_from_markers_or_a_named_resource_and_replay_to_the_tutor():
+    cons = lessons.get('system-design', 'consensus')
+    s = ses.new('s', cons, 'teach', 0)
+    res = ses.lesson_resources(cons)
+    raft = next(r for r in res if r['id'] == 'raft')
+    t = ses.add_reply(s, f'Have a go at this.\n[[play {raft["key"]}]]', cons, 1)
+    assert t['links'] == [{k: raft[k] for k in ('key', 'kind', 'id', 'title', 'href')}] and '[[' not in t['say']
+    named = next(r for r in res if r['kind'] == 'game')
+    t = ses.add_reply(s, f'You could try {named["title"]} in Ripple Ops later.', cons, 2)
+    assert [x['id'] for x in t['links']] == [named['id']]
+    assert f'[[play {raft["key"]}]]' in ses.messages(s, cons)[1]['content']
+    jo = ses.new('j', cons, 'explain', 0)
+    assert 'links' not in ses.add_reply(jo, f'[[play {raft["key"]}]] hm', cons, 1)
+
+
+def test_area_map_over_http_and_a_map_session_counts_for_pass_one(client):
+    d = ok(client.get('/api/tutor/map/distributed'))
+    assert d['lesson']['id'] == 'map-distributed' and d['lessons'][0]['layers']['1']['total'] > 0 and not d['mapped']
+    assert d['resources'] and all('href' in r for r in d['resources'])
+    assert client.get('/api/tutor/map/casebook').status_code == 404
+    bad = client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-distributed', 'mode': 'interview', 'key': 'sess-map-x'})
+    assert bad.status_code == 422
+    client.replies.append('Picture Ripple with copies of its data on three continents.')
+    s = ok(client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-distributed', 'mode': 'teach', 'key': 'sess-map-1'}))
+    for i in range(3):
+        client.replies.append('Good. Next piece.')
+        s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': f'turn-m{i}', 'text': 'Replicas lag, so reads can be stale.'}))
+    client.replies.append('**What you did well**\nYou have the map.')
+    ok(client.post(f'/api/tutor/sessions/{s["id"]}/end', json={}))
+    assert ok(client.get('/api/tutor/map/distributed'))['mapped']
+    step = ok(client.get('/api/tutor/next?section=system-design'))
+    assert step['primary']['kind'] == 'map' and step['primary']['area'] == 'foundations'

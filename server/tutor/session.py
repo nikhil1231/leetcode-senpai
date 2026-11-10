@@ -20,6 +20,12 @@ The tutor also knows his career goal, why the lesson matters to it and what his 
 career brief), so lessons connect to the job he wants; "cv" mode interviews him on that CV work. A
 session opened to close one gap carries it as `focus` and starts there.
 
+Lessons are layered (knowledge_base/layers.yaml): map, interview-ready, depth. A lesson session
+teaches to interview depth and parks depth ideas until asked; an area map ("map-<area>", MAP)
+covers a whole area at map depth in one sitting and ends on a design in the simulator. In both
+the tutor can hand over the game levels, worked designs and internals simulators that practise
+the lesson ([[play rN]], resources.py) as links under its message.
+
 A session started after an outside tutor's handback (handover.py) carries its report as `pickup`
 and continues from it instead of opening the lesson afresh.
 
@@ -32,9 +38,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .. import llm, voice
-from . import board, lessons, rig, story
+from . import board, lessons, resources, rig, story
 
-PROMPT_VERSION = 13
+PROMPT_VERSION = 14
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -59,6 +65,21 @@ How you teach:
 Opening: start from him, not from a quiz. If he's come from another tutor or a recent session, talk about that first, the way someone who read the notes would. Otherwise, open with a hook (something at Ripple about to break, a real incident, a puzzle) that this lesson answers, then let him steer. If your notes have an outage block, the lesson is built problem-first: he watches that system break before anything else. Start from the problem (what broke, and why that part), let the ideas arrive as the way to fix it, and offer the block with its activity tag if he hasn't watched it.
 
 Keep messages conversational and usually short, a few sentences. When you're explaining, take the room it needs, but one idea at a time: if it's turning into a lecture, stop and check in.""".format(voice=voice.TUTOR)
+
+MAP = """You're Nikhil's tutor, and this is a map session: one whole area of system design in one sitting of about 30 to 40 minutes. You've taught him before and will again.
+
+{voice}
+
+What a map session is for: the big picture, so he knows every piece in this area, where it fits in a design, and what he doesn't know yet. For each piece: the problem it solves, the standard answer, the one big tradeoff, a headline number, and how it connects to the other pieces and to the rest of a system. Not internals: that's for later passes. He'd rather know the shape of everything than the insides of one thing.
+
+How to run it:
+- Open with one Ripple problem that needs the whole area, and sketch on the whiteboard where each piece of the area sits in Ripple's system. That sketch is the map; come back to it as you go.
+- Then take the pieces (the objectives) one at a time, a few minutes each: explain briefly with a concrete example, ask one quick question that makes him use it, react, move on. Don't drill. If he already knows a piece, confirm it in one exchange and move on.
+- When something deeper comes up, name it and park it: "there's a whole story about X; that's for the interview pass". The notes list what's beyond the map for each piece. Naming it is the point: he should leave knowing what he doesn't know.
+- Show rather than tell: the activities and the simulators below show how pieces behave. Use a few, not all.
+- Finish with a design: hand over a design of Ripple that uses this area's pieces to run in the simulator (```design), and point him at the Ripple Ops level or worked design for this area if there is one. Then a short wrap-up: one line per piece, and what's waiting in the interview pass.
+
+Keep messages short and conversational. Pace matters more than completeness: covering every piece lightly beats covering half of them well.""".format(voice=voice.TUTOR)
 
 ROLES = {
     'teach': TEACH,
@@ -247,10 +268,19 @@ What it should leave him able to do (a map for you, not a checklist to read out)
     parts.append(f"""Setting: Ripple, a link shortener growing into a global social product, now at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
 Borrow it for examples now and then; don't narrate.
 Scale: Ripple's size is {story_state['users']}, and that is the only figure for it. He sees only this conversation, so before any question turns on Ripple's scale, give him the numbers in it. Judge his numbers only against figures stated in this conversation; if he picks his own assumptions, judge whether they are reasonable and consistent, not whether they match figures he was never given.""")
+    if mode == 'teach' and session.get('layer') == 1 and not lesson.get('map'):
+        parts.append(PASS_ONE)
+    elif mode == 'teach' and not lesson.get('map') and any(v.get('layer', 2) != 2 for v in views):
+        parts.append(layers_text(views))
     if blocks_allowed(mode):
         tools = '\n'.join(f'- {t["key"]} ({t["type"]}): {t["about"]}' for t in lessons.tools(lesson) if t['key'] not in session['shown'])
+        res = lesson_resources(lesson)
         parts.append(ACTIONS.format(
             activities=f"\n\nActivities from this lesson (one line saying what to do, then the marker; never two in a row, each once; you'll see how he did):\n{tools}" if tools else '',
+            play=("\n- [[play rN]]: hand him one of the links below: a Ripple Ops level (the design game: he builds and runs Ripple's system "
+                  "against a real day, using what he's learnt, no internals needed), a worked design or a simulator. Like activities, "
+                  "mentioning one means adding its marker, or he has nothing to click. At most two per message.\n"
+                  + resources.text(res, (profile or {}).get('unlocked'))) if res else '',
             lessons=(profile or {}).get('lessons') or '(not available)'))
     if board_allowed(mode):
         parts.append(board.guide())
@@ -270,7 +300,7 @@ Put any of these on its own line at the end of a message when it helps; he never
 - [[move SECTION/LESSON]]: when the conversation is really about another lesson, suggest going there. Say so in your message; he gets a button and you carry on together there.
 - [[next SECTION/LESSON | why]]: what you'd have him do next time. It becomes the first thing he's offered when he comes back.
 - [[enough]]: this lesson is good enough for interviews for now. What's left goes to review instead of being chased. Say so to him too.
-- [[note …]]: something worth remembering about how he learns or what he's after (not a fact about the topic).{activities}
+- [[note …]]: something worth remembering about how he learns or what he's after (not a fact about the topic).{activities}{play}
 
 Lessons you can move to or suggest (SECTION/LESSON: title):
 {lessons}"""
@@ -291,8 +321,34 @@ def pickup(p, mode):
     return text + (PICKUP_OPENING if mode == 'teach' else '')
 
 
+LAYERS = """## Layers in this lesson
+This session aims for interview-ready: what a strong candidate can explain and defend.
+- The map ideas come first; make sure these are solid before going further:
+{map}
+- Depth ideas are for later. Don't teach them unprompted: name one when it comes up, so he knows it exists, and go into it only if he asks or has everything else:
+{depth}"""
+
+
+PASS_ONE = """## Pass one: map depth
+He opened this from pass one of the course: the big picture first. Walk the whole design end to end at map depth: the boxes, one request through them, the key choice at each box and its tradeoff, the one or two numbers that drive it. Name the deep dives without doing them, so he knows they're there. Then hand the design over to run in the simulator, and point him at the worked design or the Ripple Ops level for it if there is one. Thirty minutes, not three hours."""
+
+
+def layers_text(views):
+    short = lambda v: '  - ' + (v['claim'][:150] + ('…' if len(v['claim']) > 150 else ''))  # noqa: E731
+    return LAYERS.format(map='\n'.join(short(v) for v in views if v.get('layer') == 1) or '  (none)',
+                         depth='\n'.join(short(v) for v in views if v.get('layer') == 3) or '  (none)')
+
+
+def lesson_resources(lesson):
+    """Game levels, worked designs and simulators that practise this lesson (system design only)."""
+    if lesson.get('section') != 'system-design':
+        return []
+    return resources.for_lessons(lesson['map']['lessons'] if lesson.get('map') else [lesson['id']])
+
+
 def system(session, lesson, views, misconceptions, memory, story_state, debrief=False, career=None, profile=None):
-    text = voice.live(ROLES[session['mode']]) + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career, profile)
+    role = MAP if lesson.get('map') and session['mode'] == 'teach' else ROLES[session['mode']]
+    text = voice.live(role) + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career, profile)
     if debrief:
         mistakes = '\n'.join(f'- He said "{m["quote"]}": {m["text"]}' for m in session.get('mistakes', [])) or '(none recorded)'
         text += DEBRIEF.format(voice=voice.TUTOR, extra='3. ' + DEBRIEF_EXTRA[session['mode']], mistakes=mistakes)
@@ -312,7 +368,8 @@ def messages(session, lesson, debrief=False):
     out = [{'role': 'user', 'content': CARRIED if session.get('carried') else OPENING}]
     for t in turns:
         if t['role'] == 'tutor':
-            text = '\n\n'.join([t['say'], *(board.source(b) for b in t.get('boards') or []), *(rig.source(d) for d in t.get('designs') or [])]) + (f'\n\n[[activity {t["show_block"]}]]' if t.get('show_block') else '')
+            text = '\n\n'.join([t['say'], *(board.source(b) for b in t.get('boards') or []), *(rig.source(d) for d in t.get('designs') or [])]) + (f'\n\n[[activity {t["show_block"]}]]' if t.get('show_block') else '') \
+                + ''.join(f'\n[[play {x["key"]}]]' for x in t.get('links') or [])
             if out[-1]['role'] == 'assistant':
                 out[-1]['content'] += '\n\n' + text
             else:
@@ -332,6 +389,8 @@ def messages(session, lesson, debrief=False):
 
 
 ACTIVITY = re.compile(r'\[\[\s*activity\s+(b\d{1,3})\s*\]\]', re.I)
+PLAY = re.compile(r'\[\[\s*play\s+(r\d{1,3})\s*\]\]', re.I)
+MAX_LINKS = 2
 MOVE = re.compile(r'\[\[\s*move\s+([a-z-]+)\s*/\s*([a-z0-9-]+)\s*\]\]', re.I)
 NEXT = re.compile(r'\[\[\s*next\s+([a-z-]+)\s*/\s*([a-z0-9-]+)\s*(?:\|\s*([^\]]*?))?\s*\]\]', re.I)
 ENOUGH = re.compile(r'\[\[\s*enough\s*\]\]', re.I)
@@ -419,6 +478,9 @@ def add_reply(session, text, lesson, now):
     designs = handed(text, session)
     if designs:
         turn['designs'] = designs
+    found = links(text, say, lesson, session)
+    if found:
+        turn['links'] = found
     session['turns'].append(turn)
     if show:
         session['shown'].append(show)
@@ -447,11 +509,28 @@ def add_debrief(session, text, now, lesson=None):
     boards = drawn(text, session)
     if boards:
         turn['boards'] = boards
+    found = links(text, say, lesson, session) if lesson else []
+    if found:
+        turn['links'] = found
     session['turns'].append(turn)
     if show:
         session['shown'].append(show)
     session['updated_at'] = now
     return turn
+
+
+def links(text, say, lesson, session):
+    """Game levels, worked designs and simulators handed over in a reply: [[play rN]] markers, or a
+    resource named by its title without one. Teach mode only, at most MAX_LINKS."""
+    if not blocks_allowed(session['mode']):
+        return []
+    res = lesson_resources(lesson)
+    by_key = {r['key']: r for r in res}
+    keys = [k.lower() for k in PLAY.findall(PRIVATE.sub('', text or ''))]
+    low = (say or '').lower()
+    keys += [r['key'] for r in res if len(r['title']) >= 8 and r['title'].lower() in low]
+    picked = [by_key[k] for k in dict.fromkeys(keys) if k in by_key][:MAX_LINKS]
+    return [{k: r[k] for k in ('key', 'kind', 'id', 'title', 'href')} for r in picked]
 
 
 # ---- the note-taker ------------------------------------------------------------------------

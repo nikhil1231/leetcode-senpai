@@ -6,7 +6,7 @@
   const trigger = $('#section-trigger'), menu = $('#section-menu');
   const views = ['home', 'practise', 'cases', 'skills', 'lessons', 'progress', 'workspace', 'curriculum', 'quickfire', 'papers', 'mistakes', 'drills', 'simulators'];
   // Sub-views light up the sidebar item they live under.
-  const UNDER = {lessons: 'curriculum', lesson: 'curriculum', setup: 'practise', workspace: 'practise', exercise: 'practise', skills: 'practise', cases: 'practise', quickfire: 'practise', papers: 'practise', drills: 'practise', mistakes: 'practise', redesign: 'practise'};
+  const UNDER = {lessons: 'curriculum', lesson: 'curriculum', map: 'curriculum', setup: 'practise', workspace: 'practise', exercise: 'practise', skills: 'practise', cases: 'practise', quickfire: 'practise', papers: 'practise', drills: 'practise', mistakes: 'practise', redesign: 'practise'};
   const NAMES = {leetcode: ['Leetcode Senpai', 'Interview prep'], 'system-design': ['System Design', 'Learn and practise'],
     fundamentals: ['Fundamentals', 'Role stack knowledge'], ai: ['AI Engineering', 'LLMs, RAG and agents'],
     experience: ['Experience', 'Your stories, tested'], practical: ['Practical Coding', 'Build, debug and review'],
@@ -50,7 +50,7 @@
       n.classList.toggle('is-active', selected);
       if (selected) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
     });
-    const titles = {home:'Home', practise:'Practise', curriculum:'Learn', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', simulators:'Simulators', lesson:'Lesson', cases:'Design cases', skills:'Skill drills', lessons:'Learn', progress:'What you know', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
+    const titles = {home:'Home', practise:'Practise', curriculum:'Learn', quickfire:'Quickfire', papers:'Past papers', mistakes:'Mistakes book', drills:'Estimation drills', simulators:'Simulators', lesson:'Lesson', map:'Area map', cases:'Design cases', skills:'Skill drills', lessons:'Learn', progress:'What you know', workspace:'Design workspace', exercise:'Skill drill', setup:'Case brief'};
     $('#page-title').textContent = titles[view] || 'System Design';
     $('#page-sub').textContent = 'System Design';
   }
@@ -84,7 +84,7 @@
   function route(initial) {
     const match = location.hash.match(/^#\/system-design(?:\/([^/]+)(?:\/([A-Za-z0-9~._-]+))?)?$/);
     const track = location.hash.match(/^#\/([a-z-]+)(?:\/([a-z0-9/_-]+))?$/);
-    if (match) select('system-design', (match[1]==='lesson'||match[1]==='redesign'||match[1]==='simulators')&&match[2] ? match[1]+'/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
+    if (match) select('system-design', (match[1]==='lesson'||match[1]==='redesign'||match[1]==='simulators'||match[1]==='map')&&match[2] ? match[1]+'/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
     else if (track && TRACKS.includes(track[1])) select(track[1], track[2] || 'home', false);
     else if (initial === true && !/^#\/leetcode/.test(location.hash)) { history.replaceState(null, '', '#/readiness'); select('readiness', 'home', false); }   // the app opens on Overview
     else if (current !== 'leetcode') select('leetcode', 'home', false);

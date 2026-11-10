@@ -1,0 +1,720 @@
+# Layers for the system design knowledge points: what to learn first, and what can wait.
+#   map (layer 1): what the piece is for, the standard answer, the one big tradeoff, headline numbers.
+#   interview (layer 2, every point not listed): the choices, how it fails, the usual fixes and sizing.
+#   depth (layer 3): internals, exact maths, protocol and vendor detail; learnt on demand.
+# Keyed by lesson, then point slug (the id after sd.<lesson>.). Hand-tagged; edit freely.
+request-flow:
+  map:
+  - request-hop-sequence
+  - stateless-service-any-instance
+  - rtt-physical-limit
+  - authz-in-owning-service
+  - timeout-unknown-outcome
+  - idempotency-key-retries
+  depth:
+  - edge-warm-origin-connection
+  - lb-health-and-request-id
+  - handshake-rtt-counts
+  - typical-latency-figures
+  - server-latency-hides-setup
+  - deadline-propagation
+guarantees:
+  map:
+  - four-kinds-of-statement
+  - invariants-forgotten-hard
+  - invariant-vs-nonfunctional-target
+  - sli-definition
+  - read-check-write-race
+  - clarify-design-changing-questions
+  depth:
+  - sla-looser-than-slo
+  - good-sli-ratio
+  - downtime-arithmetic
+  - freshness-requirement-caching
+service-quality:
+  map:
+  - percentiles-defined
+  - mean-hides-tail
+  - fanout-waits-for-slowest
+  - throughput-bottleneck
+  - utilisation-headroom
+  - serial-availability-multiplies
+  depth:
+  - fanout-tail-probability
+  - queueing-knee
+  - error-budget-burn-rate
+  - burn-rate-alerting
+numbers:
+  map:
+  - seconds-per-day
+  - daily-to-per-second-table
+  - network-round-trips
+  - latency-ratios
+  - app-server-capacity
+  - cache-capacity
+  - database-capacity
+  - peak-factor
+  - hot-set-and-read-ratio
+  depth:
+  - integer-limits
+  - memory-and-cache-latency
+  - broker-disk-gateway-capacity
+  - llm-token-pricing
+  - prompt-caching
+  - context-window-size
+  - model-weight-memory
+  - training-memory
+  - kv-cache-size
+  - llm-compute-flops
+  - decode-bandwidth-ceiling
+  - gpu-hardware-specs
+  - embedding-index-size
+  - ann-search-latency
+estimates:
+  map:
+  - estimation-step-order
+  - estimate-drives-decision
+  - daily-to-per-second
+  - estimate-accuracy-order-magnitude
+  - find-dominant-term
+  depth:
+  - photo-storage-calc
+  - video-upload-volume
+  - server-count-example
+  - cache-memory-binds
+  - backlog-drain-rate
+api-contracts:
+  map:
+  - safe-methods-no-state-change
+  - idempotent-methods-set
+  - status-codes-2xx-creation
+  - status-codes-4xx-client-errors
+  - bound-every-list
+  - offset-skips-repeats
+  - cursor-pagination-keyset
+  - additive-vs-breaking-changes
+  depth:
+  - problem-details-error-shape
+  - offset-deep-scan-cost
+  - cursor-unique-tiebreaker
+  - fetch-one-extra-row
+stateless-balancing:
+  map:
+  - shared-store-sessions
+  - signed-token-tradeoff
+  - in-memory-state-problems
+  - horizontal-scaling-shared-state
+  - l4-vs-l7
+  depth:
+  - grpc-l4-imbalance
+  - power-of-two-choices
+  - probe-thresholds
+  - long-lived-connection-draining
+  - lb-redundancy
+  - global-balancing-dns-anycast
+  - zone-failure-sizing
+sync-async:
+  map:
+  - sync-when-user-needs-answer
+  - async-triggers
+  - two-part-async-contract
+  - durable-before-202
+  - async-no-extra-capacity
+  depth:
+  - crash-before-commit-safe
+  - webhook-signature-verification
+  - littles-law-workers
+retry-identity:
+  map:
+  - lost-response-duplicate
+  - safe-retry-needs-idempotency-or-dedup
+  - unsafe-timeout-needs-key
+  - backoff-with-jitter
+  - exactly-once-composition
+  depth:
+  - fixed-retries-storm
+  - key-scope
+  - key-fingerprint-mismatch
+  - concurrent-duplicates-claim
+  - key-retention
+realtime-push:
+  map:
+  - short-polling-tradeoff
+  - sse-one-way-streaming
+  - websockets-full-duplex
+  - mobile-push-best-effort
+  - pubsub-backplane-routing
+  depth:
+  - connection-memory-sizing
+  - heartbeat-aggregate-rate
+data-models:
+  map:
+  - model-from-access-patterns
+  - relational-strengths
+  - document-model-fit
+  - key-value-limits
+  - wide-column-fit
+  - postgres-default
+  - normalised-vs-denormalised
+  depth:
+  - time-series-fit
+  - time-bucket-partitions
+  - embedded-array-problems
+  - backfill-in-batches
+indexes:
+  map:
+  - btree-sorted-pages
+  - btree-supported-operations
+  - leftmost-prefix-rule
+  - covering-index
+  - write-amplification
+  depth:
+  - btree-depth-fanout
+  - btree-cached-top-levels
+  - gap-column-filters-only
+  - predicate-order-irrelevant
+  - in-list-equality
+  - expression-index
+  - other-index-types
+  - leading-wildcard
+  - low-selectivity-seq-scan
+  - explain-analyze-checks
+transactions:
+  map:
+  - atomicity-all-or-nothing
+  - durability-after-commit
+  - isolation-level-dependent
+  - external-effects-not-rolled-back
+  - lost-update-definition
+  - unique-constraint-for-uniqueness
+  depth:
+  - default-isolation-levels
+  - read-committed-prevents-dirty-reads
+  - repeatable-read-snapshot-prevents-reads
+  - lost-update-by-isolation-level
+  - serializable-ssi-retry
+  - exclusion-constraint-overlap
+  - deadlock-consistent-lock-order
+storage-engines:
+  map:
+  - wal-durable-commit
+  - lsm-workload-fit
+  - row-vs-column-layout
+  depth:
+  - btree-in-place-pages
+  - btree-read-path
+  - btree-write-amplification
+  - lsm-write-path
+  - lsm-compaction-tombstones
+  - lsm-read-path
+  - compaction-strategy-tradeoff
+  - compaction-headroom-stalls
+  - bloom-lsm-per-sstable
+  - bloom-sizing
+  - column-store-read-savings
+object-storage:
+  map:
+  - proxying-uploads-melts-api
+  - object-store-data-model
+  - object-store-latency-limits
+  - bytes-vs-metadata-placement
+  - presigned-url-definition
+  depth:
+  - eleven-nines-durability
+  - strong-read-after-write
+  - per-prefix-throughput
+  - multipart-upload
+  - multipart-time-estimate
+  - abort-incomplete-multipart
+id-generation:
+  map:
+  - public-ids-leak-information
+  - auto-increment-profile
+  - uuidv4-profile
+  - uuidv7-ulid-profile
+  - snowflake-profile
+  - pick-scheme-by-use
+  depth:
+  - ticket-server-redundancy
+  - btree-sorted-insert-locality
+  - random-keys-scatter-inserts
+  - snowflake-bit-layout
+  - snowflake-bit-budget
+  - snowflake-sequence-exhaustion
+  - snowflake-clock-regression
+  - snowflake-thread-safety
+  - birthday-bound-collision-maths
+cache-aside:
+  map:
+  - db-load-is-miss-rate
+  - cache-is-capacity-plan
+  - cache-aside-read-path
+  - cache-aside-strengths-costs
+  - database-before-cache
+  - when-not-to-cache
+  depth:
+  - read-through
+  - eviction-policies
+  - redis-default-noeviction
+  - redis-approximate-lru
+  - scan-pollution
+  - large-values
+cache-freshness:
+  map:
+  - bounded-staleness-promise
+  - read-your-writes-promise
+  - authoritative-promise
+  - ttl-bounds-one-copy
+  - ttl-backstop
+  depth:
+  - stacked-ttls-add-up
+  - stale-refill-race-mechanism
+  - delete-cannot-stop-future-fill
+  - leases-mechanism
+  - lease-stampede-benefit
+  - versioned-writes-source-version
+  - delayed-double-delete
+  - replica-fill-race
+http-cdn:
+  map:
+  - two-cache-questions
+  - personalised-never-shared
+  - hashed-filename-release
+  - dont-purge-browser-assets
+  depth:
+  - no-cache-vs-no-store
+  - private-vs-public
+  - s-maxage-shared-ttl
+  - immutable-directive
+  - default-cache-key
+  - origin-shield-tiering
+  - request-collapsing
+  - purge-by-surrogate-key
+  - byte-vs-request-hit-ratio
+  - signed-urls-private-media
+hot-keys:
+  map:
+  - sharding-spreads-keys-not-one-key
+  - hot-key-sources
+  - local-l1-cache-for-hot-reads
+  - write-hot-needs-write-spreading
+  - stampede-feedback-loop
+  - request-coalescing
+  depth:
+  - single-node-throughput-ceilings
+  - ttl-jitter
+  - lock-without-expiry-danger
+  - xfetch-early-refresh
+  - cache-failure-load-multiplier
+  - local-stale-fallback
+queue-basics:
+  map:
+  - work-queue-competing-consumers
+  - pubsub-fanout-own-copy
+  - retained-log-replay
+  - burst-absorption-isolation
+  - queue-costs
+  - age-over-depth
+  depth:
+  - prefetch-tradeoff
+acknowledgements:
+  map:
+  - at-most-once-ack-first
+  - at-least-once-ack-after
+  - assume-duplicates-anyway
+  - dedupe-table-same-transaction
+  depth:
+  - broker-exactly-once-boundary
+  - visibility-timeout-mechanism
+  - extend-lease-long-work
+  - publisher-confirm-meaning
+  - kafka-durability-settings
+dead-letters:
+  map:
+  - three-failure-classes
+  - permanent-failures-dead-letter
+  - bounded-attempts
+  - dlq-alerting-ownership
+  depth:
+  - poison-message-stalls-partition
+  - delayed-redelivery
+  - kafka-retry-topics
+  - backoff-total-delay
+  - maxreceive-tradeoff
+  - park-the-key
+  - dlq-context-retention
+  - classified-handler-design
+outbox:
+  map:
+  - commit-then-publish-loses-events
+  - no-shared-transaction-db-broker
+  - outbox-same-transaction
+  depth:
+  - skip-locked-ordering-risk
+  - polling-vs-cdc-relay
+  - relay-throughput-estimate
+  - outbox-cleanup-and-lag
+  - outbox-alternatives
+event-streams:
+  map:
+  - key-hash-partitioning
+  - consumer-group-assignment
+  - ordering-guarantee-per-partition
+  - hot-key-skew
+  - retention-replay
+  depth:
+  - partition-count-calculation
+  - adding-partitions-remaps-keys
+  - rebalancing
+  - max-poll-interval-kick
+  - log-compaction
+  - safe-schema-changes
+replication:
+  map:
+  - async-ack-loss-window
+  - typical-production-replication-mix
+  - read-your-writes-anomaly
+  - split-brain-definition
+  - replicas-not-backups
+  depth:
+  - non-monotonic-reads-anomaly
+  - sticky-replica-monotonic
+  - lsn-routing-vs-time-window
+  - fencing-mechanisms
+partitioning:
+  map:
+  - shard-key-matches-access
+  - range-partitioning-tradeoffs
+  - hash-partitioning-tradeoffs
+  - good-shard-key-properties
+  - cross-shard-transactions-analytics
+  depth:
+  - fixed-logical-partitions
+  - local-secondary-index
+  - global-secondary-index
+  - rebalancing-approaches
+consistent-hashing:
+  map:
+  - resize-cache-stampede
+  - ring-clockwise-ownership
+  - ring-add-moves-one-over-n
+  - hot-key-not-solved
+  depth:
+  - ring-remove-to-clockwise-neighbour
+  - estimate-keys-moved
+  - vnodes-weighting
+  - ring-lookup-binary-search
+  - replicas-distinct-servers-zones
+  - rendezvous-hashing
+  - jump-consistent-hash
+  - maglev-hashing
+  - bounded-load-hashing
+consistency:
+  map:
+  - consistency-per-operation
+  - eventual-consistency
+  - cap-stated-properly
+  - partition-tolerance-not-optional
+  - partition-choice-examples
+  - consistency-level-by-data-type
+  depth:
+  - sequential-consistency
+  - causal-consistency
+  - pacelc
+  - quorum-availability-arithmetic
+  - convergence-mechanisms
+  - quorum-not-linearizable
+consensus:
+  map:
+  - quorum-overlap-majority
+  - failures-tolerated-2f-plus-1
+  - coordination-service-capabilities
+  - coordination-service-limits
+  depth:
+  - raft-terms
+  - raft-election-process
+  - randomised-election-timeouts
+  - raft-commit-on-majority
+  - flp-safety-vs-liveness
+  - safe-lock-release-renewal
+concurrent-holds:
+  map:
+  - check-inside-write
+  - app-mutex-insufficient
+  - conditional-update-single-row
+  - correctness-not-capacity
+  - waiting-room-admission
+  depth:
+  - claim-treats-expired-as-free
+  - confirm-predicate-fields
+  - hold-id-not-just-user
+  - retry-safe-confirm
+  - zero-rows-diagnose
+  - shard-hot-inventory
+  - queue-wait-calculation
+scaling:
+  map:
+  - vertical-scaling-tradeoff
+  - horizontal-scaling-tradeoff
+  - stateful-scale-order
+  - ladder-order
+  - autoscale-right-metric
+  depth:
+  - use-method
+  - red-method
+  - amdahl-law
+  - amdahl-ceiling-calc
+  - usl-coherency
+overload:
+  map:
+  - naive-overload-behaviour
+  - goodput-collapse
+  - shed-by-priority
+  - circuit-breaker-states
+  - bulkheads
+  depth:
+  - metastable-failure
+  - propagate-deadlines
+  - lifo-under-overload
+  - backpressure-definition
+rate-limiting:
+  map:
+  - token-bucket-burst-rate
+  - choose-token-vs-sliding-counter
+  - per-instance-limit-multiplies
+  - limit-placement
+  depth:
+  - fixed-window-boundary-burst
+  - sliding-log-exact-costly
+  - sliding-window-counter-estimate
+  - token-bucket-allowance-calc
+  - leaky-bucket-smoothing
+  - atomic-increment-check
+  - atomic-expiry-with-incr
+observability:
+  map:
+  - metrics-for-is-it-wrong
+  - logs-for-specific-events
+  - traces-for-where-time-went
+  - four-golden-signals
+  - alert-on-symptoms
+  depth:
+  - red-and-use-methods
+  - histograms-for-latency
+  - head-vs-tail-sampling
+  - rare-failure-sampling-maths
+  - cardinality-multiplies-series
+recovery:
+  map:
+  - untested-backups-dont-exist
+  - rpo-definition
+  - rto-definition
+  - pitr-mechanism
+  - dr-strategy-ladder
+  depth:
+  - snapshot-interval-sets-rpo
+  - wal-archiving-rpo
+  - three-two-one-rule
+  - monitor-backups
+  - reconcile-other-systems
+  - destructive-migration-safeguards
+search-index:
+  map:
+  - search-load-isolation
+  - inverted-index-structure
+  - index-derived-view-cdc
+  depth:
+  - query-path-postings-combine
+  - analysis-pipeline-steps
+  - bm25-signals
+  - idf-rare-terms-dominate
+  - phrase-matching-positions
+  - deep-pagination-cost
+  - shard-sizing
+  - versioned-idempotent-indexing
+  - near-real-time-refresh
+geo-index:
+  map:
+  - geohash-structure
+  - geohash-edge-problem
+  - neighbour-cells-then-filter
+  - moving-objects-ephemeral
+  depth:
+  - geohash-precision-sizes
+  - quadtree-adaptive
+  - s2-cells
+  - h3-hexagons
+  - rtree-postgis
+  - update-rate-estimate
+feed-fanout:
+  map:
+  - push-write-cost-scales-followers
+  - push-vs-pull-tradeoff
+  - hybrid-threshold-design
+  depth:
+  - ranking-candidates
+  - batched-pipelined-fanout
+  - deletes-edits-via-ids
+design-links:
+  map:
+  - requirements-scope-and-invariants
+  - estimates-shape-design
+  - read-path-layers
+  - async-click-events
+  - interview-flow-order
+  depth:
+  - custom-alias-same-constraint
+  - links-schema-design
+  - refill-race-and-replica-lag
+design-jobs:
+  map:
+  - outbox-or-polling-dispatch
+  - submit-transaction-then-202
+  - deterministic-output-key
+  depth:
+  - crash-after-output-before-success
+  - duplicate-delivery-after-success
+  - crash-after-claim
+  - failure-rate-signals
+design-seats:
+  map:
+  - browse-hold-path-split
+  - stale-map-never-double-books
+  - contention-not-volume
+  - cron-expiry-and-cache-confirm-bugs
+  depth:
+  - cache-shields-db-reads
+  - api-status-codes
+  - seat-map-cache-design
+  - admission-rate-calc
+  - cache-down-degradation
+tradeoffs:
+  map:
+  - five-part-decision-format
+  - justify-with-numbers-not-slogans
+  - decision-with-trigger-to-revisit
+  - one-way-vs-two-way-doors
+  - show-evolution-path
+  depth:
+  - expected-downtime-cost
+  - middle-option-from-numbers
+  - build-vs-buy
+design-feed:
+  map:
+  - reads-dominate-cost
+  - media-bandwidth-cdn
+  - publish-path-outbox
+  - read-path-steps
+  depth:
+  - timeline-storage-size
+  - data-sharding-keys
+  - snapshot-pagination
+  - hot-counter-fix
+design-chat:
+  map:
+  - strict-vs-best-effort
+  - server-sequence-ordering
+  - persist-then-ack-then-deliver
+  - sent-means-durable
+  depth:
+  - member-and-inbox-tables
+  - monotonic-receipts
+  - e2ee-implications
+design-ratelimiter:
+  map:
+  - chosen-hybrid-enforcement
+  - outage-must-not-kill-api
+  - sliding-vs-fixed-window
+  depth:
+  - throughput-sizes-cluster
+  - hash-tag-same-slot
+  - sliding-window-counter-script
+  - hot-key-mitigation
+  - multi-region-budget-split
+  - other-failure-responses
+design-notifications:
+  map:
+  - requirements-latency-tiers
+  - fifo-head-of-line-blocking
+  - accept-and-queue-202
+  - persist-before-send
+  depth:
+  - quiet-hours-deferral
+  - lease-claim-senders
+  - provider-token-buckets
+  - campaign-duration-estimate
+design-typeahead:
+  map:
+  - precompute-top-k-per-prefix
+  - short-prefixes-edge-cache
+  - trie-vs-prefix-table
+  - client-debounce-and-cache
+  depth:
+  - prefix-table-memory-size
+  - batch-plus-streaming-freshness
+  - batch-staleness-worst-case
+  - serve-time-blocklist
+  - personal-history-merge
+design-video:
+  map:
+  - dominant-costs
+  - resumable-multipart-upload
+  - upload-to-playback-flow
+  - cdn-serves-segments
+  - component-responsibilities
+  depth:
+  - parallel-chunk-transcoding
+  - idempotent-transcode-tasks
+  - storage-tiering
+  - codec-egress-savings
+  - view-counting-stream
+design-rides:
+  map:
+  - three-data-classes
+  - core-invariants
+  - geo-index-is-hint
+  - conditional-reservation
+  depth:
+  - offer-expiry-lease
+  - trip-state-order
+  - event-hotspot-handling
+  - targeted-rider-tracking
+design-kv:
+  map:
+  - any-node-coordinator
+  - quorum-write-path
+  - parallel-writes-latency
+  - lww-risk
+  depth:
+  - storage-node-count-formula
+  - throughput-check-sizing
+  - merkle-anti-entropy
+  - gossip-failure-detector
+  - vector-clocks-siblings
+  - crdts
+design-crawler:
+  map:
+  - constraints-not-throughput
+  - global-fifo-impolite
+  - mercator-front-queues
+  - url-pipeline-order
+  depth:
+  - concurrency-littles-law
+  - storage-estimate
+  - content-fingerprints
+  - recrawl-by-change-rate
+  - crawler-trap-defences
+  - checkpoint-frontier
+  - dns-cache
+design-payments:
+  map:
+  - persist-state-before-call
+  - conditional-transitions
+  - no-mutable-balance
+  - double-entry-zero-sum
+  - saga-for-order-payment
+  depth:
+  - sale-fee-payout-entries
+  - balances-derived-snapshots
+  - ledger-volume-estimate
+  - daily-reconciliation

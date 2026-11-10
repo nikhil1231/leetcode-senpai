@@ -20,8 +20,9 @@
 
   // Every action a step or button can take, in one place.
   async function run(section, a) {
-    if (['resume', 'fix', 'learn'].includes(a.kind) && a.tutor) window.Tutor?.queue({section, lesson: a.lesson, resume: a.kind === 'resume'});
-    if (a.lesson && ['resume', 'fix', 'learn', 'lesson'].includes(a.kind)) return go(section, 'lesson/' + a.lesson);
+    if (['resume', 'fix', 'learn', 'map'].includes(a.kind) && a.tutor) window.Tutor?.queue({section, lesson: a.lesson, resume: a.kind === 'resume', layer: a.layer || 0});
+    if (a.lesson && ['resume', 'fix', 'learn', 'lesson', 'map'].includes(a.kind)) return go(section, window.Tutor?.route(a.lesson) || 'lesson/' + a.lesson);
+    if (a.kind === 'play') { location.hash = a.href; return; }
     if (a.kind === 'placement') {
       if (section === SD) return window.DesignLearning.startRound({mode: 'placement', category: a.area, length: a.count || 10});
       return go(section, 'placement/' + a.area);

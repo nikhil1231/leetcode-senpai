@@ -22,7 +22,7 @@ from .. import auth, config, handback_filing as hf, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel, progress
 from ..store import get_store
 from ..senpai import career as senpai_career
-from . import learner as lm, lessons, rig, session as ses, story
+from . import learner as lm, lessons, resources as res, rig, session as ses, story
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/tutor', tags=['tutor'])
@@ -156,7 +156,10 @@ def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Dep
     sc = story.scale(summary)
     done = {r['lesson_id'] for r in store.list_design_records() if r.get('kind') == 'course_lesson' and r.get('tested_out_at')} \
         if section == 'system-design' else set()
-    step = progress.next_step(rep, tutor, active, mine[0]['_key'][len(prefix):] if mine else None, done)
+    worked = _worked(store, mine) if section == 'system-design' else set()
+    step = progress.next_step(rep, tutor, active, mine[0]['_key'][len(prefix):] if mine else None, done,
+                              sessions=worked, designs=_designs() if section == 'system-design' else (),
+                              play=_next_level(store) if section == 'system-design' else None)
     # The tutor's own suggestion is offered beside the course order, not over it: following it
     # every time hopped between areas and left lessons behind.
     nxt = lm.fresh_next(store.get_knowledge('tutor_memory', LEARNER_KEY), now) if tutor else None
@@ -170,6 +173,79 @@ def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Dep
             'standing': {k: rep[k] for k in ('total', 'tested', 'coverage', 'score', 'level', 'slipping', 'held')}
                         | {'misconceptions': len(rep['misconceptions']), 'week': {k: rep['week'][k] for k in ('gained', 'slipped')}},
             'company': {'name': story.BIBLE['company'], 'label': sc['label'], 'users': sc['users']}}
+
+
+MAP_TURNS = 3   # learner messages for a map or design session to count as done
+
+
+def _worked(store, mine):
+    """Areas mapped and designs worked through with the tutor at map depth (pass one)."""
+    out = set()
+    for m in mine:
+        key = m['_key'].split(':', 2)[2]
+        if m.get('mapped_at'):
+            out.add(key[len(lessons.MAP_PREFIX):] if key.startswith(lessons.MAP_PREFIX) else key)
+    return out
+
+
+def _designs():
+    """Whole-design lessons in course order with the areas their ideas lean on."""
+    c, out = kcat.CATALOG, []
+    pts = [p for p in kcat.active(c) if p['section'] == 'system-design']
+    for k, title in lessons.titles().items():
+        if k[0] != 'system-design' or k[1].startswith(lessons.MAP_PREFIX):
+            continue
+        mine = [p for p in pts if p['lesson'] == k[1]]
+        if not mine or mine[0]['category'] not in lessons.DESIGN_AREAS:
+            continue
+        needs = {c['points'][r]['category'] for p in mine for r in p['requires']} - set(lessons.DESIGN_AREAS)
+        out.append({'lesson': k[1], 'title': title, 'needs': needs})
+    return out
+
+
+def _ripple(store):
+    """Ripple Ops progress ({levels, unlocked}), or None if it can't be read."""
+    try:
+        from .. import ripple_ops
+        return ripple_ops.progress(list(ripple_ops.LEVELS.values()), ripple_ops._runs(store))
+    except Exception:  # the game is optional context
+        return None
+
+
+def _next_level(store):
+    """The next main Ripple Ops level he hasn't survived, with the areas its lessons belong to."""
+    from ..system_design_curriculum import LESSONS as SD
+    prog = _ripple(store)
+    if not prog:
+        return None
+    for r in res.ALL:
+        if r['kind'] == 'game' and r['id'] in prog['unlocked'] and not (prog['levels'].get(r['id']) or {}).get('best'):
+            return {'id': r['id'], 'title': r['title'], 'href': r['href'],
+                    'areas': sorted({SD[x]['category'] for x in r['lessons'] if x in SD} - set(lessons.DESIGN_AREAS))}
+    return None
+
+
+@router.get('/map/{area}')
+def area_map(area: str, store=Depends(store_for)):
+    """An area map for its page: the lesson the tutor teaches, its lessons with what you hold in each
+    layer, and the game levels, worked designs and simulators that practise the area."""
+    l = lessons.area_map(area)
+    if not l:
+        raise HTTPException(404, 'Unknown area')
+    now = time.time()
+    c, _, states, seen, mis = kb_api.evidence(store, now)
+    views = kmodel.views(c, states, seen, mis, now, [p for p in kcat.active(c) if p['lesson'] in l['map']['lessons']])
+    titles = lessons.titles()
+    prog = _ripple(store)
+    mem = store.get_knowledge('tutor_memory', _memory_key('system-design', l['id'])) or {}
+    return {'lesson': {k: l[k] for k in ('id', 'title', 'category', 'summary', 'objectives', 'blocks', 'map')},
+            'lessons': [{'id': k, 'title': titles[('system-design', k)], 'layers': progress.layer_tally([v for v in views if v['lesson'] == k])}
+                        for k in l['map']['lessons']],
+            'layers': progress.layer_tally(views), 'mapped': bool(mem.get('mapped_at')),
+            'resources': [{**{k: r[k] for k in ('key', 'kind', 'id', 'title', 'about', 'href', 'layer', 'lessons')},
+                           'locked': r['kind'] == 'game' and prog is not None and r['id'] not in prog['unlocked']}
+                          for r in res.for_lessons(l['map']['lessons'])],
+            'enabled': llm.enabled(store.get_settings())}
 
 
 @router.get('/home')
@@ -270,6 +346,7 @@ class Start(BaseModel):
     key: str = Field(pattern=KEY, description='Client-made session id: a retried start opens the same session.')
     focus: str = Field(default='', max_length=300, description='One gap this session is opened to close.')
     carry: str | None = Field(default=None, pattern=KEY, description='A session the tutor moved from; it ends and its thread carries on here.')
+    layer: int = Field(default=0, ge=0, le=3, description='The layer the session aims at (1: map depth, pass one); 0 for the default.')
 
 
 @router.post('/sessions')
@@ -280,12 +357,16 @@ async def start(body: Start, store=Depends(store_for)):
     s = store.get_knowledge('tutor_sessions', body.key)
     if s and any(t['role'] == 'tutor' for t in s['turns']):
         return public(s)
+    if l.get('map') and body.mode != 'teach':
+        raise HTTPException(422, 'An area map is a teaching session.')
     if body.mode in ses.NEEDS_CV and not _has_cv(store):
         raise HTTPException(422, 'Defend your CV needs your CV from Job Scout, which has not synced yet.')
     if not s:
         s = ses.new(body.key, l, body.mode, now)
         if body.focus.strip():
             s['focus'] = body.focus.strip()
+        if body.layer:
+            s['layer'] = body.layer
         if body.carry:
             _carry(store, s, body.carry, now)
         mk = _memory_key(body.section, body.lesson)
@@ -417,11 +498,27 @@ async def end(sid: str, store=Depends(store_for)):
     was_active = s['status'] == 'active'
     ses.end(s, now)
     store.put_knowledge('tutor_sessions', sid, s)
+    if was_active:
+        _mark_worked(store, s, now)
     if ses.needs_debrief(s) and llm.enabled(store.get_settings()):
         await _debrief(store, s, _lesson(s['section'], s['lesson']))
     elif was_active:
         _remember(store, s, now, '')
     return public(s)
+
+
+def _mark_worked(store, s, now):
+    """A map session, or a design session opened from pass one, that he took part in counts for pass one."""
+    l = lessons.get(s['section'], s['lesson']) or {}
+    design = l.get('category') in lessons.DESIGN_AREAS
+    if s['section'] != 'system-design' or not (l.get('map') or design) or s['mode'] != 'teach':
+        return
+    if sum(t['role'] == 'learner' for t in s['turns']) < MAP_TURNS:
+        return
+    mk = _memory_key(s['section'], s['lesson'])
+    mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
+    if not mem.get('mapped_at'):
+        store.put_knowledge('tutor_memory', mk, {**mem, 'mapped_at': now})
 
 
 def _remember(store, s, now, event, debrief=''):
@@ -449,8 +546,9 @@ def _profile(store, l, summary, events, own, now):
     profile = {'style': lm.style_notes(study, learner), 'standing': lm.standing(summary),
                'lately': lm.other_lessons(store.list_knowledge('tutor_memory'), titles, _memory_key(l['section'], l['id']), now),
                'outside': lm.outside_reports(study, titles, now)}
+    prog = _ripple(store) if l['section'] == 'system-design' else None
     return {'text': lm.text(profile), 'covered': [p['claim'] for p in lm.covered_elsewhere(events, own, now)],
-            'lessons': lessons.catalogue(exclude=(l['section'], l['id']))}
+            'lessons': lessons.catalogue(exclude=(l['section'], l['id'])), 'unlocked': set(prog['unlocked']) if prog else None}
 
 
 def _context(store, s, l, now):
