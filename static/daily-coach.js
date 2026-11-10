@@ -173,7 +173,7 @@
   const refresh = () => {
     if (document.visibilityState !== 'visible' || $('#app').classList.contains('hidden')) return;
     const tab = App.currentActiveTab();
-    if (tab === 'senpai' || tab === 'today') App.render(tab).catch(() => {});
+    if (tab === 'senpai' || tab === 'today') App.render(tab, { quiet: true }).catch(() => {});
   };
   document.addEventListener('visibilitychange', refresh);
   setInterval(refresh, 60000);

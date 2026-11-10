@@ -452,19 +452,44 @@ function prefetch(...paths) {
 
 const renderedRev = {};  // tab -> the revision its DOM was built from
 
-// `force` redraws regardless — for the rare case where the view depends on
-// something the server's counters don't cover.
-async function render(tab, { force = false } = {}) {
+// ---- redraws while a modal is open ----------------------------------------------
+// A solve's background jobs (plan, solution and process grading) each write when
+// they finish, so the page under a modal would redraw two or three times while
+// you read it, flickering through the backdrop. A drawn page waits instead, and
+// catches up once, quietly, when the last modal closes. The rows a modal is
+// deciding still say so at once (see settling rows below).
+const modalOpen = () => [...document.querySelectorAll(".overlay")].some((o) => !o.classList.contains("hidden"));
+const deferredTabs = new Set();
+let overviewDeferred = false;
+
+function flushDeferred() {
+  if (modalOpen()) return;
+  if (overviewDeferred) { overviewDeferred = false; loadOverview().catch(() => {}); }
+  const tab = currentActiveTab();
+  if (deferredTabs.has(tab)) render(tab, { quiet: true }).catch(() => {});
+  deferredTabs.clear();  // the others revalidate by revision when opened
+}
+const overlayWatch = new MutationObserver(flushDeferred);
+document.querySelectorAll(".overlay").forEach((o) =>
+  overlayWatch.observe(o, { attributes: true, attributeFilter: ["class"] }));
+
+// `force` redraws regardless, for the rare case where the view depends on
+// something the server's counters don't cover. `quiet` is for redraws nobody
+// asked for (a background write, a poll): no dimming, and the page keeps its
+// height while the new markup and its late panels arrive, so nothing jumps.
+async function render(tab, { force = false, quiet = false } = {}) {
   if (tab === "design" && window.Views.renderDesign) return window.Views.renderDesign();
   const el = $("#tab-" + tab);
   const fn = window.Views["render" + tab.charAt(0).toUpperCase() + tab.slice(1)]
     || window.Views.renderToday;
   const drawn = el.childElementCount > 0;
+  if (drawn && !force && modalOpen()) { deferredTabs.add(tab); return; }
   // Sample the revision *before* fetching: a write landing mid-render must not
   // be mistaken for one this render already reflects.
   const rev = await currentRev();
   if (!force && drawn && rev && renderedRev[tab] === rev) return;
-  if (drawn) el.classList.add("is-refreshing");
+  if (drawn && !quiet) el.classList.add("is-refreshing");
+  if (drawn && quiet) holdHeight(el);
   try {
     await fn();
     renderedRev[tab] = rev;
@@ -474,13 +499,19 @@ async function render(tab, { force = false } = {}) {
   }
 }
 
-// A modal covers the page, not its state: whatever it just wrote — a rating, a
-// grade, a sprint's attempts — shows behind it at once, not when it closes. Only
-// the visible tab redraws now; the others revalidate by revision when opened.
+const HOLD_HEIGHT_MS = 1500;
+function holdHeight(el) {
+  clearTimeout(el._heldUntil);
+  el.style.minHeight = `${el.offsetHeight}px`;
+  el._heldUntil = setTimeout(() => { el.style.minHeight = ""; }, HOLD_HEIGHT_MS);
+}
+
+// What a modal writes (a rating, a grade, a sprint's attempts) shows on the page
+// when it closes; until then the settling marks say what is happening.
 // Best-effort: a failed redraw leaves the page as it was, never the modal broken.
 function refreshBehindModal() {
   loadOverview().catch(() => {});
-  render(currentActiveTab()).catch(() => {});
+  render(currentActiveTab(), { quiet: true }).catch(() => {});
 }
 
 // ---- settling rows -------------------------------------------------------------
@@ -525,6 +556,7 @@ function applySettling() {
 // ---- overview ------------------------------------------------------------------
 let overviewRev = null;
 async function loadOverview({ force = false } = {}) {
+  if (!force && overviewRev && modalOpen()) { overviewDeferred = true; return; }
   const rev = await currentRev();
   if (!force && overviewRev && overviewRev === rev) return;
   const o = await api("/overview");
@@ -1538,7 +1570,7 @@ function detectSolves({ force = false, followup = true } = {}) {
       if (logged && sessionId) await refreshActive();
       if (logged) {
         loadOverview();
-        render(currentActiveTab());
+        render(currentActiveTab(), { quiet: true });
       } else if (sessionId && followup && document.visibilityState === "visible") {
         detectFollowup = setTimeout(() => detectSolves({ force: true, followup: false }),
                                     DETECT_FOLLOWUP_MS);
@@ -3213,7 +3245,7 @@ async function onEditorSolved(res) {
   if (solved && $("#annotate-modal").classList.contains("hidden")) openAnnotate(solved);
   await refreshActive();
   loadOverview();
-  render(currentActiveTab());
+  render(currentActiveTab(), { quiet: true });
 }
 
 window.App = { startFlow, openDetail, openRecall, startMock, startSprint, loadOverview, render,

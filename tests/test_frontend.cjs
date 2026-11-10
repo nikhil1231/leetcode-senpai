@@ -47,6 +47,7 @@ function app(fetch) {
     clearInterval(id) { intervals.delete(id); },
     setTimeout(fn, ms) { const id = nextTimer++; timeouts.set(id, { fn, ms }); return id; },
     clearTimeout(id) { timeouts.delete(id); },
+    MutationObserver: class { observe() {} },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/app.js'), 'utf8'), context);
   return { node, intervals, timeouts, listeners, run: (code) => vm.runInContext(code, context) };
@@ -895,4 +896,34 @@ test('a new tab starts from the stored copy when nothing has changed', async () 
   second.run(`Object.assign(stored, ${saved})`);
   assert.deepEqual(JSON.parse(await second.run('api("/system-design").then(JSON.stringify)')), { catalogue: 1 });
   assert.equal(reads(server, '/api/system-design'), 1);
+});
+
+test('the page under an open modal waits for it to close, then redraws once, undimmed', async () => {
+  let writes = 0;
+  const ui = app(async (url) => (url === '/api/rev'
+    ? response({ rev: { attempts: writes }, date: '2026-11-10', writes, boot: 'b' })
+    : response({})));
+  const overlay = { hidden: false, classList: { contains: (c) => c === 'hidden' && overlay.hidden } };
+  ui.run('document').querySelectorAll = (sel) => (sel === '.overlay' ? [overlay] : []);
+  const tab = ui.node('#tab-today');
+  tab.childElementCount = 1;
+  tab.style = {};
+  tab.offsetHeight = 900;
+  const dimmed = [];
+  tab.classList = { add: (c) => dimmed.push(c), remove() {}, contains: () => false };
+  ui.run('window.draws = 0; window.Views.renderToday = async () => { window.draws += 1; }');
+  const tick = () => new Promise((r) => setImmediate(r));
+
+  writes = 1;  // a background grade lands while the modal is open
+  ui.run('refreshBehindModal()');
+  ui.run('render("today", { quiet: true })');
+  await tick();
+  assert.equal(ui.run('window.draws'), 0);
+
+  overlay.hidden = true;
+  ui.run('flushDeferred()');
+  await tick(); await tick();
+  assert.equal(ui.run('window.draws'), 1);
+  assert.deepEqual(dimmed, []);
+  assert.equal(tab.style.minHeight, '900px');
 });
