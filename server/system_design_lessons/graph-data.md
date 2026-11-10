@@ -186,7 +186,7 @@ choices:
   - Shard the friendships table by user ID so the hops spread across machines
 answer: 1
 reveal: |
-  Six hops at 200 neighbours is 200⁶ = 6.4 × 10¹⁳ paths, and in a connected social graph it reaches nearly everyone. Better hardware doesn't change that, indexes make each hop cheaper but not fewer, and sharding makes hops cross the network. Constrain the question: few hops, ranked by mutual friends, and compute heavy suggestions in a batch or stream job.
+  Six hops at 200 neighbours is 200⁶ = 6.4 × 10¹³ paths, and in a connected social graph it reaches nearly everyone. Better hardware doesn't change that, indexes make each hop cheaper but not fewer, and sharding makes hops cross the network. Constrain the question: few hops, ranked by mutual friends, and compute heavy suggestions in a batch or stream job.
 ```
 
 ```faded

@@ -653,10 +653,14 @@ def test_an_authored_overview_is_the_storage_lesson_with_its_own_steps_and_short
     for s in ov['steps']:   # every step has the same shape and an activity borrowed from its own lesson
         assert all(s[f] for f in ('problem', 'answer', 'catch', 'remember', 'later', 'recap'))
         b = next(x for x in m['blocks'] if x['key'] == (s.get('use') or s['check']))
-        assert b['from']['lesson'] == s['lesson']
+        assert 'from' not in b or b['from']['lesson'] == s['lesson']
+        if b['type'] == 'sort':   # a check tests something: never one item per bucket
+            assert len(b['items']) > len(b['buckets'])
+    own = [b for b in m['blocks'] if 'from' not in b]
+    assert {b['type'] for b in own} == {'arch', 'sort'} and ov['finish']['check'] == own[-1]['key']
     text = ses.system(ses.new('m', m, 'teach', 0), m, [], [], {'overview_step': 3}, story.scale({'total': 1, 'knowledge': 0, 'pct': 0}))
     assert 'Follow the steps in your notes' in text and 'about 80 words at most' in text
-    assert 'up to step 3 of 8' in text and '### Step 3: Finding rows fast (indexes)' in text
+    assert 'up to step 3 of 8' in text and '### Step 3: Finding rows quickly (indexes)' in text
     assert '[[move' not in text and '[[next' not in text
 
 
@@ -669,6 +673,12 @@ def test_an_overview_must_follow_its_area_and_borrow_real_blocks():
     with pytest.raises(overviews.OverviewError):
         overviews.parse(bad, 'bad')
     bad = copy.deepcopy(good); bad['steps'] = bad['steps'][1:]
+    with pytest.raises(overviews.OverviewError):
+        overviews.parse(bad, 'bad')
+    bad = copy.deepcopy(good); bad['steps'][0]['check'] = {'type': 'sort', 'prompt': 'x', 'buckets': ['a'], 'items': [{'text': 'y', 'bucket': 3}]}
+    with pytest.raises(Exception):
+        overviews.parse(bad, 'bad')
+    bad = copy.deepcopy(good); bad['steps'][0]['check'] = {'type': 'interview', 'say': 'x'}
     with pytest.raises(overviews.OverviewError):
         overviews.parse(bad, 'bad')
     bad = copy.deepcopy(good); del bad['steps'][2]['catch']

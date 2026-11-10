@@ -108,7 +108,7 @@
       el.dataset.answer = b.choices[i]; ctx.save(b, { i });
       el.querySelectorAll('[data-b=pick]').forEach(o => { o.disabled = true; o.classList.toggle('is-right', Number(o.dataset.i) === b.answer); o.classList.toggle('is-wrong', o === n && !ok); });
       const r = el.querySelector('.sd-reveal'); r.hidden = false;
-      r.innerHTML = (ok ? '<b class="sd-ok">You called it.</b>' : '<b class="sd-bad">Most people miss this one.</b>') + md(b.reveal);
+      r.innerHTML = (ok ? '<b class="sd-ok">Correct.</b> ' : '<b class="sd-bad">Not quite.</b> ') + md(b.reveal);
       ctx.done(b, ok);
     }));
     return { restore(st) { el.querySelector(`[data-b=pick][data-i="${st.i}"]`)?.click(); } };
@@ -433,7 +433,7 @@
     const svg = `<div class="sd-arch-wrap"><svg class="sd-arch" style="max-width:${(cols * W_ + 40) * 1.1}px" viewBox="0 0 ${cols * W_ + 40} ${rows * H_ + 20}" role="img" aria-label="${esc(b.title || 'Architecture diagram')}"><defs><marker id="sd-arrow-${b.key}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>${edges}${boxes}${labels.join('')}</svg></div>`;
     const paths = b.paths ? `<div class="sd-arch-paths">${b.paths.map((p, i) => button('▶ ' + p.label, 'path', `data-i="${i}"`)).join('')}</div><div class="sd-arch-caption" aria-live="polite"></div>` : '';
     const quiz = b.missing ? `<div class="sd-prompt">${md(b.prompt || 'Which component belongs in the missing box?')}</div><div class="sd-predict-choices">${b.choices.map((c, i) => `<button type="button" class="sd-option" data-b="pick" data-i="${i}"><span class="sd-option-key">${String.fromCharCode(65 + i)}</span><span>${inline(c)}</span></button>`).join('')}</div><div class="sd-reveal" hidden></div>` : '';
-    const build = !b.missing && !b.board && b.edges.length >= 3 ? `<div class="sd-arch-build">${button('Wire it yourself first', 'build')}<span class="sd-arch-build-status sd-muted" aria-live="polite"></span>${button('Show all connections', 'giveup', 'hidden')}</div>` : '';
+    const build = !b.missing && !b.board && !b.plain && b.edges.length >= 3 ? `<div class="sd-arch-build">${button('Wire it yourself first', 'build')}<span class="sd-arch-build-status sd-muted" aria-live="polite"></span>${button('Show all connections', 'giveup', 'hidden')}</div>` : '';
     const legend = [['hot', 'struggling'], ['down', 'failed'], ['new', 'new']].filter(([st]) => nodes.some(n => n.state === st))
       .map(([st, l]) => `<span class="sd-arch-key is-state-${st}">${l}</span>`).join('');
     return frame(b, `${b.caption ? `<div class="sd-prompt">${md(b.caption)}</div>` : ''}${build}${svg}${legend ? `<div class="sd-arch-legend">${legend}</div>` : ''}${paths}${quiz}`, b.title);

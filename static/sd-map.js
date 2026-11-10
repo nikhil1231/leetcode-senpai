@@ -83,16 +83,18 @@
       ${part('The catch', s.catch)}
       ${part('Worth remembering', s.remember, 'is-remember')}
       ${b ? `<section class="ov-part ov-try"><h4 class="ov-label">${s.use ? 'Try it' : 'Quick check'}</h4>${s.use_note ? `<p class="sd-muted ov-note">${esc(s.use_note)}</p>` : ''}${B().renderBlock(b)}</section>` : ''}
-      <details class="ov-later"><summary>Saved for the full lesson</summary><ul>${s.later.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
-        <a href="#/system-design/lesson/${esc(s.lesson)}">${esc(lessonTitle(s.lesson))} →</a></details>`;
+      <aside class="ov-later"><h4 class="ov-label">Covered in the full lesson</h4><ul>${s.later.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+        <a class="ov-later-link" href="#/system-design/lesson/${esc(s.lesson)}">${esc(lessonTitle(s.lesson))} →</a></aside>`;
   }
 
   function finishHtml(ov) {
     const play = (ov.finish.play || []).map(k => M.resources.find(r => r.key === k)).filter(Boolean);
+    const check = ov.finish.check && M.lesson.blocks.find(b => b.key === ov.finish.check);
     return `<header class="ov-step-head"><span class="sd-eyebrow">WRAP-UP</span><h3>The area on one page</h3></header>
       <div class="sd-scroll"><table class="sd-md-table ov-recap"><thead><tr><th>Topic</th><th>The short version</th></tr></thead><tbody>
         ${ov.steps.map((s, i) => `<tr><td><button type="button" class="ov-link" data-ov-go="${i + 1}">${esc(s.title)}</button></td><td>${esc(s.recap)}</td></tr>`).join('')}</tbody></table></div>
-      ${ov.finish.text ? `<div class="sd-md">${md(ov.finish.text)}</div>` : ''}
+      ${check ? `<section class="ov-part ov-try"><h4 class="ov-label">One last check</h4>${B().renderBlock(check)}</section>` : ''}
+      ${ov.finish.text ? `<div class="sd-md ov-part">${md(ov.finish.text)}</div>` : ''}
       ${play.length ? `<h4 class="ov-label">Use it in a whole system</h4><div class="sd-map-grid">${play.map(resourceRow).join('')}</div>` : ''}`;
   }
 

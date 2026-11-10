@@ -130,7 +130,7 @@
     function verdict(culpritLabel) {
       const first = `${esc(culpritLabel)} gave way first`;
       if (!st.guess) return `${first}.`;
-      if (st.guess === c.culprit) return `<b class="sd-ok">You called it.</b> ${first}.`;
+      if (st.guess === c.culprit) return `<b class="sd-ok">Correct.</b> ${first}.`;
       const e = c.scenario.events[0], hours = res.ticks.filter(t => t.h >= e.at && t.h < e.at + Math.max(1, e.dur || 1));
       const hurt = hours.some(t => ['saturated', 'down'].includes(t.nodes[st.guess]?.status));
       return hurt ? `<b class="sd-ok">Close.</b> ${esc(labelOf(c, c.start, st.guess, defs))} went under too, but ${first}; the rest followed from it.`

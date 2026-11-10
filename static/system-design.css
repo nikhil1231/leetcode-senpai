@@ -518,10 +518,10 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 .ov-part.is-remember .ov-label { color: var(--accent); }
 .ov-try { padding-top: 6px; border-top: 1px solid var(--line); }
 .ov-note { margin: 0 0 10px; font-size: 13px; }
-.ov-later { margin-top: 18px; font-size: 13.5px; color: var(--text-2); }
-.ov-later summary { cursor: pointer; color: var(--accent); }
-.ov-later ul { margin: 8px 0; }
-.ov-later a { color: var(--accent); }
+.ov-later { margin-top: 20px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
+.ov-later ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13.5px; color: var(--text-2); }
+.ov-later-link { display: inline-block; margin-top: 10px; font-size: 13.5px; color: var(--accent); text-decoration: none; }
+.ov-later-link:hover { text-decoration: underline; }
 .ov-pager { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
 .ov-intro p { font-size: 15px; line-height: 1.6; color: var(--text); max-width: 72ch; }
 .ov-agenda { margin: 16px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; counter-reset: ov; }

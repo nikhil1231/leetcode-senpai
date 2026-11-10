@@ -42,6 +42,22 @@ it — it is the source of truth.**
 `server/next_up.py`). `tests/test_ui_audit.py` enforces what can be checked statically. Ctrl/Cmd-K is the command
 palette (`static/palette.js`, index from `/api/search-index`); a new page or lesson type should appear in it.
 
+## Writing (UI copy, lessons, overviews and prompts)
+
+Plain, warm and specific: how a friendly senior engineer explains something at a colleague's desk. The tutor's
+voice (`server/voice.py`) follows the same rules; keep the two in step.
+- Say it directly, in full sentences. No slogans or mantras ("bytes here, facts there", "add with a default, never
+  reuse, remove last"), and no one-line paragraphs written for effect.
+- No dramatic set-ups or reveals: "here's the thing / the fun bit / the opinion", "the one X that decides Y",
+  "That's the whole problem.", a rhetorical question answered in the next line, "X pulls in opposite directions".
+- No hype or selling: don't say how important a topic is or that it will pay you back at work.
+- No cheeky or gamey verdicts ("You called it", "Most people miss this one", "Nailed it"). Verdicts say the word:
+  "Correct", "Not quite".
+- Don't narrate the process ("let me set the scene", "stop for one question where it matters").
+- Encouraging, not flattering: name what was right. Define a term the first time it appears. Prefer a concrete case
+  (a Ripple situation, a number) to an abstraction. British English, contractions are fine, no em dashes.
+- A check must test what the page taught: not one item per bucket, and no answer the page never mentioned.
+
 ## Model spend (OpenRouter)
 
 - **Never use Anthropic models (`anthropic/…`) through OpenRouter.** They are far too
