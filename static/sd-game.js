@@ -126,7 +126,7 @@
     function trafficHtml(l, est) {
       if (l.ai) {
         const A = window.AISim.normalize(l), mix = Object.entries(A.ai.mix).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-        return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> users · ${l.traffic.ask.perUser} questions per user a day · evening peak about ${l.traffic.peak || 1.8}× the average · prompts about ${A.ai.promptTokens.toLocaleString('en')} tokens plus ${A.ai.topK} retrieved passages of ${A.ai.chunkTokens}, answers about ${A.ai.outTokens} tokens</p>
+        return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> users · ${l.traffic.ask.perUser} questions per user a day · evening peak about ${l.traffic.peak || 1.8}× the average on an ordinary day · prompts about ${A.ai.promptTokens.toLocaleString('en')} tokens plus ${A.ai.topK} retrieved passages of ${A.ai.chunkTokens}, answers about ${A.ai.outTokens} tokens</p>
           <ul class="rp-mix">${mix.map(([k, v]) => `<li><b>${Math.round(v * 100)}%</b><span>${esc(window.AISim.KIND_LABEL[k])}</span></li>`).join('')}</ul>`;
       }
       const T = l.traffic || {}, parts = [];
@@ -135,7 +135,7 @@
         // On the estimate step, show only what the questions need: sizes matter for storage (writes) and bandwidth, never for request rates.
         const showKb = kb && (!est || est.includes('egressTbMonth') || (est.includes('storageGbYear') && ['write', 'upload', 'realtime'].includes(t)));
         parts.push(`${T[t].perUser.toLocaleString('en')} ${(Sim().LABEL[t] || t).toLowerCase()} per user a day${showKb ? ` (~${size(kb)} each)` : ''}`); }
-      return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> daily users · ${parts.join(' · ')} · evening peak about ${T.peak || 2}× the average${l.far?.share ? ` · ${Math.round(l.far.share * 100)}% of users an ocean away` : ''}${!est && l.data?.gb ? ` · ${B().fmt(l.data.gb)} GB already stored` : ''}${!est && l.data?.mediaGb ? ` plus ${B().fmt(l.data.mediaGb)} GB of media` : ''}</p>`;
+      return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> daily users · ${parts.join(' · ')} · evening peak about ${T.peak || 2}× the average on an ordinary day${l.far?.share ? ` · ${Math.round(l.far.share * 100)}% of users an ocean away` : ''}${!est && l.data?.gb ? ` · ${B().fmt(l.data.gb)} GB already stored` : ''}${!est && l.data?.mediaGb ? ` plus ${B().fmt(l.data.mediaGb)} GB of media` : ''}</p>`;
     }
     function stepsHtml() {
       const s = [['brief', 'Brief'], ['estimate', 'Estimate'], ['build', 'Build & run']];
@@ -145,13 +145,13 @@
       return `<div class="rp-brief">
         <div class="rp-msgs">${(l.brief || []).map(m => `<div class="rp-msg">${B().avatar(m.who)}<div><b>${esc(B().CAST[m.who]?.[0] || m.who)} <small>${esc(B().CAST[m.who]?.[1] || '')}</small></b><p>${esc(m.text)}</p></div></div>`).join('')}</div>
         <aside class="rp-mission"><h4>The goal</h4><p>${esc(l.goal)}</p>${trafficHtml(l)}<h4>Targets</h4>${targetsHtml(l)}
-          ${(l.events || []).length ? `<h4>Priya's forecast</h4><ul class="rp-forecast">${l.events.map(e => `<li><b>${hh(e.at)}</b><span>${esc(e.label || Sim().EVENT_LABEL[e.type])}${e.dur > 1 ? ` (${e.dur} h)` : ''}</span></li>`).join('')}</ul>` : ''}
+          ${(l.events || []).length ? `<h4>Priya's forecast</h4><ul class="rp-forecast">${l.events.map(e => `<li><b>${hh(e.at)}</b><span>${esc(e.label || Sim().EVENT_LABEL[e.type])}${e.params?.mult && ['surge', 'partner-burst', 'ddos'].includes(e.type) ? ` · ${e.params.mult}× normal` : ''}${e.dur > 1 ? ` (${e.dur} h)` : ''}</span></li>`).join('')}</ul>` : ''}
           <h4>Study first</h4><div class="rp-chips">${l.concepts.map(conceptChip).join('')}</div>
           <div class="rp-go"><button type="button" class="button is-primary" data-step="estimate">Estimate first →</button><button type="button" class="button" data-step="build">Straight to building</button></div></aside></div>`;
     }
     function estimateHtml(l) {
       const keys = l.estimate || [];
-      return `<div class="rp-est"><p>Interviewers want the numbers before the boxes. Work these out from the brief (round freely: within 2× is good), then check.</p>
+      return `<div class="rp-est"><p>Interviewers want the numbers before the boxes. Work these out from the brief (round freely: within 2× is good), then check. Use the ordinary-day peak: surges and incidents in the brief come on top of it and are not part of these answers.</p>
         ${trafficHtml(l, keys)}
         <div class="rp-est-grid">${keys.map(k => { const g = graded?.find(x => x.key === k);
           return `<label class="rp-est-row${g ? ' is-' + g.verdict : ''}"><span>${esc(Sim().ESTIMATES[k])}</span><input type="text" inputmode="decimal" data-est="${esc(k)}" value="${esc(est[k] ?? '')}" placeholder="${UNITS[k]}">
