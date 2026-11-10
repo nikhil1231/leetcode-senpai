@@ -26,8 +26,10 @@ Collections:
   users/{uid}/wall_images/{id}         each poster's JPEG, kept apart so listing posters stays small
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
+import copy as _copy
 import threading
 import time as _time
+import uuid as _uuid
 
 from . import config
 
@@ -73,6 +75,24 @@ _cache_guard = threading.Lock()
 # stale render.
 _revisions = {}        # cache key -> bump count
 
+# Every write this process makes, cached collection or not, plus a token for this
+# process. The client's GET cache (static/app.js) keys responses on these: any
+# write at all means "refetch", and a restart (which resets the counters to zero)
+# can never be mistaken for "nothing changed".
+_writes = 0
+BOOT = _uuid.uuid4().hex[:12]
+
+
+def write_count():
+    return _writes
+
+
+def _touch():
+    """Record a write to a collection that has no cache entry to drop."""
+    global _writes
+    with _cache_guard:
+        _writes += 1
+
 
 def _cache_lock_for(key):
     with _cache_guard:
@@ -93,15 +113,23 @@ def _cached(key, loader):
         now = _time.time()
         if hit and hit[0] > now:
             return hit[1]
+        # A write that lands while the loader runs may not be in what it read.
+        # Caching that would hide the write until the TTL ran out, so only a
+        # load that no write overlapped is kept.
+        generation = _revisions.get(key, 0)
         value = loader()
-        _cache[key] = (now + _CACHE_TTL, value)
+        with _cache_guard:
+            if _revisions.get(key, 0) == generation:
+                _cache[key] = (now + _CACHE_TTL, value)
         return value
 
 
 def _invalidate(key):
-    _cache.pop(key, None)
+    global _writes
     with _cache_guard:
         _revisions[key] = _revisions.get(key, 0) + 1
+        _writes += 1
+        _cache.pop(key, None)
 
 
 def get_store(uid):
@@ -126,7 +154,8 @@ def warm(uid):
         return
     loaders = [store.list_problems, store.list_attempts, store.list_reviews,
                store.list_enrichments, store.get_settings, store.list_mocks,
-               store.list_active_sessions, store.latest_report]
+               store.list_active_sessions, store.latest_report,
+               store.list_design_records, lambda: store.list_knowledge('tutor_memory')]
     with ThreadPoolExecutor(max_workers=len(loaders)) as ex:
         for f in [ex.submit(fn) for fn in loaders]:
             try:
@@ -173,11 +202,18 @@ class FirestoreStore:
     def _user_ref(self):
         return self.db.collection("users").document(self.uid)
 
+    # System Design records are read by nearly every System Design request, often
+    # twice, at ~150ms a stream. They are cached whole; copies go out because
+    # callers build on the records they are handed.
+    def _design_records(self):
+        return _cached(('system_design', self.uid), lambda: {
+            d.id: d.to_dict() for d in self._user_ref().collection('system_design').stream()})
+
     def get_design_record(self, key):
-        return self._user_ref().collection('system_design').document(key).get().to_dict()
+        return _copy.deepcopy(self._design_records().get(key))
 
     def list_design_records(self):
-        return [d.to_dict() for d in self._user_ref().collection('system_design').stream()]
+        return _copy.deepcopy(list(self._design_records().values()))
 
     def put_design_record(self, key, doc, expected_revision=None):
         """Create or compare-and-swap. A stale tab cannot overwrite newer work."""
@@ -192,7 +228,10 @@ class FirestoreStore:
             saved = {**doc, 'id': key, 'revision': (actual or 0) + 1}
             transaction.set(ref, saved)
             return saved
-        return write(self.db.transaction())
+        try:
+            return write(self.db.transaction())
+        finally:
+            _invalidate(('system_design', self.uid))
 
     # ---- learning tracks (Fundamentals, AI Engineering, Experience, Practical) -----
     # users/{uid}/tracks/{track}/records/{key}: lesson progress, answers, stories, drills
@@ -263,7 +302,10 @@ class FirestoreStore:
                 transaction.set(ref, saved)
             transaction.set(state_ref, practice_state.rebuild(events.values()))
             return saved
-        return write(self.db.transaction())
+        try:
+            return write(self.db.transaction())
+        finally:
+            _touch()
 
     def record_practice_exposure(self, question_id, result):
         return self._practice_write(question_id, result, exposure=True)
@@ -303,6 +345,7 @@ class FirestoreStore:
 
     def save_learning_state(self, key, doc):
         self._user_ref().collection('learning_state').document(key).set(doc)
+        _touch()
 
     def list_approach_reviews(self):
         return [d.to_dict() for d in self._user_ref().collection('approach_reviews').stream()]
@@ -312,6 +355,7 @@ class FirestoreStore:
 
     def upsert_approach_review(self, slug, doc):
         self._user_ref().collection('approach_reviews').document(slug).set({**doc, 'slug': slug})
+        _touch()
 
     def list_light_practice(self):
         from google.cloud.firestore_v1 import Query
@@ -440,6 +484,7 @@ class FirestoreStore:
 
     def save_recording(self, session_id, doc):
         self._recordings().document(session_id).set(doc)
+        _touch()
 
     def _sessions(self):
         return self._user_ref().collection("sessions")
@@ -663,10 +708,18 @@ class FirestoreStore:
             raise ValueError(f"unknown knowledge collection {coll}")
         return self._user_ref().collection(coll)
 
+    # Tutor memory is a handful of small documents read one at a time on every
+    # tutor page, so single reads come from the cached collection.
+    SMALL_KNOWLEDGE = ('tutor_memory',)
+
     def list_knowledge(self, coll):
-        return list(_cached((coll, self.uid), lambda: [d.to_dict() for d in self._knowledge(coll).stream()]))
+        return list(_cached((coll, self.uid), lambda: [{**d.to_dict(), '_key': d.id} if coll in self.SMALL_KNOWLEDGE
+                                                       else d.to_dict() for d in self._knowledge(coll).stream()]))
 
     def get_knowledge(self, coll, key):
+        if coll in self.SMALL_KNOWLEDGE:
+            doc = next((d for d in self.list_knowledge(coll) if d.get('_key') == key), None)
+            return _copy.deepcopy(doc)
         doc = self._knowledge(coll).document(key).get().to_dict()
         return {**doc, '_key': key} if doc else None
 
@@ -696,6 +749,7 @@ class FirestoreStore:
 
     def upsert_playbook(self, category, doc):
         self._playbooks().document(_slugify(category)).set({**doc, "category": category})
+        _touch()
 
     # ---- mocks --------------------------------------------------------------
     def _mocks(self):

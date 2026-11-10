@@ -753,3 +753,78 @@ test('reopening completed focused practice restores its saved result instead of 
   await ui.node('#learning-check').listeners.click();
   assert.equal(submissions, 1); // Only the open action; Done never regrades.
 });
+
+// ---- GET cache --------------------------------------------------------------------
+const both = (body) => ({ ok: true, json: async () => body, text: async () => JSON.stringify(body) });
+
+function cachedServer() {
+  const server = { writes: 0, boot: 'b1', catalogue: 1, hits: [] };
+  server.fetch = async (url, opts = {}) => {
+    server.hits.push(`${opts.method || 'GET'} ${url}`);
+    if (url === '/api/rev') return both({ rev: {}, date: '2026-11-10', writes: server.writes, boot: server.boot });
+    if (url === '/api/system-design') return both({ catalogue: server.catalogue });
+    if (opts.method === 'POST') { server.writes++; return both({ ok: true }); }
+    return both({ other: url });
+  };
+  return server;
+}
+const reads = (server, url) => server.hits.filter((h) => h === 'GET ' + url).length;
+
+test('a cached page is reused until the server writes, then fetched again', async () => {
+  const server = cachedServer();
+  const ui = app(server.fetch);
+  assert.deepEqual(JSON.parse(await ui.run('api("/system-design").then(JSON.stringify)')), { catalogue: 1 });
+  const again = await ui.run('api("/system-design")');
+  assert.equal(again.catalogue, 1);
+  assert.equal(reads(server, '/api/system-design'), 1);
+  // Each caller gets its own copy: changing one never changes the next.
+  again.catalogue = 99;
+  assert.deepEqual(JSON.parse(await ui.run('api("/system-design").then(JSON.stringify)')), { catalogue: 1 });
+
+  server.catalogue = 2;
+  await ui.run('api("/system-design/profile", "POST", {})');
+  assert.deepEqual(JSON.parse(await ui.run('api("/system-design").then(JSON.stringify)')), { catalogue: 2 });
+  assert.equal(reads(server, '/api/system-design'), 2);
+});
+
+test('a write from elsewhere, a restart or a stale copy all refetch', async () => {
+  const server = cachedServer();
+  const ui = app(server.fetch);
+  await ui.run('api("/system-design")');
+  const fresh = () => ui.run('revInFlight = null; recentRev = null');
+
+  server.writes++; fresh();                     // a background job wrote
+  await ui.run('api("/system-design")');
+  assert.equal(reads(server, '/api/system-design'), 2);
+
+  server.boot = 'b2'; server.writes = 0; fresh(); // restarted: counters from zero
+  await ui.run('api("/system-design")');
+  assert.equal(reads(server, '/api/system-design'), 3);
+
+  fresh();
+  ui.run('getCache.get("/system-design").at -= GET_CACHE_MAX_AGE');
+  await ui.run('api("/system-design")');
+  assert.equal(reads(server, '/api/system-design'), 4);
+});
+
+test('reads not on the list are never cached, and concurrent reads share one request', async () => {
+  const server = cachedServer();
+  const ui = app(server.fetch);
+  await ui.run('api("/overview")');
+  await ui.run('api("/overview")');
+  assert.equal(reads(server, '/api/overview'), 2);
+  await ui.run('Promise.all([api("/system-design"), api("/system-design"), api("/system-design")])');
+  assert.equal(reads(server, '/api/system-design'), 1);
+  assert.equal(reads(server, '/api/rev'), 1);
+});
+
+test('a new tab starts from the stored copy when nothing has changed', async () => {
+  const server = cachedServer();
+  const first = app(server.fetch);
+  await first.run('api("/system-design")');
+  const saved = JSON.stringify(first.run('stored'));
+  const second = app(server.fetch);
+  second.run(`Object.assign(stored, ${saved})`);
+  assert.deepEqual(JSON.parse(await second.run('api("/system-design").then(JSON.stringify)')), { catalogue: 1 });
+  assert.equal(reads(server, '/api/system-design'), 1);
+});

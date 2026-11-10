@@ -128,6 +128,19 @@ def test_unsure_correct_answers_count_as_guesses_and_activities_record(client, m
     assert client.post('/api/system-design/course/lessons/cache-aside/activity', json={'block': 'b999'}).status_code == 404
 
 
+def test_reopening_a_lesson_soon_after_is_the_same_visit(client, monkeypatch):
+    clock = [1_000_000]
+    monkeypatch.setattr(learning.time, 'time', lambda: clock[0])
+    first = post(client, '/course/lessons/cache-aside/open')['state']
+    clock[0] += learning.REOPEN_SEC - 1
+    again = post(client, '/course/lessons/cache-aside/open')['state']
+    assert again['revision'] == first['revision'] and again['at'] == first['at']   # nothing written
+    clock[0] += 2
+    later = post(client, '/course/lessons/cache-aside/open')['state']
+    assert later['revision'] == first['revision'] + 1 and later['at'] == clock[0]
+    assert later['opened_at'] == first['opened_at']
+
+
 def test_recall_is_saved_without_a_model(client, monkeypatch):
     monkeypatch.setattr(learning.coach.llm, 'enabled', lambda settings=None: False)
     post(client, '/course/lessons/cache-aside/open')

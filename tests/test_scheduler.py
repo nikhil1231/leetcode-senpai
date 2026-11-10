@@ -1031,3 +1031,31 @@ def test_recall_progress_ignores_older_recalls_and_full_cards():
     full = {**card, "leech": 1}
     new = {**old, "last_reviewed": "2026-11-02"}
     assert scheduler.with_recall_progress([full], [new])[0]["due_date"] == "2026-10-15"
+
+
+def test_a_load_overlapped_by_a_write_is_not_cached():
+    from server import store
+
+    key = ("attempts", "race-user")
+    store._invalidate(key)
+    calls = []
+
+    def loader():
+        calls.append(1)
+        if len(calls) == 1:
+            store._invalidate(key)   # a write lands while the read is in flight
+        return ["read before the write"] if len(calls) == 1 else ["fresh"]
+
+    assert store._cached(key, loader) == ["read before the write"]
+    assert store._cached(key, loader) == ["fresh"]    # not served from cache
+    assert store._cached(key, loader) == ["fresh"]
+    assert len(calls) == 2
+
+
+def test_every_write_counts_cached_collection_or_not():
+    from server import store
+
+    before = store.write_count()
+    store._invalidate(("reviews", "u1"))
+    store._touch()
+    assert store.write_count() == before + 2

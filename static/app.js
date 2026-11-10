@@ -31,6 +31,11 @@ const COMPLEXITY_EXAMPLES = [
 ];
 
 const api = async (path, method = "GET", body) => {
+  if (method === "GET" && GET_CACHE.some((re) => re.test(path))) return cachedGet(path);
+  return (await request(path, method, body)).json();
+};
+
+const request = async (path, method = "GET", body) => {
   // X-Requested-With marks this as a fetch, which is what makes the Cloudflare
   // Access edge answer an expired session with a same-origin 401 instead of a
   // cross-origin 302 out to Google. fetch follows that redirect and then cannot
@@ -41,21 +46,24 @@ const api = async (path, method = "GET", body) => {
   if (token) headers["Authorization"] = "Bearer " + token;
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch("/api" + path, opts);
-  if (res.status === 401 || res.status === 403) {
-    handleAuthFailure(res.status);
-    throw new Error("auth");
+  try {
+    const res = await fetch("/api" + path, opts);
+    if (res.status === 401 || res.status === 403) {
+      handleAuthFailure(res.status);
+      throw new Error("auth");
+    }
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(apiErrorMessage(payload.detail) || res.statusText), { status: res.status });
+    }
+    return res;
+  } finally {
+    // A write (even a failed one: it may have landed) has just changed the
+    // server's counters, so any freshness reading taken before it now answers
+    // about the world before it. Drop them, or a render kicked off straight
+    // after a mutation could conclude "nothing changed" and leave stale rows.
+    if (method !== "GET") { revInFlight = null; recentRev = null; }
   }
-  if (!res.ok) {
-    const payload = await res.json().catch(() => ({}));
-    throw Object.assign(new Error(apiErrorMessage(payload.detail) || res.statusText), { status: res.status });
-  }
-  // A write has just changed the server's revision counters, so any in-flight
-  // freshness check is now answering about the world before it. Drop it, or a
-  // render kicked off straight after a mutation could conclude "nothing changed"
-  // from a reading taken a moment too early and leave stale rows on screen.
-  if (method !== "GET") revInFlight = null;
-  return res.json();
 };
 
 const apiErrorMessage = (detail) => {
@@ -229,7 +237,7 @@ const editorialLinkHtml = (slug) => slug
   ? `<p class="small grade-editorial"><a href="${escapeHtml(leetcodeEditorialUrl(slug))}" target="_blank" rel="noopener">Read the editorial ↗</a></p>`
   : "";
 
-window.H = { $, $$, api, fmtTime, solveSecOf, pct, badge, escapeHtml, toast, cxOptions, loader,
+window.H = { $, $$, api, prefetch, fmtTime, solveSecOf, pct, badge, escapeHtml, toast, cxOptions, loader,
   beginRender, COMPLEXITIES, sanitizeProblemHtml };
 
 renderComplexityFields("#annotate-complexities", {
@@ -351,20 +359,101 @@ function goTab(tab) {
 // the cursor. This is why the cache can be aggressive without ever showing
 // stale data: we verify freshness rather than betting on a staleness window.
 let revInFlight = null;
-async function currentRev() {
+function revSnapshot() {
   if (revInFlight) return revInFlight;
   // A single check serves every render kicked off in the same tick (page load
   // fires five at once); the next user action gets a fresh one.
-  const mine = api("/rev")
-    .then((r) => JSON.stringify([r.rev, r.date]))
-    .catch(() => null);  // freshness unknown -> fall through and re-render
+  const mine = api("/rev").catch(() => null);  // unknown -> fall through and re-render
   revInFlight = mine;
-  try { return await mine; }
-  finally {
-    // Expire at the end of the tick. Sharing within one tick is the point;
-    // holding it any longer would miss a background job's write.
-    if (revInFlight === mine) setTimeout(() => { revInFlight = null; }, 0);
+  // Expire at the end of the tick. Sharing within one tick is the point;
+  // holding it any longer would miss a background job's write.
+  mine.then(() => { if (revInFlight === mine) setTimeout(() => { if (revInFlight === mine) revInFlight = null; }, 0); });
+  return mine;
+}
+async function currentRev() {
+  const r = await revSnapshot();
+  // `boot` too: a restarted server counts from zero again, and could otherwise
+  // land back on a snapshot a tab was drawn from.
+  return r ? JSON.stringify([r.rev, r.date, r.boot]) : null;
+}
+
+// ---- GET cache ------------------------------------------------------------------
+// Pages that only read stored data are kept and reused while the server's write
+// counter (/api/rev `writes`: every write, any collection), the day and the
+// server process are unchanged. Opening a page again then costs the freshness
+// check (shared by every request in one navigation) instead of its Firestore
+// reads. A copy goes to localStorage so a new tab starts warm too. MAX_AGE covers
+// what no counter sees: a review falling due with nothing written. Only reads
+// whose answer depends on stored data and the clock belong in this list, and
+// never one that writes (a track lesson's GET records the visit).
+const GET_CACHE = [
+  /^\/system-design$/, /^\/system-design\/ledger$/, /^\/system-design\/course\/lessons\/[\w-]+\/session$/,
+  /^\/tutor$/, /^\/tutor\/home$/, /^\/tutor\/next\?section=[a-z-]+$/, /^\/tutor\/map\/[\w-]+$/,
+  /^\/tutor\/lessons\/[a-z-]+\/[\w-]+$/, /^\/knowledge\/report\?section=[a-z-]+$/,
+  /^\/tracks\/[a-z-]+$/, /^\/readiness$/,
+];
+const GET_CACHE_MAX_AGE = 5 * 60 * 1000;
+// One navigation is a short chain of requests (a page, then what it opens); they
+// share one freshness reading instead of each paying a round trip for its own.
+const REV_REUSE_MS = 1500;
+const GET_STORE = "api-cache:v1:";
+const getCache = new Map();     // path -> {key, at, text}
+const getInFlight = new Map();  // path -> {key, promise of text}
+let recentRev = null;           // {at, promise of key}
+
+function cacheKey() {
+  if (recentRev && Date.now() - recentRev.at < REV_REUSE_MS) return recentRev.promise;
+  const promise = revSnapshot().then((r) => (r && r.boot ? JSON.stringify([r.writes, r.date, r.boot]) : null));
+  recentRev = { at: Date.now(), promise };
+  return promise;
+}
+
+function cachedEntry(path) {
+  let hit = getCache.get(path);
+  if (!hit) {
+    try { hit = JSON.parse(localStorage.getItem(GET_STORE + path)); } catch (_) { hit = null; }
+    if (hit && hit.key && typeof hit.text === "string") getCache.set(path, hit);
+    else hit = null;
   }
+  return hit;
+}
+
+function keepEntry(path, entry) {
+  getCache.set(path, entry);
+  try { localStorage.setItem(GET_STORE + path, JSON.stringify(entry)); }
+  catch (_) {
+    // Full (or storage is off): this tab's memory copy still works. Old copies
+    // are only ever a head start, so drop them all to make room for this one.
+    try {
+      Object.keys(localStorage).filter((k) => k.startsWith(GET_STORE)).forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem(GET_STORE + path, JSON.stringify(entry));
+    } catch (_) { /* a per-browser nicety */ }
+  }
+}
+
+async function cachedGet(path) {
+  // Sample the key *before* fetching: a write landing mid-request is then seen
+  // as a change next time, never mistaken for something this answer reflects.
+  const key = await cacheKey();
+  if (!key) return (await request(path)).json();
+  const hit = cachedEntry(path);
+  if (hit && hit.key === key && Date.now() - hit.at < GET_CACHE_MAX_AGE) return JSON.parse(hit.text);
+  let flight = getInFlight.get(path);
+  if (!flight || flight.key !== key) {
+    const promise = request(path).then((res) => res.text());
+    flight = { key, promise };
+    getInFlight.set(path, flight);
+    promise.then((text) => keepEntry(path, { key, at: Date.now(), text }), () => {})
+      .finally(() => { if (getInFlight.get(path) === flight) getInFlight.delete(path); });
+  }
+  // Parsed per caller, so no caller can change what another one is handed.
+  return JSON.parse(await flight.promise);
+}
+
+// Start reads a page is about to make, so they run beside what comes first
+// instead of after it. Later calls for the same path join these.
+function prefetch(...paths) {
+  paths.forEach((p) => api(p).catch(() => {}));
 }
 
 const renderedRev = {};  // tab -> the revision its DOM was built from

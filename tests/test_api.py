@@ -219,6 +219,14 @@ def test_today_excludes_recently_drilled_problem(client, monkeypatch):
     assert "two-sum" not in after
 
 
+def test_rev_names_the_process_and_counts_every_write(client):
+    from server import store as store_mod
+    first = client.get("/api/rev").json()
+    assert first["boot"] == store_mod.BOOT and first["writes"] == store_mod.write_count()
+    store_mod._touch()
+    assert client.get("/api/rev").json()["writes"] == first["writes"] + 1
+
+
 def test_today_reuses_fresh_pattern_sprint_cache(client):
     cached = {
         "slug": "two-sum", "title": "Two Sum", "difficulty": "Easy",
@@ -2363,7 +2371,7 @@ def test_rev_is_stable_until_something_actually_changes(client):
     # day's drill lane. Everything after it must be pure reads.
     client.get("/api/today")
     first = client.get("/api/rev").json()
-    assert set(first) == {"rev", "date"}
+    assert set(first) == {"rev", "date", "writes", "boot"}
 
     client.get("/api/today")
     client.get("/api/insights")

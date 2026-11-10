@@ -90,12 +90,19 @@ class NextQuestion(BaseModel):
     placement: bool = Field(default=False, description='One question per lesson of the area not yet tested.')
 
 
+# Opening a lesson again within this long is the same visit (as for System Design
+# lessons): not rewriting `at` keeps the client's cached pages valid.
+REOPEN_SEC = 600
+
+
 @router.get('/{track}/lessons/{key}')
 def open_lesson(track: str, key: str, store=Depends(store_for)):
     course_track(track)
     lesson_of(track, key)
     now = int(time.time())
     old = store.get_track_record(track, 'lesson_' + key)
+    if old and old.get('kind') == 'lesson' and now - (old.get('at') or 0) < REOPEN_SEC:
+        return courses.public_lesson(track, key, old)   # the same visit: nothing to write
     record = put(store, track, 'lesson_' + key, {**(old or {}), 'kind': 'lesson', 'lesson_id': key,
                                                  'opened_at': (old or {}).get('opened_at', now), 'at': now},
                  old['revision'] if old else None)

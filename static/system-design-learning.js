@@ -158,9 +158,10 @@
   }
   async function refresh() {catalog=await call('');window.SystemDesign.setCatalog(catalog);window.DesignLedger?.invalidate();}
   async function go(v) {stop();await window.SystemDesign.openView(v);}
-  async function openLesson(key) {
+  function startOpen(key) {const p=call('/course/lessons/'+encodeURIComponent(key)+'/open','POST',{});p.catch(()=>{});return p;}
+  async function openLesson(key, opening) {
     const ticket=++lessonEpoch;
-    const data=await call('/course/lessons/'+encodeURIComponent(key)+'/open','POST',{});
+    const data=await (opening||startOpen(key));
     let recovered=null;
     const saved=readStorage(quizKey(data.lesson.id));
     if(saved?.id) {
@@ -351,7 +352,7 @@
     } catch(e) {error=e.message;}
     finally {busy=false;window.SystemDesign.repaint();}
   }
-  window.DesignLearning={render,wire,openLesson,stop,startClock,isBusy:()=>busy,startRound,
+  window.DesignLearning={render,wire,openLesson,startOpen,stop,startClock,isBusy:()=>busy,startRound,
     route:()=>lesson?'lesson/'+lesson.id:'lessons',
     setCatalog(value,nextView=view){
       if(nextView!==view) {

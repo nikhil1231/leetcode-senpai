@@ -222,6 +222,21 @@ def test_deep_dive_lessons_wait_until_opened():
 
 # ---- HTTP ------------------------------------------------------------------------------
 
+def test_reopening_a_track_lesson_soon_after_is_the_same_visit(client, monkeypatch):
+    from server.tracks import api as tracks_api
+    clock = [1_000_000]
+    monkeypatch.setattr(tracks_api.time, 'time', lambda: clock[0])
+    record = lambda: client.store.get_track_record('ai', 'lesson_rag')
+    ok(client.get('/api/tracks/ai/lessons/rag'))
+    first = record()
+    clock[0] += tracks_api.REOPEN_SEC - 1
+    ok(client.get('/api/tracks/ai/lessons/rag'))
+    assert record()['revision'] == first['revision']   # nothing written
+    clock[0] += 2
+    ok(client.get('/api/tracks/ai/lessons/rag'))
+    assert record()['revision'] == first['revision'] + 1 and record()['at'] == clock[0]
+
+
 def test_course_lesson_quickfire_round_trip(client):
     lesson = ok(client.get('/api/tracks/ai/lessons/rag'))
     assert lesson['checks'] and 'correct' not in lesson['checks'][0]

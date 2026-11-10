@@ -192,6 +192,12 @@ def course_summary(records, now=None):
             'history': list(reversed(answers))[:100], 'reviews': list(review.values())}
 
 
+# Coming back to a lesson within this long is the same visit. Not writing `at` again
+# keeps every cached page valid (any write invalidates them all), at the cost of
+# `at` being up to this much older than the last open.
+REOPEN_SEC = 600
+
+
 @router.post('/course/lessons/{key}/open')
 def open_lesson(key: str, store=Depends(store_for)):
     key = LEGACY_LESSONS.get(key, key)
@@ -199,6 +205,8 @@ def open_lesson(key: str, store=Depends(store_for)):
         raise HTTPException(404, 'Unknown lesson')
     now = int(time.time())
     old = store.get_design_record('course_' + key)
+    if old and old.get('kind') == 'course_lesson' and now - (old.get('at') or 0) < REOPEN_SEC:
+        return {'lesson': public_lesson(key), 'state': old}
     state = put(store, 'course_' + key, {**(old or {}), 'kind': 'course_lesson', 'lesson_id': key,
                  'skill': LESSONS[key]['skill'], 'opened_at': (old or {}).get('opened_at', now),
                  'at': now}, old['revision'] if old else None)

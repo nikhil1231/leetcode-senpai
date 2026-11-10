@@ -427,13 +427,19 @@
       view='cases';
     }
     if(view.startsWith('simulators/')){window.DesignSimulators.want=view.slice(11);view='simulators';}
+    // What the page opens with runs beside the catalogue rather than after it.
+    const opening=view.startsWith('lesson/')?window.DesignLearning.startOpen(view.slice(7)):null;
+    if(view.startsWith('map/'))window.H.prefetch('/tutor/map/'+encodeURIComponent(view.slice(4)));
+    // A lesson's own reads too: wasted if the open writes (a first visit), but a
+    // return within REOPEN_SEC writes nothing and finds them ready.
+    if(opening){const k=encodeURIComponent(view.slice(7));window.H.prefetch(`/system-design/course/lessons/${k}/session`,`/tutor/lessons/system-design/${k}`,'/tutor');}
     try {
       const fresh=await call();
       window.DesignLedger.invalidate();
       if(navigation!==viewEpoch)return;
       if(view.startsWith('lesson/')) {
         window.DesignLearning.setCatalog(fresh,'lesson');
-        await window.DesignLearning.openLesson(view.slice(7));
+        await window.DesignLearning.openLesson(view.slice(7),opening);
         if(navigation!==viewEpoch)return;
         screen='lesson';
       } else if(view.startsWith('map/')) {

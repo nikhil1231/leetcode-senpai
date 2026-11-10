@@ -849,8 +849,11 @@ def api_rev(uid: str = Depends(auth.require_user)):
     snapshot proves nothing it is displaying has changed, so it can skip the
     refetch entirely instead of guessing at a staleness window. `date` is in
     here because the daily queue turns over at midnight without any write.
+    `writes` counts every write and `boot` names this process: the client's
+    cached GET responses are only reused while both are unchanged.
     """
-    return {"rev": get_store(uid).revisions(), "date": _today_iso()}
+    return {"rev": get_store(uid).revisions(), "date": _today_iso(),
+            "writes": store_mod.write_count(), "boot": store_mod.BOOT}
 
 
 def _practice_store(uid):
