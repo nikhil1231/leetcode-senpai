@@ -1,5 +1,5 @@
-// Interview readiness across every section (GET /api/readiness): the Overview page, the strip shown on each
-// section's home, the sidebar chip and the section links in the Overview nav. One scale for all six sections;
+// Interview readiness across every section (GET /api/readiness): the Overview page, the card on every
+// section's Home, the sidebar chip and the section links in the Overview nav. One scale for all six sections;
 // untested is unknown, never zero. The numbers come from the server (server/readiness.py); this only draws them.
 (function () {
   'use strict';
@@ -72,23 +72,33 @@
     }).join('')}`;
   }
 
-  // ---------- strip: shown on Tutor and every section home ----------
-  function stripHtml(d, current) {
-    const o = d.overall;
-    return `<div class="rd-strip" role="group" aria-label="Interview readiness by section">
-      <button type="button" class="rd-strip-head" data-rd-overview><span class="dc-eyebrow">Interview readiness</span><b>${known(o) ? o.ready + '%' : '–'}</b><small>${esc(o.band)} · all six</small></button>
-      <div class="rd-strip-items">${d.sections.map(r => `<button type="button" class="rd-strip-item ${r.id === current ? 'is-current' : ''}" data-rd-section="${r.id}" style="--c:var(--sec-${r.id})" ${r.id === current ? 'aria-current="true"' : ''} title="${esc(r.title)}: ${esc(r.band)}"><i><b style="width:${unknown(r) ? 0 : Math.max(4, r.ready)}%"></b></i><span>${esc(SHORT[r.id])}</span><em>${pctText(r)}</em></button>`).join('')}</div></div>`;
+  // ---------- card: the same readiness card on every section Home (section-home.js) ----------
+  function cardHtml(d, id, { stats = [], details } = {}) {
+    const r = d.sections.find(x => x.id === id), o = d.overall;
+    if (!r) return '';
+    const [label, to] = details || DETAILS[id];
+    const stat = ([k, v, warn]) => `<div class="${warn ? 'is-warn' : ''}"><dt>${esc(k)}</dt><dd>${v}</dd></div>`;
+    return `<span class="sd-eyebrow">INTERVIEW READINESS</span>
+      <div class="sh-stand-num"><strong>${pctText(r)}</strong><span class="rd-band ${bandClass(r.band)}">${esc(r.band)}</span></div>
+      <p class="sh-stand-sub">${unknown(r) ? (r.coverage ? 'Too little tested to score yet.' : 'Nothing tested here yet, so there is no score.') : 'of this section you would get right today'}</p>
+      <div class="rd-bar" style="--c:var(--accent)" role="img" aria-label="${r.ready}% held, ${r.coverage}% tested, ready line at 70%"><span class="rd-bar-tested" style="width:${r.coverage}%"></span><span class="rd-bar-held" style="width:${r.ready}%"></span></div>
+      <p class="sh-stand-key"><span><i class="is-held"></i>held</span><span><i class="is-tested"></i>${r.coverage}% tested</span><span><i class="is-line"></i>ready</span></p>
+      <p class="rd-focus">${r.slipping ? `<b class="rd-slip">${r.slipping} slipping.</b> ` : ''}${esc(r.focus)}</p>
+      ${stats.length ? `<dl class="hub-stats">${stats.map(stat).join('')}</dl>` : ''}
+      <button type="button" class="hub-stand-link" data-rd-details>${esc(label)} →</button>
+      <button type="button" class="sh-all" data-rd-overview aria-label="Overall readiness ${known(o) ? o.ready + ' percent' : 'unknown'}. Open Overview."><span>All six sections <b>${known(o) ? o.ready + '%' : '–'}</b></span>${pips(d.sections)}</button>`;
   }
-  async function strip(el, current) {
-    if (!el) return null;
+  async function homeCard(el, id, opts = {}) {
+    if (!el) return false;
     try {
       const d = await load();
-      if (!el.isConnected) return d;
-      el.innerHTML = stripHtml(d, current);
-      el.querySelector('[data-rd-overview]').addEventListener('click', () => window.AppSections.select('readiness'));
-      el.querySelectorAll('[data-rd-section]').forEach(n => n.addEventListener('click', () => { if (n.dataset.rdSection !== current) open(n.dataset.rdSection); }));
-      return d;
-    } catch (e) { console.warn('readiness strip', e); if (el.isConnected) el.innerHTML = ''; return null; }   // never in the critical path
+      if (!el.isConnected) return true;
+      el.innerHTML = cardHtml(d, id, opts);
+      const to = (opts.details || DETAILS[id])[1];
+      el.querySelector('[data-rd-details]')?.addEventListener('click', () => (typeof to === 'function' ? to() : open(id, to)));
+      el.querySelector('[data-rd-overview]')?.addEventListener('click', () => window.AppSections.select('readiness'));
+      return true;
+    } catch (e) { console.warn('readiness card', e); return false; }   // never in the critical path
   }
 
   // ---------- the Overview page ----------
@@ -134,20 +144,14 @@
   function interviewForm(iv) {
     return `<form class="rd-iv-form"><label>Interview date <input type="date" class="input" data-rd-iv-date value="${esc(iv?.date || '')}" required></label><button type="submit" class="button is-primary is-small">Save</button>${iv ? '<button type="button" class="button is-ghost is-small" data-rd-iv="clear">Remove</button>' : ''}<button type="button" class="button is-ghost is-small" data-rd-iv="cancel">Cancel</button></form>`;
   }
-  function weekHtml(nu) {
-    const rows = (nu?.standing || []).filter(r => r.target_min > 0);
-    if (!rows.length) return '';
-    const sec = { dsa: 'leetcode', system_design: 'system-design', behavioural: 'experience', stack: 'fundamentals' };
-    return `<section class="rd-week"><h3>Time this week against your plan</h3><p class="sd-muted">Readiness follows time. The plan splits your week across these four; the stack share covers Fundamentals, AI and Practical.</p>
-      <ul>${rows.map(r => `<li style="--c:var(--sec-${sec[r.id]})"><span>${esc(r.label)}</span><i class="rd-bar-sm" role="img" aria-label="${r.served_min} of ${r.target_min} minutes"><b style="width:${Math.min(100, Math.round(100 * (r.ratio || 0)))}%"></b></i><em>${r.served_min}<small>/${r.target_min} min</small></em></li>`).join('')}</ul></section>`;
-  }
   async function home(ctx) {
     const d = await load(true);
     if (ctx.stale()) return;
     const o = d.overall, rows = d.sections;
     ctx.root.innerHTML = `<div class="rd">
-      <div class="sd-page-intro"><span class="sd-eyebrow">OVERVIEW</span><h2>How ready are you for the loop?</h2></div>
-      <div id="rd-next"></div>
+      <div class="sd-page-intro"><span class="sd-eyebrow">OVERVIEW</span><h2 id="sd-heading" tabindex="-1">Start with the next step. See where you stand.</h2></div>
+      <div id="daily-coach-summary"></div>
+      <div id="rd-tutor"></div>
       <section class="rd-hero">
         <div class="rd-hero-main"><span class="sd-eyebrow">INTERVIEW READINESS</span>
           <div class="rd-big"><strong>${known(o) ? o.ready + '%' : '–'}</strong><span class="rd-band ${bandClass(o.band)}">${esc(o.band)}</span></div>
@@ -158,10 +162,10 @@
         <div class="rd-hero-chart">${radar(rows)}</div>
       </section>
       <div class="rd-grid">${rows.map(r => card(r, rows.length > 1 && known(o) ? o.weakest : null)).join('')}</div>
-      <div id="rd-time"></div>
       <p class="rd-note sd-muted">How this is measured: each section counts what you would get right today out of its whole syllabus (recall fades without practice), so an untested section reads as unknown, not zero. Coding counts skills by the evidence behind them; Experience also counts whether each competency has a story. The overall figure weights sections by your plan.</p></div>`;
-    window.NextUp?.banner(ctx.root.querySelector('#rd-next'), 'readiness');
-    window.NextUp?.load().then(nu => { const t = ctx.root.querySelector('#rd-time'); if (t && !ctx.stale()) t.innerHTML = weekHtml(nu); }).catch(() => {});
+    // The day's plan (Do this next, with the week against the plan, and today's session), then the tutor's pick.
+    if (window.Senpai) window.Senpai.mountToday(); else window.DailyCoach?.mountSummary();
+    window.TutorHome?.line(ctx.root.querySelector('#rd-tutor'));
     const ivBox = ctx.root.querySelector('#rd-iv');
     const saveDate = async value => { try { await api('/config', 'POST', { interview_date: value }); await load(true); window.AppSections.select('readiness'); } catch (err) { window.H.toast?.(err.message || 'Could not save the date', 'error'); } };
     ctx.root.addEventListener('submit', e => { if (e.target.closest('.rd-iv-form')) { e.preventDefault(); const v = ivBox.querySelector('[data-rd-iv-date]').value; if (v) saveDate(v); } });
@@ -179,6 +183,6 @@
   let tries = 0;
   const wait = setInterval(() => { if (signedIn()) { clearInterval(wait); mark(here); } else if (++tries > 60) clearInterval(wait); }, 800);
 
-  window.Tracks?.register('readiness', { home });
-  window.Readiness = { load, strip, mark, navLinks, open };
+  window.Tracks?.register('readiness', { home });   // tutor-home.js adds the Tutor page
+  window.Readiness = { load, card: homeCard, mark, navLinks, open };
 })();

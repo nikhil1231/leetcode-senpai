@@ -11,14 +11,14 @@
   const TITLES = { fundamentals: 'Fundamentals', ai: 'AI Engineering', experience: 'Experience', practical: 'Practical Coding', readiness: 'Overview' };
   const NAV = {
     course: [['home', 'Home', 'i-today'], ['lessons', 'Learn', 'i-topics'], ['practise', 'Practise', 'i-drill'], ['progress', 'What you know', 'i-insights']],
-    experience: [['home', 'Overview', 'i-today'], ['stories', 'Story bank', 'i-playbook'], ['drill', 'Timed answers', 'i-drill'], ['dives', 'Deep dives', 'i-topics'], ['mistakes', 'Mistakes book', 'i-insights']],
-    practical: [['home', 'Exercises', 'i-today'], ['mistakes', 'Mistakes book', 'i-insights']],
-    readiness: [['home', 'Readiness', 'i-today']],
+    experience: [['home', 'Home', 'i-today'], ['stories', 'Story bank', 'i-playbook'], ['drill', 'Timed answers', 'i-drill'], ['dives', 'Deep dives', 'i-topics'], ['mistakes', 'Mistakes book', 'i-insights']],
+    practical: [['home', 'Home', 'i-today'], ['mistakes', 'Mistakes book', 'i-insights']],
+    readiness: [['home', 'Home', 'i-today'], ['tutor', 'Tutor', 'i-tutor']],
   };
   // Extra prep for an interview round that lives in another section.
   const ROUND_LINKS = { workflow: [['experience', 'dives', 'Deep dives on your CV']] };
   const NOTES = { course: 'Read it once.<br>Recall it often.<br>Explain it simply.', experience: 'Specific.<br>Measured.<br>In the first person.', practical: 'Run the tests.<br>Change one thing.<br>Say what you see.', readiness: 'One scale.<br>Six disciplines.<br>No blind spots.' };
-  const VIEW_TITLES = { home: 'Home', practise: 'Practise', progress: 'What you know', placement: 'Find your level', lessons: 'Learn', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round', nightshift: 'Night Shift' };
+  const VIEW_TITLES = { home: 'Home', practise: 'Practise', progress: 'What you know', placement: 'Find your level', lessons: 'Learn', lesson: 'Lesson', quickfire: 'Quickfire', mistakes: 'Mistakes book', stories: 'Story bank', story: 'Story', drill: 'Timed answers', dives: 'Deep dives', dive: 'Deep dive', claim: 'CV deep dive', exercise: 'Exercise', round: 'AI-assisted round', nightshift: 'Night Shift', tutor: 'Tutor' };
   const ACTIVE = { lesson: 'lessons', story: 'stories', dive: 'dives', claim: 'dives', exercise: 'home' };
   // Course tracks: practice views sit under Practise.
   const COURSE_ACTIVE = { lesson: 'lessons', quickfire: 'practise', mistakes: 'practise', placement: 'practise', round: 'practise', exercise: 'practise', nightshift: 'practise' };
@@ -58,7 +58,7 @@
     if (current.track !== track || !document.querySelector('#track-nav [data-track-view]')) nav(track);
     current = { track, view, arg: rest.join('/') || null, seq };
     markNav(view);
-    $('#page-title').textContent = track === 'readiness' ? 'Interview readiness' : VIEW_TITLES[view] || TITLES[track];
+    $('#page-title').textContent = track === 'readiness' && view === 'home' ? 'Overview' : VIEW_TITLES[view] || TITLES[track];
     $('#page-sub').textContent = TITLES[track];
     // A fresh container per view, so listeners from the previous view can't fire.
     const host = $('#tab-track'), root = document.createElement('div');
@@ -70,7 +70,7 @@
       const bound = (path, method = 'GET', body) => api('/tracks/' + track + path, method, body);
       await render({ track, view, arg: current.arg, root, call: bound, go: v => window.AppSections.select(track, v), stale: () => seq !== current.seq, onLeave: fn => cleanups.push(fn) });
     } catch (e) {
-      if (seq === current.seq) root.innerHTML = `<div class="sd-panel"><p class="tr-error">${esc(e.message || 'Something went wrong')}</p>${btn('Back to the overview', 'home')}</div>`;
+      if (seq === current.seq) root.innerHTML = `<div class="sd-panel"><p class="tr-error">${esc(e.message || 'Something went wrong')}</p>${btn('Back to Home', 'home')}</div>`;
       root.querySelector('[data-t=home]')?.addEventListener('click', () => go('home'));
     }
     window.scrollTo?.(0, 0);

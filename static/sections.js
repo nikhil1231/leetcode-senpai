@@ -13,7 +13,7 @@
     readiness: ['Overview', 'Interview readiness']};
   const HUE = {'system-design': 165, fundamentals: 205, ai: 290, experience: 22, practical: 78, readiness: 45};   // mirrors themes.css, for the browser chrome colour
   const TRACKS = ['fundamentals', 'ai', 'experience', 'practical', 'readiness'];
-  let current = 'leetcode', lastLeetcodeTab = 'tutor';
+  let current = 'leetcode', lastLeetcodeTab = 'today';
   const design = () => current === 'system-design';
   function close(focus = false) {
     menu.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false');
@@ -81,11 +81,12 @@
     if (entering) window.SystemDesign.openView(view, true);
     else window.SystemDesign.openView(view);
   }
-  function route() {
+  function route(initial) {
     const match = location.hash.match(/^#\/system-design(?:\/([^/]+)(?:\/([a-z0-9-]+))?)?$/);
     const track = location.hash.match(/^#\/([a-z-]+)(?:\/([a-z0-9/_-]+))?$/);
     if (match) select('system-design', (match[1]==='lesson'||match[1]==='redesign')&&match[2] ? match[1]+'/'+match[2] : views.includes(match[1]) ? match[1] : 'home', false);
     else if (track && TRACKS.includes(track[1])) select(track[1], track[2] || 'home', false);
+    else if (initial === true && !/^#\/leetcode/.test(location.hash)) { history.replaceState(null, '', '#/readiness'); select('readiness', 'home', false); }   // the app opens on Overview
     else if (current !== 'leetcode') select('leetcode', 'home', false);
   }
   trigger.addEventListener('click', () => {
@@ -111,5 +112,5 @@
   window.addEventListener('hashchange', route);
   const leave = () => { if (current !== 'leetcode') { shell('leetcode'); history.replaceState(null, '', '#/leetcode'); } };
   window.AppSections = {select, setView, current: () => current, TRACKS, leaveDesign: leave, leaveSection: leave};
-  shell('leetcode'); route();
+  shell('leetcode'); route(true);
 })();

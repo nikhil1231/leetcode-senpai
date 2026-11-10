@@ -81,14 +81,27 @@
   }
 
   // ---------- list ----------
+  const KIND = { build: 'Build', extend: 'Extend', debug: 'Debug', review: 'Review', assisted: 'AI-assisted', llm: 'LLM feature' };
+  const kind = g => KIND[g] || CAT[g];
   async function home(ctx) {
     const d = await ctx.call(''); if (ctx.stale()) return;
-    ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">PRACTICAL CODING</span><h2>${esc(d.track.blurb)}</h2><p>Code runs in your browser with real Python. Tests are visible, and hidden edge-case checks run when you submit. Opening the solution before submitting means the exercise won't count as held.</p></div>
-      <div id="rd-strip"></div>
-      ${T.knowledgeHtml(d, 'exercises you have done cleanly and still hold')}
-      ${d.groups.map(g => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(g.title)}</h3><p class="sd-muted">${esc(g.blurb)}</p></div><div class="sd-lesson-grid">${g.exercises.map(e => `<button type="button" class="sd-lesson-card tr-ex-card is-${e.status}" data-t="open" data-id="${e.id}"><span class="sd-eyebrow">${CAT[g.id]} · ${e.minutes} MIN${e.level === 'stretch' ? ' · STRETCH' : ''}</span><h3>${esc(e.title)}</h3><p class="tr-card-sum">${esc(e.summary)}</p><span><span>${e.open ? 'In progress' : e.best ? `${e.best.clean ? 'Clean' : 'Attempted'} · ${when(e.best.at)}${e.best.elapsed_sec ? ' · ' + fmt(e.best.elapsed_sec) : ''}` : 'Not started'}</span><span>${e.open ? 'Resume →' : 'Open →'}</span></span></button>`).join('')}</div></section>`).join('')}`;
+    const all = d.groups.flatMap(g => g.exercises.map(e => ({ ...e, group: g.id })));
+    // In progress first, then something not started (core before stretch), then the one held least well.
+    const RANK = { shaky: 0, fading: 1, learning: 2, solid: 3 };
+    const pick = all.find(e => e.open) || all.find(e => !e.best && e.level !== 'stretch') || all.find(e => !e.best)
+      || [...all].sort((a, b) => (RANK[a.status] ?? 0) - (RANK[b.status] ?? 0))[0];
+    const others = all.filter(e => e !== pick && !e.best).slice(0, 2);
+    const next = pick ? { kicker: pick.open ? 'Where you left off' : pick.best ? 'Worth another go' : 'Next exercise', title: pick.title,
+      why: `${esc(pick.summary)} <span class="sd-muted">${kind(pick.group)} · about ${pick.minutes} minutes.</span>`, button: btn(pick.open ? 'Resume' : 'Open the exercise', 'open', `data-id="${pick.id}"`, true) }
+      : { kicker: 'Next step', title: 'No exercises yet', why: '', button: '' };
+    const held = all.filter(e => e.best && e.best.clean).length;
+    const grid = d.groups.map(g => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(g.title)}</h3><p class="sd-muted">${esc(g.blurb)}</p></div><div class="sd-lesson-grid">${g.exercises.map(e => `<button type="button" class="sd-lesson-card tr-ex-card is-${e.status}" data-t="open" data-id="${e.id}"><span class="sd-eyebrow">${CAT[g.id]} · ${e.minutes} MIN${e.level === 'stretch' ? ' · STRETCH' : ''}</span><h3>${esc(e.title)}</h3><p class="tr-card-sum">${esc(e.summary)}</p><span><span>${e.open ? 'In progress' : e.best ? `${e.best.clean ? 'Clean' : 'Attempted'} · ${when(e.best.at)}${e.best.elapsed_sec ? ' · ' + fmt(e.best.elapsed_sec) : ''}` : 'Not started'}</span><span>${e.open ? 'Resume →' : 'Open →'}</span></span></button>`).join('')}</div></section>`).join('');
+    ctx.root.innerHTML = window.SectionHome.html({ section: 'practical', next,
+      alts: others.map(e => ({ title: e.title, why: `${kind(e.group)} · ${e.minutes} min`, attrs: `data-t="open" data-id="${e.id}"` })),
+      note: 'Code runs in your browser with real Python. Hidden edge-case checks run when you submit; opening the solution first means it won\'t count as held.',
+      below: `<h3 class="sh-below-title">All exercises <span>${held} of ${all.length} done cleanly</span></h3>${grid}` });
     wireActions(ctx.root, { open: n => ctx.go('exercise/' + n.dataset.id) });
-    window.Readiness?.strip(ctx.root.querySelector('#rd-strip'), 'practical');
+    window.SectionHome.attach(ctx.root, 'practical', { stats: [['Done cleanly', `${held}/${all.length}`], ['In progress', all.filter(e => e.open).length]] });
   }
 
   // ---------- workspace ----------

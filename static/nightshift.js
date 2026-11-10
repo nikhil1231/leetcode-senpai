@@ -1,5 +1,5 @@
 // Night Shift: the on-call game for the Fundamentals course (a course view: fundamentals/nightshift).
-// You're paged at Ripple; you read the channel, run commands on the box, act, and once it's stable you
+// You're paged; you read the channel, run commands on the box, act, and once it's stable you
 // say what happened and what fixes it for good. The incident runs in nightshift-engine.js (pure); the
 // levels are simulators/nightshift.json; runs, evidence and the story live on the server
 // (/api/nightshift). With the model on, the shell answers any command and Priya answers questions;
@@ -25,7 +25,7 @@
     if (ctx.stale()) return;
     if (ctx.arg) { const L = d.levels.find(l => l.id === ctx.arg); if (L) return shift(ctx, L, ov, titles); }
     const best = id => ov.progress.levels[id]?.best || 0;
-    ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">NIGHT SHIFT · ${ov.progress.cleared} OF ${d.levels.length} CLEARED</span><h2 tabindex="-1">You're on call at Ripple.</h2>
+    ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">NIGHT SHIFT · ${ov.progress.cleared} OF ${d.levels.length} CLEARED</span><h2 tabindex="-1">You're on call.</h2>
         <p>Each page is a real kind of production incident from this course. Read the channel, run commands on the box, act, and once it's stable, say what happened and what fixes it for good. Every command costs a minute, and users are hurting while you look.${ov.enabled ? ' The shell answers any command you type, and Priya is on the channel.' : ''}</p></div>
       <div class="ns-levels">${d.levels.map(l => `<button type="button" class="sd-lesson-card ns-card ${best(l.id) >= 2 ? 'is-done' : ''}" data-t="open" data-id="${esc(l.id)}">
           <span class="sd-eyebrow">${esc(l.clock)} · PAR ${l.par} MIN</span><h3>${esc(l.title)}</h3><p class="tr-card-sum">${esc(l.kicker)}</p>
@@ -86,7 +86,7 @@
         posted = await call('/runs', 'POST', { key: rid(), level: L.id, stars: r.stars, minutes: r.minutes, impact: r.impact, risky: r.risky, hints: r.hints,
           diagnosis: r.diagnosis, fix: r.fix, lasting: r.lasting,
           log: s.log.slice(-150).map(x => ({ kind: x.kind, at: x.at || 0, who: x.who || '', cmd: x.cmd || '', out: String(x.out || '').slice(0, 3900), label: x.label || '', text: String(x.text || '').slice(0, 1100) })) });
-        if (posted.first_clear) toast('First clear: Ripple will remember this one.');
+        if (posted.first_clear) toast('First clear. Well handled.');
         const pm = await call(`/runs/${posted.id}/postmortem`, 'POST');
         if (!ctx.stale()) slot.querySelector('[data-pm]').innerHTML = `<details open><summary>${pm.model ? "Priya's post-mortem" : 'Post-mortem'}</summary><div class="sd-md">${md(pm.text)}</div></details>`;
       } catch (e) { if (!ctx.stale()) slot.querySelector('[data-pm]').innerHTML = `<p class="tr-error">${esc(e.message)}</p>`; }

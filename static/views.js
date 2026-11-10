@@ -134,8 +134,8 @@
       return;
     }
 
+    // The day's plan across every section lives on Overview; Today keeps LeetCode's own context.
     const prepHtml = [
-      '<div id="daily-coach-summary"></div>',
       progressPanel(families),
       await weeklyReportBanner(reportWrap.report),
       mockCard(mock),
@@ -264,9 +264,32 @@
           <button class="button q-action import-one" data-slug="${x.slug}">Import</button>
         </li>`))
     ) : "";
+    // LeetCode's Home, in the layout every section Home shares (section-home.js): the next card leads.
+    const due = board.filter((seg) => seg.key === "overdue" || seg.key === "due").flatMap((seg) => seg.items.map((it) => ({ ...it, overdue: seg.key === "overdue" })));
+    const queue = [...due, ...q.new, ...(q.drills || [])];
+    const lead = queue[0], second = queue[1];
+    const startAttrs = (it) => `data-slug="${it.slug}" data-kind="${it.kind}" data-mode="${it.mode || ""}" data-title="${escapeHtml(it.title)}" data-cat="${escapeHtml(it.category || "")}" data-attempt="${it.recall_attempt_id || ""}" data-status="${it.grading_status || ""}"`;
+    const whyOf = (it) => {
+      const d = dueLabel(it.due_date, q.date, it.overdue);
+      if (it.mode === "recall") return `A quick recall${d ? ", " + d.text.toLowerCase() : ""}: say the approach from memory, then check it.`;
+      if (due.includes(it)) return `A review${d ? ", " + d.text.toLowerCase() : ""}: solve it again before it fades.`;
+      if (laneOf(it) === "drill") return it.reason || "A short targeted rep from a weak signal.";
+      return `A new ${it.difficulty ? String(it.difficulty).toLowerCase() + " " : ""}problem, picked to widen what you have covered.`;
+    };
+    const kicker = (it) => (due.includes(it) ? (it.overdue ? "Overdue review" : "Review due") : laneOf(it) === "drill" ? "Focused drill" : "New problem");
+    const homeHtml = window.SectionHome ? window.SectionHome.html({
+      section: "leetcode",
+      next: lead ? { kicker: kicker(lead), title: lead.title, why: escapeHtml(whyOf(lead)),
+        button: `<button type="button" class="button is-primary" ${startAttrs(lead)}>${lead.mode === "recall" ? "Recall" : "Start"}</button>` }
+        : { kicker: "Next step", title: "Nothing is due", why: "Every review is done for now. Import a pack in Discover, or run a sprint.", button: '<button type="button" class="button is-primary" data-today-go="discover">Open Discover</button>' },
+      alts: [
+        ...(second ? [{ title: second.title, why: kicker(second), attrs: startAttrs(second) }] : []),
+        { title: "Sprint round", why: "Several quick problems against the clock.", attrs: 'data-today-sprint' },
+      ],
+    }) : "";
     el.innerHTML = `
+      ${homeHtml}
       <div class="today-shell">
-        ${prepHtml ? `<div class="today-prep">${prepHtml}</div>` : ""}
         <div class="today-grid">
           ${reviews}
           <div class="today-side">
@@ -279,7 +302,11 @@
             <span class="learning-cta-kicker">Spaced check</span><span class="learning-cta-title">Later application check</span><span class="learning-cta-go">Answer &rarr;</span></button>`).join('')}
         </div>` : ''}
         ${expansion ? `<div class="today-expansion">${expansion}</div>` : ""}
+        ${prepHtml ? `<div class="today-prep">${prepHtml}</div>` : ""}
       </div>`;
+    window.SectionHome?.attach(el, "leetcode", { stats: [["Reviews due", waiting, waiting > 0], ["New queued", q.new.length]] });
+    $$("#tab-today [data-today-sprint]").forEach((b) => b.addEventListener("click", () => App.startSprint()));
+    $$("#tab-today [data-today-go]").forEach((b) => b.addEventListener("click", () => App.goTab(b.dataset.todayGo)));
     $$("#tab-today button[data-slug][data-kind]").forEach((b) => b.addEventListener("click", () =>
       App.startFlow(b.dataset.slug, b.dataset.kind, b.dataset.mode, b.dataset.title, b.dataset.cat,
         b.dataset.attempt || null, b.dataset.status || null)));
@@ -299,7 +326,6 @@
     $("#btn-goto-topics") && $("#btn-goto-topics").addEventListener("click", () => App.goTab("topics"));
     $("#btn-start-mock") && $("#btn-start-mock").addEventListener("click", () => App.startMock());
     $("#btn-start-sprint") && $("#btn-start-sprint").addEventListener("click", () => App.startSprint());
-    if (window.Senpai) window.Senpai.mountToday(); else window.DailyCoach?.mountSummary();
   }
 
   // Library progress, summarised from the same tree the Topics map renders:

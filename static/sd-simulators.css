@@ -72,3 +72,20 @@
 @media (max-width: 720px) { .bd-grid { grid-template-columns:1fr; } .bd-palette { max-height:none; } .bd-items { grid-auto-flow:column; grid-auto-columns:max-content; overflow-x:auto; max-height:none; } .bd-stage { height:520px; } }
 /* Phone: the canvas is wider than the screen, so the empty-state hint is centred on what is visible. */
 @media (max-width: 720px) { .bd-empty { left: calc(50vw - 36px); top: 120px; max-width: min(280px, 70vw); } }
+
+/* The list in four groups (build, worked designs, building blocks, course sims), each split by category. */
+.sim-chip span { margin-left: 4px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sim-section { margin: 22px 0 8px; }
+.sim-section + .sim-section { padding-top: 22px; border-top: 1px solid var(--line-soft); }
+.sim-section-head h3 { margin: 0; font-size: 18px; display: flex; align-items: baseline; gap: 8px; }
+.sim-section-head h3 span, .sim-sub span { color: var(--muted); font: 500 12.5px var(--font-mono, monospace); }
+.sim-section-head p { margin: 4px 0 12px; color: var(--text-2); font-size: 13.5px; max-width: 80ch; }
+.sim-sub { margin: 16px 0 8px; font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); display: flex; gap: 8px; align-items: baseline; }
+.sim-cards.is-build { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.sim-cards.is-build .sim-card.is-featured { grid-column: auto; }
+
+/* Playback speed beside Play / Step / Reset in the internals simulators (sim-clock.js). */
+.sim-speed { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--font); color: var(--text-2); }
+.sim-speed label { display: inline-flex; align-items: center; gap: 6px; }
+.sim-speed input { width: 90px; accent-color: var(--accent); }
+.sim-speed output { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text); }

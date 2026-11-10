@@ -6,9 +6,9 @@
     ['quickfire', 'Quickfire'], ['mistakes', 'Mistakes book'], ['papers', 'Past papers'], ['drills', 'Estimation drills'], ['skills', 'Skill drills'], ['cases', 'Design cases']];
   const TRACK_VIEWS = [['fundamentals', 'Fundamentals', [['home', 'Home'], ['lessons', 'Learn'], ['practise', 'Practise'], ['progress', 'What you know']]],
     ['ai', 'AI Engineering', [['home', 'Home'], ['lessons', 'Learn'], ['practise', 'Practise'], ['progress', 'What you know']]],
-    ['experience', 'Experience', [['home', 'Overview'], ['stories', 'Story bank'], ['drill', 'Timed answers'], ['dives', 'Deep dives'], ['mistakes', 'Mistakes book']]],
-    ['practical', 'Practical Coding', [['home', 'Exercises'], ['mistakes', 'Mistakes book']]],
-    ['readiness', 'Overview', [['home', 'Interview readiness']]]];
+    ['experience', 'Experience', [['home', 'Home'], ['stories', 'Story bank'], ['drill', 'Timed answers'], ['dives', 'Deep dives'], ['mistakes', 'Mistakes book']]],
+    ['practical', 'Practical Coding', [['home', 'Home'], ['mistakes', 'Mistakes book']]],
+    ['readiness', 'Overview', [['home', 'Interview readiness'], ['tutor', 'Tutor']]]];
   const KIND = { page: 'Page', action: 'Action', lesson: 'Lesson', simulator: 'Simulator', exercise: 'Exercise', problem: 'Problem' };
 
   let index = null, loading = null, results = [], sel = 0, root, input, list, lastFocus;

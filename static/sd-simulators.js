@@ -27,12 +27,24 @@
       ...ints.topics.map(t => ({ kind: 'internals', id: t.id, title: t.title, blurb: t.blurb, group: t.category, tag: t.categoryLabel, difficulty: t.difficulty,
         meta: `${t.minutes} min`, text: `${t.overview} ${t.pitfalls.join(' ')}` })),
       ...crs.items.map(t => ({ kind: 'course', id: t.id, title: t.title, blurb: t.blurb, group: t.category, tag: t.categoryLabel, meta: t.lessonTitle, text: `${t.notes} ${t.challenges.join(' ')}` }))];
-    items.groups = [['', 'All'], ['build', 'Builder'], ['designs', 'System designs'], ...ints.categories.map(([id, label]) => [id, label]), ...crs.categories];
+    // The list is four kinds of thing, each split into its own categories.
+    const sub = (cats, i) => (cats.find(([id]) => id === i.group) || [i.group, i.tag])[1];
+    SECTIONS = [
+      { id: 'build', title: 'Build and play', blurb: 'Draw a system yourself and live through its day: the design game, or a blank canvas.', has: i => i.kind === 'game' || i.kind === 'builder', sub: () => '' },
+      { id: 'designs', title: 'Worked system designs', blurb: 'Classic interview designs. Step through each request flow, then stress the design and watch what breaks.', has: i => i.kind === 'design',
+        sub: i => i.tag, order: ['Foundations', 'Core Services', 'Advanced Systems'] },
+      { id: 'internals', title: 'Inside the building blocks', blurb: 'What those designs are made of: storage engines, consensus, transactions and the network, one mechanism at a time.', has: i => i.kind === 'internals',
+        sub: i => sub(ints.categories, i), order: ints.categories.map(([, l]) => l) },
+      { id: 'course', title: 'From the Fundamentals and AI courses', blurb: 'The simulators inside those lessons, here to replay on their own.', has: i => i.kind === 'course',
+        sub: i => sub(crs.categories, i), order: crs.categories.map(([, l]) => l) },
+    ];
   }
+  let SECTIONS = [];
 
   const shown = () => {
     const q = query.trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean);
-    const hits = items.filter(i => (!group || i.group === group) && words.every(w => `${i.title} ${i.blurb} ${i.tag} ${i.text || ''}`.toLowerCase().includes(w)));
+    const kind = SECTIONS.find(x => x.id === group);
+    const hits = items.filter(i => (!kind || kind.has(i)) && words.every(w => `${i.title} ${i.blurb} ${i.tag} ${i.text || ''}`.toLowerCase().includes(w)));
     if (!words.length) return hits;
     const score = i => words.reduce((n, w) => n + (i.title.toLowerCase().includes(w) ? 4 : 0) + (i.tag.toLowerCase().includes(w) ? 2 : 0) + (i.blurb.toLowerCase().includes(w) ? 1 : 0), 0);
     return hits.map((i, k) => [i, score(i), k]).sort((a, b) => b[1] - a[1] || a[2] - b[2]).map(x => x[0]);   // best match first, otherwise list order
@@ -42,18 +54,30 @@
       <span class="sim-card-top"><strong>${esc(i.title)}</strong>${pill(i.difficulty)}</span><span class="sim-card-blurb">${esc(i.blurb)}</span>
       <span class="sim-card-meta"><span>${esc(i.tag)}</span>${i.meta ? `<span>${esc(i.meta)}</span>` : ''}</span></button>`;
   const grid = () => {
-    const list = shown();
-    return `<p class="sim-count" aria-live="polite">${list.length} of ${items.length} simulators</p>` + (list.length
-      ? `<div class="sim-cards">${list.map(card).join('')}</div>` : '<p class="sim-empty">Nothing matches. Try a shorter search, or clear the filter.</p>');
+    const list = shown(), searching = !!query.trim();
+    if (!list.length) return '<p class="sim-count" aria-live="polite">0 simulators</p><p class="sim-empty">Nothing matches. Try a shorter search, or clear the filter.</p>';
+    const parts = SECTIONS.map(sec => {
+      const mine = list.filter(sec.has);
+      if (!mine.length) return '';
+      const subs = [...new Set(mine.map(sec.sub))].sort((a, b) => (sec.order || []).indexOf(a) - (sec.order || []).indexOf(b));
+      const body = subs.map(name => {
+        const cards = mine.filter(i => sec.sub(i) === name);
+        return `${name && subs.length > 1 ? `<h4 class="sim-sub">${esc(name)} <span>${cards.length}</span></h4>` : ''}<div class="sim-cards${sec.id === 'build' ? ' is-build' : ''}">${cards.map(card).join('')}</div>`;
+      }).join('');
+      return `<section class="sim-section" id="sim-${sec.id}"><header class="sim-section-head"><h3>${esc(sec.title)} <span>${mine.length}</span></h3>${searching ? '' : `<p>${esc(sec.blurb)}</p>`}</header>${body}</section>`;
+    }).join('');
+    return `<p class="sim-count" aria-live="polite">${searching || group ? `${list.length} of ${items.length} simulators` : `${items.length} simulators in four groups`}</p>${parts}`;
   };
+  const chips = () => [['', 'All'], ...SECTIONS.map(x => [x.id, x.id === 'course' ? 'Course simulators' : x.id === 'internals' ? 'Building blocks' : x.id === 'designs' ? 'System designs' : 'Build and play'])]
+    .map(([id, label]) => `<button type="button" class="sim-chip${group === id ? ' is-on' : ''}" data-sim-group="${esc(id)}" aria-pressed="${group === id}">${esc(label)} <span>${id ? items.filter(SECTIONS.find(x => x.id === id).has).length : items.length}</span></button>`).join('');
 
   function intro() {
-    return `<div class="sd-page-intro"><span class="sd-eyebrow">SIMULATORS</span><h2 id="sd-heading" tabindex="-1">Every simulator, in one place.</h2>
-      <p>Build a design from scratch, step through a classic one and stress it, or open up how storage engines, consensus and the network really work.</p></div>`;
+    return `<div class="sd-page-intro"><span class="sd-eyebrow">SIMULATORS</span><h2 id="sd-heading" tabindex="-1">See it run, then break it.</h2>
+      <p>Build a design yourself, step through a classic one and stress it, or open up the mechanisms underneath: storage engines, consensus and the network.</p></div>`;
   }
   function listHtml() {
     return `${intro()}<div class="sim-tools"><input type="search" class="input sim-search" data-sim-search placeholder="Search simulators: raft, cache, payment, TLS…" value="${esc(query)}" aria-label="Search simulators">
-      <div class="sim-chips" role="group" aria-label="Filter">${items.groups.map(([id, label]) => `<button type="button" class="sim-chip${group === id ? ' is-on' : ''}" data-sim-group="${esc(id)}">${esc(label)}</button>`).join('')}</div></div>
+      <div class="sim-chips" role="group" aria-label="Show">${chips()}</div></div>
       <div data-sim-grid>${grid()}</div>
       <p class="sim-foot">Looking for algorithm animations? The 46 step-throughs for graphs, trees, DP and more are on the <button type="button" class="sim-link" data-sim-dsa>LeetCode Visualise tab</button>.</p>`;
   }
@@ -102,7 +126,7 @@
       root.querySelector('[data-sim-search]')?.addEventListener('input', e => { query = e.target.value; g.innerHTML = grid(); });
       root.querySelectorAll('[data-sim-group]').forEach(b => b.addEventListener('click', () => {
         group = b.dataset.simGroup; g.innerHTML = grid();
-        root.querySelectorAll('[data-sim-group]').forEach(x => x.classList.toggle('is-on', x === b));
+        root.querySelectorAll('[data-sim-group]').forEach(x => { x.classList.toggle('is-on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
       }));
       root.querySelector('[data-sim-dsa]')?.addEventListener('click', () => {
         window.AppSections?.select('leetcode');

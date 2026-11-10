@@ -76,7 +76,9 @@
 }
 
 /* The Tutor tab: where the app opens. */
-.tuh { max-width: 760px; }
+.tuh { max-width: 920px; }
+.tuh .sd-page-intro { margin-bottom: 18px; }
+.tuh-known h3 { margin: 0; font-size: 15px; }
 .tuh-pick { padding: 26px 28px; border: 1px solid var(--accent-line); border-radius: var(--radius-lg); background: var(--accent-soft); }
 .tuh-pick h2 { font-size: 22px; margin: 8px 0 8px; }
 .tuh-pick p { margin: 0 0 18px; color: var(--text-2); line-height: 1.55; max-width: 62ch; }
@@ -91,7 +93,7 @@
   border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 .go-tutor:hover { filter: brightness(1.15); }
 .go-tutor .nav-icon { width: 18px; height: 18px; }
-body:not(.section-design):not(.section-track) .go-tutor { display: none; }   /* the Tutor tab is right there in the main nav */
+body[data-section="readiness"] .go-tutor { display: none; }   /* Overview has the Tutor in its own nav */
 @media (max-width: 900px) { .go-tutor span { display: none; } .go-tutor { width: auto; } }
 
 /* A design handed over for the simulator: folded, then the builder full width under the message. */

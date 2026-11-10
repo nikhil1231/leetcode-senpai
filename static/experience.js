@@ -53,22 +53,17 @@
       const nextP = d.prompts.find(p => p.id === d.next_prompt);
       const gaps = d.coverage.filter(c => !c.stories.length);
       const dive = firstOpenDive(d);
-      const hero = !d.stories.length
-        ? `<span class="sd-eyebrow">START HERE</span><h3>Write your first story</h3><p class="sd-muted">One real project, as you would say it: the situation, what <b>you</b> did, and a measured result. ${d.cv.available ? 'Your CV evidence below can draft it for you.' : 'You can write it by hand.'}</p>${btn('Write a story', 'new-story', '', true)}`
-        : `<span class="sd-eyebrow">PRACTISE OUT LOUD</span><h3>${esc(nextP.text)}</h3><p class="sd-muted">A timed answer, then a STAR self-check${d.llm ? ' and coach feedback if you type or dictate it' : ''}. Aim for ${fmt(d.target_seconds[0])} to ${fmt(d.target_seconds[1])}.</p>${btn('Start a timed answer', 'go', 'data-view="drill"', true)}`;
-      ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">EXPERIENCE</span><h2>${esc(d.track.blurb)}</h2></div>
-        <div id="rd-strip"></div>
-        ${T.knowledgeHtml(d, 'answers and deep dives you could give well today')}
-        <section class="sd-panel tr-hero">${hero}</section>
-        ${stepsHtml(d)}
-        <div class="tr-next-grid is-two">
-          <section class="sd-panel tr-next"><span class="sd-eyebrow">STORY BANK</span><h3>${d.stories.length} stor${d.stories.length === 1 ? 'y' : 'ies'} · ${gaps.length ? `${gaps.length} competenc${gaps.length === 1 ? 'y' : 'ies'} uncovered` : 'every competency covered'}</h3><p class="sd-muted">Aim for two stories per competency. Each story can answer several prompts.</p>${btn('Open the story bank', 'go', 'data-view="stories"')}</section>
-          <section class="sd-panel tr-next"><span class="sd-eyebrow">DEEP DIVES</span><h3>${dive ? esc(shorten(dive.q.prompt, 90)) : 'Every deep dive is held'}</h3><p class="sd-muted">${dive ? `Next in ${esc(dive.pack.title)}. Interviewers drill into what is on your CV, so practise the follow-ups before they ask.` : 'They come back as they fade.'}</p>${btn(dive ? 'Answer it' : 'Open deep dives', dive ? 'dive' : 'go', dive ? `data-id="${dive.q.id}"` : 'data-view="dives"')}</section>
-        </div>
-        ${coverageHtml(d)}
-        ${recentHtml(d)}
-        ${cvHtml(d, 4)}`;
-      window.Readiness?.strip(ctx.root.querySelector('#rd-strip'), 'experience');
+      const next = !d.stories.length || !nextP
+        ? { kicker: 'Start here', title: 'Write your first story', why: `One real project, as you would say it: the situation, what <b>you</b> did, and a measured result. ${d.cv.available ? 'Your CV evidence below can draft it for you.' : 'You can write it by hand.'}`, button: btn('Write a story', 'new-story', '', true) }
+        : { kicker: 'Practise out loud', title: nextP.text, why: `A timed answer, then a STAR self-check${d.llm ? ' and coach feedback if you type or dictate it' : ''}. Aim for ${fmt(d.target_seconds[0])} to ${fmt(d.target_seconds[1])}.`, button: btn('Start a timed answer', 'go', 'data-view="drill"', true) };
+      const alts = [
+        { title: `Story bank · ${d.stories.length} stor${d.stories.length === 1 ? 'y' : 'ies'}`, why: gaps.length ? `${gaps.length} competenc${gaps.length === 1 ? 'y has' : 'ies have'} no story yet. Aim for two per competency.` : 'Every competency has a story.', attrs: 'data-t="go" data-view="stories"' },
+        dive ? { title: 'Deep dive: ' + shorten(dive.q.prompt, 70), why: `Next in ${dive.pack.title}. Practise the follow-ups before an interviewer asks them.`, attrs: `data-t="dive" data-id="${dive.q.id}"` }
+          : { title: 'Deep dives', why: 'Every deep dive is held. They come back as they fade.', attrs: 'data-t="go" data-view="dives"' },
+      ];
+      ctx.root.innerHTML = window.SectionHome.html({ section: 'experience', next, alts, extra: stepsHtml(d),
+        below: `${coverageHtml(d)}${recentHtml(d)}${cvHtml(d, 4)}` });
+      window.SectionHome.attach(ctx.root, 'experience', { stats: [['Stories', d.stories.length], ['Uncovered', gaps.length, gaps.length > 0]] });
       wireActions(ctx.root, handlers(ctx, d));
     });
   }

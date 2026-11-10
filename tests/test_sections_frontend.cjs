@@ -3,7 +3,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-function harness(hash='') {
+function harness(hash='#/leetcode') {
   const nodes=new Map(), listeners={}, opened=[], tabs=[], routes=[];
   let context;
   function node(key) {
@@ -69,6 +69,14 @@ test('the section menu supports arrows, Escape and focus return',()=>{
   assert.equal(h.node('#section-menu').classList.contains('hidden'),true);
   assert.equal(h.context.document.activeElement,h.node('#section-trigger'));
   assert.equal(h.node('#section-trigger').attrs['aria-expanded'],'false');
+});
+
+test('the app opens on Overview, and LeetCode opens on Today',()=>{
+  const h=harness('');
+  assert.equal(h.context.location.hash,'#/readiness');
+  assert.deepEqual(h.opened[0],['track','readiness','home',true]);
+  h.sections.select('leetcode');
+  assert.deepEqual(h.tabs,['today']);
 });
 
 test('returning to LeetCode restores the tab the learner left',()=>{
