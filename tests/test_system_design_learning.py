@@ -369,3 +369,22 @@ def test_recall_grading_validates_model_output(client, monkeypatch):
     monkeypatch.setattr(coach.llm, '_raw_generate', lambda *a, **k: {'content': _json.dumps(tampered), 'model': 'm'})
     result = post(client, '/course/lessons/cache-aside/recall', block=block['key'], text='Another attempt at the answer.')
     assert result['grade'] is None and result['message']
+
+
+def test_order_question_ties_accept_either_order_within_the_tie_only():
+    q = {'format': 'order', 'correct': ['c0', 'c1', 'c2', 'c3'], 'groups': [['c0', 'c1'], ['c2'], ['c3']],
+         'choices': [{'id': f'c{i}', 'text': t} for i, t in enumerate('abcd')]}
+    assert learning.judge(q, 'c0,c1,c2,c3')[0] and learning.judge(q, 'c1,c0,c2,c3')[0]
+    assert not learning.judge(q, 'c0,c2,c1,c3')[0] and not learning.judge(q, 'c0,c1,c3,c2')[0]
+    ok, right = learning.judge(q, None)
+    assert not ok and right['text'] == 'a ≈ b (any order) → c → d' and right['groups'] == q['groups']
+    plain = {k: v for k, v in q.items() if k != 'groups'}
+    assert not learning.judge(plain, 'c1,c0,c2,c3')[0]
+
+
+def test_lesson_order_tie_group_parses_and_is_not_exposed_to_the_learner():
+    q = QUESTIONS['api-contracts-check-4-v2']
+    assert len(q['groups'][0]) == 2 and sum(map(len, q['groups'])) == len(q['correct'])
+    assert 'groups' not in learning.public_contract(q)
+    ids = [k for g in q['groups'] for k in g]
+    assert learning.judge(q, ','.join(ids))[0] and learning.judge(q, ','.join(q['groups'][0][::-1] + ids[2:]))[0]

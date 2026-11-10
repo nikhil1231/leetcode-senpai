@@ -348,8 +348,8 @@ explain: |
   items:
     - Client sends with a client message_id
     - Chat service assigns the next conversation seq and appends (deduplicating by message_id)
-    - Ack the sender ("sent")
-    - Publish to member devices via the backplane
+    - - Ack the sender ("sent")
+      - Publish to member devices via the backplane
     - Recipient clients ack the seq ("delivered")
-  explanation: Persist and sequence first, acknowledge, then deliver — with receipts flowing back as sequence acks.
+  explanation: Persist and sequence first, then acknowledge the sender and deliver (either order: both depend only on the append), with receipts flowing back as sequence acks.
 ```

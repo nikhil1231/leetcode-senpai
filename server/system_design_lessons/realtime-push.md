@@ -240,11 +240,11 @@ model: |
   prompt: Order the steps for reliably delivering a chat message to a recipient.
   items:
     - Append the message to durable storage with the next sequence number
-    - Acknowledge the sender
-    - Publish to the backplane channel for the recipient
+    - - Acknowledge the sender
+      - Publish to the backplane channel for the recipient
     - The recipient's gateway pushes the frame over their connection
     - The recipient's client acks the sequence number
-  explanation: Persistence comes first, so delivery can fail without losing anything. Acks by sequence tell the server what to replay after a reconnect.
+  explanation: Persistence comes first, so delivery can fail without losing anything. Acknowledging the sender and publishing both depend only on the append, so either can go first. Acks by sequence tell the server what to replay after a reconnect.
 - kind: check
   type: numeric
   prompt: There are 6 million concurrent connections at about 50 KB each. Each gateway can devote 30 GB to connections. How many gateways are needed?

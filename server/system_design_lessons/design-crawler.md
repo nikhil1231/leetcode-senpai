@@ -311,7 +311,7 @@ explain: |
     - Normalise the discovered URL and check the seen-filter
     - Score it and place it in a priority queue, then the host's back queue
     - Fetch when the host's next-allowed time arrives (respecting robots.txt)
-    - Store the raw page and extract links
-    - Fingerprint the content for duplicate detection and schedule a recrawl
-  explanation: Dedupe early, schedule politely, store raw, then derive links and freshness from content.
+    - - Store the raw page and extract links
+      - Fingerprint the content for duplicate detection and schedule a recrawl
+  explanation: Dedupe early, schedule politely, then store the raw page and fingerprint it for duplicates and freshness; those two can go in either order.
 ```

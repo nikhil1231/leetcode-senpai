@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from . import auth, knowledge, llm, system_design_coach as coach, system_design_variants as variants
 from .store import get_store
 from .system_design_curriculum import CATEGORIES, LESSONS, QUESTIONS
-from .system_design_lessons import calc_bounds, numeric_blank
+from .system_design_lessons import calc_bounds, numeric_blank, order_fits, order_matches, order_text
 from . import system_design_items as ledger_items
 
 router = APIRouter(prefix='/api/system-design', tags=['system-design-papers'])
@@ -132,10 +132,10 @@ def _ids(value):
     return [str(v) for v in value] if isinstance(value, list) else []
 
 
-def _order_marks(picked, right):
-    if picked == right:
+def _order_marks(picked, right, groups=None):
+    if order_matches(picked, right, groups):
         return 2
-    return 1 if len(picked) == len(right) and sum(a == b for a, b in zip(picked, right)) * 2 >= len(right) else 0
+    return 1 if len(picked) == len(right) and sum(order_fits(picked, right, groups)) * 2 >= len(right) else 0
 
 
 def answer_text(c, value):
@@ -182,8 +182,8 @@ def mark(c, value):
             marks = 2 if picked == correct else 1 if picked and picked < correct else 0
             right = ' · '.join(by[k] for k in q['correct'])
         elif fmt == 'order':
-            marks = _order_marks(_ids(value), q['correct'])
-            right = ' → '.join(by[k] for k in q['correct'])
+            marks = _order_marks(_ids(value), q['correct'], q.get('groups'))
+            right = order_text(by, q['correct'], q.get('groups'))
         else:
             marks = int(value == q['correct'])
             right = by[q['correct']]

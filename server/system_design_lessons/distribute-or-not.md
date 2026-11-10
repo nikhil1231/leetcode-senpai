@@ -312,10 +312,10 @@ strong: |
   prompt: Order these scaling steps from first to try to last resort.
   items:
     - Fix queries and add indexes
-    - Add a read replica
-    - Add a cache and queues for slow work
+    - - Add a read replica
+      - Add a cache and queues for slow work
     - Shard the data
-  explanation: Cheap and reversible first, structural and hard to undo last.
+  explanation: Cheap and reversible first, structural and hard to undo last. A read replica and a cache with queues are similar-sized steps, so either can come first.
 - kind: fire
   prompt: What is a managed database service mainly buying you?
   choices:

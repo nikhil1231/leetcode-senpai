@@ -202,12 +202,12 @@ model: |
   prompt: Order the phases of a 45-minute design interview.
   items:
     - Requirements and assumptions
-    - Back-of-envelope estimates
-    - API and data model
+    - - Back-of-envelope estimates
+      - API and data model
     - High-level design and key flows
     - Deep dives on hard parts
     - Trade-offs and evolution
-  explanation: Each phase builds on the last. Deep dives without requirements or numbers lack grounding.
+  explanation: Each phase builds on the last, except that estimates and the API and data model can go in either order. Deep dives without requirements or numbers lack grounding.
 - kind: fire
   prompt: An interviewer says "Postgres won't scale for this." What's the best response?
   choices:

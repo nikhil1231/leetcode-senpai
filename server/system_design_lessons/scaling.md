@@ -189,10 +189,10 @@ model: |
   prompt: Order these database scaling steps from cheapest and most reversible to most expensive.
   items:
     - Fix slow queries and add the right indexes
-    - Cache hot reads
-    - Add read replicas
+    - - Cache hot reads
+      - Add read replicas
     - Shard the data
-  explanation: Cheap efficiency gains first; permanent architectural changes last, once measurements justify them.
+  explanation: Cheap efficiency gains first; permanent architectural changes last, once measurements justify them. Caching and read replicas are both read-scaling steps of similar cost, so either can come first.
 - kind: fire
   prompt: Why can scaling an API tier from 20 to 40 instances reduce throughput?
   choices:

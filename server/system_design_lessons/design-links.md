@@ -367,10 +367,10 @@ explain: |
   prompt: Order the phases of presenting this design in an interview.
   items:
     - Clarify scope, scale, the freshness bound and the ownership invariant
-    - Estimate storage, read rate and code space
-    - Define the API and data model
+    - - Estimate storage, read rate and code space
+      - Define the API and data model
     - Draw the architecture and trace a hit, a miss and a disable
     - Deep-dive the freshness bound and failure modes
     - Describe evolution triggers
-  explanation: Requirements and numbers first, then interfaces, then the flow, then the deep dives that show judgement.
+  explanation: Requirements first, then numbers and interfaces (either order: sizing informs the data model and the API informs what to size), then the flow, then the deep dives that show judgement.
 ```

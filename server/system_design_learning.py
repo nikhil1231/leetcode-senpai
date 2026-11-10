@@ -11,6 +11,7 @@ from . import auth, system_design_coach as coach, system_design_variants as vari
 from .store import get_store
 from .system_design_curriculum import (CATEGORIES, LESSONS, QUESTIONS, VERSION,
                                         LEGACY_LESSONS, public_lesson, public_question)
+from .system_design_lessons import order_matches, order_text
 
 router = APIRouter(prefix='/api/system-design', tags=['system-design-learning'])
 DAY = 86400
@@ -305,9 +306,11 @@ def judge(contract, answer):
             raise HTTPException(422, 'Enter a number') from exc
         return abs(value - expected) <= contract['tolerance'] * abs(expected), right
     if fmt in ('multi', 'order'):
-        ids = contract['correct']
-        joiner = ' → ' if fmt == 'order' else ' · '
-        right = {'ids': ids, 'text': joiner.join(by_id[k]['text'] for k in ids)}
+        ids, groups = contract['correct'], contract.get('groups')
+        texts = {k: c['text'] for k, c in by_id.items()}
+        right = {'ids': ids, 'text': order_text(texts, ids, groups) if fmt == 'order' else ' · '.join(texts[k] for k in ids)}
+        if groups:
+            right['groups'] = groups
         if answer is None:
             return False, right
         picked = [k for k in answer.split(',') if k]
@@ -315,7 +318,7 @@ def judge(contract, answer):
             raise HTTPException(422, 'Choose an answer first')
         if fmt == 'order' and len(picked) != len(ids):
             raise HTTPException(422, 'Place every item in order')
-        return (picked == ids if fmt == 'order' else set(picked) == set(ids)), right
+        return (order_matches(picked, ids, groups) if fmt == 'order' else set(picked) == set(ids)), right
     right = by_id[contract['correct']]
     if answer is None:
         return False, right
@@ -359,7 +362,7 @@ def quiz_answer(key: str, body: Answer, background: BackgroundTasks, store=Depen
 
 
 def public_contract(contract, order=None):
-    item = {k: deepcopy(v) for k, v in contract.items() if k not in ('correct', 'explanation', 'whys', 'retired', 'tolerance')}
+    item = {k: deepcopy(v) for k, v in contract.items() if k not in ('correct', 'groups', 'explanation', 'whys', 'retired', 'tolerance')}
     if order:
         choices = {c['id']: c for c in item['choices']}
         item['choices'] = [choices[k] for k in order]

@@ -336,9 +336,9 @@ strong: |
   items:
     - Stop writing the field in new code
     - Wait until no reader depends on it
-    - Remove it from the schema
-    - Reserve its number or name so it is never reused
-  explanation: Stop producing it, let consumers drain, remove it, then protect against reuse.
+    - - Remove it from the schema
+      - Reserve its number or name so it is never reused
+  explanation: Stop producing it, let consumers drain, then remove it and reserve its number or name so it is never reused (normally the same change, so either order).
 - kind: fire
   prompt: What does a schema registry do in a message pipeline?
   choices:

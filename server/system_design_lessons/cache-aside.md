@@ -360,9 +360,9 @@ model: |
   items:
     - Look up the key in the cache and get nothing back
     - Query the database for the record
-    - Write the record into the cache with a TTL
-    - Return the record to the caller
-  explanation: Check the cache, fall through to the source on a miss, populate the cache for the next reader, respond. (Some implementations respond before populating; the order of the last two is a latency trade-off, not a correctness one.)
+    - - Write the record into the cache with a TTL
+      - Return the record to the caller
+  explanation: Check the cache, fall through to the source on a miss, populate the cache for the next reader and respond, in either order: responding first is a latency trade-off, not a correctness one.
 - kind: check
   level: advanced
   prompt: A nightly batch job reads every one of 5M products once through the same `allkeys-lru` Redis cache used by the website. Each morning the site's p99 latency spikes for an hour. What is the best explanation and fix?

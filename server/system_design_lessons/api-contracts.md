@@ -247,11 +247,11 @@ model: |
   type: order
   prompt: Order these API changes from safest to most breaking, for existing clients that ignore unknown fields.
   items:
-    - Add a new optional response field
-    - Add a new endpoint
+    - - Add a new optional response field
+      - Add a new endpoint
     - Make a previously optional request field required
     - Rename an existing response field
-  explanation: Additions that clients can ignore are safe. Tightening request validation breaks clients that omit the field. Renaming removes the old field, which breaks everything that reads it — that one needs a new version or a long dual-write period.
+  explanation: Additions that clients can ignore are equally safe, so those two can go in either order. Tightening request validation breaks clients that omit the field. Renaming removes the old field, which breaks everything that reads it — that one needs a new version or a long dual-write period.
 - kind: fire
   prompt: Why is `GET /emails/{id}/send` a dangerous endpoint?
   choices:

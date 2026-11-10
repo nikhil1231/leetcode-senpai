@@ -124,6 +124,29 @@ def _permute(seed, items):
     return out
 
 
+def order_ranks(correct, groups=None):
+    """{id: tier} for an order question; tied items share a tier."""
+    return {k: n for n, tier in enumerate(groups or [[k] for k in correct]) for k in tier}
+
+
+def order_matches(picked, correct, groups=None):
+    """True when `picked` follows the right order, treating items in a tie group as interchangeable."""
+    ranks = order_ranks(correct, groups)
+    return len(picked) == len(correct) and all(ranks.get(a) == ranks[b] for a, b in zip(picked, correct))
+
+
+def order_fits(picked, correct, groups=None):
+    """Per position: does the item placed there belong in that tier?"""
+    ranks = order_ranks(correct, groups)
+    return [ranks.get(a) == ranks[b] for a, b in zip(picked, correct)]
+
+
+def order_text(by, correct, groups=None):
+    """The right order as text; a tie reads `A ≈ B (any order)`."""
+    tiers = groups or [[k] for k in correct]
+    return ' → '.join(f'{" ≈ ".join(by[k] for k in t)} (any order)' if len(t) > 1 else by[t[0]] for t in tiers)
+
+
 def _flat(value, where):
     """Plain list items like `- Cache-aside: reads…` parse as one-key mappings; undo that."""
     if isinstance(value, dict) and len(value) == 1:
@@ -226,12 +249,17 @@ def _question(lesson, meta, raw, kind, n):
             raise LessonError(f'{qid}: tolerance must be positive')
         return q
     if fmt == 'order':
-        items = [_flat(x, qid) for x in raw['items']]
-        if not 3 <= len(items) <= 7:
+        # An item written as a nested list is a tie: those items are equally right in either order.
+        tiers = [[_flat(y, qid) for y in x] if isinstance(x, list) else [_flat(x, qid)] for x in raw['items']]
+        items = [t for tier in tiers for t in tier]
+        if not 3 <= len(items) <= 7 or any(not tier for tier in tiers):
             raise LessonError(f'{qid}: order needs 3-7 items')
         ids = [f'c{i}' for i in range(len(items))]
         shown = _permute(qid, ids)
         q.update(choices=[{'id': i, 'text': str(items[int(i[1:])]).strip()} for i in shown], correct=ids)
+        if any(len(tier) > 1 for tier in tiers):
+            ends = [sum(map(len, tiers[:n + 1])) for n in range(len(tiers))]
+            q['groups'] = [ids[end - len(tier):end] for tier, end in zip(tiers, ends)]
         return q
     choices = raw['choices']
     texts = [str(c['text']).strip() for c in choices]

@@ -68,6 +68,9 @@ def test_partial_credit_rules():
     swapped = [str(i) for i in range(n)]
     swapped[-1], swapped[-2] = swapped[-2], swapped[-1]
     assert papers.mark(order, swapped)['marks'] == 1
+    tied = papers.contract('api-contracts-check-4-v2')
+    a, b, c, d = [k for g in tied['q']['groups'] for k in g]
+    assert papers.mark(tied, [b, a, c, d])['marks'] == 2 and papers.mark(tied, [a, c, b, d])['marks'] == 1
     multi = papers.contract(next(q for q in QUESTIONS if QUESTIONS[q].get('format') == 'multi'
                                  and len(QUESTIONS[q]['correct']) > 1 and q in items.BY_ID))
     assert papers.mark(multi, multi['q']['correct'][:1])['marks'] == 1

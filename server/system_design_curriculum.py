@@ -552,7 +552,7 @@ _apply_rich()
 
 def public_question(key, order=None):
     item = deepcopy(QUESTIONS[key])
-    for k in ('correct', 'explanation', 'whys', 'retired'):
+    for k in ('correct', 'groups', 'explanation', 'whys', 'retired'):
         item.pop(k, None)
     if order:
         by_id = {c['id']: c for c in item['choices']}
