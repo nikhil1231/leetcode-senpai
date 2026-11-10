@@ -106,6 +106,7 @@ WALL_REVIEW_MODEL = os.environ.get("WALL_REVIEW_MODEL", "openai/gpt-6.1-terra").
 WALL_EVERY_HOURS = float(os.environ.get("WALL_EVERY_HOURS", "4"))
 WALL_PER_DAY = int(os.environ.get("WALL_PER_DAY", "3"))
 WALL_SLOT_HOURS = float(os.environ.get("WALL_SLOT_HOURS", "2"))
+WALL_FRESH_HOURS = float(os.environ.get("WALL_FRESH_HOURS", "36"))   # a new poster takes the phone slots this long
 
 
 # ---- Scheduler ------------------------------------------------------------------

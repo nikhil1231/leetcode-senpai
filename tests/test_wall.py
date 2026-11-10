@@ -89,6 +89,10 @@ def test_shelf_puts_the_weakest_lessons_posters_first_and_reuses_old_ones():
     assert wall.current(library + [hand], ranked, 4, now=150, hold=60)['_key'] == 'hand'     # made by hand: up now
     assert wall.current(library + [hand], ranked, 4, now=200, hold=60)['_key'] == 'a-new'    # then the rotation again
     assert wall.current(library + [{**hand, 'ok': False}], ranked, 4, now=150, hold=60)['_key'] == 'a-new'
+    # a new poster goes up ahead of the weakness order, then falls back into it
+    assert wall.current(library, ranked, 0, now=7, fresh=3)['_key'] == 'a-new'
+    assert wall.current(library, ranked, 3, now=7, fresh=3)['_key'] == 'a-new'
+    assert wall.current(library, ranked, 0, now=100, fresh=3)['_key'] == 'b1'
 
 
 def test_to_make_picks_the_weakest_lesson_without_a_fresh_poster():

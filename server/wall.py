@@ -159,12 +159,19 @@ def shelf(library, ranked, least=3):
     return out
 
 
-def current(library, ranked, n, now=0, hold=0):
+def current(library, ranked, n, now=0, hold=0, fresh=0):
     """The poster up in waking slot n, or None before there is one. A passing poster made by hand
-    (pinned_at) in the last `hold` seconds goes up ahead of the rotation, the newest first."""
+    (pinned_at) in the last `hold` seconds goes up ahead of the rotation, the newest first. Then
+    new posters (passing, made in the last `fresh` seconds, newest per lesson, at most 3) take the
+    slots, so a poster just made is seen at once instead of waiting its turn in the weakness order."""
     pinned = [p for p in library if p.get('ok') and p.get('pinned_at') and now - p['pinned_at'] < hold]
     if pinned:
         return max(pinned, key=lambda p: p['pinned_at'])
+    new = sorted((p for p in library if p.get('ok') and 0 <= now - p['created_at'] < fresh), key=lambda p: -p['created_at'])
+    seen = set()
+    new = [p for p in new if not (p['lesson'] in seen or seen.add(p['lesson']))][:3]
+    if new:
+        return new[n % len(new)]
     on = shelf(library, ranked)
     return on[n % len(on)] if on else None
 
@@ -385,7 +392,8 @@ def _wallpaper(uid, now):
     ranked = struggles(views)
     n = wake_slot(dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())), config.DRIP_WINDOW,
                   config.WALL_SLOT_HOURS)
-    p = current(store.list_knowledge(wall_gen.POSTERS), ranked, n, now, config.WALL_SLOT_HOURS * 3600)
+    p = current(store.list_knowledge(wall_gen.POSTERS), ranked, n, now, config.WALL_SLOT_HOURS * 3600,
+                config.WALL_FRESH_HOURS * 3600)
     if p or not ranked:
         return p, None
     b = brief(ranked[n % len(ranked)], views, mis)
