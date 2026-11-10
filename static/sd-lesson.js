@@ -204,7 +204,7 @@
     if (p.kind === 'known') return `<p class="sd-muted sd-known-intro">You showed you know ${p.secs.length === 1 ? 'this part' : 'these parts'} in the warm-up or earlier practice. Open any of them if you want it anyway.</p>${p.secs.map(sectionHtml).join('')}`;
     if (p.kind === 'callback') return callbackHtml();
     if (p.kind === 'finale') return finaleHtml();
-    if (p.kind === 'check') return `<section class="sd-sec"><span class="sd-eyebrow">LESSON CHECK</span><h3 tabindex="-1" id="sd-sec-check">Answer from memory</h3><p class="sd-muted">The check is in the card just below this one. When you have finished it, the last page turns everything you missed into a few targeted questions.</p></section>`;
+    if (p.kind === 'check') return '<div data-check-slot></div>';  // the lesson check card is moved in here (placeCheck)
     return gapsHtml();
   }
   function html() {
@@ -221,19 +221,32 @@
     const P = pages(), i = pageIndex(P), icon = x => x.kind === 'sec' ? MODE[x.s.mode][0] : {known: '✓', callback: '↺', finale: '★', check: '?', gaps: '◎'}[x.kind];
     return `<span class="sd-eyebrow">YOUR PATH</span>${P.map((x, j) => `<a href="#" data-lp="page" data-page="${j}" class="${x.kind === 'sec' ? 'is-' + x.s.mode : x.kind === 'known' ? 'is-known' : ''} ${j === i ? 'is-current' : ''}"><i>${icon(x)}</i>${inline(x.label)}</a>`).join('')}`;
   }
-  // Only the check page shows the lesson check, and only the last page the footer (finish, and where else to go):
-  // both live outside the player.
+  // The lesson check card and the footer (finish, and where else to go) are drawn by the page around the
+  // player. The check is moved into its own page, above "Next"; the footer shows on the last page only, and
+  // the lesson's goals on the first.
   function applyPage() {
     const article = S.host.closest('.sd-rich');
     if (article) {
-      const P = S.session?.planned ? pages() : null, kind = P ? P[pageIndex(P)].kind : null;
-      const check = article.querySelector('#sd-check'), foot = article.querySelector('.sd-lesson-foot');
-      if (check) check.hidden = kind !== 'check';
+      const P = S.session?.planned ? pages() : null, i = P ? pageIndex(P) : 0, kind = P ? P[i].kind : null;
+      placeCheck(article, kind);
+      const foot = article.querySelector('.sd-lesson-foot'), goals = article.querySelector('.sd-goals');
       if (foot) foot.hidden = kind !== 'gaps';
+      if (goals) goals.hidden = !!P && i > 0;
       watch(article);
     }
     oneNext();
   }
+  function placeCheck(article, kind) {
+    // After the surrounding page repaints there is a fresh card outside the player; any older one inside goes.
+    const all = [...article.querySelectorAll('#sd-check')], card = all.find(n => !S.host.contains(n)) || all[0];
+    all.forEach(n => { if (n !== card) n.remove(); });
+    if (!card) return;
+    const slot = S.host.querySelector('[data-check-slot]');
+    if (kind === 'check' && slot) { if (card.parentElement !== slot) slot.appendChild(card); card.hidden = false; return; }
+    if (S.host.contains(card)) parkCheck(card, article);
+    card.hidden = true;
+  }
+  const parkCheck = (card, article) => article?.querySelector('.sd-lesson-foot')?.before(card);
   // One filled button per page: the next step of the lesson as it is meant to be done. That is the first
   // unfinished activity on the page, then the lesson check on its page, then "Next" (or "Finish" on the last
   // page). Every other button that would be primary is drawn as a plain one; data-primary remembers which
@@ -274,6 +287,8 @@
     S.host.querySelectorAll('[data-draft]').forEach(n => { keep[n.dataset.draft] = n.value; });
     Object.assign(S.drafts, keep);
     Object.values(S.nodes).forEach(n => n.remove());
+    const card = S.host.querySelector('#sd-check');
+    if (card) parkCheck(card, S.host.closest('.sd-rich'));  // keep it (and its wiring) out of the repaint
     S.host.innerHTML = html();
     S.rail.innerHTML = railHtml();
     S.host.querySelectorAll('[data-slot]').forEach(n => { const node = S.nodes[n.dataset.slot]; if (node) n.replaceWith(node); else n.remove(); });

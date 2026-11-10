@@ -39,6 +39,7 @@
     }
     T.ctx = ctx;
     slot.replaceWith(T.host);
+    placeHost(T.host.classList.contains('is-tools'));
     hideLesson();
     if (T.info) takeQueued();
   }
@@ -92,16 +93,30 @@
   const cast = id => (T.overview?.story?.cast || []).find(c => c.id === id);
 
 
+  // Reading the notes, the tutor is a way in, not the page's next step: two icon buttons by the lesson title
+  // (start the tutor; what the outside tutor reported, opened as a popover), not banners above the lesson.
+  const ICON = {
+    chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
+    report: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
+  };
+  const toolsMode = () => !!T.info && !T.warming && !T.passed && (!T.info.enabled || T.notes) && !(T.open && T.session);
+  function toolsHtml() {
+    const i = T.info, active = T.session && T.session.status === 'active';
+    const x = i.outside, has = x || (i.outside_elsewhere || []).length;
+    const when = x ? ' · ' + new Date(x.at * 1000).toLocaleDateString(undefined, {day: 'numeric', month: 'short'}) : '';
+    const tutor = i.enabled ? `<button type="button" class="tu-icon" data-tu="${active ? 'resume' : 'start'}" aria-label="${active ? 'Continue your tutor session' : 'Learn this with the tutor'}" title="${active ? 'Continue your tutor session' : 'Learn this with the tutor: it asks the questions and brings in the activities'}">${ICON.chat}${active ? '<i class="tu-dot"></i>' : ''}</button>` : '';
+    const report = has ? `<button type="button" class="tu-icon ${T.outOpen ? 'is-on' : ''}" data-tu="outside" aria-expanded="${!!T.outOpen}" aria-label="What your outside tutor reported${esc(when)}" title="From your outside tutor${esc(when)}">${ICON.report}</button>` : '';
+    if (!tutor && !report) return '';
+    return `<div class="tu-tools">${report}${tutor}</div>${T.outOpen && has ? `<div class="tu-pop" role="dialog" aria-label="From your outside tutor">${outsideHtml()}</div>` : ''}${T.error ? `<p class="tu-error">${esc(T.error)}</p>` : ''}`;
+  }
   function entryHtml() {
     const i = T.info, o = T.overview, out = outsideHtml();
-    if (!i.enabled) return out;
+    if (toolsMode()) return toolsHtml();
     const active = T.session && T.session.status === 'active';
     if (T.warming) return out + `<section class="tu-entry tu-compact"><span><b>Quick check first.</b> Answer what you can below; the tutor starts from what you miss.</span>${btn('Skip it: start the tutor', 'start-now')}</section>`;
     if (T.passed) return out + `<section class="tu-entry"><span class="sd-eyebrow">FULL MARKS</span><p>You got every warm-up question right, so this lesson counts as done and Home moves you on.</p>
       <div class="sd-actions">${btn('Next lesson →', 'home', '', true)}${btn('Talk it through anyway', 'start-now')}${btn('Read the notes', 'notes')}</div></section>`;
-    // Reading the notes, the lesson's own next step is the page's one primary button; the tutor is the other way in.
-    const go = active ? btn('Continue your session', 'resume', '', !T.notes) : btn(T.notes ? 'Learn this with the tutor' : 'Start', 'start', '', !T.notes);
-    if (T.notes) return out + `<section class="tu-entry tu-compact"><span>Rather be taught? The tutor asks the questions and brings in this lesson's activities.</span>${go}</section>`;
+    const go = active ? btn('Continue your session', 'resume', '', true) : btn('Start', 'start', '', true);
     const mode = o.modes.find(m => m.id === T.mode);
     const style = active ? '' : `<label class="tu-style">Style <select data-tu-mode aria-label="Session style">${o.modes.map(m => `<option value="${m.id}" ${T.mode === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>`;
     const fresh = i.outside?.picks_up && !active;
@@ -146,6 +161,8 @@
   function paint() {
     if (!T.info) return;
     hideLesson();
+    const tools = !T.open || !T.session ? toolsMode() : false;
+    placeHost(tools);
     if (!T.open || !T.session) { T.host.innerHTML = entryHtml(); wireEntry(); return; }
     T.host.innerHTML = panelHtml();
     T.rendered = 0;
@@ -153,6 +170,14 @@
     sync();
   }
 
+  // Icon buttons sit in the corner of the lesson's title block; the full entry card sits below it.
+  function placeHost(tools) {
+    T.host.classList.toggle('is-tools', tools);
+    const intro = T.host.closest('.sd-rich-intro') || (T.host.previousElementSibling?.matches?.('.sd-rich-intro') ? T.host.previousElementSibling : null);
+    if (!intro) return;
+    if (tools && T.host.parentElement !== intro) intro.appendChild(T.host);
+    else if (!tools && T.host.parentElement === intro) intro.after(T.host);
+  }
   function wireEntry() {
     T.host.querySelector('[data-tu-mode]')?.addEventListener('change', e => { T.mode = e.target.value; paint(); });
     T.host.querySelectorAll('[data-tu]').forEach(n => n.addEventListener('click', () => act(n.dataset.tu)));
@@ -176,6 +201,7 @@
   async function act(action) {
     const t = T;
     try {
+      if (action === 'outside') { t.outOpen = !t.outOpen; paint(); return; }
       if (action === 'refile') {
         await api(`/knowledge/handback/${t.info.outside.filing.retry.session}/file`, 'POST');
         if (T === t) load();

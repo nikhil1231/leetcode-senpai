@@ -107,3 +107,16 @@ body[data-section="readiness"] .go-tutor { display: none; }   /* Overview has th
 .tu-link span { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
 .tu-link:hover { border-color:var(--accent); }
 .tu-link.is-game { border-color:var(--accent); }
+/* Reading the notes: the tutor as icon buttons in the corner of the lesson's title block. */
+.tu-host.is-tools { position: relative; }
+.sd-rich-intro:has(> .tu-host.is-tools) { position: relative; max-width: none; padding-right: 104px; }
+.sd-rich-intro > .tu-host.is-tools { position: absolute; top: 0; right: 0; }
+.tu-tools { display: flex; gap: 8px; justify-content: flex-end; }
+.tu-icon { position: relative; width: 40px; height: 40px; display: inline-grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text-2); cursor: pointer; }
+.tu-icon:hover, .tu-icon.is-on { color: var(--accent); border-color: var(--accent-line); }
+.tu-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tu-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tu-dot { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.tu-pop { position: absolute; right: 0; top: 48px; z-index: 20; width: min(440px, calc(100vw - 32px)); box-shadow: 0 12px 32px rgba(0, 0, 0, .35); }
+.tu-pop .tu-outside { margin: 0; }
+.tu-host.is-tools .tu-error { position: absolute; right: 0; top: 46px; width: max-content; max-width: 320px; }

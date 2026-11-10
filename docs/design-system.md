@@ -82,6 +82,10 @@ the lesson check on its page, then the pager's "Next", and on the last page "Fin
 the lesson read). `oneNext()` in `static/sd-lesson.js` enforces it, so an activity can mark its own submit button
 primary and the role moves on as you work. Ways to go somewhere else (the tutor, Ripple Ops, practise this topic, the
 related case, further reading) are plain buttons, grouped under "Elsewhere" in the last page's footer.
+Reading the notes, the tutor is two icon buttons in the corner of the lesson's title block (start the tutor; what an
+outside tutor reported, as a popover), never a banner. The lesson check sits inside its own page, above "Next". The
+lesson's goals show on the first page only, and the rail is one card: progress, then the path (on narrow screens,
+where the rail sits above the lesson, the pager dots stand in for the path).
 
 In an interview card each question (the opening question, each follow-up, then weak vs strong) is its own tab; an
 answered step offers "Next: follow-up n" rather than stacking the next question below it.
