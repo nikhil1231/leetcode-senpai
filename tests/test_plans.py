@@ -105,15 +105,16 @@ def test_plan_review_shape_for_the_scorecard():
     attempt = _planned(complexity_target_space="O(1)", plan_time_sec=95, plan_held="held")
     review = plans.plan_review(attempt, {"plan_grade": {
         "approach_verdict": "viable", "optimal_time": "O(n)", "optimal_space": "O(n)",
-        "solution_time": "O(n)", "failure_case": "empty array", "note": "Solid.",
-    }})
+        "solution_time": "O(n)", "note": "Solid.",
+    }}, difficulty="Hard")
     assert review["status"] == "planned"
     assert review["graded"] is True
     assert review["time_vs_optimal"] is True
     assert review["space_vs_optimal"] is False
     assert review["time_vs_solution"] is True
-    assert review["failure_case"] == "empty array"
+    assert review["missing_step"] is None
     assert review["plan_time_sec"] == 95
+    assert review["soft_limit_sec"] == 600
     assert review["score"] is not None
 
 
@@ -166,3 +167,26 @@ def test_a_solve_is_timed_from_the_plan_not_the_first_keystroke():
     assert plans.solve_sec({"time_taken_sec": 600}) == 600
     # Untimed stays untimed: a plan alone isn't a solve time.
     assert plans.solve_sec({"plan_time_sec": 300}) is None
+
+
+def test_plan_soft_limit_scales_with_difficulty():
+    assert plans.plan_soft_limit_sec("Easy") == 240
+    assert plans.plan_soft_limit_sec("Medium") == 360
+    assert plans.plan_soft_limit_sec("Hard") == 600
+    assert plans.plan_soft_limit_sec(None) == 360
+
+
+def test_plan_over_limit():
+    assert plans.plan_over_limit(_planned(plan_time_sec=300), "Easy") is True
+    assert plans.plan_over_limit(_planned(plan_time_sec=300), "Medium") is False
+    assert plans.plan_over_limit(_planned(plan_time_sec=360), "Medium") is True
+    assert plans.plan_over_limit(_planned(), "Medium") is None
+    assert plans.plan_over_limit({"plan_status": "skipped", "plan_time_sec": 900}, "Easy") is None
+    assert plans.plan_over_limit({"plan_status": "blank", "plan_time_sec": 500}, "Hard") is False
+
+
+def test_plan_review_shows_the_missing_step():
+    review = plans.plan_review(_planned(), {"plan_grade": {
+        "approach_verdict": "partial", "missing_step": "move the smaller side"}})
+    assert review["approach_verdict"] == "partial"
+    assert review["missing_step"] == "move the smaller side"

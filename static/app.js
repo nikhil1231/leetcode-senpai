@@ -859,11 +859,14 @@ $("#quickstart-input").addEventListener("keydown", (e) => {
 });
 
 // ---- pre-solve plan ------------------------------------------------------------
-// A run starts from a plan: one line of approach and a time target, the way an
-// interview expects you to talk before you type. Pattern, space and edge cases
-// are optional. Nothing here waits on the network once you commit — the plan is
-// graded after the solve, and critiqued mid-run only if you ask.
-const PLAN_SOFT_LIMIT_SEC = 5 * 60;
+// A run starts from a plan: the approach as you'd say it to the interviewer (the
+// key idea and why it works) and a time target. Space is optional. Nothing here
+// waits on the network once you commit: the plan is graded after the solve, on
+// whether it was ready to code, and critiqued mid-run only if you ask.
+// The soft limit depends on difficulty (plans.plan_soft_limit_sec); Medium's
+// until the problem has loaded.
+const PLAN_SOFT_LIMIT_DEFAULT_SEC = 6 * 60;
+let planSoftLimitSec = PLAN_SOFT_LIMIT_DEFAULT_SEC;
 const PREDICT_INTERVIEW_KEY = "predict_interview";
 let planOpenedAt = 0;
 let planClockTimer = null;
@@ -875,7 +878,12 @@ function tickPlanClock() {
   const sec = planElapsedSec() || 0;
   const clock = $("#predict-clock");
   clock.textContent = fmtClock(sec);
-  clock.classList.toggle("is-over", sec >= PLAN_SOFT_LIMIT_SEC);
+  clock.classList.toggle("is-over", sec >= planSoftLimitSec);
+}
+
+function setPlanSoftLimit(sec) {
+  planSoftLimitSec = sec || PLAN_SOFT_LIMIT_DEFAULT_SEC;
+  $("#predict-clock").title = `Aim to have a plan within ${Math.round(planSoftLimitSec / 60)} minutes, as you would in an interview`;
 }
 
 function stopPlanClock() {
@@ -894,6 +902,7 @@ async function openPredict(ctx) {
   $("#predict-on-leetcode").checked = false;
   syncPredictSurface();
   updatePlanReady();
+  setPlanSoftLimit(null);
   $("#predict-modal").classList.remove("hidden");
   planOpenedAt = Date.now();
   stopPlanClock();
@@ -907,6 +916,7 @@ async function openPredict(ctx) {
     ctx.url = problem.url;  // openProblemTab needs this without a round-trip
     Object.assign(ctx, { content_html: problem.content_html, editor: problem.editor });
     $("#predict-problem").textContent = problem.title || ctx.title || ctx.slug;
+    if (pendingStart === ctx) { setPlanSoftLimit(problem.plan_soft_limit_sec); tickPlanClock(); }
     renderProblemStatement("#predict-statement", problem, ctx.slug);
   } catch (e) {
     renderProblemStatement("#predict-statement", null, ctx.slug, e);
@@ -1750,12 +1760,15 @@ function refreshAnnotate(fresh) {
 
 // ---- the plan, after the solve --------------------------------------------------
 const PLAN_VERDICTS = {
-  viable: ["viable", "ok"], correct: ["right", "ok"],
-  partial: ["partly", "partial"], wrong: ["off", "miss"],
+  correct: ["right", "ok"], partial: ["partly", "partial"], wrong: ["off", "miss"],
+};
+// The approach is judged as an interviewer would: could you start coding?
+const APPROACH_VERDICTS = {
+  viable: ["ready to code", "ok"], partial: ["missing the key step", "partial"], wrong: ["wouldn't work", "miss"],
 };
 
-function verdictTag(verdict) {
-  const [label, tone] = PLAN_VERDICTS[verdict] || [];
+function verdictTag(verdict, labels = PLAN_VERDICTS) {
+  const [label, tone] = labels[verdict] || [];
   return label ? `<span class="plan-tag is-${tone}">${label}</span>` : "";
 }
 
@@ -1786,7 +1799,10 @@ function planSummaryHtml(plan) {
 function planGradeHtml(plan) {
   if (!plan || plan.status !== "planned") return "";
   const rows = [];
-  if (plan.approach_verdict && plan.approach_verdict !== "unknown") rows.push(["Approach", verdictTag(plan.approach_verdict)]);
+  if (plan.approach_verdict && plan.approach_verdict !== "unknown") {
+    rows.push(["Approach", `${verdictTag(plan.approach_verdict, APPROACH_VERDICTS)}${
+      plan.missing_step ? ` <span class="small">${escapeHtml(plan.missing_step)}</span>` : ""}`]);
+  }
   if (plan.pattern && plan.pattern_verdict && plan.pattern_verdict !== "unknown") rows.push(["Pattern", verdictTag(plan.pattern_verdict)]);
   if (plan.target_time && plan.optimal_time) {
     rows.push(["Time", `${escapeHtml(plan.target_time)} vs optimal ${escapeHtml(plan.optimal_time)} ${hitTag(plan.time_vs_optimal)}${
@@ -1795,17 +1811,11 @@ function planGradeHtml(plan) {
   if (plan.target_space && plan.optimal_space) {
     rows.push(["Space", `${escapeHtml(plan.target_space)} vs optimal ${escapeHtml(plan.optimal_space)} ${hitTag(plan.space_vs_optimal)}`]);
   }
-  const checks = plan.edge_checks || [];
-  if (checks.length) {
-    rows.push(["Edge cases", checks.map((c) =>
-      `<span class="plan-tag is-${c.covered ? "ok" : "miss"}" title="${c.covered ? "In your plan" : "Not in your plan"}">${c.covered ? "✓" : "✗"} ${escapeHtml(c.case)}</span>`).join(" ")]);
-  }
   const score = plan.score != null
     ? `<div class="plan-score">Plan score <b>${plan.score}/5</b></div>` : "";
-  if (!rows.length && !plan.note && !plan.failure_case) return score;
+  if (!rows.length && !plan.note) return score;
   return `${score}
     ${rows.length ? `<dl class="plan-rows">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>` : ""}
-    ${plan.failure_case ? `<p class="plan-failure">A failing test hit <b>${escapeHtml(plan.failure_case)}</b> — not in your plan.</p>` : ""}
     ${plan.note ? `<p class="grade-analysis">${escapeHtml(plan.note)}</p>` : ""}`;
 }
 
@@ -1828,7 +1838,7 @@ function renderAnnotatePlan(attempt) {
   if (!shown) return;
   $("#annotate-plan-meta").textContent = plan.plan_time_sec != null && plan.status === "planned"
     ? `planned in ${fmtClock(plan.plan_time_sec)}` : "";
-  $("#annotate-plan-meta").classList.toggle("is-over", (plan.plan_time_sec || 0) >= PLAN_SOFT_LIMIT_SEC);
+  $("#annotate-plan-meta").classList.toggle("is-over", (plan.plan_time_sec || 0) >= (plan.soft_limit_sec || PLAN_SOFT_LIMIT_DEFAULT_SEC));
   $("#annotate-plan-body").innerHTML = planSummaryHtml(plan);
   $("#annotate-plan-held").classList.toggle("hidden", plan.status !== "planned");
   const prev = previousPlanHtml(attempt.previous_plan);

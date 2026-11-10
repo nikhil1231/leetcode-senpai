@@ -1,7 +1,10 @@
 """Pre-solve plans — pure functions over plain data (no I/O), like scheduler.py.
 
-A run starts with a plan: a one-line approach and a time target, optionally a
-pattern guess, a space target and edge cases. `plan_status` says how the run
+A run starts with a plan: the approach as you would say it to an interviewer
+(the key idea and why it works), a time target and optionally a space target.
+Older rows may also carry a pattern guess and edge cases. The approach is
+judged the way an interviewer would: "viable" means ready to code, "partial"
+means the key step is missing, "wrong" means it wouldn't work. `plan_status` says how the run
 began — "planned", "blank" (the user had no idea yet) or "skipped". Rows written
 before plan_status existed carry only the raw fields; they read as planned when
 any field is present, so older history keeps its meaning.
@@ -22,8 +25,22 @@ _APPROACH_VALUE = {"viable": 1.0, "partial": 0.5, "wrong": 0.0}
 _HELD_VALUE = {"held": 1.0, "tweaked": 0.5, "pivoted": 0.0}
 # The approach is the plan; the rest are how well it was specified.
 _WEIGHTS = {"approach": 2, "pattern": 1, "complexity": 1, "edges": 1, "held": 1}
-# Soft planning budget, as in an interview: past this, planning is slow.
-PLAN_SOFT_LIMIT_SEC = 5 * 60
+# Soft planning budget by difficulty, about a quarter of the solve's par
+# (config.SOLVE_PAR_SEC): past this, planning is slow for that problem.
+PLAN_SOFT_LIMIT_SEC = {"Easy": 4 * 60, "Medium": 6 * 60, "Hard": 10 * 60}
+_DEFAULT_SOFT_LIMIT_SEC = PLAN_SOFT_LIMIT_SEC["Medium"]
+
+
+def plan_soft_limit_sec(difficulty):
+    return PLAN_SOFT_LIMIT_SEC.get(difficulty, _DEFAULT_SOFT_LIMIT_SEC)
+
+
+def plan_over_limit(attempt, difficulty):
+    """True when planning ran past the soft limit, None when untimed or skipped."""
+    sec = attempt.get("plan_time_sec")
+    if sec is None or plan_status(attempt) == "skipped":
+        return None
+    return sec >= plan_soft_limit_sec(difficulty)
 
 
 # ---- what kind of start was this ---------------------------------------------
@@ -221,7 +238,7 @@ def quality_cap(status, held):
 
 
 # ---- the scorecard the UI renders ----------------------------------------------
-def plan_review(attempt, enrichment=None, canonical=None):
+def plan_review(attempt, enrichment=None, canonical=None, difficulty=None):
     """Everything the post-solve and detail views show about a plan."""
     status = plan_status(attempt)
     grade = _plan_grade(enrichment)
@@ -240,12 +257,14 @@ def plan_review(attempt, enrichment=None, canonical=None):
         "target_space": target_space,
         "edge_cases": planned_edge_cases(attempt),
         "plan_time_sec": attempt.get("plan_time_sec"),
+        "soft_limit_sec": plan_soft_limit_sec(difficulty),
         "held": attempt.get("plan_held"),
         "check_revealed": bool(attempt.get("plan_check_revealed")),
         "graded": bool(grade),
         "grading_error": (enrichment or {}).get("plan_grading_error"),
         "pattern_verdict": grade.get("pattern_verdict") or (enrichment or {}).get("prediction_verdict"),
         "approach_verdict": grade.get("approach_verdict"),
+        "missing_step": grade.get("missing_step") or None,
         "optimal_time": opt_time,
         "optimal_space": opt_space,
         "solution_time": sol_time,

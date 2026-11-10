@@ -327,7 +327,7 @@
           <p id="predict-problem" class="small"></p>
         </div>
         <div class="predict-titlebar-side">
-          <span id="predict-clock" class="predict-clock" title="Aim to have a plan within 5 minutes, as you would in an interview">0:00</span>
+          <span id="predict-clock" class="predict-clock" title="Aim to have a plan within 6 minutes, as you would in an interview">0:00</span>
           <button id="btn-close-predict" class="button is-ghost is-small icon-button" type="button" aria-label="Close" title="Close">&times;</button>
         </div>
       </div>
@@ -335,8 +335,9 @@
       <div id="predict-statement" class="recall-statement"></div>
 
       <div class="predict-form">
-        <label class="label-sm" for="predict-approach">Approach <span class="help-inline">the key idea, data structure or invariant</span></label>
-        <textarea id="predict-approach" class="textarea" data-dictate rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. sliding window over counts, shrink while a char repeats"></textarea>
+        <label class="label-sm" for="predict-approach">How would you solve it? <span class="help-inline">say it as you would to the interviewer: the key idea and why it works</span></label>
+        <textarea id="predict-approach" class="textarea" data-dictate rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="e.g. a sliding window over character counts. Grow the right edge, and shrink from the left while a character repeats, because any window containing a repeat can't be the answer."></textarea>
+        <p class="help predict-graded">Graded on whether an interviewer would let you start coding. Bounds, base cases and edge cases are judged with your code, not here.</p>
 
         <div id="predict-complexities" class="complexity-fields mt-2"></div>
 

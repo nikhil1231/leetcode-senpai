@@ -670,6 +670,9 @@ def test_planning_stats_overall_categories_and_weakest():
     assert o["held_rate"] == round(1 / 3, 3)
     assert o["optimal_rate"] == round(1 / 3, 3)
     assert o["median_plan_sec"] == 210
+    assert o["ready_rate"] == round(1 / 3, 3)  # one viable of three graded
+    # Over each problem's own limit: only the 400s blank on a Medium (6 min).
+    assert o["over_limit_rate"] == 0.25
     arrays = next(c for c in out["categories"] if c["category"] == "Arrays & Hashing")
     assert arrays["plans"] == 2 and arrays["scored"] == 2
     # Two Pointers: one blank (0) and one pivoted wrong plan (0) — the weakest.

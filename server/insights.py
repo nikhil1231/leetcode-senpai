@@ -367,10 +367,12 @@ def planning_stats(problems, attempts, enrichments, canonical_by_slug=None):
 
     Only real solves count (not sprints or recalls). A start can be planned,
     blank ("No idea yet") or skipped; a plan is then scored 0..5 from its parts
-    (see plans.plan_score) and read for whether it held, whether its time target
-    was the optimal one, and how many of the edge cases that matter it named.
+    (see plans.plan_score) and read for whether it held, whether it was ready to
+    code, whether its time target was the optimal one, and how often planning ran
+    past the soft limit for the problem's difficulty.
     """
     cat_of = {p["slug"]: p.get("neetcode_category") for p in problems}
+    diff_of = {p["slug"]: p.get("difficulty") for p in problems}
     enr_by = {e.get("attempt_id"): e for e in enrichments}
     canonical_by_slug = canonical_by_slug or {}
     rows = {}
@@ -379,6 +381,7 @@ def planning_stats(problems, attempts, enrichments, canonical_by_slug=None):
         return rows.setdefault(cat, {
             "starts": 0, "plans": 0, "blanks": 0, "skips": 0, "scores": [],
             "held": [], "optimal": [], "edges": [], "plan_secs": [], "pattern": [],
+            "ready": [], "over": [],
         })
 
     total = row(None)
@@ -411,8 +414,11 @@ def planning_stats(problems, attempts, enrichments, canonical_by_slug=None):
                     r["edges"].append(c["edges"])
                 if c["pattern"] is not None:
                     r["pattern"].append(c["pattern"])
+                if c["approach"] is not None:
+                    r["ready"].append(1 if c["approach"] == 1 else 0)
             if status != "skipped" and a.get("plan_time_sec") is not None:
                 r["plan_secs"].append(a["plan_time_sec"])
+                r["over"].append(1 if plans.plan_over_limit(a, diff_of.get(a.get("slug"))) else 0)
 
     def summarize(cat, r):
         return {
@@ -426,6 +432,8 @@ def planning_stats(problems, attempts, enrichments, canonical_by_slug=None):
             "edge_coverage": _mean_or_none(r["edges"], 3),
             "pattern_rate": _mean_or_none(r["pattern"], 3),
             "median_plan_sec": _median_or_none(r["plan_secs"]),
+            "ready_rate": _mean_or_none(r["ready"], 3),
+            "over_limit_rate": _mean_or_none(r["over"], 3),
         }
 
     categories = [summarize(cat, r) for cat, r in rows.items() if cat is not None]
@@ -445,7 +453,7 @@ def planning_stats(problems, attempts, enrichments, canonical_by_slug=None):
             weakest = {"category": cat, "avg_score": round(key[0], 1), "count": len(pts),
                        "blanks": r["blanks"]}
     return {"overall": summarize(None, total), "categories": categories,
-            "weakest": weakest, "soft_limit_sec": plans.PLAN_SOFT_LIMIT_SEC}
+            "weakest": weakest, "soft_limit_sec": dict(plans.PLAN_SOFT_LIMIT_SEC)}
 
 
 _CATEGORY_RANK = {c: i for i, c in enumerate(CATEGORY_ORDER)}

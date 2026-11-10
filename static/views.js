@@ -778,12 +778,14 @@
     if (!o || !o.starts) {
       return `<p class="empty">Lock in a plan before a run and this fills in: your plan score, how often plans hold, and where you plan worst.</p>${sprint}`;
     }
-    const slow = o.median_plan_sec != null && o.median_plan_sec >= pl.soft_limit_sec;
+    // The time limit depends on difficulty, so "slow" is most plans running past theirs.
+    const slow = o.over_limit_rate != null && o.over_limit_rate >= 0.5;
     const stats = [
       ["Held", pctOrDash(o.held_rate)],
+      ["Ready to code", pctOrDash(o.ready_rate)],
       ["Optimal target", pctOrDash(o.optimal_rate)],
-      ["Edge coverage", pctOrDash(o.edge_coverage)],
       ["Median plan time", o.median_plan_sec == null ? "—" : `<span class="${slow ? "is-over" : ""}">${clock(o.median_plan_sec)}</span>`],
+      ["Over time", pctOrDash(o.over_limit_rate)],
       ["No idea yet", `${o.blanks} of ${o.starts}`],
     ];
     const rows = (pl.categories || []).filter((c) => c.avg_score != null).map((c) => ({

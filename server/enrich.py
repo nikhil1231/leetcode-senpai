@@ -23,7 +23,7 @@ import time
 from . import coach, config, llm, plans, recording
 
 PROMPT_VERSION = 1
-PLAN_PROMPT_VERSION = 1
+PLAN_PROMPT_VERSION = 2
 PROCESS_PROMPT_VERSION = 2
 # Enrichment fields owned by plan grading; a full re-enrichment carries them over.
 PLAN_KEYS = ("plan_grade", "plan_prompt_version", "plan_grading_error")
@@ -124,21 +124,21 @@ def _short(items, limit=5, width=80):
 
 
 def normalize_plan_grade(res):
-    """The stored shape of a plan grade, from the flat model response."""
-    covered = _short(res.get("edge_cases_covered"))
-    missed = [c for c in _short(res.get("edge_cases_missed"))
-              if c.lower() not in {x.lower() for x in covered}]
-    edges = ([{"case": c, "covered": True} for c in covered]
-             + [{"case": c, "covered": False} for c in missed])[:5]
+    """The stored shape of a plan grade, from the flat model response.
+
+    Version 2 grades the plan as an interviewer would (is it ready to code?) and
+    no longer checks edge cases or failing tests, which the plan never asks for;
+    version 1 grades may still carry `edge_cases` and `failure_case`.
+    """
+    verdict = res.get("approach_verdict") or "unknown"
     return {
         "pattern_verdict": res.get("pattern_verdict") or "unknown",
-        "approach_verdict": res.get("approach_verdict") or "unknown",
+        "approach_verdict": verdict,
+        "missing_step": "" if verdict == "viable" else " ".join(str(res.get("missing_step") or "").split())[:100],
         "optimal_time": (res.get("optimal_time") or "")[:60],
         "optimal_space": (res.get("optimal_space") or "")[:60],
         "solution_time": (res.get("solution_time") or "")[:60],
         "solution_space": (res.get("solution_space") or "")[:60],
-        "edge_cases": edges,
-        "failure_case": (res.get("failure_case") or "")[:80],
         "note": (res.get("note") or "")[:400],
     }
 
@@ -182,10 +182,8 @@ async def grade_plan(store, attempt_id):
         "predicted_approach": attempt.get("predicted_approach"),
         "complexity_target_time": attempt.get("complexity_target_time"),
         "complexity_target_space": attempt.get("complexity_target_space"),
-        "planned_edge_cases": plans.planned_edge_cases(attempt),
         "plan_held": attempt.get("plan_held"),
         "note": attempt.get("mistake_note"),
-        "failed_tests": attempt.get("failed_tests") or [],
         "code": attempt.get("code"), "lang": attempt.get("lang"),
     }, settings=settings)
     # Stamped either way, so a prompt that keeps failing isn't re-sent on every

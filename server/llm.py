@@ -77,9 +77,7 @@ class PlanGrade(BaseModel):
     optimal_space: str = Field("", description="bare big-O only")
     solution_time: str = Field("", description="bare big-O of their code, empty if no code")
     solution_space: str = Field("", description="bare big-O of their code, empty if no code")
-    edge_cases_covered: list[str] = Field(default_factory=list, description="edge cases that matter which the plan handles")
-    edge_cases_missed: list[str] = Field(default_factory=list, description="edge cases that matter which the plan does not name")
-    failure_case: str = ""
+    missing_step: str = Field("", description="the key step the plan lacked, a few words; empty when viable")
     note: str = ""
 
 
@@ -418,21 +416,28 @@ TASKS: dict[str, Task] = {
     "grade_plan": Task(
         PlanGrade,
         "You grade a coding-interview plan the solver wrote BEFORE coding, now that "
-        "the solve is over. pattern_verdict: did the predicted pattern match what the "
-        "problem needs ('partial' = right family, wrong variant; 'unknown' if none "
-        "was given). approach_verdict: would the stated approach, as written, solve "
-        "the problem within the optimal complexity ('viable'), solve it but "
-        "suboptimally or missing the crucial trick ('partial'), or not solve it "
-        "('wrong')? Judge by meaning, not wording. optimal_time/optimal_space: the "
-        "canonical optimum. solution_time/solution_space: what their final code "
-        "actually achieves. Write every complexity as a bare big-O with no prose, "
-        "e.g. O(n log n) or O(n + m). Name the 3-5 edge cases that genuinely matter "
-        "for this problem, a few words each: put one in edge_cases_covered only if the "
-        "plan's edge cases or approach explicitly handle it, else in "
-        "edge_cases_missed. failure_case: if a failing test input shows "
-        "an edge case the plan did not name, name it in a few words, else empty. "
-        "note: one or two sentences on the plan itself — what it got right and the "
-        "one thing to plan better next time. Keep strings short.",
+        "the solve is over. The plan is what they would say to an interviewer before "
+        "typing: the key idea and why it works, in a few sentences. Judge it the way "
+        "an interviewer would decide whether to let them start coding. "
+        "approach_verdict: 'viable' = the plan names the key step that makes the "
+        "problem work at the optimal complexity (for example, in Trapping Rain Water, "
+        "moving the side with the smaller running max); an interviewer would say go "
+        "ahead. 'partial' = right family of approach, but the key step is missing or "
+        "the idea only reaches a suboptimal complexity. 'wrong' = the idea would not "
+        "solve the problem. Judge by meaning, not wording, and read dictated or rough "
+        "text generously. Do NOT mark down for implementation detail: index bounds, "
+        "base cases, loop order, carry arithmetic, cursors, return values and edge "
+        "cases come out while coding and are graded with the code, not here. A plan "
+        "that names the right idea and asks a sensible clarifying question is still "
+        "viable. missing_step: when partial or wrong, the key step it lacked in a few "
+        "words; empty when viable. pattern_verdict: did the predicted pattern match "
+        "what the problem needs ('partial' = right family, wrong variant; 'unknown' "
+        "if none was given). optimal_time/optimal_space: the canonical optimum. "
+        "solution_time/solution_space: what their final code actually achieves. Write "
+        "every complexity as a bare big-O with no prose, e.g. O(n log n) or O(n + m). "
+        "note: one or two plain sentences on the plan itself: what it got right, and "
+        "if it was not viable, what to have said before coding. Never ask for more "
+        "implementation detail in the note. British English, no em dashes.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
             f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
@@ -443,11 +448,9 @@ TASKS: dict[str, Task] = {
             f"Approach: {p.get('predicted_approach') or '(none)'}\n"
             f"Target complexity: time={p.get('complexity_target_time') or '?'}, "
             f"space={p.get('complexity_target_space') or '?'}\n"
-            f"Planned edge cases: {json.dumps(p.get('planned_edge_cases') or [])}\n"
             f"--- after the solve ---\n"
             f"Solver says the plan: {p.get('plan_held') or '(not said)'}\n"
             f"Solver note: {p.get('note') or '(none)'}\n"
-            f"Failing test inputs before AC: {json.dumps(p.get('failed_tests') or [])[:1200]}\n"
             f"--- final accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'), 1500)}"
         ),
     ),

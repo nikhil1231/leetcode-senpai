@@ -1447,9 +1447,7 @@ def test_grade_plan_stores_a_normalized_grade_and_the_pattern_verdict(client, mo
             return {"pattern_verdict": "correct", "approach_verdict": "viable",
                     "optimal_time": "O(n)", "optimal_space": "O(n)",
                     "solution_time": "O(n)", "solution_space": "O(n)",
-                    "edge_cases_covered": ["duplicates", "Duplicates"],
-                    "edge_cases_missed": ["no valid pair", "duplicates"],
-                    "failure_case": "empty input", "note": "Right idea."}, None
+                    "missing_step": "stray text", "note": "Right idea."}, None
         return None, "unexpected"
 
     async def fake_extract(task_name, payload, settings=None):
@@ -1473,11 +1471,11 @@ def test_grade_plan_stores_a_normalized_grade_and_the_pattern_verdict(client, mo
     assert plan["graded"] is True
     assert plan["approach_verdict"] == "viable"
     assert plan["time_vs_optimal"] is True
-    assert plan["edge_checks"] == [{"case": "duplicates", "covered": True},
-                                   {"case": "no valid pair", "covered": False}]
-    assert plan["failure_case"] == "empty input"
-    assert plan["score"] == 5  # (2 + 1 + 1 + .5 + 1) / 6
-    assert seen["grade_plan"]["failed_tests"][0]["input"] == "[]"
+    assert plan["missing_step"] is None  # a viable plan lacks nothing
+    assert plan["edge_checks"] == []  # the plan isn't graded on edge cases
+    assert plan["soft_limit_sec"] == 240  # two-sum is Easy
+    assert plan["score"] == 5
+    assert "failed_tests" not in seen["grade_plan"]
     assert seen["grade_plan"]["plan_held"] == "held"
     enrichment = client.store.get_enrichment(aid)
     assert enrichment["mistake_tags"] == ["edge_case"]  # merged, not replaced
@@ -1532,7 +1530,7 @@ def test_insights_reports_planning(client):
     client.store.add_attempt({"slug": "two-sum", "solved_at": 100, "plan_status": "blank"})
     planning = client.get("/api/insights").json()["planning"]
     assert planning["overall"]["blanks"] == 1
-    assert planning["soft_limit_sec"] == 300
+    assert planning["soft_limit_sec"] == {"Easy": 240, "Medium": 360, "Hard": 600}
 
 
 def test_session_pause_resume_adjusts_elapsed(client, monkeypatch):

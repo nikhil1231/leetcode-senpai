@@ -536,6 +536,27 @@ test('saving a planned solve sends whether the plan held, then grades the plan',
   assert.match(ui.node('#annotate-plan-grade').innerHTML, /Plan score <b>2\/5<\/b>/);
 });
 
+test('the plan card says whether the plan was ready to code, and grades no edge cases', () => {
+  const ui = app(async () => response({}));
+  const html = ui.run(`planGradeHtml({ status: 'planned', approach_verdict: 'partial', missing_step: 'move the smaller side',
+    edge_checks: [{ case: 'empty', covered: false }], failure_case: 'empty', score: 3 })`);
+  assert.match(html, /missing the key step/);
+  assert.match(html, /move the smaller side/);
+  assert.doesNotMatch(html, /empty/);
+  assert.match(ui.run(`planGradeHtml({ status: 'planned', approach_verdict: 'viable' })`), /ready to code/);
+});
+
+test('the plan clock turns amber at the limit for the problem\'s difficulty', () => {
+  const ui = app(async () => response({}));
+  let over = null;
+  ui.node('#predict-clock').classList.toggle = (name, on) => { if (name === 'is-over') over = on; };
+  ui.run('setPlanSoftLimit(600); planOpenedAt = Date.now() - 400000; tickPlanClock()');
+  assert.equal(over, false);
+  assert.match(ui.node('#predict-clock').title, /10 minutes/);
+  ui.run('setPlanSoftLimit(240); tickPlanClock()');
+  assert.equal(over, true);
+});
+
 test('stopping an optimize run goes back to rating that solve, not the queue head', async () => {
   const ui = app(async () => response({
     pending: [{ id: 'older', slug: 'a', title: 'A' }, { id: 'optimized', slug: 'b', title: 'B' }],

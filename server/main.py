@@ -433,7 +433,7 @@ def _pending(store):
             if enrichments is None:
                 enrichments = _enrichment_map(store)
             out[-1]["plan"] = plans.plan_review(
-                a, enrichments.get(a["id"]), p.get("canonical_summary"))
+                a, enrichments.get(a["id"]), p.get("canonical_summary"), p.get("difficulty"))
             out[-1]["previous_plan"] = plans.previous_plan(
                 attempts, enrichments, a["slug"], a.get("solved_at") or 0, exclude_id=a["id"])
     out.sort(key=lambda a: a.get("solved_at") or 0, reverse=True)
@@ -1866,7 +1866,7 @@ async def api_grade_plan(attempt_id: str, uid: str = Depends(auth.require_user))
 
 def _plan_review(store, attempt, enrichment=None):
     prob = store.get_problem(attempt["slug"]) or {}
-    return plans.plan_review(attempt, enrichment, prob.get("canonical_summary"))
+    return plans.plan_review(attempt, enrichment, prob.get("canonical_summary"), prob.get("difficulty"))
 
 
 @app.post("/api/attempt/{attempt_id}/dismiss-annotation")
@@ -1958,7 +1958,7 @@ def api_attempt(attempt_id: str, uid: str = Depends(auth.require_user)):
             "par_sec": config.SOLVE_PAR_SEC.get(prob.get("difficulty")),
             "enrichment": enrichment,
             "plan_reconciliation": insights.reconcile_plan(a, enrichment),
-            "plan": plans.plan_review(a, enrichment, prob.get("canonical_summary"))}
+            "plan": plans.plan_review(a, enrichment, prob.get("canonical_summary"), prob.get("difficulty"))}
 
 
 @app.get("/api/history")
@@ -2732,6 +2732,7 @@ async def api_recall_context(slug: str, editor: bool = False,
         "slug": slug,
         "title": p.get("title", slug),
         "difficulty": p.get("difficulty"),
+        "plan_soft_limit_sec": plans.plan_soft_limit_sec(p.get("difficulty")),
         "url": p.get("url") or f"https://leetcode.com/problems/{slug}/",
         "category": p.get("neetcode_category"),
         "content_html": p.get("content_html"),
