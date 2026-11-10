@@ -504,6 +504,7 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 .ov-bar ol { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; overflow-x: auto; max-width: 100%; }
 .ov-bar button { min-width: 34px; height: 34px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; }
 .ov-bar li.is-done button { border-color: var(--accent-line); color: var(--accent); }
+.ov-bar li.is-right button { background: rgba(var(--accent-rgb), .28); border-color: var(--accent); color: var(--text); font-weight: 600; }
 .ov-bar li.is-now button { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .ov-bar button:focus-visible, .ov-agenda-item:focus-visible, .ov-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ov-bar-label { font-size: 13px; color: var(--muted); }
@@ -533,3 +534,11 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 .ov-recap td:first-child { white-space: nowrap; }
 .ov-link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-align: left; }
 @media (max-width: 700px) { .ov-recap td:first-child { white-space: normal; } .ov-step-head h3 { font-size: 20px; } }
+
+/* The check before the wrap-up: a conversation with the tutor inside the card */
+.ov-review-lead { color: var(--text-2); max-width: 68ch; }
+.ov-review { margin-top: 16px; }
+.ov-review .ov-chat { height: auto; min-height: 120px; max-height: min(62vh, 640px); padding: 4px 4px 4px 0; }
+.ov-status .is-busy::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--accent); animation: tu-pulse 1s ease-in-out infinite; }
+.ov-review-again { margin: 4px 0 0; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .ov-status .is-busy::before { animation: none; } }

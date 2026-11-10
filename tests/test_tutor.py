@@ -720,6 +720,33 @@ def test_reading_the_overview_saves_the_step_marks_ideas_seen_and_finishing_coun
     assert client.post('/api/tutor/map/distributed/step', json={'step': 1}).status_code == 404
 
 
+def test_the_overview_check_is_a_conversation_of_its_own_beside_the_tutor_session(client):
+    key = 'lesson:system-design:map-storage'
+    client.replies.append('Picture Ripple with one Postgres box.')
+    teach = ok(client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-storage', 'mode': 'teach', 'key': 'sess-ov-teach'}))
+    client.replies.append('Ripple wants to show a creator\'s links fast. What would you add?\n<private>1 not yet, 2 not yet</private>')
+    r = ok(client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-storage', 'mode': 'review', 'key': 'sess-ov-rev1'}))
+    assert r['mode'] == 'review' and 'notes' not in r and '<private>' not in r['turns'][0]['say']
+    system, first = client.chats[-1][0]['content'], client.chats[-1][1]['content']
+    assert 'check what stuck' in system and 'Never mention one' in system and 'Step 8:' in system and first == ses.REVIEWING
+    assert 'Where he is on the page' not in system and '[[activity' not in system
+    client.replies.append('Correct: an index on creator_id. Next one.')
+    r = ok(client.post('/api/tutor/sessions/sess-ov-rev1/turns', json={'key': 'turn-rev1', 'text': 'An index on creator_id.'}))
+    assert [t['role'] for t in r['turns']] == ['tutor', 'learner', 'tutor']
+    mem = client.store.get_knowledge('tutor_memory', key)
+    assert mem['active'] == teach['id'] and mem['review'] == 'sess-ov-rev1'   # the tutor's own session is untouched
+    assert ok(client.get('/api/tutor/map/storage'))['review']['id'] == 'sess-ov-rev1'
+    client.replies.append('Let\'s go again from the top.')
+    ok(client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-storage', 'mode': 'review', 'key': 'sess-ov-rev2'}))
+    old = client.store.get_knowledge('tutor_sessions', 'sess-ov-rev1')
+    assert old['status'] == 'ended' and old['ended_by'] == 'replaced sess-ov-rev2' and not any(t.get('debrief') for t in old['turns'])
+    assert ok(client.get('/api/tutor/map/storage'))['review']['id'] == 'sess-ov-rev2'
+    assert client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-distributed', 'mode': 'review', 'key': 'sess-ov-x1'}).status_code == 422
+    assert client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'indexes', 'mode': 'review', 'key': 'sess-ov-x2'}).status_code == 422
+    assert 'review' not in {m['id'] for m in ok(client.get('/api/tutor'))['modes']}
+    assert ok(client.post('/api/tutor/map/storage/step', json={'step': 30}))['step'] == 10   # 8 steps, the check, the wrap-up
+
+
 def test_area_map_over_http_and_a_map_session_counts_for_pass_one(client):
     d = ok(client.get('/api/tutor/map/distributed'))
     assert d['lesson']['id'] == 'map-distributed' and d['lessons'][0]['layers']['1']['total'] > 0 and not d['mapped']

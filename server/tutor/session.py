@@ -40,13 +40,14 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import board, lessons, resources, rig, story
 
-PROMPT_VERSION = 14
+PROMPT_VERSION = 15
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
 MAX_MISTAKES = 12
 OPENING = '(Nikhil has opened the lesson and started a session with you.)'
 CARRIED = '(Nikhil followed you to this lesson to carry on.)'
+REVIEWING = '(Nikhil has read the overview on the page and opened the check with you.)'
 
 TEACH = """You're Nikhil's tutor. He's a software engineer preparing for mid/senior interviews: system design, backend, and the AI platform work he's aiming for. You've taught him before and will again; this conversation is one of many, and you know him (below).
 
@@ -88,8 +89,23 @@ MAP_PIECES = ("Open with one Ripple problem that needs the whole area and sketch
               "Then take the pieces (the objectives) one at a time: the problem, the usual answer, the catch. Finish by handing "
               "over a design of Ripple that uses the area's pieces to run in the simulator (```design).")
 
+REVIEW = """You're Nikhil's tutor. He has just read an overview on the page: a short tour of one area of system design, one step per topic. Before the wrap-up, you have a short conversation with him, about ten minutes, to check what stuck.
+
+{voice}
+
+What to check: every step in your notes. For each, that he knows what problem it solves, the usual answer, its catch, and the thing worth remembering. Each step must come up before you finish, but this is a conversation, not a quiz read out in order:
+- Open with a Ripple situation that touches one or two steps and ask what he'd do. Let his answers lead into the next topic; one question can cover two steps.
+- One question per message, under 70 words. Ask him to use an idea in a situation, not to recite a definition.
+- React briefly. If he's right, say so plainly and name what he got right, then move on; never re-ask something he's covered. If he's partly right or wrong, say what's off and what's true in a sentence or two, kindly, then move on. Don't drill.
+- If he doesn't know, give the answer in two sentences and carry on.
+- Keep a tally in your <private> notes: each step's number and how he did (solid, shaky, missed, not yet).
+- He doesn't see a checklist. Never mention one, or how many topics are left.
+- When every step has come up, finish in a few lines: what was solid, and the one or two ideas worth rereading, by step number. Then say the wrap-up is next on the page. Don't ask anything more.
+- Stay on this overview: don't suggest other lessons.""".format(voice=voice.TUTOR)
+
 ROLES = {
     'teach': TEACH,
+    'review': REVIEW,
 
     'explain': """You ARE Jo, a junior engineer at Ripple, chatting with Nikhil, the senior engineer, who has offered to explain this lesson's topic to you. This tests whether HE can teach it, so you never teach.
 
@@ -168,6 +184,7 @@ DEBRIEF_EXTRA = {
     'critique': '**Flaws still in the design**: any planted flaw (from your private notes) he didn\'t find, with the failure it would cause.',
     'war-room': '**Postmortem**: a short blameless one: impact, root cause, what helped, what to change.',
     'interview': '**How it would land**: with a hiring panel (strong, mixed or weak, for mid and for senior), and the one change that would most raise it.',
+    'review': "**Worth rereading**: the overview steps (by number) whose ideas didn't come through.",
     'cv': '**How your CV held up**: which claims he backed with specifics and which a panel would doubt, and the one detail to prepare before a real loop.',
 }
 
@@ -190,8 +207,10 @@ MODES = {
     'war-room': ('War room', 'Priya is on the pager with a live incident. You diagnose and fix it.', 'priya', False),
     'interview': ('Interview', 'Marcus interviews you on this topic like a real loop, then gives feedback.', 'marcus', False),
     'cv': ('Defend your CV', "Marcus digs into your own work through this lesson's ideas, the way interviewers do, then gives feedback.", 'marcus', False),
+    'review': ('Check what you know', "The tutor checks what stuck from an overview, in conversation.", 'tutor', False),
 }
 NEEDS_CV = {'cv'}
+OVERVIEW_ONLY = {'review'}   # opened from an overview page, never offered as a lesson's style
 OPEN, WORKING, DEMONSTRATED = 'open', 'working', 'demonstrated'
 RANK = {OPEN: 0, WORKING: 1, DEMONSTRATED: 2}
 MARK = {OPEN: '○ not yet', WORKING: '◐ partly shown', DEMONSTRATED: '✓ shown'}
@@ -248,7 +267,7 @@ Lesson: {lesson['title']}. {lesson['summary']}
 
 What it should leave him able to do (a map for you, not a checklist to read out):
 {objectives}"""]
-    if all(o['status'] == DEMONSTRATED for o in session['objectives']):
+    if mode != 'review' and all(o['status'] == DEMONSTRATED for o in session['objectives']):
         parts.append("He has now shown every objective. Wrap up warmly in a line or two, and suggest he ends the session for the debrief.")
     if (career or {}).get('text'):
         know.append(career['text'])
@@ -275,10 +294,10 @@ What it should leave him able to do (a map for you, not a checklist to read out)
     parts.append(f"""Setting: Ripple, a link shortener growing into a global social product, now at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
 Borrow it for examples now and then; don't narrate.
 Scale: Ripple's size is {story_state['users']}, and that is the only figure for it. He sees only this conversation, so before any question turns on Ripple's scale, give him the numbers in it. Judge his numbers only against figures stated in this conversation; if he picks his own assumptions, judge whether they are reasonable and consistent, not whether they match figures he was never given.""")
-    if lesson.get('overview') and memory.get('overview_step'):
+    if lesson.get('overview') and memory.get('overview_step') and mode != 'review':
         n = len(lesson['overview']['steps'])
         at = memory['overview_step']
-        parts.append(f"## Where he is on the page\nHe has read the overview on the page up to {'the wrap-up' if at > n else f'step {at} of {n}'}. "
+        parts.append(f"## Where he is on the page\nHe has read the overview on the page up to {'the end' if at > n else f'step {at} of {n}'}. "
                      "Ask whether he wants to start from there or from the top; don't re-teach steps he says he's got.")
     if mode == 'teach' and session.get('layer') == 1 and not lesson.get('map'):
         parts.append(PASS_ONE)
@@ -385,7 +404,8 @@ def _block_text(t, lesson):
 def messages(session, lesson, debrief=False):
     """The conversation as chat messages: tutor turns are the assistant, the learner is the user."""
     turns = [t for t in session['turns'] if not t.get('debrief')][-HISTORY_TURNS:]
-    out = [{'role': 'user', 'content': CARRIED if session.get('carried') else OPENING}]
+    first = CARRIED if session.get('carried') else REVIEWING if session['mode'] == 'review' else OPENING
+    out = [{'role': 'user', 'content': first}]
     for t in turns:
         if t['role'] == 'tutor':
             text = '\n\n'.join([t['say'], *(board.source(b) for b in t.get('boards') or []), *(rig.source(d) for d in t.get('designs') or [])]) + (f'\n\n[[activity {t["show_block"]}]]' if t.get('show_block') else '') \
@@ -396,7 +416,7 @@ def messages(session, lesson, debrief=False):
                 out.append({'role': 'assistant', 'content': text})
         else:
             text = t['text'] if t['role'] == 'learner' else _block_text(t, lesson)
-            if out[-1]['role'] == 'user' and out[-1]['content'] not in (OPENING, CARRIED):
+            if out[-1]['role'] == 'user' and out[-1]['content'] not in (OPENING, CARRIED, REVIEWING):
                 out[-1]['content'] += '\n' + text
             elif out[-1]['role'] == 'user':
                 out.append({'role': 'assistant', 'content': '…'})

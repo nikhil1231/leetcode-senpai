@@ -96,7 +96,8 @@ def _has_cv(store):
 
 def _modes(store=None):
     cv = store is not None and _has_cv(store)
-    return [{'id': k, 'label': v[0], 'blurb': v[1]} for k, v in ses.MODES.items() if cv or k not in ses.NEEDS_CV]
+    return [{'id': k, 'label': v[0], 'blurb': v[1]} for k, v in ses.MODES.items()
+            if (cv or k not in ses.NEEDS_CV) and k not in ses.OVERVIEW_ONLY]
 
 
 def _career(store, lesson):
@@ -238,7 +239,8 @@ def area_map(area: str, store=Depends(store_for)):
     titles = lessons.titles()
     prog = _ripple(store)
     mem = store.get_knowledge('tutor_memory', _memory_key('system-design', l['id'])) or {}
-    return {'lesson': {k: l[k] for k in ('id', 'title', 'category', 'summary', 'objectives', 'blocks', 'map') + (('overview',) if l.get('overview') else ())},
+    review = store.get_knowledge('tutor_sessions', mem['review']) if mem.get('review') else None
+    return {'review': public(review) if review else None, 'lesson': {k: l[k] for k in ('id', 'title', 'category', 'summary', 'objectives', 'blocks', 'map') + (('overview',) if l.get('overview') else ())},
             'step': mem.get('overview_step', 0), 'answers': mem.get('overview_answers') or {},
             'lessons': [{'id': k, 'title': titles[('system-design', k)], 'layers': progress.layer_tally([v for v in views if v['lesson'] == k])}
                         for k in l['map']['lessons']],
@@ -266,7 +268,7 @@ def overview_step(area: str, body: OverviewStep, store=Depends(store_for)):
     now, steps = time.time(), l['overview']['steps']
     mk = _memory_key('system-design', l['id'])
     mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
-    mem['overview_step'] = min(body.step, len(steps) + 1)
+    mem['overview_step'] = min(body.step, len(steps) + 2)   # the steps, then the check, then the wrap-up
     keys = {b['key'] for b in l['blocks']}
     mem['overview_answers'] = {**(mem.get('overview_answers') or {}), **{k: v for k, v in body.answers.items() if k in keys}}
     if 0 <= body.finished < len(steps):
@@ -374,7 +376,7 @@ def _next_from(store, section, lesson):
 class Start(BaseModel):
     section: Literal['system-design', 'fundamentals', 'ai']
     lesson: str = Field(max_length=80)
-    mode: Literal['teach', 'explain', 'critique', 'war-room', 'interview', 'cv'] = 'teach'
+    mode: Literal['teach', 'explain', 'critique', 'war-room', 'interview', 'cv', 'review'] = 'teach'
     key: str = Field(pattern=KEY, description='Client-made session id: a retried start opens the same session.')
     focus: str = Field(default='', max_length=300, description='One gap this session is opened to close.')
     carry: str | None = Field(default=None, pattern=KEY, description='A session the tutor moved from; it ends and its thread carries on here.')
@@ -389,7 +391,9 @@ async def start(body: Start, store=Depends(store_for)):
     s = store.get_knowledge('tutor_sessions', body.key)
     if s and any(t['role'] == 'tutor' for t in s['turns']):
         return public(s)
-    if l.get('map') and body.mode != 'teach':
+    if body.mode == 'review' and not l.get('overview'):
+        raise HTTPException(422, 'The check is for an area overview.')
+    if l.get('map') and body.mode not in ('teach', 'review'):
         raise HTTPException(422, 'An area map is a teaching session.')
     if body.mode in ses.NEEDS_CV and not _has_cv(store):
         raise HTTPException(422, 'Defend your CV needs your CV from Job Scout, which has not synced yet.')
@@ -412,8 +416,21 @@ async def start(body: Start, store=Depends(store_for)):
         store.create_knowledge('tutor_sessions', body.key, s)
         if body.mode in ses.NEEDS_CV:   # Senpai's weekly brief stops suggesting it for a while
             store.put_knowledge('tutor_memory', CV_KEY, {'last_at': now, 'lesson': f'{body.section}:{body.lesson}'})
-        store.put_knowledge('tutor_memory', mk, {**mem, 'active': body.key, 'sessions': mem.get('sessions', 0) + 1, 'last_at': now})
+        if body.mode == 'review':   # the check sits on the page beside the tutor's own session, not in place of it
+            _replace_review(store, mem.get('review'), body.key, now)
+            store.put_knowledge('tutor_memory', mk, {**mem, 'review': body.key, 'last_at': now})
+        else:
+            store.put_knowledge('tutor_memory', mk, {**mem, 'active': body.key, 'sessions': mem.get('sessions', 0) + 1, 'last_at': now})
     return await _reply(store, s, l)
+
+
+def _replace_review(store, old, new, now):
+    """A fresh overview check ends the previous one quietly (kept, no debrief)."""
+    s = store.get_knowledge('tutor_sessions', old) if old and old != new else None
+    if s and s['status'] == 'active':
+        ses.end(s, now)
+        s['ended_by'] = 'replaced ' + new
+        store.put_knowledge('tutor_sessions', old, s)
 
 
 class BlockResult(BaseModel):
@@ -556,11 +573,14 @@ def _mark_worked(store, s, now):
 def _remember(store, s, now, event, debrief=''):
     mk = _memory_key(s['section'], s['lesson'])
     mem = {k: v for k, v in (store.get_knowledge('tutor_memory', mk) or {}).items() if k != '_key'}
-    mem.update(summary=s['summary'] or mem.get('summary', ''), last_at=now,
-               active=s['id'] if s['status'] == 'active' else None)
+    if s['mode'] == 'review':   # the overview check keeps its own slot and leaves the lesson's thread alone
+        mem.update(review=s['id'], last_at=now)
+    else:
+        mem.update(summary=s['summary'] or mem.get('summary', ''), last_at=now,
+                   active=s['id'] if s['status'] == 'active' else None)
     if debrief:   # the whole session in the tutor's words; the rolling summary only covers its last turns
         mem['debrief'] = {'text': debrief[:3000], 'at': now, 'session': s['id'], 'turns': len(s['turns'])}
-    if s['summary']:
+    if s['summary'] and s['mode'] != 'review':
         mem['summary_from'] = 'tutor'
     store.put_knowledge('tutor_memory', mk, mem)
     st = {k: v for k, v in (store.get_knowledge('tutor_memory', STORY_KEY) or {}).items() if k != '_key'}

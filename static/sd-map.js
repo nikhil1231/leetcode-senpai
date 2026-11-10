@@ -3,6 +3,9 @@
 // problem, the usual answer, the catch, one thing to remember, then a check or something to try, and what
 // the full lesson adds. The step you're on is saved; finishing a step counts its ideas as seen, finishing
 // the tour counts the area as done. The tutor is an icon by the title and teaches from the same steps.
+// Before the wrap-up, a check: a conversation with the tutor (mode "review") that brings up every step
+// without showing a checklist. It needs the model; without it the step says so and the tour goes on.
+// A step's number fills in once its check is answered correctly.
 // Activities are the lessons' own blocks; answers land on the lesson they came from.
 // Areas without an authored overview keep the older page: the lessons, then what puts them to work.
 (function () {
@@ -10,14 +13,16 @@
   const {api, escapeHtml: esc} = window.H;
   const B = () => window.SDBlocks;
   const LAYER = {1: 'Overview', 2: 'Interview-ready', 3: 'Depth'};
-  let M = null, area = '', error = '', step = 0, answers = {}, wired = null, observer = null;
+  let M = null, area = '', error = '', step = 0, answers = {}, wired = null, observer = null, review = null;
+  const rid = () => 'k' + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
 
   async function open(id) {
     area = id; error = '';
     try {
       M = await api('/tutor/map/' + encodeURIComponent(id));
-      step = Math.min(M.step || 0, (M.lesson.overview?.steps.length || 0) + 1);
+      step = Math.min(M.step || 0, (M.lesson.overview?.steps.length || 0) + 2);
       answers = {...(M.answers || {})};
+      review = {session: M.review || null, busy: false, pending: null, error: ''};
     } catch (e) { M = null; error = e.message; }
   }
 
@@ -54,12 +59,15 @@
   const lessonTitle = id => M.lessons.find(x => x.id === id)?.title || id;
 
   // ---------- The guided overview ----------
+  // A step's check (or activity) answered correctly on this page.
+  const right = s => [s.check, s.use].some(k => k && answers[k] === true);
   function stepBar(ov) {
-    const n = ov.steps.length, names = ['Start', ...ov.steps.map(s => s.title), 'Wrap-up'];
+    const n = ov.steps.length, names = ['Start', ...ov.steps.map(s => s.title), 'Check', 'Wrap-up'];
     return `<nav class="ov-bar" aria-label="Overview steps"><ol>${names.map((name, i) => {
-      const cls = i === step ? 'is-now' : i < step ? 'is-done' : '';
-      const label = i === 0 || i === n + 1 ? name : `${i}`;
-      return `<li class="${cls}"><button type="button" data-ov-go="${i}" title="${esc(name)}" aria-label="${esc(i === 0 || i === n + 1 ? name : `Step ${i}: ${name}`)}"${i === step ? ' aria-current="step"' : ''}>${esc(label)}</button></li>`;
+      const numbered = i >= 1 && i <= n, ok = numbered && right(ov.steps[i - 1]);
+      const cls = [i === step ? 'is-now' : i < step ? 'is-done' : '', ok ? 'is-right' : ''].filter(Boolean).join(' ');
+      const label = numbered ? `${i}` : name;
+      return `<li class="${cls}"><button type="button" data-ov-go="${i}" title="${esc(name + (ok ? ': answered correctly' : ''))}" aria-label="${esc(numbered ? `Step ${i}: ${name}${ok ? ', answered correctly' : ''}` : name === 'Check' ? 'Check what you know' : name)}"${i === step ? ' aria-current="step"' : ''}>${esc(label)}</button></li>`;
     }).join('')}</ol>${step >= 1 && step <= n ? `<span class="ov-bar-label">Step ${step} of ${n}</span>` : ''}</nav>`;
   }
 
@@ -98,18 +106,97 @@
       ${play.length ? `<h4 class="ov-label">Use it in a whole system</h4><div class="sd-map-grid">${play.map(resourceRow).join('')}</div>` : ''}`;
   }
 
+  // ---------- The check: a conversation with the tutor ----------
+  function chatTurn(t) {
+    if (t.role === 'learner') return `<div class="tu-msg tu-me"><div class="tu-text">${esc(t.text)}</div></div>`;
+    if (t.role !== 'tutor' || t.debrief) return '';
+    return `<div class="tu-msg tu-them"><div class="tu-who"><span class="tu-avatar" aria-hidden="true">T</span><b>Tutor</b></div><div class="tu-text sd-md">${md(t.say)}</div></div>`;
+  }
+  function reviewInner() {
+    const r = review ||= {session: M.review || null, busy: false, pending: null, error: ''}, s = r.session;
+    if (!s) return `<div class="ov-try"><button type="button" class="button is-primary" data-primary="1" data-ov-review="start"${r.busy ? ' disabled' : ''}>${r.busy ? 'The tutor is getting ready…' : 'Start the check'}</button>
+      ${r.error ? `<p class="tu-error">${esc(r.error)}</p>` : ''}</div>`;
+    const live = s.status === 'active', talked = s.turns.some(t => t.role === 'learner');
+    const status = r.busy ? '<span class="is-busy">The tutor is thinking…</span>' : r.error || s.error
+      ? `<span class="tu-error">${esc(r.error || s.error)}</span>${r.pending || s.error ? ' <button type="button" class="button" data-ov-review="retry">Try again</button>' : ''}` : '';
+    return `<div class="tu-chat ov-chat" aria-live="polite">${s.turns.map(chatTurn).join('')}${r.optimistic ? `<div class="tu-msg tu-me"><div class="tu-text">${esc(r.optimistic)}</div></div>` : ''}</div>
+      ${live ? `<form class="tu-compose ov-compose"><textarea data-dictate rows="2" aria-label="Your answer" placeholder="Answer in your own words. It's fine to say you don't know."></textarea>
+        <button type="submit" class="button"${r.busy ? ' disabled' : ''}>Send</button></form>` : ''}
+      <div class="tu-status ov-status" role="status">${status}</div>
+      ${talked && !r.busy ? '<p class="ov-review-again"><button type="button" class="ov-link" data-ov-review="start">Start the check again</button></p>' : ''}`;
+  }
+  function reviewHtml() {
+    return `<header class="ov-step-head"><span class="sd-eyebrow">CHECK WHAT YOU KNOW · ABOUT 10 MIN</span><h3>Talk it through with the tutor</h3></header>
+      <p class="ov-review-lead">The tutor asks about what you've just read, one question at a time, until every step has come up. Answer in your own words. It's fine to say you don't know: you'll get the answer and carry on.</p>
+      ${M.enabled ? `<section class="ov-review">${reviewInner()}</section>`
+        : '<p class="sd-muted ov-review-off">The check is a conversation with the tutor, which needs the model, and it isn\'t connected right now. Go on to the wrap-up; its last check still works.</p>'}`;
+  }
+
+  function paintReview(root) {
+    const box = root.querySelector('.ov-review');
+    if (!box || !M?.enabled) return;
+    const typed = box.querySelector('textarea')?.value || '';
+    box.innerHTML = reviewInner();
+    const form = box.querySelector('.ov-compose'), text = form?.querySelector('textarea');
+    if (text) text.value = typed;
+    box.querySelectorAll('[data-ov-review]').forEach(n => n.addEventListener('click', () => (n.dataset.ovReview === 'retry' ? reviewSend(root, null) : reviewStart(root))));
+    text?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
+    form?.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (review.busy) return;
+      await window.Dictate?.hold?.(text);
+      const said = text.value.trim();
+      if (!said) return;
+      text.value = '';
+      reviewSend(root, said);
+    });
+    const chat = box.querySelector('.ov-chat');
+    if (chat) chat.scrollTop = chat.scrollHeight;
+    if (text && !review.busy) setTimeout(() => text.focus({preventScroll: true}), 0);
+  }
+
+  async function reviewStart(root) {
+    const r = review;
+    r.busy = true; r.error = ''; r.session = null; paintReview(root);
+    try {
+      r.session = await api('/tutor/sessions', 'POST', {section: 'system-design', lesson: M.lesson.id, mode: 'review', key: rid()});
+    } catch (e) { r.error = e.message; }
+    if (review !== r) return;
+    r.busy = false; paintReview(root);
+  }
+
+  // `text` null retries the last message that failed.
+  async function reviewSend(root, text) {
+    const r = review;
+    if (text !== null) r.pending = {key: rid(), text};
+    if (!r.pending || !r.session) return;
+    r.busy = true; r.error = ''; r.optimistic = r.session.turns.some(t => t.key === r.pending.key) ? '' : r.pending.text;
+    paintReview(root);
+    try {
+      const s = await api(`/tutor/sessions/${r.session.id}/turns`, 'POST', r.pending);
+      if (review !== r) return;
+      r.session = s;
+      if (!s.error) r.pending = null;
+    } catch (e) { r.error = e.message; }
+    if (review !== r) return;
+    r.busy = false; r.optimistic = '';
+    paintReview(root);
+    window.Dictate?.resume?.(root.querySelector('.ov-compose textarea'));
+  }
+
   function pager(ov) {
     const n = ov.steps.length;
     const prev = step > 0 ? `<button type="button" class="button" data-ov-go="${step - 1}">← Back</button>` : '<span></span>';
-    const next = step === 0 ? 'Start the tour →' : step < n ? `Next: ${ov.steps[step].title} →` : step === n ? 'Next: wrap-up →' : '';
+    const next = step === 0 ? 'Start the tour →' : step < n ? `Next: ${ov.steps[step].title} →` : step === n ? 'Next: check what you know →'
+      : step === n + 1 ? 'Next: wrap-up →' : '';
     const last = M.mapped ? '<a class="button is-primary" data-primary="1" href="#/system-design/curriculum">Back to the course →</a>'
       : '<button type="button" class="button is-primary" data-primary="1" data-ov-finish>Finish the overview ✓</button>';
-    return `<div class="ov-pager">${prev}${step > n ? last : `<button type="button" class="button is-primary" data-primary="1" data-ov-go="${step + 1}">${esc(next)}</button>`}</div>`;
+    return `<div class="ov-pager">${prev}${step > n + 1 ? last : `<button type="button" class="button is-primary" data-primary="1" data-ov-go="${step + 1}">${esc(next)}</button>`}</div>`;
   }
 
   function overviewHtml() {
     const l = M.lesson, ov = l.overview, n = ov.steps.length;
-    const body = step === 0 ? startHtml(ov) : step > n ? finishHtml(ov) : stepHtml(ov.steps[step - 1]);
+    const body = step === 0 ? startHtml(ov) : step === n + 1 ? reviewHtml() : step > n ? finishHtml(ov) : stepHtml(ov.steps[step - 1]);
     return `${back}
       <div class="sd-page-intro sd-rich-intro ov-intro-head"><span class="sd-eyebrow">PASS ONE · OVERVIEW${M.mapped ? ' · DONE ✓' : ''}</span>
         <h2 id="sd-heading" tabindex="-1">${esc(ov.title)}</h2>
@@ -158,7 +245,7 @@
 
   function go(to, root) {
     const n = M.lesson.overview.steps.length, from = step;
-    step = Math.max(0, Math.min(n + 1, to));
+    step = Math.max(0, Math.min(n + 2, to));
     save({step, finished: to === from + 1 && from >= 1 && from <= n ? from - 1 : -1});
     const host = root.querySelector('.sd-map-body.ov');
     if (!host) return;
@@ -187,8 +274,13 @@
     const saved = Object.fromEntries(Object.keys(answers).map(k => [k, {done: true}]));
     wired = B().wire(card, M.lesson, {saved, save() {}, done(key, correct) {
       Promise.resolve(done(key, correct)).catch(() => {});
-      if (typeof correct === 'boolean') { answers[key] = correct; save({step, answers: {[key]: correct}}); }
+      if (typeof correct === 'boolean') {
+        answers[key] = correct; save({step, answers: {[key]: correct}});
+        const ov = M.lesson.overview, i = ov.steps.findIndex(s => s.check === key || s.use === key);
+        if (i >= 0 && right(ov.steps[i])) root.querySelector(`.ov-bar [data-ov-go="${i + 1}"]`)?.closest('li')?.classList.add('is-right');
+      }
     }});
+    paintReview(root);
     oneNext(card);
     observer = new MutationObserver(() => oneNext(card));
     observer.observe(card, {subtree: true, childList: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'data-done', 'data-answered']});
@@ -201,7 +293,7 @@
     window.Tutor?.mount(slot, {section: 'system-design', lesson: M.lesson, layout: root.querySelector('.sd-map-body'), done});
   }
 
-  function stop() { wired?.destroy?.(); wired = null; observer?.disconnect(); observer = null; }
+  function stop() { wired?.destroy?.(); wired = null; observer?.disconnect(); observer = null; review = null; }
 
   window.DesignMap = {open, render, wire, stop, route: () => 'map/' + area, rings, ladder};
 })();
