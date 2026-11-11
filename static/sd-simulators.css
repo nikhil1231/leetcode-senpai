@@ -151,7 +151,6 @@
   .sim-stage .rp-notes-head { min-height:28px; }
   .sim-stage .rp-notes-log { max-height:3.2em; margin:4px 0 2px; padding:4px 8px; }
   .sim-stage .rp-notes textarea { height:3.6em; min-height:0; margin:4px 0 2px; padding:4px 8px; resize:none; }
-  .sim-stage .rp-reftabs { margin:0; max-height:9em; overflow-y:auto; }
   .sim-stage .rp-results { flex:0 0 auto; position:relative; }
   .sim-stage .rp-res-body { position:absolute; left:0; right:0; bottom:calc(100% + 6px); max-height:min(70vh, calc(100vh - 220px)); overflow-y:auto; overscroll-behavior:contain; z-index:8;
     background:var(--panel); border:1px solid var(--line-hi); border-radius:var(--radius-lg); padding:14px 16px; box-shadow:0 -12px 40px rgba(0,0,0,.55); }

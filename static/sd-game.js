@@ -178,7 +178,6 @@
           <button type="button" class="button" data-step="brief">Brief</button></div></div>
         ${h.length || aiHint ? `<div class="rp-hints">${h.map((x, i) => `<p><b>Hint ${i + 1}.</b> ${esc(x)}</p>`).join('')}${aiHint ? `<div class="rp-msg">${B().avatar('priya')}<div><b>Priya</b><p>${esc(aiHint)}</p></div></div>` : ''}</div>` : ''}
         ${notesHtml()}
-        <div data-reftabs>${refTabsHtml(l)}</div>
         <div class="rp-stage" data-stage></div>
         <section class="rp-results" data-results>${resultsInline(l)}</section></div>`;
     }
@@ -237,7 +236,7 @@
             ${nextL ? `<button type="button" class="button is-primary" data-open="${esc(nextL.id)}">Next: ${esc(nextL.title)} →</button>` : '<button type="button" class="button" data-hub>Back to Ripple Ops</button>'}</div></div></div>`;
     }
     // ---------- your design vs the reference ----------
-    // Once the level is passed (or tried twice) two tabs flip the canvas between his design and the reference, with the boxes that differ outlined.
+    // Once the level is passed (or tried twice) two tabs at the top of the side panel flip the canvas between his design and the reference, with the boxes that differ outlined.
     const canCompare = l => !!(l.solution && res && revealed && (res.summary.stars >= 2 || attempts >= 2));
     const cfgKey = n => JSON.stringify(Object.entries(n.cfg || {}).filter(([, v]) => v !== null && v !== undefined && v !== false && v !== '' && v !== 0).sort());
     // Mark the nodes of `a` that have no counterpart in `b`, matched by component kind (ids and positions don't matter).
@@ -256,7 +255,7 @@
     function refTabsHtml(l) {
       if (!canCompare(l)) return '';
       const pts = refView && debrief?.reference?.length ? `<ul class="rp-ref">${debrief.reference.map(p => `<li><b>${esc(p.point)}</b> <span class="rp-ref-tag is-${esc(p.verdict)}">${esc(REF_TAG[p.verdict] || p.verdict)}</span> ${esc(p.why)}</li>`).join('')}</ul>` : '';
-      return `<div class="rp-reftabs"><div class="rp-tabs" role="tablist"><button type="button" role="tab" class="rp-tab${refView ? '' : ' is-on'}" aria-selected="${!refView}" data-view="mine">Your design</button><button type="button" role="tab" class="rp-tab${refView ? ' is-on' : ''}" aria-selected="${refView}" data-view="ref">Reference design</button>
+      return `<div class="rp-reftabs bd-box"><div class="rp-tabs" role="tablist"><button type="button" role="tab" class="rp-tab${refView ? '' : ' is-on'}" aria-selected="${!refView}" data-view="mine">Your design</button><button type="button" role="tab" class="rp-tab${refView ? ' is-on' : ''}" aria-selected="${refView}" data-view="ref">Reference design</button>
         <span class="rp-tabs-key"><i class="rp-key is-new"></i>${refView ? 'not in yours' : 'not in the reference'} <i class="rp-key is-sized"></i>sized differently</span></div>${pts}</div>`;
     }
     function paintTabs() { const box = el.querySelector('[data-reftabs]'); if (box) box.innerHTML = refTabsHtml(L); }
@@ -502,7 +501,7 @@
       if (dead || !el.contains(stage)) return;
       if (notes) paintNotes();      // the draft's reasoning arrived after the first paint
       const scn = L;
-      builder = B().mount(stage, { mode: 'game', scenario: scn, toolbox: L.toolbox, storageKey: `rp-canvas-${L.id}`, initial, onChange: saveDraft, onRun, onDayEnd });
+      builder = B().mount(stage, { mode: 'game', scenario: scn, toolbox: L.toolbox, storageKey: `rp-canvas-${L.id}`, initial, onChange: saveDraft, onRun, onDayEnd, panelTop: () => `<div data-reftabs>${refTabsHtml(L)}</div>` });
       await builder.ready;
     }
     async function paint() {

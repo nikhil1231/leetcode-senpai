@@ -51,7 +51,7 @@
 .rp-report { display:grid; gap:8px; }
 .rp-report h5 { margin:8px 0 2px; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-2); }
 .rp-score { display:flex; align-items:center; gap:12px; } .rp-score .rp-stars { font-size:24px; }
-.rp-score strong { display:block; font-size:14px; } .rp-score span { color:var(--text-2); font-size:12.5px; }
+.rp-score strong { display:block; font-size:14px; } .rp-score div > span { color:var(--text-2); font-size:12.5px; }
 .rp-objs, .rp-evs, .rp-finds { list-style:none; margin:0; padding:0; display:grid; gap:4px; }
 .rp-objs li { display:grid; grid-template-columns:18px 1fr auto; gap:2px 8px; font-size:12.5px; align-items:baseline; }
 .rp-objs li small { grid-column:2 / -1; color:var(--text-2); font-size:11px; }
@@ -163,6 +163,8 @@
 .rp-notes-state { font-size:12px; color:var(--accent); animation:dictate-fade 1s ease-in-out infinite; }
 .rp-notes-log { margin:6px 0 2px; max-height:7.5em; overflow-y:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:8px; font:13px var(--font); line-height:1.5; color:var(--text); }
 .rp-notes-log:empty::before { content:attr(data-hint); color:var(--muted); }
+/* While the mic is on the log is one muted line, pinned right so the newest word stays in view; older words fade off the left. */
+.rp-notes.is-live .rp-notes-log { display:flex; justify-content:flex-end; white-space:nowrap; overflow:hidden; max-height:none; background:none; border:0; padding:0 2px; color:var(--text-2); -webkit-mask-image:linear-gradient(to right, transparent, #000 4em); mask-image:linear-gradient(to right, transparent, #000 4em); }
 .rp-notes textarea { width:100%; margin:6px 0 2px; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; font:13px var(--font); line-height:1.5; resize:vertical; box-sizing:border-box; }
 .rp-results:empty { display:none; }
 .rp-results { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); padding:16px; display:grid; gap:10px; }
@@ -212,12 +214,12 @@
 @keyframes rp-pop { from { opacity:0; transform:translateY(14px) scale(.96); } to { opacity:1; transform:none; } }
 @media (prefers-reduced-motion: reduce) { .rp-modal, .rp-modal-card, .rp-pop { animation:none; opacity:1; } }
 
-/* your design vs the reference: tabs above the canvas, differing boxes outlined */
-.rp-reftabs { margin:10px 0; }
+/* your design vs the reference: tabs at the top of the side panel, differing boxes outlined */
+[data-reftabs]:empty { display:none; }
 .rp-tabs { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 .rp-tab { padding:6px 14px; border:1px solid var(--border); border-radius:8px; background:var(--panel2); color:var(--text-2); font:inherit; font-size:13px; cursor:pointer; }
 .rp-tab.is-on { border-color:var(--accent); color:var(--text); background:var(--accent-soft); }
-.rp-tabs-key { margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
+.rp-tabs-key { flex-basis:100%; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
 .rp-key { display:inline-block; width:12px; height:12px; border-radius:3px; border:2px solid var(--amber); }
 .rp-key.is-sized, .bd-node.is-diff-sized { border-style:dashed; }
 .bd-node.is-diff { border-color:var(--amber); box-shadow:0 0 0 3px rgba(251,191,36,.25), 0 2px 8px rgba(0,0,0,.45); }

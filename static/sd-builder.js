@@ -267,11 +267,12 @@
       const panel = el.querySelector('[data-panel]');
       if (!panel) return;
       const d = sel?.kind === 'node' && nodeById(sel.id) ? def(nodeById(sel.id).defId) : null, n = d ? nodeById(sel.id) : null;
+      const top = opts.panelTop?.() || '';    // the host's own box at the head of the panel (Ripple: your design vs the reference)
       if (play) {
         const t = play.res.ticks[play.h];
         const wob = (id, k, amp) => 1 + amp * (jit(`${play.h}|${id}|${k}`) * 2 - 1);   // display-only wobble: the graded numbers are untouched
         const rows = S.nodes.map(x => ({ x, st: t.nodes[x.id] })).filter(r => r.st && (r.st.util > 0.005 || r.st.status === 'down')).map(r => ({ ...r, u: r.st.util < 1 ? Math.min(r.st.util * wob(r.x.id, 'u', 0.08), 0.99) : r.st.util })).sort((a, b) => b.u - a.u).slice(0, 10);
-        panel.innerHTML = `<section class="bd-box"><h4>${hh(play.h)} · busiest components</h4>${rows.map(r => `<div class="bd-row bd-u-${esc(r.st.status)}"><span>${def(r.x.defId).icon} ${esc(def(r.x.defId).label)}</span><b>${r.st.status === 'down' ? 'down' : `${fmt(Math.round((r.st.load || 0) * wob(r.x.id, 'r', 0.06)))}/s · ${Math.round(r.u * 100)}%`}</b></div>`).join('') || '<p class="bd-note">Quiet.</p>'}
+        panel.innerHTML = `${top}<section class="bd-box"><h4>${hh(play.h)} · busiest components</h4>${rows.map(r => `<div class="bd-row bd-u-${esc(r.st.status)}"><span>${def(r.x.defId).icon} ${esc(def(r.x.defId).label)}</span><b>${r.st.status === 'down' ? 'down' : `${fmt(Math.round((r.st.load || 0) * wob(r.x.id, 'r', 0.06)))}/s · ${Math.round(r.u * 100)}%`}</b></div>`).join('') || '<p class="bd-note">Quiet.</p>'}
           <h4 style="margin-top:12px">Requests this hour</h4>${Object.entries(t.types).map(([k, v]) => `<div class="bd-row"><span>${esc(Sim.LABEL[k] || k)}</span><b>${fmt(Math.round(v.rps * wob(k, 'q', 0.04)))}/s · ${(v.ok * 100).toFixed(v.ok > 0.999 ? 2 : 1)}% · ${ms(v.p99 * wob(k, 'p', 0.07))}</b></div>`).join('')}
           ${Object.values(t.queues).some(q => q.backlog > 1) ? `<h4 style="margin-top:12px">Queues</h4>${Object.entries(t.queues).map(([id, q]) => `<div class="bd-row"><span>${esc(def(nodeById(id)?.defId).label)}${q.stalled ? ' (stalled)' : ''}</span><b>${fmt(q.backlog)} waiting · ${Number.isFinite(q.lagMin) ? Math.round(q.lagMin) + ' min' : '∞'}</b></div>`).join('')}` : ''}</section>
           ${game || !play.done ? '' : `<section class="bd-box"><h4>The day</h4>${reportHtml(play.res, { labelOf, maxFindings: 6 })}</section>`}`;
@@ -285,7 +286,7 @@
       if (game) {
         const s = opts.scenario, sc = { dau: String(s.dau) }, checks = s.ai ? [] : Calc.checks({ nodes: S.nodes, edges: S.edges }, sc, { availability: `${s.slo?.availability}%` });
         const q = Sim.quickCost(graph(), econ, s);
-        panel.innerHTML = `${nodeBox || `<section class="bd-box"><h4>How to build</h4><ol class="bd-how"><li>Drag components in and connect them, client first.</li><li>Click a component to size it: instances, zones, replicas, options.</li><li>Press <b>Run the day</b> to play the scenario against it.</li></ol></section>`}
+        panel.innerHTML = `${top}${nodeBox || `<section class="bd-box"><h4>How to build</h4><ol class="bd-how"><li>Drag components in and connect them, client first.</li><li>Click a component to size it: instances, zones, replicas, options.</li><li>Press <b>Run the day</b> to play the scenario against it.</li></ol></section>`}
           ${deploymentHtml()}
           <section class="bd-box"><h4>Fixed costs</h4>${q.items.filter(i => i.usd >= 0.5).slice(0, 8).map(i => row(esc(labelOf(i.defId)), money(i.usd))).join('') || '<p class="bd-note">Nothing priced yet.</p>'}${row('<strong>Total</strong>', `<strong>${money(q.total)}</strong>`)}<p class="bd-fine">Plus usage: requests, bandwidth and storage, billed when you run the day.</p></section>
           ${checks.length ? `<section class="bd-box"><h4>Quick checks</h4><ul class="bd-checks">${checks.map(c => `<li class="bd-${c.level}"><span>${c.level === 'warn' ? '⚠' : c.level === 'good' ? '✓' : '💡'}</span>${esc(c.text)}</li>`).join('')}</ul></section>` : ''}`;
