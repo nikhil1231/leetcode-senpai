@@ -535,6 +535,11 @@ details.sd-goals summary { cursor:pointer; font-size:11px; letter-spacing:.08em;
 .nd-tab:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .nd-body { display:grid; grid-template-columns:minmax(0, 1fr) 280px; gap:18px; margin-top:12px; align-items:start; }
 .nd-card, .nd-score { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px; }
+.nd-card-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.nd-modes { display:inline-flex; gap:2px; padding:2px; border:1px solid var(--line); border-radius:8px; background:var(--panel2); }
+.nd-mode { padding:4px 10px; border:0; border-radius:6px; background:none; color:var(--text-2); font:inherit; font-size:12.5px; cursor:pointer; }
+.nd-mode.is-on { background:var(--accent-soft); color:var(--text); }
+.nd-mode:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .nd-q { font-size:20px; line-height:1.4; margin:6px 0 16px; max-width:62ch; }
 .nd-form { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .nd-value { flex:1 1 220px; max-width:320px; font-size:16px; }

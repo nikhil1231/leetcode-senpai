@@ -4,7 +4,9 @@ import math
 import pytest
 from fastapi.testclient import TestClient
 
-from server import auth, main, system_design_numbers as nd
+import itertools
+
+from server import auth, main, numbers_derived as derived, system_design_numbers as nd
 from tests.fake_store import FakeStore
 
 
@@ -50,7 +52,7 @@ def test_misses_come_back_sooner_the_further_out_they_were():
     card = {}
     for turn in range(1, 4):
         card = nd.schedule(card, 'exact', turn)
-    assert card['streak'] == 3 and card['due'] - 3 > gaps['exact']
+    assert card['streak'] == 4 and card['due'] - 3 > gaps['exact']
     assert nd.schedule(card, 'far', 4)['streak'] == 0
 
 
@@ -89,3 +91,66 @@ def test_the_queue_is_endless_and_keeps_a_window_of_recent_answers(client):
     assert first in [a['q'] for a in res['log']]   # the miss came back within the window
     bad = client.post('/api/system-design/numbers/answer', json={'question_id': res['question']['id'], 'value': 'lots', 'unit': ''})
     assert bad.status_code == 422
+
+
+def test_a_typed_unit_beats_the_dropdown_through_the_api(client):
+    res = client.post('/api/system-design/numbers/answer', json={'question_id': 'lat-100km', 'value': '300ms', 'unit': 's'})
+    assert res.status_code == 200
+    assert res.json()['result']['given'] == '300ms'
+
+
+def test_new_questions_keep_coming_while_misses_pile_up():
+    cards = {q: {'due': 0} for q in list(nd.QUESTIONS)[:10]}
+    picks = [nd.pick(cards, turn, None, 1) for turn in range(10, 20)]
+    assert sum(p not in cards for p in picks) == 5
+    assert nd.schedule({}, 'exact', 1)['due'] - 1 == nd.RIGHT_GAPS[1]   # known cold on first sight
+
+
+def test_every_derived_question_checks_against_its_own_answer():
+    n = 0
+    for name, t in derived.TEMPLATES.items():
+        for combo in itertools.product(*t['options']):
+            q = derived.build(':'.join(['gen', name, *combo]))
+            if not q:
+                continue
+            n += 1
+            lo, hi = q['answer']
+            assert 0 < lo <= hi and q['prompt'].endswith('?') and q['why'], q['id']
+            assert q['parts'] and all(p in nd.QUESTIONS for p in q['parts']), q['id']
+            assert nd.band(nd.ratio(*nd.parse(q['shown'], q['kind'], nd.DEFAULT[q['kind']]), q['answer'])) == 'exact', q['id']
+    assert n > 500
+    assert derived.build('gen:span:7:months:seconds') is None and derived.build('gen:nope') is None
+
+
+def test_derived_answers_follow_the_base_numbers():
+    q = derived.build('gen:span:6:months:seconds')
+    assert q['answer'] == pytest.approx((6 * 30 * 86400, 6 * 365 / 12 * 86400))
+    q = derived.build('gen:remote:ssd:dc')     # random SSD read on a machine in the same datacentre
+    assert q['answer'] == pytest.approx((0.5e-3 + 20e-6, 0.5e-3 + 100e-6)) and set(q['parts']) == {'lat-dc-rtt', 'lat-ssd-random'}
+    assert nd.band(nd.ratio(*nd.parse('0.6 ms', 'time', ''), q['answer'])) == 'exact'
+
+
+def test_a_derived_miss_nudges_its_base_cards_lightly():
+    card = {'due': 100, 'streak': 3}
+    after = derived.nudge(card, 'wild', 10)
+    assert after['streak'] == 2 and after['due'] == 10 + 2 * nd.WRONG_GAP['wild']
+    assert nd.schedule(card, 'wild', 10)['due'] < after['due']   # lighter than a direct miss
+    assert derived.nudge({'due': 5, 'streak': 0}, 'off', 10)['due'] == 5
+    assert derived.nudge(None, 'off', 10) is None
+
+
+def test_derived_mode_through_the_api(client):
+    base = client.get('/api/system-design/numbers').json()
+    state = client.get('/api/system-design/numbers?mode=derived').json()
+    q = state['question']
+    assert q['derived'] and q['id'].startswith('gen:') and state['mode'] == 'derived'
+    assert client.get('/api/system-design/numbers?mode=derived').json()['question'] == q
+    built = derived.build(q['id'])
+    for part in built['parts']:
+        client.post('/api/system-design/numbers/answer', json={'question_id': part, 'skip': True})
+    lo, _ = built['answer']
+    res = client.post('/api/system-design/numbers/answer', json={'question_id': q['id'], 'value': repr(lo * 1e4), 'unit': nd.UNITS[q['kind']][0][0]}).json()
+    assert res['result']['correct'] is False and res['result']['nudged'] >= 1 and res['pending'] == 1
+    assert res['question']['derived'] and res['answered'] == 1 and res['log'][-1]['q'] == q['id']
+    assert client.get('/api/system-design/numbers').json()['answered'] == base['answered'] + len(set(built['parts']))
+    assert client.post('/api/system-design/numbers/answer', json={'question_id': 'gen:span:7:x:y', 'skip': True}).status_code == 404

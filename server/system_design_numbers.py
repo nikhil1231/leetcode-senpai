@@ -4,10 +4,12 @@ Each question has one authored answer (a value or a range, with a unit) taken fr
 type a number and pick a unit (or type the unit); any unit of the same kind converts, so 1,000 MB
 and 1 GB are the same answer. Within the range, or within 2× of the answer, is correct. Wrong
 answers are banded by how far out they were, and the further out, the sooner the question comes
-back. The queue counts answers, not days: a question is due again after so many other questions.
+back. The queue counts answers, not days: a question is due again after so many other questions,
+and while any are unseen every other question is a new one.
 State is one design record (kind numbers_drill): per-question cards, the current question and a
-log of recent answers that the page turns into a sliding-window score. Parsing, grading and
-picking are pure.
+log of recent answers that the page turns into a sliding-window score. Derived questions
+(numbers_derived.py) sit beside them with their own turn count and log; a miss there nudges the
+base cards it rests on. Parsing, grading and picking are pure.
 """
 import math
 import random
@@ -41,7 +43,8 @@ UNITS = {
     'rate': [('per second', ['/s', 'per second', 'per sec', 'ps', 'rps', 'qps', 'iops', 'req/s', 'ops/s', 'tokens/s', 'tok/s'], 1),
              ('thousand/s', ['k/s', 'thousand/s', 'thousand per second'], 1e3), ('million/s', ['m/s', 'million/s', 'million per second'], 1e6)],
     'count': [('(number)', ['', 'x1'], 1), ('thousand', ['k', 'thousand'], 1e3), ('million', ['m', 'mn', 'million'], 1e6),
-              ('billion', ['bn', 'billion'], 1e9), ('trillion', ['tn', 'trillion'], 1e12)],
+              ('billion', ['bn', 'billion'], 1e9), ('trillion', ['tn', 'trillion'], 1e12),
+              ('quadrillion', ['quadrillion'], 1e15)],
     'percent': [('%', ['%', 'percent', 'pct', ''], 1)],
     'ratio': [('×', ['×', 'x', 'times', ''], 1)],
     'distance': [('km', ['km', 'kilometre', 'kilometres', 'kilometer', 'kilometers'], 1)],
@@ -50,7 +53,7 @@ DEFAULT = {'time': 's', 'size': 'MB', 'bandwidth': 'MB/s', 'rate': 'per second',
            'percent': '%', 'ratio': '×', 'distance': 'km'}
 # Magnitude words that may sit between the number and the unit ("2.5k /s", "3 million").
 SCALE = {'k': 1e3, 'thousand': 1e3, 'mn': 1e6, 'million': 1e6, 'bn': 1e9, 'billion': 1e9,
-         'tn': 1e12, 'trillion': 1e12}
+         'tn': 1e12, 'trillion': 1e12, 'quadrillion': 1e15}
 SUPER = str.maketrans('⁰¹²³⁴⁵⁶⁷⁸⁹⁻', '0123456789-')
 NUM = r'(?:\d[\d,]*(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?'
 VALUE = re.compile(rf'^\s*[~≈]?\s*(?:10\^(-?\d+)|({NUM})\s*(?:[x×*]\s*10\^(-?\d+))?)\s*(.*?)\s*$', re.I)
@@ -77,6 +80,8 @@ QUESTIONS_RAW = [
     ('pow-31', 'Sizes', 'What is the largest signed 32-bit integer, roughly (2³¹)?', 'count', '2.1 billion', '2³¹ ≈ 2.1 billion. An auto-increment id in a 32-bit column runs out there.'),
     ('pow-32', 'Sizes', '2³² is roughly what?', 'count', '4.3 billion', '2³² ≈ 4.3 billion, the size of the IPv4 address space.'),
     ('pow-40', 'Sizes', '2⁴⁰ is roughly what?', 'count', '1 trillion', '2⁴⁰ = (2¹⁰)⁴ ≈ 10¹²: a TB.'),
+    ('pow-50', 'Sizes', '2⁵⁰ is roughly what?', 'count', '1 quadrillion', '2⁵⁰ = (2¹⁰)⁵ ≈ 10¹⁵: a PB.'),
+    ('pow-64', 'Sizes', '2⁶⁴ is roughly what?', 'count', '1.8 × 10¹⁹', '2⁶⁴ ≈ 1.8 × 10¹⁹, the number of values in an unsigned 64-bit integer.'),
     ('gbps-1', 'Sizes', 'A link runs at 1 Gbps. How many bytes a second is that?', 'bandwidth', '125 MB/s', 'Network speeds are in bits: 1,000 Mb/s ÷ 8 = 125 MB/s.'),
     ('gbps-10', 'Sizes', 'A link runs at 10 Gbps. How many bytes a second is that?', 'bandwidth', '1.25 GB/s', '10,000 Mb/s ÷ 8 = 1,250 MB/s, about 1.25 GB/s.'),
     ('size-int64', 'Sizes', 'How big is a 64-bit integer or timestamp?', 'size', '8 bytes', '64 bits ÷ 8 = 8 bytes.'),
@@ -103,6 +108,7 @@ QUESTIONS_RAW = [
     ('lat-100km', 'Latency', 'How much round-trip time does each 100 km of distance add?', 'time', '1 ms', '200 km of fibre there and back at 200 km per ms: about 1 ms.'),
     ('lat-https', 'Latency', 'How many round trips does a new HTTPS connection (TCP + TLS 1.3) cost before the request is sent?', 'count', '2', 'One for the TCP handshake and one for TLS 1.3.'),
     ('lat-instant', 'Latency', 'Under what response time does an action feel instant?', 'time', '100 ms', 'Under about 100 ms feels instant; under 1 s keeps the user\'s flow.'),
+    ('lat-flow', 'Latency', 'Under what response time does the user keep their flow of thought?', 'time', '1 s', 'Under about 1 s. Past that they notice the wait, though they stay on the task.'),
     ('lat-attention', 'Latency', 'Past what wait do you lose the user\'s attention?', 'time', '10 s', 'Past about 10 s. Show progress well before then.'),
     # One machine
     ('cap-app', 'One machine', 'How many simple requests a second can one stateless app server handle?', 'rate', '1000-10000 /s', 'About 1k to 10k a second, depending on the work per request.'),
@@ -128,6 +134,7 @@ QUESTIONS_RAW = [
     ('nines-parallel', 'Availability', 'Two independent replicas, each 99% available, and either will do. What percentage of the time are both down?', 'percent', '0.01 %', 'Redundant copies multiply their failures: 0.01 × 0.01 = 0.0001, which is 0.01%.'),
     # Rules of thumb
     ('rule-peak', 'Rules of thumb', 'Peak traffic is how many times the daily average, for a typical product?', 'ratio', '2-3 ×', 'About 2 to 3×; spiky products reach 10×.'),
+    ('rule-peak-spiky', 'Rules of thumb', 'Peak traffic for a spiky product can reach how many times the daily average?', 'ratio', '10 ×', 'Up to about 10×, for example a ticket sale or a live event.'),
     ('rule-read-write', 'Rules of thumb', 'For content and social products, reads outnumber writes by how many times?', 'ratio', '10-100 ×', 'About 10:1 to 100:1.'),
     ('rule-hot-set', 'Rules of thumb', 'What percentage of items typically get about 80% of requests?', 'percent', '20 %', 'About 20%, so caching the hot set covers most reads.'),
     ('rule-little-1', 'Rules of thumb', 'At 2,000 requests a second with 50 ms in the service, how many requests are in flight?', 'count', '100', 'Little\'s Law: rate × time = 2,000 × 0.05 = 100.'),
@@ -146,10 +153,15 @@ QUESTIONS_RAW = [
     ('llm-cache-read', 'LLMs', 'A prompt-cache read costs what multiple of normal input?', 'ratio', '0.1 ×', 'About 0.1×, a 90% discount.'),
     ('llm-cache-write', 'LLMs', 'A prompt-cache write (5-minute lifetime) costs what multiple of normal input?', 'ratio', '1.25 ×', 'About 1.25×; a 1-hour cache costs more.'),
     ('llm-batch', 'LLMs', 'What percentage discount does a batch API give?', 'percent', '50 %', 'About 50% off, with results within 24 hours.'),
+    ('llm-batch-wait', 'LLMs', 'How long can a batch API take to return its results?', 'time', '24 hours', 'Up to 24 hours, in exchange for the 50% discount.'),
     ('llm-context', 'LLMs', 'How many tokens fit in the context window of a current frontier model?', 'count', '200 thousand-1 million', 'About 200k to 1M tokens.'),
     ('llm-ttft', 'LLMs', 'What is the time to first token for a short prompt?', 'time', '0.3-1 s', 'About 0.3 to 1 s; longer with long prompts or thinking.'),
     ('llm-speed', 'LLMs', 'How many output tokens a second does one stream from a frontier model produce?', 'rate', '50-150 /s', 'About 50 to 150 tokens a second; small models are faster.'),
+    ('llm-prefill', 'LLMs', 'How many input tokens a second does prefill process?', 'rate', '1000-10000 /s', 'Thousands a second, because the whole prompt is processed in parallel. Output comes one token at a time.'),
     ('llm-500', 'LLMs', 'How long does a 500-token answer take to stream in full?', 'time', '3-10 s', 'At 50 to 150 tokens a second, about 5 s.'),
+    ('llm-bytes-fp16', 'LLMs', 'How many bytes does one parameter take in FP16 or BF16?', 'size', '2 bytes', '16 bits = 2 bytes.'),
+    ('llm-bytes-int8', 'LLMs', 'How many bytes does one parameter take at INT8?', 'size', '1 byte', '8 bits = 1 byte.'),
+    ('llm-bytes-int4', 'LLMs', 'How many bytes does one parameter take at INT4?', 'size', '0.5 bytes', '4 bits = half a byte.'),
     ('llm-7b-fp16', 'LLMs', 'How much memory do the weights of a 7B model take in FP16?', 'size', '14 GB', '7 billion params × 2 bytes = 14 GB.'),
     ('llm-70b-fp16', 'LLMs', 'How much memory do the weights of a 70B model take in FP16?', 'size', '140 GB', '70 billion × 2 bytes = 140 GB: two H100s.'),
     ('llm-70b-int4', 'LLMs', 'How much memory do the weights of a 70B model take at INT4?', 'size', '35 GB', '70 billion × 0.5 bytes = 35 GB.'),
@@ -158,17 +170,24 @@ QUESTIONS_RAW = [
     ('llm-kv-token', 'LLMs', 'How much KV cache does one token take, for an 8B to 70B open model in FP16?', 'size', '0.1-0.3 MB', 'About 0.1 to 0.3 MB per token.'),
     ('llm-kv-100k', 'LLMs', 'How much KV cache does a 100k-token context take, for an 8B to 70B model in FP16?', 'size', '10-30 GB', '100k × 0.1 to 0.3 MB = 10 to 30 GB.'),
     ('llm-flops-token', 'LLMs', 'How many FLOPs does a 7B model spend per generated token?', 'count', '14 billion', 'About 2 × params = 14 billion.'),
+    ('llm-train-flops', 'LLMs', 'Training costs about how many FLOPs per parameter per training token?', 'count', '6', 'About 6: 2 for the forward pass and 4 for the backward pass.'),
     ('llm-chinchilla', 'LLMs', 'Compute-optimal training uses about how many tokens per parameter?', 'count', '20', 'About 20 tokens per parameter.'),
     ('llm-decode', 'LLMs', 'What is the single-stream decode ceiling for an 8B FP16 model (16 GB) on an H100 (3.35 TB/s)?', 'rate', '200 /s', '3.35 TB/s ÷ 16 GB ≈ 200 tokens a second: each token reads every weight once.'),
     ('hw-h100-mem', 'LLMs', 'How much HBM does an H100 have?', 'size', '80 GB', '80 GB.'),
     ('hw-h100-bw', 'LLMs', 'What is an H100\'s memory bandwidth?', 'bandwidth', '3.35 TB/s', 'About 3.35 TB/s.'),
     ('hw-h100-flops', 'LLMs', 'How many dense BF16 TFLOPS does an H100 do?', 'count', '1000', 'About 1,000 TFLOPS.'),
+    ('hw-h200-mem', 'LLMs', 'How much HBM does an H200 have?', 'size', '141 GB', '141 GB, at about 4.8 TB/s.'),
+    ('hw-h200-bw', 'LLMs', 'What is an H200\'s memory bandwidth?', 'bandwidth', '4.8 TB/s', 'About 4.8 TB/s, with 141 GB of HBM.'),
+    ('hw-b200-mem', 'LLMs', 'How much HBM does a B200 have?', 'size', '180 GB', 'About 180 GB, at about 8 TB/s.'),
+    ('hw-b200-bw', 'LLMs', 'What is a B200\'s memory bandwidth?', 'bandwidth', '8 TB/s', 'About 8 TB/s, with about 180 GB of HBM.'),
     ('hw-4090', 'LLMs', 'How much memory does an RTX 4090 have?', 'size', '24 GB', '24 GB. Consumer GPUs range from 8 to 32 GB.'),
     ('hw-nvlink', 'LLMs', 'What is H100 NVLink bandwidth per direction?', 'bandwidth', '450 GB/s', 'About 450 GB/s each way, 900 GB/s total.'),
     ('hw-pcie', 'LLMs', 'What is PCIe 5 x16 bandwidth per direction?', 'bandwidth', '64 GB/s', 'About 64 GB/s, a seventh of NVLink.'),
+    ('rag-dims', 'LLMs', 'How many dimensions does a typical text embedding have?', 'count', '768-3072', 'About 768 to 3,072; 1,536 is a common size.'),
     ('rag-vector', 'LLMs', 'How big is one 1,536-dimension float32 embedding?', 'size', '6 KB', '1,536 × 4 bytes ≈ 6 KB.'),
     ('rag-1m', 'LLMs', 'How big is an index of 1 million 1,536-dimension float32 vectors, before overhead?', 'size', '6 GB', '1M × 6 KB = 6 GB.'),
     ('rag-100m', 'LLMs', 'How big is an index of 100 million 1,536-dimension float32 vectors, before overhead?', 'size', '600 GB', '100M × 6 KB = 600 GB; int8 quantisation cuts it 4×.'),
+    ('rag-int8', 'LLMs', 'By how many times does int8 quantisation shrink a float32 vector index?', 'ratio', '4 ×', '4 bytes per number down to 1: 4× smaller.'),
     ('rag-hnsw', 'LLMs', 'How long does an approximate nearest-neighbour (HNSW) search take?', 'time', '1-10 ms', 'About 1 to 10 ms at 95 to 99% recall.'),
 ]
 
@@ -261,6 +280,7 @@ LABEL = {b[0]: b[3] for b in BANDS} | {'skip': 'Skipped'}
 CORRECT = {b[0] for b in BANDS if b[2]}
 WRONG_GAP = {'off': 6, 'far': 3, 'wild': 2, 'skip': 3}
 RIGHT_GAPS = [10, 25, 60, 150, 350]
+GEN_PENDING = 30   # derived misses kept to come back
 
 
 def ratio(lo, hi, answer):
@@ -284,7 +304,8 @@ def schedule(card, b, turn):
     card['seen'] = card.get('seen', 0) + 1
     card['band'] = b
     if b in CORRECT:
-        streak = card.get('streak', 0) + (1 if b == 'exact' else 0) or 1
+        first = card['seen'] == 1
+        streak = (2 if first and b == 'exact' else card.get('streak', 0) + (1 if b == 'exact' else 0)) or 1
         gap = RIGHT_GAPS[min(streak, len(RIGHT_GAPS)) - 1]
         card['streak'] = streak
         card['due'] = turn + (gap if b == 'exact' else max(8, gap // 2))
@@ -296,28 +317,31 @@ def schedule(card, b, turn):
 
 
 def pick(cards, turn, last, seed):
-    """The next question: the most overdue card, else a new one, else the one due soonest. Never the
-    question just answered. Pure."""
+    """The next question. While some are unseen, every other turn brings a new one, so misses coming
+    back can't crowd out the rest of the sheet; other turns take the most overdue card. Then the one
+    due soonest. Never the question just answered. Pure."""
     rng = random.Random(f'{seed}:{turn}')
     ids = [q for q in QUESTIONS if q != last]
     due = [q for q in ids if q in cards and cards[q]['due'] <= turn]
+    new = [q for q in ids if q not in cards]
+    if new and (not due or turn % 2 == 0):
+        return rng.choice(new)
     if due:
         return min(due, key=lambda q: (cards[q]['due'], rng.random()))
-    new = [q for q in ids if q not in cards]
-    if new:
-        return rng.choice(new)
     return min(ids, key=lambda q: (cards[q]['due'], rng.random()))
 
 
 def public(q):
     return {'id': q['id'], 'topic': q['topic'], 'prompt': q['prompt'], 'kind': q['kind'],
-            'units': [u[0] for u in UNITS[q['kind']]], 'unit': DEFAULT[q['kind']]}
+            'units': [u[0] for u in UNITS[q['kind']]], 'unit': DEFAULT[q['kind']], 'derived': bool(q.get('derived'))}
 
 
-def summary(doc):
-    log = doc.get('log') or []
+def summary(doc, mode='base'):
     cards = doc.get('cards') or {}
-    return {'log': log[-WINDOW:], 'window': WINDOW, 'answered': doc.get('turn', 0),
+    if mode == 'derived':
+        return {'mode': mode, 'log': (doc.get('gen_log') or [])[-WINDOW:], 'window': WINDOW, 'answered': doc.get('gen_turn', 0),
+                'pending': len(doc.get('gen_cards') or {})}
+    return {'mode': mode, 'log': (doc.get('log') or [])[-WINDOW:], 'window': WINDOW, 'answered': doc.get('turn', 0),
             'seen': len(cards), 'total': len(QUESTIONS),
             'secure': sum(1 for c in cards.values() if c.get('streak', 0) >= 2)}
 
@@ -344,6 +368,18 @@ def _state(store):
     return doc
 
 
+def _derived(store, doc):
+    """The doc with a current derived question. Derived state sits beside the base state: its own turn
+    count, log and the missed questions waiting to come back."""
+    from . import numbers_derived as derived
+    if derived.build(doc.get('gen_current')):
+        return doc
+    doc.setdefault('gen_turn', 0)
+    doc.setdefault('gen_cards', {})
+    doc['gen_current'] = derived.pick(doc['gen_cards'], doc['gen_turn'], None, doc['seed'], doc['cards'])
+    return _save(store, doc)
+
+
 class NumbersAnswer(BaseModel):
     question_id: str
     value: str = Field(default='', max_length=80)
@@ -352,15 +388,20 @@ class NumbersAnswer(BaseModel):
 
 
 @router.get('/numbers')
-def numbers_state(store=Depends(store_for)):
+def numbers_state(mode: str = 'base', store=Depends(store_for)):
     doc = _state(store)
+    if mode == 'derived':
+        from . import numbers_derived as derived
+        doc = _derived(store, doc)
+        return {'question': public(derived.build(doc['gen_current'])), **summary(doc, mode)}
     return {'question': public(QUESTIONS[doc['current']]), **summary(doc)}
 
 
 @router.post('/numbers/answer')
 def numbers_answer(body: NumbersAnswer, store=Depends(store_for)):
+    from . import numbers_derived as derived
     doc = _state(store)
-    q = QUESTIONS.get(body.question_id)
+    q = QUESTIONS.get(body.question_id) or derived.build(body.question_id)
     if not q:
         raise HTTPException(404, 'Unknown question')
     if body.skip:
@@ -374,13 +415,39 @@ def numbers_answer(body: NumbersAnswer, store=Depends(store_for)):
         b = band(r)
         unit = '' if typed_unit(body.value, q['kind']) or body.unit in ('(number)', '%', '×') else ' ' + body.unit
         given = body.value.strip() + unit
-    turn = doc['turn'] + 1
-    doc['turn'] = turn
-    doc['cards'][q['id']] = schedule(doc['cards'].get(q['id']), b, turn)
-    doc['log'] = (doc.get('log') or [])[-(LOG - 1):] + [{'q': q['id'], 'band': b, 'given': given, 'at': int(time.time())}]
-    doc['current'] = pick(doc['cards'], turn, q['id'], doc['seed'])
-    doc = _save(store, doc)
+    entry = {'q': q['id'], 'band': b, 'given': given, 'at': int(time.time())}
+    nudged = 0
+    if q.get('derived'):
+        mode = 'derived'
+        turn = doc.get('gen_turn', 0) + 1
+        doc['gen_turn'] = turn
+        gen = dict(doc.get('gen_cards') or {})
+        if b in CORRECT:
+            gen.pop(q['id'], None)
+            back_in = None
+        else:
+            gen[q['id']] = {'due': turn + WRONG_GAP[b], 'band': b}
+            back_in = WRONG_GAP[b]
+            for part in q['parts']:
+                if part in doc['cards']:
+                    doc['cards'][part] = derived.nudge(doc['cards'][part], b, doc['turn'])
+                    nudged += 1
+        doc['gen_cards'] = dict(sorted(gen.items(), key=lambda kv: kv[1]['due'])[-GEN_PENDING:])
+        doc['gen_log'] = (doc.get('gen_log') or [])[-(LOG - 1):] + [entry]
+        doc['gen_current'] = derived.pick(doc['gen_cards'], turn, [e['q'] for e in doc['gen_log'][-WINDOW:]], doc['seed'], doc['cards'])
+        doc = _save(store, doc)
+        nxt = derived.build(doc['gen_current'])
+    else:
+        mode = 'base'
+        turn = doc['turn'] + 1
+        doc['turn'] = turn
+        doc['cards'][q['id']] = schedule(doc['cards'].get(q['id']), b, turn)
+        doc['log'] = (doc.get('log') or [])[-(LOG - 1):] + [entry]
+        doc['current'] = pick(doc['cards'], turn, q['id'], doc['seed'])
+        doc = _save(store, doc)
+        back_in = doc['cards'][q['id']]['due'] - turn
+        nxt = QUESTIONS[doc['current']]
     result = {'question_id': q['id'], 'band': b, 'label': LABEL[b], 'correct': b in CORRECT, 'given': given,
               'answer': q['shown'], 'why': q['why'], 'factor': None if r is None or math.isinf(r) else round(r, 1),
-              'back_in': doc['cards'][q['id']]['due'] - turn}
-    return {'result': result, 'question': public(QUESTIONS[doc['current']]), **summary(doc)}
+              'back_in': back_in, 'nudged': nudged}
+    return {'result': result, 'question': public(nxt), **summary(doc, mode)}
