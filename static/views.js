@@ -224,7 +224,7 @@
     const newProblems = section(
       "New problems",
       q.new.length,
-      "Fresh practice selected to expand coverage without crowding out spaced repetition.",
+      "Problems you haven't solved yet, picked from topics you have covered least. Reviews still come first.",
       q.new.length ? list(q.new.map(item)) : "<p class='empty'>Nothing queued. Import a pack in Discover.</p>"
     );
     // Sprint round and focused practice are peers: both are timed-ish drill modes,
@@ -244,7 +244,7 @@
     const drills = section(
       "Focused drills",
       (q.drills && q.drills.length) || 0,
-      "Short targeted reps from weak signals, recent mistakes, and topics that need sharper pattern recognition.",
+      "Short practice on problems you recently got wrong or found slow.",
       drillTiles + (q.drills && q.drills.length
         ? list(q.drills.map(item))
         : "<p class='empty'>No focused drills queued.</p>")
@@ -252,7 +252,7 @@
     const expansion = q.expansion && q.expansion.length ? section(
       "Grow your library",
       q.expansion.length,
-      "Optional high-quality imports from topics you have started to clear.",
+      "Well-rated problems you could import, from topics you have already started.",
       list(q.expansion.map((x) => `
         <li class="q-row is-expansion">
           <div class="q-main">
@@ -272,9 +272,9 @@
     const whyOf = (it) => {
       const d = dueLabel(it.due_date, q.date, it.overdue);
       if (it.mode === "recall") return `A quick recall${d ? ", " + d.text.toLowerCase() : ""}: say the approach from memory, then check it.`;
-      if (due.includes(it)) return `A review${d ? ", " + d.text.toLowerCase() : ""}: solve it again before it fades.`;
-      if (laneOf(it) === "drill") return it.reason || "A short targeted rep from a weak signal.";
-      return `A new ${it.difficulty ? String(it.difficulty).toLowerCase() + " " : ""}problem, picked to widen what you have covered.`;
+      if (due.includes(it)) return `A review${d ? ", " + d.text.toLowerCase() : ""}: solve it again from scratch.`;
+      if (laneOf(it) === "drill") return it.reason || "Short practice on something you recently got wrong.";
+      return `A new ${it.difficulty ? String(it.difficulty).toLowerCase() + " " : ""}problem from a topic you have covered less.`;
     };
     const kicker = (it) => (due.includes(it) ? (it.overdue ? "Overdue review" : "Review due") : laneOf(it) === "drill" ? "Focused drill" : "New problem");
     const homeHtml = window.SectionHome ? window.SectionHome.html({
