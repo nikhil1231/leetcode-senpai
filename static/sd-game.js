@@ -127,7 +127,7 @@
     function trafficHtml(l, est) {
       if (l.ai) {
         const A = window.AISim.normalize(l), mix = Object.entries(A.ai.mix).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-        return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> users · ${l.traffic.ask.perUser} questions per user a day · evening peak about ${l.traffic.peak || 1.8}× the average on an ordinary day · prompts about ${A.ai.promptTokens.toLocaleString('en')} tokens plus ${A.ai.topK} retrieved passages of ${A.ai.chunkTokens}, answers about ${A.ai.outTokens} tokens</p>
+        return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> users · ${l.traffic.ask.perUser} questions per user a day · evening peak about ${l.traffic.peak || 1.8}× the average on an ordinary day · prompts about ${A.ai.promptTokens.toLocaleString('en')} tokens plus ${A.ai.topK} retrieved passages of ${A.ai.chunkTokens}, answers about ${A.ai.outTokens} tokens${est?.includes('largeModelMonthUsd') ? ' · the large model costs $3 per million tokens in and $15 per million out' : ''}</p>
           <ul class="rp-mix">${mix.map(([k, v]) => `<li><b>${Math.round(v * 100)}%</b><span>${esc(window.AISim.KIND_LABEL[k])}</span></li>`).join('')}</ul>`;
       }
       const T = l.traffic || {}, parts = [];
@@ -136,6 +136,9 @@
         // On the estimate step, show only what the questions need: sizes matter for storage (writes) and bandwidth, never for request rates.
         const showKb = kb && (!est || est.includes('egressTbMonth') || (est.includes('storageGbYear') && ['write', 'upload', 'realtime'].includes(t)));
         parts.push(`${T[t].perUser.toLocaleString('en')} ${(Sim().LABEL[t] || t).toLowerCase()} per user a day${showKb ? ` (~${size(kb)} each)` : ''}`); }
+      // The cache question needs the hot set: how many distinct items are read in a day, and their size.
+      if (est?.includes('cacheGb') && T.read?.workingSetGb) { const kb = T.read.kb ?? Sim().KB.read;
+        parts.push(`about ${Math.round(T.read.workingSetGb * 1e6 / kb).toLocaleString('en')} different items read in a day (~${size(kb)} each)`); }
       return `<p class="rp-traffic"><b>${Number(l.dau).toLocaleString('en')}</b> daily users · ${parts.join(' · ')} · evening peak about ${T.peak || 2}× the average on an ordinary day${l.far?.share ? ` · ${Math.round(l.far.share * 100)}% of users an ocean away` : ''}${!est && l.data?.gb ? ` · ${B().fmt(l.data.gb)} GB already stored` : ''}${!est && l.data?.mediaGb ? ` plus ${B().fmt(l.data.mediaGb)} GB of media` : ''}</p>`;
     }
     function stepsHtml() {
@@ -164,7 +167,7 @@
       if (l.ai) return 'Working: questions a day = users × questions per user. Peak per second = that ÷ 86,400 × the peak multiple. Tokens per question = the prompt plus top-k × passage size, plus the answer. The large model costs $3 per million tokens in and $15 per million out, so a month is questions × 30 × (tokens in × 3 + tokens out × 15) ÷ 1,000,000.';
       const T = l.traffic, peak = Math.max(...Sim().curve(Sim().normalize(l)));
       const reads = ['read', 'media', 'search', 'geo'].filter(t => T[t]?.perUser).map(t => T[t].perUser), writes = ['write', 'upload', 'realtime', 'payment', 'locate'].filter(t => T[t]?.perUser).map(t => T[t].perUser);
-      return `Working: ${Number(l.dau).toLocaleString('en')} users × ${reads.reduce((a, b) => a + b, 0)} reads a day ÷ 86,400 s × ${peak.toFixed(1)} at peak; writes the same way with ${writes.reduce((a, b) => a + b, 0)} a day. Storage is writes a day × their size × 365. Bandwidth is every response's size, summed over a month.`;
+      return `Working: ${Number(l.dau).toLocaleString('en')} users × ${reads.reduce((a, b) => a + b, 0)} reads a day ÷ 86,400 s × ${peak.toFixed(1)} at peak; writes the same way with ${writes.reduce((a, b) => a + b, 0)} a day. Storage is writes a day × their size × 365. Bandwidth is every response's size, summed over a month.${T.read?.workingSetGb ? ' The cache holds the hot set: the different items read in a day × their size.' : ''}`;
     }
     function buildHtml(l) {
       const h = (l.hints || []).slice(0, hints);
