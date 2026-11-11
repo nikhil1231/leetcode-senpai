@@ -523,3 +523,39 @@ details.sd-goals summary { cursor:pointer; font-size:11px; letter-spacing:.08em;
 @media (min-width:1101px) { .sd-pager-dots { display:none; } }
 @media (max-width:1100px) { .sd-rail-merged .sd-path-rail { display:none; } }
 [data-check-slot] > #sd-check { margin:0; }
+
+/* Numbers drill (sd-numbers.js): the default way into Numbers to know. While it is on, the tutor and the
+   notes step aside; a tutor session opened from elsewhere takes the page instead. */
+.tab:has(.nd-host.is-on):not(:has(.tu-panel)) .sd-rich-layout, .tab:has(.nd-host.is-on) .tu-host:not(:has(.tu-panel)) { display:none !important; }
+.tab:has(.tu-panel) .nd-host { display:none; }
+.nd-host { margin:14px 0 18px; }
+.nd-switch { display:inline-flex; gap:4px; padding:3px; border:1px solid var(--line); border-radius:9px; background:var(--panel); }
+.nd-tab { padding:6px 12px; border:0; border-radius:7px; background:none; color:var(--text-2); font:inherit; font-size:13px; cursor:pointer; }
+.nd-tab.is-on { background:var(--accent-soft); color:var(--text); }
+.nd-tab:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.nd-body { display:grid; grid-template-columns:minmax(0, 1fr) 280px; gap:18px; margin-top:12px; align-items:start; }
+.nd-card, .nd-score { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px; }
+.nd-q { font-size:20px; line-height:1.4; margin:6px 0 16px; max-width:62ch; }
+.nd-form { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.nd-value { flex:1 1 220px; max-width:320px; font-size:16px; }
+.nd-unit { flex:0 0 150px; }
+.nd-result { margin-top:16px; padding:12px 14px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); }
+.nd-result > b { font-size:15px; }
+.nd-result p { margin:6px 0 0; }
+.nd-result.is-good { border-color:var(--green); }
+.nd-result.is-good > b { color:var(--green); }
+.nd-result.is-warn { border-color:var(--amber); }
+.nd-result.is-warn > b { color:var(--amber); }
+.nd-result.is-bad { border-color:var(--red); }
+.nd-result.is-bad > b { color:var(--red); }
+.nd-card .sd-actions { margin-top:14px; align-items:center; }
+.nd-big { display:flex; align-items:baseline; gap:10px; margin:6px 0 10px; font-size:18px; color:var(--text-2); }
+.nd-big b { font-size:34px; color:var(--text); }
+.nd-big small { font-size:13px; color:var(--muted); }
+.nd-dots { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px; }
+.nd-dot { width:12px; height:12px; border-radius:50%; background:var(--line); }
+.nd-dot.is-good { background:var(--green); }
+.nd-dot.is-warn { background:var(--amber); }
+.nd-dot.is-bad { background:var(--red); }
+.nd-score p { font-size:13px; margin:8px 0 0; }
+@media (max-width: 900px) { .nd-body { grid-template-columns:minmax(0, 1fr); } }

@@ -108,7 +108,7 @@
     const number=catalog.course.lessons.findIndex(l=>l.id===lesson.id)+1;
     const done=Object.values(lessonState?.activities||{}).filter(a=>a.done).length;
     return `<div class="sd-breadcrumb">${btn('← Curriculum','navigate','data-view="curriculum"')}<span>/ ${esc(cat.title)}</span></div>`+
-      `<div class="sd-page-intro sd-rich-intro"><span class="sd-eyebrow">LESSON ${number} · ${lesson.minutes} MIN · ${lesson.interactive} ACTIVITIES</span><h2 id="sd-heading" tabindex="-1">${esc(lesson.title)}</h2><p>${rich(lesson.principle)}</p><div id="sd-tutor-slot"></div></div>`+
+      `<div class="sd-page-intro sd-rich-intro"><span class="sd-eyebrow">LESSON ${number} · ${lesson.minutes} MIN · ${lesson.interactive} ACTIVITIES</span><h2 id="sd-heading" tabindex="-1">${esc(lesson.title)}</h2><p>${rich(lesson.principle)}</p><div id="sd-tutor-slot"></div></div>${window.NumbersDrill?.lessons.includes(lesson.id)?'<div id="sd-numbers-slot"></div>':''}`+
       `<div class="sd-rich-layout"><article class="sd-rich"><details class="sd-goals"><summary>By the end you can</summary><ul>${lesson.objectives.map(o=>`<li>${rich(o)}</li>`).join('')}</ul></details><div id="sd-lesson-blocks"></div>${checkHtml(state)}<footer class="sd-lesson-foot"><div class="sd-actions sd-finish">${btn(state.read?(lesson.next_id?'Next lesson →':'Back to the curriculum'):lesson.next_id?'Finish: next lesson →':'Finish the lesson','finish','',true)}${state.read?'':'<span class="sd-muted">Marks this lesson read on your map.</span>'}</div><div class="sd-elsewhere"><span class="sd-eyebrow">ELSEWHERE</span><div class="sd-actions">${btn('Practise this topic','topic-fire',`data-id="${lesson.id}"`)}${lesson.case_id?btn('Try the related design case','case',`data-case="${lesson.case_id}"`):''}</div><div id="sd-ripple-slot"></div><details><summary>Further reading</summary><ul>${lesson.sources.map(([title,url])=>`<li><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></li>`).join('')}</ul></details></div></footer></article>`+
       `<aside class="sd-rich-rail"><div class="sd-rail-card sd-rail-merged"><span class="sd-eyebrow">PROGRESS</span><div class="sd-rail-progress"><b id="sd-activity-count">${done}</b>/<span>${lesson.interactive}</span> activities</div><div class="sd-course-bar"><span id="sd-activity-bar" style="width:${lesson.interactive?100*done/lesson.interactive:0}%"></span></div><p class="sd-muted">Check: ${state.latest_score===null?'not taken':`${state.latest_score}/${state.latest_total}`}${state.passed?' · passed':''}</p><nav id="sd-lesson-rail"></nav></div></aside></div>`;
   }
@@ -263,6 +263,7 @@
         recall:(block,text)=>call('/course/lessons/'+id+'/recall','POST',{block:block.key,text}),
         pitch:(block,text,followup,after)=>call('/course/lessons/'+id+'/pitch','POST',{block:block.key,text,followup,after:after||''}),
         done:(key,correct)=>recordActivity(id,key,correct)});
+      window.NumbersDrill?.mount(root.querySelector('#sd-numbers-slot'),{layout:root.querySelector('.sd-rich-layout')});
       return;
     }
     if(blockCache?.id!==lesson.id) {

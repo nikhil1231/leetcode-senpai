@@ -34,6 +34,7 @@ from . import store as store_mod
 from .store import get_store
 from .system_design import router as system_design_router
 from .system_design_learning import router as system_design_learning_router
+from .system_design_numbers import router as system_design_numbers_router
 from .system_design_items import router as system_design_items_router
 from .system_design_papers import router as system_design_papers_router
 from .system_design_drills import router as system_design_drills_router
@@ -101,6 +102,7 @@ async def lifespan(_app):
 app = FastAPI(title="Leetcode Senpai V2", lifespan=lifespan)
 app.include_router(system_design_router)
 app.include_router(system_design_learning_router)
+app.include_router(system_design_numbers_router)
 app.include_router(system_design_items_router)
 app.include_router(system_design_papers_router)
 app.include_router(system_design_drills_router)

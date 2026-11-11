@@ -59,6 +59,7 @@
 .tu-goals-btn .tu-progress { color: var(--muted); font-size: 12px; margin-left: 4px; }
 .tu-goals-btn[aria-expanded="true"] { border-color: var(--accent-line); color: var(--accent); }
 /* The stage: what the tutor brought in, beside the chat. */
+.tu-stage[hidden] { display: none; }
 .tu-stage { min-width: 0; display: flex; flex-direction: column; gap: 10px; height: max(430px, calc(100vh - 260px)); position: sticky; top: 12px; }
 .tu-stage-tabs { display: flex; gap: 6px; overflow-x: auto; flex: none; padding-bottom: 2px; }
 .tu-stage-tab { flex: none; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
