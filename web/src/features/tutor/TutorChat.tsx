@@ -80,7 +80,11 @@ export function turnsToMessages(session: Any, cast: TutorChatProps["cast"], bloc
   }).filter((m: ChatMessage | null): m is ChatMessage => m !== null);
 }
 
-type Preview = { text: string; parts: ChatPart[]; mine?: string; speaker: string };
+// base: how many turns the session had when the reply began. Once the stored session has more, it replaces the
+// preview in the same redraw (clearing the preview first would shrink the thread for a frame and jump the scroll).
+type Preview = { text: string; parts: ChatPart[]; mine?: string; speaker: string; base: number };
+
+const tip = (a: Record<string, unknown>) => Array.isArray(a.notes) ? (a.notes as string[]).join("\n") : "What this turn showed went into your knowledge model";
 
 function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<TutorChatHandle> }) {
   const { session, cast, blocks } = props;
@@ -95,7 +99,8 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
   const lastSpeaker = () => { const turns = live.current.session?.turns || []; for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "tutor") return turns[i].speaker; return "tutor"; };
   const run = async (path: string, body: Any, mine: string | undefined, speaker: string) => {
     setBusy(true); setError("");
-    setPreview({ text: "", parts: [], mine, speaker });
+    const base = live.current.session?.turns?.length || 0;
+    setPreview({ text: "", parts: [], mine, speaker, base });
     let shown = { text: "", parts: [] as ChatPart[] };
     try {
       let stored: Any = null;
@@ -105,13 +110,13 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
         else if (e.type === "widget") shown = { ...shown, parts: [...shown.parts, { tool: "pending", args: { text: WIDGET[e.kind] || "One moment…" } }] };
         else if (e.type === "marker") { const hit = MARKERS.find(([re]) => re.test(e.text)); if (hit) shown = { ...shown, parts: [...shown.parts, hit[1](e.text.match(hit[0])!)] }; }
         else if (e.type === "done") stored = e.session ?? e;
-        if (e.type !== "done") setPreview({ ...shown, mine, speaker });
+        if (e.type !== "done") setPreview({ ...shown, mine, speaker, base });
       });
-      setPreview(null);
       if (stored) {
         live.current.onSession(stored);
         if (stored.error) setError(stored.error); else pending.current = null;
       }
+      if (!((stored?.turns?.length || 0) > base)) setPreview(null);   // otherwise the effect below clears it
       return stored;
     } catch (e) {
       setPreview(null);
@@ -132,28 +137,29 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
     end: () => run(`/tutor/sessions/${live.current.session.id}/end`, {}, undefined, "tutor"),
   }));
 
+  const stale = !!preview && (session?.turns?.length || 0) > preview.base;
+  useEffect(() => { if (stale) setPreview(null); }, [stale]);
+
   const messages = useMemo(() => {
     const out = turnsToMessages(session, cast, blocks, props.review);
-    if (preview?.mine) out.push({ id: "mine", role: "user", text: preview.mine });
-    if (preview) {
-      const who = preview.speaker === "tutor" ? { name: "Tutor" } : (cast(preview.speaker) || { name: preview.speaker });
-      out.push({ id: "preview", role: "assistant", text: preview.text, parts: preview.parts, streaming: true, who: { ...who, key: preview.speaker } });
-    }
+    if (!preview || stale) return out;
+    if (preview.mine) out.push({ id: "mine", role: "user", text: preview.mine });
+    const who = preview.speaker === "tutor" ? { name: "Tutor" } : (cast(preview.speaker) || { name: preview.speaker });
+    out.push({ id: "preview", role: "assistant", text: preview.text, parts: preview.parts, streaming: true, who: { ...who, key: preview.speaker } });
     return out;
-  }, [session, cast, blocks, preview, props.review]);
+  }, [session, cast, blocks, preview, stale, props.review]);
 
   const tools = useMemo<Record<string, ToolRenderer>>(() => ({
     stage: (a) => <button type="button" className={`tu-chip${a.correct === true ? " is-right" : a.correct === false ? " is-wrong" : ""}`} data-stage-chip={String(a.id)} onClick={() => {
       live.current.showStage(String(a.id));
       if (window.matchMedia?.("(max-width: 1000px)").matches) document.querySelector(".tu-stage")?.scrollIntoView?.({ block: "start", behavior: "smooth" });
-    }} title={a.correct === true ? "You got this right" : a.correct === false ? "You missed this one" : undefined}>
+    }} data-tip={a.correct === true ? "You got this right" : a.correct === false ? "You missed this one" : undefined}>
       {a.correct === undefined ? <span aria-hidden="true">▸</span> : <span className="tu-mark" aria-label={a.correct ? "Right:" : "Missed:"}>{a.correct ? "✓" : "✗"}</span>} {String(a.label)}</button>,
     links: (a) => <div className="tu-links">{(a.links as Any[]).map((l, i) => <a key={i} className={`tu-link is-${l.kind}`} href={l.href}><span>{({ game: "Play in Ripple Ops", design: "Worked design", internals: "Simulator" } as Any)[l.kind] || "Open"}</span><b>{l.title} →</b></a>)}</div>,
     move: (a) => <div className="tu-move"><button type="button" className="button is-primary" onClick={() => live.current.onMove(a)}>Carry on in {String(a.title)} →</button></div>,
     pending: (a) => <div className="ch-card is-pending">{String(a.text)}</div>,
     noted: () => <span className="ch-chip">Noted</span>,
-    recorded: (a) => <span className="tu-recorded" tabIndex={0}
-      title={Array.isArray(a.notes) ? (a.notes as string[]).join("\n") : "What this turn showed went into your knowledge model"}>Recorded {Number(a.n)} {Number(a.n) === 1 ? "thing" : "things"} you showed</span>,
+    recorded: (a) => <span className="tu-recorded" tabIndex={0} aria-description={tip(a)} data-tip={tip(a)}>Recorded {Number(a.n)} {Number(a.n) === 1 ? "thing" : "things"} you showed</span>,
   }), []);
 
   const ended = session?.status === "ended";

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Chat, type ChatMessage } from "./Chat";
+import { Chat, StreamingMarkdown, type ChatMessage } from "./Chat";
 import { mdHtml } from "@/lib/lesson-md";
 
 // jsdom has no layout: assistant-ui measures the thread for auto-scroll.
@@ -56,5 +56,18 @@ describe("lesson Markdown", () => {
   it("escapes, and renders a reply cut off mid-fence", () => {
     expect(mdHtml("<script>x</script>")).toBe("<p>&lt;script&gt;x&lt;/script&gt;</p>");
     expect(mdHtml("Code:\n```python\nx = 1")).toContain('<pre class="sd-code" data-lang="python"><code>x = 1</code></pre>');
+  });
+
+  it("fades a streaming reply in word by word, keeping the Markdown and the words already shown", () => {
+    const { container, rerender } = render(<StreamingMarkdown text="Because **one bit** goes" />);
+    expect(container.querySelector("strong")?.textContent).toBe("one bit");
+    expect(container.textContent).toBe("Because one bit goes");
+    expect(container.querySelectorAll(".ch-fade")).toHaveLength(4);   // every word is new, so all four fade in
+    const delay = () => parseInt(container.querySelector<HTMLElement>(".ch-fade")!.style.animationDelay);
+    const before = delay();
+    rerender(<StreamingMarkdown text="Because **one bit** goes down the wire" />);
+    expect(container.textContent).toBe("Because one bit goes down the wire");
+    expect(container.querySelectorAll(".ch-fade").length).toBe(7);    // still fading: drawn again, not restarted
+    expect(delay()).toBeLessThanOrEqual(before);   // the first word keeps its start time, it isn't restarted
   });
 });

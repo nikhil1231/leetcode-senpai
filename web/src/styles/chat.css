@@ -19,6 +19,20 @@
 .ch-md pre { max-width: 100%; overflow-x: auto; }
 .ch-msg.is-streaming .ch-md > :last-child::after { content: ""; display: inline-block; width: .5em; height: 1em; margin-left: 2px; vertical-align: -2px; border-radius: 2px; background: rgba(var(--accent-rgb), .7); animation: ch-caret 1s steps(2) infinite; }
 @keyframes ch-caret { 50% { opacity: 0; } }
+.ch-fade { animation: ch-fade-in 450ms ease-out both; }
+@keyframes ch-fade-in { from { opacity: 0; } }
+/* Tooltips in a chat: the app's own look, at once, instead of the browser's slow default one. Multi-line text keeps its breaks. */
+.ch-thread [data-tip] { position: relative; }
+.ch-thread [data-tip]::before {
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; z-index: 31;
+  transform: translateX(-50%) translateY(2px); width: max-content; max-width: min(280px, 70vw); padding: 5px 9px;
+  border: 1px solid var(--line-hi); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow);
+  color: var(--text); font-size: 12px; font-weight: 500; line-height: 1.4; text-align: left; text-decoration: none;
+  white-space: pre-line; pointer-events: none; opacity: 0; transition: opacity .08s, transform .08s;
+}
+.ch-thread [data-tip]:hover::before, .ch-thread [data-tip]:focus-visible::before { opacity: 1; transform: translateX(-50%); }
+.ch-thread .tu-recorded[data-tip]::before { left: 0; transform: translateY(2px); }
+.ch-thread .tu-recorded[data-tip]:hover::before, .ch-thread .tu-recorded[data-tip]:focus-visible::before { transform: none; }
 .ch-who { display: flex; align-items: baseline; gap: 6px; margin: 0 6px 4px; font-size: 13px; }
 .ch-who b { font-weight: 600; }
 .ch-msg[data-speaker="priya"] .ch-who b { color: var(--red); }
@@ -80,7 +94,7 @@ body.chat-screen { overflow: hidden; }
 .chat-screen-host { --chat-bg: var(--bg); position: fixed; z-index: 20; top: var(--chat-top, 0); left: var(--chat-left, 0); right: var(--chat-right, 0); bottom: 0; margin: 0 !important; max-width: none !important; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--bg); padding: 12px clamp(14px, 3vw, 32px) 0; border: 0; border-radius: 0; }
 
 @media (max-width: 700px), (pointer: coarse) { .ch-input { font-size: 16px; } .ch-msg.is-me .ch-bubble { max-width: 88%; } }
-@media (prefers-reduced-motion: reduce) { .ch-typing span, .ch-msg.is-streaming .ch-md > :last-child::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .ch-typing span, .ch-msg.is-streaming .ch-md > :last-child::after, .ch-fade { animation: none; } }
 /* In a chat screen the header carries the title, so it reads as one (the System Design header is small breadcrumbs). */
 body.chat-screen.section-design .page-title { font-size: 15px; font-weight: 600; color: var(--text); }
 body.chat-screen.section-design .page-title::before { display: none; }

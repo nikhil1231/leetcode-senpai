@@ -4,6 +4,7 @@ import {
   ActionBarPrimitive, AssistantRuntimeProvider, ComposerPrimitive, MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime,
   type AppendMessage, type ThreadMessageLike, type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
+import type { TextMessagePartProps } from "@assistant-ui/react";
 import { mdHtml } from "@/lib/lesson-md";
 
 // Every chat in the app on assistant-ui's unstyled primitives, laid out like the library's default thread (replies as
@@ -86,7 +87,56 @@ export function Markdown({ text }: { text: string }) {
   return <div className="ch-md sd-md" dangerouslySetInnerHTML={{ __html: mdHtml(text) }} />;
 }
 
-function AssistantText({ text }: { text: string }) { return text.trim() ? <Markdown text={text} /> : null; }
+// A reply while it streams: each word fades in, staggered across a chunk so the text wipes on left to right instead of
+// landing a line at a time. Every update redraws the Markdown, so a word's start time is kept by its index and a word
+// still fading is drawn with a negative delay, carrying on where it was.
+const FADE_MS = 450;
+export function StreamingMarkdown({ text }: { text: string }) {
+  const el = useRef<HTMLDivElement>(null);
+  const births = useRef<number[]>([]);
+  useLayoutEffect(() => {
+    const root = el.current;
+    if (!root) return;
+    root.innerHTML = mdHtml(text);
+    const now = performance.now(), seen = births.current;
+    const nodes: Text[] = [];
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walk.nextNode()) nodes.push(walk.currentNode as Text);
+    const total = nodes.reduce((n, t) => n + (t.data.match(/\S+/g)?.length || 0), 0);
+    if (total > seen.length) {
+      const step = Math.min(28, Math.max(4, 500 / (total - seen.length)));
+      let t = Math.max(now, seen[seen.length - 1] || 0);
+      while (seen.length < total) { t += step; seen.push(t); }
+    }
+    let i = 0;
+    for (const node of nodes) {
+      const parts = node.data.split(/(\s+)/);
+      const first = i;
+      const words = parts.filter((w) => w && !/^\s+$/.test(w)).length;
+      i += words;
+      if (!words || now - seen[i - 1] >= FADE_MS) continue;   // every word here is already fully in
+      const frag = document.createDocumentFragment();
+      let k = first;
+      for (const w of parts) {
+        if (!w) continue;
+        if (/^\s+$/.test(w) || now - seen[k] >= FADE_MS) { frag.append(w); if (!/^\s+$/.test(w)) k++; continue; }
+        const span = document.createElement("span");
+        span.className = "ch-fade";
+        span.style.animationDelay = `${Math.round(seen[k] - now)}ms`;
+        span.textContent = w;
+        frag.append(span);
+        k++;
+      }
+      node.replaceWith(frag);
+    }
+  }, [text]);
+  return <div ref={el} className="ch-md sd-md" />;
+}
+
+function AssistantText({ text, status }: TextMessagePartProps) {
+  if (!text.trim()) return null;
+  return status?.type === "running" ? <StreamingMarkdown text={text} /> : <Markdown text={text} />;
+}
 
 function ToolPart({ toolName, args, toolCallId }: ToolCallMessagePartProps) {
   const { byId, tools } = useContext(ChatCtx);
@@ -119,7 +169,7 @@ function Row({ id, role }: { id: string; role: string }) {
       {m.after}
       {!m.streaming && m.text.trim() && (
         <ActionBarPrimitive.Root className="ch-actions" autohide="never">
-          <ActionBarPrimitive.Copy className="ch-action" aria-label="Copy" title="Copy">
+          <ActionBarPrimitive.Copy className="ch-action" aria-label="Copy" data-tip="Copy">
             <svg viewBox="0 0 24 24" aria-hidden="true" className="ch-icon-copy"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
             <svg viewBox="0 0 24 24" aria-hidden="true" className="ch-icon-done"><path d="m5 12 5 5L20 7" /></svg>
           </ActionBarPrimitive.Copy>
@@ -182,7 +232,7 @@ export function Chat(p: Props) {
     <ChatCtx.Provider value={ctx}>
       <AssistantRuntimeProvider runtime={runtime}>
         <ThreadPrimitive.Root className={`ch-thread ${p.className || ""}`}>
-          <ThreadPrimitive.Viewport ref={log} className="ch-log" role="log" aria-live="polite" autoScroll={false} scrollToBottomOnRunStart={false}>
+          <ThreadPrimitive.Viewport ref={log} className="ch-log" role="log" aria-live="polite" autoScroll={false} scrollToBottomOnRunStart={false} scrollToBottomOnInitialize={false}>
             {!p.messages.length && !p.running && p.empty}
             <ThreadPrimitive.Messages>{({ message }) => <Row id={message.id} role={message.role} />}</ThreadPrimitive.Messages>
             {waiting && <div className="ch-msg is-them"><div className="ch-bubble ch-typing" role="status" aria-label={p.typingLabel || "Typing"}><span /><span /><span /></div></div>}
@@ -197,7 +247,7 @@ export function Chat(p: Props) {
                     placeholder={p.placeholder || "Message"} aria-label={p.label || p.placeholder || "Message"} autoFocus={p.autoFocus} submitMode="enter" />
                   <div className="ch-composer-actions">
                     {p.composerExtra}
-                    <ComposerPrimitive.Send className="ch-send" aria-label="Send" title="Send (Enter)">
+                    <ComposerPrimitive.Send className="ch-send" aria-label="Send" data-tip="Send (Enter)">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
                     </ComposerPrimitive.Send>
                   </div>
