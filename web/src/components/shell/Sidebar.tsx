@@ -14,7 +14,7 @@ const SD_UNDER: Record<string, string> = {
 };
 const SD_NAV = [
   ["home", "Home", "i-today"], ["curriculum", "Learn", "i-topics"], ["simulators", "Simulators", "i-discover"],
-  ["practise", "Practise", "i-drill"], ["progress", "What you know", "i-insights"],
+  ["practise", "Practise", "i-drill"], ["principles", "Principles", "i-playbook"], ["progress", "What you know", "i-insights"],
 ] as const;
 
 export const TRACK_NAV: Record<string, [string, string, string][]> = {

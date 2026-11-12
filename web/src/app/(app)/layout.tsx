@@ -10,6 +10,7 @@ import "@/styles/sd-progress.css";
 import "@/styles/visualise.css";
 import "@/styles/sd-walkthrough.css";
 import "@/styles/sd-simulators.css";
+import "@/styles/sd-principles.css";
 import "@/styles/sd-game.css";
 import "@/styles/sd-outage.css";
 import "@/styles/course-sims.css";

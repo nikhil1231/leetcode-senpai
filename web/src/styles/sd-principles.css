@@ -1,0 +1,86 @@
+/* System Design › Principles (web/src/features/system-design/PrinciplesPage.tsx). */
+.sdp { max-width:1280px; margin:0 auto; font-family:var(--font); }
+.sdp h3, .sdp h4 { color:var(--text); margin:0; }
+.sdp [id^="p-"], .sdp [id^="g-"] { scroll-margin-top:84px; }
+
+/* The bigger picture: the swap table, a recommendation-style card. */
+.sdp-big { background:linear-gradient(125deg, var(--accent-soft), transparent 52%), var(--panel); border:1px solid var(--accent-line);
+  border-radius:16px; padding:26px 28px 22px; margin-bottom:22px; }
+.sdp-big h3 { font-size:22px; font-weight:560; letter-spacing:-.02em; line-height:1.3; margin:8px 0 10px; max-width:760px; }
+.sdp-big > p { color:var(--text-2); font-size:14px; line-height:1.75; margin:0 0 18px; max-width:76ch; }
+.sdp-table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--bg-elev); }
+.sdp-table { width:100%; border-collapse:collapse; font-size:13.5px; min-width:560px; }
+.sdp-table th { text-align:left; font-size:11px; letter-spacing:.12em; text-transform:uppercase; font-weight:650; color:var(--muted);
+  padding:12px 16px; border-bottom:1px solid var(--line); }
+.sdp-table td { padding:12px 16px; border-bottom:1px solid var(--line-soft); vertical-align:top; line-height:1.5; }
+.sdp-table tbody tr:last-child td { border-bottom:0; }
+.sdp-table tbody tr:hover td { background:rgba(var(--accent-rgb), .04); }
+.sdp-hard { color:var(--text-2); width:34%; }
+.sdp-arrow { color:var(--accent); width:28px; padding-left:0 !important; padding-right:0 !important; text-align:center; }
+.sdp-easy { color:var(--text); font-weight:520; }
+.sdp-refs { white-space:nowrap; width:1%; }
+.sdp-ref { display:inline-grid; place-items:center; min-width:24px; height:24px; padding:0 6px; margin-right:4px; border-radius:7px;
+  font-size:12px; font-weight:650; font-variant-numeric:tabular-nums; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent-line); text-decoration:none; }
+.sdp-ref:hover { background:rgba(var(--accent-rgb), .22); }
+.sdp-ref:focus-visible, .sdp-jump a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* Jump links to the four groups. */
+.sdp-jump { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; margin-bottom:34px; }
+.sdp-jump a { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 14px; border-radius:10px;
+  background:var(--panel); border:1px solid var(--line); color:var(--text-2); text-decoration:none; font-size:13px; }
+.sdp-jump a:hover { border-color:var(--accent-line); color:var(--text); }
+.sdp-jump b { font-weight:600; }
+.sdp-jump span { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+
+/* Groups and principle cards. */
+.sdp-group { margin-bottom:38px; }
+.sdp-group-head { display:flex; align-items:baseline; gap:14px; padding-bottom:12px; margin-bottom:16px; border-bottom:1px solid var(--line); }
+.sdp-group-n { color:var(--accent); font-size:13px; font-weight:650; letter-spacing:.08em; font-variant-numeric:tabular-nums; }
+.sdp-group-head h3 { font-size:20px; font-weight:580; letter-spacing:-.015em; }
+.sdp-group-head p { color:var(--muted); font-size:13px; margin:4px 0 0; }
+.sdp-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; }
+.sdp-card { display:flex; flex-direction:column; gap:12px; background:var(--panel); border:1px solid var(--line); border-radius:14px;
+  padding:18px 20px; transition:border-color .15s; }
+.sdp-card:hover { border-color:var(--line-hi); }
+.sdp-card:target { border-color:var(--accent-line); box-shadow:0 0 0 3px var(--accent-soft); }
+.sdp-card-top { display:flex; gap:12px; align-items:baseline; }
+.sdp-num { color:var(--accent); font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; flex:none; }
+.sdp-card h4 { font-size:16px; font-weight:600; line-height:1.4; letter-spacing:-.01em; }
+.sdp-body { color:var(--text-2); font-size:13.5px; line-height:1.7; margin:0; }
+.sdp-example { background:var(--panel2); border-left:2px solid var(--accent-line); border-radius:0 8px 8px 0; padding:10px 14px; }
+.sdp-example span, .sdp-ask span { display:block; font-size:11px; letter-spacing:.12em; text-transform:uppercase; font-weight:650; color:var(--muted); margin-bottom:4px; }
+.sdp-example p { color:var(--text-2); font-size:13px; line-height:1.65; margin:0; }
+.sdp-ask { margin:auto 0 0; padding-top:10px; border-top:1px dashed var(--line); color:var(--text); font-size:13.5px; font-style:italic; line-height:1.55; }
+.sdp-ask span { font-style:normal; color:var(--accent); }
+
+/* Closing: reshape the problem. */
+.sdp-reframe { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px 28px; }
+.sdp-reframe h3 { font-size:20px; font-weight:580; margin:8px 0 10px; }
+.sdp-reframe > p { color:var(--text-2); font-size:14px; line-height:1.75; margin:0 0 16px; max-width:76ch; }
+.sdp-reframe-list { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.4fr); gap:0; margin:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.sdp-reframe-list dt, .sdp-reframe-list dd { margin:0; padding:12px 16px; font-size:13.5px; line-height:1.55; border-bottom:1px solid var(--line-soft); }
+.sdp-reframe-list dt { color:var(--muted); background:var(--bg-elev); }
+.sdp-reframe-list dd { color:var(--text); }
+.sdp-reframe-list dt:nth-last-of-type(1), .sdp-reframe-list dd:last-of-type { border-bottom:0; }
+.sdp-close { margin:16px 0 0 !important; color:var(--text) !important; font-weight:550; }
+
+@media (max-width: 960px) {
+  .sdp-jump { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .sdp-grid { grid-template-columns:1fr; }
+  .sdp-big, .sdp-reframe { padding:20px 18px; }
+  .sdp-reframe-list { grid-template-columns:1fr; }
+  .sdp-reframe-list dt { border-bottom:0; padding-bottom:4px; }
+}
+
+@media (max-width: 600px) {
+  .sdp-table { min-width:0; }
+  .sdp-table thead { display:none; }
+  .sdp-table tr { display:grid; grid-template-columns:1fr auto; padding:12px 14px; border-bottom:1px solid var(--line-soft); }
+  .sdp-table tbody tr:last-child { border-bottom:0; }
+  .sdp-table td { padding:0; border:0; width:auto; }
+  .sdp-hard { grid-column:1; font-size:12.5px; }
+  .sdp-arrow { display:none; }
+  .sdp-easy { grid-column:1; margin-top:4px; }
+  .sdp-refs { grid-column:2; grid-row:1 / span 2; align-self:center; padding-left:10px !important; }
+}

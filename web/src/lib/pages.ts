@@ -3,7 +3,7 @@ import { LEETCODE_TABS } from "./sections";
 // Every page the palette can jump to (and Settings' usage panel can say you never open).
 export interface PageEntry { key: string; title: string; sub: string; href: string }
 
-export const SD_VIEWS: [string, string][] = [["", "Home"], ["curriculum", "Learn"], ["simulators", "Simulators"], ["practise", "Practise"], ["progress", "What you know"],
+export const SD_VIEWS: [string, string][] = [["", "Home"], ["curriculum", "Learn"], ["simulators", "Simulators"], ["practise", "Practise"], ["principles", "Principles"], ["progress", "What you know"],
   ["quickfire", "Quickfire"], ["mistakes", "Mistakes book"], ["papers", "Past papers"], ["drills", "Estimation drills"], ["skills", "Skill drills"], ["cases", "Design cases"]];
 export const TRACK_VIEWS: [string, string, [string, string][]][] = [
   ["fundamentals", "Fundamentals", [["", "Home"], ["lessons", "Learn"], ["practise", "Practise"], ["progress", "What you know"]]],
