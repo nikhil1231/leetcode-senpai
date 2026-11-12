@@ -106,7 +106,7 @@
   // Reading the notes, the tutor is a way in, not the page's next step: two icon buttons by the lesson title
   // (start the tutor; what the outside tutor reported, opened as a popover), not banners above the lesson.
   const ICON = {
-    chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9.5 12 5l10 4.5-10 4.5z"/><path d="M6 11.3v4.2c0 1.4 2.7 2.8 6 2.8s6-1.4 6-2.8v-4.2"/><path d="M22 9.5V15"/></svg>',
     report: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
   };
   const toolsMode = () => !!T.info && !T.warming && !T.passed && (!T.info.enabled || T.notes || !!T.ctx.lesson.overview) && !(T.open && T.session);
