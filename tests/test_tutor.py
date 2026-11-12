@@ -164,6 +164,8 @@ def test_notes_keep_only_grounded_evidence():
     assert s['objectives'][2]['status'] == 'demonstrated' and s['objectives'][0]['status'] == 'open'
     assert [e['point'] for e in writes['evidence']] == [MISS]
     assert writes['misconceptions'] == [] and writes['resolved'] == ['tutor:m1'] and s['summary'] == 'Has the miss-rate rule.'
+    assert ses.recorded_notes(writes, {MISS: 'Misses times requests'}, [{'_key': 'tutor:m1', 'text': 'thinks TTL fixes it'}]) == [
+        'Shown: Misses times requests', 'Cleared up: thinks TTL fixes it']
 
 
 def test_objectives_never_regress_and_a_correct_block_can_demonstrate():

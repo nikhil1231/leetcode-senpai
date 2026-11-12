@@ -748,6 +748,14 @@ def apply_notes(session, notes, said, blocks, allowed_points, open_keys, now):
     return {'evidence': evidence, 'misconceptions': mistaken, 'resolved': resolved}, notes['story_event']
 
 
+
+def recorded_notes(writes, claims, open_mis):
+    """What a turn put in the knowledge model, one line each, for the chat's tooltip."""
+    texts = {m['_key']: m['text'] for m in open_mis}
+    return ([f"Shown: {claims.get(e['point'], e['point'])}" for e in writes['evidence']]
+            + [f"Mistaken: {m['text']}" for m in writes['misconceptions']]
+            + [f"Cleared up: {texts.get(k, k)}" for k in writes['resolved']])
+
 # ---- lifecycle -------------------------------------------------------------------------------
 
 def new(sid, lesson, mode, now):

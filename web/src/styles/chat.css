@@ -28,10 +28,12 @@
 .ch-msg.is-me .ch-time { margin: 0 8px 3px; }
 .ch-note { align-self: center; color: var(--muted); font-size: 13px; text-align: center; }
 
-/* The reply's actions (copy): under the latest reply, and on hover for the rest, as in the library. */
-.ch-actions { display: flex; gap: 2px; margin: 4px 0 0; padding: 0 2px; }
-.ch-actions[data-floating] { opacity: 0; transition: opacity .15s; }
-.ch-msg:hover .ch-actions[data-floating], .ch-actions:focus-within { opacity: 1; }
+/* The reply's actions (copy): under the latest reply, and on hover for the rest. The row always keeps its space, so
+   showing it moves nothing. */
+.ch-actions { display: flex; gap: 2px; margin: 4px 0 0; padding: 0 2px; opacity: 0; transition: opacity .15s; }
+.ch-msg.is-last .ch-actions, .ch-msg:hover .ch-actions, .ch-actions:focus-within { opacity: 1; }
+/* The reply streaming in (and then the latest) is at least a view tall, so it can sit at the top while it is written. */
+.ch-msg.has-room { min-height: var(--ch-room, 0px); }
 .ch-action { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
 .ch-action:hover { background: var(--panel2, var(--panel)); color: var(--text); }
 .ch-action svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

@@ -25,6 +25,9 @@
   const MARK = {open: ['○', 'Not yet'], working: ['◐', 'In progress'], demonstrated: ['●', 'Shown']};
   const PREFER_NOTES = 'tutor:prefer-notes';
   const GOALS_OPEN = 'tutor:goals-open';
+  const STAGE_OFF = 'tutor:stage-off';
+  const stageOff = () => { try { return localStorage.getItem(STAGE_OFF) === '1'; } catch (_) { return false; } };
+  const setStageOff = off => { try { if (off) localStorage.setItem(STAGE_OFF, '1'); else localStorage.removeItem(STAGE_OFF); } catch (_) {} };
   const goalsOpen = () => { try { return localStorage.getItem(GOALS_OPEN) === '1'; } catch (_) { return false; } };
   const setGoalsOpen = on => { try { if (on) localStorage.setItem(GOALS_OPEN, '1'); else localStorage.removeItem(GOALS_OPEN); } catch (_) {} };
   const preferNotes = () => { try { return localStorage.getItem(PREFER_NOTES) === '1'; } catch (_) { return false; } };
@@ -158,11 +161,12 @@
     const s = T.session, mode = T.overview.modes.find(m => m.id === s.mode), open = goalsOpen();
     const back = T.ctx.lesson.overview ? 'Back to the overview' : T.ctx.lesson.map ? 'Back to the page' : 'Show the notes';
     return `<section class="tu-panel"><header class="tu-head"><div><span class="sd-eyebrow">TUTOR · ${esc(mode?.label || s.mode)}</span><h3>${esc(T.ctx.lesson.title)}</h3></div>
-        <div class="tu-head-actions"><button type="button" class="button tu-goals-btn" data-tu="goals" aria-expanded="${open}" aria-controls="tu-goals">Objectives <span class="tu-progress"></span></button>${btn(back, 'close')}${s.status === 'active' ? btn('End session', 'end') : ''}</div></header>
-      <div class="tu-body${open ? ' goals-open' : ''}">
+        <div class="tu-head-actions"><button type="button" class="button tu-goals-btn" data-tu="goals" aria-expanded="${open}" aria-controls="tu-goals">Objectives <span class="tu-progress"></span></button>${btn(back, 'close')}${s.status === 'active' ? btn('End session', 'end') : ''}</div>
+        <button type="button" class="tu-stage-btn" data-tu="stage" aria-expanded="${!stageOff()}" aria-controls="tu-stage" aria-label="Activities panel" title="${stageOff() ? 'Show' : 'Hide'} the activities panel" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5" /><path class="tu-stage-btn-fill" d="M14 4h4.5A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14z" /><path d="M14 4v16" /></svg></button></header>
+      <div class="tu-body${open ? ' goals-open' : ''}${stageOff() ? ' stage-off' : ''}">
         <aside class="tu-goals" id="tu-goals" aria-label="Objectives"${open ? '' : ' hidden'}><span class="sd-eyebrow">OBJECTIVES</span><ol class="tu-objectives"></ol></aside>
         <div class="tu-convo"></div>
-        <aside class="tu-stage" aria-label="Whiteboard and activities" hidden><div class="tu-stage-tabs" role="tablist" aria-label="What the tutor brought in"></div><div class="tu-stage-items"></div></aside>
+        <aside class="tu-stage" id="tu-stage" aria-label="Whiteboard and activities" hidden><div class="tu-stage-tabs" role="tablist" aria-label="What the tutor brought in"></div><div class="tu-stage-items"></div></aside>
       </div></section>`;
   }
 
@@ -181,10 +185,21 @@
     stage.querySelector('.tu-stage-tabs').appendChild(tab);
     stage.hidden = false;
     T.host.querySelector('.tu-body')?.classList.add('has-stage');
+    const toggle = T.host.querySelector('.tu-stage-btn'); if (toggle) toggle.hidden = false;
   }
-  function stageShow(id) {
+  // The stage folds away (the Activities button) so the chat can have the width; a chip, or something new brought in,
+  // opens it again.
+  function stageOpen(on) {
+    setStageOff(!on);
+    T.host.querySelector('.tu-body')?.classList.toggle('stage-off', !on);
+    const toggle = T.host.querySelector('.tu-stage-btn');
+    toggle?.setAttribute('aria-expanded', String(on));
+    toggle?.setAttribute('title', `${on ? 'Hide' : 'Show'} the activities panel`);
+  }
+  function stageShow(id, open = true) {
     const stage = T.host.querySelector('.tu-stage');
     if (!stage) return;
+    if (open) stageOpen(true);
     stage.querySelectorAll('.tu-stage-item').forEach(n => { n.hidden = n.dataset.stage !== id; });
     stage.querySelectorAll('.tu-stage-tab').forEach(n => { const on = n.dataset.stageTab === id; n.classList.toggle('is-on', on); n.setAttribute('aria-selected', String(on)); });
     T.host.querySelectorAll('.tu-chip').forEach(n => n.classList.toggle('is-on', n.dataset.stageChip === id));
@@ -244,6 +259,7 @@
         t.host.querySelector('.tu-goals-btn')?.setAttribute('aria-expanded', String(on));
         return;
       }
+      if (action === 'stage') { stageOpen(stageOff()); return; }
       if (action === 'refile') {
         await api(`/knowledge/handback/${t.info.outside.filing.retry.session}/file`, 'POST');
         if (T === t) load();
@@ -305,11 +321,11 @@
     if (!T.host.querySelector('.tu-convo')) return;
     T.chat?.update(chatProps());
     const answered = new Set(s.turns.filter(t => t.role === 'block').map(t => t.block));
-    const before = T.host.querySelectorAll('.tu-stage-item').length;
+    const before = T.host.querySelectorAll('.tu-stage-item').length, live = T.rendered > 0;
     s.turns.slice(T.rendered).forEach((turn, i) => stageTurn(turn, T.rendered + i, answered));
     T.rendered = s.turns.length;
     const items = T.host.querySelectorAll('.tu-stage-item');
-    if (items.length > before) stageShow(items[items.length - 1].dataset.stage);
+    if (items.length > before) stageShow(items[items.length - 1].dataset.stage, live);
     if (s.status === 'ended') T.host.querySelector('.tu-head [data-tu="end"]')?.remove();
     T.host.querySelector('.tu-objectives').innerHTML = T.ctx.lesson.objectives.map((o, i) => {
       const st = s.objectives[i]?.status || 'open';

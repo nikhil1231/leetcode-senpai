@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActionBarPrimitive, AssistantRuntimeProvider, ComposerPrimitive, MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime,
   type AppendMessage, type ThreadMessageLike, type ToolCallMessagePartProps,
@@ -11,6 +11,9 @@ import { mdHtml } from "@/lib/lesson-md";
 // button) and styled by src/styles/chat.css over the app's tokens, so a section's colours follow. The caller owns the messages (the external-store runtime): the server stays the record, and
 // this only shows it, plus a reply while it streams in. Tool parts are cards the caller draws: whiteboards, activities,
 // simulator hand-overs, "go to lesson" moves, all keyed by name.
+// Scrolling: when a reply starts streaming, the log scrolls once to put its top at the top of the view and then holds
+// still while the text runs down the page (the latest reply is given room to reach the top). Nothing scrolls after
+// that, so you can read or scroll back while it writes.
 
 export type ChatPart = { tool: string; args?: Record<string, unknown> };
 export type ChatMessage = {
@@ -47,8 +50,8 @@ type Props = {
   onDraft?: (text: string) => void;
 };
 
-type Ctx = { byId: Map<string, ChatMessage>; tools: Record<string, ToolRenderer> };
-const ChatCtx = createContext<Ctx>({ byId: new Map(), tools: {} });
+type Ctx = { byId: Map<string, ChatMessage>; tools: Record<string, ToolRenderer>; lastId?: string; roomy: boolean };
+const ChatCtx = createContext<Ctx>({ byId: new Map(), tools: {}, roomy: false });
 
 const convert = (m: ChatMessage): ThreadMessageLike => {
   if (m.role === "note") return { id: m.id, role: "system", content: [{ type: "text", text: m.text }] };
@@ -96,7 +99,7 @@ function ToolPart({ toolName, args, toolCallId }: ToolCallMessagePartProps) {
 const PARTS = { Text: AssistantText, tools: { Override: ToolPart } };
 
 function Row({ id, role }: { id: string; role: string }) {
-  const { byId } = useContext(ChatCtx);
+  const { byId, lastId, roomy } = useContext(ChatCtx);
   const m = byId.get(id);
   if (!m) return null;
   if (role === "system") return <MessagePrimitive.Root className={`ch-note ${m.className || ""}`}>{m.text}</MessagePrimitive.Root>;
@@ -107,7 +110,7 @@ function Row({ id, role }: { id: string; role: string }) {
   );
   const who = m.who && ((m.who.key && m.who.key !== "tutor") || m.who.role) ? m.who : null;   // the plain tutor or coach goes unnamed
   return (
-    <MessagePrimitive.Root className={`ch-msg is-them${m.streaming ? " is-streaming" : ""} ${m.className || ""}`} data-speaker={m.who?.key}>
+    <MessagePrimitive.Root className={`ch-msg is-them${m.streaming ? " is-streaming" : ""}${id === lastId ? " is-last" : ""}${id === lastId && roomy ? " has-room" : ""} ${m.className || ""}`} data-speaker={m.who?.key}>
       {who && <div className="ch-who"><b>{who.name}</b>{who.role && <small>{who.role}</small>}{m.time && <span className="ch-time">{m.time}</span>}</div>}
       <div className="ch-bubble">
         <MessagePrimitive.Parts components={PARTS} />
@@ -115,7 +118,7 @@ function Row({ id, role }: { id: string; role: string }) {
       </div>
       {m.after}
       {!m.streaming && m.text.trim() && (
-        <ActionBarPrimitive.Root className="ch-actions" hideWhenRunning autohide="not-last" autohideFloat="single-branch">
+        <ActionBarPrimitive.Root className="ch-actions" autohide="never">
           <ActionBarPrimitive.Copy className="ch-action" aria-label="Copy" title="Copy">
             <svg viewBox="0 0 24 24" aria-hidden="true" className="ch-icon-copy"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
             <svg viewBox="0 0 24 24" aria-hidden="true" className="ch-icon-done"><path d="m5 12 5 5L20 7" /></svg>
@@ -152,12 +155,34 @@ export function Chat(p: Props) {
   useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, []);   // a chat opens on its latest message
   const last = p.messages[p.messages.length - 1];
   const waiting = p.running && !(last?.role === "assistant" && last.streaming);
-  const ctx = useMemo(() => ({ byId, tools: p.tools || {} }), [byId, p.tools]);
+  const streamingId = last?.role === "assistant" && last.streaming ? last.id : null;
+  const [roomy, setRoomy] = useState(false);   // the latest reply has room to scroll to the top (once one has streamed here)
+  useLayoutEffect(() => {
+    const el = log.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const foot = el.querySelector<HTMLElement>(".ch-footer");
+    const fit = () => el.style.setProperty("--ch-room", `${Math.max(0, el.clientHeight - (foot?.offsetHeight || 0) - 40)}px`);
+    const ro = new ResizeObserver(fit);
+    ro.observe(el); if (foot) ro.observe(foot);
+    fit();
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const el = log.current;
+    if (!streamingId || !el) return;
+    setRoomy(true);
+    requestAnimationFrame(() => {
+      const msg = el.querySelector<HTMLElement>(`[data-message-id="${streamingId}"]`);
+      if (msg) el.scrollTo?.({ top: msg.offsetTop - 8, behavior: "smooth" });
+    });
+  }, [streamingId]);
+  const lastId = last?.role === "assistant" ? last.id : undefined;
+  const ctx = useMemo(() => ({ byId, tools: p.tools || {}, lastId, roomy }), [byId, p.tools, lastId, roomy]);
   return (
     <ChatCtx.Provider value={ctx}>
       <AssistantRuntimeProvider runtime={runtime}>
         <ThreadPrimitive.Root className={`ch-thread ${p.className || ""}`}>
-          <ThreadPrimitive.Viewport ref={log} className="ch-log" role="log" aria-live="polite" autoScroll>
+          <ThreadPrimitive.Viewport ref={log} className="ch-log" role="log" aria-live="polite" autoScroll={false} scrollToBottomOnRunStart={false}>
             {!p.messages.length && !p.running && p.empty}
             <ThreadPrimitive.Messages>{({ message }) => <Row id={message.id} role={message.role} />}</ThreadPrimitive.Messages>
             {waiting && <div className="ch-msg is-them"><div className="ch-bubble ch-typing" role="status" aria-label={p.typingLabel || "Typing"}><span /><span /><span /></div></div>}

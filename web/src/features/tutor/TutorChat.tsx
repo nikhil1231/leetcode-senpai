@@ -39,31 +39,44 @@ const MARKERS: [RegExp, (m: RegExpMatchArray) => ChatPart][] = [
 const WIDGET: Record<string, string> = { diagram: "Drawing on the whiteboard…", mermaid: "Drawing on the whiteboard…", design: "Setting up the simulator…" };
 
 // The parts a stored tutor turn brings: cards that open its stage items, links, and a move. Ids match tutor.js's stage.
-export function turnParts(turn: Any, at: number, blocks: TutorChatProps["blocks"]): ChatPart[] {
+// `correct`: how the learner did on the activity it brought in, once answered (its chip shows a tick or a cross).
+export function turnParts(turn: Any, at: number, blocks: TutorChatProps["blocks"], correct?: boolean): ChatPart[] {
   const parts: ChatPart[] = [];
   (turn.boards || []).forEach((d: Any, i: number) => parts.push({ tool: "stage", args: { id: `wb${at}-${i}`, label: `Whiteboard: ${d.title || "sketch"}` } }));
   (turn.designs || []).forEach((d: Any, i: number) => parts.push({ tool: "stage", args: { id: `ds${at}-${i}`, label: `Simulator: ${d.title}` } }));
   if (turn.show_block) {
     const b = blocks.find((x) => x.key === turn.show_block);
-    parts.push({ tool: "stage", args: { id: `ac${at}`, label: `Activity: ${plain(b?.title || b?.prompt || "try it")}` } });
+    parts.push({ tool: "stage", args: { id: `ac${at}`, label: `Activity: ${plain(b?.title || b?.prompt || "try it")}`, ...(correct === undefined ? {} : { correct }) } });
   }
   if (turn.links?.length) parts.push({ tool: "links", args: { links: turn.links } });
   if (turn.move) parts.push({ tool: "move", args: turn.move });
   const r = turn.recorded || {};
   const seen = (r.evidence || 0) + (r.misconceptions || 0) + (r.resolved || 0);
-  if (seen) parts.push({ tool: "recorded", args: { n: seen } });
+  if (seen) parts.push({ tool: "recorded", args: { n: seen, ...(turn.recorded_notes?.length ? { notes: turn.recorded_notes } : {}) } });
   return parts;
 }
 
+// An answered activity marks the chip of the turn that brought it in; one with no such chip gets a note instead.
+function blockResults(turns: Any[]) {
+  const results = new Map<number, boolean>(), marked = new Set<number>();
+  turns.forEach((t, i) => {
+    if (t.role !== "block") return;
+    for (let j = i - 1; j >= 0; j--) if (turns[j].role === "tutor" && turns[j].show_block === t.block) { results.set(j, !!t.correct); marked.add(i); break; }
+  });
+  return { results, marked };
+}
+
 export function turnsToMessages(session: Any, cast: TutorChatProps["cast"], blocks: TutorChatProps["blocks"], review = false): ChatMessage[] {
-  return (session?.turns || []).map((t: Any, i: number): ChatMessage | null => {
+  const turns: Any[] = session?.turns || [];
+  const { results, marked } = blockResults(turns);
+  return turns.map((t: Any, i: number): ChatMessage | null => {
     const id = `t${i}`;
     if (t.role === "learner") return { id, role: "user", text: t.text };
-    if (t.role === "block") return { id, role: "note", text: t.correct ? "You got the activity right." : "You missed the activity." };
+    if (t.role === "block") return marked.has(i) ? null : { id, role: "note", text: t.correct ? "You got the activity right." : "You missed the activity." };
     if (review && t.debrief) return null;
     if (t.role === "run") return { id, role: "note", text: `You ran the design in the simulator: ${Number(t.availability || 0).toFixed(2)}% availability.` };
     const who = t.debrief ? { name: "Tutor", role: "Debrief" } : t.speaker === "tutor" ? { name: "Tutor" } : (cast(t.speaker) || { name: t.speaker });
-    return { id, role: "assistant", text: t.say || "", who: { ...who, key: t.speaker }, parts: turnParts(t, i, blocks), className: t.debrief ? "tu-debrief" : "" };
+    return { id, role: "assistant", text: t.say || "", who: { ...who, key: t.speaker }, parts: turnParts(t, i, blocks, results.get(i)), className: t.debrief ? "tu-debrief" : "" };
   }).filter((m: ChatMessage | null): m is ChatMessage => m !== null);
 }
 
@@ -130,15 +143,17 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
   }, [session, cast, blocks, preview, props.review]);
 
   const tools = useMemo<Record<string, ToolRenderer>>(() => ({
-    stage: (a) => <button type="button" className="tu-chip" data-stage-chip={String(a.id)} onClick={() => {
+    stage: (a) => <button type="button" className={`tu-chip${a.correct === true ? " is-right" : a.correct === false ? " is-wrong" : ""}`} data-stage-chip={String(a.id)} onClick={() => {
       live.current.showStage(String(a.id));
       if (window.matchMedia?.("(max-width: 1000px)").matches) document.querySelector(".tu-stage")?.scrollIntoView?.({ block: "start", behavior: "smooth" });
-    }}><span aria-hidden="true">▸</span> {String(a.label)}</button>,
+    }} title={a.correct === true ? "You got this right" : a.correct === false ? "You missed this one" : undefined}>
+      {a.correct === undefined ? <span aria-hidden="true">▸</span> : <span className="tu-mark" aria-label={a.correct ? "Right:" : "Missed:"}>{a.correct ? "✓" : "✗"}</span>} {String(a.label)}</button>,
     links: (a) => <div className="tu-links">{(a.links as Any[]).map((l, i) => <a key={i} className={`tu-link is-${l.kind}`} href={l.href}><span>{({ game: "Play in Ripple Ops", design: "Worked design", internals: "Simulator" } as Any)[l.kind] || "Open"}</span><b>{l.title} →</b></a>)}</div>,
     move: (a) => <div className="tu-move"><button type="button" className="button is-primary" onClick={() => live.current.onMove(a)}>Carry on in {String(a.title)} →</button></div>,
     pending: (a) => <div className="ch-card is-pending">{String(a.text)}</div>,
     noted: () => <span className="ch-chip">Noted</span>,
-    recorded: (a) => <span className="ch-chip" title="What this turn showed went into your knowledge model">Recorded {Number(a.n)} {Number(a.n) === 1 ? "thing" : "things"} you showed</span>,
+    recorded: (a) => <span className="tu-recorded" tabIndex={0}
+      title={Array.isArray(a.notes) ? (a.notes as string[]).join("\n") : "What this turn showed went into your knowledge model"}>Recorded {Number(a.n)} {Number(a.n) === 1 ? "thing" : "things"} you showed</span>,
   }), []);
 
   const ended = session?.status === "ended";

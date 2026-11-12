@@ -678,7 +678,7 @@ def _context(store, s, l, now):
         memory = {**memory, **_last_debrief(store, l['section'], l['id'], s['id'])}
     story_mem = store.get_knowledge('tutor_memory', STORY_KEY) or {}
     return {'views': kmodel.views(c, states, seen, mis, now, own), 'prereq_views': kmodel.views(c, states, seen, mis, now, prereqs),
-            'allowed': allowed, 'open': [m for m in mis if m.get('status') == 'open' and m['point'] in allowed
+            'allowed': allowed, 'claims': {p['id']: p['claim'] for p in own + prereqs}, 'open': [m for m in mis if m.get('status') == 'open' and m['point'] in allowed
                                          and not kb_api.parked(m, now)],
             'memory': {**memory, 'events': story_mem.get('events', [])}, 'story': story.scale(summary),
             'career': _career(store, l), 'profile': _profile(store, l, summary, events, own, now)}
@@ -825,6 +825,7 @@ async def _reply(store, s, l):
         writes, event = ses.apply_notes(s, notes, said, blocks, ctx['allowed'], {m['_key'] for m in ctx['open']}, now)
     turn = ses.add_reply(s, text, l, now)
     turn['recorded'] = {k: len(v) for k, v in writes.items()}
+    turn['recorded_notes'] = ses.recorded_notes(writes, ctx['claims'], ctx['open'])
     _act(store, s, l, turn, ses.actions(text), now)
     store.put_knowledge('tutor_sessions', s['id'], s)
     n = len(s['turns'])
