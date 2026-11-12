@@ -1,11 +1,12 @@
-# leetcode.nikhil.ing (Cloudflare Tunnel + Access) -> leetcode-senpai-web (Next.js), which forwards /api to the API
-# container below. State lives in Firestore.
+# leetcode.nikhil.ing (Cloudflare Tunnel + Access) -> http://leetcode-senpai:8080, which is now the web container (Next.js):
+# it carries the `leetcode-senpai` alias on the edge network and listens on 8080, so the tunnel route in the Cloudflare
+# dashboard and personal-mcp's SENPAI_URL stay as they were. It forwards /api to the API container. State lives in Firestore.
 name: leetcode-senpai
 services:
-  leetcode-senpai:
+  api:
     build: ./src
     image: infra-leetcode-senpai:${IMAGE_TAG:-current}
-    container_name: leetcode-senpai
+    container_name: leetcode-senpai-api
     mem_limit: 1g   # 128 MB peak (Oct 2026) plus the daily podcast's speech synthesis (~450 MB for a minute)
     restart: unless-stopped
     env_file: ${HOME}/secrets/leetcode-senpai.env
@@ -27,24 +28,29 @@ services:
 
   # The pages: Next.js from ./frontend/web (the same repo, cloned a second time by bin/deploy via FRONTEND_REPO), which
   # serves them and forwards /api/* to the API above. The address is baked in at build time.
-  frontend:
+  web:
     build:
       context: ./frontend/web
       args:
-        API_URL: http://leetcode-senpai:8080
+        API_URL: http://leetcode-senpai-api:8080
     image: infra-leetcode-senpai-frontend:${FRONTEND_TAG:-current}
     container_name: leetcode-senpai-web
     mem_limit: 256m
     restart: unless-stopped
-    depends_on: [leetcode-senpai]
+    depends_on: [api]
+    environment:
+      PORT: "8080"   # the port the tunnel route already names
     healthcheck:   # through the /api proxy, so a broken API or proxy shows here too
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
       start_interval: 3s
-    networks: [default, edge]   # edge: reachable by the cloudflared container
+    networks:
+      default:
+      edge:
+        aliases: [leetcode-senpai]   # what cloudflared and personal-mcp already call it
     logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
 
 networks:
