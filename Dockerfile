@@ -18,7 +18,9 @@ RUN python -c "import urllib.request as u, os; os.makedirs('/app/voices'); \
  for v in ('alan', 'jenny_dioco') for x in ('', '.json')]"
 
 COPY server ./server
-COPY static ./static
+# Content the API reads and the browser also fetches: the simulator data and the worked designs' index. web/public is the one copy.
+COPY web/public/simulators ./web/public/simulators
+COPY web/public/walkthrough ./web/public/walkthrough
 
-# Cloud Run injects $PORT. STORE_BACKEND defaults to firestore in prod.
+# The API only. The web service (web/) serves the pages and proxies /api here. Cloud Run injects $PORT. STORE_BACKEND defaults to firestore in prod.
 CMD exec uvicorn server.main:app --host 0.0.0.0 --port ${PORT}

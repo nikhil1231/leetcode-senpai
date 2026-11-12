@@ -1,10 +1,10 @@
-"""The clock-driven internals simulators open paused and run on the shared speed (static/sim-clock.js)."""
+"""The clock-driven internals simulators open paused and run on the shared speed (web/src/legacy/sim-clock.js)."""
 import pathlib
 import re
 
 from scripts import patch_sim_widgets as p
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent / 'static'
+ROOT = pathlib.Path(__file__).resolve().parent.parent / 'web'
 
 
 def test_every_clocked_widget_is_patched_and_the_patch_is_idempotent():
@@ -17,11 +17,11 @@ def test_every_clocked_widget_is_patched_and_the_patch_is_idempotent():
 
 
 def test_no_other_widget_auto_ticks_unpatched():
-    for f in (ROOT / 'widgets' / 'internals').glob('*.js'):
+    for f in (ROOT / 'public' / 'widgets' / 'internals').glob('*.js'):
         if f.stem not in p.WIDGETS:
             assert '"Auto-tick"' not in f.read_text(), f'{f.stem} has an auto-tick the patch does not cover'
 
 
 def test_sim_clock_loads_before_the_widgets():
-    html = (ROOT / 'index.html').read_text()
-    assert html.index('/sim-clock.js') < html.index('/sd-widgets.js')
+    order = (ROOT / 'src' / 'legacy' / 'load.ts').read_text()
+    assert order.index('"sim-clock"') < order.index('"sd-widgets"')

@@ -1,0 +1,4 @@
+/* Links that stand in for what were buttons in the old shell: same look, no underline, inherited colour. */
+a.section-option, a.go-tutor, a.go-settings, a.readiness-chip, .design-nav a, a.rd-nav-link, a.hub-stand-link, a.sh-all, a.rd-link { text-decoration: none; }
+a.section-option, a.readiness-chip, a.sh-all { color: inherit; }
+.nav a { text-decoration: none; }

@@ -79,9 +79,12 @@ def test_results_record_answers_and_exposures_once_and_knowing_a_gap_closes_it(c
     assert client.post('/api/feed/result', json={'key': 'bad key!', 'point': MISS, 'outcome': 'knew'}).status_code == 422
 
 
-def test_the_page_is_served(client):
-    r = client.get('/feed')
-    assert r.status_code == 200 and '/api/feed' in r.text and r.headers['cache-control'] == 'no-cache'
+def test_the_pages_live_in_the_web_app_and_call_this_api():
+    """/feed, /walk and /wall are Next routes (web/src/app/(standalone)); the API only has to be what they call."""
+    import os
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'web', 'src', 'app', '(standalone)')
+    for page, endpoint in (('feed', '/api/feed'), ('walk', '/api/feed/answer'), ('wall', '/api/wall')):
+        assert endpoint in open(os.path.join(root, page, f'{page.capitalize()}Page.tsx'), encoding='utf-8').read()
 
 
 def ev(point, at, clean):
@@ -143,4 +146,3 @@ def test_spoken_answers_are_graded_and_open_a_gap(client, monkeypatch):
     assert (e['source'], e['clean'], e['partial'], e['strength']) == ('walk', False, True, 'soft')
     gap = client.store.list_knowledge('knowledge_misconceptions')[0]
     assert gap['kind'] == 'gap' and gap['ask'] == 'What sets the load?'
-    assert client.get('/walk').status_code == 200

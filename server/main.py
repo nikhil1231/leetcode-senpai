@@ -1,4 +1,4 @@
-"""FastAPI app: authenticated REST API + static frontend (V2).
+"""FastAPI app: the authenticated REST API (V2). The frontend is web/.
 
 Firestore-only. The LeetCode session cookie and CSRF token are stored on the
 user document and shared by every device; the last save wins. The LLM-powered
@@ -10,7 +10,6 @@ intentionally waits so the review is scheduled immediately.
 import asyncio
 import contextlib
 import datetime as dt
-import hashlib
 import logging
 import os
 import random
@@ -23,8 +22,7 @@ from typing import Literal, Optional
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from . import (assessment, auth, coach, config, connectivity, enrich, gamify, importer, insights,
@@ -60,7 +58,6 @@ from .search_index import router as search_router
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 log = logging.getLogger(__name__)
-STATIC_DIR = os.path.join(ROOT, "static")
 
 
 def _load_voice():
@@ -3098,28 +3095,15 @@ def api_health():
     return {"ok": True, "auth_mode": config.AUTH_MODE}
 
 
-# ---- static frontend ------------------------------------------------------------
-def _index_assets():
-    """Every file index.html loads with ?v=__ASSET_VER__. Each must feed the hash: one left out keeps
-    its URL across deploys and is served stale from browser and edge caches (marked immutable)."""
-    with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as fh:
-        return re.findall(r'(?:src|href)="/([^"?]+)\?v=__ASSET_VER__"', fh.read())
-
-
-# codemirror and the widgets load on demand with window.ASSET_VER, so they are not in index.html.
-def _widget_assets():
-    """Vendored widget modules, imported on demand by sd-widgets.js with ?v=ASSET_VER."""
-    root = os.path.join(STATIC_DIR, "widgets")
-    return sorted(os.path.relpath(os.path.join(d, f), STATIC_DIR).replace(os.sep, "/")
-                  for d, _, files in os.walk(root) for f in files if f.endswith((".js", ".json")))
-
-
-_VERSIONED_ASSETS = tuple(dict.fromkeys(_index_assets() + ["vendor/codemirror.js"] + _widget_assets()))
-_CODE_UPDATED_DIRS = ("server", "static")
-_CODE_UPDATED_EXTS = {".py", ".js", ".css", ".html"}
+# ---- housekeeping -----------------------------------------------------------------
+# The frontend is its own service (web/, Next.js) and reaches this one through /api. Nothing here serves pages.
+_CODE_UPDATED_DIRS = ("server", os.path.join("web", "src"))
+_CODE_UPDATED_EXTS = {".py", ".ts", ".tsx", ".js", ".css"}
 
 
 def code_updated_at():
+    """When the code last changed, for the "Updated ..." line in the sidebar. The web service is not in this image,
+    so this reads the server's own files there and both services' files in a development checkout."""
     latest = 0.0
     for dirname in _CODE_UPDATED_DIRS:
         root_dir = os.path.join(ROOT, dirname)
@@ -3128,34 +3112,12 @@ def code_updated_at():
             for filename in filenames:
                 if os.path.splitext(filename)[1] not in _CODE_UPDATED_EXTS:
                     continue
-                path = os.path.join(dirpath, filename)
                 try:
-                    latest = max(latest, os.path.getmtime(path))
+                    latest = max(latest, os.path.getmtime(os.path.join(dirpath, filename)))
                 except OSError:
                     continue
     updated = dt.datetime.fromtimestamp(latest or time.time(), dt.timezone.utc)
     return {"iso": updated.isoformat(), "epoch": int(updated.timestamp())}
-
-
-def asset_version():
-    h = hashlib.sha1()
-    for name in _VERSIONED_ASSETS:
-        try:
-            with open(os.path.join(STATIC_DIR, name), "rb") as fh:
-                h.update(fh.read())
-        except OSError:
-            continue
-    return h.hexdigest()[:8]
-
-
-# Loaded from gstatic on every page load (~300KB) but never used in local mode,
-# where boot() short-circuits before touching firebase at all.
-_FIREBASE_SDK = (
-    '<script src="https://www.gstatic.com/firebasejs/10.12.0/'
-    'firebase-app-compat.js"></script>\n  '
-    '<script src="https://www.gstatic.com/firebasejs/10.12.0/'
-    'firebase-auth-compat.js"></script>'
-)
 
 
 # What still works without the internet: Quickfire (local mirror), the in-memory
@@ -3174,57 +3136,3 @@ async def offline_gate(request, call_next):
             and not await asyncio.to_thread(connectivity.online)):
         return JSONResponse({"detail": OFFLINE_MESSAGE}, status_code=503)
     return await call_next(request)
-
-
-@app.middleware("http")
-async def asset_cache_headers(request, call_next):
-    resp = await call_next(request)
-    path = request.url.path.lstrip("/")
-    if path in _VERSIONED_ASSETS and request.query_params.get("v"):
-        # The URL carries a content hash, so this exact body can never change.
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif path.endswith((".png", ".ico", ".svg")) and not path.startswith("api/"):
-        resp.headers["Cache-Control"] = "public, max-age=86400"
-    elif request.url.path == "/":
-        # Must be revalidated, or a new asset version would never be picked up.
-        resp.headers["Cache-Control"] = "no-cache"
-    return resp
-
-
-@app.get("/")
-def index():
-    with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as fh:
-        html = fh.read()
-    # Only the Firebase modes need a sign-in gate, and only they need the SDK
-    # that drives it. Under Access the edge signed the caller in before the
-    # request arrived; shipping the gate anyway would mean logging in twice.
-    gate = config.signin_required()
-    html = (html
-            .replace("__ASSET_VER__", asset_version())
-            .replace("__FIREBASE_SDK__", _FIREBASE_SDK if gate else "")
-            .replace("__AUTH_MODE__", config.AUTH_MODE))
-    return HTMLResponse(html)
-
-
-def _standalone(name):
-    """A self-contained page outside the app (the feed, the wall): opens in a moment, no app around it."""
-    with open(os.path.join(STATIC_DIR, name), encoding="utf-8") as fh:
-        return HTMLResponse(fh.read(), headers={"Cache-Control": "no-cache"})
-
-
-@app.get("/feed")
-def feed_page():
-    return _standalone("feed.html")
-
-
-@app.get("/wall")
-def wall_page():
-    return _standalone("wall.html")
-
-
-@app.get("/walk")
-def walk_page():
-    return _standalone("walk.html")
-
-
-app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")

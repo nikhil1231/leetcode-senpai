@@ -1,4 +1,4 @@
-"""Write static/simulators/ripple.json: the Ripple Ops campaign for the design builder.
+"""Write web/public/simulators/ripple.json: the Ripple Ops campaign for the design builder.
 
 Authored content kept as Python so graphs stay short to write. Run it after editing, then
 `node --test tests/test_sd_sim.cjs`, which checks every level is beatable with its reference
@@ -8,7 +8,7 @@ import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, '..', 'static', 'simulators', 'ripple.json')
+OUT = os.path.join(HERE, '..', 'web', 'public', 'simulators', 'ripple.json')
 
 
 def g(nodes, edges, settings=None):
@@ -492,7 +492,7 @@ ASKS = {  # the question a gap asks when a run fails on that concept
 }
 
 
-# ---------- Ripple Assist: the AI chapters (static/ai-sim.js runs them) ----------
+# ---------- Ripple Assist: the AI chapters (web/src/legacy/ai-sim.js runs them) ----------
 AI_CONCEPTS = {
     'rag': {'label': 'Retrieval-augmented answers', 'lesson': 'rag', 'section': 'ai', 'sim': '',
             'points': ['ai.rag.rag-pipeline-stages', 'ai.rag.grounded-prompt']},

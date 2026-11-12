@@ -12,7 +12,8 @@ Optional:
     $env:GOOGLE_APPLICATION_CREDENTIALS = "C:\\path\\to\\key.json"
     $env:DEV_UID = "<your-firebase-uid>"
     uv run run_local_firestore.py
-Then open http://127.0.0.1:8000
+This is the API only. In another terminal, `cd web && npm install && npm run dev`, then open
+http://127.0.0.1:3000 (it forwards /api to this server on :8000).
 
 Binds to loopback only. Never expose this profile via port forwarding —
 auth is bypassed, so anything that can reach it can read/write your data.

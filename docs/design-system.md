@@ -8,11 +8,11 @@ stylesheets; the rest are conventions to keep when adding a page.
   picks the open block from the bucket furthest behind its weekly share. Today's Senpai session, the tutor's pick (one
   line) and readiness across all six sections follow. Do not add another "what to do now" source.
 - Opening the app to answering a question is one click from that card.
-- The tutor lives under Overview (`#/readiness/tutor`, `static/tutor-home.js`), not in any one section; the sidebar's
+- The tutor lives under Overview (`/readiness/tutor`, `web/src/legacy/tutor-home.js`), not in any one section; the sidebar's
   "Your tutor" button goes there from anywhere. LeetCode opens on Today.
 
 ## Section Home (one layout for all six)
-Every section Home uses `static/section-home.js`: the section's name and tagline, the plan's next step as a slim
+Every section Home uses `web/src/components/SectionHome.tsx`: the section's name and tagline, the plan's next step as a slim
 banner, then this section's own next step (one card, up to two alternatives) on the left and the readiness card on the
 right (300px, sticky, same place everywhere), then the section's own lists below. A section supplies the content; it
 never rearranges the layout. The readiness card (`Readiness.card`) shows the same number as Overview, never a second
@@ -23,8 +23,8 @@ Ripple, the company the tutor's scenes and Ripple Ops are set in, belongs to Sys
 sections do not mention it.
 
 ## One colour per section
-Each section has its own identity, set once by `sections.js` as `<body data-section="…">` and defined in
-`static/themes.css`: LeetCode indigo, System Design mint, Fundamentals sky, AI Engineering orchid, Experience apricot,
+Each section has its own identity, set once by `web/src/components/shell/AppShell.tsx` as `<body data-section="…">` and defined in
+`web/src/styles/themes.css`: LeetCode indigo, System Design mint, Fundamentals sky, AI Engineering orchid, Experience apricot,
 Practical Coding lime, Overview gold. A section re-points `--accent*`, `--on-accent` (dark label for accent fills) and tints
 its surfaces from one hue (`--h`). Rules:
 - Style with the tokens (`--accent`, `--accent-soft`, `--accent-line`, `rgba(var(--accent-rgb), a)`), never a literal
@@ -35,7 +35,7 @@ its surfaces from one hue (`--h`). Rules:
   that the accent passes WCAG AA as text on the panel and under the button label.
 
 ## Readiness
-Overview (`#/readiness`, `static/readiness.js`, `server/readiness.py`) puts all six sections on one scale: what you
+Overview (`/readiness`, `web/src/features/readiness/`, `server/readiness.py`) puts all six sections on one scale: what you
 would get right today out of each section's whole syllabus. Untested is unknown, never zero (below 15% tested the
 band says so). The overall figure weights sections by the Senpai plan. The same numbers appear in the readiness card on every
 section Home and as the sidebar chip. An optional interview date adds a countdown
@@ -45,7 +45,7 @@ and the weekly pace needed to reach 70%.
 The Simulators page groups its ~90 items into four kinds (build and play, worked system designs, building blocks,
 course simulators), each split by category; filter chips pick a kind, search narrows within the groups. Simulators
 that run on a clock open paused: Play, Step (one full tick), Reset (which pauses again) and a shared speed slider
-(`static/sim-clock.js`, 0.1× to 2×, remembered per browser). `scripts/patch_sim_widgets.py` applies this to the prebuilt
+(`web/src/legacy/sim-clock.js`, 0.1× to 2×, remembered per browser). `scripts/patch_sim_widgets.py` applies this to the prebuilt
 widget bundles.
 
 ## Sidebar foot
@@ -79,7 +79,7 @@ place 11px is the default.
 Every page of a lesson (warm-up, each part, Put it together, the check, your gaps) has exactly one filled (primary)
 button: the next step of the lesson as it is meant to be done. It is the first unfinished activity on the page, then
 the lesson check on its page, then the pager's "Next", and on the last page "Finish: next lesson" (which also marks
-the lesson read). `oneNext()` in `static/sd-lesson.js` enforces it, so an activity can mark its own submit button
+the lesson read). `oneNext()` in `web/src/legacy/sd-lesson.js` enforces it, so an activity can mark its own submit button
 primary and the role moves on as you work. Ways to go somewhere else (the tutor, Ripple Ops, practise this topic, the
 related case, further reading) are plain buttons, grouped under "Elsewhere" in the last page's footer.
 Reading the notes, the tutor is two icon buttons in the corner of the lesson's title block (start the tutor; what an

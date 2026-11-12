@@ -91,12 +91,9 @@ Firestore connectivity. Migrate any old `local_data.json` with
 
 ## Architecture
 ```
-Browser (static SPA on Firebase Hosting)
-   │  Google sign-in -> ID token (Bearer)
-   ▼
-Cloud Run  ── FastAPI (server/) ──► Firestore (Admin SDK, per-user data)
-   │                              └► LLM API (enrichment, off critical path)
-   └── calls LeetCode GraphQL using the stored cookie
+Browser ── Cloudflare Access ──► web  (Next.js, web/)  ── /api/* ──► api  (FastAPI, server/) ──► Firestore (Admin SDK, per-user data)
+                                                                      │                      └► LLM API (enrichment, off critical path)
+                                                                      └── calls LeetCode GraphQL using the stored cookie
 ```
 - **Firestore is locked** (`firestore.rules` deny-all); all access is through the
   backend's Admin SDK.
@@ -111,7 +108,7 @@ Cloud Run  ── FastAPI (server/) ──► Firestore (Admin SDK, per-user dat
 
 ```
 server/           FastAPI backend (containerized for Cloud Run)
-  main.py         routes + auth dependencies + static serving
+  main.py         routes + auth dependencies (API only; the pages are web/)
   auth.py         Firebase token verification + email allowlist
   store.py        Firestore store (Firestore-only)
   scheduler.py    pure queue/topic/mistake logic (no I/O)
@@ -129,9 +126,14 @@ server/           FastAPI backend (containerized for Cloud Run)
   leetcode.py     GraphQL client + run/submit judging (cookie passed in per call)
   neetcode150.py  the backbone list (slugs by category)
   config.py       env-driven app config
-static/           vanilla-JS SPA (app.js + views.js + charts.js), Firebase Auth
-  editor.js       in-app editor: Run/Submit via the server, 10s change log
-  vendor/         CodeMirror bundle, rebuilt only by scripts/vendor_editor.sh
+web/              Next.js + React + TypeScript frontend (its own container)
+  src/app/        routes: (app) the shell and every page, (standalone) feed, wall, walk
+  src/features/   one folder per area (leetcode, run, editor, senpai, readiness, ...)
+  src/components/ shared UI: Modal, Charts, SectionHome, ReadinessCard, Palette, ...
+  src/lib/        API client, stores, formatting
+  src/legacy/     imperative modules (System Design, tracks, tutor, simulators) behind bridge.ts
+  src/styles/     the app's CSS
+  public/         prebuilt widgets, simulator and walkthrough data, icons
 scripts/          migrate_local_to_firestore.py
 tests/            pytest (scheduler, FSRS, discover, insights, API, llm)
 ```
@@ -167,7 +169,14 @@ LLM_PROVIDER=openrouter \
 LLM_MODEL=openai/gpt-5.6-luna \
 uv run run.py
 ```
-Open http://127.0.0.1:8000. Without the selected provider's API key everything still works; the
+That is the API. The pages are the web app, in a second terminal:
+```bash
+cd web && npm install && npm run dev      # http://127.0.0.1:3000, forwarding /api to http://127.0.0.1:8000
+```
+(Node 22. If the API took another port, `API_URL=http://127.0.0.1:8001 npm run dev`. To try the UI on seeded fake data
+with no Firestore, run `uv run scripts/dev_fake_server.py` instead of `run.py`.)
+
+Open http://127.0.0.1:3000. Without the selected provider's API key everything still works; the
 LLM-powered features degrade gracefully. In **Settings** set your username,
 coach provider/model, and
 `LEETCODE_SESSION` cookie; in **Discover** import a pack and backfill history.
@@ -263,8 +272,8 @@ DEV_UID=<your-firebase-uid> uv run scripts/migrate_local_to_firestore.py
 ### Tests
 ```bash
 uv run --locked pytest                 # no Firestore/network needed
-node --test tests/test_frontend.cjs       # UI flow regressions; no npm install needed
-node --test tests/test_practice_frontend.cjs # Quickfire interactions
+cd web && npm install && npm test      # vitest (components, stores, editor log) + the pure simulator/model tests
+cd web && npm run typecheck
 ```
 
 ## Quickfire
@@ -345,9 +354,13 @@ Two deployments, and they authenticate differently:
    it; the free tier covers a single user at ~$0/month. Requires a card on file.
 3. Enable **Firestore** (Native mode) and **Authentication → Google** provider.
 4. Add a **Web app** in Project settings; copy its config into
-   `static/firebase-config.js` (apiKey, authDomain, projectId, appId).
+   a Firebase config (apiKey, authDomain, projectId, appId) for whatever client signs in.
 5. Install tools: `npm i -g firebase-tools`, then `firebase login`.
 6. `firebase use --add <your-project-id>`.
+
+> The Firebase Hosting + Google sign-in path below predates the web app: `web/` supports `AUTH_MODE=local` and
+> Cloudflare Access (`access`) only, and runs as its own container (see `web/Dockerfile`, `docker-compose.yml`).
+> The API still verifies Firebase tokens if you send them.
 
 **Set your allowlist + deploy the backend (Cloud Run)**
 ```bash
@@ -512,7 +525,7 @@ Records are additive `paper` and `sprint` kinds in the `system_design` collectio
 
 ### Tutor (a conversation that leads you through a lesson)
 
-`server/tutor/` and `static/tutor.js`. With the model on, every system design, Fundamentals and
+`server/tutor/` and `web/src/legacy/tutor.js`. With the model on, every system design, Fundamentals and
 AI Engineering lesson opens as a choice: learn it with the tutor (style: Teach me, I explain, Spot
 the flaws, War room, Interview) or read the notes, which are hidden until chosen (choosing notes is
 remembered in the browser). A session turns the lesson into a chat with the objectives as a checklist. The tutor brings in the
@@ -581,7 +594,7 @@ Logs: `journalctl --user -u leetcode-senpai-podcast`.
 
 ### Home, Practise and What you know
 
-System Design, Fundamentals and AI Engineering share one shell (`static/hub.js`): four sidebar
+System Design, Fundamentals and AI Engineering share one shell (`web/src/legacy/hub.js`): four sidebar
 items, **Home · Learn · Practise · What you know**. Everything else (Quickfire, papers, drills,
 skill drills, design cases, the mistakes book, the AI round) lives under Practise.
 
@@ -648,5 +661,5 @@ Relevant regression checks:
 ```bash
 uv run --locked pytest tests/test_knowledge.py tests/test_knowledge_base.py tests/test_tutor.py tests/test_drip.py tests/test_system_design_items.py tests/test_system_design_papers.py tests/test_system_design_drills.py tests/test_activity.py
 uv run --locked pytest tests/test_system_design.py tests/test_system_design_learning.py tests/test_daily_coach.py
-node --test tests/test_sections_frontend.cjs tests/test_system_design_learning_frontend.cjs
+(cd web && node --test tests/legacy/test_system_design_learning_frontend.cjs)
 ```

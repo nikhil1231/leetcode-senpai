@@ -7,7 +7,7 @@ Block keys are positional (b0, b1, …) and practice history is keyed by them, s
 in a published lesson are appended after the existing ones, never inserted.
 Question IDs are `<lesson>-check-<n>-v2` / `<lesson>-fire-<n>-v2`; once published
 their semantics are immutable, like v1. Anything malformed fails loudly at import.
-An ```outage block names a case from static/simulators/outages.json (scripts/build_outages.py);
+An ```outage block names a case from web/public/simulators/outages.json (scripts/build_outages.py);
 the case is copied into the block, so the lesson carries everything the player needs.
 """
 import hashlib
@@ -53,7 +53,7 @@ REQUIRED = {
     'interview': ['say', 'followups', 'weak', 'strong'],
     'outage': ['case'],
 }
-OUTAGES = os.path.join(HERE, '..', '..', 'static', 'simulators', 'outages.json')
+OUTAGES = os.path.join(HERE, '..', '..', 'web', 'public', 'simulators', 'outages.json')
 _cases = None
 
 

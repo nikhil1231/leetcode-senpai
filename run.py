@@ -10,7 +10,8 @@ your real Firestore data via a service-account key and your real UID:
     OPENROUTER_API_KEY=<optional, unlocks the coaching layer> \
     uv run run.py
 
-Then open http://127.0.0.1:8000. Without OPENROUTER_API_KEY the app still runs; the
+This is the API only. In another terminal, `cd web && npm install && npm run dev`, then open
+http://127.0.0.1:3000 (it forwards /api to this server on :8000). Without OPENROUTER_API_KEY the app still runs; the
 LLM-powered features degrade gracefully.
 
 For convenience, if a `.env.local` file exists at the project root (KEY=VALUE

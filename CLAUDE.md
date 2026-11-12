@@ -1,7 +1,7 @@
 # Leetcode Senpai — engineering conventions
 
-Personal, local-first SWE-interview prep app: FastAPI (Python) backend in `server/`,
-vanilla-JS frontend in `static/`. Single user (Nikhil). **Read the code before changing
+Personal, local-first SWE-interview prep app: FastAPI (Python) API in `server/`,
+Next.js + React + TypeScript frontend in `web/`. Single user (Nikhil). **Read the code before changing
 it — it is the source of truth.**
 
 ## Design invariants (do not violate)
@@ -15,12 +15,10 @@ it — it is the source of truth.**
    is derived, re-generable, and versioned (the `PROMPT_VERSION` pattern).
 3. Analytics and scheduling logic are pure functions over plain data — unit-testable
    without I/O, like `scheduler.py` and `insights.py`. Keep them that way.
-4. Local-first, single-user, low-ceremony. No heavyweight frameworks, no frontend build
-   step, no new infrastructure unless a feature truly demands it.
-5. Never lose or corrupt practice history. Migrations must be backward-compatible with
+4. Never lose or corrupt practice history. Migrations must be backward-compatible with
    existing stored data (see the SM-2→FSRS migration in `fsrs_engine.py`). When in doubt,
    additive schema changes only.
-6. Runs on Windows 10 (primary, RTX 3070) and macOS (M2 MacBook Air). Keep
+5. Runs on Windows 10 (primary, RTX 3070) and macOS (M2 MacBook Air). Keep
    platform-specific code behind detection/config, never hard-coded.
 
 ## Working method
@@ -40,7 +38,21 @@ it — it is the source of truth.**
 
 `docs/design-system.md` has the rules (type floor, widths, states, the single "Do this next" recommendation from
 `server/next_up.py`). `tests/test_ui_audit.py` enforces what can be checked statically. Ctrl/Cmd-K is the command
-palette (`static/palette.js`, index from `/api/search-index`); a new page or lesson type should appear in it.
+palette (`web/src/components/Palette.tsx`, index from `/api/search-index`); a new page or lesson type should appear in it.
+
+## Frontend (`web/`)
+
+Next.js (App Router) + React + TypeScript. `npm run dev` (with the API on :8000, e.g. `scripts/dev_fake_server.py` for
+seeded fake data), `npm test` (vitest, plus the pure-module tests under `tests/legacy/`), `npm run typecheck`.
+- `src/app/(app)/` the app (one shell for every page), `src/app/(standalone)/` feed, wall and walk (own root layout, no shell).
+- `src/features/<area>/` one folder per area; `src/components/` shared UI (Modal, Charts, ReadinessCard, SectionHome...);
+  `src/lib/` the API client, stores (`run-store`, `flow-store`, `ui-store`), formatting.
+- Server state is TanStack Query (the `/api/rev` watcher invalidates it when anything is written); UI state is zustand.
+- `src/styles/` is the app's CSS, loaded in `src/app/(app)/layout.tsx`. Pages use its class names; keep them.
+- `src/legacy/` is imperative code carried over from the old vanilla-JS frontend (System Design, the course tracks, the
+  tutor, the simulators). It runs behind `src/legacy/bridge.ts`, which supplies the globals it was written against.
+  Converting a module means giving it a component and deleting its use of `window.*`, nothing else. New UI is components.
+- `/api/*` is forwarded to the API by `next.config.ts` (`API_URL`, fixed at build time in the image).
 
 ## Writing (UI copy, lessons, overviews and prompts)
 
@@ -77,7 +89,7 @@ pure unit tests that run without I/O. Prefer additive, backward-compatible data 
 
 ## Repo topology — where changes land (read before committing)
 
-- `~/…/leetcode` — the **real repo**. Its `origin` is GitHub
+- `~/…/leetcode` — the **real repo** (two services: the API in `server/`, the web app in `web/`, each its own image). Its `origin` is GitHub
   (`github.com/nikhil1231/leetcode-senpai`); `main` is canonical. **Durable work goes
   here, on `main`.** Land a change by fast-forwarding `main` to `origin/main`, applying
   your commit, running the suite, and `git push origin main`.

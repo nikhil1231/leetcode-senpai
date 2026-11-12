@@ -1,6 +1,6 @@
 """Ripple Ops: the design builder as a game. /api/ripple/...
 
-The simulation runs in the browser (static/sd-sim.js) and is pure; this module keeps what must
+The simulation runs in the browser (web/src/legacy/sd-sim.js) and is pure; this module keeps what must
 outlive a tab and connects a run to the rest of the course:
 - Runs are raw data (the graph you drew, what the engine said, your estimates and notes), stored
   once each with the engine version. Progress, unlocks and the daily streak are derived from them.
@@ -33,8 +33,8 @@ from .tutor import story
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/ripple', tags=['ripple'])
 HERE = os.path.dirname(os.path.abspath(__file__))
-CAMPAIGN_PATH = os.path.join(HERE, '..', 'static', 'simulators', 'ripple.json')
-ECON_PATH = os.path.join(HERE, '..', 'static', 'simulators', 'economics.json')
+CAMPAIGN_PATH = os.path.join(HERE, '..', 'web', 'public', 'simulators', 'ripple.json')
+ECON_PATH = os.path.join(HERE, '..', 'web', 'public', 'simulators', 'economics.json')
 SOURCE = 'ripple'
 RUNS, DRAFTS, GENERATED, REVIEWS = 'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews'
 PROMPT_VERSION = 4

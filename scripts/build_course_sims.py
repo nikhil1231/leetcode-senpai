@@ -1,4 +1,4 @@
-"""Write static/simulators/courses.json: the Fundamentals and AI simulators for the simulator hub.
+"""Write web/public/simulators/courses.json: the Fundamentals and AI simulators for the simulator hub.
 
 Each entry comes from the ```sim block that embeds it in a course lesson (title, intro, takeaway),
 so the hub and the lessons say the same thing. Run it after adding or editing a course simulator;
@@ -10,7 +10,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..'))
-OUT = os.path.join(HERE, '..', 'static', 'simulators', 'courses.json')
+OUT = os.path.join(HERE, '..', 'web', 'public', 'simulators', 'courses.json')
 SECTIONS = [('fundamentals', 'Fundamentals'), ('ai', 'AI engineering')]
 SCRIPTS = ('fund-sims.js', 'core-sims.js', 'ai-sims.js')
 

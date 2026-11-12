@@ -10,16 +10,19 @@ from server import main
 from server.system_design_lessons import LessonError, parse
 from server.tracks import courses
 
-STATIC = main.STATIC_DIR
+WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'web')
+LEGACY = os.path.join(WEB, 'src', 'legacy')   # the imperative simulator modules
+PUBLIC = os.path.join(WEB, 'public')          # widgets, walkthroughs and simulator data
+LEGACY_ORDER = re.findall(r'"([a-z0-9-]+)"', re.search(r'const ORDER = \[(.*?)\];', open(os.path.join(LEGACY, 'load.ts'), encoding='utf-8').read(), re.S).group(1))
 LESSON_DIRS = [os.path.join(os.path.dirname(main.__file__), 'system_design_lessons'), courses.HERE]
 
 
 def registered():
     names = set()
-    for f in glob.glob(os.path.join(STATIC, 'sd-sims*.js')) + glob.glob(os.path.join(STATIC, '*-sims.js')) + [os.path.join(STATIC, 'sd-walkthrough.js')]:
+    for f in glob.glob(os.path.join(LEGACY, 'sd-sims*.js')) + glob.glob(os.path.join(LEGACY, '*-sims.js')) + [os.path.join(LEGACY, 'sd-walkthrough.js')]:
         text = open(f, encoding='utf-8').read()
         names |= set(re.findall(r"\b(?:reg|register)\('([a-z0-9-]+)'", text)) | set(re.findall(r"\bregistry\.([a-z0-9]+)\s*=", text))
-    widgets = open(os.path.join(STATIC, 'sd-widgets.js'), encoding='utf-8').read()
+    widgets = open(os.path.join(LEGACY, 'sd-widgets.js'), encoding='utf-8').read()
     block = re.search(r'const WIDGETS = \{(.*?)\};', widgets, re.S).group(1)
     return names, set(re.findall(r"\b([a-z0-9]+): '", block))
 
@@ -48,9 +51,8 @@ def test_widget_names_are_unique_and_shipped():
     assert widgets and not widgets & base, 'a widget would replace a built-in simulator'
     for name in widgets:
         path = f'widgets/internals/{name}.js'
-        assert os.path.exists(os.path.join(STATIC, path))
-        assert path in main._VERSIONED_ASSETS
-    assert 'widgets/shared/vendor-react.js' in main._VERSIONED_ASSETS
+        assert os.path.exists(os.path.join(PUBLIC, path))
+    assert os.path.exists(os.path.join(PUBLIC, 'widgets/shared/vendor-react.js'))
 
 
 def test_widgets_are_used_by_a_lesson():
@@ -62,7 +64,7 @@ def test_widgets_are_used_by_a_lesson():
 @pytest.mark.skipif(subprocess.run(['which', 'node'], capture_output=True).returncode, reason='node not installed')
 def test_widget_modules_load_and_export_mount():
     """Catches a widget that references something its extraction dropped (a ReferenceError at import)."""
-    files = sorted(glob.glob(os.path.join(STATIC, 'widgets', '*', '*.js')))
+    files = sorted(glob.glob(os.path.join(PUBLIC, 'widgets', '*', '*.js')))
     files = [f for f in files if '/shared/' not in f]
     script = ("const files=process.argv.slice(1);(async()=>{for(const f of files){const m=await import('file://'+f);"
               "if(typeof m.mount!=='function')throw new Error(f+' has no mount()');}})().catch(e=>{console.error(e.stack);process.exit(1)})")
@@ -108,60 +110,56 @@ def test_visualise_index_matches_the_shipped_animations():
     import json
     from server import neetcode150
     neet = {s for s, _ in neetcode150.all_problems()}
-    index = json.load(open(os.path.join(STATIC, 'widgets', 'dsa', 'index.json'), encoding='utf-8'))
+    index = json.load(open(os.path.join(PUBLIC, 'widgets', 'dsa', 'index.json'), encoding='utf-8'))
     ids = [t['id'] for t in index['topics']]
     assert len(ids) == len(set(ids)) >= 40
     assert {t['category'] for t in index['topics']} == {c for c, _ in index['categories']}
-    shipped = {os.path.basename(f)[:-3] for f in glob.glob(os.path.join(STATIC, 'widgets', 'dsa', '*.js'))}
+    shipped = {os.path.basename(f)[:-3] for f in glob.glob(os.path.join(PUBLIC, 'widgets', 'dsa', '*.js'))}
     assert set(ids) == shipped, 'listed without a module, or shipped without being listed'
     for t in index['topics']:
         assert t['difficulty'] in ('easy', 'medium', 'hard') and t['title'] and t['concept'] and t['time'] and t['space']
         assert isinstance(t['pitfalls'], list) and isinstance(t['problems'], list)
         assert all(p['title'] and (p['slug'] is None or p['slug'] in neet) for p in t['problems'])
         _assert_short_notes(t)
-    assert 'widgets/dsa/index.json' in main._VERSIONED_ASSETS
 
 
 def test_walkthrough_lessons_point_at_real_designs():
     import json
-    index = {d['id'] for d in json.load(open(os.path.join(STATIC, 'walkthrough', 'index.json'), encoding='utf-8'))['designs']}
+    index = {d['id'] for d in json.load(open(os.path.join(PUBLIC, 'walkthrough', 'index.json'), encoding='utf-8'))['designs']}
     seen = []
     for path in lesson_files():
         text = open(path, encoding='utf-8').read()
         for design in re.findall(r'^name: walkthrough\n(?:.*\n)*?config: \{design: ([a-z0-9-]+)\}', text, re.M):
             seen.append(design)
             assert design in index, (os.path.basename(path), design)
-            assert os.path.exists(os.path.join(STATIC, 'walkthrough', design + '.json'))
+            assert os.path.exists(os.path.join(PUBLIC, 'walkthrough', design + '.json'))
     assert len(seen) >= 10 and len(seen) == len(set(seen))
 
 
 def test_simulator_hub_lists_exactly_the_shipped_internals_widgets():
     import json
-    topics = json.load(open(os.path.join(STATIC, 'simulators', 'internals.json'), encoding='utf-8'))['topics']
+    topics = json.load(open(os.path.join(PUBLIC, 'simulators', 'internals.json'), encoding='utf-8'))['topics']
     ids = [t['id'] for t in topics]
-    shipped = {os.path.basename(f)[:-3] for f in glob.glob(os.path.join(STATIC, 'widgets', 'internals', '*.js'))}
+    shipped = {os.path.basename(f)[:-3] for f in glob.glob(os.path.join(PUBLIC, 'widgets', 'internals', '*.js'))}
     assert len(ids) == len(set(ids)) == 32 and set(ids) == shipped
     for t in topics:
         assert t['title'] and t['blurb'] and t['overview'] and t['howItWorks'] and t['difficulty'] in ('easy', 'medium', 'hard')
         _assert_short_notes(t)
     cats = {t['category'] for t in topics}
-    assert cats == {c for c, _ in json.load(open(os.path.join(STATIC, 'simulators', 'internals.json'), encoding='utf-8'))['categories']}
+    assert cats == {c for c, _ in json.load(open(os.path.join(PUBLIC, 'simulators', 'internals.json'), encoding='utf-8'))['categories']}
 
 
 def test_hub_scripts_are_loaded_in_dependency_order():
-    html = open(os.path.join(STATIC, 'index.html'), encoding='utf-8').read()
-    order = [m for m in re.findall(r'<script src="/([\w.-]+)\?v=__ASSET_VER__"', html)]
-    pos = {n: i for i, n in enumerate(order)}
-    for dep, user in [('sd-stress.js', 'sd-walkthrough.js'), ('sd-builder-calc.js', 'sd-builder.js'),
-                      ('sd-walkthrough.js', 'sd-simulators.js'), ('sd-builder.js', 'sd-simulators.js'), ('sd-sims.js', 'sd-walkthrough.js')]:
+    pos = {n: i for i, n in enumerate(LEGACY_ORDER)}
+    for dep, user in [('sd-stress', 'sd-walkthrough'), ('sd-builder-calc', 'sd-builder'),
+                      ('sd-walkthrough', 'sd-simulators'), ('sd-builder', 'sd-simulators'), ('sd-sims', 'sd-walkthrough')]:
         assert pos[dep] < pos[user], f'{dep} must load before {user}'
-    assert 'data-design-view="simulators"' in html
 
 
 def test_full_page_simulators_are_folded_until_opened():
     """Every vendored widget and the walkthrough are flagged heavy; the lesson block folds them, small sims mount at once."""
-    widgets = open(os.path.join(STATIC, 'sd-widgets.js'), encoding='utf-8').read()
+    widgets = open(os.path.join(LEGACY, 'sd-widgets.js'), encoding='utf-8').read()
     assert '{ heavy: true }' in widgets
-    assert "}, { heavy: true });" in open(os.path.join(STATIC, 'sd-walkthrough.js'), encoding='utf-8').read()
-    blocks = open(os.path.join(STATIC, 'sd-blocks.js'), encoding='utf-8').read()
+    assert "}, { heavy: true });" in open(os.path.join(LEGACY, 'sd-walkthrough.js'), encoding='utf-8').read()
+    blocks = open(os.path.join(LEGACY, 'sd-blocks.js'), encoding='utf-8').read()
     assert 'isHeavy' in blocks and 'sd-sim-open' in blocks

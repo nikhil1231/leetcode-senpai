@@ -2,7 +2,7 @@
 import glob
 import re
 
-CSS = sorted(glob.glob('static/*.css'))
+CSS = sorted(glob.glob('web/src/styles/*.css'))
 MIN_PX = 11
 
 
@@ -19,22 +19,6 @@ def test_no_text_below_the_type_floor():
         css = open(f, encoding='utf-8').read()
         bad += [f'{f}:{css.count(chr(10), 0, pos) + 1} {size}px' for size, pos in _sizes(css) if size < MIN_PX]
     assert not bad, 'Text smaller than 11px (see docs/design-system.md):\n' + '\n'.join(bad)
-
-
-def test_every_asset_in_index_exists():
-    html = open('static/index.html', encoding='utf-8').read()
-    for path in re.findall(r'(?:src|href)="/([^"?]+)\?v=__ASSET_VER__"', html):
-        assert glob.glob('static/' + path), f'index.html references static/{path}, which does not exist'
-
-
-def test_icon_only_buttons_are_labelled():
-    html = open('static/index.html', encoding='utf-8').read()
-    for m in re.finditer(r'<button\b([^>]*)>(.*?)</button>', html, re.S):
-        attrs, inner = m.group(1), re.sub(r'<svg.*?</svg>', '', m.group(2), flags=re.S)
-        if re.search(r'class="[^"]*\bhidden\b', attrs):   # filled with text by script when shown
-            continue
-        if not re.sub(r'<[^>]+>|\s', '', inner):
-            assert 'aria-label' in attrs or 'title=' in attrs, f'Unlabelled icon-only button: <button{attrs[:80]}'
 
 
 # ---- section colour identities (static/themes.css) ---------------------------------------------
@@ -58,7 +42,7 @@ def _hsl_hex(h, s, l):
 
 
 def _themes():
-    css = open('static/themes.css', encoding='utf-8').read()
+    css = open('web/src/styles/themes.css', encoding='utf-8').read()
     out = {}
     for m in re.finditer(r'body\[data-section="([a-z-]+)"\]\s*\{([^}]*)\}', css):
         props = dict(re.findall(r'--([a-z0-9-]+):\s*([^;]+);', m.group(2)))
@@ -69,8 +53,8 @@ def _themes():
 
 def test_every_section_has_a_colour_identity():
     css, themes = _themes()
-    html = open('static/index.html', encoding='utf-8').read()
-    ids = set(re.findall(r'data-section="([a-z-]+)" class="section-option"', html))
+    from_ts = open('web/src/lib/sections.ts', encoding='utf-8').read()
+    ids = set(re.findall(r'^  "?([a-z-]+)"?: \{ name:', from_ts, re.M))
     assert ids >= {'leetcode', 'system-design', 'fundamentals', 'ai', 'experience', 'practical', 'readiness'}
     for sid in ids:
         assert f'--sec-{sid}:' in css, f'{sid} has no --sec-{sid} token in themes.css'
@@ -91,10 +75,10 @@ def test_section_accents_are_legible():
 def test_the_sidebar_stacks_above_home_cards():
     """The section menu opens out of the sidebar over the page; Home cards are positioned, so the sidebar needs a
     z-index in every section or the cards paint over the menu."""
-    css = open('static/style.css', encoding='utf-8').read()
+    css = open('web/src/styles/style.css', encoding='utf-8').read()
     base = re.search(r'\n\.sidebar \{([^}]*)\}', css).group(1)
     z = int(re.search(r'z-index:\s*(\d+)', base).group(1))
-    for f in ('static/hub.css', 'static/readiness.css', 'static/next-up.css', 'static/tutor.css'):
+    for f in ('web/src/styles/hub.css', 'web/src/styles/readiness.css', 'web/src/styles/next-up.css', 'web/src/styles/tutor.css'):
         for m in re.finditer(r'z-index:\s*(\d+)', open(f, encoding='utf-8').read()):
             assert int(m.group(1)) < z, f'{f} puts page content (z-index {m.group(1)}) at or above the sidebar ({z})'
     assert 'body.section-track .sidebar { position: static' not in css and 'section-design .sidebar { position: static' not in css

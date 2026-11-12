@@ -15,7 +15,7 @@ import yaml
 from . import board
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-STATIC = os.path.join(HERE, '..', '..', 'static', 'simulators')
+STATIC = os.path.join(HERE, '..', '..', 'web', 'public', 'simulators')
 FENCE = re.compile(r'```[ \t]*design[ \t]*\n(.*?)(?:```|$)', re.S | re.I)
 
 

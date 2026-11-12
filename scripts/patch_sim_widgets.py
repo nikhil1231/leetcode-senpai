@@ -1,7 +1,7 @@
 """Make the auto-ticking internals simulators open paused, pause on Reset, and run at the shared speed.
 
-The widgets in static/widgets/internals/ are prebuilt React bundles with no source here, so this rewrites
-the few spots that matter (see static/sim-clock.js). Idempotent: a patched file is left alone.
+The widgets in web/public/widgets/internals/ are prebuilt React bundles with no source here, so this rewrites
+the few spots that matter (see web/src/legacy/sim-clock.js). Idempotent: a patched file is left alone.
 
     python scripts/patch_sim_widgets.py
 """
@@ -9,7 +9,7 @@ import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent / 'static' / 'widgets' / 'internals'
+ROOT = pathlib.Path(__file__).resolve().parent.parent / 'web' / 'public' / 'widgets' / 'internals'
 WIDGETS = ['raft', 'bully', 'cap', 'quorum', 'twopc', 'replanomalies', 'tcp']
 OWN_SPEED = {'tcp'}   # already has its own speed slider
 ID = r'[\w$]+'

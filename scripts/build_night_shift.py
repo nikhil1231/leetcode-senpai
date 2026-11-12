@@ -1,4 +1,4 @@
-"""Write static/simulators/nightshift.json: Night Shift, the on-call game for the Fundamentals course.
+"""Write web/public/simulators/nightshift.json: Night Shift, the on-call game for the Fundamentals course.
 
 Each level is an incident at Ripple taught by a Fundamentals lesson: the page, the commands you can
 run (with the output the box would print before and after it's stable), the actions you can take
@@ -11,7 +11,7 @@ import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, '..', 'static', 'simulators', 'nightshift.json')
+OUT = os.path.join(HERE, '..', 'web', 'public', 'simulators', 'nightshift.json')
 F = 'fundamentals.'
 
 

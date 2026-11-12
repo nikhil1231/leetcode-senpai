@@ -1,6 +1,6 @@
 """Night Shift: the on-call game for the Fundamentals course. /api/nightshift/...
 
-The incident plays in the browser (static/nightshift-engine.js, pure). This module keeps the runs and
+The incident plays in the browser (web/src/legacy/nightshift-engine.js, pure). This module keeps the runs and
 connects them to the course:
 - A run is raw data (the moves, the answers, the score), stored once. Progress is derived from runs.
 - A run is evidence for the knowledge model (source "nightshift", soft, depth "apply") on the level's
@@ -29,7 +29,7 @@ from .tutor import story
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/nightshift', tags=['nightshift'])
 HERE = os.path.dirname(os.path.abspath(__file__))
-LEVELS_PATH = os.path.join(HERE, '..', 'static', 'simulators', 'nightshift.json')
+LEVELS_PATH = os.path.join(HERE, '..', 'web', 'public', 'simulators', 'nightshift.json')
 SOURCE, RUNS = 'nightshift', 'nightshift_runs'
 PROMPT_VERSION = 1
 KEY = r'^[A-Za-z0-9_-]{1,80}$'

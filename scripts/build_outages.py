@@ -1,4 +1,4 @@
-"""Write static/simulators/outages.json: outage cases for the design simulator.
+"""Write web/public/simulators/outages.json: outage cases for the design simulator.
 
 Each case is a system shown breaking, then fixed. Real cases follow a published postmortem
 (linked in `sources`); what-if cases take a company's write-up about an upgrade and run the
@@ -14,7 +14,7 @@ import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, '..', 'static', 'simulators', 'outages.json')
+OUT = os.path.join(HERE, '..', 'web', 'public', 'simulators', 'outages.json')
 
 
 def g(nodes, edges, settings=None):

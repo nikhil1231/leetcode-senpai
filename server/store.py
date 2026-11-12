@@ -78,7 +78,7 @@ _cache_guard = threading.Lock()
 _revisions = {}        # cache key -> bump count
 
 # Every write this process makes, cached collection or not, plus a token for this
-# process. The client's GET cache (static/app.js) keys responses on these: any
+# process. The client's GET cache (web/src/lib/providers.tsx) keys responses on these: any
 # write at all means "refetch", and a restart (which resets the counters to zero)
 # can never be mistaken for "nothing changed".
 _writes = 0

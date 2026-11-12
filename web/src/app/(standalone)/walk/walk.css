@@ -1,0 +1,37 @@
+/* Scoped to .sa-walk: this page ships its own look and nothing else loads here. */
+.sa-walk { --bg: #0a0c11; --panel: #141821; --line: #262c3a; --text: #e9ecf3; --muted: #8b93a8; --accent: #7c86ff;
+      --right: #59d48a; --partly: #f2c14e; --wrong: #ff7a7a; }
+.sa-walk * { box-sizing: border-box; margin: 0; }
+.sa-walk, .sa-walk { height: 100%; background: var(--bg); color: var(--text);
+      font: 18px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+.sa-walk main { min-height: 100dvh; display: flex; flex-direction: column; gap: 18px;
+      padding: calc(env(safe-area-inset-top) + 22px) 20px calc(env(safe-area-inset-bottom) + 22px); max-width: 640px; margin: 0 auto; }
+.sa-walk .top { display: flex; justify-content: space-between; color: var(--muted); font-size: 14px; }
+.sa-walk .orb { width: 92px; height: 92px; flex-shrink: 0; border-radius: 50%; margin: 6px auto 0; display: grid; place-items: center;
+      background: radial-gradient(circle at 35% 30%, #a3abff, var(--accent) 55%, #3b43b8); box-shadow: 0 0 0 0 rgba(124,134,255,.5);
+      transition: transform .15s ease; font-size: 30px; }
+.sa-walk .orb.listening { animation: pulse 1.4s infinite; background: radial-gradient(circle at 35% 30%, #9ff0c0, var(--right) 55%, #217a49); }
+.sa-walk .orb.thinking { opacity: .7; animation: spin 1.6s linear infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(89,212,138,.45); } 70% { box-shadow: 0 0 0 28px rgba(89,212,138,0); } 100% { box-shadow: 0 0 0 0 rgba(89,212,138,0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.sa-walk .state { text-align: center; color: var(--muted); font-size: 15px; min-height: 22px; }
+.sa-walk .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+.sa-walk .who { font-size: 14px; color: var(--muted); }
+.sa-walk .ask { font-size: 23px; font-weight: 700; line-height: 1.25; margin-top: 6px; }
+.sa-walk .heard { margin-top: 12px; color: var(--muted); font-style: italic; font-size: 16px; }
+.sa-walk .verdict { margin-top: 12px; font-weight: 700; }
+.sa-walk .verdict.right { color: var(--right); }
+.sa-walk .verdict.partly { color: var(--partly); }
+.sa-walk .verdict.wrong { color: var(--wrong); }
+.sa-walk .idea { margin-top: 10px; font-size: 17px; }
+.sa-walk .actions { display: flex; gap: 10px; margin-top: auto; position: sticky; bottom: 0; margin-bottom: calc(-1 * env(safe-area-inset-bottom) - 22px);
+      padding: 28px 0 calc(env(safe-area-inset-bottom) + 16px); background: linear-gradient(transparent, var(--bg) 26px); }
+.sa-walk .feedback { margin-top: 6px; font-size: 16px; color: var(--text); }
+.sa-walk .idea { color: var(--muted); }
+.sa-walk button { flex: 1; appearance: none; border: 0; border-radius: 14px; padding: 16px 10px; font: inherit; font-weight: 700;
+      background: #1e2330; color: var(--text); cursor: pointer; }
+.sa-walk button.primary { background: var(--accent); color: #fff; }
+.sa-walk .hide { display: none !important; }
+.sa-walk .intro p { color: var(--muted); margin-top: 8px; }
+
+  .sa-walk { min-height: 100dvh; }

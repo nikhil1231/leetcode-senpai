@@ -172,8 +172,6 @@ def test_endpoints(client):
     assert client.get('/api/wall/now').json() == {'poster': None, 'card': None}   # nothing covered yet
     assert client.post('/api/wall/posters').status_code == 503                    # no model: nothing is made
     assert client.post('/api/wall/poster.png').status_code == 503
-    page = client.get('/wall')
-    assert page.status_code == 200 and '/api/wall' in page.text
 
 
 def test_watch_topics_rank_slipping_lessons_and_skip_unopened_ones():

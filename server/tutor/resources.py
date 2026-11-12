@@ -9,7 +9,7 @@ A link is `#/system-design/simulators/<kind>~<id>[~<level>]`, the Simulators pag
 import json
 import os
 
-STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'static')
+STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'web', 'public')   # shared content: the browser and this module read the same files
 
 # internals simulator -> (lessons, layer)
 INTERNALS = {
@@ -24,7 +24,7 @@ INTERNALS = {
     'sqlsharding': (['partitioning'], 2), 'dns': (['request-flow'], 3), 'http': (['request-flow'], 2),
     'tcp': (['request-flow'], 3), 'tls': (['request-flow'], 3), 'csrf': (['api-contracts'], 3),
 }
-# worked design (static/walkthrough) -> lessons it practises
+# worked design (web/public/walkthrough) -> lessons it practises
 DESIGNS = {
     'url-shortener': ['design-links', 'id-generation'], 'rate-limiter': ['design-ratelimiter', 'rate-limiting'],
     'news-feed': ['design-feed', 'feed-fanout'], 'whatsapp': ['design-chat', 'realtime-push'],

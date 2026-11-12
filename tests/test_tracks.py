@@ -11,8 +11,8 @@ from server.tracks import ai_round, courses, experience, http, practical
 from server.tracks.experience_content import PROMPTS, STAR_CHECKS
 from tests.fake_store import FakeStore
 
-STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static')
-sys.path.insert(0, STATIC)
+PUBLIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'web', 'public')   # practical_runner.py runs in the browser's worker and here
+sys.path.insert(0, PUBLIC)
 import practical_runner  # noqa: E402
 
 DAY = 86400
