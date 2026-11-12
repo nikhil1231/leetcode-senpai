@@ -18,14 +18,9 @@ body.has-editor-run:not(.run-minimised):not(.section-design) .page-coach { displ
 .page-coach .coach-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 #page-coach-clear { margin-left: auto; white-space: nowrap; }
 .page-coach-context { flex: none; margin: 0; padding: 10px 14px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
-.page-coach-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px; }
-.page-coach .hint-card { flex-shrink: 0; padding: 12px; border: 1px solid rgba(245,181,68,.3); border-radius: 12px; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.page-coach .chat-msg { flex-shrink: 0; }
+.page-coach-thread { --chat-bg: var(--bg-elev); padding: 14px 14px 0; background: var(--bg-elev); }
 .page-coach-empty { color: var(--muted); font-size: 13px; line-height: 1.6; }
-.page-coach-error { margin: 0; padding: 0 14px; color: var(--amber); font-size: 13px; }
-.page-coach .coach-chat { border-top: 1px solid var(--line); margin-top: 10px; }
-.page-coach-send { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
-.page-coach-send span { font-size: 11px; color: var(--muted); }
+.page-coach-error { margin: 0; color: var(--amber); font-size: 13px; }
 @media (min-width: 1200px) {
   body.page-coach-open .content > main { width: calc(100% - 400px); margin-left: 0; margin-right: 400px; }
   body.page-coach-open .content > .active-run { margin-right: 400px; }

@@ -33,7 +33,7 @@
   function mount(el, o = {}) {
     let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false, refView = false, mineG = null, resOpen = true;
     let casePage = null;
-    let est = {}, graded = null, notes = '', editing = false, mic = 'idle', voice = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
+    let chatView = null, est = {}, graded = null, notes = '', editing = false, mic = 'idle', voice = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
     const levels = () => camp.levels;
     const byId = id => levels().find(l => l.id === id);
     el.classList.add('rp-root');
@@ -294,8 +294,7 @@
         <div class="rp-head"><button type="button" class="rp-crumb" data-hub>← Ripple Ops</button>
           <div class="rp-title"><span class="sd-eyebrow">${esc(CHAPTERS[l.chapter] || l.chapter || '')} · ${esc(l.tier || '')} · ${esc(l.users || '')}${l.daily ? ' · DAILY' : ''}</span><h2 id="sd-heading" tabindex="-1">${esc(l.title)}</h2><p>${esc(l.kicker)}</p></div>
           ${stepsHtml()}</div>
-        ${step === 'brief' ? briefHtml(l) : step === 'estimate' ? estimateHtml(l) : buildHtml(l)}
-        ${chat ? chatHtml() : ''}</div>`;
+        ${step === 'brief' ? briefHtml(l) : step === 'estimate' ? estimateHtml(l) : buildHtml(l)}</div>`;
     }
 
     // ---------- the review / interview drawer ----------
@@ -304,11 +303,15 @@
       return `<aside class="rp-chat" aria-label="${chat.mode === 'interview' ? 'Mock interview' : 'Design review'}">
         <header><b>${chat.mode === 'interview' ? '🎤 Mock interview' : '🗣 Design review with Marcus'}</b>${left != null ? `<span class="rp-clock${left < 300 ? ' is-low' : ''}" data-clock>${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</span>` : ''}
           ${chat.mode === 'interview' && !chat.eval ? '<button type="button" class="button" data-chat-end>End & score</button>' : ''}<button type="button" class="button" data-chat-close aria-label="Close">✕</button></header>
-        <div class="rp-chat-log" data-chat-log>${chat.messages.map(m => m.role === 'note' ? `<p class="rp-note">⚡ ${esc(m.text)}</p>`
-          : `<div class="rp-msg${m.role === 'user' ? ' is-me' : ''}">${m.role === 'user' ? '' : chat.mode === 'interview' ? '<span class="rp-av rp-av-int">I</span>' : B().avatar('marcus')}<div><p>${esc(m.text)}</p></div></div>`).join('')}
-          ${chat.busy ? `<p class="rp-note">${chat.mode === 'interview' ? 'Interviewer' : 'Marcus'} is typing…</p>` : ''}${chat.error ? `<p class="rp-err">${esc(chat.error)}</p>` : ''}
-          ${chat.eval ? evalHtml(chat.eval) : ''}</div>
-        ${chat.eval ? '' : `<form class="rp-chat-in" data-chat-form><textarea data-chat-text rows="2" placeholder="Your answer… (Enter sends, Shift+Enter for a new line)" ${chat.busy ? 'disabled' : ''}></textarea><button type="submit" class="button is-primary" ${chat.busy ? 'disabled' : ''}>Send</button></form>`}</aside>`;
+        <div class="rp-chat-host"></div>${chat.eval ? `<div class="rp-chat-eval">${evalHtml(chat.eval)}</div>` : ''}</aside>`;
+    }
+    // The conversation is the shared chat (window.SenpaiChat); the drawer keeps its header, clock and verdict.
+    function chatProps() {
+      const who = chat.mode === 'interview' ? {name: 'Interviewer', key: 'int'} : {name: 'Marcus', role: 'Staff engineer', key: 'marcus'};
+      return {className: 'rp-thread', running: chat.busy, composer: !chat.eval, error: chat.error, typingLabel: `${who.name} is typing`,
+        placeholder: 'Your answer…', label: 'Your answer', onSend: text => chatSend(text).then(keepChat),
+        messages: chat.messages.map((m, i) => m.role === 'note' ? {id: `n${i}`, role: 'note', text: `⚡ ${m.text}`}
+          : {id: `m${i}`, role: m.role === 'user' ? 'user' : 'assistant', text: m.text, who: m.role === 'user' ? undefined : who})};
     }
     function evalHtml(e) {
       return `<div class="rp-eval"><h4>Verdict: ${esc(e.verdict)}</h4><p>${esc(e.summary)}</p>
@@ -346,12 +349,14 @@
       if (chat) { chat.busy = false; paintChat(); }
     }
     function paintChat() {
-      const old = el.querySelector('.rp-chat'), draft = old?.querySelector('[data-chat-text]')?.value || '';
+      const old = el.querySelector('.rp-chat'), key = chat ? chat.mode + (chat.eval ? ':eval' : '') : '';
+      if (old?.dataset.key === key && chatView && old.isConnected) { chatView.update(chatProps()); return; }
+      chatView?.unmount(); chatView = null;
       if (!chat) { old?.remove(); return; }
       const tmp = document.createElement('div'); tmp.innerHTML = chatHtml();
-      if (old) old.replaceWith(tmp.firstElementChild); else el.querySelector('.rp-level')?.appendChild(tmp.firstElementChild);
-      const log = el.querySelector('[data-chat-log]'); if (log) log.scrollTop = log.scrollHeight;
-      const ta = el.querySelector('[data-chat-text]'); if (ta) { ta.value = draft; if (!chat.busy) ta.focus(); }
+      const node = tmp.firstElementChild; node.dataset.key = key;
+      if (old) old.replaceWith(node); else el.querySelector('.rp-level')?.appendChild(node);
+      chatView = window.SenpaiChat.mount(node.querySelector('.rp-chat-host'), {...chatProps(), autoFocus: true});
     }
     let clock = null;
     function openChat(mode) {
@@ -508,6 +513,7 @@
       if (dead) return;
       modalOpen = false; refView = false;
       stopBuilder();
+      chatView?.unmount(); chatView = null;
       o.onRoute?.();
       if (view === 'hub') { el.innerHTML = hubHtml(); return; }
       if (view === 'case') {
@@ -518,6 +524,7 @@
       }
       writeLocal(`rp-step-${L.id}`, step);
       el.innerHTML = levelHtml(L);
+      if (chat) paintChat();   // the drawer is the shared chat, mounted into the fresh page
       if (step === 'build') await mountBuilder();
       el.querySelector('#sd-heading')?.focus({ preventScroll: true });
     }
@@ -577,21 +584,12 @@
         notes = t.value; notesChanged();
       }
     };
-    const onSubmit = ev => {
-      if (!ev.target.matches('[data-chat-form]')) return;
-      ev.preventDefault();
-      const ta = el.querySelector('[data-chat-text]'), text = ta.value.trim();
-      if (!text) return;
-      ta.value = '';
-      chatSend(text).then(keepChat);
-    };
     const onKey = ev => {
       if (ev.key === 'Escape' && modalOpen) { ev.preventDefault(); closeModal(); return; }
       if (ev.key === 'Escape' && voice) { ev.preventDefault(); stopVoice(); return; }
-      if (ev.target.matches('[data-chat-text]') && ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ev.target.form?.requestSubmit(); }
       if (ev.target.matches('[data-est]') && ev.key === 'Enter') { ev.preventDefault(); graded = Sim().grade(L, est, L.estimate); paint(); }
     };
-    el.addEventListener('click', onClick); el.addEventListener('input', onInput); el.addEventListener('submit', onSubmit); el.addEventListener('keydown', onKey);
+    el.addEventListener('click', onClick); el.addEventListener('input', onInput); el.addEventListener('keydown', onKey);
 
     (async () => {
       try { await loadStatic(); } catch (e) { el.innerHTML = `<p class="bd-note">Could not load Ripple Ops (${esc(e.message)}).</p>`; return; }
@@ -601,7 +599,7 @@
       if (want && byId(want) && unlocked(want)) await openLevel(byId(want)); else paint();
     })();
 
-    return { route: () => (view === 'level' && L && byId(L.id) ? L.id : ''), destroy() { dead = true; stopBuilder(); clearTimeout(draftTimer); clearTimeout(logTimer); el.removeEventListener('click', onClick); el.removeEventListener('input', onInput); el.removeEventListener('submit', onSubmit); el.removeEventListener('keydown', onKey); } };
+    return { route: () => (view === 'level' && L && byId(L.id) ? L.id : ''), destroy() { dead = true; stopBuilder(); chatView?.unmount(); chatView = null; clearTimeout(draftTimer); clearTimeout(logTimer); el.removeEventListener('click', onClick); el.removeEventListener('input', onInput); el.removeEventListener('keydown', onKey); } };
   }
 
   // Lessons and the home page link straight into a level.

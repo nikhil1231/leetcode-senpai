@@ -34,27 +34,27 @@
 .tu-body.goals-open { grid-template-columns: 230px minmax(0, 1fr); }
 .tu-body.goals-open.has-stage { grid-template-columns: 230px minmax(300px, 1fr) minmax(0, 1.25fr); }
 .tu-convo { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.tu-chat { display: flex; flex-direction: column; gap: 12px; height: max(380px, calc(100vh - 330px)); overflow-y: auto; padding-right: 4px; scroll-behavior: smooth; }
-.tu-msg { max-width: 92%; }
-.tu-them { align-self: flex-start; }
-.tu-me { align-self: flex-end; }
-.tu-me .tu-text { background: var(--accent-soft); border: 1px solid var(--accent-line); padding: 9px 12px; border-radius: 12px 12px 3px 12px; white-space: pre-wrap; }
-.tu-them .tu-text { background: var(--panel2); border: 1px solid var(--line); padding: 10px 14px; border-radius: 12px 12px 12px 3px; }
-.tu-them .tu-text > :first-child { margin-top: 0; } .tu-them .tu-text > :last-child { margin-bottom: 0; }
-.tu-who { display: flex; align-items: baseline; gap: 6px; margin: 0 0 4px 2px; font-size: 13px; }
-.tu-who small { color: var(--muted); }
-.tu-avatar { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; align-self: center; }
-.tu-them[data-speaker="priya"] .tu-avatar { background: var(--red); }
-.tu-them[data-speaker="marcus"] .tu-avatar { background: var(--amber); color: #111; }
-.tu-them[data-speaker="jo"] .tu-avatar { background: var(--green); color: #111; }
-.tu-them[data-speaker="sam"] .tu-avatar { background: var(--accent-2); }
-.tu-note { align-self: center; font-size: 12px; color: var(--muted); }
+/* The conversation is the shared chat (chat.css); here it only gets the panel's height and the tutor's touches. */
+.tu-convo .ch-log { height: max(380px, calc(100vh - 360px)); }
+/* The session as a chat screen (lib/chat-screen.ts): the header names the lesson, so the panel keeps only its
+   buttons, and the chat and the stage fill the height with only the conversation scrolling. */
+.chat-screen-host.tu-host .tu-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.chat-screen-host .tu-head { justify-content: flex-end; }
+.chat-screen-host .tu-head > div:first-child { display: none; }
+.chat-screen-host .tu-head .button { padding: 4px 10px; height: auto; font-size: 13px; }
+.chat-screen-host .tu-body { flex: 1; min-height: 0; margin-top: 8px; grid-template-rows: minmax(0, 1fr); }
+.chat-screen-host .tu-convo { min-height: 0; }
+.chat-screen-host .tu-convo .ch-log { height: auto; }
+.chat-screen-host .tu-stage { position: static; height: auto; min-height: 0; padding-bottom: 12px; }
+.chat-screen-host .tu-goals { position: static; max-height: none; min-height: 0; overflow-y: auto; margin-bottom: 12px; }
+.tu-thread .ch-tool[data-tool="stage"], .tu-thread .ch-tool[data-tool="noted"], .tu-thread .ch-tool[data-tool="recorded"] { display: inline-block; margin: 8px 6px 0 0; }
+.tu-thread .tu-debrief { align-self: stretch; max-width: none; }
+.tu-thread .tu-debrief .ch-bubble { border-color: rgba(var(--accent-rgb), .34); background: rgba(var(--accent-rgb), .08); }
+.tu-thread .tu-links, .tu-thread .tu-move { margin-top: 0; }
 .tu-block { margin-top: 10px; }
 .tu-stage-item.tu-block { margin-top: 0; }
 .tu-block > [data-block] { margin: 0; }
 .tu-wrap { padding: 14px; border: 1px solid var(--accent-line); border-radius: 10px; background: var(--accent-soft); }
-.tu-debrief { align-self: stretch; max-width: none; }
-.tu-debrief .tu-text { border-color: var(--accent-line); background: var(--accent-soft); }
 .tu-goals { align-self: start; position: sticky; top: 12px; max-height: calc(100vh - 120px); overflow-y: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
 .tu-goals-btn .tu-progress { color: var(--muted); font-size: 12px; margin-left: 4px; }
 .tu-goals-btn[aria-expanded="true"] { border-color: var(--accent-line); color: var(--accent); }
@@ -68,32 +68,33 @@
 .tu-stage-items { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel2); }
 .tu-stage-item { margin: 0; }
 .tu-stage-item > [data-block] { margin: 0; }
-.tu-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .tu-chip { padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
 .tu-chip:hover, .tu-chip.is-on { border-color: var(--accent-line); color: var(--accent); }
 .tu-objectives { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
 .tu-obj { display: flex; gap: 8px; font-size: 13px; line-height: 1.4; color: var(--muted); }
 .tu-obj.is-working { color: var(--text); } .tu-obj.is-working > span:first-child { color: var(--amber); }
 .tu-obj.is-demonstrated { color: var(--text); } .tu-obj.is-demonstrated > span:first-child { color: var(--green); }
-.tu-compose { display: flex; gap: 8px; margin-top: 14px; align-items: flex-end; width: 100%; }
-.tu-compose > :not(button) { flex: 1 1 auto; min-width: 0; }
-.tu-compose textarea { flex: 1; width: 100%; box-sizing: border-box; min-height: 46px; max-height: 40vh; resize: vertical; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: inherit; }
-.tu-compose textarea:focus { outline: none; border-color: var(--accent); }
-.tu-status { min-height: 20px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.tu-status { margin: 0; font-size: 13px; color: var(--muted); }
+.tu-status .button { margin-left: 8px; }
 .tu-status.is-busy::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--accent); animation: tu-pulse 1s ease-in-out infinite; }
 @keyframes tu-pulse { 50% { opacity: .3; } }
-@media (prefers-reduced-motion: reduce) { .tu-status.is-busy::before { animation: none; } .tu-chat { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { .tu-status.is-busy::before { animation: none; } }
 @media (max-width: 1000px) {
   .tu-body, .tu-body.has-stage, .tu-body.goals-open, .tu-body.goals-open.has-stage { grid-template-columns: minmax(0, 1fr); }
   .tu-goals { position: static; max-height: none; }
   .tu-stage { order: -1; position: static; height: auto; max-height: 55vh; }
   .tu-stage-items { max-height: 48vh; }
-  .tu-chat { height: auto; max-height: 70vh; }
+  .tu-convo .ch-log { height: auto; min-height: 240px; max-height: 70vh; }
+  .chat-screen-host .tu-body { grid-template-rows: auto minmax(0, 1fr); }
+  .chat-screen-host .tu-body.goals-open { grid-template-rows: auto auto minmax(0, 1fr); }
+  .chat-screen-host .tu-stage { max-height: 34vh; }
+  .chat-screen-host .tu-stage-items { max-height: none; }
+  .chat-screen-host .tu-goals { max-height: 26vh; }
+  .chat-screen-host .tu-convo .ch-log { max-height: none; min-height: 0; }
 }
 @media (max-width: 760px) {
   .tu-entry, .tu-panel { padding: 14px; }
   .tu-objectives { gap: 4px; }
-  .tu-msg { max-width: 100%; }
 }
 
 /* The Tutor tab: where the app opens. */

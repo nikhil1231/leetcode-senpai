@@ -10,15 +10,17 @@ recorded by the lesson's own activity endpoint, so they stay hard evidence. Senp
 (goal, market, CV) goes into the prompt; without Job Scout context it is simply left out.
 """
 import asyncio
+import contextvars
 import json
 import logging
 import time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .. import auth, config, handback_filing as hf, llm
+from .. import auth, chat_stream, config, handback_filing as hf, llm
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel, progress
 from ..store import get_store
 from ..senpai import career as senpai_career
@@ -36,6 +38,10 @@ FAILED = 'The tutor could not answer just now. Your message is saved; try again.
 DEBRIEF_FAILED = 'The debrief could not be written just now. Your session is saved; try again.'
 SOURCE = 'tutor'
 PICKUP_DAYS = 14   # a new session picks up from an outside tutor's handback this recent
+# Starting a session, a turn and ending a session answer with server-sent events when the request accepts
+# them: the reply as it arrives (chat_stream.Visible), then {type: done, session} with the stored record.
+_SINK = contextvars.ContextVar('tutor_sink', default=None)
+_RUNNING = set()   # streamed turns finish and are stored even when the browser goes away
 
 
 def store_for(uid: str = Depends(auth.require_user)):
@@ -388,8 +394,50 @@ class Start(BaseModel):
     layer: int = Field(default=0, ge=0, le=3, description='The layer the session aims at (1: map depth, pass one); 0 for the default.')
 
 
+def _streams(request):
+    return 'text/event-stream' in request.headers.get('accept', '')
+
+
+async def _answer(request, work):
+    """Run `work()` (-> the response body) plainly, or as an event stream when the browser asked for one."""
+    if not _streams(request):
+        return await work()
+    queue = asyncio.Queue()
+
+    async def run():
+        _SINK.set(queue.put_nowait)
+        return await work()
+
+    async def events():
+        task = asyncio.create_task(run())
+        _RUNNING.add(task)
+        task.add_done_callback(_RUNNING.discard)
+        while True:
+            get = asyncio.ensure_future(queue.get())
+            done, _ = await asyncio.wait({get, task}, return_when=asyncio.FIRST_COMPLETED)
+            if get in done:
+                yield chat_stream.sse(get.result())
+                continue
+            get.cancel()
+            while not queue.empty():
+                yield chat_stream.sse(queue.get_nowait())
+            break
+        try:
+            yield chat_stream.sse({'type': 'done', 'session': task.result()})
+        except HTTPException as exc:
+            yield chat_stream.sse({'type': 'error', 'status': exc.status_code, 'message': exc.detail})
+        except Exception:
+            log.exception('Streamed tutor turn failed')
+            yield chat_stream.sse({'type': 'error', 'status': 500, 'message': FAILED})
+    return StreamingResponse(events(), media_type='text/event-stream', headers=chat_stream.HEADERS)
+
+
 @router.post('/sessions')
-async def start(body: Start, store=Depends(store_for)):
+async def start(body: Start, request: Request, store=Depends(store_for)):
+    return await _answer(request, lambda: _start(body, store))
+
+
+async def _start(body, store):
     if not llm.enabled(store.get_settings()):
         raise HTTPException(503, UNAVAILABLE)
     l, now = _lesson(body.section, body.lesson), time.time()
@@ -498,7 +546,11 @@ def get_session(sid: str, store=Depends(store_for)):
 
 
 @router.post('/sessions/{sid}/turns')
-async def turn(sid: str, body: Turn, store=Depends(store_for)):
+async def turn(sid: str, body: Turn, request: Request, store=Depends(store_for)):
+    return await _answer(request, lambda: _turn(sid, body, store))
+
+
+async def _turn(sid, body, store):
     s = _session(store, sid)
     l = _lesson(s['section'], s['lesson'])
     if s['status'] != 'active':
@@ -546,8 +598,12 @@ def _run_summary(run, design):
 
 
 @router.post('/sessions/{sid}/end')
-async def end(sid: str, store=Depends(store_for)):
+async def end(sid: str, request: Request, store=Depends(store_for)):
     """End the session and write its debrief. Ending an ended session retries a debrief that failed."""
+    return await _answer(request, lambda: _end(sid, store))
+
+
+async def _end(sid, store):
     s, now = _session(store, sid), time.time()
     was_active = s['status'] == 'active'
     ses.end(s, now)
@@ -583,6 +639,8 @@ def _remember(store, s, now, event, debrief=''):
     else:
         mem.update(summary=s['summary'] or mem.get('summary', ''), last_at=now,
                    active=s['id'] if s['status'] == 'active' else None)
+        if s['summary']:   # whose summary it is: this session's own must not come back to it as "last session"
+            mem['summary_session'] = s['id']
     if debrief:   # the whole session in the tutor's words; the rolling summary only covers its last turns
         mem['debrief'] = {'text': debrief[:3000], 'at': now, 'session': s['id'], 'turns': len(s['turns'])}
     if s['summary'] and s['mode'] != 'review':
@@ -672,17 +730,32 @@ def _park_lesson_gaps(store, l, now):
 
 def _count(s, usage):
     s['usage'] = {'calls': s['usage']['calls'] + 1, 'input': s['usage']['input'] + int(usage.get('prompt_tokens') or 0),
-                  'output': s['usage']['output'] + int(usage.get('completion_tokens') or 0)}
+                  'output': s['usage']['output'] + int(usage.get('completion_tokens') or 0),
+                  'cached': s['usage'].get('cached', 0) + int((usage.get('prompt_tokens_details') or {}).get('cached_tokens') or 0),
+                  'cost': round(s['usage'].get('cost', 0) + float(usage.get('cost') or 0), 6)}   # dollars, as OpenRouter reports
 
 
 async def _talk(s, l, ctx, debrief=False):
     """The tutor's reply as plain text, or None when the model failed."""
-    system = ses.system(s, l, ctx['views'], ctx['open'], ctx['memory'], ctx['story'], debrief=debrief, career=ctx.get('career'),
-                        profile=ctx.get('profile'))
-    messages = [{'role': 'system', 'content': system}, *ses.messages(s, l, debrief)]
-    for _ in range(2):   # a reply with nothing visible (all private notes) gets one more try
+    args = (s, l, ctx['views'], ctx['open'], ctx['memory'], ctx['story'])
+    if debrief:
+        messages = [{'role': 'system', 'content': ses.system(*args, debrief=True, career=ctx.get('career'), profile=ctx.get('profile'))},
+                    *ses.messages(s, l, debrief)]
+    else:   # the system prompt and the conversation stay the same turn to turn (cached); this turn's state rides on his message
+        system, now = ses.prompt(*args, career=ctx.get('career'), profile=ctx.get('profile'))
+        messages = [{'role': 'system', 'content': system}, *ses.with_now(ses.messages(s, l), now)]
+    sink = _SINK.get()
+    for attempt in range(2):   # a reply with nothing visible (all private notes) gets one more try
         try:
-            raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, messages, options={'max_tokens': 2500, 'timeout': 60, 'think': False})
+            # cache: the system prompt and the conversation so far are the same text each turn (session.prompt).
+            options = {'max_tokens': 2500, 'timeout': 60, 'think': False, 'cache': True, 'allow_anthropic': 'tutor',
+                       **({'cache_ttl': config.TUTOR_CACHE_TTL} if config.TUTOR_CACHE_TTL else {})}
+            if sink:
+                if attempt:
+                    sink({'type': 'reset'})
+                raw = await _stream_talk(messages, options, sink)
+            else:
+                raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, messages, options=options)
         except Exception as exc:
             log.warning('Tutor reply failed: %s', type(exc).__name__)
             return None
@@ -691,6 +764,21 @@ async def _talk(s, l, ctx, debrief=False):
             return raw['content']
     log.warning('Tutor reply had nothing to show')
     return None
+
+
+async def _stream_talk(messages, options, sink):
+    """The tutor's reply streamed through the visibility filter -> {content, usage} like `_raw_chat`."""
+    visible, parts, usage = chat_stream.Visible(), [], {}
+    async for piece in llm._raw_chat_stream(config.TUTOR_MODEL, messages, options=options):
+        if 'text' in piece:
+            parts.append(piece['text'])
+            for event in visible.feed(piece['text']):
+                sink(event)
+        else:
+            usage = piece.get('usage') or {}
+    for event in visible.finish():
+        sink(event)
+    return {'content': ''.join(parts), 'usage': usage}
 
 
 async def _take_notes(s, l, ctx):

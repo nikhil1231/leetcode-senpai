@@ -161,10 +161,7 @@
         <div class="tu-head-actions"><button type="button" class="button tu-goals-btn" data-tu="goals" aria-expanded="${open}" aria-controls="tu-goals">Objectives <span class="tu-progress"></span></button>${btn(back, 'close')}${s.status === 'active' ? btn('End session', 'end') : ''}</div></header>
       <div class="tu-body${open ? ' goals-open' : ''}">
         <aside class="tu-goals" id="tu-goals" aria-label="Objectives"${open ? '' : ' hidden'}><span class="sd-eyebrow">OBJECTIVES</span><ol class="tu-objectives"></ol></aside>
-        <div class="tu-convo"><div class="tu-chat" aria-live="polite"></div>
-          <form class="tu-compose"><textarea data-dictate rows="2" aria-label="Your reply" placeholder="Answer, ask, or think out loud…"></textarea>
-            <button type="submit" class="button is-primary">Send</button></form>
-          <div class="tu-status" role="status"></div></div>
+        <div class="tu-convo"></div>
         <aside class="tu-stage" aria-label="Whiteboard and activities" hidden><div class="tu-stage-tabs" role="tablist" aria-label="What the tutor brought in"></div><div class="tu-stage-items"></div></aside>
       </div></section>`;
   }
@@ -192,21 +189,17 @@
     stage.querySelectorAll('.tu-stage-tab').forEach(n => { const on = n.dataset.stageTab === id; n.classList.toggle('is-on', on); n.setAttribute('aria-selected', String(on)); });
     T.host.querySelectorAll('.tu-chip').forEach(n => n.classList.toggle('is-on', n.dataset.stageChip === id));
   }
-  function chip(id, label) {
-    const c = document.createElement('button');
-    c.type = 'button'; c.className = 'tu-chip'; c.dataset.stageChip = id;
-    c.innerHTML = `<span aria-hidden="true">▸</span> ${esc(label)}`;
-    c.addEventListener('click', () => { stageShow(id); if (window.matchMedia?.('(max-width: 1000px)').matches) T.host.querySelector('.tu-stage')?.scrollIntoView?.({block: 'start', behavior: 'smooth'}); });
-    return c;
-  }
-
   function paint() {
     if (!T.info) return;
+    T.chat?.unmount(); T.chat = null;
     hideLesson();
     const tools = !T.open || !T.session ? toolsMode() : false;
     placeHost(tools);
-    if (!T.open || !T.session) { T.host.innerHTML = entryHtml(); wireEntry(); return; }
+    if (!T.open || !T.session) { window.SenpaiChat?.leaveScreen(T.host); T.host.innerHTML = entryHtml(); wireEntry(); return; }
     T.host.innerHTML = panelHtml();
+    // The session is the page: it fills the screen under the header, which names the lesson and the style.
+    const mode = T.overview.modes.find(m => m.id === T.session.mode);
+    window.SenpaiChat?.screen(T.host, T.ctx.lesson.title, `Tutor · ${mode?.label || T.session.mode}`);
     T.rendered = 0;
     wirePanel();
     sync();
@@ -224,20 +217,20 @@
     T.host.querySelector('[data-tu-mode]')?.addEventListener('change', e => { T.mode = e.target.value; paint(); });
     T.host.querySelectorAll('[data-tu]').forEach(n => n.addEventListener('click', () => act(n.dataset.tu)));
   }
+  // The conversation itself is the shared chat (src/features/tutor/TutorChat.tsx): it draws the turns, streams replies
+  // and hands each stored session back here, where the stage and objectives follow it.
+  function chatProps() {
+    const t = T;
+    return {session: t.session, cast, blocks: t.ctx.lesson.blocks || [], next: t.info?.next || null,
+      onSession(s) { if (T !== t) return; t.session = s; sync(); },
+      showStage: id => stageShow(id),
+      onMove(m) { queue({section: m.section, lesson: m.lesson, carry: t.session?.id}); window.AppSections?.select(m.section, route(m.lesson)); },
+      onAct: a => act(a)};
+  }
   function wirePanel() {
     T.host.querySelectorAll('.tu-head [data-tu]').forEach(n => n.addEventListener('click', () => act(n.dataset.tu)));
-    const form = T.host.querySelector('.tu-compose'), box = form.querySelector('textarea');
-    box.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-      if (T.busy) return;
-      await window.Dictate?.hold?.(box);  // the mic, if on, comes back on with the reply (resumeMic)
-      const text = box.value.trim();
-      if (!text) { resumeMic(); return; }
-      box.value = '';
-      send({text});
-    });
-    setTimeout(() => box.focus({preventScroll: true}), 0);
+    T.chat = window.SenpaiChat.tutor(T.host.querySelector('.tu-convo'), chatProps());
+    setTimeout(() => T?.host.querySelector('.tu-convo .ch-input')?.focus({preventScroll: true}), 0);
   }
 
   async function act(action) {
@@ -271,9 +264,9 @@
         t.busy = true; t.error = ''; t.open = true;
         t.session = {id: null, mode: t.mode, status: 'active', turns: [], objectives: t.info.objectives.map(() => ({status: 'open'})), progress: {demonstrated: 0, total: t.info.objectives.length}};
         paint(); t.host.scrollIntoView?.({block: 'start', behavior: 'smooth'});
-        status(`${cast(firstSpeaker(t.mode))?.name || 'The tutor'} is getting ready…`);
-        const s = await api('/tutor/sessions', 'POST', {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid(), focus: t.focus || '', carry: t.carry || null, layer: t.layer || 0});
+        const body = {section: t.ctx.section, lesson: t.ctx.lesson.id, mode: t.mode, key: rid(), focus: t.focus || '', carry: t.carry || null, layer: t.layer || 0};
         t.focus = ''; t.carry = null; t.layer = 0;
+        const s = await t.chat.start(body);
         if (T !== t) return;
         t.session = s; t.busy = false; paint();
       } else if (action === 'resume') {
@@ -282,14 +275,12 @@
         t.open = false; t.notes = true; paint(); t.ctx.layout?.scrollIntoView?.({block: 'start'});
       } else if (action === 'end' || action === 'fresh') {
         if (action === 'fresh') { t.open = true; paint(); }
-        t.busy = true; status('Writing your debrief…');
+        t.busy = true;
         t.host.querySelectorAll('[data-tu="end"]').forEach(n => { n.disabled = true; });
-        t.session = await api(`/tutor/sessions/${t.session.id}/end`, 'POST', {});
+        t.session = await t.chat.end();   // the debrief streams into the chat
         t.info = await api(`/tutor/lessons/${t.ctx.section}/${t.ctx.lesson.id}`);
         if (T !== t) return;
-        t.busy = false; t.pending = null; paint();
-      } else if (action === 'retry' && t.pending) {
-        send(t.pending, true);
+        t.busy = false; paint();
       } else if (action === 'go-next' && t.info?.next) {
         const n = t.info.next;
         queue({section: n.section, lesson: n.lesson});
@@ -300,122 +291,43 @@
     } catch (e) {
       if (T !== t) return;
       t.busy = false;
-      if (!t.session?.id) { t.open = false; t.session = null; t.error = e.message; paint(); } else status(e.message, true);
+      if (!t.session?.id) { t.open = false; t.session = null; t.error = e.message; paint(); }   // otherwise the chat shows it
     }
   }
-  const firstSpeaker = mode => ({explain: 'jo', critique: 'marcus', 'war-room': 'priya', interview: 'marcus', cv: 'marcus'}[mode] || 'tutor');
 
-  async function send(body, retry = false) {
-    const t = T;
-    if (!retry) t.pending = {...body, key: rid()};
-    t.busy = true;
-    const chat = t.host.querySelector('.tu-chat');
-    if (!retry && body.text) chat?.insertAdjacentHTML('beforeend', `<div class="tu-msg tu-me tu-optimistic"><div class="tu-text">${esc(body.text)}</div></div>`);
-    status(`${cast(lastSpeaker())?.name || 'The tutor'} is thinking…`);
-    scrollChat();
-    try {
-      const s = await api(`/tutor/sessions/${t.session.id}/turns`, 'POST', t.pending);
-      if (T !== t) return;
-      t.session = s; t.busy = false;
-      if (!s.error) t.pending = null;
-      sync();
-      resumeMic();
-    } catch (e) {
-      if (T !== t) return;
-      t.busy = false;
-      status(e.message, true);
-      resumeMic();
-    }
-  }
-  function resumeMic() { window.Dictate?.resume?.(T?.host.querySelector('.tu-compose textarea')); }
-  function lastSpeaker() { const turns = T.session?.turns || []; for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === 'tutor') return turns[i].speaker; return 'tutor'; }
+  // An activity answer or a design run goes to the tutor as a turn, through the chat so its reply streams.
+  function send(body) { T.chat?.send(body).catch(() => {}); }
 
-  function status(text, isError = false) {
-    const n = T.host.querySelector('.tu-status');
-    if (!n) return;
-    n.className = 'tu-status' + (isError ? ' is-error' : text ? ' is-busy' : '');
-    n.innerHTML = text ? esc(text) + (isError && T.pending ? ' ' + btn('Try again', 'retry') : '') : '';
-    n.querySelector('[data-tu]')?.addEventListener('click', () => act('retry'));
-  }
-  function scrollChat() { const c = T.host.querySelector('.tu-chat'); if (c) c.scrollTop = c.scrollHeight; }
-
-  // Append turns the chat has not shown yet; earlier turns (and live activities in them) stay put.
+  // Follow the session: the chat redraws, the stage gains what new turns brought in (earlier items and their live
+  // state stay put), and the objectives update.
   function sync() {
-    const s = T.session, chat = T.host.querySelector('.tu-chat');
-    if (!chat) return;
-    chat.querySelectorAll('.tu-optimistic').forEach(n => n.remove());
+    const s = T.session;
+    if (!T.host.querySelector('.tu-convo')) return;
+    T.chat?.update(chatProps());
     const answered = new Set(s.turns.filter(t => t.role === 'block').map(t => t.block));
     const before = T.host.querySelectorAll('.tu-stage-item').length;
-    s.turns.slice(T.rendered).forEach(turn => chat.appendChild(turnNode(turn, answered)));
+    s.turns.slice(T.rendered).forEach((turn, i) => stageTurn(turn, T.rendered + i, answered));
     T.rendered = s.turns.length;
     const items = T.host.querySelectorAll('.tu-stage-item');
     if (items.length > before) stageShow(items[items.length - 1].dataset.stage);
-    if (s.status === 'ended' && !chat.querySelector('.tu-wrap')) {
-      const retry = s.debrief_due ? btn('Write the debrief', 'end', '', true) : '';
-      const nx = !retry && T.info?.next;
-      chat.insertAdjacentHTML('beforeend', `<div class="tu-wrap"><b>Session ended.</b> ${s.progress.demonstrated} of ${s.progress.total} objectives shown. What you showed is now in your knowledge model.<div class="sd-actions">${retry}${nx ? btn(`Next: ${nx.title} →`, 'go-next', '', true) : ''}${btn('Back to the lesson', 'close', '', !retry && !nx)}${btn('Another session', 'again')}</div></div>`);
-      chat.querySelectorAll('.tu-wrap [data-tu]').forEach(n => n.addEventListener('click', () => act(n.dataset.tu)));
-      T.host.querySelector('.tu-compose')?.remove();
-      T.host.querySelector('.tu-head [data-tu="end"]')?.remove();
-    }
+    if (s.status === 'ended') T.host.querySelector('.tu-head [data-tu="end"]')?.remove();
     T.host.querySelector('.tu-objectives').innerHTML = T.ctx.lesson.objectives.map((o, i) => {
       const st = s.objectives[i]?.status || 'open';
       return `<li class="tu-obj is-${st}" title="${MARK[st][1]}"><span aria-hidden="true">${MARK[st][0]}</span><span>${inline(o)}</span></li>`;
     }).join('');
     T.host.querySelector('.tu-progress').textContent = `${s.progress.demonstrated}/${s.progress.total}`;
-    status(s.error || '', !!s.error);
-    scrollChat();
   }
 
-  function turnNode(turn, answered) {
-    const n = document.createElement('div');
-    if (turn.role === 'learner') {
-      n.className = 'tu-msg tu-me'; n.innerHTML = `<div class="tu-text">${esc(turn.text)}</div>`;
-    } else if (turn.role === 'block') {
-      n.className = 'tu-note'; n.textContent = turn.correct ? 'You got the activity right.' : 'You missed the activity.';
-    } else if (turn.role === 'run') {
-      n.className = 'tu-note'; n.textContent = `You ran the design in the simulator: ${Number(turn.availability || 0).toFixed(2)}% availability.`;
-    } else {
-      const who = turn.debrief ? {name: 'Tutor', role: 'Debrief'} : turn.speaker === 'tutor' ? {name: 'Tutor', role: ''} : (cast(turn.speaker) || {name: turn.speaker, role: ''});
-      n.className = 'tu-msg tu-them' + (turn.debrief ? ' tu-debrief' : ''); n.dataset.speaker = turn.speaker;
-      n.innerHTML = `<div class="tu-who"><span class="tu-avatar" aria-hidden="true">${esc(who.name[0])}</span><b>${esc(who.name)}</b>${who.role ? `<small>${esc(who.role)}</small>` : ''}</div><div class="tu-text sd-md">${md(turn.say)}</div>`;
-      const at = T.session?.turns.indexOf(turn);
-      const chips = document.createElement('div');
-      chips.className = 'tu-chips';
-      const put = (node, label, id) => { stageAdd(node, label, id); chips.appendChild(chip(id, label)); };
-      (turn.boards || []).forEach((d, i) => put(boardNode(d, `wb${at}-${i}`), `Whiteboard: ${d.title || 'sketch'}`, `wb${at}-${i}`));
-      (turn.designs || []).forEach((d, i) => put(designNode(d, at), `Simulator: ${d.title}`, `ds${at}-${i}`));
-      if (turn.show_block) {
-        const b = (T.ctx.lesson.blocks || []).find(x => x.key === turn.show_block);
-        put(blockNode(turn.show_block, answered.has(turn.show_block)), `Activity: ${String(b?.title || b?.prompt || 'try it').replace(/[*`]/g, '').slice(0, 48)}`, `ac${at}`);
-      }
-      if (chips.childElementCount) n.appendChild(chips);
-      if (turn.links?.length) n.appendChild(linksNode(turn.links));
-      if (turn.move) n.appendChild(moveNode(turn.move));
+  // What a tutor turn brought in goes on the stage; its message in the chat carries a card that brings it forward.
+  // Ids match TutorChat's turnParts.
+  function stageTurn(turn, at, answered) {
+    if (turn.role !== 'tutor') return;
+    (turn.boards || []).forEach((d, i) => stageAdd(boardNode(d, `wb${at}-${i}`), `Whiteboard: ${d.title || 'sketch'}`, `wb${at}-${i}`));
+    (turn.designs || []).forEach((d, i) => stageAdd(designNode(d, at), `Simulator: ${d.title}`, `ds${at}-${i}`));
+    if (turn.show_block) {
+      const b = (T.ctx.lesson.blocks || []).find(x => x.key === turn.show_block);
+      stageAdd(blockNode(turn.show_block, answered.has(turn.show_block)), `Activity: ${String(b?.title || b?.prompt || 'try it').replace(/[*`]/g, '').slice(0, 48)}`, `ac${at}`);
     }
-    return n;
-  }
-
-  // Game levels, worked designs and simulators the tutor handed over: links to the Simulators page.
-  function linksNode(links) {
-    const wrap = document.createElement('div');
-    wrap.className = 'tu-links';
-    const TAG = {game: 'Play in Ripple Ops', design: 'Worked design', internals: 'Simulator'};
-    wrap.innerHTML = links.map(l => `<a class="tu-link is-${esc(l.kind)}" href="${esc(l.href)}"><span>${TAG[l.kind] || 'Open'}</span><b>${esc(l.title)} →</b></a>`).join('');
-    return wrap;
-  }
-
-  // The tutor suggests carrying the conversation into another lesson: one click, and the thread comes along.
-  function moveNode(m) {
-    const wrap = document.createElement('div');
-    wrap.className = 'tu-move';
-    wrap.innerHTML = btn(`Carry on in ${m.title} →`, 'move', '', true);
-    const from = T.session?.id;
-    wrap.querySelector('button').addEventListener('click', () => {
-      queue({section: m.section, lesson: m.lesson, carry: from});
-      window.AppSections?.select(m.section, route(m.lesson));
-    });
-    return wrap;
   }
 
   // A diagram the tutor drew on the whiteboard: drawn like a lesson's architecture block, with its
@@ -487,6 +399,6 @@
     return wrap;
   }
 
-  function reset() { T = null; }
+  function reset() { if (T) window.SenpaiChat?.leaveScreen(T.host); T = null; }
   window.Tutor = {mount, reset, queue, warming, warmed, route};
 })();

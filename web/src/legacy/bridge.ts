@@ -22,6 +22,9 @@ import { ReadinessCard } from "@/components/readiness/ReadinessCard";
 import { NextUpBanner, NextUpCard } from "@/components/nextup/NextUp";
 import { loadCodeMirror } from "@/features/editor/codemirror";
 import { ToastBoundary } from "@/lib/toast";
+import { mountTutorChat } from "@/features/tutor/TutorChat";
+import { mountChat } from "@/components/chat/mount";
+import { enterChatScreen, leaveChatScreen } from "@/lib/chat-screen";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -54,6 +57,7 @@ export function installBridge() {
     beginRender: (el: HTMLElement, msg?: string) => { if (!el.childElementCount) el.innerHTML = loader(msg); },
   };
   w.ASSET_VER = "";
+  w.SenpaiChat = { mount: mountChat, tutor: mountTutorChat, screen: enterChatScreen, leaveScreen: leaveChatScreen };   // the shared chat (components/chat) for legacy modules
   w.Views = {};
   w.loadCodeMirrorLegacy = async () => { if (!w.CM) w.CM = await loadCodeMirror(); return w.CM; };
 

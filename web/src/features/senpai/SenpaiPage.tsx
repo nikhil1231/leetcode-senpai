@@ -9,6 +9,8 @@ import { Loader } from "@/components/ui/Loader";
 import { Blocks, Brief, day, pct, when } from "./parts";
 import { useStartBlock } from "./start";
 import { DailyReviews } from "@/features/leetcode/DailyReviews";
+import { Chat, type ChatMessage } from "@/components/chat/Chat";
+import { enterChatScreen, leaveChatScreen } from "@/lib/chat-screen";
 import Link from "next/link";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -283,19 +285,26 @@ function TeachPanel({ capability, name, onClose }: { capability: string; name: s
   const [mode, setMode] = useState("learn");
   const [history, setHistory] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
-  const [text, setText] = useState("");
+  const [error, setError] = useState("");
   const box = useRef<HTMLDivElement>(null);
-  useEffect(() => { box.current?.scrollIntoView({ behavior: "smooth" }); }, []);
-  const send = async () => {
-    const t = text.trim();
-    if (!t || busy) return;
+  // Teaching is a chat screen: it fills the page under the header, which names the capability.
+  useEffect(() => { const el = box.current; if (!el) return; enterChatScreen(el, name, "Senpai · Teach me"); return () => leaveChatScreen(el); }, [name]);
+  const send = async (t: string) => {
     const prior = history;
-    setHistory([...prior, { role: "you", text: t }]); setText(""); setBusy(true);
+    setHistory([...prior, { role: "you", text: t }]); setBusy(true); setError("");
     try {
       const r = await api("/senpai/teach", "POST", { capability_id: capability, message: t, mode, history: prior.map((m) => ({ role: m.role, text: m.text })) });
       setHistory((h) => [...h, { role: "senpai", text: r.reply, assistance: r.assistance, exercise: r.exercise, actions: r.actions }]);
-    } catch (e) { setHistory((h) => [...h, { role: "senpai", text: (e as Error).message }]); } finally { setBusy(false); }
+    } catch (e) { setHistory(prior); setError((e as Error).message); throw e; } finally { setBusy(false); }
   };
+  const messages: ChatMessage[] = history.map((m, i) => m.role === "you" ? { id: `m${i}`, role: "user", text: m.text } : {
+    id: `m${i}`, role: "assistant", text: m.text,
+    who: { name: "Senpai", role: m.assistance && m.assistance !== "none" ? m.assistance.replace("_", " ") : undefined },
+    after: (m.exercise || (m.actions || []).length > 0) ? <>
+      {m.exercise && <details className="sp-exercise"><summary>Practice exercise · supplemental, not validated</summary><p>{m.exercise.prompt}</p><details><summary>Outline</summary><p>{m.exercise.answer_outline}</p></details></details>}
+      {(m.actions || []).length > 0 && <p className="help">{m.actions!.map((a) => a.tool === "request_checkpoint" ? `Later check scheduled ${day(a.check_at)}` : `Focus proposal: ${DECISION[a.decision] || a.decision}`).join(" · ")}</p>}
+    </> : undefined,
+  });
   return (
     <div id="sp-teach-host" ref={box}>
       <div className="sp-teach" role="dialog" aria-label="Teach me">
@@ -303,18 +312,9 @@ function TeachPanel({ capability, name, onClose }: { capability: string; name: s
         <label>Mode <select className="input" value={mode} onChange={(e) => setMode(e.target.value)}>
           {[["learn", "Learn (explanations welcome)"], ["independent", "Independent (conceptual hints only)"], ["interview", "Interview (clarifications only)"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
         <p className="help">Help is recorded as assistance{mode !== "learn" ? ", and on any run in progress" : ""}. Exercises Senpai writes are practice material, not assessments.</p>
-        <div className="sp-chat">
-          {history.length === 0 && <p className="help">Ask a question, or say what you think you know. Senpai usually starts by checking.</p>}
-          {history.map((m, i) => (
-            <div key={i} className={`sp-msg ${m.role === "senpai" ? "is-senpai" : ""}`}><b>{m.role === "senpai" ? "Senpai" : "You"}</b>
-              {m.assistance && m.assistance !== "none" && <> <span className="sp-chip">{m.assistance.replace("_", " ")}</span></>}<p>{m.text}</p>
-              {m.exercise && <details className="sp-exercise"><summary>Practice exercise · supplemental, not validated</summary><p>{m.exercise.prompt}</p><details><summary>Outline</summary><p>{m.exercise.answer_outline}</p></details></details>}
-              {(m.actions || []).length > 0 && <p className="help">{m.actions!.map((a) => a.tool === "request_checkpoint" ? `Later check scheduled ${day(a.check_at)}` : `Focus proposal: ${DECISION[a.decision] || a.decision}`).join(" · ")}</p>}</div>))}
-          {busy && <p className="help">Senpai is thinking…</p>}
-        </div>
-        <textarea className="input" rows={3} maxLength={4000} placeholder="What I think the invariant is…" disabled={busy} value={text} autoFocus
-          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(); }} />
-        <div className="dc-actions"><button type="button" className="button is-primary" disabled={busy} onClick={send}>Send</button></div>
+        <Chat className="sp-chat" messages={messages} running={busy} onSend={send} autoFocus placeholder="What I think the invariant is…" label="Message Senpai" typingLabel="Senpai is thinking"
+          empty={<p className="help">Ask a question, or say what you think you know. Senpai usually starts by checking.</p>}
+          status={error ? <p className="ch-status is-error" role="status">{error}</p> : null} />
       </div>
     </div>
   );

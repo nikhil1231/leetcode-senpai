@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { streamApi } from "@/lib/api";
+import { Chat, useKeyboardFit, type ChatMessage } from "@/components/chat/Chat";
 import { useHeadingValue } from "@/lib/heading";
 import { useOverview } from "@/lib/queries";
 import { useRun } from "@/lib/run-store";
@@ -21,7 +22,7 @@ export function snapshotPage(pageName: string, section: string) {
   const parts: string[] = [];
   for (const root of roots) {
     const fields = [...root.querySelectorAll<HTMLInputElement>("input, textarea, select")]
-      .filter((n) => visible(n) && !/password|hidden|file/.test(n.type) && !/cookie|token|secret|api.?key|password/i.test(n.id + " " + n.name) && !n.closest(".coach-chat, .sd-chat"))
+      .filter((n) => visible(n) && !/password|hidden|file/.test(n.type) && !/cookie|token|secret|api.?key|password/i.test(n.id + " " + n.name) && !n.closest(".coach-chat, .sd-chat, .ch-thread"))
       .slice(0, 16).map((n) => ({ field: n.getAttribute("aria-label") || n.labels?.[0]?.innerText || n.id || n.name, value: clip(n.value || "", 1200), ...(/checkbox|radio/.test(n.type) ? { selected: n.checked } : {}) }));
     const answers = [...root.querySelectorAll<HTMLElement>(".is-wrong, .light-option.is-correct, .sd-choice-picked, .sd-choice-correct, .sd-choice-wrong")].filter(visible).slice(0, 10)
       .map((n) => ({ answer: clip(n.innerText || "", 1200), state: n.matches(".is-wrong, .sd-choice-wrong") ? "incorrect selection" : n.matches(".is-correct, .sd-choice-correct") ? "correct answer" : "selected answer" }));
@@ -32,6 +33,10 @@ export function snapshotPage(pageName: string, section: string) {
   return { page: pageName, section, context: clip(parts.join("\n\n"), 11980) };
 }
 
+type Turn = { id: string; role: "me" | "coach"; text: string; page: string; streaming?: boolean };
+let seq = 0;
+const nextId = () => `pc${++seq}`;
+
 export function PageCoach() {
   const { pageCoachOpen: open, setPageCoach } = useUi();
   const { title } = useHeadingValue();
@@ -39,62 +44,71 @@ export function PageCoach() {
   const overview = useOverview().data;
   const run = useRun();
   const editorRun = !!run.active && run.active.surface === "editor" && !run.minimised && section === "leetcode";
-  const [turns, setTurns] = useState<{ role: "me" | "coach"; text: string; page: string }[]>([]);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [model, setModel] = useState("");
-  const [text, setText] = useState("");
-  const gen = useRef(0);
-  const input = useRef<HTMLTextAreaElement>(null);
-  const log = useRef<HTMLDivElement>(null);
+  const abort = useRef<AbortController | null>(null);
+  const panel = useRef<HTMLElement>(null);
   const pageName = (title || "Current page").slice(0, 160);
+  const enabled = !!overview?.llm_enabled;
+  useKeyboardFit(panel, open);
 
   useEffect(() => { if (open && editorRun) setPageCoach(false); }, [open, editorRun, setPageCoach]);
   useEffect(() => { document.body.classList.toggle("page-coach-open", open); return () => document.body.classList.remove("page-coach-open"); }, [open]);
-  useEffect(() => { if (open) { input.current?.focus(); setError(overview?.llm_enabled ? "" : "AI coaching is unavailable. Check the coach configuration in Settings."); } }, [open, overview?.llm_enabled]);
-  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [turns, pending]);
+  useEffect(() => { if (open) { setError(enabled ? "" : "AI coaching is unavailable. Check the coach configuration in Settings."); document.getElementById("page-coach-input")?.focus(); } }, [open, enabled]);
   useEffect(() => {
     if (!open) return;
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !document.querySelector(".overlay")) { e.preventDefault(); e.stopImmediatePropagation(); setPageCoach(false); document.getElementById("btn-page-coach")?.focus(); }
-      else if (document.getElementById("page-coach")?.contains(e.target as Node)) e.stopImmediatePropagation();   // Quickfire shortcuts must never read typing in the coach as answers
     };
     document.addEventListener("keydown", key, true);
     return () => document.removeEventListener("keydown", key, true);
   }, [open, setPageCoach]);
 
-  const send = async () => {
-    const message = text.trim();
-    if (!message || pending || editorRun) return;
+  const send = async (message: string) => {
+    if (pending || editorRun) return;
     const state = snapshotPage(pageName, section === "system-design" ? "system-design" : "leetcode");
-    const g = gen.current, history = turns.slice(-8).map((m) => ({ ...m, text: m.text.slice(0, 2000) }));
-    setTurns([...turns, { role: "me", text: message, page: state.page }]); setText(""); setPending(true); setError("");
+    const history = turns.filter((t) => !t.streaming).slice(-8).map(({ role, text, page }) => ({ role, text: text.slice(0, 2000), page }));
+    const me: Turn = { id: nextId(), role: "me", text: message, page: state.page };
+    const reply: Turn = { id: nextId(), role: "coach", text: "", page: state.page, streaming: true };
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    setTurns((t) => [...t, me]); setPending(true); setError("");
+    const put = (patch: Partial<Turn>) => setTurns((t) => t.map((x) => (x.id === reply.id ? { ...x, ...patch } : x)));
+    let text = "";
     try {
-      const r: Any = await api("/coach/page-chat", "POST", { message, ...state, history });
-      if (gen.current !== g) return;
-      setTurns((t) => [...t, { role: "coach", text: r.reply, page: state.page }]); setModel(r.model);
-    } catch (e) { if (gen.current !== g) return; setTurns((t) => t.slice(0, -1)); setText(message); setError((e as Error).message); } finally { setPending(false); input.current?.focus(); }
+      await streamApi("/coach/page-chat", { message, ...state, history }, (e: Any) => {
+        if (abort.current !== ctrl) return;
+        if (e.type === "text") { const first = !text; text += e.text; if (first) setTurns((t) => [...t, { ...reply, text }]); else put({ text }); }
+        else if (e.type === "done") { if (e.reply != null) text = e.reply; setModel(e.model || ""); }
+      }, ctrl.signal);
+      if (abort.current !== ctrl) return;
+      setTurns((t) => (t.some((x) => x.id === reply.id) ? t.map((x) => (x.id === reply.id ? { ...x, text: text.trim(), streaming: false } : x)) : [...t, { ...reply, text: text.trim(), streaming: false }]));
+    } catch (e) {
+      if (abort.current !== ctrl) return;
+      setTurns((t) => t.filter((x) => x.id !== reply.id && x.id !== me.id));   // the message goes back in the box
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      if (abort.current === ctrl) { abort.current = null; setPending(false); }
+    }
   };
+  const clear = () => { abort.current?.abort(); abort.current = null; setPending(false); setTurns([]); setError(""); document.getElementById("page-coach-input")?.focus(); };
 
+  const messages = useMemo<ChatMessage[]>(() => turns.map((t) => ({ id: t.id, role: t.role === "me" ? "user" : "assistant", text: t.text, streaming: t.streaming })), [turns]);
   if (!open) return null;
-  const render = (t: string) => t.split(/(`[^`]+`)/).map((p, i) => (p.startsWith("`") && p.endsWith("`") && p.length > 1 ? <code key={i}>{p.slice(1, -1)}</code> : p));
   return (
-    <aside id="page-coach" className="page-coach" aria-label="AI page coach">
+    // Page shortcuts (Quickfire's answer keys) listen on document: typing in the coach stops there, after the composer saw it.
+    <aside ref={panel} id="page-coach" className="page-coach" aria-label="AI page coach" onKeyDown={(e) => e.nativeEvent.stopImmediatePropagation()}>
       <div className="coach-head"><span className="coach-title">Coach</span><span id="page-coach-model" className="coach-model-name">{model || overview?.llm_model || "AI"}</span>
-        <button id="page-coach-clear" className="button is-ghost is-small" type="button" title="Clear this chat" disabled={pending} onClick={() => { gen.current++; setTurns([]); setError(""); input.current?.focus(); }}>New chat</button>
+        <button id="page-coach-clear" className="button is-ghost is-small" type="button" title="Clear this chat" onClick={clear}>New chat</button>
         <button id="page-coach-close" className="panel-toggle" type="button" aria-label="Close AI coach" onClick={() => setPageCoach(false)}>&#x203A;</button></div>
       <p id="page-coach-context" className="page-coach-context">Current page: {pageName}</p>
-      <div id="page-coach-messages" className="page-coach-messages" role="log" aria-live="polite" ref={log}>
-        {turns.length ? turns.map((m, i) => <div key={i} className={m.role === "me" ? "chat-msg is-me" : "hint-card"}><p>{render(m.text)}</p></div>)
-          : <p className="page-coach-empty">Ask about the question, your answer, or the feedback on this page. The coach receives a short page snapshot with each message.</p>}
-        {pending && <div className="hint-card chat-typing" aria-label="Coach is typing"><span /><span /><span /></div>}
-      </div>
-      <p id="page-coach-error" className="page-coach-error" role="status">{error}</p>
-      <form id="page-coach-form" className="coach-chat" autoComplete="off" onSubmit={(e) => { e.preventDefault(); void send(); }}>
-        <textarea id="page-coach-input" ref={input} rows={3} maxLength={4000} placeholder="Ask about this question or your mistake…" aria-label="Message the AI coach" disabled={pending} value={text} onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as KeyboardEvent).isComposing) { e.preventDefault(); void send(); } }} />
-        <div className="page-coach-send"><span>Enter to send · Shift+Enter for a new line</span><button id="page-coach-send" className="button is-primary is-small" type="submit" disabled={pending}>Send</button></div>
-      </form>
+      <Chat className="page-coach-thread" messages={messages} running={pending} onSend={send} inputId="page-coach-input" disabled={!enabled}
+        placeholder="Ask about this question or your mistake…" label="Message the AI coach" typingLabel="Coach is typing"
+        empty={<p className="page-coach-empty">Ask about the question, your answer, or the feedback on this page. The coach receives a short page snapshot with each message.</p>}
+        status={error ? <p id="page-coach-error" className="page-coach-error" role="status">{error}</p> : null} />
     </aside>
   );
 }

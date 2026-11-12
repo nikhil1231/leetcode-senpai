@@ -22,6 +22,7 @@ import "@/styles/next-up.css";
 import "@/styles/palette.css";
 import "@/styles/daily-coach.css";
 import "@/styles/page-coach.css";
+import "@/styles/chat.css";
 import "@/styles/readiness.css";
 import "@/styles/themes.css";
 import "@/styles/app.css";

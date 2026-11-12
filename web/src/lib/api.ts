@@ -36,10 +36,11 @@ export function apiErrorMessage(detail: unknown): string {
 
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-export async function request(path: string, method: Method = "GET", body?: unknown, signal?: AbortSignal): Promise<Response> {
+export async function request(path: string, method: Method = "GET", body?: unknown, signal?: AbortSignal, accept?: string): Promise<Response> {
   // X-Requested-With makes the Access edge answer an expired session with a same-origin 401 rather than a
   // cross-origin 302 that fetch follows and then cannot read.
   const headers: Record<string, string> = { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" };
+  if (accept) headers.Accept = accept;
   if (method !== "GET" && typeof window !== "undefined") noteWrite("/api" + path);
   const res = await fetch("/api" + path, { method, headers, signal, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.status === 401 || res.status === 403) {
@@ -57,4 +58,40 @@ export async function request(path: string, method: Method = "GET", body?: unkno
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function api<T = any>(path: string, method: Method = "GET", body?: unknown): Promise<T> {
   return (await request(path, method, body)).json();
+}
+
+// Server-sent events: each `data:` line is one JSON object with a `type` (server/chat_stream.py). Returns the
+// complete events in `buffer` and the unfinished rest.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function parseEvents(buffer: string): { events: any[]; rest: string } {
+  const blocks = buffer.replace(/\r\n/g, "\n").split("\n\n");
+  const rest = blocks.pop() ?? "";
+  const events = blocks.flatMap((b) => b.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()))
+    .flatMap((d) => { try { return [JSON.parse(d)]; } catch { return []; } });
+  return { events, rest };
+}
+
+// POST and read the reply as it streams; onEvent sees each event in order. Errors before the stream starts throw like
+// `api`; a stream that ends without a `done` event throws, so a dropped connection is never taken for a finished reply.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function streamApi(path: string, body: unknown, onEvent: (event: any) => void, signal?: AbortSignal): Promise<void> {
+  const res = await request(path, "POST", body, signal, "text/event-stream");
+  if (!(res.headers.get("content-type") || "").includes("text/event-stream")) {   // an older server: one JSON reply
+    onEvent({ type: "done", ...(await res.json()) });
+    return;
+  }
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "", finished = false;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const parsed = parseEvents(buffer + value);
+    buffer = parsed.rest;
+    for (const e of parsed.events) {
+      if (e.type === "error") throw new ApiError(e.message || "The reply stopped.", e.status || 502);
+      if (e.type === "done") finished = true;
+      onEvent(e);
+    }
+  }
+  if (!finished) throw new ApiError("The connection dropped before the reply finished. Try again.", 0);
 }

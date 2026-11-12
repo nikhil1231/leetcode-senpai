@@ -28,7 +28,7 @@
       M = await api('/tutor/map/' + encodeURIComponent(id) + q());
       step = Math.min(M.step || 0, (M.lesson.overview?.steps.length || 0) + 2);
       answers = {...(M.answers || {})};
-      review = {session: M.review || null, busy: false, pending: null, error: ''};
+      review = {session: M.review || null, busy: false, error: ''};
     } catch (e) { M = null; error = e.message; }
   }
 
@@ -120,23 +120,22 @@
   }
 
   // ---------- The check: a conversation with the tutor ----------
-  function chatTurn(t) {
-    if (t.role === 'learner') return `<div class="tu-msg tu-me"><div class="tu-text">${esc(t.text)}</div></div>`;
-    if (t.role !== 'tutor' || t.debrief) return '';
-    return `<div class="tu-msg tu-them"><div class="tu-who"><span class="tu-avatar" aria-hidden="true">T</span><b>Tutor</b></div><div class="tu-text sd-md">${md(t.say)}</div></div>`;
-  }
+  // The conversation is the tutor's chat (src/features/tutor/TutorChat.tsx) in review mode; it streams the replies.
   function reviewInner() {
-    const r = review ||= {session: M.review || null, busy: false, pending: null, error: ''}, s = r.session;
-    if (!s) return `<div class="ov-try"><button type="button" class="button is-primary" data-primary="1" data-ov-review="start"${r.busy ? ' disabled' : ''}>${r.busy ? 'The tutor is getting ready…' : 'Start the check'}</button>
+    const r = review ||= {session: M.review || null, busy: false, error: ''}, s = r.session;
+    if (!s) return `<div class="ov-try"><button type="button" class="button is-primary" data-primary="1" data-ov-review="start">Start the check</button>
       ${r.error ? `<p class="tu-error">${esc(r.error)}</p>` : ''}</div>`;
-    const live = s.status === 'active', talked = s.turns.some(t => t.role === 'learner');
-    const status = r.busy ? '<span class="is-busy">The tutor is thinking…</span>' : r.error || s.error
-      ? `<span class="tu-error">${esc(r.error || s.error)}</span>${r.pending || s.error ? ' <button type="button" class="button" data-ov-review="retry">Try again</button>' : ''}` : '';
-    return `<div class="tu-chat ov-chat" aria-live="polite">${s.turns.map(chatTurn).join('')}${r.optimistic ? `<div class="tu-msg tu-me"><div class="tu-text">${esc(r.optimistic)}</div></div>` : ''}</div>
-      ${live ? `<form class="tu-compose ov-compose"><textarea data-dictate rows="2" aria-label="Your answer" placeholder="Answer in your own words. It's fine to say you don't know."></textarea>
-        <button type="submit" class="button"${r.busy ? ' disabled' : ''}>Send</button></form>` : ''}
-      <div class="tu-status ov-status" role="status">${status}</div>
-      ${talked && !r.busy ? '<p class="ov-review-again"><button type="button" class="ov-link" data-ov-review="start">Start the check again</button></p>' : ''}`;
+    return `<div class="ov-chat"></div><p class="ov-review-again" hidden><button type="button" class="ov-link" data-ov-review="start">Start the check again</button></p>`;
+  }
+  function chatProps(root) {
+    const r = review;
+    return {session: r.session, cast: () => null, blocks: [], next: null, review: true, showStage() {}, onMove() {},
+      onSession(s) { if (review !== r) return; r.session = s; r.chat?.update(chatProps(root)); againLink(root); },
+      onAct(a) { if (a === 'again') reviewStart(root); }};
+  }
+  function againLink(root) {
+    const n = root.querySelector('.ov-review-again'), s = review?.session;
+    if (n) n.hidden = review.busy || !s?.turns.some(t => t.role === 'learner');
   }
   function reviewHtml() {
     return `<header class="ov-step-head"><span class="sd-eyebrow">CHECK WHAT YOU KNOW · ABOUT 10 MIN</span><h3>Talk it through with the tutor</h3></header>
@@ -148,53 +147,32 @@
   function paintReview(root) {
     const box = root.querySelector('.ov-review');
     if (!box || !M?.enabled) return;
-    const typed = box.querySelector('textarea')?.value || '';
+    review?.chat?.unmount();
+    if (review) review.chat = null;
     box.innerHTML = reviewInner();
-    const form = box.querySelector('.ov-compose'), text = form?.querySelector('textarea');
-    if (text) text.value = typed;
-    box.querySelectorAll('[data-ov-review]').forEach(n => n.addEventListener('click', () => (n.dataset.ovReview === 'retry' ? reviewSend(root, null) : reviewStart(root))));
-    text?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
-    form?.addEventListener('submit', async e => {
-      e.preventDefault();
-      if (review.busy) return;
-      await window.Dictate?.hold?.(text);
-      const said = text.value.trim();
-      if (!said) return;
-      text.value = '';
-      reviewSend(root, said);
-    });
-    const chat = box.querySelector('.ov-chat');
-    if (chat) chat.scrollTop = chat.scrollHeight;
-    if (text && !review.busy) setTimeout(() => text.focus({preventScroll: true}), 0);
+    box.querySelectorAll('[data-ov-review]').forEach(n => n.addEventListener('click', () => reviewStart(root)));
+    const host = box.querySelector('.ov-chat'), card = root.querySelector('.ov-card');
+    if (host) review.chat = window.SenpaiChat.tutor(host, chatProps(root));
+    // Once the check has started, the conversation is the page: it fills the screen under the header.
+    if (host && card) window.SenpaiChat.screen(card, M.lesson.overview.title, 'Check what you know');
+    else if (card) window.SenpaiChat.leaveScreen(card);
+    againLink(root);
   }
 
   async function reviewStart(root) {
     const r = review;
-    r.busy = true; r.error = ''; r.session = null; paintReview(root);
-    try {
-      r.session = await api('/tutor/sessions', 'POST', {section, lesson: M.lesson.id, mode: 'review', key: rid()});
-    } catch (e) { r.error = e.message; }
-    if (review !== r) return;
-    r.busy = false; paintReview(root);
-  }
-
-  // `text` null retries the last message that failed.
-  async function reviewSend(root, text) {
-    const r = review;
-    if (text !== null) r.pending = {key: rid(), text};
-    if (!r.pending || !r.session) return;
-    r.busy = true; r.error = ''; r.optimistic = r.session.turns.some(t => t.key === r.pending.key) ? '' : r.pending.text;
+    r.busy = true; r.error = '';
+    r.session = {id: null, status: 'active', turns: []};   // the chat shows the opening question as it streams
     paintReview(root);
     try {
-      const s = await api(`/tutor/sessions/${r.session.id}/turns`, 'POST', r.pending);
+      const s = await r.chat.start({section, lesson: M.lesson.id, mode: 'review', key: rid()});
       if (review !== r) return;
-      r.session = s;
-      if (!s.error) r.pending = null;
-    } catch (e) { r.error = e.message; }
-    if (review !== r) return;
-    r.busy = false; r.optimistic = '';
+      r.session = s; r.busy = false;
+    } catch (e) {
+      if (review !== r) return;
+      r.session = null; r.busy = false; r.error = e.message;
+    }
     paintReview(root);
-    window.Dictate?.resume?.(root.querySelector('.ov-compose textarea'));
   }
 
   function pager(ov) {
@@ -309,7 +287,7 @@
     window.Tutor?.mount(slot, {section, lesson: M.lesson, layout: root.querySelector('.sd-map-body'), done});
   }
 
-  function stop() { wired?.destroy?.(); wired = null; observer?.disconnect(); observer = null; review = null; }
+  function stop() { wired?.destroy?.(); wired = null; observer?.disconnect(); observer = null; review?.chat?.unmount(); review = null; window.SenpaiChat?.leaveScreen(); }
 
   window.DesignMap = {open, render, wire, stop, route: () => 'map/' + area, rings, ladder};
 })();

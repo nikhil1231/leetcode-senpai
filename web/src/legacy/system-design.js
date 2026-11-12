@@ -250,7 +250,7 @@
   }
   function coachHtml() {
     if (!catalog.coach_enabled) return `<div class="sd-companion-empty"><span class="sd-mini-icon">◌</span><h3>Your thinking comes first.</h3><p>Live coaching is not connected on this preview. Use the brief to guide your design, or open a short lesson when you need a hand.</p>${caseOf(session.case_id).skills.map(k=>button(catalog.skills[k],'lesson',`data-skill="${k}"`)).join('')}</div>`;
-    return `<h3>${session.mode==='interview'?'Your interviewer':'Think it through together'}</h3><p class="sd-muted">${session.mode==='interview'?'Clarifications and questions, without solution hints.':'Ask about one decision. Hints are recorded as support.'}</p><div class="sd-chat" id="sd-chat">${session.chat.length?session.chat.map(m=>`<div class="sd-message ${m.role==='coach'?'is-coach':''}"><b>${m.role==='coach'?'Coach':'You'}${m.error?' · unavailable':''}</b>${esc(m.text)}</div>`).join(''):'<p class="sd-muted">Start with a question, or explain a choice you’re considering.</p>'}</div><label for="sd-message" class="label-sm">Your question or decision</label><textarea id="sd-message" class="textarea" rows="4" maxlength="2000" placeholder="What happens if…">${esc(chatDraft)}</textarea><div class="sd-actions">${button('Send message ↑','chat','',true)}</div>`;
+    return `<h3>${session.mode==='interview'?'Your interviewer':'Think it through together'}</h3><p class="sd-muted">${session.mode==='interview'?'Clarifications and questions, without solution hints.':'Ask about one decision. Hints are recorded as support.'}</p><div class="sd-chat" id="sd-chat"></div>`;
   }
   function exerciseHtml() {
     const q = exercise.question, result = exercise.result;
@@ -260,8 +260,32 @@
       <div class="sd-exercise-actions">${!result?`${button('Check answer →','answer','',true)}${button('Reveal answer','reveal')}`:button(session?'Apply it to your design →':'Back to drills →',session?'back':'view',session?'':'data-view="skills"',true)}${button('Read the lesson','lesson',`data-skill="${q.skill}"`)}</div><p class="sd-muted">${result?'This skill will return for a later check.':'Commit to an answer first. The explanation is where the learning happens.'}</p>${lessonHtml()}</div>`;
   }
 
+  // The coach's conversation is the shared chat (window.SenpaiChat), mounted again after each paint. A message being
+  // sent shows at once with the coach typing; if it fails, it comes back in the box (chatDraft) with the error above.
+  let chatView = null;
+  function chatProps(pending) {
+    const who = {name: session.mode === 'interview' ? 'Interviewer' : 'Coach'};
+    const messages = session.chat.map((m, i) => m.role === 'coach' ? {id: `c${i}`, role: 'assistant', text: m.text, who: m.error ? {...who, role: 'unavailable'} : who}
+      : {id: `c${i}`, role: 'user', text: m.text});
+    if (pending) messages.push({id: 'pending', role: 'user', text: pending});
+    return {messages, running: !!pending, inputId: 'sd-message', maxLength: 2000, placeholder: 'What happens if…', label: 'Your question or decision',
+      typingLabel: `${who.name} is typing`, empty: 'Start with a question, or explain a choice you’re considering.', className: 'sd-thread',
+      draft: chatDraft, onDraft(text) { if (text !== chatDraft) { chatDraft = text; stash(); } }, onSend: sendChat};
+  }
+  function sendChat(message) {
+    if (busy) return Promise.reject(new Error('busy'));
+    chatView?.update(chatProps(message));
+    return act(async () => {
+      chatDraft = message; stash();
+      await saveDraft();
+      const result = await call(`/sessions/${session.id}/chat`, 'POST', {revision: session.revision, request_id: id(), message});
+      session = {...result, elapsed_sec: Math.max(session.elapsed_sec, result.elapsed_sec)}; chatDraft = ''; stash();
+    });
+  }
+
   function paint() {
     if (!catalog || !root()) return;
+    chatView?.unmount(); chatView = null;
     window.DesignLearning.setCatalog(catalog,screen);
     root().innerHTML = `<div id="sd-error" class="sd-error" role="alert" ${error?'':'hidden'}>${esc(error)}</div>` +
       (screen==='workspace'?workspaceHtml():screen==='exercise'?exerciseHtml():screen==='setup'?setupHtml():homeHtml());
@@ -292,8 +316,7 @@
         if (n.dataset.field==='diagram') $('#sd-diagram').innerHTML = diagram(n.value);
         clearTimeout(debounce); debounce = setTimeout(() => { if (!busy) saveDraft().catch(()=>{}); }, 850);
       }));
-      const chatNode = $('#sd-chat'); if (chatNode) chatNode.scrollTop = chatNode.scrollHeight;
-      $('#sd-message')?.addEventListener('input',e=>{chatDraft=e.target.value;stash();});
+      const chatNode = $('#sd-chat'); if (chatNode) chatView = window.SenpaiChat.mount(chatNode, chatProps());
       if(conflictDraft)root().querySelectorAll('[data-field]').forEach(n=>{n.disabled=true;});
     }
     startTimers();
@@ -320,7 +343,6 @@
     container.querySelectorAll('[data-sd]').forEach(n => n.addEventListener('click', () => {
       if (busy) return;
       const action = n.dataset.sd;
-      const message = $('#sd-message')?.value?.trim();
       const answer = $('#sd-answer')?.value ?? root().querySelector('input[name="sd-answer"]:checked')?.value;
       selectedMode = root().querySelector('input[name="sd-mode"]:checked')?.value || selectedMode;
       const minutes = Number($('#sd-minutes')?.value || catalog.profile.minutes);
@@ -355,13 +377,6 @@
         if (action==='retry') {
           const result=await call(`/assessments/${n.dataset.id}/retry`,'POST',{});
           assessments=assessments.map(a=>a.id===result.id?result:a);
-        }
-        if (action==='chat') {
-          if (!message) throw new Error('Write a question or explanation first.');
-          chatDraft=message;stash();
-          await saveDraft();
-          const result=await call(`/sessions/${session.id}/chat`,'POST',{revision:session.revision,request_id:id(),message});
-          session={...result,elapsed_sec:Math.max(session.elapsed_sec,result.elapsed_sec)};chatDraft='';stash();
         }
         if (action==='lesson') {
           if (session) await saveDraft();

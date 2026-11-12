@@ -13,6 +13,7 @@
     "test:legacy": "node --test tests/legacy/test_*.cjs"
   },
   "dependencies": {
+    "@assistant-ui/react": "0.15.32",
     "@codemirror/autocomplete": "^6.20.4",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-python": "^6.2.1",

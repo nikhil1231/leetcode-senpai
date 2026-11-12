@@ -191,10 +191,9 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 .sd-lesson p strong { font-weight:550; color:var(--text); }
 .sd-lesson .sd-eyebrow { font-size:11px; }
 .sd-companion .sd-lesson { padding:16px; }
-.sd-chat { max-height:320px; overflow-y:auto; margin:20px 0; }
-.sd-message { font-size:11px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; padding:12px; margin-bottom:10px; border-radius:8px; background:var(--bg-elev); color:var(--text-2); }
-.sd-message.is-coach { background:var(--accent-soft); }
-.sd-message b { display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
+.sd-chat { margin:20px 0; }
+.sd-chat { --chat-bg:var(--panel); }
+.sd-chat .ch-log { max-height:420px; }
 .sd-feedback { border-top:1px solid var(--line); padding:18px 0; font-size:11px; }
 .sd-feedback b { font-weight:550; }
 .sd-feedback blockquote { color:var(--muted); border-left:2px solid var(--accent-line); padding-left:12px; margin:12px 0; white-space:pre-wrap; }
@@ -538,7 +537,11 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 /* The check before the wrap-up: a conversation with the tutor inside the card */
 .ov-review-lead { color: var(--text-2); max-width: 68ch; }
 .ov-review { margin-top: 16px; }
-.ov-review .ov-chat { height: auto; min-height: 120px; max-height: min(62vh, 640px); padding: 4px 4px 4px 0; }
-.ov-status .is-busy::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--accent); animation: tu-pulse 1s ease-in-out infinite; }
+.ov-review .ov-chat .ch-log { min-height: 120px; max-height: min(62vh, 640px); }
+/* The check as a chat screen: the header names the overview, the step's title and lead give way to the conversation. */
+.ov-card.chat-screen-host .ov-step-head, .ov-card.chat-screen-host .ov-review-lead { display: none; }
+.ov-card.chat-screen-host .ov-review { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; }
+.ov-card.chat-screen-host .ov-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ov-card.chat-screen-host .ov-chat .ch-log { max-height: none; min-height: 0; }
+.ov-card.chat-screen-host .ov-pager { flex: none; padding: 8px 0 12px; margin: 0; }
 .ov-review-again { margin: 4px 0 0; font-size: 13px; }
-@media (prefers-reduced-motion: reduce) { .ov-status .is-busy::before { animation: none; } }

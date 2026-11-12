@@ -203,11 +203,17 @@ def client(monkeypatch):
     monkeypatch.setattr(config, 'OPENROUTER_API_KEY', 'test')
     main.app.dependency_overrides[auth.require_user] = lambda: 'alice'
     c = TestClient(main.app)
-    c.store, c.replies, c.notes, c.chats, c.payloads = store, [], [], [], []
+    c.store, c.replies, c.notes, c.chats, c.payloads, c.raw = store, [], [], [], [], []
 
     def chat(model, messages, options=None):
         assert not llm.forbidden_model(model) and model == config.TUTOR_MODEL
-        c.chats.append(messages)
+        c.raw.append(messages)
+        # Recorded as one system text (the turn's state folded back in) and his messages as he wrote them.
+        msgs, now = [dict(m) for m in messages], ''
+        if msgs[-1]['role'] == 'user' and ses.NOW_HEADER in msgs[-1]['content']:
+            msgs[-1]['content'], now = msgs[-1]['content'].split('\n\n' + ses.NOW_HEADER + '\n', 1)
+        msgs[0] = {**msgs[0], 'content': msgs[0]['content'] + ('\n\n' + now if now else '')}
+        c.chats.append(msgs)
         nxt = c.replies.pop(0)
         if isinstance(nxt, Exception):
             raise nxt
@@ -220,7 +226,13 @@ def client(monkeypatch):
         if isinstance(nxt, Exception):
             raise nxt
         return {'content': json.dumps(nxt), 'usage': {}}
+    async def stream(model, messages, options=None):
+        content = chat(model, messages, options)['content']
+        for i in range(0, len(content), 5):   # small pieces, so markers and private notes arrive split
+            yield {'text': content[i:i + 5]}
+        yield {'model': model, 'usage': {'prompt_tokens': 100, 'completion_tokens': 20}}
     monkeypatch.setattr(llm, '_raw_chat', chat)
+    monkeypatch.setattr(llm, '_raw_chat_stream', stream)
     monkeypatch.setattr(llm, '_raw_generate', generate)
     yield c
     main.app.dependency_overrides.clear()
@@ -814,3 +826,85 @@ def test_lesson_blocks_reject_an_empty_bucket_and_unwrap_text_choices():
     b = {'prompt': 'p', 'choices': [{'text': 'one: two'}, 'three'], 'answer': 0, 'reveal': 'r'}
     _check_block('x', 'predict', b, 0)
     assert b['choices'] == ['one: two', 'three']
+
+
+# ---- streaming -------------------------------------------------------------------------
+
+def streamed(c, url, body=None):
+    r = c.post(url, json=body or {}, headers={'Accept': 'text/event-stream'})
+    assert r.status_code == 200 and r.headers['content-type'].startswith('text/event-stream'), r.text
+    return [json.loads(line[6:]) for line in r.text.split('\n\n') if line.startswith('data: ')]
+
+
+def test_a_streamed_turn_shows_only_what_he_may_see_then_the_stored_turn(client):
+    s = start(client)
+    client.replies.append('Right.<private>He has the miss storm.</private> Try this.\n[[activity b1]]')
+    events = streamed(client, f'/api/tutor/sessions/{s["id"]}/turns', {'key': 'turn-0001', 'text': 'Every read misses.'})
+    shown = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert shown == 'Right. Try this.\n' and 'miss storm' not in json.dumps(events[:-1])
+    assert {'type': 'marker', 'text': 'activity b1'} in events
+    done = events[-1]
+    assert done['type'] == 'done' and done['session']['turns'][-1]['show_block'] == 'b1'
+    assert client.store.get_knowledge('tutor_sessions', s['id'])['turns'][-1]['say'] == done['session']['turns'][-1]['say']
+
+
+def test_a_streamed_start_and_end(client):
+    client.replies.append('A deploy changed every cache key.')
+    events = streamed(client, '/api/tutor/sessions', {'section': 'system-design', 'lesson': 'cache-aside', 'mode': 'teach', 'key': 'sess-0009'})
+    assert ''.join(e.get('text', '') for e in events) == 'A deploy changed every cache key.'
+    sid = events[-1]['session']['id']
+    client.replies.append('Good.')
+    ok(client.post(f'/api/tutor/sessions/{sid}/turns', json={'key': 'turn-0001', 'text': 'Every read misses.'}))
+    client.replies.append('**What you did well**: the miss storm.')
+    events = streamed(client, f'/api/tutor/sessions/{sid}/end')
+    assert events[-1]['session']['status'] == 'ended' and events[-1]['session']['turns'][-1]['debrief']
+
+
+def test_a_streamed_failure_ends_with_the_saved_error(client):
+    s = start(client)
+    client.replies.append(RuntimeError('provider down'))
+    events = streamed(client, f'/api/tutor/sessions/{s["id"]}/turns', {'key': 'turn-0001', 'text': 'my answer'})
+    assert events[-1]['type'] == 'done' and events[-1]['session']['error']
+    assert events[-1]['session']['turns'][-1]['role'] == 'learner'
+
+
+def test_a_reply_with_nothing_to_show_is_reset_and_tried_again(client):
+    s = start(client)
+    client.replies += ['<private>only notes</private>', 'Second go.']
+    events = streamed(client, f'/api/tutor/sessions/{s["id"]}/turns', {'key': 'turn-0001', 'text': 'hm'})
+    assert {'type': 'reset'} in events and events[-1]['session']['turns'][-1]['say'] == 'Second go.'
+
+
+def test_a_refused_turn_streams_an_error(client):
+    s = start(client)
+    client.post(f'/api/tutor/sessions/{s["id"]}/end')
+    events = streamed(client, f'/api/tutor/sessions/{s["id"]}/turns', {'key': 'turn-0001', 'text': 'more'})
+    assert events == [{'type': 'error', 'status': 409, 'message': events[0]['message']}]
+
+
+def test_a_sessions_own_running_summary_is_not_shown_to_it_as_the_last_session():
+    s = fresh()
+    assert 'Last session on this lesson' not in system(s, memory={'summary': 'He thinks replicas help availability.', 'summary_session': s['id']})
+    assert 'Last session on this lesson: Earlier: TTLs.' in system(s, memory={'summary': 'Earlier: TTLs.', 'summary_session': 'older'})
+
+
+def test_the_teaching_prompts_end_on_the_voice_and_the_role_plays_do_not():
+    prompts = {m: ses.prompt(ses.new('s', L, m, 0), L, [], [], {}, story.scale(summary(0)))[0] for m in ('teach', 'explain', 'critique')}
+    assert prompts['teach'].rstrip().endswith(llm.SPOKEN_ANSWER.strip()) and '## Before you reply' in prompts['teach'].split('## Lesson notes')[1]
+    assert all('## Before you reply' not in prompts[m] for m in ('explain', 'critique'))
+    assert '## Before you reply' not in system(ses.new('s', L, 'teach', 0), debrief=True)
+
+
+def test_the_system_prompt_stays_the_same_all_session_and_the_state_rides_on_his_message(client):
+    s = start(client)
+    client.replies.append('Right. Try this.\n[[activity b1]]')
+    client.notes.append(notes(objectives=[{'objective': 2, 'status': 'working', 'quote': 'every read misses'}]))
+    ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0001', 'text': 'Every read misses at once.'}))
+    client.replies.append('Good.')
+    ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0002', 'text': 'Delete on write.'}))
+    first, second, third = client.raw
+    assert first[0]['content'] == second[0]['content'] == third[0]['content']   # objective progress and activities moved on
+    assert 'Where he is now' not in third[0]['content'] and ses.NOW_HEADER in third[-1]['content']
+    assert ses.NOW_HEADER not in ''.join(m['content'] for m in third[1:-1])     # earlier turns go back as they were
+    assert third[1:len(second) - 1] == second[1:-1]                            # so the conversation so far is a stable prefix
+    assert '◐ partly shown' in third[-1]['content'] and 'b1 (' not in third[-1]['content']

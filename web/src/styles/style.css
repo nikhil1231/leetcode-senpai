@@ -1081,7 +1081,7 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .active-notes { display: flex; flex-direction: column; gap: 10px; max-width: 64ch; width: 100%; margin: 24px auto 0; text-align: left; }
 .active-run:not(.has-editor) .active-notes:not(:has(> :not(.hidden):not(.coach-empty))) { display: none; }
 .active-notes > .hidden { display: none; }
-.active-run .active-notes > :not(.hint-panel):not(.coach-empty), .hint-card {
+.active-run .active-notes > :not(.coach-empty), .hint-card {
   margin: 0; padding: 13px 15px;
   border: 1px solid var(--line); border-radius: 12px;
   background: var(--panel);
@@ -1090,33 +1090,18 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .active-run .active-notes > .active-takeaway { border-color: rgba(124, 134, 255, .3); background: rgba(124, 134, 255, .07); }
 .active-run .active-notes > .give-up-panel { border-color: rgba(167, 139, 250, .38); background: rgba(167, 139, 250, .08); color: var(--text); }
 .active-run .active-notes > .plan-critique { border-color: rgba(124, 134, 255, .38); }
-.hint-panel { display: flex; flex-direction: column; gap: 10px; }
 .hint-card { border-color: rgba(245, 181, 68, .3); background: rgba(245, 181, 68, .06); }
 .hint-card p { margin: 0; }
 .hint-card.is-latest { color: var(--text); animation: hint-in .25s ease-out; }
-.hint-card .chat-time, .chat-msg .chat-time { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
-.chat-msg {
-  align-self: flex-end; max-width: 88%; padding: 9px 13px;
-  border: 1px solid var(--line-hi); border-radius: 12px 12px 4px 12px; background: var(--panel);
-  font-size: 13.5px; line-height: 1.55; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere;
-  animation: hint-in .2s ease-out;
-}
-.chat-msg .chat-time { display: block; margin-bottom: 3px; color: var(--muted); font-size: 11px; text-align: right; }
-.chat-msg p { margin: 0; }
-.hint-card.chat-typing { align-self: flex-start; display: flex; gap: 5px; padding: 13px 15px; }
-.chat-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
-.chat-typing span:nth-child(2) { animation-delay: .2s; }
-.chat-typing span:nth-child(3) { animation-delay: .4s; }
-.coach-chat { flex: none; padding: 10px 14px 12px; }
-.coach-chat.hidden { display: none; }
-.coach-chat textarea {
-  display: block; width: 100%; min-height: 44px; max-height: 160px; resize: vertical; padding: 9px 11px;
-  border: 1px solid var(--line-hi); border-radius: 10px; background: var(--panel); color: var(--text);
-  font: inherit; font-size: 13.5px; line-height: 1.5;
-}
-.coach-chat textarea:focus { outline: none; border-color: rgba(245, 181, 68, .5); }
-.active-run:not(.has-editor) .coach-chat { display: none; }
-.active-run.coach-hidden .coach-chat { display: none; }
+/* The interviewer's chat (components/chat): hints keep their amber, and the latest can clear its marks in the editor. */
+.run-chat-host { --chat-bg: var(--bg-elev); display: flex; flex-direction: column; min-height: 0; max-width: 64ch; width: 100%; margin: 12px auto 0; }
+.active-run:not(.has-editor) .run-chat .ch-log { max-height: 50vh; }
+.run-chat .ch-msg.is-hint .ch-bubble { border-color: rgba(245, 181, 68, .3); background: rgba(245, 181, 68, .06); }
+.run-chat .ch-msg.is-hint.is-latest .ch-bubble { animation: hint-in .25s ease-out; }
+.run-chat .ch-msg .note-action { align-self: flex-end; margin-top: 4px; }
+.run-chat .ch-typing span { background: var(--amber); }
+.active-run:not(.has-editor) .run-chat .ch-composer { display: none; }   /* without the editor there is no code to talk about */
+.active-run.coach-hidden .run-chat-host { display: none; }
 .active-takeaway b { color: var(--text); }
 .give-up-panel p { margin: 0; }
 .note-head {
@@ -1712,6 +1697,9 @@ pre.code {
 }
 
 @media (max-width: 960px) {
+  /* A phone never scrolls the page sideways: wide content scrolls in its own box. clip, not hidden, so sticky
+     headers keep working. */
+  html, body { overflow-x: clip; }
   :root { --rail: 0px; --topbar: auto; }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar {
@@ -1763,10 +1751,19 @@ pre.code {
   .brand-text { display: none; }
   .nav { flex: 1 0 100%; order: 3; margin: 0 -14px; padding: 4px 14px 0; }
   .nav li a span, .nav li.is-active a span { display: inline; }
-  .sidebar-foot { margin-left: auto; gap: 8px; }
+  /* The account row shares the brand's line: it shrinks to fit, and the model chip and "Updated" stamp (both on the
+     Settings page) give way. */
+  .sidebar-foot { flex: 1 1 0; min-width: 0; margin-left: auto; gap: 8px; justify-content: flex-end; }
+  .sidebar-foot .palette-trigger { flex: 0 1 auto; min-width: 0; margin: 0; gap: 8px; white-space: nowrap; }
+  .sidebar-foot .palette-trigger kbd { display: none; }   /* no keyboard shortcut on a phone */
+  .sidebar-foot .foot-chips, .sidebar-foot .last-updated, .sidebar-foot .go-tutor span { display: none; }
+  .sidebar-foot .foot-user, .sidebar-foot .go-tutor { flex: none; }
   .coach-chip { padding: 6px 9px; }
 
-  .overview { width: 100%; }
+  /* The stats take their own full-width row under the title instead of pushing the page wider. */
+  .topbar-side { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; gap: 12px; }
+  .overview { flex: 1 1 calc(100% - 64px); width: auto; min-width: 0; }   /* a row of their own, with room for the + button */
+  .overview .stat { min-width: 0; }
   .overview .stat { flex: 1; padding: 0 10px; }
   .overview .stat:first-child { padding-left: 0; }
   /* Phone: the action drops under the row instead of squeezing the title. */
@@ -2918,6 +2915,9 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .coach-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12.5px; }
 .run-coach #btn-coach-toggle { margin-left: auto; }
 .active-run.has-editor .active-notes { flex: 1 1 0; min-height: 0; max-width: none; margin: 0; padding: 14px; overflow: auto; gap: 12px; }
+.active-run.has-editor .active-notes:has(+ .run-chat-host) { flex: 0 1 auto; max-height: 45%; }
+.active-run.has-editor .active-notes:has(+ .run-chat-host):not(:has(> :not(.hidden):not(.coach-empty))) { flex: none; padding-bottom: 0; }
+.active-run.has-editor .run-chat-host { flex: 1 1 0; max-width: none; margin: 0; padding: 0 14px 4px; }
 .active-run.has-editor .active-notes:not(:has(> :not(.hidden):not(.coach-empty))) .coach-empty { display: block; }
 .coach-empty { margin: 0; padding: 2px; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .active-run.has-editor .coach-actions { order: 0; flex: none; margin: 0; padding: 12px 14px; border-top: 1px solid var(--line); }
@@ -2954,6 +2954,9 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
   .console-panel .editor-input { flex: none; }
   .active-run.has-editor .run-coach { border-left: 0; border-top: 1px solid var(--line); }
   .active-run.has-editor .active-notes { flex: none; overflow: visible; }
+  .active-run.has-editor .active-notes:has(+ .run-chat-host) { max-height: none; }
+  .active-run.has-editor .run-chat-host { flex: none; }
+  .active-run.has-editor .run-chat .ch-log { max-height: 60vh; }
   .active-run.coach-hidden .run-coach .coach-head { flex-direction: row; justify-content: center; padding: 10px 0; }
 }
 @media (max-width: 720px) {

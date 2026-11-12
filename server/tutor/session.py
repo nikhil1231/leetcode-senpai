@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import board, lessons, resources, rig, story
 
-PROMPT_VERSION = 15
+PROMPT_VERSION = 17
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -62,8 +62,10 @@ How you teach:
 - Know when it's enough. Once he has the gist, say so and move on. Leftover detail goes to review, not into five more questions, and don't come back to the same small point in one session.
 - Not every message needs a question. Sometimes explain, sometimes connect it to his own work, sometimes just react.
 - Judge the idea, not the wording. If his answer shows the idea, it's right; if a sharper version matters for interviews, add it yourself in a sentence and carry on. Never re-ask something he's effectively answered. When he's wrong, say what's off and why it matters, plainly and kindly.
+- Reply to what you asked. Start with whether his answer to it holds up, in plain words ("Yes", "That's right", "Not quite"), and only call it wrong or off if it actually is: a figure inside the real range is right, not "optimistic". If he adds something you didn't ask about and it's sound, take it on board or build on it; correct an aside only when it's wrong and matters to this lesson. Don't go through his answer clause by clause.
+- One question per message, and never one you've already answered yourself. If you give him a figure, ask him to use it, not to work it out again.
 
-Opening: start from him, not from a quiz. If he's come from another tutor or a recent session, talk about that first, the way someone who read the notes would. Otherwise, open with a hook (something at Ripple about to break, a real incident, a puzzle) that this lesson answers, then let him steer. If your notes have an outage block, the lesson is built problem-first: he watches that system break before anything else. Start from the problem (what broke, and why that part), let the ideas arrive as the way to fix it, and offer the block with its activity tag if he hasn't watched it.
+Opening: start from him, not from a quiz. If he's come from another tutor or a recent session, talk about that first, the way someone who read the notes would. Otherwise, open with a concrete situation at Ripple that this lesson helps with, told plainly in a sentence or two with the numbers he needs, and one question about it. No scene-setting for effect (a graph going vertical, a countdown, "a bit of context you'd have in a real room"), and don't explain why you're asking. If your notes have an outage block, the lesson is built problem-first: he watches that system break before anything else. Start from the problem (what broke, and why that part), let the ideas arrive as the way to fix it, and offer the block with its activity tag if he hasn't watched it.
 
 Keep messages conversational and usually short, a few sentences. When you're explaining, take the room it needs, but one idea at a time: if it's turning into a lecture, stop and check in.""".format(voice=voice.TUTOR)
 
@@ -239,17 +241,77 @@ def _ago(seconds):
 
 
 def context(session, lesson, views, misconceptions, memory, story_state, career=None, profile=None):
-    """The session-specific part of the tutor's system prompt. `career`: Senpai's career brief
-    ({'text', 'experience'}); `profile`: learner.text() plus this lesson's ideas covered elsewhere and
-    the lesson catalogue for moves ({'text', 'covered', 'lessons'}). Both optional."""
+    """The session-specific part of the tutor's system prompt, as one text (the debrief, tests). `career`: Senpai's
+    career brief ({'text', 'experience'}); `profile`: learner.text() plus this lesson's ideas covered elsewhere and the
+    lesson catalogue for moves ({'text', 'covered', 'lessons'}). Both optional."""
+    fixed, changing = context_parts(session, lesson, views, misconceptions, memory, story_state, career, profile)
+    return fixed + '\n\n' + changing
+
+
+def context_parts(session, lesson, views, misconceptions, memory, story_state, career=None, profile=None):
+    """-> (fixed, changing). Fixed holds what stays the same for the whole session, most stable first, so a model
+    provider can cache it with the conversation after it; changing (where he is on the objectives, what he has shown,
+    the activities left, the role's notes) goes with his latest message instead, so it never breaks that cache."""
     mode = session['mode']
+    cast = '; '.join(f'{c["name"]} ({c["role"]})' for c in story.cast())
+    objectives = '\n'.join(f'- {o}' for o in lesson['objectives'])
+    fixed = [f"""## This session
+Lesson: {lesson['title']}. {lesson['summary']}
+
+What it should leave him able to do (a map for you, not a checklist to read out; where he is on each comes with his latest message):
+{objectives}"""]
+    if mode == 'teach' and session.get('layer') == 1 and not lesson.get('map'):
+        fixed.append(PASS_ONE)
+    elif mode == 'teach' and not lesson.get('map') and any(v.get('layer', 2) != 2 for v in views):
+        fixed.append(layers_text(views))
+    if blocks_allowed(mode):
+        res = lesson_resources(lesson)
+        fixed.append((ACTIONS_MAP if lesson.get('map') else ACTIONS).format(
+            activities="\n\nThe lesson's activities you haven't used yet come with his latest message." if lessons.tools(lesson) else '',
+            play=("\n- [[play rN]]: hand him one of the links below: a Ripple Ops level (the design game: he builds and runs Ripple's system "
+                  "against a real day, using what he's learnt, no internals needed), a worked design or a simulator. Like activities, "
+                  "mentioning one means adding its marker, or he has nothing to click. At most two per message.\n"
+                  + resources.text(res, (profile or {}).get('unlocked'))) if res else '',
+            lessons=(profile or {}).get('lessons') or '(not available)'))
+    if board_allowed(mode):
+        fixed.append(board.guide())
+        fixed.append(rig.guide())
+    fixed.append(f"""## Lesson notes (private; the ground truth — teach and judge from them, but don't recite them or treat their exact wording as the only right answer)
+{lessons.notes(lesson)}""")
+    fixed.append(f"""Setting: Ripple, a company that began as a link shortener and now builds many products, at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}
+Borrow it for examples now and then; don't narrate.
+Scale: Ripple's size is {story_state['users']}, and that is the only figure for it. He sees only this conversation, so before any question turns on Ripple's scale, give him the numbers in it. Judge his numbers only against figures stated in this conversation; if he picks his own assumptions, judge whether they are reasonable and consistent, not whether they match figures he was never given.""")
+    last = memory.get('debrief') or {}
+    if last.get('text') and last.get('session') != session.get('id'):
+        ago = _ago((session.get('created_at') or last['at']) - last['at'])
+        fixed.append(f"## Your last session on this lesson\nIt ended {ago}, {last.get('turns', 0)} messages long. Your debrief at the end:\n"
+                     f"{last['text']}\n\nThis conversation follows on from that one: you both remember it. Don't re-teach what it covered "
+                     "or open as if the lesson were new. If it pointed him somewhere else next, say so and offer to go there.")
+    if session.get('carried'):
+        c = session['carried']
+        fixed.append(f"## Carrying on\nYou and he just moved here from {c['from']}, because the conversation was heading this way. "
+                     "The last few messages:\n" + '\n'.join(f'{x}' for x in c['turns']) +
+                     "\nPick up the thread naturally; no fresh greeting, no recap of what he just said.")
+    if mode == 'cv' and (career or {}).get('experience'):
+        fixed.append('## His CV (claims to probe, not facts you know)\n' + '\n'.join(f'- {e}' for e in career['experience']))
+    if session.get('focus'):
+        fixed.append(f"## Why he opened this session\nTo close one gap that hasn't landed yet: {session['focus']}\n"
+                     "Start there (in your own way, through a situation, not by quoting this), make sure it lands, then carry on with the lesson.")
+    if session.get('pickup'):
+        fixed.append(pickup(session['pickup'], mode))
+    if (profile or {}).get('text'):
+        fixed.append("## Who you're teaching\n" + profile['text'])
+
+    marks = '\n'.join(f'- {o} ({MARK[session["objectives"][i]["status"]]})' for i, o in enumerate(lesson['objectives']))
+    changing = [f"## Where he is now\nThe objectives so far:\n{marks}"]
+    if mode != 'review' and all(o['status'] == DEMONSTRATED for o in session['objectives']):
+        changing.append("He has now shown every objective. Wrap up warmly in a line or two, and suggest he ends the session for the debrief.")
     held = [v for v in views if v['status'] in ('solid', 'learning')]
     shaky = [v for v in views if v['status'] in ('shaky', 'fading')]
-    objectives = '\n'.join(f'- {o} ({MARK[session["objectives"][i]["status"]]})' for i, o in enumerate(lesson['objectives']))
     know = [f'- Already holds (skip or touch lightly):\n{_claims(held, ("solid", "learning"))}' if held else '- Nothing in this lesson tested yet.',
             *([f'- Shaky or fading:\n{_claims(shaky, ("shaky", "fading"))}'] if shaky else [])]
-    last = memory.get('debrief') or {}
-    if memory.get('summary') and not last:
+    own = memory.get('summary_session') == session.get('id') or memory.get('summary') == session.get('summary')
+    if memory.get('summary') and not last and not own:   # this session's own running summary is not "last session"
         know.append(f'- Last session on this lesson: {memory["summary"]}')
     slips = [m for m in misconceptions if m.get('status', 'open') == 'open']
     if slips:
@@ -260,69 +322,33 @@ def context(session, lesson, views, misconceptions, memory, story_state, career=
     if covered:
         know.append("- Covered recently somewhere else (his other tutor, Telegram); don't teach these again unless he asks or "
                     "an answer shows a hole:\n" + '\n'.join(f'  - {c}' for c in covered[:12]))
-    cast = '; '.join(f'{c["name"]} ({c["role"]})' for c in story.cast())
-    events = [e['text'] for e in (memory.get('events') or [])][-3:]
-    parts = [f"""## This session
-Lesson: {lesson['title']}. {lesson['summary']}
-
-What it should leave him able to do (a map for you, not a checklist to read out):
-{objectives}"""]
-    if mode != 'review' and all(o['status'] == DEMONSTRATED for o in session['objectives']):
-        parts.append("He has now shown every objective. Wrap up warmly in a line or two, and suggest he ends the session for the debrief.")
     if (career or {}).get('text'):
         know.append(career['text'])
-    if (profile or {}).get('text'):
-        parts.append("## Who you're teaching\n" + profile['text'])
-    parts.append('About Nikhil and this lesson:\n' + '\n'.join(know))
-    if last.get('text') and last.get('session') != session.get('id'):
-        ago = _ago((session.get('created_at') or last['at']) - last['at'])
-        parts.append(f"## Your last session on this lesson\nIt ended {ago}, {last.get('turns', 0)} messages long. Your debrief at the end:\n"
-                     f"{last['text']}\n\nThis conversation follows on from that one: you both remember it. Don't re-teach what it covered "
-                     "or open as if the lesson were new. If it pointed him somewhere else next, say so and offer to go there.")
-    if session.get('carried'):
-        c = session['carried']
-        parts.append(f"## Carrying on\nYou and he just moved here from {c['from']}, because the conversation was heading this way. "
-                     "The last few messages:\n" + '\n'.join(f'{x}' for x in c['turns']) +
-                     "\nPick up the thread naturally; no fresh greeting, no recap of what he just said.")
-    if mode == 'cv' and (career or {}).get('experience'):
-        parts.append('## His CV (claims to probe, not facts you know)\n' + '\n'.join(f'- {e}' for e in career['experience']))
-    if session.get('focus'):
-        parts.append(f"## Why he opened this session\nTo close one gap that hasn't landed yet: {session['focus']}\n"
-                     "Start there (in your own way, through a situation, not by quoting this), make sure it lands, then carry on with the lesson.")
-    if session.get('pickup'):
-        parts.append(pickup(session['pickup'], mode))
-    parts.append(f"""Setting: Ripple, a company that began as a link shortener and now builds many products, at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
-Borrow it for examples now and then; don't narrate.
-Scale: Ripple's size is {story_state['users']}, and that is the only figure for it. He sees only this conversation, so before any question turns on Ripple's scale, give him the numbers in it. Judge his numbers only against figures stated in this conversation; if he picks his own assumptions, judge whether they are reasonable and consistent, not whether they match figures he was never given.""")
+    changing.append('About Nikhil and this lesson:\n' + '\n'.join(know))
+    events = [e['text'] for e in (memory.get('events') or [])][-3:]
+    if events:
+        changing.append('Recently at Ripple: ' + ' '.join(events))
     if lesson.get('overview') and memory.get('overview_step') and mode != 'review':
         n = len(lesson['overview']['steps'])
         at = memory['overview_step']
-        parts.append(f"## Where he is on the page\nHe has read the overview on the page up to {'the end' if at > n else f'step {at} of {n}'}. "
-                     "Ask whether he wants to start from there or from the top; don't re-teach steps he says he's got.")
-    if mode == 'teach' and session.get('layer') == 1 and not lesson.get('map'):
-        parts.append(PASS_ONE)
-    elif mode == 'teach' and not lesson.get('map') and any(v.get('layer', 2) != 2 for v in views):
-        parts.append(layers_text(views))
+        changing.append(f"## Where he is on the page\nHe has read the overview on the page up to {'the end' if at > n else f'step {at} of {n}'}. "
+                        "Ask whether he wants to start from there or from the top; don't re-teach steps he says he's got.")
     if blocks_allowed(mode):
         tools = '\n'.join(f'- {t["key"]} ({t["type"]}): {t["about"]}' for t in lessons.tools(lesson) if t['key'] not in session['shown'])
-        res = lesson_resources(lesson)
-        parts.append((ACTIONS_MAP if lesson.get('map') else ACTIONS).format(
-            activities=f"\n\nActivities from this lesson (one line saying what to do, then the marker; never two in a row, each once; you'll see how he did):\n{tools}" if tools else '',
-            play=("\n- [[play rN]]: hand him one of the links below: a Ripple Ops level (the design game: he builds and runs Ripple's system "
-                  "against a real day, using what he's learnt, no internals needed), a worked design or a simulator. Like activities, "
-                  "mentioning one means adding its marker, or he has nothing to click. At most two per message.\n"
-                  + resources.text(res, (profile or {}).get('unlocked'))) if res else '',
-            lessons=(profile or {}).get('lessons') or '(not available)'))
-    if board_allowed(mode):
-        parts.append(board.guide())
-        parts.append(rig.guide())
+        if tools:
+            changing.append(f"Activities from this lesson you haven't used yet (one line saying what to do, then the marker; never two in a row, each once; you'll see how he did):\n{tools}")
     if not blocks_allowed(mode):
-        parts.append("""## Private notes
+        changing.append("""## Private notes
 Keep anything you must stay consistent about (a planted flaw, an incident's state, what he has told you) in a short <private>…</private> block at the end of a message, under 120 words; he never sees it. Everything else in your message is what he sees, so every message must have something for him outside the block. Your notes so far:
 """ + (session.get('notes') or '(none yet)'))
-    parts.append(f"""## Lesson notes (private; the ground truth — teach and judge from them, but don't recite them or treat their exact wording as the only right answer)
-{lessons.notes(lesson)}""")
-    return '\n\n'.join(parts)
+    return '\n\n'.join(fixed), '\n\n'.join(changing)
+
+
+# The end of the prompt is what a model weighs most, and the lesson notes before it are long: the voice, again, in brief.
+BEFORE_REPLY = """
+
+## Before you reply
+Read his last message and answer that, the way a friendly colleague would across a desk: warm, plain, in full sentences. Say what he got right first, by name. Move on without announcing it: no "here's where I want to go next", "the bit I'd push on", "one thing I'd separate out", "let me give you a number". Ask at most one question."""
 
 
 ACTIONS = """## Things you can do
@@ -382,15 +408,44 @@ def lesson_resources(lesson):
     return resources.for_lessons(lesson['map']['lessons'] if lesson.get('map') else [lesson['id']])
 
 
-def system(session, lesson, views, misconceptions, memory, story_state, debrief=False, career=None, profile=None):
+def _role(session, lesson):
     if lesson.get('map') and session['mode'] == 'teach':
-        role = MAP.format(voice=voice.TUTOR, route=MAP_STEPS if lesson.get('overview') else MAP_PIECES)
-    else:
-        role = ROLES[session['mode']]
-    text = voice.live(role) + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career, profile)
-    if debrief:
-        mistakes = '\n'.join(f'- He said "{m["quote"]}": {m["text"]}' for m in session.get('mistakes', [])) or '(none recorded)'
-        text += DEBRIEF.format(voice=voice.TUTOR, extra='3. ' + DEBRIEF_EXTRA[session['mode']], mistakes=mistakes)
+        return MAP.format(voice=voice.TUTOR, route=MAP_STEPS if lesson.get('overview') else MAP_PIECES)
+    return ROLES[session['mode']]
+
+
+def prompt(session, lesson, views, misconceptions, memory, story_state, career=None, profile=None):
+    """-> (system, now) for a turn. The system prompt stays the same all session (so it caches); `now` is where things
+    stand this turn, which `with_now` puts on his latest message."""
+    fixed, now = context_parts(session, lesson, views, misconceptions, memory, story_state, career, profile)
+    text = voice.live(_role(session, lesson)) + '\n\n' + fixed
+    if session['mode'] in ('teach', 'review'):
+        text += BEFORE_REPLY
+    return text + llm.SPOKEN_ANSWER, now
+
+
+NOW_HEADER = "[Where things stand now. This is for you; he doesn't see it.]"
+
+
+def with_now(messages, now):
+    """The conversation with this turn's state after his latest message. Earlier turns go back without it, so the
+    conversation before this message is the same text every turn and stays cached."""
+    out = [dict(m) for m in messages]
+    if not out or out[-1]['role'] != 'user':
+        out.append({'role': 'user', 'content': '(carry on)'})
+    out[-1]['content'] += f'\n\n{NOW_HEADER}\n{now}'
+    return out
+
+
+def system(session, lesson, views, misconceptions, memory, story_state, debrief=False, career=None, profile=None):
+    """The whole prompt as one system text: the debrief's (a one-off call), and the turn's prompt with its state
+    appended, for reading and tests."""
+    if not debrief:
+        text, now = prompt(session, lesson, views, misconceptions, memory, story_state, career, profile)
+        return text + '\n\n' + now
+    text = voice.live(_role(session, lesson)) + '\n\n' + context(session, lesson, views, misconceptions, memory, story_state, career, profile)
+    mistakes = '\n'.join(f'- He said "{m["quote"]}": {m["text"]}' for m in session.get('mistakes', [])) or '(none recorded)'
+    text += DEBRIEF.format(voice=voice.TUTOR, extra='3. ' + DEBRIEF_EXTRA[session['mode']], mistakes=mistakes)
     return text + llm.SPOKEN_ANSWER
 
 

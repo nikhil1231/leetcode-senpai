@@ -1,10 +1,13 @@
 """Run the real API on an in-memory FakeStore seeded with a plausible history. No Firestore, no network, no LLM.
 
     uv run scripts/dev_fake_server.py            # http://127.0.0.1:8000
+    FAKE_CHAT=1 uv run scripts/dev_fake_server.py   # chats answer with canned replies, streamed slowly
 
 Auth is bypassed and nothing is persisted, so it is the safe thing to point `web/` (or a browser) at while
-building UI. Model calls are rejected, so every LLM feature shows its non-LLM state.
+building UI. Model calls are rejected, so every LLM feature shows its non-LLM state. With FAKE_CHAT the plain chats
+(page coach, tutor) answer with a canned reply instead, never touching the network, to build and check chat UI.
 """
+import asyncio
 import os
 import sys
 import tempfile
@@ -50,6 +53,50 @@ def log_history(client):
         k += 1
 
 
+TUTOR_REPLY = """Good start.<private>He has the miss storm but not the fix.</private> When every key changes at once, **every read misses** and goes to the database together.
+
+- The cache is cold for all keys at the same moment.
+- The database sees the whole read load, not the usual 5%.
+
+[[note knows mass misses]]Here is the picture:
+
+```diagram
+title: Cold cache
+nodes:
+  - {id: app, label: App, at: [0, 0]}
+  - {id: db, label: Database, at: [2, 0]}
+edges:
+  - [app, db, every read]
+```
+
+What would you do to stop the stampede? Try this one.
+[[activity b1]]"""
+COACH_REPLY = """`exp >>= 1` halves the exponent, so each loop **consumes one bit**. Your `exp -= 1` only removes one multiplication.
+
+```python
+while exp:
+    if exp & 1:
+        result *= base
+    base *= base
+    exp >>= 1
+```
+
+That is why it runs in O(log n) rather than O(n)."""
+
+
+def fake_reply(messages):
+    """The tutor's prompt asks for <private> notes and markers; every other chat gets a plain reply."""
+    return TUTOR_REPLY if "<private>" in messages[0]["content"] else COACH_REPLY
+
+
+async def fake_stream(model, messages, options=None):
+    text = fake_reply(messages)
+    for i in range(0, len(text), 6):
+        await asyncio.sleep(0.03)
+        yield {"text": text[i:i + 6]}
+    yield {"model": "fake/chat", "usage": {}}
+
+
 def build():
     store = FakeStore("dev")
     seed(store)
@@ -65,6 +112,13 @@ def build():
         raise RuntimeError("Model calls are off in the fake dev server")
     for name in ("_raw_generate", "_raw_transcribe", "_raw_image", "_raw_look"):
         setattr(llm, name, reject)
+    if os.environ.get("FAKE_CHAT"):
+        config.OPENROUTER_API_KEY = "fake"
+        llm._raw_chat = lambda model, messages, options=None: {"content": fake_reply(messages), "model": "fake/chat", "usage": {}}
+        llm._raw_chat_stream = fake_stream
+    else:
+        llm._raw_chat = reject
+
     async def no_leetcode(*args, **kwargs):   # the real poller would ask leetcode.com about a real account
         return []
     poller.check_active_sessions = poller.sweep_untracked_solves = no_leetcode

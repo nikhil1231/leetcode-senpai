@@ -11,6 +11,7 @@ import { useUi } from "@/lib/ui-store";
 import { EditorHead, EditorPane } from "@/features/editor/EditorPane";
 import { COACH_PX, useEditorUi, useLayout } from "@/features/editor/editor-store";
 import { useRunActions } from "./useRunActions";
+import { Chat, type ChatMessage } from "@/components/chat/Chat";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -66,8 +67,6 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
     return () => { document.removeEventListener("click", away); document.removeEventListener("keydown", key); };
   }, [menu]);
   useEffect(() => { useLayout.getState().hydrate(); }, []);
-  const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => { panel.current?.lastElementChild?.scrollIntoView({ block: "nearest" }); }, [active?.chat?.length, coachPending]);
 
   const codeForCoach = useCallback(async () => { if (!ed) return null; ed.tick(); await ed.flush(); return ed.code(); }, [ed]);
 
@@ -98,7 +97,10 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
   const optimizing = active.kind === "optimize";
   const walk = active.give_up, steps: Any[] = walk?.steps || [];
   const hasEditor = active.surface === "editor";
-  const stamp = (t?: number | null) => (t == null ? null : <span className="chat-time">{fmtTime(t)}</span>);
+  const messages: ChatMessage[] = chat.map((m, i) => ({ id: `c${i}`, role: m.role === "me" ? "user" : "assistant", text: m.text, time: m.t == null ? undefined : fmtTime(m.t),
+    className: m.role === "me" ? "" : `is-hint${i === lastCoach ? " is-latest" : ""}`,
+    after: i === lastCoach ? <button className="note-action" type="button" onClick={() => ed?.clearMarks()}>Clear marks</button> : undefined }));
+  if (coachPending?.text) messages.push({ id: "pending", role: "user", text: coachPending.text, time: coachPending.t == null ? undefined : fmtTime(coachPending.t) });
   const over = Boolean(active.par_sec) && elapsed >= active.par_sec;
   const diff = active.difficulty || "";
 
@@ -196,16 +198,6 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
           {active.takeaway?.scope === "problem" && <p id="active-takeaway" className="active-takeaway"><b>Last time on this problem:</b> {active.takeaway.text}</p>}
           {critique && <div id="plan-check-panel" className="plan-critique"><div className="plan-critique-title"><span>Plan check</span><span>{verdict}</span></div>{items.length ? <ul>{items.map((i, n) => <li key={n}>{i}</li>)}</ul> : <p className="small">No specific concerns.</p>}</div>}
           {nudge && <div id="nudge" className="nudge">{nudge}</div>}
-          {(chat.length > 0 || coachPending) && (
-            <div id="hint-panel" className="hint-panel" ref={panel}>
-              {chat.map((m, i) => m.role === "me" ? <div key={i} className="chat-msg is-me">{stamp(m.t)}<p>{m.text}</p></div> : (
-                <div key={i} className={`hint-card${i === lastCoach ? " is-latest" : ""}`}>
-                  {(m.t != null || i === lastCoach) && <div className="note-head">{stamp(m.t) || <span />}{i === lastCoach && <button className="note-action" type="button" onClick={() => ed?.clearMarks()}>Clear marks</button>}</div>}
-                  <p>{coachText(m.text)}</p></div>))}
-              {coachPending?.text && <div className="chat-msg is-me">{stamp(coachPending.t)}<p>{coachPending.text}</p></div>}
-              {coachPending && <div className="hint-card chat-typing" aria-label="The interviewer is typing"><span /><span /><span /></div>}
-            </div>
-          )}
           {walk && (
             <div id="give-up-panel" className="give-up-panel"><div className="note-head"><span>Walkthrough</span><span className="note-meta">{walk.done ? "that's all of it" : "write each step, then ask for the next"}</span></div>
               <ol className="walk-steps">{steps.map((st, i) => <li key={i} className={i === steps.length - 1 ? "is-latest" : ""}>{coachText(st.text)}</li>)}</ol>
@@ -215,17 +207,12 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
             : active.chat_available ? "Stuck? Think out loud below, or ask for a hint. The interviewer reads your code and points, without giving the fix." : active.hints_available ? "Stuck? A hint reads the code you've written and points, without giving the fix."
             : active.kind === "mock" ? "A mock runs without hints — it's you and the clock." : "No hints for this one."}</p>}
         </div>
-        {active.chat_available && (
-          <form id="coach-chat" className="coach-chat" autoComplete="off" onSubmit={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()}>
-            <textarea id="coach-input" data-dictate rows={2} maxLength={4000} placeholder={optimizing ? "Ask about your solution or optimizations" : "Message the interviewer"} aria-label={optimizing ? "Talk to the coach" : "Talk to the interviewer"}
-              onKeyDown={async (e) => {
-                if (e.key !== "Enter" || e.shiftKey || (e.nativeEvent as KeyboardEvent).isComposing) return;
-                e.preventDefault(); const input = e.currentTarget;
-                if (useRun.getState().coachPending) return;
-                const text = input.value.trim(); if (!text) return; input.value = "";
-                if (!(await askCoach(text)) && !input.value) input.value = text;
-              }} />
-          </form>
+        {(messages.length > 0 || coachPending || (active.chat_available && hasEditor)) && (
+          <div id="hint-panel" className="run-chat-host" onClick={(e) => e.stopPropagation()}>
+            <Chat className="run-chat" messages={messages} running={Boolean(coachPending)} composer={Boolean(active.chat_available && hasEditor)} inputId="coach-input"
+              placeholder={optimizing ? "Ask about your solution or optimizations" : "Message the interviewer"} label={optimizing ? "Talk to the coach" : "Talk to the interviewer"}
+              typingLabel="The interviewer is typing" onSend={async (text) => { if (!(await askCoach(text))) throw new Error("not sent"); }} />
+          </div>
         )}
         <div className="coach-actions" onClick={(e) => e.stopPropagation()}>
           <div className="assist-group" role="group" aria-label="Help">

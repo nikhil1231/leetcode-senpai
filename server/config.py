@@ -78,6 +78,9 @@ STT_MODEL = os.environ.get("STT_MODEL", "elevenlabs/scribe-v2").strip()
 # (verdicts were worse without), with a large token budget. Never an Anthropic model through OpenRouter (CLAUDE.md).
 TUTOR_MODEL = os.environ.get("TUTOR_MODEL", "deepseek/deepseek-v4.1-flash").strip()
 TUTOR_NOTES_MODEL = os.environ.get("TUTOR_NOTES_MODEL", "openai/gpt-6-luna").strip()
+# How long an Anthropic or Gemini tutor model keeps the prompt cached: blank is five minutes, "1h" an hour (dearer to
+# write, but a pause to think or do an activity doesn't throw it away). Other models cache on their own.
+TUTOR_CACHE_TTL = os.environ.get("TUTOR_CACHE_TTL", "").strip()
 
 # The Telegram drip (server/drip). Only the process with a bot token runs it, so set the token
 # in one place (the box). TELEGRAM_CHAT_ID is the one chat it serves; /start tells you yours.

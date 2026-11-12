@@ -20,13 +20,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal, Optional
 
-from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import (assessment, auth, coach, config, connectivity, enrich, gamify, importer, insights,
-               leetcode, llm, mock, neetcode150, packs, plans, poller, practice,
+from . import (assessment, auth, chat_stream, coach, config, connectivity, enrich, gamify, importer, insights,
+               leetcode, llm, mock, neetcode150, packs, page_coach, plans, poller, practice,
                practice_offline, practice_queue, recording, scheduler, learning_evidence, curriculum, learning_sequences, voice)
 from . import store as store_mod
 from .store import get_store
@@ -3043,21 +3043,36 @@ def api_voice_sample(body: VoiceSample, uid: str = Depends(auth.require_user)):
 
 
 @app.post("/api/coach/page-chat")
-async def api_page_chat(body: PageChatRequest, uid: str = Depends(auth.require_user)):
+async def api_page_chat(body: PageChatRequest, request: Request, uid: str = Depends(auth.require_user)):
+    """One reply about the page on screen: JSON {reply, model}, or streamed events when the browser accepts them."""
     message = body.message.strip()
     if not message:
         raise HTTPException(400, "Write a message first.")
     settings = get_store(uid).get_settings()
     if not llm.enabled(settings):
         raise HTTPException(503, "AI coaching is unavailable. Check the coach configuration in Settings.")
-    result = await llm.extract("page_chat", {
-        "message": message, "page": body.page, "section": body.section,
-        "context": body.context, "history": [turn.model_dump() for turn in body.history],
-    }, settings=settings)
-    reply = (result or {}).get("reply", "").strip()
-    if not reply:
-        raise HTTPException(502, "The coach could not reply. Your message is kept; try again.")
-    return {"reply": reply, "model": llm.current_model(settings)["model"]}
+    model = llm.current_model(settings)["model"]
+    chat = page_coach.messages(message, body.page, body.section, body.context, [t.model_dump() for t in body.history])
+    # Whatever model is selected: some refuse to switch reasoning off, so keep it low and hidden, with room for it.
+    options = {"max_tokens": 4000, "timeout": 90, "effort": "low"}
+    failed = "The coach could not reply. Your message is kept; try again."
+    if "text/event-stream" not in request.headers.get("accept", ""):
+        try:
+            raw = await asyncio.to_thread(llm._raw_chat, model, chat, options=options)
+        except Exception as exc:
+            log.warning("page coach failed: %s", type(exc).__name__)
+            raise HTTPException(502, failed)
+        return {"reply": raw["content"].strip(), "model": raw.get("model") or model}
+
+    async def events():
+        try:
+            async for piece in llm._raw_chat_stream(model, chat, options=options):
+                yield chat_stream.sse({"type": "text", "text": piece["text"]} if "text" in piece
+                                      else {"type": "done", "model": piece.get("model") or model})
+        except Exception as exc:
+            log.warning("page coach stream failed: %s", type(exc).__name__)
+            yield chat_stream.sse({"type": "error", "status": 502, "message": failed})
+    return StreamingResponse(events(), media_type="text/event-stream", headers=chat_stream.HEADERS)
 
 
 class TranscribeRequest(BaseModel):

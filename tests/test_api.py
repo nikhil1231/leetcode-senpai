@@ -3050,11 +3050,11 @@ def test_page_coach_uses_bounded_current_context_and_selected_model(client, monk
     monkeypatch.setattr(main.llm, 'enabled', lambda settings: True)
     monkeypatch.setattr(main.llm, 'current_model', lambda settings: {'model': 'test/coach'})
 
-    async def reply(task, payload, settings=None):
-        seen.update(task=task, payload=payload, settings=settings)
-        return {'reply': 'Shift consumes one bit of the exponent.'}
+    def reply(model, messages, options=None):
+        seen.update(model=model, messages=messages)
+        return {'content': 'Shift consumes one bit of the exponent.\n', 'model': 'test/coach'}
 
-    monkeypatch.setattr(main.llm, 'extract', reply)
+    monkeypatch.setattr(main.llm, '_raw_chat', reply)
     before = _practice_state_snapshot(client.store)
     body = {'message': 'Why was my answer wrong?', 'page': 'Quickfire', 'section': 'leetcode',
             'context': 'exp -= 1 selected; exp >>= 1 correct',
@@ -3062,10 +3062,30 @@ def test_page_coach_uses_bounded_current_context_and_selected_model(client, monk
     response = client.post('/api/coach/page-chat', json=body)
     assert response.status_code == 200
     assert response.json() == {'reply': 'Shift consumes one bit of the exponent.', 'model': 'test/coach'}
-    assert seen['task'] == 'page_chat'
-    assert seen['payload'] == body
-    assert seen['settings'] == client.store.get_settings()
+    assert seen['model'] == 'test/coach'
+    assert [m['role'] for m in seen['messages']] == ['system', 'assistant', 'user']
+    assert seen['messages'][1]['content'] == 'What did you try?'
+    last = seen['messages'][-1]['content']
+    assert 'exp >>= 1 correct' in last and last.endswith('Why was my answer wrong?') and 'Quickfire' in last
     assert _practice_state_snapshot(client.store) == before
+
+
+def test_page_coach_streams_its_reply(client, monkeypatch):
+    monkeypatch.setattr(main.llm, 'enabled', lambda settings: True)
+    monkeypatch.setattr(main.llm, 'current_model', lambda settings: {'model': 'test/coach'})
+
+    async def stream(model, messages, options=None):
+        for piece in ('Shift ', 'consumes ', 'one bit.'):
+            yield {'text': piece}
+        yield {'model': 'test/coach-2', 'usage': {}}
+
+    monkeypatch.setattr(main.llm, '_raw_chat_stream', stream)
+    r = client.post('/api/coach/page-chat', headers={'Accept': 'text/event-stream'},
+                    json={'message': 'Why?', 'page': 'Quickfire', 'section': 'leetcode'})
+    assert r.status_code == 200 and r.headers['content-type'].startswith('text/event-stream')
+    events = [json.loads(line[6:]) for line in r.text.split('\n\n') if line.startswith('data: ')]
+    assert ''.join(e.get('text', '') for e in events) == 'Shift consumes one bit.'
+    assert events[-1] == {'type': 'done', 'model': 'test/coach-2'}
 
 
 def test_page_coach_disabled_and_provider_failure_are_recoverable(client, monkeypatch):
@@ -3073,13 +3093,20 @@ def test_page_coach_disabled_and_provider_failure_are_recoverable(client, monkey
     assert client.post('/api/coach/page-chat', json=body).status_code == 503
     monkeypatch.setattr(main.llm, 'enabled', lambda settings: True)
 
-    async def unavailable(*args, **kwargs):
-        return None
+    def down(*args, **kwargs):
+        raise RuntimeError('provider down')
 
-    monkeypatch.setattr(main.llm, 'extract', unavailable)
+    async def down_stream(*args, **kwargs):
+        yield {'text': 'Half a '}
+        raise RuntimeError('provider down')
+
+    monkeypatch.setattr(main.llm, '_raw_chat', down)
+    monkeypatch.setattr(main.llm, '_raw_chat_stream', down_stream)
     response = client.post('/api/coach/page-chat', json=body)
     assert response.status_code == 502
     assert 'try again' in response.json()['detail']
+    r = client.post('/api/coach/page-chat', json=body, headers={'Accept': 'text/event-stream'})
+    assert json.loads(r.text.strip().split('\n\n')[-1][6:])['type'] == 'error'
 
 
 def test_page_coach_rejects_oversized_context_and_history(client):
