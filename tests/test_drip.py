@@ -520,7 +520,7 @@ def test_podcast_command_sends_audio_and_daily_sends_each_morning(env, monkeypat
     for t in threading.enumerate():
         if t.name == 'podcast':
             t.join(5)
-    assert uploads == [('sendAudio', 'senpai-2026-11-02.mp3', b'ID3audio', 'Senpai daily, 2026-11-02')]
+    assert uploads == [('sendAudio', 'senpai-2026-11-02.mp3', b'ID3audio', 'Senpai daily, Monday 2 November')]
     tg.updates = [msg('/podcast daily')]
     b.step(poll=0)
     assert b.state['podcast_daily'] and 'every morning' in tg.last()

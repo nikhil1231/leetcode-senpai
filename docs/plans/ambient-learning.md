@@ -224,7 +224,14 @@ Like NotebookLM's audio overviews, but made from his own weak spots and due poin
 that ask him to think. Also wanted: audio-drama episodes about his company's latest outage.
 Delivered so his phone's podcast app can play it; timed for walks and commutes.
 
-Status: **built (daily episode); the audio drama is not.** `server/podcast.py`. An episode is
+Status: **the audio drama is built (2026-11-12): Ripple After Dark**, `server/podcast_drama.py`, see the
+README. Nikhil's verdicts that shaped it: Piper sounded robotic; of the voices compared he liked Gemini best
+(most human and expressive) and Kokoro's Heart as soothing; the Q&A list read like a news bulletin, and a
+podcast is the wrong place for active recall, so an episode now explains one topic as a story, in a format
+that rotates. Scripts are written by a scheduled Claude Code job, falling back to Opus on OpenRouter.
+The questions episode below remains the fallback.
+
+Earlier, the questions episode: `server/podcast.py`. An episode is
 about six minutes: last night's misses, then gaps, misconceptions, shaky and fading points; a
 cast member asks, six seconds of quiet, then the narrator gives the idea. Templated, no model.
 Speech is free and local: Piper with two British voices, baked into the image. Each voice runs in

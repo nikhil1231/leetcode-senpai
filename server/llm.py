@@ -807,6 +807,11 @@ def forbidden_model(model: str) -> bool:
     return model.strip().lstrip("~").lower().startswith("anthropic/")
 
 
+# The only exception to the ban, decided by Nikhil on 2026-11-12: the podcast's fallback scriptwriter
+# (server/podcast_drama.py), used only when the scheduled Claude Code job did not write the episode.
+ANTHROPIC_EXCEPTIONS = {"podcast fallback"}
+
+
 def valid_model(model: str) -> bool:
     return (bool(re.fullmatch(r"~?[A-Za-z0-9._-]+/[A-Za-z0-9._:/-]+", model)) and len(model) <= 200
             and not forbidden_model(model))
@@ -946,10 +951,10 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema, *
 
 def _raw_chat(model: str, messages: list, *, options=None) -> dict:
     """Plain-text chat completion (the tutor's voice). Tests replace this to avoid network calls.
-    -> {content, model, usage}."""
-    if forbidden_model(model):
-        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+    -> {content, model, usage}. `allow_anthropic` names the one caller allowed past the Anthropic ban."""
     options = options or {}
+    if forbidden_model(model) and options.get("allow_anthropic") not in ANTHROPIC_EXCEPTIONS:
+        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
     body = {"model": model, "messages": messages, "stream": False, "max_tokens": options.get("max_tokens", 1500)}
     if options.get("think") is False:
         body["reasoning"] = {"enabled": False}   # answer straight away: no hidden reasoning eating the token budget
@@ -969,6 +974,27 @@ def _raw_chat(model: str, messages: list, *, options=None) -> dict:
     if choices[0].get("finish_reason") == "length":
         raise RuntimeError("OpenRouter response exceeded the output limit")
     return {"content": content, "model": data.get("model", model), "usage": data.get("usage") or {}}
+
+
+# ---- speech ---------------------------------------------------------------------
+def _raw_speech(model: str, input, voice: Optional[str] = None, instructions: Optional[str] = None) -> tuple:
+    """-> (sample rate, 16-bit mono PCM bytes) from a text-to-speech model. `input` is text, or a list of
+    {text, voice, instructions} turns for models that voice two speakers at once. Tests replace this."""
+    if forbidden_model(model):
+        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+    body = {"model": model, "input": input, "response_format": "pcm"}
+    if voice:
+        body["voice"] = voice
+    if instructions:
+        body["instructions"] = instructions
+    resp = httpx.post("https://openrouter.ai/api/v1/audio/speech", timeout=180, json=body,
+                      headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "Content-Type": "application/json",
+                               "X-Title": "LeetCode Senpai"})
+    if resp.is_error:
+        log.warning("OpenRouter speech HTTP %s for %s: %s", resp.status_code, model, resp.text[:300])
+        raise RuntimeError(f"OpenRouter speech failed (HTTP {resp.status_code})")
+    rate = re.search(r"rate=(\d+)", resp.headers.get("content-type", ""))
+    return (int(rate.group(1)) if rate else 24000), resp.content
 
 
 # ---- images ---------------------------------------------------------------------

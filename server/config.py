@@ -98,6 +98,9 @@ SUNDIAL_URL = os.environ.get("SUNDIAL_URL", "").rstrip("/")
 PODCAST_DIR = os.environ.get("PODCAST_DIR", os.path.join(os.path.expanduser("~"), ".cache", "senpai-podcast"))
 PODCAST_VOICES = os.environ.get("PODCAST_VOICES", os.path.join(os.path.expanduser("~"), ".cache", "senpai-voices"))
 PODCAST_TOKEN = os.environ.get("PODCAST_TOKEN", "").strip()
+# "drama" (Ripple After Dark, server/podcast_drama.py) or "quiz" (the Piper questions-and-answers episode,
+# also what a drama falls back to when it cannot be made).
+PODCAST_STYLE = os.environ.get("PODCAST_STYLE", "drama").strip().lower()
 # The wall's wallpaper posters (server/wall_gen.py): an image model draws an infographic of a lesson
 # you hold badly; WALL_REVIEW_MODEL writes its words and reviews it. A new poster at most every WALL_EVERY_HOURS, WALL_PER_DAY a day
 # (each try about $0.06); the phone's poster changes every WALL_SLOT_HOURS within DRIP_WINDOW.

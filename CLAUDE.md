@@ -62,7 +62,9 @@ voice (`server/voice.py`) follows the same rules; keep the two in step.
 
 - **Never use Anthropic models (`anthropic/…`) through OpenRouter.** They are far too
   expensive for this app. `llm.forbidden_model` enforces it: such a setting falls back to the
-  default and the transport refuses the call.
+  default and the transport refuses the call. One exception, Nikhil's decision (2026-11-12): the
+  podcast's fallback scriptwriter (`server/podcast_drama.py`, `llm.ANTHROPIC_EXCEPTIONS`), used
+  only when the scheduled Claude Code job did not write the day's episode (~$0.20 an episode).
 - Paid model calls are for the app's runtime features only. One-off content work (drafting,
   linking, mapping, rewriting lessons) is done by the agent in its own session, not scripted
   through OpenRouter; scripts that need answers export prompts and import the agent's answers

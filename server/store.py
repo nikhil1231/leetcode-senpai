@@ -24,6 +24,8 @@ Collections:
   users/{uid}/drip/{key}               the Telegram drip: its state, and one document per card sent
   users/{uid}/wall_posters/{id}        generated wallpaper posters (derived): what each teaches, its review
   users/{uid}/wall_images/{id}         each poster's JPEG, kept apart so listing posters stays small
+  users/{uid}/podcast_episodes/{day}   Ripple After Dark: the day's brief, script and status
+  users/{uid}/podcast_audio/{day}-{n}  that episode's MP3, in chunks under Firestore's 1 MiB document limit
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
 import copy as _copy
@@ -699,7 +701,7 @@ class FirestoreStore:
     # records once. Misconceptions are updated in place (open → resolved). Tutor sessions
     # are read one at a time (they grow); tutor memory is a handful of small documents.
     KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions', 'tutor_sessions', 'tutor_memory', 'drip',
-                 'study_sessions', 'wall_posters', 'wall_images',
+                 'study_sessions', 'wall_posters', 'wall_images', 'podcast_episodes', 'podcast_audio',
                  'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews',
                  'nightshift_runs')
 

@@ -15,6 +15,7 @@ import datetime as dt
 import hmac
 import html
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -25,11 +26,13 @@ import time
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
 
-from . import config, voice
+from . import config, llm, voice
 from .drip import cards as dcards
 from .feed import deck, day_bounds, morning
 from .knowledge_base import api as kb_api, model as kmodel
 from .tutor import story
+
+log = logging.getLogger(__name__)
 
 ITEMS = 12
 THINK = 6.0      # seconds of quiet after each question
@@ -103,13 +106,27 @@ def path_for(day):
 
 
 def make(store, now=None, force=False):
-    """Today's episode, made if missing. -> (path, segments count) or raises RuntimeError."""
+    """Today's episode, made if missing: Ripple After Dark (server/podcast_drama.py) when it can be made,
+    else the Piper questions episode. -> its path, or raises RuntimeError."""
     now = now or time.time()
     day = dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())).date()
     out = path_for(day)
     with _lock:
         if os.path.exists(out) and not force:
             return out
+        if config.PODCAST_STYLE == 'drama' and llm.enabled():
+            from . import podcast_drama
+            try:
+                made = podcast_drama.ensure(store, day, now)
+            except Exception:
+                log.warning('Ripple After Dark failed; making the questions episode instead', exc_info=True)
+                made = None
+            if made and made[0]:
+                os.makedirs(config.PODCAST_DIR, exist_ok=True)
+                with open(out + '.part', 'wb') as fh:
+                    fh.write(made[0])
+                os.replace(out + '.part', out)
+                return out
         if not available():
             raise RuntimeError('Speech is not installed here (Piper voices missing)')
         items, company = episode_items(store, now)
@@ -150,10 +167,21 @@ def _check(token):
         raise HTTPException(404, 'Not found')
 
 
-def rss(episodes, base, token):
+def title(store, day):
+    """An episode's name: the drama's own title, or the day."""
+    from . import podcast_drama
+    try:
+        named = podcast_drama.title_for(store, day)
+    except Exception:
+        named = None
+    return f'{named} ({day.strftime("%-d %B")})' if named else f'Senpai daily, {day.strftime("%A %-d %B")}'
+
+
+def rss(episodes, base, token, titles=None):
     """-> RSS XML for [(date, path, bytes)], newest first."""
+    titles = titles or {}
     items = ''.join(
-        f'<item><title>Senpai daily, {d.strftime("%A %-d %B")}</title><guid isPermaLink="false">senpai-{d.isoformat()}</guid>'
+        f'<item><title>{html.escape(titles.get(d) or "Senpai daily, " + d.strftime("%A %-d %B"))}</title><guid isPermaLink="false">senpai-{d.isoformat()}</guid>'
         f'<pubDate>{dt.datetime.combine(d, dt.time(6, 0)).strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>'
         f'<enclosure url="{html.escape(base)}/podcast/{token}/{d.isoformat()}.mp3" length="{size}" type="audio/mpeg"/></item>'
         for d, _, size in episodes)
@@ -178,7 +206,8 @@ def podcast_feed(token: str):
             if f.endswith('.mp3'):
                 p = os.path.join(config.PODCAST_DIR, f)
                 eps.append((dt.date.fromisoformat(f[:-4]), p, os.path.getsize(p)))
-    return Response(rss(eps, config.APP_URL, token), media_type='application/rss+xml')
+    return Response(rss(eps, config.APP_URL, token, {d: title(store, d) for d, _, _ in eps}),
+                    media_type='application/rss+xml')
 
 
 @router.get('/podcast/{token}/{day}.mp3')

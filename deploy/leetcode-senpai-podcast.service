@@ -1,0 +1,9 @@
+[Unit]
+# Runs from the deploy-only clone (~/infra/stacks/leetcode-senpai/src), so it always matches the app that is live.
+Description=Write and voice today's Ripple After Dark episode (Claude Code, then the app's fallback)
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/infra/stacks/leetcode-senpai/src/deploy/podcast-writer.sh
+TimeoutStartSec=45min

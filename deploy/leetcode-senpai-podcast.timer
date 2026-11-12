@@ -1,0 +1,11 @@
+[Unit]
+Description=Make Ripple After Dark before the morning
+
+[Timer]
+OnCalendar=*-*-* 04:40
+Persistent=true
+RandomizedDelaySec=10min
+Unit=leetcode-senpai-podcast.service
+
+[Install]
+WantedBy=timers.target

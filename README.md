@@ -548,7 +548,36 @@ On Telegram each card is written by the character who asks it (`drip/assess.phra
 point's question as a short message from a colleague at Ripple, told what was recently sent so it
 doesn't repeat itself, graded against the question as asked; the template is the fallback), and
 reveals, skips and self-grades get that character's own lines (`lines` in story.yaml). The daily
-podcast uses each character's opening lines. Senpai and the LeetCode helpers keep their own voice.
+Senpai and the LeetCode helpers keep their own voice.
+
+### Ripple After Dark (the daily podcast)
+
+`server/podcast_drama.py`. Each day's episode is an audio drama of 10 to 15 minutes about one lesson: the one
+you hold worst (`wall.struggles`) that no episode covered in the last 21 days. It teaches by telling, not
+quizzing: the lesson's ideas are facts the story must state correctly (in the reveal and a closing recap),
+and your recorded mistakes on them become characters' wrong theories. The shape rotates through seven
+formats (investigation, heist, confession, parallel world, inquiry, countdown, case files), least recently
+used first, and the writer is told the last five titles, formats and products so it doesn't repeat them.
+
+- **Writing.** `leetcode-senpai-podcast.timer` (host, 04:40) runs `deploy/podcast-writer.sh` from the deploy
+  clone: `docker exec … python -m server.podcast_drama brief` gives the prompt, `claude -p --model opus`
+  writes it on Nikhil's subscription (no tools), and `… submit` checks and voices it. If Claude Code fails or
+  its script is rejected, `… ensure` writes it with `anthropic/claude-opus-5.5` on OpenRouter (the one
+  exception to the Anthropic ban). If the timer never ran, the first `/podcast` of the day does the same.
+- **Voicing.** Gemini 3.8 Flash TTS on OpenRouter (~$0.15 an episode): one voice per character (narrator
+  Sulafat, Marcus Puck, Priya Kore, Jo Leda, Sam Laomedeia, up to three guests), each line's acting note
+  sent as `instructions`, and two speakers to a request so exchanges flow (the most Gemini takes). A clip
+  much shorter than its text is cut off and redone. Terms voices misread are rewritten as said (`say_as`:
+  "E-tag", "sequel", "four twelve"); the prompt asks the writer to do the same. Sound and music cues are
+  short pauses for now.
+- **Keeping.** The brief, script and status are in `podcast_episodes/{day}`, the MP3 in 700 KB chunks in
+  `podcast_audio`, so a redeploy doesn't lose it. A script whose voicing failed is voiced again, not
+  rewritten. `PODCAST_STYLE=quiz` (or no OpenRouter key, or a failure) gives the Piper questions episode.
+- Delivery is unchanged: `/podcast`, `/podcast daily` and the RSS feed, titled with the episode's name.
+
+Install the timer once: `ln -s ~/infra/stacks/leetcode-senpai/src/deploy/leetcode-senpai-podcast.{service,timer}
+~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now leetcode-senpai-podcast.timer`.
+Logs: `journalctl --user -u leetcode-senpai-podcast`.
 
 ### Home, Practise and What you know
 

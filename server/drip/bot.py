@@ -126,9 +126,11 @@ class Bot:
                 with open(path, 'rb') as fh:
                     data = fh.read()
                 day = os.path.basename(path)[:-4]
+                name = podcast.title(self.store, dt.date.fromisoformat(day))
                 with self.lock:
                     self.tg.upload('sendAudio', 'audio', f'senpai-{day}.mp3', data, 'audio/mpeg', chat_id=self.chat,
-                                   title=f'Senpai daily, {day}', performer='Leetcode Senpai')
+                                   title=name, performer='Ripple After Dark' if 'Senpai daily' not in name
+                                   else 'Leetcode Senpai')
             except Exception as e:
                 log.warning('Podcast failed', exc_info=True)
                 with self.lock:
