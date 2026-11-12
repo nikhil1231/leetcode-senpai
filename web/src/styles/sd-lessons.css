@@ -74,14 +74,16 @@
 
 /* Sort */
 .sd-sort { display:grid; gap:8px; margin-top:12px; }
-.sd-sort-item { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 14px; align-items:center; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:13.5px; color:var(--text); }
+.sd-sort-item { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:13.5px; color:var(--text); }
 .sd-sort-item.is-right { border-color:#35d39a66; } .sd-sort-item.is-wrong { border-color:#fb718566; }
 .sd-seg { display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
 .sd-seg button { background:transparent; border:0; border-right:1px solid var(--line); color:var(--muted); font:500 11.5px var(--font); padding:7px 11px; cursor:pointer; }
 .sd-seg button:last-child { border-right:0; }
 .sd-seg button.is-on { background:var(--accent-soft); color:var(--accent); }
 .sd-seg button.is-answer { box-shadow:inset 0 -2px 0 #35d39a; color:var(--text); }
-.sd-sort-why { grid-column:1/-1; font-size:12.5px; color:var(--text-2); line-height:1.6; }
+.sd-sort-text { flex:1 1 16em; min-width:0; }
+.sd-sort-item > .sd-seg { flex:0 1 auto; }
+.sd-sort-why { flex-basis:100%; font-size:12.5px; color:var(--text-2); line-height:1.6; }
 .sd-item-tutor { grid-column:1/-1; font-size:12.5px; line-height:1.6; color:var(--text); border-left:2px solid #7cb7ff88; background:#7cb7ff0b; padding:6px 10px; border-radius:0 6px 6px 0; }
 .sd-item-tutor .sd-say-label { display:inline; margin:0 6px 0 0; color:#7cb7ff; }
 
@@ -509,7 +511,6 @@ details.sd-goals summary { cursor:pointer; font-size:11px; letter-spacing:.08em;
 
 /* Sort-it-out rows: on a narrow screen the choices drop under the prompt instead of crushing it. */
 @media (max-width: 720px) {
-  .sd-sort-item { grid-template-columns: minmax(0, 1fr); }
   .sd-seg { display: flex; flex-wrap: wrap; width: 100%; }
   .sd-seg button { flex: 1 1 auto; border-bottom: 1px solid var(--line); }
 }
