@@ -62,7 +62,8 @@ def persona(cast_id):
         return ''
     role = c['role'] if c['role'][:2].isupper() else c['role'][0].lower() + c['role'][1:]
     return (f"{c['name']}, Ripple's {role}: {c.get('personality') or c['voice']} (Quoted phrases show the tone; "
-            "don't repeat them word for word.)")
+            "don't repeat them word for word. Let the personality show in how they think and talk, not in a "
+            "recurring habit, prop or catchphrase.)")
 
 
 def lead(cast_id, seed=''):

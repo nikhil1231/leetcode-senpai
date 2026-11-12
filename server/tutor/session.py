@@ -291,7 +291,7 @@ What it should leave him able to do (a map for you, not a checklist to read out)
                      "Start there (in your own way, through a situation, not by quoting this), make sure it lands, then carry on with the lesson.")
     if session.get('pickup'):
         parts.append(pickup(session['pickup'], mode))
-    parts.append(f"""Setting: Ripple, a link shortener growing into a global social product, now at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
+    parts.append(f"""Setting: Ripple, a company that began as a link shortener and now builds many products, at {story_state['label']} ({story_state['users']}). Nikhil is its lead engineer. Cast: {cast}. This lesson's scene: {story.chapter(lesson['section'], lesson['category'])}{' Recently: ' + ' '.join(events) if events else ''}
 Borrow it for examples now and then; don't narrate.
 Scale: Ripple's size is {story_state['users']}, and that is the only figure for it. He sees only this conversation, so before any question turns on Ripple's scale, give him the numbers in it. Judge his numbers only against figures stated in this conversation; if he picks his own assumptions, judge whether they are reasonable and consistent, not whether they match figures he was never given.""")
     if lesson.get('overview') and memory.get('overview_step') and mode != 'review':
