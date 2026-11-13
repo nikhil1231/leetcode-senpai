@@ -1,0 +1,31 @@
+/* Page notes (components/PageNotes.tsx): a question about highlighted text, kept beside it. */
+::highlight(page-notes) { background-color: rgba(var(--accent-rgb), .16); text-decoration: underline 1.5px rgba(var(--accent-rgb), .7); text-underline-offset: 3px; }
+::highlight(page-notes-draft) { background-color: rgba(var(--accent-rgb), .28); }
+.page-notes-ask, .page-notes-marker {
+  position: fixed; z-index: 44; width: 24px; height: 24px; padding: 0; display: grid; place-items: center;
+  border-radius: 7px; border: 1px solid rgba(var(--accent-rgb), .45); background: var(--panel); color: rgb(var(--accent-rgb));
+  cursor: pointer; box-shadow: var(--shadow-sm);
+}
+.page-notes-ask { width: 28px; height: 28px; background: rgb(var(--accent-rgb)); color: var(--bg); border-color: transparent; }
+.page-notes-marker { opacity: .75; }
+.page-notes-marker:hover, .page-notes-marker.is-open { opacity: 1; background: rgba(var(--accent-rgb), .18); }
+.page-notes-ask svg, .page-notes-marker svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.page-notes-pop {
+  position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 10px; max-height: min(460px, 70vh); padding: 12px;
+  background: var(--bg-elev); border: 1px solid var(--line-hi); border-radius: 12px; box-shadow: var(--shadow);
+}
+.page-notes-head { display: flex; align-items: flex-start; gap: 8px; }
+.page-notes-quote { flex: 1; margin: 0; padding-left: 9px; border-left: 2px solid rgba(var(--accent-rgb), .6); color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
+.page-notes-close { flex: none; width: 24px; height: 24px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.page-notes-close:hover { color: var(--text); }
+.page-notes-log { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.55; }
+.page-notes-log .ch-md > :first-child { margin-top: 0; }
+.page-notes-log .ch-md > :last-child { margin-bottom: 0; }
+.page-notes-me { align-self: flex-end; max-width: 88%; margin: 0; padding: 6px 10px; border-radius: 10px; background: rgba(var(--accent-rgb), .14); color: var(--text); white-space: pre-wrap; }
+.page-notes-wait { margin: 0; color: var(--muted); }
+.page-notes-error { margin: 0; color: var(--amber); font-size: 13px; }
+.page-notes-compose { display: flex; gap: 8px; align-items: flex-end; }
+.page-notes-compose textarea {
+  flex: 1; min-height: 40px; max-height: 120px; resize: vertical; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line-hi); background: var(--panel); color: var(--text); font: inherit; font-size: 13.5px;
+}

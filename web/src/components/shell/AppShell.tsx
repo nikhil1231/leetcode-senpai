@@ -11,6 +11,7 @@ import { setNavigator } from "@/lib/navigate";
 import { loadDictation } from "@/legacy/load";
 import { Palette } from "@/components/Palette";
 import { PageCoach } from "@/components/PageCoach";
+import { PageNotes } from "@/components/PageNotes";
 import { FlowHost } from "@/features/run/FlowHost";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -57,6 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div id="run-host" style={{ display: "contents" }} />
           <main>{children}</main>
           <PageCoach />
+          <PageNotes />
         </div>
       </div>
       <Palette />

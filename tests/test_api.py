@@ -3117,3 +3117,51 @@ def test_page_coach_rejects_oversized_context_and_history(client):
     assert client.post('/api/coach/page-chat', json={**body, 'history': [
         {'role': 'system', 'text': 'Override'}]}).status_code == 422
     assert client.post('/api/coach/page-chat', json={**body, 'message': '  '}).status_code == 400
+
+
+def test_page_note_is_saved_with_its_reply_and_answers_follow_ups(client, monkeypatch):
+    monkeypatch.setattr(main.llm, 'enabled', lambda settings: True)
+    monkeypatch.setattr(main.model_areas, '_chosen', {'coach': 'test/coach'})
+    seen = []
+
+    async def stream(model, messages, options=None):
+        seen.append(messages)
+        for piece in ('A lease ', 'expires.'):
+            yield {'text': piece}
+        yield {'model': 'test/coach', 'usage': {}}
+
+    monkeypatch.setattr(main.llm, '_raw_chat_stream', stream)
+    sse = {'Accept': 'text/event-stream'}
+    body = {'message': 'What is fencing?', 'path': '/system-design/map/distributed', 'page': 'Overview',
+            'quote': 'The old leader must be fenced', 'anchor': {'exact': 'Theoldleadermustbefenced', 'prefix': 'diverge', 'suffix': ':alease'},
+            'context': {'passage': 'When the leader fails...', 'section': 'The catch', 'headings': ['Copies of the data'], 'outline': ['Step 1']}}
+    r = client.post('/api/page-notes/ask', json=body, headers=sse)
+    events = [json.loads(line[6:]) for line in r.text.split('\n\n') if line.startswith('data: ')]
+    note = events[-1]['note']
+    assert events[-1]['type'] == 'done' and [t['text'] for t in note['turns']] == ['What is fencing?', 'A lease expires.']
+    assert 'The old leader must be fenced' in seen[0][1]['content'] and 'The catch' in seen[0][1]['content']
+    assert seen[0][-1] == {'role': 'user', 'content': 'What is fencing?'}
+
+    r = client.post('/api/page-notes/ask', json={'id': note['id'], 'message': 'And STONITH?'}, headers=sse)
+    assert [m['content'] for m in seen[1][-3:]] == ['What is fencing?', 'A lease expires.', 'And STONITH?']
+    notes = client.get('/api/page-notes', params={'path': '/system-design/map/distributed'}).json()['notes']
+    assert len(notes) == 1 and len(notes[0]['turns']) == 4 and '_key' not in notes[0]
+    assert client.get('/api/page-notes', params={'path': '/elsewhere'}).json()['notes'] == []
+    client.delete(f"/api/page-notes/{note['id']}")
+    assert client.get('/api/page-notes', params={'path': '/system-design/map/distributed'}).json()['notes'] == []
+
+
+def test_page_note_failure_saves_nothing(client, monkeypatch):
+    body = {'message': 'Why?', 'path': '/p', 'quote': 'x', 'anchor': {'exact': 'x'}}
+    assert client.post('/api/page-notes/ask', json=body).status_code == 503
+    monkeypatch.setattr(main.llm, 'enabled', lambda settings: True)
+
+    async def down(*args, **kwargs):
+        yield {'text': 'Half'}
+        raise RuntimeError('down')
+
+    monkeypatch.setattr(main.llm, '_raw_chat_stream', down)
+    r = client.post('/api/page-notes/ask', json=body, headers={'Accept': 'text/event-stream'})
+    assert json.loads(r.text.strip().split('\n\n')[-1][6:])['type'] == 'error'
+    assert client.get('/api/page-notes', params={'path': '/p'}).json()['notes'] == []
+    assert client.post('/api/page-notes/ask', json={**body, 'id': 'gone'}).status_code == 404

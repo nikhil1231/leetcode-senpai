@@ -60,6 +60,9 @@ class FakeStore:
         self._knowledge_coll(coll)[key] = deepcopy({**doc, '_key': key})
         return deepcopy(self._knowledge_coll(coll)[key])
 
+    def delete_knowledge(self, coll, key):
+        self._knowledge_coll(coll).pop(key, None)
+
     def _senpai_coll(self, coll):
         from server.store import FirestoreStore
         if coll not in FirestoreStore.SENPAI:

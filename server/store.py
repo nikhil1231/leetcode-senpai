@@ -26,6 +26,7 @@ Collections:
   users/{uid}/wall_images/{id}         each poster's JPEG, kept apart so listing posters stays small
   users/{uid}/podcast_episodes/{day}   Ripple After Dark: the day's brief, script and status
   users/{uid}/podcast_audio/{day}-{n}  that episode's MP3, in chunks under Firestore's 1 MiB document limit
+  users/{uid}/page_notes/{id}          a highlighted passage on a page and the short chat about it
   users/{uid} (doc)                    { settings: {...}, flags: {...} }
 """
 import copy as _copy
@@ -703,7 +704,7 @@ class FirestoreStore:
     KNOWLEDGE = ('knowledge_events', 'knowledge_misconceptions', 'tutor_sessions', 'tutor_memory', 'drip',
                  'study_sessions', 'wall_posters', 'wall_images', 'podcast_episodes', 'podcast_audio',
                  'ripple_runs', 'ripple_drafts', 'ripple_scenarios', 'ripple_reviews',
-                 'nightshift_runs')
+                 'nightshift_runs', 'page_notes')
 
     def _knowledge(self, coll):
         if coll not in self.KNOWLEDGE:
@@ -740,6 +741,10 @@ class FirestoreStore:
         self._knowledge(coll).document(key).set(doc)
         _invalidate((coll, self.uid))
         return doc
+
+    def delete_knowledge(self, coll, key):
+        self._knowledge(coll).document(key).delete()
+        _invalidate((coll, self.uid))
 
     # ---- playbooks (per-category cheat sheets) ------------------------------
     def _playbooks(self):

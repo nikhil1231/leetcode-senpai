@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import (assessment, auth, chat_stream, coach, config, connectivity, enrich, gamify, importer, insights,
-               leetcode, llm, mock, neetcode150, packs, page_coach, plans, poller, practice,
+               leetcode, llm, mock, neetcode150, packs, page_coach, page_notes, plans, poller, practice,
                practice_offline, practice_queue, recording, scheduler, learning_evidence, curriculum, learning_sequences, voice)
 from . import model_areas
 from . import store as store_mod
@@ -172,6 +172,23 @@ class PageChatRequest(BaseModel):
     section: Literal["leetcode", "system-design"]
     context: str = Field(default="", max_length=12000)
     history: list[PageChatTurn] = Field(default_factory=list, max_length=8)
+
+
+class PageNoteContext(BaseModel):
+    passage: str = Field(default="", max_length=2000)
+    section: str = Field(default="", max_length=4000)
+    headings: list[str] = Field(default_factory=list, max_length=8)
+    outline: list[str] = Field(default_factory=list, max_length=40)
+
+
+class PageNoteAsk(BaseModel):
+    id: Optional[str] = Field(None, max_length=40)       # a follow-up in an existing note
+    message: str = Field(min_length=1, max_length=2000)
+    path: str = Field(default="", max_length=300)
+    page: str = Field(default="", max_length=160)
+    quote: str = Field(default="", max_length=1200)
+    anchor: dict[str, str] = Field(default_factory=dict)  # {exact, prefix, suffix}: web/src/lib/page-anchor.ts
+    context: PageNoteContext = Field(default_factory=PageNoteContext)
 
 
 class GiveUpRequest(HintRequest):
@@ -3097,6 +3114,75 @@ async def api_page_chat(body: PageChatRequest, request: Request, uid: str = Depe
         except Exception as exc:
             log.warning("page coach stream failed: %s", type(exc).__name__)
             yield chat_stream.sse({"type": "error", "status": 502, "message": failed})
+    return StreamingResponse(events(), media_type="text/event-stream", headers=chat_stream.HEADERS)
+
+
+@app.get("/api/page-notes")
+def api_page_notes(path: str, uid: str = Depends(auth.require_user)):
+    """The notes made on one page, oldest first."""
+    notes = [page_notes.public(n) for n in get_store(uid).list_knowledge(page_notes.COLL) if n.get("path") == path]
+    return {"notes": sorted(notes, key=lambda n: n.get("created_at") or 0)}
+
+
+@app.delete("/api/page-notes/{note_id}")
+def api_delete_page_note(note_id: str, uid: str = Depends(auth.require_user)):
+    get_store(uid).delete_knowledge(page_notes.COLL, note_id)
+    return {"ok": True}
+
+
+@app.post("/api/page-notes/ask")
+async def api_page_note_ask(body: PageNoteAsk, request: Request, uid: str = Depends(auth.require_user)):
+    """A question about a highlighted passage, streamed. The note (new, or the one named) is saved with the question
+    and reply once the reply is complete, and comes back in the `done` event."""
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(400, "Write a question first.")
+    store = get_store(uid)
+    if not llm.enabled(store.get_settings()):
+        raise HTTPException(503, "AI coaching is unavailable. Check the coach configuration in Settings.")
+    if body.id:
+        note = store.get_knowledge(page_notes.COLL, body.id)
+        if not note:
+            raise HTTPException(404, "That note was deleted.")
+    else:
+        anchor = {k: str(body.anchor.get(k, ""))[:1200] for k in ("exact", "prefix", "suffix")}
+        if not body.quote.strip() or not anchor["exact"]:
+            raise HTTPException(400, "Highlight some text first.")
+        note = page_notes.new(body.path, body.page, body.quote.strip(), anchor, body.context.model_dump())
+    model = model_areas.model_for("coach")
+    chat = page_notes.messages(note, message)
+    options = {"max_tokens": 2000, "timeout": 60, "effort": "low"}
+    failed = "The tutor could not reply. Your question is kept; try again."
+
+    def save(reply: str, used: str):
+        done = page_notes.answered(note, message, reply, used)
+        store.put_knowledge(page_notes.COLL, done["id"], done)
+        return page_notes.public(done)
+
+    if "text/event-stream" not in request.headers.get("accept", ""):
+        try:
+            raw = await asyncio.to_thread(llm._raw_chat, model, chat, options=options)
+        except Exception as exc:
+            log.warning("page note failed: %s", type(exc).__name__)
+            raise HTTPException(502, failed)
+        used = raw.get("model") or model
+        return {"reply": raw["content"].strip(), "model": used, "note": await asyncio.to_thread(save, raw["content"].strip(), used)}
+
+    async def events():
+        text, used = "", model
+        try:
+            async for piece in llm._raw_chat_stream(model, chat, options=options):
+                if "text" in piece:
+                    text += piece["text"]
+                    yield chat_stream.sse({"type": "text", "text": piece["text"]})
+                else:
+                    used = piece.get("model") or model
+        except Exception as exc:
+            log.warning("page note stream failed: %s", type(exc).__name__)
+            yield chat_stream.sse({"type": "error", "status": 502, "message": failed})
+            return
+        saved = await asyncio.to_thread(save, text.strip(), used)
+        yield chat_stream.sse({"type": "done", "model": used, "note": saved})
     return StreamingResponse(events(), media_type="text/event-stream", headers=chat_stream.HEADERS)
 
 
