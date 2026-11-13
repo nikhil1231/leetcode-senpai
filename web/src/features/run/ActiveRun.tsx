@@ -195,7 +195,6 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
         <div className="coach-head"><span className="coach-title">Coach</span><span id="coach-model" className="coach-model-name">{overview?.llm_enabled ? overview.llm_model : "off"}</span>
           <button id="btn-coach-toggle" className="panel-toggle" type="button" aria-label="Hide the coach" title="Hide the coach">&#x203A;</button></div>
         <div className="active-notes" onClick={(e) => e.stopPropagation()}>
-          {active.takeaway?.scope === "problem" && <p id="active-takeaway" className="active-takeaway"><b>Last time on this problem:</b> {active.takeaway.text}</p>}
           {critique && <div id="plan-check-panel" className="plan-critique"><div className="plan-critique-title"><span>Plan check</span><span>{verdict}</span></div>{items.length ? <ul>{items.map((i, n) => <li key={n}>{i}</li>)}</ul> : <p className="small">No specific concerns.</p>}</div>}
           {nudge && <div id="nudge" className="nudge">{nudge}</div>}
           {walk && (

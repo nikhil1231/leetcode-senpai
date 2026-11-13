@@ -1094,7 +1094,6 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
   background: var(--panel);
   font-size: 13.5px; line-height: 1.55; color: var(--text-2);
 }
-.active-run .active-notes > .active-takeaway { border-color: rgba(124, 134, 255, .3); background: rgba(124, 134, 255, .07); }
 .active-run .active-notes > .give-up-panel { border-color: rgba(167, 139, 250, .38); background: rgba(167, 139, 250, .08); color: var(--text); }
 .active-run .active-notes > .plan-critique { border-color: rgba(124, 134, 255, .38); }
 .hint-card { border-color: rgba(245, 181, 68, .3); background: rgba(245, 181, 68, .06); }
@@ -1109,7 +1108,6 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .run-chat .ch-typing span { background: var(--amber); }
 .active-run:not(.has-editor) .run-chat .ch-composer { display: none; }   /* without the editor there is no code to talk about */
 .active-run.coach-hidden .run-chat-host { display: none; }
-.active-takeaway b { color: var(--text); }
 .give-up-panel p { margin: 0; }
 .note-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px;
