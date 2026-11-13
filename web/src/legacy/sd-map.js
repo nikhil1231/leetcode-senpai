@@ -125,7 +125,7 @@
     const r = review ||= {session: M.review || null, busy: false, error: ''}, s = r.session;
     if (!s) return `<div class="ov-try"><button type="button" class="button is-primary" data-primary="1" data-ov-review="start">Start the check</button>
       ${r.error ? `<p class="tu-error">${esc(r.error)}</p>` : ''}</div>`;
-    return `<div class="ov-chat"></div><p class="ov-review-again" hidden><button type="button" class="ov-link" data-ov-review="start">Start the check again</button></p>`;
+    return '<div class="ov-chat"></div>';
   }
   function chatProps(root) {
     const r = review;
@@ -182,7 +182,8 @@
       : step === n + 1 ? 'Next: wrap-up →' : '';
     const last = M.mapped ? `<a class="button is-primary" data-primary="1" href="${home()}">Back to the course →</a>`
       : '<button type="button" class="button is-primary" data-primary="1" data-ov-finish>Finish the overview ✓</button>';
-    return `<div class="ov-pager">${prev}${step > n + 1 ? last : `<button type="button" class="button is-primary" data-primary="1" data-ov-go="${step + 1}">${esc(next)}</button>`}</div>`;
+    const again = step === n + 1 && M.enabled ? '<button type="button" class="button ov-review-again" data-ov-review="start" hidden>Start the check again</button>' : '';
+    return `<div class="ov-pager">${prev}<span class="ov-pager-end">${again}${step > n + 1 ? last : `<button type="button" class="button is-primary" data-primary="1" data-ov-go="${step + 1}">${esc(next)}</button>`}</span></div>`;
   }
 
   function overviewHtml() {
@@ -255,6 +256,7 @@
     const card = root.querySelector('.ov-card');
     if (!card) return;
     root.querySelectorAll('.sd-map-body.ov [data-ov-go]').forEach(n => n.addEventListener('click', () => go(+n.dataset.ovGo, root)));
+    card.querySelector('.ov-pager [data-ov-review]')?.addEventListener('click', () => reviewStart(root));
     card.querySelector('[data-ov-finish]')?.addEventListener('click', async e => {
       e.target.disabled = true;
       const r = await save({step, done: true});

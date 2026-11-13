@@ -544,5 +544,10 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 .ov-card.chat-screen-host .ov-review { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; }
 .ov-card.chat-screen-host .ov-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ov-card.chat-screen-host .ov-chat .ch-log { max-height: none; min-height: 0; }
-.ov-card.chat-screen-host .ov-pager { flex: none; padding: 8px 0 12px; margin: 0; }
-.ov-review-again { margin: 4px 0 0; font-size: 13px; }
+.ov-pager-end { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.ov-review-again[hidden] { display: none; }
+/* The card is pinned between the sidebar and the window's edge, so its own width gives way and the thread centres. In a
+   chat screen the pager is a row along the top: Back on the left, starting again and the next step on the right. */
+.ov-card.chat-screen-host { width: auto; }
+.ov-card.chat-screen-host .ov-pager { order: -1; flex: none; padding: 0 0 8px; margin: 0; border-top: 0; }
+.ov-card.chat-screen-host .ov-pager .button { padding: 4px 10px; height: auto; font-size: 13px; }
