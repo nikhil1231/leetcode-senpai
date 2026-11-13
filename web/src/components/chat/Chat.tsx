@@ -92,7 +92,7 @@ export function Markdown({ text }: { text: string }) {
 // landing a line at a time. Every update redraws the Markdown, so a word's start time is kept by its index and a word
 // still fading is drawn with a negative delay, carrying on where it was.
 const FADE_MS = 450;
-export function StreamingMarkdown({ text }: { text: string }) {
+export function StreamingMarkdown({ text, done, onSettled }: { text: string; done?: boolean; onSettled?: () => void }) {
   const el = useRef<HTMLDivElement>(null);
   const births = useRef<number[]>([]);
   useLayoutEffect(() => {
@@ -131,12 +131,21 @@ export function StreamingMarkdown({ text }: { text: string }) {
       node.replaceWith(frag);
     }
   }, [text]);
+  // Once the reply is complete the words still waiting to fade in finish their wipe before the plain text takes over.
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => onSettled?.(), Math.max(0, (births.current[births.current.length - 1] || 0) + FADE_MS - performance.now()) + 30);
+    return () => clearTimeout(t);
+  }, [done]);   // eslint-disable-line react-hooks/exhaustive-deps
   return <div ref={el} className="ch-md sd-md" />;
 }
 
 function AssistantText({ text, status }: TextMessagePartProps) {
+  const [streamed, setStreamed] = useState(false), [settled, setSettled] = useState(false);
+  const running = status?.type === "running";
+  if (running && !streamed) setStreamed(true);
   if (!text.trim()) return null;
-  return status?.type === "running" ? <StreamingMarkdown text={text} /> : <Markdown text={text} />;
+  return running || (streamed && !settled) ? <StreamingMarkdown text={text} done={!running} onSettled={() => setSettled(true)} /> : <Markdown text={text} />;
 }
 
 function ToolPart({ toolName, args, toolCallId }: ToolCallMessagePartProps) {
@@ -216,8 +225,7 @@ export function Chat(p: Props) {
     const el = log.current, sp = spacer.current;
     if (!el || !sp) return;
     const anchor = anchorId ? el.querySelector<HTMLElement>(`[data-message-id="${anchorId}"]`) : null;
-    sp.style.height = "0px";
-    if (!anchor) return;
+    if (!anchor) { sp.style.height = "0px"; return; }   // never zero it first: measuring would shrink the log and clamp the scroll position
     const foot = el.querySelector<HTMLElement>(".ch-footer");
     sp.style.height = `${Math.max(0, el.clientHeight - (foot?.offsetHeight || 0) - 8 - (sp.offsetTop - anchor.offsetTop))}px`;
   };
