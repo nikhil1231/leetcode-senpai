@@ -94,7 +94,7 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
   const pending = useRef<Any>(null);
   const live = useRef(props);
   live.current = props;
-  const box = () => document.querySelector<HTMLTextAreaElement>(".tu-convo .ch-input");
+  const box = () => document.querySelector<HTMLTextAreaElement>(".tu-thread .ch-input");
 
   const lastSpeaker = () => { const turns = live.current.session?.turns || []; for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "tutor") return turns[i].speaker; return "tutor"; };
   const run = async (path: string, body: Any, mine: string | undefined, speaker: string) => {
@@ -143,9 +143,9 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
   const messages = useMemo(() => {
     const out = turnsToMessages(session, cast, blocks, props.review);
     if (!preview || stale) return out;
-    if (preview.mine) out.push({ id: "mine", role: "user", text: preview.mine });
+    if (preview.mine) out.push({ id: `t${preview.base}`, role: "user", text: preview.mine });
     const who = preview.speaker === "tutor" ? { name: "Tutor" } : (cast(preview.speaker) || { name: preview.speaker });
-    out.push({ id: "preview", role: "assistant", text: preview.text, parts: preview.parts, streaming: true, who: { ...who, key: preview.speaker } });
+    out.push({ id: `t${preview.base + (preview.mine ? 1 : 0)}`, role: "assistant", text: preview.text, parts: preview.parts, streaming: true, who: { ...who, key: preview.speaker } });
     return out;
   }, [session, cast, blocks, preview, stale, props.review]);
 
@@ -177,7 +177,7 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
   ) : null;
 
   return (
-    <Chat className="tu-thread" messages={messages} running={busy} tools={tools} status={status} composer={!ended}
+    <Chat className="tu-thread" holdMic messages={messages} running={busy} tools={tools} status={status} composer={!ended}
       disabled={!session?.id}
       placeholder={props.review ? "Answer in your own words. It's fine to say you don't know." : "Answer, ask, or think out loud…"} label={props.review ? "Your answer" : "Your reply"} typingLabel="The tutor is thinking"
       onSend={async (text) => { await (window as Any).Dictate?.hold?.(box()); await turn({ text }); }} />

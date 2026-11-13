@@ -145,7 +145,8 @@
     el: field,
     get: () => field.value,
     set(v) {
-      field.value = v;
+      // The native setter, so React's value tracker sees the change and the composer (Send) updates.
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(field, v);
       field.scrollTop = field.scrollHeight;
       field.dispatchEvent(new Event("input", { bubbles: true }));
     },
@@ -284,6 +285,7 @@
       if (!active || active.el !== field) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stop(active); return; }
       if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+      if (e.key === "Enter" && !e.shiftKey) return;   // sending: the chat settles the transcript first
       cancel(active);
     });
   }

@@ -49,10 +49,11 @@ type Props = {
   autoFocus?: boolean;
   draft?: string;                // text to start the composer with (an unsent message kept across redraws)
   onDraft?: (text: string) => void;
+  holdMic?: boolean;             // sending while dictating keeps the mic armed, to come back on with the reply (the caller resumes it)
 };
 
-type Ctx = { byId: Map<string, ChatMessage>; tools: Record<string, ToolRenderer>; lastId?: string; roomy: boolean };
-const ChatCtx = createContext<Ctx>({ byId: new Map(), tools: {}, roomy: false });
+type Ctx = { byId: Map<string, ChatMessage>; tools: Record<string, ToolRenderer>; lastId?: string };
+const ChatCtx = createContext<Ctx>({ byId: new Map(), tools: {} });
 
 const convert = (m: ChatMessage): ThreadMessageLike => {
   if (m.role === "note") return { id: m.id, role: "system", content: [{ type: "text", text: m.text }] };
@@ -149,7 +150,7 @@ function ToolPart({ toolName, args, toolCallId }: ToolCallMessagePartProps) {
 const PARTS = { Text: AssistantText, tools: { Override: ToolPart } };
 
 function Row({ id, role }: { id: string; role: string }) {
-  const { byId, lastId, roomy } = useContext(ChatCtx);
+  const { byId, lastId } = useContext(ChatCtx);
   const m = byId.get(id);
   if (!m) return null;
   if (role === "system") return <MessagePrimitive.Root className={`ch-note ${m.className || ""}`}>{m.text}</MessagePrimitive.Root>;
@@ -160,7 +161,7 @@ function Row({ id, role }: { id: string; role: string }) {
   );
   const who = m.who && ((m.who.key && m.who.key !== "tutor") || m.who.role) ? m.who : null;   // the plain tutor or coach goes unnamed
   return (
-    <MessagePrimitive.Root className={`ch-msg is-them${m.streaming ? " is-streaming" : ""}${id === lastId ? " is-last" : ""}${id === lastId && roomy ? " has-room" : ""} ${m.className || ""}`} data-speaker={m.who?.key}>
+    <MessagePrimitive.Root className={`ch-msg is-them${m.streaming ? " is-streaming" : ""}${id === lastId ? " is-last" : ""} ${m.className || ""}`} data-speaker={m.who?.key}>
       {who && <div className="ch-who"><b>{who.name}</b>{who.role && <small>{who.role}</small>}{m.time && <span className="ch-time">{m.time}</span>}</div>}
       <div className="ch-bubble">
         <MessagePrimitive.Parts components={PARTS} />
@@ -206,28 +207,77 @@ export function Chat(p: Props) {
   const last = p.messages[p.messages.length - 1];
   const waiting = p.running && !(last?.role === "assistant" && last.streaming);
   const streamingId = last?.role === "assistant" && last.streaming ? last.id : null;
-  const [roomy, setRoomy] = useState(false);   // the latest reply has room to scroll to the top (once one has streamed here)
+  const [anchorId, setAnchorId] = useState<string | null>(null);   // the message pinned to the top of the view for this exchange
+  const lastId = [...p.messages].reverse().find((m) => m.role === "assistant")?.id;
+  // Room under the pinned message is a spacer after the messages, sized so it can reach the top of the view. It is the
+  // log's own space, so it never collapses when the reply finishes or grows.
+  const spacer = useRef<HTMLDivElement>(null);
+  const fit = () => {
+    const el = log.current, sp = spacer.current;
+    if (!el || !sp) return;
+    const anchor = anchorId ? el.querySelector<HTMLElement>(`[data-message-id="${anchorId}"]`) : null;
+    sp.style.height = "0px";
+    if (!anchor) return;
+    const foot = el.querySelector<HTMLElement>(".ch-footer");
+    sp.style.height = `${Math.max(0, el.clientHeight - (foot?.offsetHeight || 0) - 8 - (sp.offsetTop - anchor.offsetTop))}px`;
+  };
+  useLayoutEffect(fit);
   useLayoutEffect(() => {
     const el = log.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const foot = el.querySelector<HTMLElement>(".ch-footer");
-    const fit = () => el.style.setProperty("--ch-room", `${Math.max(0, el.clientHeight - (foot?.offsetHeight || 0) - 40)}px`);
     const ro = new ResizeObserver(fit);
-    ro.observe(el); if (foot) ro.observe(foot);
-    fit();
+    ro.observe(el);
+    const foot = el.querySelector<HTMLElement>(".ch-footer");
+    if (foot) ro.observe(foot);
     return () => ro.disconnect();
-  }, []);
-  useLayoutEffect(() => {
+  });   // eslint-disable-line react-hooks/exhaustive-deps
+  // Pin: scroll once, eased, to put a message at the top. Nothing scrolls after that (the reply writes down the page
+  // under it, and overflowing is the reader's to scroll); touching the log cancels it.
+  const anim = useRef(0);
+  const pin = (id: string) => {
     const el = log.current;
-    if (!streamingId || !el) return;
-    setRoomy(true);
-    requestAnimationFrame(() => {
-      const msg = el.querySelector<HTMLElement>(`[data-message-id="${streamingId}"]`);
-      if (msg) el.scrollTo?.({ top: msg.offsetTop - 8, behavior: "smooth" });
-    });
-  }, [streamingId]);
-  const lastId = last?.role === "assistant" ? last.id : undefined;
-  const ctx = useMemo(() => ({ byId, tools: p.tools || {}, lastId, roomy }), [byId, p.tools, lastId, roomy]);
+    if (!el) return;
+    cancelAnimationFrame(anim.current);
+    const from = el.scrollTop, t0 = performance.now(), ms = 520;
+    const stop = () => cancelAnimationFrame(anim.current);
+    ["wheel", "touchstart", "keydown"].forEach((ev) => el.addEventListener(ev, stop, { once: true, passive: true }));
+    const step = (now: number) => {
+      const msg = el.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+      if (!msg) return;
+      const k = Math.min(1, (now - t0) / ms), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;   // cubic ease in-out
+      el.scrollTop = from + (Math.max(0, msg.offsetTop - 8) - from) * e;
+      if (k < 1) anim.current = requestAnimationFrame(step);
+    };
+    anim.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => cancelAnimationFrame(anim.current), []);
+  // A new message from the learner while a reply is coming pins it; a reply that starts with no learner message
+  // just before it (the opening question) pins itself.
+  const lastUserId = [...p.messages].reverse().find((m) => m.role === "user")?.id;
+  const seenUser = useRef(lastUserId), seenStream = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (lastUserId === seenUser.current) return;
+    seenUser.current = lastUserId;
+    if (lastUserId && p.running) { setAnchorId(lastUserId); pin(lastUserId); }
+  }, [lastUserId]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    if (!streamingId || streamingId === seenStream.current) return;
+    seenStream.current = streamingId;
+    const i = p.messages.findIndex((m) => m.id === streamingId);
+    const before = p.messages.slice(0, i).reverse().find((m) => m.role !== "note");
+    if (before?.role === "user" && before.id === lastUserId) { setAnchorId(before.id); pin(before.id); }
+    else { setAnchorId(streamingId); pin(streamingId); }
+  }, [streamingId]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const ctx = useMemo(() => ({ byId, tools: p.tools || {}, lastId }), [byId, p.tools, lastId]);
+  // Send (or Enter) while dictating waits for the accurate transcript, then sends what the box then holds.
+  const sendSettled = (e: React.SyntheticEvent) => {
+    const input = (e.currentTarget as HTMLElement).querySelector("textarea");
+    const D = typeof window !== "undefined" ? (window as unknown as { Dictate?: { settle?: (f: Element) => Promise<void> | null; hold?: (f: Element) => Promise<void> | null } }).Dictate : undefined;
+    const wait = input && (p.holdMic ? D?.hold : D?.settle)?.call(D, input);
+    if (!wait) return;
+    e.preventDefault(); e.stopPropagation();
+    wait.then(() => setTimeout(() => runtime.thread.composer.send(), 0));
+  };
   return (
     <ChatCtx.Provider value={ctx}>
       <AssistantRuntimeProvider runtime={runtime}>
@@ -237,12 +287,15 @@ export function Chat(p: Props) {
             <ThreadPrimitive.Messages>{({ message }) => <Row id={message.id} role={message.role} />}</ThreadPrimitive.Messages>
             {waiting && <div className="ch-msg is-them"><div className="ch-bubble ch-typing" role="status" aria-label={p.typingLabel || "Typing"}><span /><span /><span /></div></div>}
             {p.status && <div className="ch-status">{p.status}</div>}
+            <div ref={spacer} className="ch-spacer" aria-hidden="true" />
             <ThreadPrimitive.ViewportFooter className="ch-footer">
               <ThreadPrimitive.ScrollToBottom className="ch-scroll-down" aria-label="Scroll to the latest message" title="Scroll to the latest message">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
               </ThreadPrimitive.ScrollToBottom>
               {p.composer !== false && (
-                <ComposerPrimitive.Root className="ch-composer">
+                <ComposerPrimitive.Root className="ch-composer"
+                  onKeyDownCapture={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) sendSettled(e); }}
+                  onClickCapture={(e) => { if ((e.target as HTMLElement).closest(".ch-send")) sendSettled(e); }}>
                   <ComposerPrimitive.Input className="ch-input" id={p.inputId} data-dictate rows={1} minRows={1} maxRows={8} maxLength={p.maxLength || 4000}
                     placeholder={p.placeholder || "Message"} aria-label={p.label || p.placeholder || "Message"} autoFocus={p.autoFocus} submitMode="enter" />
                   <div className="ch-composer-actions">

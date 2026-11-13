@@ -8,7 +8,7 @@ let active: { host: HTMLElement; saved: { title: string; sub: string }; title: s
 
 function place(host: HTMLElement) {
   const top = document.querySelector(".topbar")?.getBoundingClientRect().bottom ?? 0;
-  const main = (document.querySelector(".content > main") as HTMLElement | null)?.getBoundingClientRect();
+  const main = (document.querySelector(".content") as HTMLElement | null)?.getBoundingClientRect();
   host.style.setProperty("--chat-top", `${Math.max(0, Math.round(top))}px`);
   host.style.setProperty("--chat-left", `${Math.round(main?.left ?? 0)}px`);
   host.style.setProperty("--chat-right", `${Math.max(0, Math.round(window.innerWidth - (main?.right ?? window.innerWidth)))}px`);
@@ -29,7 +29,7 @@ export function enterChatScreen(host: HTMLElement, title: string, sub: string) {
   const again = () => { if (active?.host === host) place(host); };
   const raf = requestAnimationFrame(() => { again(); requestAnimationFrame(again); });
   const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(again) : null;
-  ["topbar", "content > main"].forEach((s) => { const n = document.querySelector("." + s); if (n) ro?.observe(n); });
+  ["topbar", "content"].forEach((s) => { const n = document.querySelector("." + s); if (n) ro?.observe(n); });
   window.addEventListener("resize", again);
   const gone = window.setInterval(() => { if (!host.isConnected) leaveChatScreen(host); }, 400);
   active = { host, saved, title, sub, stop: () => { cancelAnimationFrame(raf); ro?.disconnect(); window.removeEventListener("resize", again); window.clearInterval(gone); } };

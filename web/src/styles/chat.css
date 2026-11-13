@@ -17,8 +17,6 @@
 .ch-md ul, .ch-md ol { margin: 0 0 .9em; padding-left: 1.4em; }
 .ch-md li + li { margin-top: .25em; }
 .ch-md pre { max-width: 100%; overflow-x: auto; }
-.ch-msg.is-streaming .ch-md > :last-child::after { content: ""; display: inline-block; width: .5em; height: 1em; margin-left: 2px; vertical-align: -2px; border-radius: 2px; background: rgba(var(--accent-rgb), .7); animation: ch-caret 1s steps(2) infinite; }
-@keyframes ch-caret { 50% { opacity: 0; } }
 .ch-fade { animation: ch-fade-in 450ms ease-out both; }
 @keyframes ch-fade-in { from { opacity: 0; } }
 /* Tooltips in a chat: the app's own look, at once, instead of the browser's slow default one. Multi-line text keeps its breaks. */
@@ -47,7 +45,7 @@
 .ch-actions { display: flex; gap: 2px; margin: 4px 0 0; padding: 0 2px; opacity: 0; transition: opacity .15s; }
 .ch-msg.is-last .ch-actions, .ch-msg:hover .ch-actions, .ch-actions:focus-within { opacity: 1; }
 /* The reply streaming in (and then the latest) is at least a view tall, so it can sit at the top while it is written. */
-.ch-msg.has-room { min-height: var(--ch-room, 0px); }
+.ch-spacer { flex: none; margin-top: -22px; pointer-events: none; }
 .ch-action { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
 .ch-action:hover { background: var(--panel2, var(--panel)); color: var(--text); }
 .ch-action svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -94,7 +92,7 @@ body.chat-screen { overflow: hidden; }
 .chat-screen-host { --chat-bg: var(--bg); position: fixed; z-index: 20; top: var(--chat-top, 0); left: var(--chat-left, 0); right: var(--chat-right, 0); bottom: 0; margin: 0 !important; max-width: none !important; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--bg); padding: 12px clamp(14px, 3vw, 32px) 0; border: 0; border-radius: 0; }
 
 @media (max-width: 700px), (pointer: coarse) { .ch-input { font-size: 16px; } .ch-msg.is-me .ch-bubble { max-width: 88%; } }
-@media (prefers-reduced-motion: reduce) { .ch-typing span, .ch-msg.is-streaming .ch-md > :last-child::after, .ch-fade { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .ch-typing span, .ch-fade { animation: none; } }
 /* In a chat screen the header carries the title, so it reads as one (the System Design header is small breadcrumbs). */
 body.chat-screen.section-design .page-title { font-size: 15px; font-weight: 600; color: var(--text); }
 body.chat-screen.section-design .page-title::before { display: none; }
