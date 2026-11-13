@@ -972,6 +972,27 @@ def _headers():
     return {"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "Content-Type": "application/json", "X-Title": "LeetCode Senpai"}
 
 
+def _raw_local_chat(model: str, messages: list, *, timeout: float = 600) -> dict:
+    """Plain-text completion through LocalRouter (config.LOCALROUTER_URL): no key, no cost, the subscription's quota.
+    Sampling and length options are ignored there, so none are sent. -> {content, model}; raises RuntimeError."""
+    if not config.LOCALROUTER_URL:
+        raise RuntimeError("LocalRouter is not configured")
+    try:
+        resp = httpx.post(f"{config.LOCALROUTER_URL}/chat/completions", timeout=timeout, json={"model": model, "messages": messages},
+                          headers={"Content-Type": "application/json"})
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"LocalRouter unreachable ({type(e).__name__})") from e
+    if resp.is_error:
+        log.warning("LocalRouter HTTP %s for %s: %s", resp.status_code, model, resp.text[:300])
+        raise RuntimeError(f"LocalRouter request failed (HTTP {resp.status_code})")
+    data = resp.json()
+    choices = data.get("choices") or []
+    content = (choices[0].get("message") or {}).get("content") if choices else None
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("LocalRouter returned no reply")
+    return {"content": content, "model": data.get("model", model)}
+
+
 def _raw_chat(model: str, messages: list, *, options=None) -> dict:
     """Plain-text chat completion (the tutor's voice). Tests replace this to avoid network calls.
     -> {content, model, usage}; usage includes OpenRouter's `cost` in dollars. Options: max_tokens, timeout, think

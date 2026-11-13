@@ -93,7 +93,6 @@ class Bot:
         self.roll_day(now)
         self.refresh_sleep(now)
         self.bedtime(now)
-        self.morning_podcast(now)
         if self.state['pending'] is not None:
             c = self.card(self.state['pending'])
             if c and c['status'] == 'pending' and now - c['sent_at'] > cards.EXPIRE:
@@ -138,16 +137,6 @@ class Bot:
         t = threading.Thread(target=work, name='podcast', daemon=True)
         t.start()
         return t
-
-    def morning_podcast(self, now):
-        """With /podcast daily: the day's episode once the questions start."""
-        if not self.state.get('podcast_daily') or self.state['paused'] or self.state.get('podcast_day') == self.state['day']:
-            return None
-        if not self.in_window(now):
-            return None
-        self.state['podcast_day'] = self.state['day']
-        self.save()
-        return self.send_podcast()
 
     def bedtime(self, now):
         """Once a day after DRIP_BEDTIME: if you missed anything today, a link to go over it."""
@@ -251,17 +240,8 @@ class Bot:
             self.state.update(paused=False, next_at=None)
             self.say("Back on! The next question will turn up later today.")
         elif cmd == '/podcast':
-            arg = (args[0].lower() if args else '')
-            if arg in ('daily', 'on'):
-                self.state['podcast_daily'] = True
-                self.say("Done: a fresh episode every morning when the questions start. /podcast off to stop.")
-            elif arg in ('off', 'stop'):
-                self.state['podcast_daily'] = False
-                self.say('No more daily episodes. /podcast still makes one when you ask.')
-            else:
-                self.say("On it: making today's episode. About a minute.")
-                self.state['podcast_day'] = self.state['day']   # the daily one won't send it again
-                self.send_podcast()
+            self.say("On it: making today's episode. About a minute.")
+            self.send_podcast()
         elif cmd in ('/frequency', '/freq'):
             n = cards.parse_per_day(args[0]) if args else None
             if args and n is None:

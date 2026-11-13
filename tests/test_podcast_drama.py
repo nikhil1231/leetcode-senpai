@@ -138,6 +138,23 @@ def test_without_the_host_job_the_fallback_model_writes_it(speech, monkeypatch):
     assert ep['writer'] == 'openrouter:anthropic/claude-opus-5.5' and mp3
 
 
+def test_localrouter_writes_it_first_and_openrouter_only_if_that_fails(speech, monkeypatch):
+    monkeypatch.setattr(pd, 'make_brief', lambda store, day, now=None: pd.brief(LESSONS[0], VIEWS, MIS, [], day))
+    monkeypatch.setattr(pd.config, 'LOCALROUTER_URL', 'http://lr.test/api/v1')
+    local, paid = [], []
+    monkeypatch.setattr(llm, '_raw_local_chat', lambda model, messages, **k: local.append(model) or {'content': script()})
+    monkeypatch.setattr(llm, '_raw_chat', lambda *a, **k: paid.append(a) or pytest.fail('paid call'))
+    _, ep = pd.ensure(FakeStore('u'), DAY)
+    assert local == ['anthropic/claude-opus-5.5'] and not paid and ep['writer'] == 'localrouter:anthropic/claude-opus-5.5'
+
+    def down(*a, **k):
+        raise RuntimeError('LocalRouter request failed (HTTP 503)')
+    monkeypatch.setattr(llm, '_raw_local_chat', down)
+    monkeypatch.setattr(llm, '_raw_chat', lambda m, msgs, options=None: {'content': script()})
+    _, ep = pd.ensure(FakeStore('u'), DAY)
+    assert ep['writer'] == 'openrouter:anthropic/claude-opus-5.5'
+
+
 def test_a_written_script_whose_voicing_failed_is_voiced_again_not_rewritten(speech, monkeypatch):
     store = FakeStore('u')
     b = pd.brief(LESSONS[0], VIEWS, MIS, [], DAY)

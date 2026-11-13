@@ -45,7 +45,8 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(api, 'get_store', lambda uid: store)
     monkeypatch.setattr(config, 'PODCAST_DIR', str(tmp_path))
     monkeypatch.setattr(config, 'PODCAST_TOKEN', 'sekret')
-    monkeypatch.setattr(podcast, 'make', lambda store, now=None, force=False: (tmp_path / '2026-11-02.mp3').write_bytes(b'ID3fake') and str(tmp_path / '2026-11-02.mp3'))
+    (tmp_path / '2026-11-02.mp3').write_bytes(b'ID3fake')
+    monkeypatch.setattr(podcast, 'make', lambda *a, **k: pytest.fail('the feed must not make episodes'))
     return TestClient(main.app)
 
 

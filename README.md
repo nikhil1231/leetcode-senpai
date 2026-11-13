@@ -572,11 +572,14 @@ and your recorded mistakes on them become characters' wrong theories. The shape 
 formats (investigation, heist, confession, parallel world, inquiry, countdown, case files), least recently
 used first, and the writer is told the last five titles, formats and products so it doesn't repeat them.
 
-- **Writing.** `leetcode-senpai-podcast.timer` (host, 04:40) runs `deploy/podcast-writer.sh` from the deploy
-  clone: `docker exec … python -m server.podcast_drama brief` gives the prompt, `claude -p --model opus`
-  writes it on Nikhil's subscription (no tools), and `… submit` checks and voices it. If Claude Code fails or
-  its script is rejected, `… ensure` writes it with `anthropic/claude-opus-5.5` on OpenRouter (the one
-  exception to the Anthropic ban). If the timer never ran, the first `/podcast` of the day does the same.
+- **Writing.** Nothing makes an episode on a schedule; `/podcast` in Telegram is the only trigger, and it
+  writes through LocalRouter (`LOCALROUTER_URL`, `anthropic/claude-opus-5.5` on Nikhil's Claude subscription, free,
+  about a minute). Only if LocalRouter is down or out of quota does it use `anthropic/claude-opus-5.5` on
+  OpenRouter (the one exception to the Anthropic ban, ~$0.20); the episode's `writer` says which one wrote it.
+  `deploy/podcast-writer.sh` (run by hand: `systemctl --user start leetcode-senpai-podcast.service`) is the
+  Claude Code route on Nikhil's subscription: `docker exec … python -m server.podcast_drama brief` gives the
+  prompt, `claude -p --model opus` writes it (no tools), and `… submit` checks and voices it; if that fails
+  it falls back to `… ensure`.
 - **Voicing.** Gemini 3.8 Flash TTS on OpenRouter (~$0.15 an episode): one voice per character (narrator
   Sulafat, Marcus Puck, Priya Kore, Jo Leda, Sam Laomedeia, up to three guests), each line's acting note
   sent as `instructions`, and two speakers to a request so exchanges flow (the most Gemini takes). A clip
@@ -586,11 +589,10 @@ used first, and the writer is told the last five titles, formats and products so
 - **Keeping.** The brief, script and status are in `podcast_episodes/{day}`, the MP3 in 700 KB chunks in
   `podcast_audio`, so a redeploy doesn't lose it. A script whose voicing failed is voiced again, not
   rewritten. `PODCAST_STYLE=quiz` (or no OpenRouter key, or a failure) gives the Piper questions episode.
-- Delivery is unchanged: `/podcast`, `/podcast daily` and the RSS feed, titled with the episode's name.
+- Delivery: `/podcast` makes and sends today's episode; the RSS feed only lists episodes that exist, titled with the episode's name.
 
-Install the timer once: `ln -s ~/infra/stacks/leetcode-senpai/src/deploy/leetcode-senpai-podcast.{service,timer}
-~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now leetcode-senpai-podcast.timer`.
-Logs: `journalctl --user -u leetcode-senpai-podcast`.
+The manual unit: `ln -s ~/infra/stacks/leetcode-senpai/src/deploy/leetcode-senpai-podcast.service
+~/.config/systemd/user/ && systemctl --user daemon-reload`. Logs: `journalctl --user -u leetcode-senpai-podcast`.
 
 ### Home, Practise and What you know
 

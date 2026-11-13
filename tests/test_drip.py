@@ -505,7 +505,7 @@ def test_the_bot_reads_last_night_from_sundial_once_it_appears(env, monkeypatch)
     assert b.state['sleep'] is None and b.per_day() == 6
 
 
-def test_podcast_command_sends_audio_and_daily_sends_each_morning(env, monkeypatch, tmp_path):
+def test_podcast_command_sends_audio_and_nothing_makes_one_unasked(env, monkeypatch, tmp_path):
     from server import podcast
     b, store, tg, clock, _ = env
     ep = tmp_path / '2026-11-02.mp3'
@@ -521,16 +521,10 @@ def test_podcast_command_sends_audio_and_daily_sends_each_morning(env, monkeypat
         if t.name == 'podcast':
             t.join(5)
     assert uploads == [('sendAudio', 'senpai-2026-11-02.mp3', b'ID3audio', 'Senpai daily, Monday 2 November')]
-    tg.updates = [msg('/podcast daily')]
-    b.step(poll=0)
-    assert b.state['podcast_daily'] and 'every morning' in tg.last()
-    clock.t = dt.datetime(2026, 11, 3, 7, 0, tzinfo=LON).timestamp()
-    assert b.morning_podcast(clock.t) is None  # before the window opens
-    b.roll_day(clock.t)
+    b.roll_day(dt.datetime(2026, 11, 3, 7, 0, tzinfo=LON).timestamp())
     clock.t = dt.datetime(2026, 11, 3, 9, 0, tzinfo=LON).timestamp()
-    t = b.morning_podcast(clock.t)
-    t.join(5)
-    assert len(uploads) == 2 and b.morning_podcast(clock.t) is None
+    b.tick()   # a new day inside the window: the questions start, no episode follows
+    assert not hasattr(b, 'morning_podcast') and len(uploads) == 1
 
 
 def test_the_grader_speaks_as_the_colleague_who_asked():

@@ -55,8 +55,8 @@ themselves.
 feed starts with last night's misses; from 20:00 with today's (`?set=` overrides).
 
 **Daily podcast.** In Telegram: `/podcast` sends today's episode of Ripple After Dark (an audio
-drama of 10 to 15 minutes about one lesson; see the README), `/podcast daily` sends
-one every morning when the questions start. Telegram plays it in the background with lock-screen
+drama of 10 to 15 minutes about one lesson; see the README). Nothing makes an episode unasked: `/podcast`
+is the only trigger. Telegram plays it in the background with lock-screen
 controls. For a podcast app instead: set `PODCAST_TOKEN` (any long random string) in
 `~/secrets/leetcode-senpai.env`, add a Cloudflare Access application for
 `leetcode.nikhil.ing/podcast/*` with a **Bypass** policy (the token in the address is the lock),

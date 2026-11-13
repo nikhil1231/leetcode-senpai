@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Writes today's Ripple After Dark script with Claude Code (Nikhil's subscription), then hands it to the
 # app to voice and keep. If Claude Code fails or its script is rejected, the app writes the script itself
-# with its fallback model. Run by leetcode-senpai-podcast.timer; safe to run again (a made episode is kept).
+# with its fallback model. Run by hand (systemctl --user start leetcode-senpai-podcast.service); safe to run again (a made episode is kept).
 #
 #   deploy/podcast-writer.sh            today
 #   deploy/podcast-writer.sh 2026-11-13 a given day

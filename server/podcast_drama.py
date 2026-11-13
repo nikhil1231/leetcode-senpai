@@ -5,11 +5,11 @@ story at Ripple, in a format that rotates so episodes don't all run the same way
 quizzed: the lesson's ideas are the facts the story must get right, and your past mistakes on
 them become characters' wrong theories.
 
-The script is written on the host by a scheduled Claude Code job (`deploy/podcast-writer.sh`):
+The script can also be written on the host by a Claude Code job run by hand (`deploy/podcast-writer.sh`):
 it asks for the brief (`python -m server.podcast_drama brief`) and hands the script back
-(`... submit`). If that job fails or never runs, `ensure` writes the script here with
-FALLBACK_MODEL, the one Anthropic model this app calls through OpenRouter (Nikhil's decision,
-2026-11-12). Gemini voices it, two speakers to a request so exchanges flow; a clip that comes back
+(`... submit`). `/podcast` (no scheduled job any more) goes to `ensure`, which writes the script
+here through LocalRouter (the box's endpoint over Nikhil's Claude subscription, free) and only if that fails
+with FALLBACK_MODEL, the one Anthropic model this app calls through OpenRouter (Nikhil's decision, 2026-11-12). Gemini voices it, two speakers to a request so exchanges flow; a clip that comes back
 cut short is redone. Script and MP3 live in Firestore (`podcast_episodes`, the audio in
 `podcast_audio` chunks) so an episode survives a redeploy. Intent: docs/plans/ambient-learning.md.
 """
@@ -31,7 +31,8 @@ from .tutor import story
 log = logging.getLogger(__name__)
 
 EPISODES, AUDIO = 'podcast_episodes', 'podcast_audio'
-FALLBACK_MODEL = 'anthropic/claude-opus-5.5'
+FALLBACK_MODEL = 'anthropic/claude-opus-5.5'   # on OpenRouter, paid
+LOCAL_MODEL = 'anthropic/claude-opus-5.5'      # on LocalRouter, free
 SPEECH_MODEL = 'google/gemini-3.8-flash-tts'
 PROMPT_VERSION = 1
 RATE = 24000
@@ -387,9 +388,16 @@ def accept(store, b, text, writer):
 
 
 def write_fallback(b):
-    r = llm._raw_chat(FALLBACK_MODEL, [{'role': 'user', 'content': prompt(b)}],
-                      options={'max_tokens': 9000, 'timeout': 420, 'allow_anthropic': 'podcast fallback'})
-    return r['content']
+    """The script from the app's own writer -> (text, writer name). LocalRouter first (Nikhil's Claude subscription,
+    free); only if that is down or out of quota, FALLBACK_MODEL on OpenRouter (~$0.20)."""
+    messages = [{'role': 'user', 'content': prompt(b)}]
+    if config.LOCALROUTER_URL:
+        try:
+            return llm._raw_local_chat(LOCAL_MODEL, messages)['content'], f'localrouter:{LOCAL_MODEL}'
+        except Exception:
+            log.warning('LocalRouter could not write the episode; trying OpenRouter', exc_info=True)
+    r = llm._raw_chat(FALLBACK_MODEL, messages, options={'max_tokens': 9000, 'timeout': 420, 'allow_anthropic': 'podcast fallback'})
+    return r['content'], f'openrouter:{FALLBACK_MODEL}'
 
 
 def ensure(store, day=None, now=None):
@@ -407,7 +415,7 @@ def ensure(store, day=None, now=None):
         b = ep.get('brief') or make_brief(store, day, now)
         if not b:
             return None
-        ep = accept(store, b, write_fallback(b), f'openrouter:{FALLBACK_MODEL}')
+        ep = accept(store, b, *write_fallback(b))
     return load_audio(store, ep), ep
 
 

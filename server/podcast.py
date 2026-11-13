@@ -7,7 +7,7 @@ idea. No model writes it. Speech is synthesised locally with Piper (free, offlin
 child process, so its memory is returned as soon as the episode is made, and encoded to MP3.
 
 Episodes are derived: kept on local disk (PODCAST_DIR) and remade when missing. Delivered by the
-Telegram bot (/podcast, or every morning with /podcast daily) and, with PODCAST_TOKEN set, as an
+Telegram bot (/podcast, on request only) and, with PODCAST_TOKEN set, as an
 RSS feed a podcast app can follow at /podcast/<token>/feed.xml (that path must bypass Access).
 Intent: docs/plans/ambient-learning.md.
 """
@@ -195,11 +195,7 @@ def rss(episodes, base, token, titles=None):
 @router.get('/podcast/{token}/feed.xml')
 def podcast_feed(token: str):
     _check(token)
-    store = kb_api.get_store(config.ACCESS_UID)
-    try:
-        make(store)
-    except RuntimeError:
-        pass   # the feed still lists what there is
+    store = kb_api.get_store(config.ACCESS_UID)   # lists what exists; episodes are only made by /podcast
     eps = []
     if os.path.isdir(config.PODCAST_DIR):
         for f in sorted(os.listdir(config.PODCAST_DIR), reverse=True):
