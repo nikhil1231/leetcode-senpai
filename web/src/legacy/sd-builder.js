@@ -181,19 +181,21 @@
       const now = evs.filter(e => h >= e.at && h < e.at + e.dur);
       const say = now.find(e => e.line && e.at === h);
       p.hidden = false;
-      p.innerHTML = `<div class="bd-play-row"><button type="button" class="button" data-act="play" aria-label="${play.timer ? 'Pause' : h >= 23 ? 'Replay' : 'Play'}">${play.timer ? '⏸ Pause' : h >= 23 ? '↺ Replay' : '▶ Play'}</button>
+      const playLabel = play.timer ? 'Pause' : h >= 23 ? 'Replay' : 'Play';
+      p.innerHTML = `<div class="bd-play-row"><div class="bd-xport" role="group" aria-label="Playback">
+            <button type="button" class="button" data-act="stepback" aria-label="Previous hour" title="Previous hour" ${h <= 0 ? 'disabled' : ''}><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="2" height="10"/><path d="M13 3v10L6 8z"/></svg></button>
+            <button type="button" class="button bd-xport-main" data-act="play" aria-label="${playLabel}" title="${playLabel}">${play.timer ? '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10"/><rect x="9.5" y="3" width="3" height="10"/></svg>' : h >= 23 ? '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 2a6 6 0 1 0 6 6h-2a4 4 0 1 1-1.2-2.8L9 7h5V2l-1.6 1.6A6 6 0 0 0 8 2z"/></svg>' : '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>'}</button>
+            <button type="button" class="button" data-act="stepfwd" aria-label="Next hour" title="Next hour" ${h >= 23 ? 'disabled' : ''}><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="11" y="3" width="2" height="10"/><path d="M3 3v10l7-5z"/></svg></button></div>
           <div class="bd-time"><input type="range" min="0" max="23" step="1" value="${h}" data-hour aria-label="Hour of the simulated day">
             <div class="bd-marks">${evs.map(e => `<i class="bd-mark" style="left:${e.at / 23 * 100}%;width:${Math.max(1.5, Math.min(e.dur, 24 - e.at) / 23 * 100)}%" title="${esc(e.label || Sim.EVENT_LABEL[e.type])} at ${hh(e.at)}"></i>`).join('')}</div>
             <div class="bd-ok">${res.ticks.map(x => `<i style="height:${Math.max(2, (1 - x.ok) * 100)}%" class="${x.ok < 0.95 ? 'is-bad' : x.ok < 0.999 ? 'is-warn' : ''}"></i>`).join('')}</div></div>
-          <div class="bd-read"><b>${hh(h)}</b><span>${fmt(rps)} req/s</span><span class="${t.ok < 0.99 ? 'is-bad' : ''}">${(t.ok * 100).toFixed(t.ok > 0.999 ? 2 : 1)}% ok</span><span>p99 ${ms(worst)}</span>${t.retryMult > 1.05 ? `<span class="is-bad">retries ×${t.retryMult.toFixed(1)}</span>` : ''}</div>
-          <button type="button" class="button" data-act="endplay">Back to editing</button></div>
-        <div class="bd-play-row bd-play-ctl"><button type="button" class="button" data-act="stepback" aria-label="Previous hour" ${h <= 0 ? 'disabled' : ''}>⏮ Step back</button><button type="button" class="button" data-act="stepfwd" aria-label="Next hour" ${h >= 23 ? 'disabled' : ''}>Step ⏭</button>
-          <label class="bd-speed">Speed <select data-speed aria-label="Playback speed">${[[0.5, '0.5×'], [1, '1×'], [2, '2×'], [4, '4×']].map(([v, l]) => `<option value="${v}"${play.speed === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-          <button type="button" class="button" data-act="skip" ${h >= 23 ? 'disabled' : ''}>Skip to the end ⏩</button></div>
+          <div class="bd-read"><b>${hh(h)}</b><span>${fmt(rps)} req/s</span><span class="${t.ok < 0.99 ? 'is-bad' : ''}">${(t.ok * 100).toFixed(t.ok > 0.999 ? 2 : 1)}% ok</span><span>p99 ${ms(worst)}</span>${t.retryMult > 1.05 ? `<span class="is-bad">retries &times;${t.retryMult.toFixed(1)}</span>` : ''}</div>
+          <button type="button" class="button bd-back" data-act="endplay">&#9998; Back to editing</button></div>
+
         ${now.length ? `<div class="bd-now">${now.map(e => `<span class="bd-chip">⚡ ${esc(e.label || Sim.EVENT_LABEL[e.type])}</span>`).join('')}${say ? `<span class="bd-say">${avatar(say.who)}<em>${esc(say.line)}</em></span>` : ''}</div>` : ''}`;
       if (h >= 23 && !play.done) {            // the last hour is on screen: the day is over, now the results may show
         const mine = play; mine.done = true;
-        mine.endTimer = setTimeout(() => { if (play === mine) { paintPanel(); opts.onDayEnd?.({ finished: true, whatif: mine.whatif }); } }, 900);
+        mine.endTimer = setTimeout(() => { mine.endTimer = null; if (play === mine) { paintPanel(); opts.onDayEnd?.({ finished: true, whatif: mine.whatif }); } }, 900);
       }
     }
     function startPlay(res) {
@@ -216,7 +218,7 @@
       if (!play) return;
       clearInterval(play.timer); clearTimeout(play.endTimer);
       const old = play; play = null;
-      if (!old.done) opts.onDayEnd?.({ finished: false, whatif: old.whatif });
+      if (!old.done || old.endTimer) opts.onDayEnd?.({ finished: false, whatif: old.whatif });   // stopping early shows the results inline, never the modal
       if (repaint) { paintCanvas(); paintPlay(); paintPanel(); } else paintPlay();
     }
     function runDay(extra) {

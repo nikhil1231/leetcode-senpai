@@ -32,7 +32,15 @@
 .bd-ok { display:flex; align-items:flex-end; gap:1px; height:16px; margin-top:2px; }
 .bd-ok i { flex:1; background:var(--line-hi); min-height:2px; border-radius:1px; }
 .bd-ok i.is-warn { background:var(--amber); } .bd-ok i.is-bad { background:var(--red); }
-.bd-read { display:flex; gap:12px; font:12.5px var(--font-mono); color:var(--text-2); flex-wrap:wrap; }
+.bd-xport { display:inline-flex; flex:none; }
+.bd-xport .button { border-radius:0; min-width:34px; padding:0 10px; font-size:12px; justify-content:center; }
+.bd-xport .button + .button { margin-left:-1px; }
+.bd-xport .button:first-child { border-radius:8px 0 0 8px; } .bd-xport .button:last-child { border-radius:0 8px 8px 0; }
+.bd-xport .button svg { display:block; }
+.bd-xport .bd-xport-main { color:var(--bg,#0e1511); background:var(--accent); border-color:var(--accent); min-width:44px; }
+.bd-back { margin-left:auto; background:transparent; border-style:dashed; color:var(--text-2); }
+.bd-read { display:flex; gap:4px 12px; font:12.5px var(--font-mono); color:var(--text-2); flex-wrap:wrap; flex:0 1 auto; }
+.bd-read span, .bd-read b { white-space:nowrap; }
 .bd-read b { color:var(--text); } .bd-read .is-bad { color:var(--red); }
 .bd-now { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .bd-chip { font-size:12px; padding:3px 9px; border-radius:999px; background:rgba(251,113,133,.14); border:1px solid rgba(251,113,133,.4); color:var(--text); }

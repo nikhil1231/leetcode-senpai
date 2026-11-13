@@ -129,9 +129,10 @@
   .sim-stage .bd-cost { padding:4px 9px; }
   .sim-stage .bd-play:not([hidden]) { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:6px 10px; }   /* both control rows share one line when they fit */
   .sim-stage .bd-play-row { display:contents; }
-  .sim-stage .bd-time { flex:1 1 200px; min-width:160px; }
+  .sim-stage .bd-time { flex:1 1 240px; min-width:200px; }
   .sim-stage .bd-now { flex-basis:100%; }
   .sim-stage .bd-play-ctl { margin-top:0; }
+  .sim-stage .bd-play-ctl { flex-basis:100%; }
   :is(.sim-stage.bd, .sim-stage .bd).bd-no-palette .bd-grid { grid-template-columns:minmax(0,1fr) 300px; }
   :is(.sim-stage.bd, .sim-stage .bd).bd-no-panel .bd-grid { grid-template-columns:190px minmax(0,1fr); }
   :is(.sim-stage.bd, .sim-stage .bd).bd-no-palette.bd-no-panel .bd-grid { grid-template-columns:minmax(0,1fr); }
