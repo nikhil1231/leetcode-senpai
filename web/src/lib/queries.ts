@@ -4,7 +4,7 @@ import { api } from "./api";
 
 export interface Overview {
   solved: number; total_problems: number; due_reviews: number; streak: number; xp_today: number; drills_today: number;
-  leeches: number; llm_enabled: boolean; llm_provider?: string; llm_model?: string; newly_mastered?: { category: string }[];
+  leeches: number; llm_enabled: boolean; llm_provider?: string; llm_model?: string; chat_model?: string; chat_model_free?: boolean; newly_mastered?: { category: string }[];
 }
 export interface ReadinessSection {
   id: string; title: string; ready: number; coverage: number; band: string; slipping: number; focus: string; headline: string; weight: number;

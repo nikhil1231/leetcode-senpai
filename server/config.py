@@ -102,7 +102,8 @@ PODCAST_DIR = os.environ.get("PODCAST_DIR", os.path.join(os.path.expanduser("~")
 PODCAST_VOICES = os.environ.get("PODCAST_VOICES", os.path.join(os.path.expanduser("~"), ".cache", "senpai-voices"))
 PODCAST_TOKEN = os.environ.get("PODCAST_TOKEN", "").strip()
 # LocalRouter, the box's OpenRouter-compatible endpoint over Nikhil's Claude subscription (free, text only, no key;
-# ~/infra/docs/localrouter.md). Ripple After Dark's script is written there first. Unset: OpenRouter only.
+# ~/infra/docs/localrouter.md). Every chat call whose model it serves goes there first, OpenRouter on failure (llm._local_first);
+# Ripple After Dark's script is written there first. Unset: OpenRouter only. From the container: http://localrouter:8787/api/v1.
 LOCALROUTER_URL = os.environ.get("LOCALROUTER_URL", "").strip().rstrip("/")
 # "drama" (Ripple After Dark, server/podcast_drama.py) or "quiz" (the Piper questions-and-answers episode,
 # also what a drama falls back to when it cannot be made).

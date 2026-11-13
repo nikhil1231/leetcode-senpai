@@ -70,15 +70,21 @@ voice (`server/voice.py`) follows the same rules; keep the two in step.
   (a Ripple situation, a number) to an abstraction. British English, contractions are fine, no em dashes.
 - A check must test what the page taught: not one item per bucket, and no answer the page never mentioned.
 
-## Model spend (OpenRouter)
+## Model spend (OpenRouter and LocalRouter)
 
-- **Never use Anthropic models (`anthropic/…`) through OpenRouter.** They are far too
-  expensive for this app. `llm.forbidden_model` enforces it: such a setting falls back to the
-  default and the transport refuses the call. Two exceptions, Nikhil's decisions (2026-11-12),
-  both in `llm.ANTHROPIC_EXCEPTIONS`: the podcast's fallback scriptwriter (`server/podcast_drama.py`),
-  used only when LocalRouter (free, on this box) cannot write the `/podcast` episode (~$0.20 an episode);
-  and the tutor's voice when `TUTOR_MODEL` is set to one (a Claude Sonnet trial on the LAN copy; the
-  default stays DeepSeek). The tutor's prompt is built to cache (`session.prompt`, `llm.cache_marks`).
+- **Which model each area uses is a setting.** `server/model_areas.py` lists every area (main model, page coach,
+  grading, notes, analysis, SD coach and assessor, wall, podcast, dictation) with its kind and default; Settings >
+  AI models has a dropdown for each, and the sidebar's coach pill shows the main model. Call sites ask
+  `model_areas.model_for(area)`; a new model call gets an area, not a hard-coded model or a new env var.
+- **LocalRouter first.** When `LOCALROUTER_URL` is set, every plain chat call whose model LocalRouter serves (Claude
+  Sonnet/Opus on Nikhil's subscriptions, free, 8 at once) goes there first and falls back to OpenRouter on failure
+  (`llm._local_first`). Structured, speech, image and transcription calls are OpenRouter only.
+- **Never use Anthropic models (`anthropic/…`) through OpenRouter.** They are far too expensive for this app. The
+  rule is on OpenRouter only (Nikhil, 2026-11-13): through LocalRouter any conversation area may use them.
+  `llm._openrouter_allowed` refuses the OpenRouter leg, so an Anthropic chat whose LocalRouter call fails errors
+  instead of paying, except for the callers in `llm.ANTHROPIC_EXCEPTIONS` (Nikhil, 2026-11-12): the podcast's
+  scriptwriter (~$0.20 an episode) and the tutor's voice. The tutor's prompt is built to cache
+  (`session.prompt`, `llm.cache_marks`) for that paid fallback.
 - Paid model calls are for the app's runtime features only. One-off content work (drafting,
   linking, mapping, rewriting lessons) is done by the agent in its own session, not scripted
   through OpenRouter; scripts that need answers export prompts and import the agent's answers

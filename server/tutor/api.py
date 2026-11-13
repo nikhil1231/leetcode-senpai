@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .. import auth, chat_stream, config, handback_filing as hf, llm
+from .. import auth, chat_stream, config, handback_filing as hf, llm, model_areas
 from ..knowledge_base import api as kb_api, catalog as kcat, model as kmodel, progress
 from ..store import get_store
 from ..senpai import career as senpai_career
@@ -129,7 +129,7 @@ def public(s):
 def overview(store=Depends(store_for)):
     """Whether the tutor is available, its modes, and the company's story so far."""
     _, _, _, _, summary = _knowledge(store, time.time())
-    return {'enabled': llm.enabled(store.get_settings()), 'model': config.TUTOR_MODEL, 'modes': _modes(store),
+    return {'enabled': llm.enabled(store.get_settings()), 'model': model_areas.model_for('main'), 'modes': _modes(store),
             'story': story.public(summary, store.get_knowledge('tutor_memory', STORY_KEY))}
 
 
@@ -755,7 +755,7 @@ async def _talk(s, l, ctx, debrief=False):
                     sink({'type': 'reset'})
                 raw = await _stream_talk(messages, options, sink)
             else:
-                raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, messages, options=options)
+                raw = await asyncio.to_thread(llm._raw_chat, model_areas.model_for('main'), messages, options=options)
         except Exception as exc:
             log.warning('Tutor reply failed: %s', type(exc).__name__)
             return None
@@ -769,7 +769,7 @@ async def _talk(s, l, ctx, debrief=False):
 async def _stream_talk(messages, options, sink):
     """The tutor's reply streamed through the visibility filter -> {content, usage} like `_raw_chat`."""
     visible, parts, usage = chat_stream.Visible(), [], {}
-    async for piece in llm._raw_chat_stream(config.TUTOR_MODEL, messages, options=options):
+    async for piece in llm._raw_chat_stream(model_areas.model_for('main'), messages, options=options):
         if 'text' in piece:
             parts.append(piece['text'])
             for event in visible.feed(piece['text']):
@@ -785,7 +785,7 @@ async def _take_notes(s, l, ctx):
     """The note-taker's record of the learner's latest words, or None (the turn still goes ahead)."""
     payload = ses.notes_payload(s, l, ctx['views'], ctx['prereq_views'], ctx['open'])
     try:
-        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_NOTES_MODEL, ses.NOTES_SYSTEM,
+        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', model_areas.model_for('notes'), ses.NOTES_SYSTEM,
                                       json.dumps(payload, ensure_ascii=False), ses.Notes,
                                       options={'effort': 'low', 'max_tokens': 3000, 'timeout': 60, 'metadata': True})
         notes = ses.Notes.model_validate_json(raw['content']).model_dump()

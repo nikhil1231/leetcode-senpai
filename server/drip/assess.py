@@ -12,7 +12,7 @@ import json
 import logging
 import re
 
-from .. import config, llm, voice
+from .. import config, llm, model_areas, voice
 from ..knowledge_base import api as kb_api
 from . import cards
 
@@ -45,7 +45,7 @@ def phrase(store, point, reason, ask=None, context=None, recent=()):
     messages = [{'role': 'system', 'content': PHRASE_SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]
     for _ in range(2):   # the model now and then returns nothing; one more try, then the template
         try:
-            raw = llm._raw_chat(config.TUTOR_MODEL, messages, options={'max_tokens': 400, 'timeout': 30, 'think': False})
+            raw = llm._raw_chat(model_areas.model_for('drip'), messages, options={'max_tokens': 400, 'timeout': 30, 'think': False})
         except Exception as exc:
             log.warning('Phrasing a card failed: %s', exc)
             continue
@@ -65,7 +65,7 @@ def grade(store, point, text, ask=None, focus=None, in_story=False):
         return None
     try:
         system = voice.live(cards.STORY_GRADE_SYSTEM if in_story else cards.GRADE_SYSTEM)
-        raw = llm._raw_generate('openrouter', config.TUTOR_MODEL, system,
+        raw = llm._raw_generate('openrouter', model_areas.model_for('grading'), system,
                                 json.dumps(cards.grade_payload(point, text, ask, focus, in_story), ensure_ascii=False), cards.Grade,
                                 options={'effort': 'low', 'max_tokens': 6000, 'timeout': 60, 'metadata': True})   # room to think: verdicts need it
         return cards.Grade.model_validate_json(raw['content']).model_dump()
@@ -80,7 +80,7 @@ def chat(store, card, point, turns):
     if not llm.enabled(store.get_settings()):
         return None
     try:
-        raw = llm._raw_chat(config.TUTOR_MODEL, cards.chat_messages(card, point, turns),
+        raw = llm._raw_chat(model_areas.model_for('drip'), cards.chat_messages(card, point, turns),
                             options={'max_tokens': 500, 'timeout': 45, 'think': False})
     except Exception as exc:
         log.warning('Drip chat failed: %s', exc)

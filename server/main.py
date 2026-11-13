@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from . import (assessment, auth, chat_stream, coach, config, connectivity, enrich, gamify, importer, insights,
                leetcode, llm, mock, neetcode150, packs, page_coach, plans, poller, practice,
                practice_offline, practice_queue, recording, scheduler, learning_evidence, curriculum, learning_sequences, voice)
+from . import model_areas
 from . import store as store_mod
 from .store import get_store
 from .system_design import router as system_design_router
@@ -63,7 +64,9 @@ log = logging.getLogger(__name__)
 def _load_voice():
     """The voice saved in Settings, for every prompt this process builds. Single-user: the owner's."""
     try:
-        voice.apply(get_store(config.DEV_UID if config.local_mode() else config.ACCESS_UID).get_settings())
+        saved = get_store(config.DEV_UID if config.local_mode() else config.ACCESS_UID).get_settings()
+        voice.apply(saved)
+        model_areas.apply(saved)
     except Exception:  # the built-in voice stands
         log.warning("could not load the saved voice", exc_info=True)
 
@@ -1020,6 +1023,8 @@ def api_overview(uid: str = Depends(auth.require_user)):
     ov["llm_enabled"] = selected["enabled"]
     ov["llm_provider"] = selected["provider"]
     ov["llm_model"] = selected["model"]
+    ov["chat_model"] = model_areas.model_for(model_areas.MAIN)   # the coach pill shows the main model
+    ov["chat_model_free"] = model_areas.free(ov["chat_model"])
     return ov
 
 
@@ -3017,8 +3022,28 @@ def api_set_config(body: SettingsUpdate, uid: str = Depends(auth.require_user)):
     store.update_settings(updates)
     settings = store.get_settings()
     voice.apply(settings)
+    model_areas.apply(settings)
     selected = llm.current_model(settings)
     return {**settings, "llm_provider": selected["provider"], "llm_model": selected["model"]}
+
+
+class ModelChoices(BaseModel):
+    models: dict[str, str] = Field(default_factory=dict)   # area key -> model ID; "" goes back to the default
+
+
+@app.get("/api/models")
+def api_get_models(uid: str = Depends(auth.require_user)):
+    """Every area of the app that uses a model, what it uses now and what it could use (Settings > AI models)."""
+    model_areas.apply(get_store(uid).get_settings())
+    return {"areas": model_areas.describe(), "localrouter": bool(config.LOCALROUTER_URL)}
+
+
+@app.post("/api/models")
+def api_set_models(body: ModelChoices, uid: str = Depends(auth.require_user)):
+    try:
+        return model_areas.save(get_store(uid), body.models)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 class VoiceSample(BaseModel):
@@ -3033,13 +3058,13 @@ def api_voice_sample(body: VoiceSample, uid: str = Depends(auth.require_user)):
         raise HTTPException(409, "The model is not connected.")
     system = (body.text.strip() or voice.TUTOR) + "\n\nYou're Nikhil's tutor."
     try:
-        raw = llm._raw_chat(config.TUTOR_MODEL, [{"role": "system", "content": system},
+        raw = llm._raw_chat(model_areas.model_for("main"), [{"role": "system", "content": system},
                                                  {"role": "user", "content": voice.SAMPLE}],
                             options={"max_tokens": 600, "timeout": 45, "think": False})
     except Exception as exc:
         log.warning("voice sample failed: %s", exc)
         raise HTTPException(502, "The model didn't answer; try again.")
-    return {"prompt": voice.SAMPLE, "text": voice.plain((raw.get("content") or "").strip()), "model": config.TUTOR_MODEL}
+    return {"prompt": voice.SAMPLE, "text": voice.plain((raw.get("content") or "").strip()), "model": model_areas.model_for("main")}
 
 
 @app.post("/api/coach/page-chat")
@@ -3051,7 +3076,7 @@ async def api_page_chat(body: PageChatRequest, request: Request, uid: str = Depe
     settings = get_store(uid).get_settings()
     if not llm.enabled(settings):
         raise HTTPException(503, "AI coaching is unavailable. Check the coach configuration in Settings.")
-    model = llm.current_model(settings)["model"]
+    model = model_areas.model_for("coach")
     chat = page_coach.messages(message, body.page, body.section, body.context, [t.model_dump() for t in body.history])
     # Whatever model is selected: some refuse to switch reasoning off, so keep it low and hidden, with room for it.
     options = {"max_tokens": 4000, "timeout": 90, "effort": "low"}

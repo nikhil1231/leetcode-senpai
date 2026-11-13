@@ -20,7 +20,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from . import config, handback_filing as hf, llm, study_debrief, study_prompt
+from . import config, handback_filing as hf, llm, model_areas, study_debrief, study_prompt
 from .knowledge_base import api as kb_api, catalog as kcat, model as kmodel
 from .store import get_store
 from .tutor import api as tutor_api, lessons, session as tses
@@ -345,7 +345,7 @@ def file_session(uid, code, source):
     idx = hf.index(points)
     lists = [hf.shortlist(hf.topic_text(t), idx, exclude=graded) for t in topics]
     try:
-        raw = llm._raw_generate('openrouter', config.TUTOR_NOTES_MODEL, hf.SYSTEM, json.dumps(hf.payload(topics, lists, c['points']), ensure_ascii=False),
+        raw = llm._raw_generate('openrouter', model_areas.model_for('notes'), hf.SYSTEM, json.dumps(hf.payload(topics, lists, c['points']), ensure_ascii=False),
                                 hf.Filing, options={'effort': 'low', 'max_tokens': 3000, 'timeout': 90})
         matches = hf.Filing.model_validate_json(raw).model_dump()['matches']
     except Exception as exc:

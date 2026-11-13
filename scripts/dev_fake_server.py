@@ -106,7 +106,12 @@ def build():
     connectivity.online = lambda: True
     config.PRACTICE_OFFLINE_PATH = os.path.join(tempfile.mkdtemp(prefix="senpai-fake-"), "practice_offline.json")
     config.OPENROUTER_API_KEY = None
-    llm._catalog_models, llm._catalog_expires = [], float("inf")
+    # A small offline catalog, so Settings > AI models has something to offer without calling OpenRouter.
+    llm._catalog, llm._catalog_expires = [
+        {"id": m, "supported_parameters": ["structured_outputs"],
+         "architecture": {"input_modalities": ["text", "image"], "output_modalities": out}}
+        for m, out in (("openai/gpt-6.1-terra", ["text"]), ("openai/gpt-6-luna", ["text"]), ("openai/gpt-6.1-sol", ["text"]),
+                       ("deepseek/deepseek-v4.1-flash", ["text"]), ("google/gemini-nano-banana-2.1", ["image", "text"]))], float("inf")
 
     def reject(*args, **kwargs):
         raise RuntimeError("Model calls are off in the fake dev server")

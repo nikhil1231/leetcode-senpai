@@ -9,7 +9,7 @@ The script can also be written on the host by a Claude Code job run by hand (`de
 it asks for the brief (`python -m server.podcast_drama brief`) and hands the script back
 (`... submit`). `/podcast` (no scheduled job any more) goes to `ensure`, which writes the script
 here through LocalRouter (the box's endpoint over Nikhil's Claude subscription, free) and only if that fails
-with FALLBACK_MODEL, the one Anthropic model this app calls through OpenRouter (Nikhil's decision, 2026-11-12). Gemini voices it, two speakers to a request so exchanges flow; a clip that comes back
+with the Podcast script model (Settings), on LocalRouter first and OpenRouter if that fails (an Anthropic model is allowed there: Nikhil's decision, 2026-11-12). Gemini voices it, two speakers to a request so exchanges flow; a clip that comes back
 cut short is redone. Script and MP3 live in Firestore (`podcast_episodes`, the audio in
 `podcast_audio` chunks) so an episode survives a redeploy. Intent: docs/plans/ambient-learning.md.
 """
@@ -23,7 +23,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config, llm, voice
+from . import config, llm, model_areas, voice
 from .drip import cards as dcards
 from .knowledge_base import api as kb_api, model as kmodel
 from .tutor import story
@@ -31,9 +31,7 @@ from .tutor import story
 log = logging.getLogger(__name__)
 
 EPISODES, AUDIO = 'podcast_episodes', 'podcast_audio'
-FALLBACK_MODEL = 'anthropic/claude-opus-5.5'   # on OpenRouter, paid
-LOCAL_MODEL = 'anthropic/claude-opus-5.5'      # on LocalRouter, free
-SPEECH_MODEL = 'google/gemini-3.8-flash-tts'
+# The writer and the voices are the "Podcast script" and "Podcast voices" areas in Settings (model_areas).
 PROMPT_VERSION = 1
 RATE = 24000
 CHUNK_BYTES = 700_000          # Firestore documents hold at most 1 MiB
@@ -323,7 +321,7 @@ def make_brief(store, day, now=None):
 def _speak(chunk, cast):
     for attempt in range(5):
         try:
-            rate, pcm = llm._raw_speech(SPEECH_MODEL, **request(chunk, cast))
+            rate, pcm = llm._raw_speech(model_areas.model_for('podcast_voice'), **request(chunk, cast))
             a = resample(array.array('h', pcm), rate)
             if not cut_off(chunk, len(a) / RATE):
                 return a
@@ -389,15 +387,16 @@ def accept(store, b, text, writer):
 
 def write_fallback(b):
     """The script from the app's own writer -> (text, writer name). LocalRouter first (Nikhil's Claude subscription,
-    free); only if that is down or out of quota, FALLBACK_MODEL on OpenRouter (~$0.20)."""
-    messages = [{'role': 'user', 'content': prompt(b)}]
+    free); only if that is down or out of quota, the same model on OpenRouter (~$0.20 for Opus)."""
+    messages, model = [{'role': 'user', 'content': prompt(b)}], model_areas.model_for('podcast_writer')
     if config.LOCALROUTER_URL:
         try:
-            return llm._raw_local_chat(LOCAL_MODEL, messages)['content'], f'localrouter:{LOCAL_MODEL}'
+            return llm._raw_local_chat(model, messages)['content'], f'localrouter:{model}'
         except Exception:
             log.warning('LocalRouter could not write the episode; trying OpenRouter', exc_info=True)
-    r = llm._raw_chat(FALLBACK_MODEL, messages, options={'max_tokens': 9000, 'timeout': 420, 'allow_anthropic': 'podcast fallback'})
-    return r['content'], f'openrouter:{FALLBACK_MODEL}'
+    r = llm._raw_chat(model, messages, options={'max_tokens': 9000, 'timeout': 420, 'allow_anthropic': 'podcast fallback',
+                                                              'local': False})   # LocalRouter was just tried
+    return r['content'], f'openrouter:{model}'
 
 
 def ensure(store, day=None, now=None):

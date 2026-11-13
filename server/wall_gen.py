@@ -21,7 +21,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import config, llm, wall
+from . import config, llm, model_areas, wall
 from .knowledge_base import api as kb_api, model as kmodel
 
 log = logging.getLogger(__name__)
@@ -202,7 +202,7 @@ def _state(store, now):
 def _copy(b):
     """The poster's words, or the claims themselves when the text model fails."""
     try:
-        raw = llm._raw_generate('openrouter', config.WALL_REVIEW_MODEL, COPY_SYSTEM, copy_prompt(b), PosterCopy)
+        raw = llm._raw_generate('openrouter', model_areas.model_for('wall_review'), COPY_SYSTEM, copy_prompt(b), PosterCopy)
         copy = PosterCopy.model_validate(json.loads(raw)).model_dump()
         if len(copy['panels']) == len(b['ideas']):
             return copy
@@ -229,13 +229,13 @@ def make(store, now, lesson=None, force=False, pin=False):
     for attempt in range(1, ATTEMPTS + 1):
         try:
             if last:
-                pic = llm._raw_image(config.WALL_IMAGE_MODEL, fix_prompt(last[1]['issues'] or ['Redraw it more carefully.']),
+                pic = llm._raw_image(model_areas.model_for('wall_image'), fix_prompt(last[1]['issues'] or ['Redraw it more carefully.']),
                                      ASPECT, edit=(last[0], 'image/jpeg'))
             else:
-                pic = llm._raw_image(config.WALL_IMAGE_MODEL, image_prompt(b, copy, style), ASPECT)
+                pic = llm._raw_image(model_areas.model_for('wall_image'), image_prompt(b, copy, style), ASPECT)
             spent += float(pic['usage'].get('cost') or 0)
             data = _jpeg(pic['image'])
-            review = llm._raw_look(config.WALL_REVIEW_MODEL, REVIEW_SYSTEM, review_prompt(b, copy), data, 'image/jpeg',
+            review = llm._raw_look(model_areas.model_for('wall_review'), REVIEW_SYSTEM, review_prompt(b, copy), data, 'image/jpeg',
                                    PosterReview)
         except Exception:
             log.warning('Wall poster try %s for %s failed', attempt, b['lesson'], exc_info=True)
@@ -256,7 +256,7 @@ def make(store, now, lesson=None, force=False, pin=False):
     return store.put_knowledge(POSTERS, key, {
         'lesson': b['lesson'], 'title': b['title'], 'section': b['section'], 'points': b['points'],
         'ideas': [i['claim'] for i in b['ideas']], 'copy': copy, 'created_at': now, 'version': PROMPT_VERSION,
-        'style': style['name'], 'ok': ok, 'review': review, 'attempts': attempt, 'model': model, 'reviewer': config.WALL_REVIEW_MODEL,
+        'style': style['name'], 'ok': ok, 'review': review, 'attempts': attempt, 'model': model, 'reviewer': model_areas.model_for('wall_review'),
         'cost': round(spent, 4), 'bytes': len(data), 'pinned_at': time.time() if pin else None})   # from when it is ready
 
 

@@ -787,13 +787,13 @@ def normalize_model(model: str) -> str:
 
 
 def forbidden_model(model: str) -> bool:
-    """Anthropic models are never used through OpenRouter: they cost far more than this app warrants."""
+    """Anthropic models are never used through OpenRouter: they cost far more than this app warrants. Through
+    LocalRouter (Nikhil's subscriptions, free) they're fine for any plain chat (Nikhil, 2026-11-13)."""
     return model.strip().lstrip("~").lower().startswith("anthropic/")
 
 
-# The exceptions to the ban, both Nikhil's decisions on 2026-11-12: the podcast's fallback scriptwriter
-# (server/podcast_drama.py), used only when the scheduled Claude Code job did not write the episode; and the tutor's
-# voice, when TUTOR_MODEL is set to an Anthropic model (a trial of Claude Sonnet on the LAN copy; the default stays DeepSeek).
+# Callers allowed to fall back to an Anthropic model on OpenRouter when LocalRouter fails, both Nikhil's decisions on
+# 2026-11-12: the podcast's fallback scriptwriter (server/podcast_drama.py) and the tutor's voice.
 ANTHROPIC_EXCEPTIONS = {"podcast fallback", "tutor"}
 
 
@@ -820,34 +820,47 @@ def current_model(settings: Optional[dict] = None) -> dict:
     return {"provider": provider, "model": model, "enabled": enabled(settings)}
 
 
-_catalog_models: list[str] = []
+_catalog: list[dict] = []
 _catalog_expires = 0.0
 _catalog_lock = threading.Lock()
 
 
-def available_models() -> list[str]:
-    """Cache compatible text models; catalog outages retain the last good list."""
-    global _catalog_models, _catalog_expires
+def _catalog_entries() -> list[dict]:
+    """OpenRouter's model list with what each model can do, cached; an outage keeps the last good list."""
+    global _catalog, _catalog_expires
     with _catalog_lock:
         if time.monotonic() < _catalog_expires:
-            return list(_catalog_models)
+            return _catalog
         try:
             resp = httpx.get("https://openrouter.ai/api/v1/models", timeout=5)
             resp.raise_for_status()
-            models = sorted({
-                m["id"] for m in resp.json()["data"]
-                if valid_model(m.get("id", ""))
-                and "structured_outputs" in m.get("supported_parameters", [])
-                and "text" in m.get("architecture", {}).get("output_modalities", [])
-            })
-            if not models:
-                raise ValueError("OpenRouter returned no compatible models")
-            _catalog_models = models
+            entries = [m for m in resp.json()["data"] if valid_model(m.get("id", ""))]
+            if not entries:
+                raise ValueError("OpenRouter returned no models")
+            _catalog = entries
             _catalog_expires = time.monotonic() + 600
         except Exception:
             log.warning("Could not refresh OpenRouter model catalog", exc_info=True)
             _catalog_expires = time.monotonic() + 60
-        return list(_catalog_models)
+        return _catalog
+
+
+def _can(m: dict, kind: str) -> bool:
+    arch = m.get("architecture") or {}
+    out, inp = arch.get("output_modalities") or [], arch.get("input_modalities") or []
+    structured = "structured_outputs" in (m.get("supported_parameters") or [])
+    return {"chat": "text" in out, "structured": "text" in out and structured,
+            "vision": "text" in out and structured and "image" in inp, "image": "image" in out}.get(kind, False)
+
+
+def catalog(kind: str = "structured") -> list[str]:
+    """OpenRouter model IDs fit for a kind of call (model_areas): chat, structured, vision or image. Never Anthropic."""
+    return sorted({m["id"] for m in _catalog_entries() if _can(m, kind)})
+
+
+def available_models() -> list[str]:
+    """Models for the structured calls (the analysis model)."""
+    return catalog("structured")
 
 
 def model_options(settings: Optional[dict] = None) -> dict:
@@ -956,9 +969,12 @@ def cache_marks(model: str, messages: list, ttl: Optional[str] = None) -> list:
     return out
 
 
-def _chat_body(model: str, messages: list, options: dict, stream: bool) -> dict:
+def _openrouter_allowed(model: str, options: dict):
     if forbidden_model(model) and options.get("allow_anthropic") not in ANTHROPIC_EXCEPTIONS:
         raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+
+
+def _chat_body(model: str, messages: list, options: dict, stream: bool) -> dict:
     body = {"model": model, "stream": stream, "max_tokens": options.get("max_tokens", 1500), "usage": {"include": True},
             "messages": cache_marks(model, messages, options.get("cache_ttl")) if options.get("cache") else messages}
     if options.get("think") is False:
@@ -970,6 +986,35 @@ def _chat_body(model: str, messages: list, options: dict, stream: bool) -> dict:
 
 def _headers():
     return {"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "Content-Type": "application/json", "X-Title": "LeetCode Senpai"}
+
+
+OPENROUTER_CHAT = "https://openrouter.ai/api/v1/chat/completions"
+_LOCAL = {"at": 0.0, "ttl": 0.0, "models": frozenset()}
+
+
+def _local_models() -> frozenset:
+    """The models LocalRouter serves (empty when it's unset or down). Asked every ten minutes, or a minute after a
+    failure, so a chat call never waits on it more than once in a while."""
+    if not config.LOCALROUTER_URL:
+        return frozenset()
+    now = time.time()
+    if now - _LOCAL["at"] < _LOCAL["ttl"]:
+        return _LOCAL["models"]
+    try:
+        resp = httpx.get(f"{config.LOCALROUTER_URL}/models", timeout=3)
+        resp.raise_for_status()
+        models, ttl = frozenset(m["id"] for m in resp.json().get("data") or [] if m.get("id")), 600
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
+        log.warning("LocalRouter model list unavailable (%s); using OpenRouter", type(e).__name__)
+        models, ttl = frozenset(), 60
+    _LOCAL.update(at=now, ttl=ttl, models=models)
+    return models
+
+
+def _local_first(model: str, options: dict) -> bool:
+    """Chat goes to LocalRouter first (free, Nikhil's subscriptions) whenever it serves the model; OpenRouter is the
+    fallback. A caller can opt out with options["local"] = False (it already tried LocalRouter itself)."""
+    return options.get("local", True) and model.lstrip("~") in _local_models()
 
 
 def _raw_local_chat(model: str, messages: list, *, timeout: float = 600) -> dict:
@@ -995,14 +1040,21 @@ def _raw_local_chat(model: str, messages: list, *, timeout: float = 600) -> dict
 
 def _raw_chat(model: str, messages: list, *, options=None) -> dict:
     """Plain-text chat completion (the tutor's voice). Tests replace this to avoid network calls.
-    -> {content, model, usage}; usage includes OpenRouter's `cost` in dollars. Options: max_tokens, timeout, think
+    LocalRouter first when it serves the model (`_local_first`), else or on failure OpenRouter.
+    -> {content, model, usage, via}; usage includes OpenRouter's `cost` in dollars (empty from LocalRouter). Options: max_tokens, timeout, think
     (False: no reasoning, or low if the model insists), effort, cache (mark the prompt for caching, cache_marks),
     cache_ttl, and `allow_anthropic`, naming a caller allowed past the Anthropic ban (ANTHROPIC_EXCEPTIONS)."""
     options = options or {}
     body = _chat_body(model, messages, options, False)
-    resp = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=options.get("timeout", 60), json=body, headers=_headers())
+    if _local_first(model, options):
+        try:
+            return {**_raw_local_chat(model, messages, timeout=options.get("timeout", 60)), "usage": {}, "via": "localrouter"}
+        except RuntimeError as e:
+            log.warning("LocalRouter failed for %s (%s); falling back to OpenRouter", model, e)
+    _openrouter_allowed(model, options)   # the ban is on OpenRouter only
+    resp = httpx.post(OPENROUTER_CHAT, timeout=options.get("timeout", 60), json=body, headers=_headers())
     if resp.status_code == 400 and body.get("reasoning", {}).get("enabled") is False and REASONING_REQUIRED.search(resp.text):
-        resp = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=options.get("timeout", 60),
+        resp = httpx.post(OPENROUTER_CHAT, timeout=options.get("timeout", 60),
                           json={**body, "reasoning": _LOW_REASONING}, headers=_headers())
     if resp.is_error:
         log.warning("OpenRouter HTTP %s for %s: %s", resp.status_code, model, resp.text[:500])
@@ -1014,26 +1066,48 @@ def _raw_chat(model: str, messages: list, *, options=None) -> dict:
         raise RuntimeError("OpenRouter returned no reply")
     if choices[0].get("finish_reason") == "length":
         raise RuntimeError("OpenRouter response exceeded the output limit")
-    return {"content": content, "model": data.get("model", model), "usage": data.get("usage") or {}}
+    return {"content": content, "model": data.get("model", model), "usage": data.get("usage") or {}, "via": "openrouter"}
 
 
 async def _raw_chat_stream(model: str, messages: list, *, options=None):
-    """`_raw_chat` as a stream: yields {"text": delta} as the reply arrives, then one {"model", "usage"}.
+    """`_raw_chat` as a stream: yields {"text": delta} as the reply arrives, then one {"model", "usage"}. LocalRouter
+    first when it serves the model; OpenRouter if that fails before any text arrived (after, the error stands).
     Raises like `_raw_chat` (nothing at all, a cut-off reply, or HTTP errors). Tests replace this."""
     options = options or {}
     body = _chat_body(model, messages, options, True)
+    timeout = options.get("timeout", 60)
+    if _local_first(model, options):
+        sent = False
+        try:
+            async for piece in _sse(f"{config.LOCALROUTER_URL}/chat/completions", {"model": model, "messages": messages, "stream": True},
+                                    {"Content-Type": "application/json"}, timeout, model, "LocalRouter"):
+                sent = sent or "text" in piece
+                yield piece
+            return
+        except (RuntimeError, httpx.HTTPError) as e:
+            if sent:
+                raise
+            log.warning("LocalRouter failed for %s (%s); falling back to OpenRouter", model, e)
+    _openrouter_allowed(model, options)
+    async for piece in _sse(OPENROUTER_CHAT, body, _headers(), timeout, model, "OpenRouter"):
+        yield piece
+
+
+async def _sse(url: str, body: dict, headers: dict, timeout: float, model: str, name: str):
+    """One OpenAI-style streamed completion -> {"text"} pieces, then {"model", "usage"}. A model that won't switch
+    reasoning off is asked once more with it low."""
     seen, used, usage, finish = False, model, {}, None
-    async with httpx.AsyncClient(timeout=httpx.Timeout(options.get("timeout", 60), read=options.get("timeout", 60))) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, read=timeout)) as client:
         for attempt in range(2):
-            async with client.stream("POST", "https://openrouter.ai/api/v1/chat/completions", json=body, headers=_headers()) as resp:
+            async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.is_error:
                     text = (await resp.aread()).decode("utf-8", "replace")
                     if (not attempt and resp.status_code == 400 and body.get("reasoning", {}).get("enabled") is False
                             and REASONING_REQUIRED.search(text)):
                         body = {**body, "reasoning": _LOW_REASONING}
                         continue
-                    log.warning("OpenRouter HTTP %s for %s: %s", resp.status_code, model, text[:500])
-                    raise RuntimeError(f"OpenRouter request failed (HTTP {resp.status_code})")
+                    log.warning("%s HTTP %s for %s: %s", name, resp.status_code, model, text[:500])
+                    raise RuntimeError(f"{name} request failed (HTTP {resp.status_code})")
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue   # SSE comments (": OPENROUTER PROCESSING") keep the connection alive
@@ -1045,7 +1119,7 @@ async def _raw_chat_stream(model: str, messages: list, *, options=None):
                     except ValueError:
                         continue
                     if event.get("error"):
-                        raise RuntimeError("OpenRouter returned an error mid-reply")
+                        raise RuntimeError(f"{name} returned an error mid-reply")
                     used, usage = event.get("model") or used, event.get("usage") or usage
                     for choice in event.get("choices") or []:
                         finish = choice.get("finish_reason") or finish
@@ -1055,9 +1129,9 @@ async def _raw_chat_stream(model: str, messages: list, *, options=None):
                             yield {"text": text}
                 break
     if finish == "length":
-        raise RuntimeError("OpenRouter response exceeded the output limit")
+        raise RuntimeError(f"{name} response exceeded the output limit")
     if not seen:
-        raise RuntimeError("OpenRouter returned no reply")
+        raise RuntimeError(f"{name} returned no reply")
     yield {"model": used, "usage": usage}
 
 
@@ -1145,12 +1219,17 @@ def _raw_look(model: str, system: str, prompt: str, image: bytes, mime: str, sch
 _stt_client: Optional[httpx.Client] = None
 
 
+def _stt_model() -> str:
+    from . import model_areas   # it imports this module
+    return model_areas.model_for("stt")
+
+
 def _raw_transcribe(audio_b64: str, fmt: str, language: Optional[str]) -> Optional[str]:
     """Transport choke point for transcription; tests replace this."""
     global _stt_client
     if _stt_client is None:
         _stt_client = httpx.Client(timeout=httpx.Timeout(30, connect=5))
-    body = {"model": config.STT_MODEL, "input_audio": {"data": audio_b64, "format": fmt},
+    body = {"model": _stt_model(), "input_audio": {"data": audio_b64, "format": fmt},
             "temperature": 0}
     if language:
         body["language"] = language
@@ -1160,7 +1239,7 @@ def _raw_transcribe(audio_b64: str, fmt: str, language: Optional[str]) -> Option
         json=body,
     )
     if resp.is_error:
-        log.warning("OpenRouter STT HTTP %s for %s: %s", resp.status_code, config.STT_MODEL, resp.text[:300])
+        log.warning("OpenRouter STT HTTP %s for %s: %s", resp.status_code, _stt_model(), resp.text[:300])
         return None
     text = resp.json().get("text")
     return text.strip() if isinstance(text, str) else None

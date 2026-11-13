@@ -1,11 +1,12 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useHeading } from "@/lib/heading";
 import { TAB_TITLES } from "@/lib/sections";
 import { useToast } from "@/lib/toast";
 import { Loader, LoadError } from "@/components/ui/Loader";
+import { AIModels } from "./AIModels";
 import { UsageSettings } from "./UsageSettings";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,7 +29,7 @@ export function SettingsPage() {
   return <SettingsForm c={q.data} />;
 }
 
-const JUMP = ["Senpai", "Voice", "LeetCode account", "AI model", "Scheduling & weighting", "Weekly goals", "Discover thresholds", "Usage", "Data", "Account"];
+const JUMP = ["Senpai", "Voice", "LeetCode account", "AI models", "Scheduling & weighting", "Weekly goals", "Discover thresholds", "Usage", "Data", "Account"];
 
 function SettingsForm({ c }: { c: Any }) {
   const qc = useQueryClient();
@@ -49,9 +50,10 @@ function SettingsForm({ c }: { c: Any }) {
   const [sample, setSample] = useState<string | null>(null);
   const defaults = c.voice_defaults || {};
   const [lc, setLc] = useState({ username: c.username || "", session: "", csrf: "" });
-  const llmOptions: Record<string, string[]> = c.llm_options || {};
-  const providers = Object.keys(llmOptions);
-  const [llm, setLlm] = useState({ provider: c.llm_provider || providers[0] || "openrouter", model: c.llm_model || (llmOptions[c.llm_provider || providers[0]] || [])[0] || "" });
+  useEffect(() => {   // arriving from a link to a section (the coach pill opens AI models)
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
+  }, []);
   const [sched, setSched] = useState<Any>({
     review_limit: c.review_limit, new_limit: c.new_limit, drill_limit: c.drill_limit, drill_min_signal: c.drill_min_signal, weakness_weight: c.weakness_weight,
     breadth_weight: c.breadth_weight, mistake_weight: c.mistake_weight, goal_reviews_per_week: c.goal_reviews_per_week, goal_new_per_week: c.goal_new_per_week,
@@ -93,7 +95,7 @@ function SettingsForm({ c }: { c: Any }) {
   };
   const saveSched = async () => {
     try {
-      await api("/config", "POST", { ...Object.fromEntries(Object.entries(sched).map(([k, v]) => [k, Number(v)])), llm_provider: llm.provider, llm_model: llm.model });
+      await api("/config", "POST", { ...Object.fromEntries(Object.entries(sched).map(([k, v]) => [k, Number(v)])) });
       toast("Settings saved"); refresh();
     } catch (e) { toast((e as Error).message); }
   };
@@ -165,13 +167,9 @@ function SettingsForm({ c }: { c: Any }) {
       <div className="buttons"><button className="button is-primary" onClick={saveAccount}>Save</button>
         <button className="button is-ghost" onClick={async () => { await api("/leetcode-auth", "DELETE"); toast("Cookie cleared"); refresh(); }}>Clear cookie</button></div>
 
-      <div className="section-title" id="settings-AI model" style={{ scrollMarginTop: 84 }}>AI model</div>
-      <div className="settings-row">
-        <Field label="Provider"><Sel value={llm.provider} onChange={(v) => setLlm({ ...llm, provider: v })} options={providers.map((p) => [p, p])} /></Field>
-        <Field label="Model"><input className="input" list="cfg-llm-models" value={llm.model} onChange={(e) => setLlm({ ...llm, model: e.target.value })} placeholder="vendor/model" />
-          <datalist id="cfg-llm-models">{(llmOptions[llm.provider] || []).map((m) => <option key={m} value={m} />)}</datalist></Field>
-      </div>
-      <p className="help">Models are loaded from OpenRouter and support structured output. You can also enter a model ID. The API key stays on the server in OPENROUTER_API_KEY. Current status: {c.llm_enabled ? "enabled" : "disabled"}.</p>
+      <div className="section-title" id="settings-AI models" style={{ scrollMarginTop: 84 }}>AI models</div>
+      <AIModels />
+      <p className="help">The OpenRouter key stays on the server in OPENROUTER_API_KEY. Current status: {c.llm_enabled ? "enabled" : "disabled"}.</p>
 
       <div className="section-title" id="settings-Scheduling & weighting" style={{ scrollMarginTop: 84 }}>Scheduling &amp; weighting</div>
       <div className="settings-row">{sch("review_limit", "Reviews / day")}{sch("new_limit", "New / day")}{sch("drill_limit", "Drills / day")}</div>

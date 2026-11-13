@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { modelName } from "@/lib/models";
 import { Icon } from "@/components/Icon";
 import { Pips } from "@/components/readiness/Pips";
 import { SectionSwitcher } from "./SectionSwitcher";
@@ -131,9 +132,10 @@ export function Sidebar({ section, segments }: { section: SectionId; segments: s
         </Link>
         <div className="foot-row foot-chips">
           <div id="coach-chip">
-            <div className={`coach-chip${on ? " ai-on" : ""}`} title={overview?.llm_model ? `${overview.llm_provider}/${overview.llm_model}` : "not configured"}>
-              <span className="coach-dot" /><span className="coach-model">{on ? overview?.llm_model : "Coach off"}</span>
-            </div>
+            <Link className={`coach-chip${on ? " ai-on" : ""}`} href="/leetcode/settings#settings-AI%20models"
+              title={on ? `Main model: ${overview?.chat_model}${overview?.chat_model_free ? " (free, LocalRouter)" : ""}. Change models in Settings.` : "Coach not configured"}>
+              <span className="coach-dot" /><span className="coach-model">{on ? modelName(overview?.chat_model || overview?.llm_model) : "Coach off"}</span>
+            </Link>
           </div>
           <div id="design-coach-chip" />
         </div>

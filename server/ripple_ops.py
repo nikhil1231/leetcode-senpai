@@ -25,7 +25,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from . import auth, config, llm, voice
+from . import auth, config, llm, model_areas, voice
 from .knowledge_base import api as kb_api, catalog as kcat, model as kmodel
 from .store import get_store
 from .tutor import story
@@ -624,7 +624,7 @@ async def debrief(rid: str, store=Depends(store_for)):
                          'earlier_attempts': [{'stars': h.get('stars'), 'cost': round(h.get('cost') or 0)} for h in history],
                          'concepts': {k: v['label'] for k, v in CONCEPTS.items()}}, ensure_ascii=False)
     try:
-        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_NOTES_MODEL, system, prompt, Debrief,
+        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', model_areas.model_for('notes'), system, prompt, Debrief,
                                       options={'effort': 'low', 'max_tokens': 3500, 'timeout': 60})
         d = Debrief.model_validate_json(raw).model_dump()
     except Exception as exc:
@@ -695,7 +695,7 @@ async def review(body: ReviewIn, store=Depends(store_for)):
     if len(msgs) == 1:
         msgs.append({'role': 'user', 'content': '(Nikhil has opened the review. Start.)' if body.mode == 'review' else '(The candidate has joined. Start the interview.)'})
     try:
-        raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, msgs, options={'max_tokens': 900, 'timeout': 60, 'think': False})
+        raw = await asyncio.to_thread(llm._raw_chat, model_areas.model_for('main'), msgs, options={'max_tokens': 900, 'timeout': 60, 'think': False})
     except Exception as exc:
         log.warning('Ripple review failed: %s', type(exc).__name__)
         raise HTTPException(502, FAILED)
@@ -719,7 +719,7 @@ async def end_interview(body: ReviewIn, store=Depends(store_for)):
                          'his_reasoning': reasoning_text(body.notes, [t.model_dump() for t in body.timeline]),
                          'concepts': {k: v['label'] for k, v in CONCEPTS.items()}}, ensure_ascii=False)
     try:
-        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_NOTES_MODEL, system, prompt, Evaluation,
+        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', model_areas.model_for('notes'), system, prompt, Evaluation,
                                       options={'effort': 'medium', 'max_tokens': 3000, 'timeout': 90})
         ev = Evaluation.model_validate_json(raw).model_dump()
     except Exception as exc:
@@ -750,7 +750,7 @@ async def hint(body: ReviewIn, store=Depends(store_for)):
               "name the symptom to look at and the question to ask himself, in two or three sentences. Don't name the fix outright and never give a full design. No em dashes.")
     prompt = f"{level_text(level)}\n\nHis design:\n{graph_text(body.graph)}\n\nLast run:\n{run_text(body.run)}"
     try:
-        raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, [{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}],
+        raw = await asyncio.to_thread(llm._raw_chat, model_areas.model_for('main'), [{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}],
                                       options={'max_tokens': 400, 'timeout': 45, 'think': False})
     except Exception as exc:
         log.warning('Ripple hint failed: %s', type(exc).__name__)
@@ -815,7 +815,7 @@ async def generate(body: GenerateIn, store=Depends(store_for)):
                          'request_types': 'read (cacheable reads with workingSetGb), write (with optional background jobs), media (bytes for a CDN), search, realtime (live messages), geo (nearby lookups), payment'},
                         ensure_ascii=False)
     try:
-        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', config.TUTOR_NOTES_MODEL, system, prompt, GenScenario,
+        raw = await asyncio.to_thread(llm._raw_generate, 'openrouter', model_areas.model_for('notes'), system, prompt, GenScenario,
                                       options={'effort': 'medium', 'max_tokens': 5000, 'timeout': 90})
         gen = GenScenario.model_validate_json(raw).model_dump()
     except Exception as exc:

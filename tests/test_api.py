@@ -3048,7 +3048,7 @@ def test_recall_hints_reach_the_grader_and_the_attempt(client, monkeypatch):
 def test_page_coach_uses_bounded_current_context_and_selected_model(client, monkeypatch):
     seen = {}
     monkeypatch.setattr(main.llm, 'enabled', lambda settings: True)
-    monkeypatch.setattr(main.llm, 'current_model', lambda settings: {'model': 'test/coach'})
+    monkeypatch.setattr(main.model_areas, '_chosen', {'coach': 'test/coach'})
 
     def reply(model, messages, options=None):
         seen.update(model=model, messages=messages)
@@ -3072,7 +3072,7 @@ def test_page_coach_uses_bounded_current_context_and_selected_model(client, monk
 
 def test_page_coach_streams_its_reply(client, monkeypatch):
     monkeypatch.setattr(main.llm, 'enabled', lambda settings: True)
-    monkeypatch.setattr(main.llm, 'current_model', lambda settings: {'model': 'test/coach'})
+    monkeypatch.setattr(main.model_areas, '_chosen', {'coach': 'test/coach'})
 
     async def stream(model, messages, options=None):
         for piece in ('Shift ', 'consumes ', 'one bit.'):

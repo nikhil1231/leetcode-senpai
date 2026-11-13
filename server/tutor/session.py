@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 from .. import llm, voice
 from . import board, lessons, resources, rig, story
 
-PROMPT_VERSION = 18
+PROMPT_VERSION = 19
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -95,14 +95,15 @@ REVIEW = """You're Nikhil's tutor. He has just read an overview on the page: a s
 
 {voice}
 
-What to check: every step in your notes. For each, that he knows what problem it solves, the usual answer, its catch, and the thing worth remembering. Each step must come up before you finish, but this is a conversation, not a quiz read out in order:
-- Open with a Ripple situation that touches one or two steps and ask what he'd do. Let his answers lead into the next topic; one question can cover two steps.
-- One question per message, under 70 words. Ask him to use an idea in a situation, not to recite a definition.
-- React briefly. If he's right, say so plainly and name what he got right, then move on; never re-ask something he's covered. If he's partly right or wrong, say what's off and what's true in a sentence or two, kindly, then move on. Don't drill.
-- If he doesn't know, give the answer in two sentences and carry on.
+What to check: the steps in your notes. For each, that he knows what problem it solves, the usual answer, its catch, and the thing worth remembering. This is a conversation, not a quiz read out in order, and ten minutes matters more than asking about every step:
+- Open with a Ripple situation that touches one or two steps and ask what he'd do.
+- After that, take the next question from what he just said: something he mentioned, a consequence of his design, the weak spot in it. That usually leads into the next step on its own. Bring in a new situation only when his answer gives you nothing to follow, and then just ask it, with no line announcing the switch.
+- A step his answer already showed is covered, even in passing. Never ask about it separately.
+- When he's right, say so in a few words and move on; a reply can be two sentences. Add something only if it would change what he'd say in an interview, and correct only what is actually wrong, one thing per reply at most.
+- If he doesn't know, give the answer in two sentences and carry on. If he asks you something, answer it properly first.
 - Keep a tally in your <private> notes: each step's number and how he did (solid, shaky, missed, not yet).
 - He doesn't see a checklist. Never mention one, or how many topics are left.
-- When every step has come up, finish in a few lines: what was solid, and the one or two ideas worth rereading, by step number. Then say the wrap-up is next on the page. Don't ask anything more.
+- After about eight exchanges, or once every step has come up, finish in a few lines: what was solid, and the one or two ideas worth rereading, by step number (steps that never came up count). Then say the wrap-up is next on the page. Don't ask anything more.
 - Stay on this overview: don't suggest other lessons.""".format(voice=voice.TUTOR)
 
 ROLES = {
@@ -348,7 +349,7 @@ Keep anything you must stay consistent about (a planted flaw, an incident's stat
 BEFORE_REPLY = """
 
 ## Before you reply
-Read his last message and answer that, the way a friendly colleague would across a desk: warm, plain, in full sentences. Say what he got right first, by name. Move on without announcing it: no "here's where I want to go next", "the bit I'd push on", "one thing I'd separate out", "let me give you a number". Ask at most one question."""
+Answer his last message the way a friend at the next desk would: plain and warm, in full sentences, and short. Most replies are under 100 words; explaining something new can take more. If he asked you something, answer that first. Whether he's right comes before anything else, but a word or two does it ("Yes." "Right." "Not quite."); it isn't a sentence of praise. Credit only what he actually said, and never compare him with other people ("most people miss this", "a step further than most"). Don't add a correction or a refinement when nothing he said was wrong. Vary the shape: not every reply ends on a question, and no labelled moves ("One correction:", "One refinement:", "The catch is", "Now a different failure", "Next,", "Last one"). At most one question."""
 
 
 ACTIONS = """## Things you can do

@@ -21,7 +21,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from . import auth, config, llm, voice
+from . import auth, config, llm, model_areas, voice
 from .knowledge_base import api as kb_api, catalog as kcat
 from .store import get_store
 from .tutor import story
@@ -158,7 +158,7 @@ def _level(lid):
 
 async def _chat(messages, max_tokens=700):
     try:
-        raw = await asyncio.to_thread(llm._raw_chat, config.TUTOR_MODEL, messages, options={'max_tokens': max_tokens, 'timeout': 60, 'think': False})
+        raw = await asyncio.to_thread(llm._raw_chat, model_areas.model_for('main'), messages, options={'max_tokens': max_tokens, 'timeout': 60, 'think': False})
     except Exception as exc:
         log.warning('Night Shift model call failed: %s', type(exc).__name__)
         raise HTTPException(502, FAILED)

@@ -484,6 +484,13 @@ code, pre, .timer, .mono { font-family: var(--font-mono); font-variant-numeric: 
 .coach-chip.ai-on { color: var(--text-2); }
 .coach-chip.ai-on .coach-dot { background: var(--green); box-shadow: 0 0 0 3px rgba(53, 211, 154, .16); }
 .coach-chip .coach-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.coach-chip { text-decoration: none; transition: border-color .15s, color .15s; }
+a.coach-chip:hover, a.coach-chip:focus-visible { border-color: var(--accent); color: var(--text); }
+.ai-models { display: grid; gap: 4px; }
+.ai-model { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 340px); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.ai-model label { font-weight: 600; font-size: 13.5px; }
+.ai-model .help { margin-top: 2px; }
+@media (max-width: 720px) { .ai-model { grid-template-columns: minmax(0, 1fr); gap: 8px; } }
 #user-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; min-width: 0; }
 #user-chip .last-updated { font-size: 11.5px; }
 #user-chip .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

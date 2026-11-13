@@ -42,8 +42,11 @@ def _offline_llm_catalog(monkeypatch):
     """Settings tests never call the public catalog or use real LLM keys."""
     from server import llm
     monkeypatch.setattr(llm.config, "OPENROUTER_API_KEY", None)
-    monkeypatch.setattr(llm, "_catalog_models", [])
+    monkeypatch.setattr(llm, "_catalog", [])
     monkeypatch.setattr(llm, "_catalog_expires", float("inf"))
+    monkeypatch.setattr(llm.config, "LOCALROUTER_URL", "")
+    from server import model_areas
+    monkeypatch.setattr(model_areas, "_chosen", {})
 
 
 @pytest.fixture(autouse=True)

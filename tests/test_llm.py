@@ -282,7 +282,7 @@ async def test_openrouter_invalid_output(enable_llm, monkeypatch, body):
 def test_catalog_filters_caches_and_keeps_stale_models(monkeypatch):
     import httpx
     monkeypatch.setattr(llm, "_catalog_expires", 0)
-    monkeypatch.setattr(llm, "_catalog_models", [])
+    monkeypatch.setattr(llm, "_catalog", [])
     calls = []
     def get(url, **kwargs):
         calls.append(url)
@@ -301,7 +301,7 @@ def test_catalog_filters_caches_and_keeps_stale_models(monkeypatch):
         raise httpx.ConnectError("offline")
     monkeypatch.setattr(llm.httpx, "get", offline)
     assert llm.available_models() == ["vendor/structured"]
-    monkeypatch.setattr(llm, "_catalog_models", [])
+    monkeypatch.setattr(llm, "_catalog", [])
     monkeypatch.setattr(llm, "_catalog_expires", 0)
     assert llm.model_options({"llm_model": "vendor/custom"}) == {"openrouter": ["vendor/custom"]}
 

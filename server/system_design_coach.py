@@ -2,12 +2,11 @@
 import asyncio
 import json
 import logging
-import os
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import llm, voice
+from . import llm, model_areas, voice
 from .system_design_content import SKILLS, CASES, VERSION
 
 log = logging.getLogger(__name__)
@@ -61,9 +60,9 @@ class ExaminerReport(BaseModel):
 
 def profiles():
     return {
-        'tutor': {'model': os.environ.get('SD_TUTOR_MODEL', 'openai/gpt-6.1-sol'),
+        'tutor': {'model': model_areas.model_for('sd_tutor'),
                   'effort': 'medium', 'max_tokens': 6000, 'timeout': 90, 'metadata': True},
-        'assessor': {'model': os.environ.get('SD_ASSESSOR_MODEL', 'openai/gpt-6-astra'),
+        'assessor': {'model': model_areas.model_for('sd_assessor'),
                      'effort': 'high', 'max_tokens': 16000, 'timeout': 150, 'metadata': True},
     }
 
