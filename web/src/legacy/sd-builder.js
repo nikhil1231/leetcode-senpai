@@ -60,13 +60,14 @@
     const outcome = { handled: ['Handled', 'ok'], degraded: ['Degraded', 'warn'], outage: ['Outage', 'bad'] };
     const top = res.bill.items.filter(i => i.usd >= 0.5).slice(0, 8);
     const label = i => i.id === '_egress' ? 'Bandwidth to users' : i.id === '_xregion' ? 'Cross-region replication' : (o.labelOf?.(i.defId) || i.defId);
+    const only = o.only, show = k => !only || only === k;   // only: 'summary' | 'bill' | 'team' (the results tabs); unset shows everything
     return `<div class="rp-report">
-      <div class="rp-score">${stars(s.stars)}<div><strong>${(o.headlines || ['Ripple went down', 'Survived, barely', 'Every target met', 'Every target met, with money to spare'])[s.stars]}</strong>
+      ${show('summary') ? `<div class="rp-score">${stars(s.stars)}<div><strong>${(o.headlines || ['Ripple went down', 'Survived, barely', 'Every target met', 'Every target met, with money to spare'])[s.stars]}</strong>
         <span>${s.availability.toFixed(s.availability >= 99.99 ? 3 : 2)}% available · ${money(res.bill.total)}/month${s.lost >= 1 ? ` · ${fmt(s.lost)} writes lost` : ''}</span></div></div>
       <ul class="rp-objs">${s.objectives.map(x => `<li class="${x.pass ? 'is-pass' : 'is-fail'}"><span>${x.pass ? '✓' : '✗'}</span><em>${esc(x.label)}</em><b>${esc(x.actual)}</b><small>target ${esc(x.target)}</small></li>`).join('')}</ul>
-      ${res.events.length ? `<h5>Incidents</h5><ul class="rp-evs">${res.events.map(e => `<li class="rp-${outcome[e.outcome][1]}"><b>${hh(e.at)}</b><span>${esc(e.label)}</span><em>${outcome[e.outcome][0]}${e.type !== 'poison-message' ? ` · ${(e.ok * 100).toFixed(1)}% ok` : ''}${e.lost >= 1 ? ` · ${fmt(e.lost)} lost` : ''}</em></li>`).join('')}</ul>` : ''}
-      <h5>The bill</h5><div class="rp-bill">${top.map(i => `<div class="rp-bill-row" title="${esc(i.detail)}"><span>${esc(label(i))}</span><i style="--w:${Math.max(2, Math.round(i.usd / total * 100))}%"></i><b>${money(i.usd)}</b></div>`).join('')}</div>
-      ${res.findings.length ? `<h5>What the team saw</h5><ul class="rp-finds">${res.findings.slice(0, o.maxFindings || 12).map(f => `<li class="rp-f-${esc(f.level)}">${avatar(f.who)}<div><p>${esc(f.text)}</p>${f.concept && o.conceptLink ? o.conceptLink(f.concept) : ''}</div></li>`).join('')}</ul>` : ''}
+      ${res.events.length ? `<h5>Incidents</h5><ul class="rp-evs">${res.events.map(e => `<li class="rp-${outcome[e.outcome][1]}"><b>${hh(e.at)}</b><span>${esc(e.label)}</span><em>${outcome[e.outcome][0]}${e.type !== 'poison-message' ? ` · ${(e.ok * 100).toFixed(1)}% ok` : ''}${e.lost >= 1 ? ` · ${fmt(e.lost)} lost` : ''}</em></li>`).join('')}</ul>` : ''}` : ''}
+      ${show('bill') ? `<h5>The bill</h5><div class="rp-bill">${top.map(i => `<div class="rp-bill-row" title="${esc(i.detail)}"><span>${esc(label(i))}</span><i style="--w:${Math.max(2, Math.round(i.usd / total * 100))}%"></i><b>${money(i.usd)}</b></div>`).join('')}</div>` : ''}
+      ${show('team') ? `${res.findings.length ? `<h5>What the team saw</h5><ul class="rp-finds">${res.findings.slice(0, o.maxFindings || 12).map(f => `<li class="rp-f-${esc(f.level)}">${avatar(f.who)}<div><p>${esc(f.text)}</p>${f.concept && o.conceptLink ? o.conceptLink(f.concept) : ''}</div></li>`).join('')}</ul>` : ''}` : ''}
     </div>`;
   }
 
@@ -214,11 +215,11 @@
     }
     function pausePlay() { if (play?.timer) { clearInterval(play.timer); play.timer = null; } }
     function gotoHour(h) { if (!play) return; pausePlay(); play.h = Math.max(0, Math.min(23, h)); paintCanvas(); paintPlay(); paintPanel(); }
-    function stopPlay(repaint = true) {
+    function stopPlay(repaint = true, reveal = false) {
       if (!play) return;
       clearInterval(play.timer); clearTimeout(play.endTimer);
       const old = play; play = null;
-      if (!old.done || old.endTimer) opts.onDayEnd?.({ finished: false, whatif: old.whatif });   // stopping early shows the results inline, never the modal
+      if (reveal && (!old.done || old.endTimer)) opts.onDayEnd?.({ finished: false, whatif: old.whatif });   // stopping early shows the results inline, never the modal
       if (repaint) { paintCanvas(); paintPlay(); paintPanel(); } else paintPlay();
     }
     function runDay(extra) {
@@ -396,7 +397,8 @@
     };
     const onDown = ev => {
       if (!ev.target.closest('[data-canvas]')) return;
-      const handle = ev.target.closest('[data-handle]'), node = ev.target.closest('.bd-node'), edge = ev.target.closest('[data-edge]');
+      const pick = q => held ? null : ev.target.closest(q);   // viewing the reference: the canvas pans and zooms but nothing is edited
+      const handle = pick('[data-handle]'), node = pick('.bd-node'), edge = pick('[data-edge]');
       if (play && (handle || node || edge)) stopPlay();
       if (handle && node) {
         ev.preventDefault();
@@ -417,7 +419,7 @@
         paintCanvas(); paintPanel(); stage().focus({ preventScroll: true });
         stage().setPointerCapture?.(ev.pointerId);
       } else if (edge) { sel = { kind: 'edge', id: edge.dataset.edge }; paintCanvas(); paintPanel(); stage().focus({ preventScroll: true }); }
-      else if (ev.shiftKey) {   // Shift-drag on empty space: rubber-band select (Ctrl+Shift adds to the selection)
+      else if (ev.shiftKey && !held) {   // Shift-drag on empty space: rubber-band select (Ctrl+Shift adds to the selection)
         const [px, py] = local(ev); box = { x: px, y: py, w: 0, h: 0 };
         if (ev.ctrlKey || ev.metaKey) { if (!group.size && sel?.kind === 'node') group.add(sel.id); } else group.clear();
         sel = null; paintPanel();
@@ -478,7 +480,15 @@
       else if (play && ev.key === ' ') { ev.preventDefault(); togglePlay(); }
       else if (play && (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft')) { ev.preventDefault(); play.h = Math.max(0, Math.min(23, play.h + (ev.key === 'ArrowRight' ? 1 : -1))); paintCanvas(); paintPlay(); paintPanel(); }
     };
+    // The strip repaints every tick while it plays, which swallows a click (mouse down and up land on different elements): act on press.
+    let pressed = 0;
+    const onPress = ev => {
+      const b = ev.target.closest?.('.bd-xport [data-act]');
+      if (!b || !play || b.disabled) return;
+      pressed = Date.now(); onClick(ev);
+    };
     const onClick = ev => {
+      if (ev.type === 'click' && Date.now() - pressed < 700 && ev.target.closest?.('.bd-xport')) { pressed = 0; return; }
       const item = ev.target.closest('.bd-item'), act = ev.target.closest('[data-act]')?.dataset.act;
       if (item) addNode(item.dataset.def);
       else if (act === 'undo') doUndo(); else if (act === 'delete') remove();
@@ -487,7 +497,7 @@
       else if (act === 'run') runDay();
       else if (act === 'play') togglePlay();
       else if (act === 'stepback') gotoHour(play.h - 1); else if (act === 'stepfwd') gotoHour(play.h + 1); else if (act === 'skip') gotoHour(23);
-      else if (act === 'endplay') stopPlay();
+      else if (act === 'endplay') stopPlay(true, true);
       else if (act === 'clear') { if (!S.nodes.length) return; snapshot(); S.nodes = []; S.edges = []; sel = null; touch(); }
     };
     const onInput = ev => {
@@ -527,7 +537,7 @@
       shell(); paintCanvas(); paintPanel(); paintBar();
       const on = (t, ev, f) => { t.addEventListener(ev, f); offs.push(() => t.removeEventListener(ev, f)); }, offs = [];
       on(el, 'pointerdown', onDown); on(el, 'pointermove', onMove); on(el, 'pointerup', onUp); on(el, 'pointercancel', onUp);
-      on(el, 'wheel', onWheel); on(el, 'keydown', onKey); on(el, 'click', onClick); on(el, 'input', onInput); on(el, 'change', onChange);
+      on(el, 'wheel', onWheel); on(el, 'keydown', onKey); on(el, 'pointerdown', onPress); on(el, 'click', onClick); on(el, 'input', onInput); on(el, 'change', onChange);
       on(el, 'dragstart', onDragStart); on(el, 'dragover', onDragOver); on(el, 'drop', onDrop);
       el._bdOffs = offs;
     }).catch(err => { if (!dead) el.innerHTML = `<p class="bd-note">Could not load the builder (${esc(err.message)}).</p>`; });
@@ -544,7 +554,7 @@
         el.classList.toggle('is-viewing', !!held);
       },
       destroy() { dead = true; clearTimeout(saveTimer); stopPlay(false); if (S && !held) writeLocal(key, S); (el._bdOffs || []).forEach(f => f()); },
-      state: () => S, graph, setGraph, run: runDay, labelOf, econ: () => econ,
+      state: () => S, stopPlay: () => stopPlay(), graph, setGraph, run: runDay, labelOf, econ: () => econ,
       flush() { clearTimeout(saveTimer); if (S && !held) { writeLocal(key, S); opts.onChange?.(graph()); } },
     };
   }

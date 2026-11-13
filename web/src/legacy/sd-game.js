@@ -31,7 +31,7 @@
   }
 
   function mount(el, o = {}) {
-    let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false, refView = false, mineG = null, resOpen = true;
+    let ov = null, err = '', view = 'hub', L = null, step = 'brief', builder = null, res = null, posted = null, debrief = null, dbState = '', revealed = false, modalOpen = false, modalPlayed = false, refView = false, mineG = null, resOpen = true, resTab = 'summary';
     let casePage = null;
     let chatView = null, est = {}, graded = null, notes = '', editing = false, mic = 'idle', voice = null, timeline = [], logged = '', lastSig = '', logTimer = null, hints = 0, aiHint = '', chat = null, dead = false, genState = '', draftTimer = null, attempts = 0, recent = [];
     const levels = () => camp.levels;
@@ -226,14 +226,19 @@
     function resultsHtml(l) {
       if (!res || !revealed) return '';
       const s = res.summary, prog = posted?.progress, nextL = levels().find(x => x.after === l.id && (!x.side || x.chapter === l.chapter) && (prog || ov.progress).unlocked.includes(x.id));
+      const TABS = [['summary', 'Results'], ['post', 'Post-mortem'], ['team', 'What the team saw'], ['bill', 'The bill']];
+      if (!TABS.some(t => t[0] === resTab)) resTab = 'summary';
+      const pane = resTab === 'post'
+        ? `<div class="rp-debrief">${debriefHtml() || '<p class="bd-fine">No post-mortem for this run.</p>'}${s.stars >= 2 && l.debrief ? `<div class="rp-lesson"><h4>The lesson</h4><p>${esc(l.debrief)}</p></div>` : ''}</div>`
+        : B().reportHtml(res, { labelOf: builder?.labelOf, conceptLink: conceptChip, only: resTab });
       return `<h3>How the day went</h3>
+        <div class="rp-res-top"><div class="rp-go"><button type="button" class="button${s.stars >= 2 ? '' : ' is-primary'}" data-edit>&#9998; ${s.stars >= 2 ? 'Back to editing' : 'Try again'}</button>${canCompare(l) ? '<button type="button" class="button" data-ref>Compare with the reference design</button>' : ''}
+            ${nextL ? `<button type="button" class="button${s.stars >= 2 ? ' is-primary' : ''}" data-open="${esc(nextL.id)}">Next: ${esc(nextL.title)} →</button>` : '<button type="button" class="button" data-hub>Back to Ripple Ops</button>'}</div>
+          <div class="rp-tabs rp-res-tabs" role="tablist">${TABS.map(([k, n]) => `<button type="button" role="tab" class="rp-tab${resTab === k ? ' is-on' : ''}" aria-selected="${resTab === k}" data-res-tab="${k}">${n}${k === 'post' && dbState === 'busy' ? ' …' : ''}</button>`).join('')}</div></div>
         ${posted?.first_clear ? `<div class="rp-banner">🎉 Chapter cleared. Ripple made it through “${esc(l.title)}”, and the team will remember it.</div>` : ''}
         ${posted?.unlocked?.length ? `<div class="rp-banner">🔓 Unlocked: ${posted.unlocked.map(id => `<button type="button" class="sim-link" data-open="${esc(id)}">${esc(byId(id)?.title || id)}</button>`).join(', ')}</div>` : ''}
-        ${posted?.gaps ? `<p class="bd-fine">${posted.gaps} thing${posted.gaps === 1 ? '' : 's'} you missed will come back in your reviews and with the tutor.</p>` : ''}
-        <div class="rp-res-grid"><div>${B().reportHtml(res, { labelOf: builder?.labelOf, conceptLink: conceptChip })}</div>
-          <div class="rp-debrief">${debriefHtml()}${s.stars >= 2 && l.debrief ? `<div class="rp-lesson"><h4>The lesson</h4><p>${esc(l.debrief)}</p></div>` : ''}
-            <div class="rp-go">${canCompare(l) ? '<button type="button" class="button" data-ref>Compare with the reference design</button>' : ''}
-            ${nextL ? `<button type="button" class="button is-primary" data-open="${esc(nextL.id)}">Next: ${esc(nextL.title)} →</button>` : '<button type="button" class="button" data-hub>Back to Ripple Ops</button>'}</div></div></div>`;
+        ${resTab === 'summary' && posted?.gaps ? `<p class="bd-fine">${posted.gaps} thing${posted.gaps === 1 ? '' : 's'} you missed will come back in your reviews and with the tutor.</p>` : ''}
+        <div class="rp-res-pane" role="tabpanel">${pane}</div>`;
     }
     // ---------- your design vs the reference ----------
     // Once the level is passed (or tried twice) two tabs at the top of the side panel flip the canvas between his design and the reference, with the boxes that differ outlined.
@@ -387,16 +392,21 @@
         graph: builder.graph(), ...reasoning() };
       try { return await call('/runs', 'POST', body); } catch (e) { if (e.message !== 'auth') err = `This run wasn't saved (${e.message}).`; return null; }
     }
-    async function onRun(r, g, info) {
+    // A run counts only when the day plays to its end: onRun just holds it, onDayEnd({finished}) saves it, and going back to editing before then drops it.
+    function onRun(r, g, info) {
       if (info.whatif) return;
-      res = r; attempts++; debrief = null; dbState = ''; posted = null; revealed = false; modalPlayed = false; closeModal(); refView = false; applyView();
+      res = r; debrief = null; dbState = ''; posted = null; revealed = false; modalPlayed = false; closeModal(); refView = false; applyView();
       paintResults();
+    }
+    async function saveRun() {
+      attempts++;
       // The day is over: stop the mic and wait for the last words, so the debrief grades everything he said.
       const said = window.Dictate?.settle(el);
       if (said) await said;
       if (dead) return;
-      posted = await postRun(r);
-      if (dead) return;
+      const mine = res;
+      posted = await postRun(res);
+      if (dead || res !== mine) return;
       if (posted?.progress) { ov.progress = posted.progress; }
       paintResults();
       if (posted?.id && ov.enabled) getDebrief();
@@ -417,9 +427,11 @@
     }
     function onDayEnd(info) {
       if (dead || info.whatif || !res || revealed) return;
-      revealed = true; resOpen = true;
+      if (!info.finished) return;
+      revealed = true; resOpen = true; resTab = 'summary';
       applyView();
-      if (info.finished) openModal(); else paintResults();
+      openModal();
+      saveRun();
     }
     function fillModal(body) {
       body.innerHTML = resultsHtml(L);
@@ -536,6 +548,8 @@
       if (!t) return;
       const d = t.dataset;
       if (d.modalClose !== undefined) { closeModal(); return; }
+      if (d.resTab) { resTab = d.resTab; paintResults(); return; }
+      if (d.edit !== undefined) { closeModal(true); resOpen = false; if (res?.summary.stars < 2) revealed = false; refView = false; builder?.stopPlay(); applyView(); paintResults(); el.querySelector('.rp-stage')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return; }
       if (d.resToggle !== undefined) { resOpen = !resOpen; paintResults(); return; }
       if (d.open) { const l = byId(d.open); if (l && unlocked(l.id)) await openLevel(l); }
       else if (d.case) openCase(d.case);

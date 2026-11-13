@@ -231,7 +231,8 @@
 .bd-node.is-diff { border-color:var(--amber); box-shadow:0 0 0 3px rgba(251,191,36,.25), 0 2px 8px rgba(0,0,0,.45); }
 .bd-node.is-diff-sized { border-color:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.25), 0 2px 8px rgba(0,0,0,.45); }
 .rp-key.is-sized { border-color:#60a5fa; }
-.is-viewing .bd-palette, .is-viewing .bd-canvas { pointer-events:none; }
+.is-viewing .bd-palette { pointer-events:none; }
+.is-viewing .bd-node, .is-viewing .bd-edge { cursor:grab; }
 .rp-reftabs .rp-ref { margin-top:10px; }
 
 /* Under the builder the day's results fold to one bar (sd-simulators.css lifts the open body over the canvas on wide screens). */
@@ -242,3 +243,14 @@
 .rp-res-body { display:grid; gap:10px; padding:4px 16px 16px; }
 .rp-res-body[hidden] { display:none; }
 .rp-res-body > h3 { display:none; }
+
+/* Results: actions and tabs stay at the top while the pane under them scrolls. */
+.rp-res-top { position:sticky; top:-4px; z-index:2; display:grid; gap:10px; padding:6px 0 10px; background:var(--panel); border-bottom:1px solid var(--line); }
+.rp-res-top .rp-go { margin:0; }
+.rp-res-tabs .rp-tab { padding:6px 12px; }
+.rp-res-tabs .rp-tab.is-on { background:var(--accent-soft); border-color:var(--accent-line); color:var(--text); }
+.rp-res-pane { display:grid; gap:10px; max-width:760px; padding-top:4px; }
+.rp-res-pane .rp-score .rp-stars { font-size:30px; }
+.rp-res-pane .rp-score strong { font-size:17px; }
+.rp-res-pane .rp-objs { gap:8px; } .rp-res-pane .rp-objs li { font-size:13.5px; }
+.rp-res-pane .rp-evs li, .rp-res-pane .rp-bill-row { font-size:13px; }
