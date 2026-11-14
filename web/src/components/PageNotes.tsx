@@ -20,6 +20,8 @@ type Open = { id: string } | { draft: Draft };
 
 const SKIP = "script, style, noscript, textarea, input, select, [contenteditable], .page-coach, .page-notes-ui";
 const BLOCK = "p, li, td, th, dd, dt, blockquote, pre, h1, h2, h3, h4, h5, h6, figcaption, label, summary";
+// One empty list, so "no notes yet" doesn't change identity on every render and re-run the anchor search forever.
+const NO_NOTES: Note[] = [];
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "…" : s);
 const elementOf = (n: Node) => (n.nodeType === 1 ? (n as Element) : n.parentElement);
 const shown = (n: Element) => n.getClientRects().length > 0;
@@ -81,7 +83,7 @@ export function PageNotes() {
   const enabled = !!useOverview().data?.llm_enabled;
   const qc = useQueryClient();
   const key = ["page-notes", path];
-  const notes = useQuery<{ notes: Note[] }>({ queryKey: key, queryFn: () => api(`/page-notes?path=${encodeURIComponent(path)}`), staleTime: 60_000 }).data?.notes ?? [];
+  const notes = useQuery<{ notes: Note[] }>({ queryKey: key, queryFn: () => api(`/page-notes?path=${encodeURIComponent(path)}`), staleTime: 60_000 }).data?.notes ?? NO_NOTES;
   const [selection, setSelection] = useState<Range | null>(null);
   const [anchors, setAnchors] = useState<Map<string, Range>>(new Map());
   const [open, setOpen] = useState<Open | null>(null);
@@ -112,7 +114,7 @@ export function PageNotes() {
     const find = () => {
       const flat = flatten(main, SKIP), found = new Map<string, Range>();
       for (const n of notes) { const r = n.anchor && rangeOf(flat, n.anchor); if (r) found.set(n.id, r); }
-      setAnchors(found);
+      setAnchors((prev) => (prev.size || found.size ? found : prev));
     };
     find();
     const watch = new MutationObserver(() => { clearTimeout(timer); timer = window.setTimeout(find, 400); });
