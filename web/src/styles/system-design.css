@@ -500,7 +500,8 @@ body.section-design #active-run,body.section-design .topbar-side,body.section-de
 /* An area overview (sd-map.js): a step bar, then one step at a time, every step the same shape. */
 .sd-map-body.ov { margin-top: 0; gap: 12px; }
 .ov-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 auto 10px; width: 100%; max-width: 860px; }
-#tab-design > .sd-rich-intro.ov-intro-head, #tab-design:has(> .ov-intro-head) > .sd-breadcrumb { margin-left: auto; margin-right: auto; width: 100%; max-width: 860px; }
+/* The header lines up with the step bar and card, also when the tutor button sits in it. */
+.sd-rich-intro.ov-intro-head, .sd-rich-intro.ov-intro-head:has(> .tu-host.is-tools), :has(> .ov-intro-head) > .sd-breadcrumb { margin-left: auto; margin-right: auto; width: 100%; max-width: 860px; }
 .ov-bar ol { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; overflow-x: auto; max-width: 100%; }
 .ov-bar button { min-width: 34px; height: 34px; padding: 0 10px; border-radius: 999px; border: 0; background: var(--panel); color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; }
 .ov-bar li.is-done button { color: var(--accent); }
