@@ -15,7 +15,7 @@ and none is seen only asleep. Without a model, or before the first poster, a pla
 Surfaces: /wall cycles posters full screen (a TV, a projector, a Mac screensaver, a phone on
 StandBy); /wall?print=1 lays six out for a weekly colour print. Showing a poster records nothing,
 because a screen on the wall is not proof anyone looked. Pure: weight, posters, struggles, brief,
-wake_slot, shelf, current, to_make, stalest, fading_map. I/O: render_card, fit_image, the router.
+wake_slot, shelf, current, rotate, to_make, stalest, fading_map. I/O: render_card, fit_image, the router.
 Intent: docs/plans/ambient-learning.md.
 """
 import asyncio
@@ -97,9 +97,11 @@ def struggle(v):
         + 2 * bool(v['unconfirmed'])
 
 
-def struggles(views, n=6, per=3):
-    """The lessons you have covered and hold worst, weakest first, each with its weakest points
-    you have met (up to `per`: more and the text gets too small to read on a lock screen). -> [{lesson, title, section, score, points}]"""
+def struggles(views, n=12, per=3, pool=12):
+    """The lessons you have covered and hold worst, weakest first, each with its weakest points you have met:
+    `points` the top `per` (more and the text gets too small to read on a lock screen) and `pool` the top `pool`,
+    from which `rotate` picks so successive posters of a lesson teach different ideas.
+    -> [{lesson, title, section, score, points, pool}]"""
     by = {}
     for v in views:
         s = struggle(v)
@@ -109,7 +111,8 @@ def struggles(views, n=6, per=3):
     for lesson, items in by.items():
         items.sort(key=lambda t: -t[0])
         out.append({'lesson': lesson, 'title': items[0][1]['lesson_title'], 'section': items[0][1]['section'],
-                    'score': sum(s for s, _ in items), 'points': [v['id'] for _, v in items[:per]]})
+                    'score': sum(s for s, _ in items), 'points': [v['id'] for _, v in items[:per]],
+                    'pool': [v['id'] for _, v in items[:pool]]})
     return sorted(out, key=lambda l: (-l['score'], l['lesson']))[:n]
 
 
@@ -140,55 +143,75 @@ def wake_slot(now_local, window, slot_hours):
     return day * per_day + min(per_day - 1, (minute - start) // slot)
 
 
-def shelf(library, ranked, least=3):
-    """The posters in rotation, weakest lesson first: the newest passing poster of each lesson you
-    still struggle with, then older passing posters (reuse) until there are at least `least`."""
+def shelf(library, ranked, now=0, days=14, least=3):
+    """The posters in rotation: every passing poster of a lesson you still struggle with made in the last `days`
+    (all of them when now is 0), dealt one lesson at a time, the weakest lesson first and each lesson's newest
+    first, so neighbours differ; then older passing posters (reuse) until there are at least `least`."""
     good = sorted((p for p in library if p.get('ok')), key=lambda p: -p['created_at'])
-    out, used = [], set()
-    for l in ranked:
-        p = next((p for p in good if p['lesson'] == l['lesson']), None)
-        if p:
-            out.append(p)
-            used.add(p['_key'])
+    weak = {l['lesson'] for l in ranked}
+    by = {}
     for p in good:
-        if len(out) >= least:
-            break
-        if p['_key'] not in used and p['lesson'] not in {q['lesson'] for q in out}:
-            out.append(p)
-            used.add(p['_key'])
-    return out
+        if p['lesson'] in weak and (not now or now - p['created_at'] < days * 86400):
+            by.setdefault(p['lesson'], []).append(p)
+    order = [l['lesson'] for l in ranked if l['lesson'] in by]
+    out = [by[k][r] for r in range(max(map(len, by.values()), default=0)) for k in order if len(by[k]) > r]
+    used = {p['_key'] for p in out}
+    return out + [p for p in good if p['_key'] not in used][:max(0, least - len(out))]
 
 
 def current(library, ranked, n, now=0, hold=0, fresh=0):
     """The poster up in waking slot n, or None before there is one. A passing poster made by hand
-    (pinned_at) in the last `hold` seconds goes up ahead of the rotation, the newest first. Then
-    new posters (passing, made in the last `fresh` seconds, newest per lesson, at most 3) take the
-    slots, so a poster just made is seen at once instead of waiting its turn in the weakness order."""
+    (pinned_at) in the last `hold` seconds goes up ahead of the rotation, the newest first. New posters
+    (passing, made in the last `fresh` seconds, the newest 3) take every other slot, so a poster just made is
+    seen at once, and the rest of the shelf takes the slots between."""
     pinned = [p for p in library if p.get('ok') and p.get('pinned_at') and now - p['pinned_at'] < hold]
     if pinned:
         return max(pinned, key=lambda p: p['pinned_at'])
-    new = sorted((p for p in library if p.get('ok') and 0 <= now - p['created_at'] < fresh), key=lambda p: -p['created_at'])
-    seen = set()
-    new = [p for p in new if not (p['lesson'] in seen or seen.add(p['lesson']))][:3]
-    if new:
-        return new[n % len(new)]
-    on = shelf(library, ranked)
+    new = sorted((p for p in library if p.get('ok') and 0 <= now - p['created_at'] < fresh), key=lambda p: -p['created_at'])[:3]
+    on = shelf(library, ranked, now)
+    mine = {p['_key'] for p in new}
+    rest = [p for p in on if p['_key'] not in mine]
+    if new and rest:
+        return new[n // 2 % len(new)] if n % 2 == 0 else rest[n // 2 % len(rest)]
+    on = new or on
     return on[n % len(on)] if on else None
 
 
-def to_make(ranked, library, now, versions, fresh_days=7, retry_hours=20):
-    """The weakest lesson that needs a new poster, or None: one with no passing poster of these
-    prompt versions made in the last fresh_days that covers at least half its weak points now.
-    A lesson whose last try failed review waits retry_hours, so one stubborn lesson can't eat the budget."""
-    for l in ranked:
+def rotate(lesson, library):
+    """The lesson with `points` swapped for the weak points longest absent from its passing posters (never shown
+    first, then the weakest), so a new poster teaches ideas the last ones did not."""
+    pool = lesson.get('pool') or lesson['points']
+    last = {}
+    for p in library:
+        if p.get('ok') and p['lesson'] == lesson['lesson']:
+            for pt in p['points']:
+                last[pt] = max(last.get(pt, 0), p['created_at'])
+    picked = sorted(range(len(pool)), key=lambda i: (last.get(pool[i], 0), i))[:len(lesson['points'])]
+    return {**lesson, 'points': [pool[i] for i in sorted(picked)]}
+
+
+def to_make(ranked, library, now, versions, retry_hours=20, min_age_hours=24, stale_days=7, days=14):
+    """The lesson that should get the next poster, or None. A lesson is eligible when its newest passing poster of
+    these prompt versions is at least min_age_hours old and it still has weak points not on a poster of the last
+    `days` (a lesson with none left waits stale_days, then is drawn afresh). Lessons with new ideas to teach come
+    first, then the one with the oldest poster, ties to the weaker. A lesson whose last try failed review waits
+    retry_hours, so one stubborn lesson can't eat the budget."""
+    best = None
+    for i, l in enumerate(ranked):
         mine = [p for p in library if p['lesson'] == l['lesson'] and p.get('version') in versions]
         if any(not p.get('ok') and now - p['created_at'] < retry_hours * 3600 for p in mine):
             continue
-        fresh = [p for p in mine if p.get('ok') and now - p['created_at'] < fresh_days * 86400
-                 and len(set(p['points']) & set(l['points'])) * 2 >= len(l['points'])]
-        if not fresh:
-            return l
-    return None
+        ok = [p for p in mine if p.get('ok')]
+        newest = max((p['created_at'] for p in ok), default=0)
+        shown = {pt for p in ok if now - p['created_at'] < days * 86400 for pt in p['points']}
+        pool = l.get('pool') or l['points']
+        new = sum(pt not in shown for pt in pool) >= min(2, len(pool))
+        if now - newest < (min_age_hours if new else stale_days * 24) * 3600:
+            continue
+        key = (not new, newest, i)
+        if best is None or key < best[0]:
+            best = (key, l)
+    return best and best[1]
 
 
 def stalest(ranked, library):

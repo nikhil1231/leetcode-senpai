@@ -48,6 +48,7 @@ def test_struggles_rank_covered_lessons_and_never_include_unmet_points():
     out = wall.struggles(views, per=2)
     assert [l['lesson'] for l in out] == ['a', 'b']      # c never met, d held: neither needs a poster
     assert out[0]['points'] == ['a1', 'a2'] and out[0]['score'] == 9 and out[1]['score'] == 7
+    assert out[0]['pool'] == ['a1', 'a2'] and wall.struggles(views, per=1, pool=1)[0]['pool'] == ['a1']
     assert wall.struggle(v('u', 'unseen', mis=1)) == 6   # a misconception counts even before an answer
 
 
@@ -78,36 +79,70 @@ def poster_doc(key, lesson, at, ok=True, points=('p',), version='v'):
     return {'_key': key, 'lesson': lesson, 'created_at': at, 'ok': ok, 'points': list(points), 'version': version}
 
 
-def test_shelf_puts_the_weakest_lessons_posters_first_and_reuses_old_ones():
+def test_shelf_deals_every_recent_poster_one_lesson_at_a_time():
     ranked = [{'lesson': 'b', 'points': ['p']}, {'lesson': 'a', 'points': ['p']}]
     library = [poster_doc('a-old', 'a', 1), poster_doc('a-new', 'a', 5), poster_doc('b1', 'b', 2),
                poster_doc('bad', 'b', 9, ok=False), poster_doc('c1', 'c', 3)]
-    assert [p['_key'] for p in wall.shelf(library, ranked)] == ['b1', 'a-new', 'c1']
+    assert [p['_key'] for p in wall.shelf(library, ranked)] == ['b1', 'a-new', 'a-old']   # c is no longer weak
+    assert [p['_key'] for p in wall.shelf(library, ranked, now=1000, days=1)] == ['b1', 'a-new', 'a-old']
+    assert [p['_key'] for p in wall.shelf(library, ranked, now=DAY + 4, days=1)] == ['a-new', 'c1', 'b1']   # old ones padded in
+    assert wall.shelf([], ranked) == []
+
+
+def test_current_rotates_the_shelf_and_gives_new_posters_every_other_slot():
+    ranked = [{'lesson': 'b', 'points': ['p']}, {'lesson': 'a', 'points': ['p']}]
+    library = [poster_doc('a-old', 'a', 1), poster_doc('a-new', 'a', 5), poster_doc('b1', 'b', 2),
+               poster_doc('bad', 'b', 9, ok=False), poster_doc('c1', 'c', 3)]
     assert wall.current(library, ranked, 4)['_key'] == 'a-new'
     assert wall.current([], ranked, 4) is None
     hand = {**poster_doc('hand', 'c', 8), 'pinned_at': 100}
     assert wall.current(library + [hand], ranked, 4, now=150, hold=60)['_key'] == 'hand'     # made by hand: up now
     assert wall.current(library + [hand], ranked, 4, now=200, hold=60)['_key'] == 'a-new'    # then the rotation again
     assert wall.current(library + [{**hand, 'ok': False}], ranked, 4, now=150, hold=60)['_key'] == 'a-new'
-    # a new poster goes up ahead of the weakness order, then falls back into it
-    assert wall.current(library, ranked, 0, now=7, fresh=3)['_key'] == 'a-new'
-    assert wall.current(library, ranked, 3, now=7, fresh=3)['_key'] == 'a-new'
+    # a new poster is up every other slot, the rest of the shelf in between, and then the shelf alone
+    assert [wall.current(library, ranked, n, now=7, fresh=3)['_key'] for n in range(6)] == \
+        ['a-new', 'b1', 'a-new', 'a-old', 'a-new', 'b1']
     assert wall.current(library, ranked, 0, now=100, fresh=3)['_key'] == 'b1'
+    only = [poster_doc('x', 'a', 5)]
+    assert [wall.current(only, ranked, n, now=7, fresh=3)['_key'] for n in range(3)] == ['x'] * 3
 
 
-def test_to_make_picks_the_weakest_lesson_without_a_fresh_poster():
+def test_rotate_picks_the_weak_points_longest_absent_from_posters():
+    lesson = {'lesson': 'a', 'points': ['a1', 'a2', 'a3'], 'pool': ['a1', 'a2', 'a3', 'a4', 'a5', 'a6']}
+    assert wall.rotate(lesson, [])['points'] == ['a1', 'a2', 'a3']                      # nothing shown yet: the weakest
+    library = [poster_doc('x', 'a', 5, points=['a1', 'a2', 'a3'])]
+    assert wall.rotate(lesson, library)['points'] == ['a4', 'a5', 'a6']                 # then the ideas it has not shown
+    library += [poster_doc('y', 'a', 9, points=['a4', 'a5', 'a6']), poster_doc('z', 'a', 12, ok=False, points=['a1'])]
+    assert wall.rotate(lesson, library)['points'] == ['a1', 'a2', 'a3']                 # then the longest ago; failed ones never showed
+    assert wall.rotate({'lesson': 'a', 'points': ['a1', 'a2']}, library)['points'] == ['a1', 'a2']   # no pool: as given
+    assert wall.rotate(lesson, [poster_doc('o', 'b', 5, points=['a1'])])['points'] == ['a1', 'a2', 'a3']   # other lessons' posters
+
+
+def test_to_make_gives_the_next_poster_to_a_lesson_with_ideas_it_has_not_shown():
     now = 100 * DAY
-    ranked = [{'lesson': 'a', 'points': ['a1', 'a2']}, {'lesson': 'b', 'points': ['b1']}]
+    ranked = [{'lesson': 'a', 'points': ['a1', 'a2'], 'pool': ['a1', 'a2', 'a3', 'a4']},
+              {'lesson': 'b', 'points': ['b1'], 'pool': ['b1']}]
     assert wall.to_make(ranked, [], now, ('v',))['lesson'] == 'a'
-    fresh_a = poster_doc('a', 'a', now - DAY, points=['a1'])
+    # a poster under a day old holds the lesson back; another lesson goes next
+    fresh_a = poster_doc('a', 'a', now - 3600, points=['a1', 'a2'])
     assert wall.to_make(ranked, [fresh_a], now, ('v',))['lesson'] == 'b'
-    assert wall.to_make(ranked, [poster_doc('a', 'a', now - 8 * DAY, points=['a1'])], now, ('v',))['lesson'] == 'a'
-    assert wall.to_make(ranked, [poster_doc('a', 'a', now - DAY, points=['zz'])], now, ('v',))['lesson'] == 'a'  # moved on
-    assert wall.to_make(ranked, [poster_doc('a', 'a', now - DAY, points=['a1'], version='old')], now, ('v',))['lesson'] == 'a'
+    # a day on, the lesson has ideas it has not shown, so it gets another poster ahead of b (which has none new)
+    old_a = poster_doc('a', 'a', now - 2 * DAY, points=['a1', 'a2'])
+    assert wall.to_make(ranked, [old_a, poster_doc('b', 'b', now - 2 * DAY, points=['b1'])], now, ('v',))['lesson'] == 'a'
+    # when nothing has new ideas, the lesson with the oldest poster waits a week and then goes again
+    done = [poster_doc('a1', 'a', now - 3 * DAY, points=['a1', 'a2']), poster_doc('a2', 'a', now - 2 * DAY, points=['a3', 'a4']),
+            poster_doc('b', 'b', now - 5 * DAY, points=['b1'])]
+    assert wall.to_make(ranked, done, now, ('v',)) is None
+    done[2] = poster_doc('b', 'b', now - 8 * DAY, points=['b1'])
+    assert wall.to_make(ranked, done[:2] + done[2:], now, ('v',))['lesson'] == 'b'
+    # ideas shown more than two weeks ago count as new again
+    assert wall.to_make(ranked[:1], [poster_doc('a', 'a', now - 20 * DAY, points=['a1', 'a2', 'a3', 'a4'])], now, ('v',))['lesson'] == 'a'
+    # posters of an older prompt version do not count; a failed try holds the lesson back for retry_hours
+    assert wall.to_make(ranked, [poster_doc('a', 'a', now - 3600, points=['a1'], version='old')], now, ('v',))['lesson'] == 'a'
     failed_a = poster_doc('x', 'a', now - 3600, ok=False)
-    assert wall.to_make(ranked, [failed_a], now, ('v',))['lesson'] == 'b'   # a failing lesson waits its turn
-    assert wall.to_make(ranked, [fresh_a, poster_doc('b', 'b', now - DAY, points=['b1'])], now, ('v',)) is None
-    assert wall.to_make(ranked, [poster_doc('a', 'a', now - DAY, points=['a1'], version='old')], now, ('old', 'v'))['lesson'] == 'b'
+    assert wall.to_make(ranked, [failed_a], now, ('v',))['lesson'] == 'b'
+    assert wall.to_make(ranked, [poster_doc('a', 'a', now - 3600, points=['a1'], version='old')], now, ('old', 'v'))['lesson'] == 'b'
+    assert wall.to_make([], [], now, ('v',)) is None
 
 
 def test_stalest_picks_the_lesson_with_the_oldest_poster():

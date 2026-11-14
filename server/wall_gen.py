@@ -2,7 +2,8 @@
 checked by a second model before it goes up on the wall (server/wall.py picks which is up).
 
 Made in the background on a cadence (`run`: a new poster at most every WALL_EVERY_HOURS and
-WALL_PER_DAY a day, for the weakest lesson without a fresh one), never on a phone's request.
+WALL_PER_DAY a day: next for a lesson with weak ideas no recent poster showed, else the one whose poster is oldest;
+wall.rotate gives each new poster of a lesson the ideas shown longest ago), never on a phone's request.
 A poster is made in three steps: the text model condenses the lesson's claims (the source of
 truth) into the poster's few words, the image model draws them, and the text model reviews the
 picture against the claims and the words for spelling, facts, sensible diagrams and legibility.
@@ -223,7 +224,7 @@ def make(store, now, lesson=None, force=False, pin=False):
         wall.to_make(ranked, library, now, KEPT) or (wall.stalest(ranked, library) if force else None)
     if not target:
         return None
-    b = wall.brief(target, views, mis)
+    b = wall.brief(wall.rotate(target, library), views, mis)
     copy, style = _copy(b), pick_style(library, b['lesson'])
     best, last, spent = None, None, 0.0
     for attempt in range(1, ATTEMPTS + 1):
