@@ -1,0 +1,209 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: auth-basics
+source_hash: 1b9cd350c939fbbf
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.auth-basics.authn-vs-authz
+  subtopic: Two different questions
+  kind: fact
+  claim: Authentication answers who the caller is (password, passkey, one-time code, signed token); authorisation answers whether this caller may do this to this thing.
+  prompt: What question does authentication answer, and what does authorisation answer?
+  objectives:
+  - 0
+- id: fundamentals.auth-basics.401-403-404
+  subtopic: Two different questions
+  kind: fact
+  claim: 401 means unauthenticated (no valid credentials, log in), 403 means authenticated but not allowed; for objects the caller shouldn't know exist, return 404 so IDs can't be probed.
+  prompt: A logged-in user requests another customer's order. Which status should you return?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.auth-basics.authn-vs-authz
+- id: fundamentals.auth-basics.access-control-most-common-flaw
+  subtopic: Two different questions
+  kind: principle
+  claim: Authentication is usually one well-tested library or identity provider, while authorisation is spread across every handler, which is why OWASP ranks broken access control as the most common serious web flaw.
+  prompt: Why is broken access control more common than broken authentication?
+  objectives:
+  - 0
+  - 4
+  requires:
+  - fundamentals.auth-basics.authn-vs-authz
+- id: fundamentals.auth-basics.fast-hashes-crack
+  subtopic: Storing passwords
+  kind: fact
+  claim: 'Never store passwords or a fast hash of them: a GPU computes billions of SHA-256 hashes a second, so a leaked table of unsalted SHA-256 hashes falls in hours.'
+  prompt: Why is SHA-256 a poor choice for storing passwords, even with a salt?
+  objectives:
+  - 1
+- id: fundamentals.auth-basics.slow-password-hash
+  subtopic: Storing passwords
+  kind: procedure
+  claim: 'Store passwords with a deliberately slow, memory-hard hash: Argon2id first, then scrypt or bcrypt (cost 10-12 or more), PBKDF2 where FIPS requires it; tune it to tens to hundreds of milliseconds per hash and re-hash on login when you raise the cost.'
+  prompt: Which password hash is the first recommendation, and how slow should it be?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.auth-basics.fast-hashes-crack
+- id: fundamentals.auth-basics.salt-and-pepper
+  subtopic: Storing passwords
+  kind: mechanism
+  claim: A unique random salt per password makes identical passwords hash differently and precomputed tables useless; an optional pepper, a secret kept outside the database in a KMS or HSM, means a database dump alone isn't enough.
+  prompt: What does a salt prevent, and what does a pepper add?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.auth-basics.slow-password-hash
+- id: fundamentals.auth-basics.slow-hash-arithmetic
+  subtopic: Storing passwords
+  kind: procedure
+  claim: Exhausting all 26^8 (about 2.1 × 10^11) lowercase 8-letter passwords at 20,000 bcrypt guesses a second takes about 121 days for one user, versus about 21 seconds for unsalted SHA-256 at 10^10 a second, which cracks every user with that password at once.
+  prompt: How long does an exhaustive search of 8-letter lowercase passwords take at 20,000 bcrypt guesses a second?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.auth-basics.slow-password-hash
+  - fundamentals.auth-basics.salt-and-pepper
+- id: fundamentals.auth-basics.login-defences
+  subtopic: Storing passwords
+  kind: procedure
+  claim: 'Around the hash: rate-limit logins per account and per IP, check new passwords against breached-password lists, offer MFA (passkeys and TOTP over SMS), and give the same error for no such user and wrong password.'
+  prompt: Besides hashing, what protects a login endpoint?
+  objectives:
+  - 1
+- id: fundamentals.auth-basics.server-side-sessions
+  subtopic: Sessions or tokens
+  kind: mechanism
+  claim: A server-side session stores user and expiry under an opaque random ID (in Redis or the database) sent in a cookie; each request costs a lookup, but logout and sign-out-everywhere are a delete and the cookie reveals nothing.
+  prompt: What are the strengths and cost of server-side sessions?
+  objectives:
+  - 2
+- id: fundamentals.auth-basics.jwt-cannot-be-revoked
+  subtopic: Sessions or tokens
+  kind: tradeoff
+  claim: A JWT carries signed claims that any service with the public key can verify without a lookup, but it can't be revoked before exp, so access tokens are short-lived (5-15 minutes) and paired with server-side, rotating, revocable refresh tokens.
+  prompt: What is the main drawback of JWT access tokens, and how is it usually managed?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.auth-basics.server-side-sessions
+- id: fundamentals.auth-basics.jwt-signed-not-encrypted
+  subtopic: Sessions or tokens
+  kind: fact
+  claim: 'A JWT is signed, not encrypted: anyone can base64-decode the payload, so never put secrets in it.'
+  prompt: Can a client read a JWT's payload?
+  objectives:
+  - 2
+- id: fundamentals.auth-basics.token-storage-xss-csrf
+  subtopic: Sessions or tokens
+  kind: tradeoff
+  claim: An HttpOnly, Secure, SameSite=Lax cookie can't be read by XSS and SameSite blocks most cross-site sends; localStorage or JS memory is readable by any XSS. For SPAs a backend-for-frontend keeps OAuth tokens server-side and gives the browser only a session cookie.
+  prompt: Where should a web app keep its session token so XSS can't read it?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.auth-basics.server-side-sessions
+- id: fundamentals.auth-basics.sessions-default-for-one-app
+  subtopic: Sessions or tokens
+  kind: tradeoff
+  claim: For a single web app talking to its own backend, server-side sessions are the sensible default; JWTs earn their place when many services or third parties must verify identity without a central store.
+  prompt: When should a web app use JWTs rather than server-side sessions?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.auth-basics.server-side-sessions
+  - fundamentals.auth-basics.jwt-cannot-be-revoked
+- id: fundamentals.auth-basics.jwt-verify-signature
+  subtopic: What a JWT verifier must check
+  kind: procedure
+  claim: A JWT verifier must verify the signature with a trusted key (never just decode), pin the algorithm, check exp and nbf with a little clock skew, and check iss and aud so tokens from another issuer or for another service are rejected.
+  prompt: What must a JWT verifier check?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.auth-basics.jwt-signed-not-encrypted
+- id: fundamentals.auth-basics.alg-confusion-attack
+  subtopic: What a JWT verifier must check
+  kind: mechanism
+  claim: 'Trusting the header''s alg lets an attacker send alg: none, or switch RS256 to HS256 and sign with your public key, which the verifier then uses as the HMAC secret; pin the accepted algorithm in configuration.'
+  prompt: What happens if your API trusts the JWT header's alg and an attacker switches RS256 to HS256?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.auth-basics.jwt-verify-signature
+- id: fundamentals.auth-basics.rbac-abac-rebac
+  subtopic: Authorisation models
+  kind: tradeoff
+  claim: RBAC grants permissions through roles, simple and auditable until exceptions multiply roles; ABAC uses rules over user, resource and context attributes, flexible but harder to audit (OPA, Cedar); ReBAC follows a relationship graph, as in Google's Zanzibar and SpiceDB or OpenFGA, the model behind Docs-style sharing.
+  prompt: When does RBAC, ABAC or ReBAC fit best?
+  objectives:
+  - 4
+- id: fundamentals.auth-basics.check-the-object
+  subtopic: Authorisation models
+  kind: principle
+  claim: 'Check access per object, not just per endpoint: a login check or role check passes for someone else''s invoice, so load the object and check owner or tenant, or scope the query (WHERE id = $1 AND tenant_id = $2). Missing this is BOLA, also called IDOR.'
+  prompt: A user changes /invoices/1001 to 1002 and sees someone else's invoice. What is the bug and fix?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.auth-basics.authn-vs-authz
+- id: fundamentals.auth-basics.deny-by-default
+  subtopic: Authorisation models
+  kind: principle
+  claim: Authorise centrally and deny by default, so a new endpoint is locked until someone grants access rather than open until someone remembers.
+  prompt: Why should authorisation deny by default?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.auth-basics.check-the-object
+- id: fundamentals.auth-basics.never-trust-client-identity
+  subtopic: Authorisation models
+  kind: principle
+  claim: 'User ID, role and tenant come from the verified session or token, never the request body; bind request bodies to an allow list of fields, since copying every field lets {"role": "admin"} through (mass assignment).'
+  prompt: What is mass assignment, and how do you prevent it?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.auth-basics.check-the-object
+items:
+  auth-basics-check-1-v2:
+  - fundamentals.auth-basics.401-403-404
+  auth-basics-check-2-v2:
+  - fundamentals.auth-basics.fast-hashes-crack
+  auth-basics-check-3-v2:
+  - fundamentals.auth-basics.alg-confusion-attack
+  auth-basics-check-4-v2:
+  - fundamentals.auth-basics.jwt-cannot-be-revoked
+  auth-basics-fire-1-v2:
+  - fundamentals.auth-basics.401-403-404
+  auth-basics-fire-2-v2:
+  - fundamentals.auth-basics.slow-password-hash
+  auth-basics-fire-3-v2:
+  - fundamentals.auth-basics.token-storage-xss-csrf
+  auth-basics-fire-4-v2:
+  - fundamentals.auth-basics.check-the-object
+  auth-basics-fire-5-v2:
+  - fundamentals.auth-basics.rbac-abac-rebac
+  auth-basics:b1:
+  - fundamentals.auth-basics.authn-vs-authz
+  - fundamentals.auth-basics.check-the-object
+  auth-basics:b3:
+  - fundamentals.auth-basics.slow-hash-arithmetic
+  - fundamentals.auth-basics.salt-and-pepper
+  auth-basics:b7:
+  - fundamentals.auth-basics.jwt-verify-signature
+  - fundamentals.auth-basics.check-the-object
+  - fundamentals.auth-basics.never-trust-client-identity
+  auth-basics:b8:
+  - fundamentals.auth-basics.rbac-abac-rebac
+  auth-basics:b9:
+  - fundamentals.auth-basics.sessions-default-for-one-app
+  - fundamentals.auth-basics.jwt-cannot-be-revoked
+  - fundamentals.auth-basics.token-storage-xss-csrf

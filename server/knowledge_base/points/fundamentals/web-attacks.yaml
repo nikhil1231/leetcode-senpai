@@ -1,0 +1,221 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: web-attacks
+source_hash: b445622de6a10260
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.web-attacks.same-origin-policy
+  subtopic: The same-origin policy
+  kind: mechanism
+  claim: The same-origin policy stops a script from one origin (scheme, host and port) reading responses or the DOM of another, but it can still send many cross-origin requests, and the browser attaches that site's cookies by default.
+  prompt: What does the same-origin policy prevent, and what does it still allow?
+  objectives:
+  - 0
+- id: fundamentals.web-attacks.origin-vs-site
+  subtopic: The same-origin policy
+  kind: fact
+  claim: A site is the registrable domain plus scheme, so a.example.com and b.example.com are different origins but the same site; SameSite cookies work on sites and CORS on origins, which is why a compromised sibling subdomain is dangerous.
+  prompt: What is the difference between an origin and a site?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.web-attacks.same-origin-policy
+- id: fundamentals.web-attacks.xss-kinds
+  subtopic: Cross-site scripting (XSS)
+  kind: fact
+  claim: 'XSS is attacker data run as code in your origin: stored (a saved comment served to readers), reflected (a request parameter echoed into the response) or DOM-based (your own JavaScript writing untrusted data into innerHTML, eval or location).'
+  prompt: What are the three kinds of XSS?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.web-attacks.same-origin-policy
+- id: fundamentals.web-attacks.contextual-output-encoding
+  subtopic: Cross-site scripting (XSS)
+  kind: principle
+  claim: The primary XSS defence is contextual output encoding for where data goes (HTML, attribute, JavaScript, URL); templating systems do it by default, and the holes are escape hatches like dangerouslySetInnerHTML, |safe and v-html. Sanitise accepted HTML with a library like DOMPurify.
+  prompt: What is the primary defence against XSS?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.web-attacks.xss-kinds
+- id: fundamentals.web-attacks.csp-second-layer
+  subtopic: Cross-site scripting (XSS)
+  kind: mechanism
+  claim: A Content-Security-Policy such as script-src 'self' or nonces stops inline and foreign scripts running, so an injection that slips through doesn't execute; it is a strong second layer, not a replacement for escaping.
+  prompt: Which header stops injected inline scripts from running?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.web-attacks.contextual-output-encoding
+- id: fundamentals.web-attacks.httponly-limits-xss
+  subtopic: Cross-site scripting (XSS)
+  kind: principle
+  claim: HttpOnly cookies stop scripts reading the session cookie, but an injected script can still call your API as the user from inside the page and read what it shows.
+  prompt: With an HttpOnly session cookie, what can an XSS payload still do?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.web-attacks.xss-kinds
+  - fundamentals.auth-basics.token-storage-xss-csrf
+- id: fundamentals.web-attacks.csrf-mechanism
+  subtopic: Cross-site request forgery (CSRF)
+  kind: mechanism
+  claim: CSRF works because another site can make the victim's browser send a request to yours (an auto-submitted form) and the browser attaches your session cookie, so the server sees an authenticated action the attacker never needed to read.
+  prompt: How does a CSRF attack work?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.web-attacks.same-origin-policy
+- id: fundamentals.web-attacks.csrf-defences
+  subtopic: Cross-site request forgery (CSRF)
+  kind: procedure
+  claim: CSRF is stopped by SameSite=Lax cookies (the Chromium default), which withhold cookies on cross-site POSTs; per-session CSRF tokens in your forms; checking Origin or Sec-Fetch-Site; and never changing state on GET.
+  prompt: Which defences stop CSRF?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.web-attacks.csrf-mechanism
+  - fundamentals.web-attacks.origin-vs-site
+- id: fundamentals.web-attacks.bearer-header-no-csrf
+  subtopic: Cross-site request forgery (CSRF)
+  kind: principle
+  claim: APIs authenticated by an Authorization header aren't vulnerable to CSRF, because browsers don't attach that header to cross-site requests automatically.
+  prompt: 'Why doesn''t CSRF work against an API using Authorization: Bearer?'
+  objectives:
+  - 2
+  requires:
+  - fundamentals.web-attacks.csrf-mechanism
+- id: fundamentals.web-attacks.xss-defeats-csrf-defences
+  subtopic: Cross-site request forgery (CSRF)
+  kind: principle
+  claim: CSRF defences don't stop XSS, because the script is already same-origin and can read the CSRF token; XSS defences don't stop CSRF, because no script is involved.
+  prompt: Why don't CSRF defences protect against XSS, and vice versa?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - fundamentals.web-attacks.csrf-defences
+  - fundamentals.web-attacks.xss-kinds
+- id: fundamentals.web-attacks.cors-preflight
+  subtopic: 'CORS: relaxing the policy on purpose'
+  kind: mechanism
+  claim: CORS lets a server allow scripts from listed origins to read its responses; for non-simple requests (JSON bodies, custom headers, PUT, DELETE) the browser first sends an OPTIONS preflight.
+  prompt: What does CORS control, and when does the browser send a preflight?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.web-attacks.same-origin-policy
+- id: fundamentals.web-attacks.cors-reflect-origin-credentials
+  subtopic: 'CORS: relaxing the policy on purpose'
+  kind: fact
+  claim: 'Reflecting any request Origin into Access-Control-Allow-Origin together with Allow-Credentials: true lets any website read your logged-in users'' data; allow an exact list of origins, and never use * with credentials.'
+  prompt: 'What is the risk of reflecting Origin with Allow-Credentials: true?'
+  objectives:
+  - 3
+  requires:
+  - fundamentals.web-attacks.cors-preflight
+- id: fundamentals.web-attacks.cors-not-server-access-control
+  subtopic: 'CORS: relaxing the policy on purpose'
+  kind: principle
+  claim: CORS is enforced by the browser (curl ignores it) and governs reading responses, so it is not server-side access control, and a simple cross-origin POST still reaches your server.
+  prompt: Is CORS a server-side access control mechanism?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.web-attacks.cors-preflight
+- id: fundamentals.web-attacks.parameterised-queries
+  subtopic: SQL injection
+  kind: principle
+  claim: Building SQL from strings lets data become SQL (name = "admin' --" comments out a check); parameterised queries, which ORMs use outside their raw-SQL escape hatches, send the value separately so it can never be parsed as SQL.
+  prompt: What is the root fix for SQL injection?
+  objectives:
+  - 4
+- id: fundamentals.web-attacks.identifiers-need-allow-list
+  subtopic: SQL injection
+  kind: procedure
+  claim: Parameters can't stand in for identifiers such as table or column names or ORDER BY direction, so map those through an allow list; run the app as a least-privilege database user.
+  prompt: How do you safely let users choose a sort column?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.web-attacks.parameterised-queries
+- id: fundamentals.web-attacks.ssrf-metadata-attack
+  subtopic: Server-side request forgery (SSRF)
+  kind: mechanism
+  claim: 'Features that fetch user-supplied URLs (link previews, webhooks, import from URL) run inside your network, so an attacker can request http://169.254.169.254, the cloud metadata service, and get temporary credentials: the shape of the 2019 Capital One breach.'
+  prompt: How does SSRF steal cloud credentials?
+  objectives:
+  - 4
+- id: fundamentals.web-attacks.ssrf-defences
+  subtopic: Server-side request forgery (SSRF)
+  kind: procedure
+  claim: Defend against SSRF with destination allow lists where possible, otherwise by blocking private, loopback and link-local ranges checked after DNS resolution and on every redirect, and by running fetchers in an isolated network.
+  prompt: Which check best prevents SSRF in a link-preview feature?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.web-attacks.ssrf-metadata-attack
+- id: fundamentals.web-attacks.imdsv2
+  subtopic: Server-side request forgery (SSRF)
+  kind: fact
+  claim: AWS IMDSv2 requires a session token obtained with a PUT, which a GET-only SSRF can't do; it protects the credentials, not the rest of your network.
+  prompt: What does IMDSv2 protect against, and what doesn't it protect?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.web-attacks.ssrf-metadata-attack
+- id: fundamentals.web-attacks.broken-access-control-family
+  subtopic: Broken access control
+  kind: fact
+  claim: 'Broken access control, top of OWASP''s list since 2021, is a family of missing server-side checks: IDOR/BOLA, admin endpoints that answer anyone, mass assignment, and trusting client-supplied prices, user IDs or tenant IDs.'
+  prompt: Which OWASP Top 10 category ranks first, and what forms does it take?
+  objectives:
+  - 5
+  requires:
+  - fundamentals.auth-basics.check-the-object
+- id: fundamentals.web-attacks.uuids-not-a-fix
+  subtopic: Broken access control
+  kind: principle
+  claim: 'Random UUIDs make IDs harder to guess but don''t fix missing access checks: a leaked ID still opens the record.'
+  prompt: Do random UUIDs fix IDOR?
+  objectives:
+  - 5
+  requires:
+  - fundamentals.web-attacks.broken-access-control-family
+items:
+  web-attacks-check-1-v2:
+  - fundamentals.web-attacks.httponly-limits-xss
+  web-attacks-check-2-v2:
+  - fundamentals.web-attacks.cors-reflect-origin-credentials
+  web-attacks-check-3-v2:
+  - fundamentals.web-attacks.bearer-header-no-csrf
+  web-attacks-check-4-v2:
+  - fundamentals.web-attacks.ssrf-defences
+  web-attacks-fire-1-v2:
+  - fundamentals.web-attacks.parameterised-queries
+  web-attacks-fire-2-v2:
+  - fundamentals.web-attacks.csrf-defences
+  web-attacks-fire-3-v2:
+  - fundamentals.web-attacks.broken-access-control-family
+  web-attacks-fire-4-v2:
+  - fundamentals.web-attacks.csp-second-layer
+  web-attacks-fire-5-v2:
+  - fundamentals.web-attacks.cors-not-server-access-control
+  web-attacks:b2:
+  - fundamentals.web-attacks.csp-second-layer
+  - fundamentals.web-attacks.csrf-defences
+  - fundamentals.web-attacks.parameterised-queries
+  web-attacks:b3:
+  - fundamentals.web-attacks.cors-reflect-origin-credentials
+  - fundamentals.web-attacks.identifiers-need-allow-list
+  - fundamentals.web-attacks.ssrf-defences
+  web-attacks:b4:
+  - fundamentals.web-attacks.xss-defeats-csrf-defences
+  - fundamentals.web-attacks.csrf-mechanism
+  - fundamentals.web-attacks.contextual-output-encoding

@@ -1,0 +1,185 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: sql-windows
+source_hash: 2bbed76b7d08419f
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.sql-windows.window-keeps-every-row
+  subtopic: Windows keep the rows
+  kind: mechanism
+  claim: GROUP BY collapses each group to one row, while a window function computes over a group of rows and returns a value for every row, such as each sale's share of its region's total.
+  prompt: How does a window function differ from GROUP BY?
+  objectives:
+  - 0
+- id: fundamentals.sql-windows.over-clause-parts
+  subtopic: Windows keep the rows
+  kind: fact
+  claim: 'OVER has three parts: PARTITION BY (which rows belong together, without collapsing them), ORDER BY (the sequence inside a partition, needed for ranking, LAG/LEAD and running totals) and the frame (which rows around the current one an aggregate sees).'
+  prompt: What are the three parts of an OVER clause?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.sql-windows.window-keeps-every-row
+- id: fundamentals.sql-windows.filter-window-outside
+  subtopic: Ranking and top-N per group
+  kind: principle
+  claim: WHERE runs before window functions, so you can't filter on one directly; compute it in a CTE or subquery and filter outside.
+  prompt: Why does WHERE rn = 1 fail when rn is a ROW_NUMBER in the same SELECT?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.sql-windows.window-keeps-every-row
+- id: fundamentals.sql-windows.top-n-per-group
+  subtopic: Ranking and top-N per group
+  kind: procedure
+  claim: 'Latest row per key, top N per category and deduplicate-keeping-newest are one pattern: ROW_NUMBER() OVER (PARTITION BY key ORDER BY created_at DESC, id DESC) in a CTE, then keep rn = 1 (or rn <= N).'
+  prompt: How do you return each customer's latest order?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.sql-windows.filter-window-outside
+- id: fundamentals.sql-windows.rank-functions-ties
+  subtopic: Ranking and top-N per group
+  kind: fact
+  claim: 'ROW_NUMBER is unique, RANK leaves gaps after ties and DENSE_RANK doesn''t: for 95, 95, 90 the 90 gets RANK 3 and DENSE_RANK 2. Top 3 with ties is RANK <= 3; the third-highest distinct value is DENSE_RANK = 3.'
+  prompt: Scores are 95, 95, 90. What do RANK and DENSE_RANK give the 90?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.sql-windows.over-clause-parts
+- id: fundamentals.sql-windows.row-number-tiebreaker
+  subtopic: Ranking and top-N per group
+  kind: principle
+  claim: ROW_NUMBER picks arbitrarily among ties unless its ORDER BY is unique, so add a tiebreaker such as id to make results repeatable.
+  prompt: How do you make ROW_NUMBER results repeatable?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.sql-windows.rank-functions-ties
+- id: fundamentals.sql-windows.lag-and-lead
+  subtopic: Comparing with neighbours
+  kind: fact
+  claim: LAG(x) and LEAD(x) read the previous and next row in the window without a self-join, such as revenue - LAG(revenue) OVER (ORDER BY day) for the day-on-day change.
+  prompt: Which function gives the previous row's value in a window?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.sql-windows.over-clause-parts
+- id: fundamentals.sql-windows.running-total-and-moving-average
+  subtopic: Comparing with neighbours
+  kind: procedure
+  claim: A running total is SUM(x) OVER (ORDER BY day ROWS UNBOUNDED PRECEDING) and a seven-day moving average is AVG(x) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW).
+  prompt: How do you write a seven-day moving average with a window function?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - fundamentals.sql-windows.over-clause-parts
+- id: fundamentals.sql-windows.default-range-frame-peers
+  subtopic: Comparing with neighbours
+  kind: mechanism
+  claim: With ORDER BY and no frame, the default is RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW, which includes all rows tied on the ORDER BY value, so tied rows share a running total and LAST_VALUE returns the current row; say ROWS when you mean physical rows.
+  prompt: Why can SUM(amount) OVER (ORDER BY day) give two rows the same running total?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - fundamentals.sql-windows.running-total-and-moving-average
+- id: fundamentals.sql-windows.gaps-and-islands
+  subtopic: Comparing with neighbours
+  kind: procedure
+  claim: To find runs of consecutive days, compute day - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day), which is constant within a run, and group by it.
+  prompt: How do you find runs of consecutive active days per user in SQL?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.sql-windows.rank-functions-ties
+- id: fundamentals.sql-windows.cte-inlining
+  subtopic: CTEs and recursion
+  kind: fact
+  claim: A CTE names a subquery so a long query reads top to bottom; since Postgres 12 a CTE referenced once is inlined and optimised like a subquery, and MATERIALIZED forces it to be computed once.
+  prompt: Is a Postgres CTE always computed separately from the main query?
+  objectives:
+  - 3
+- id: fundamentals.sql-windows.recursive-cte
+  subtopic: CTEs and recursion
+  kind: mechanism
+  claim: A recursive CTE has an anchor query that runs once, UNION ALL a recursive step that runs against the previous step's new rows until it adds none; it walks hierarchies like org charts, and graph data needs a cycle guard (a path array or the CYCLE clause).
+  prompt: How does a recursive CTE run, and what must you guard against?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.sql-windows.cte-inlining
+- id: fundamentals.sql-windows.explain-analyze
+  subtopic: Reading a query plan
+  kind: procedure
+  claim: EXPLAIN shows the plan and EXPLAIN (ANALYZE, BUFFERS) runs it, showing actual rows, times and pages; read it inside out, since the most indented nodes run first.
+  prompt: How do you see actual row counts and times for a query plan?
+  objectives:
+  - 4
+- id: fundamentals.sql-windows.scan-node-types
+  subtopic: Reading a query plan
+  kind: fact
+  claim: Seq Scan reads the whole table; Index Scan seeks then visits the table; Index Only Scan never touches the table; Bitmap Heap Scan collects matching pages from an index and reads them in order.
+  prompt: Which plan node never reads the table itself?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.sql-windows.explain-analyze
+- id: fundamentals.sql-windows.estimate-mismatch
+  subtopic: Reading a query plan
+  kind: principle
+  claim: 'A large gap between estimated and actual rows means stale statistics or correlated columns, and the planner chooses badly from there on: a nested loop estimated at 12 rows doing 1.8 million lookups. Run ANALYZE or add extended statistics rather than disabling nested loops.'
+  prompt: A nested loop estimated 12 rows but did 1.8 million. What is the root cause and fix?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.sql-windows.explain-analyze
+- id: fundamentals.sql-windows.sort-spills-to-disk
+  subtopic: Reading a query plan
+  kind: fact
+  claim: A sort shown as external merge has spilled to disk; an index in the right order or more work_mem avoids it.
+  prompt: 'What does ''Sort Method: external merge'' mean, and how do you avoid it?'
+  objectives:
+  - 4
+  requires:
+  - fundamentals.sql-windows.explain-analyze
+- id: fundamentals.sql-windows.three-join-algorithms
+  subtopic: Reading a query plan
+  kind: tradeoff
+  claim: A nested loop looks up matches per outer row and wins with a small outer side and an indexed inner side; a hash join builds a hash table on the smaller input and wins for large unsorted equality joins; a merge join walks two inputs sorted on the key.
+  prompt: Name the three join algorithms and when each wins.
+  objectives:
+  - 4
+items:
+  sql-windows-check-1-v2:
+  - fundamentals.sql-windows.rank-functions-ties
+  sql-windows-check-2-v2:
+  - fundamentals.sql-windows.filter-window-outside
+  sql-windows-check-3-v2:
+  - fundamentals.sql-windows.default-range-frame-peers
+  sql-windows-check-4-v2:
+  - fundamentals.sql-windows.three-join-algorithms
+  sql-windows-fire-1-v2:
+  - fundamentals.sql-windows.lag-and-lead
+  sql-windows-fire-2-v2:
+  - fundamentals.sql-windows.over-clause-parts
+  sql-windows-fire-3-v2:
+  - fundamentals.sql-windows.scan-node-types
+  sql-windows-fire-4-v2:
+  - fundamentals.sql-windows.recursive-cte
+  sql-windows-fire-5-v2:
+  - fundamentals.sql-windows.rank-functions-ties
+  sql-windows:b3:
+  - fundamentals.sql-windows.top-n-per-group
+  - fundamentals.sql-windows.filter-window-outside
+  - fundamentals.sql-windows.lag-and-lead
+  sql-windows:b5:
+  - fundamentals.sql-windows.estimate-mismatch
+  - fundamentals.sql-windows.three-join-algorithms

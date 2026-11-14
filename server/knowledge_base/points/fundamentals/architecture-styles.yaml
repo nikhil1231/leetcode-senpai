@@ -1,0 +1,197 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: architecture-styles
+source_hash: 97f28a46e7c02ebb
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.architecture-styles.layered-architecture-trap
+  subtopic: Structuring one codebase
+  kind: tradeoff
+  claim: A layered architecture (presentation, application, domain, data access) is familiar and fine for CRUD, but every feature touches every layer and the domain tends to depend on the database.
+  prompt: What is the trap in a layered architecture?
+  objectives:
+  - 0
+- id: fundamentals.architecture-styles.hexagonal-ports-adapters
+  subtopic: Structuring one codebase
+  kind: mechanism
+  claim: Hexagonal architecture puts the domain in the middle defining ports (interfaces like OrderRepository) that adapters implement for Postgres, Stripe, HTTP or a test fake; dependencies point inward, so logic is testable without infrastructure and swapping a vendor touches one adapter.
+  prompt: How does hexagonal architecture keep business logic independent of infrastructure?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.architecture-styles.layered-architecture-trap
+  - fundamentals.lld-design.dependency-inversion
+- id: fundamentals.architecture-styles.modular-monolith
+  subtopic: Structuring one codebase
+  kind: tradeoff
+  claim: A modular monolith is one deployable split into business-domain modules, each with its own model, a narrow public interface and ideally its own schema, giving most design benefits of services without network calls, distributed transactions or many pipelines.
+  prompt: What does a modular monolith give you compared with microservices?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.architecture-styles.layered-architecture-trap
+- id: fundamentals.architecture-styles.microservices-costs-benefits
+  subtopic: When to split into services
+  kind: tradeoff
+  claim: Microservices buy independent deployment and scaling per team and fault isolation; they cost network latency and failures, no cross-service joins or transactions, versioned contracts, and platform work such as discovery, tracing and per-service CI and on-call.
+  prompt: What do microservices buy, and what do they cost?
+  objectives:
+  - 0
+- id: fundamentals.architecture-styles.good-reasons-to-split
+  subtopic: When to split into services
+  kind: principle
+  claim: Good reasons to split out a service are teams blocked on each other's releases, very different scaling or reliability needs (GPU transcoding), or a hard isolation boundary (PCI payments); weak reasons are fashion or splitting by technical layer.
+  prompt: Name good and bad reasons to split something into its own service.
+  objectives:
+  - 0
+  requires:
+  - fundamentals.architecture-styles.microservices-costs-benefits
+- id: fundamentals.architecture-styles.distributed-monolith
+  subtopic: When to split into services
+  kind: principle
+  claim: Split along domain boundaries so most changes touch one service; if features regularly need coordinated deploys of several services you have a distributed monolith, with the costs of both styles and the benefits of neither.
+  prompt: Every feature needs four services deployed together in order. What have they built?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.architecture-styles.microservices-costs-benefits
+- id: fundamentals.architecture-styles.ubiquitous-language
+  subtopic: Domain-driven design in five terms
+  kind: fact
+  claim: Ubiquitous language means the words domain experts use appear unchanged in code, so conversations and code don't drift apart.
+  prompt: What is ubiquitous language in DDD?
+  objectives:
+  - 1
+- id: fundamentals.architecture-styles.bounded-context
+  subtopic: Domain-driven design in five terms
+  kind: fact
+  claim: 'A bounded context is a boundary within which one model and its language are consistent: Customer means a payer with a credit limit to billing and a person with tickets to support; contexts translate at their edges and are the natural seams for modules or services.'
+  prompt: What is a bounded context?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.architecture-styles.ubiquitous-language
+- id: fundamentals.architecture-styles.aggregate-boundary
+  subtopic: Domain-driven design in five terms
+  kind: principle
+  claim: An aggregate is a cluster of objects changed together under one root that enforces invariants; transactions shouldn't span aggregates, which reference each other by ID.
+  prompt: What is an aggregate, and how should it relate to transactions?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.architecture-styles.bounded-context
+- id: fundamentals.architecture-styles.domain-events-and-acl
+  subtopic: Domain-driven design in five terms
+  kind: fact
+  claim: Domain events (OrderPlaced, PaymentFailed) are facts that glue contexts together; an anti-corruption layer translates a legacy or third-party model into yours so its concepts don't leak in, essential during migrations.
+  prompt: What does an anti-corruption layer do?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.architecture-styles.bounded-context
+- id: fundamentals.architecture-styles.saga-compensations
+  subtopic: 'Sagas: choreography or orchestration'
+  kind: mechanism
+  claim: A saga runs a cross-service business transaction as a sequence of local transactions, each with a compensating action that semantically undoes it (refund, release stock) if a later step fails; compensations must be idempotent and retried until they succeed.
+  prompt: What is a compensating action in a saga, and what must be true of it?
+  objectives:
+  - 2
+- id: fundamentals.architecture-styles.choreography-vs-orchestration
+  subtopic: 'Sagas: choreography or orchestration'
+  kind: tradeoff
+  claim: Choreography has services react to each other's events, loosely coupled and easy to extend, but the flow exists nowhere in code; orchestration has a coordinator such as Temporal or Step Functions drive each step, making long ordered flows with timeouts and compensations explicit, at the risk of a god service.
+  prompt: When does orchestration beat choreography for a saga?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.architecture-styles.saga-compensations
+- id: fundamentals.architecture-styles.durable-saga-state
+  subtopic: 'Sagas: choreography or orchestration'
+  kind: mechanism
+  claim: A saga's state must be durable (a workflow engine or a saga table updated each step) so a crashed orchestrator resumes where it stopped, and each step needs an idempotency key so a retried charge isn't taken twice; reliable event publishing needs the outbox pattern.
+  prompt: How does a saga survive its orchestrator crashing after the charge step?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.architecture-styles.saga-compensations
+- id: fundamentals.architecture-styles.cqrs
+  subtopic: CQRS and event sourcing
+  kind: tradeoff
+  claim: CQRS sends commands to a write model shaped around invariants and queries to read models shaped for screens, updated from events or CDC; it suits very different read and write shapes or loads, at the cost of eventual consistency and more moving parts.
+  prompt: What is CQRS, and what is its main cost?
+  objectives:
+  - 3
+- id: fundamentals.architecture-styles.event-sourcing
+  subtopic: CQRS and event sourcing
+  kind: tradeoff
+  claim: Event sourcing stores the sequence of events as the source of truth and derives state by replay with snapshots, giving a full audit trail, time travel and replayable read models, at the cost of evolving event schemas forever and a harder mental model; it fits ledgers and bookings, not settings pages.
+  prompt: What is event sourcing, and where does it fit?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.architecture-styles.cqrs
+- id: fundamentals.architecture-styles.strangler-fig-steps
+  subtopic: The strangler fig
+  kind: procedure
+  claim: A strangler fig migration puts a routing facade in front of the legacy system, builds one capability anew behind an anti-corruption layer, routes that slice to it (shadowing first), repeats slice by slice with data synced both ways, and retires the legacy system when nothing routes to it.
+  prompt: What are the steps of a strangler fig migration?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.architecture-styles.domain-events-and-acl
+- id: fundamentals.architecture-styles.big-bang-rewrites-fail
+  subtopic: The strangler fig
+  kind: principle
+  claim: Big-bang rewrites fail because they go years without shipping and then a cutover finds everything the old system did implicitly; incremental slices can each be rolled back by flipping a route.
+  prompt: Why do big-bang rewrites of legacy systems usually fail?
+  objectives:
+  - 4
+- id: fundamentals.architecture-styles.twelve-factor-config-and-state
+  subtopic: The twelve-factor rules
+  kind: fact
+  claim: Twelve-factor apps keep config in the environment so one build runs everywhere, treat backing services as attached resources, and run stateless processes with sessions and files in backing services so any instance can serve any request.
+  prompt: Where should a twelve-factor app keep config and session state?
+  objectives:
+  - 4
+- id: fundamentals.architecture-styles.twelve-factor-operations
+  subtopic: The twelve-factor rules
+  kind: fact
+  claim: Twelve-factor also asks for separate build, release and run stages, port binding, disposability (fast start and graceful shutdown on SIGTERM), dev/prod parity and logs as event streams to stdout.
+  prompt: What does disposability mean in twelve-factor, and where should logs go?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.architecture-styles.twelve-factor-config-and-state
+items:
+  architecture-styles-check-1-v2:
+  - fundamentals.architecture-styles.distributed-monolith
+  architecture-styles-check-2-v2:
+  - fundamentals.architecture-styles.choreography-vs-orchestration
+  architecture-styles-check-3-v2:
+  - fundamentals.architecture-styles.cqrs
+  architecture-styles-check-4-v2:
+  - fundamentals.architecture-styles.saga-compensations
+  architecture-styles-fire-1-v2:
+  - fundamentals.architecture-styles.bounded-context
+  architecture-styles-fire-2-v2:
+  - fundamentals.architecture-styles.strangler-fig-steps
+  architecture-styles-fire-3-v2:
+  - fundamentals.architecture-styles.twelve-factor-config-and-state
+  architecture-styles-fire-4-v2:
+  - fundamentals.architecture-styles.event-sourcing
+  architecture-styles-fire-5-v2:
+  - fundamentals.architecture-styles.domain-events-and-acl
+  architecture-styles:b1:
+  - fundamentals.architecture-styles.good-reasons-to-split
+  - fundamentals.architecture-styles.modular-monolith
+  architecture-styles:b4:
+  - fundamentals.architecture-styles.choreography-vs-orchestration
+  architecture-styles:b8:
+  - fundamentals.architecture-styles.twelve-factor-config-and-state
+  - fundamentals.architecture-styles.twelve-factor-operations

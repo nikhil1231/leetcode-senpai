@@ -1,0 +1,68 @@
+# Layers for the fundamentals knowledge points (see layers.yaml for what each layer means).
+# Keyed by lesson, then point slug. Points in the optional deep-dive lessons are depth without being listed. Hand-tagged.
+os-scheduling:
+  map: [process-vs-thread, threads-cheap-processes-isolated, thread-states, context-switch-cost, scheduling-metrics, round-robin-quantum, priority-inversion]
+  depth: [eevdf-replaced-cfs, cfs-virtual-runtime, per-cpu-queues-affinity, realtime-classes-starve, process-switch-flushes-tlb]
+os-memory:
+  map: [virtual-memory-benefits, pages-and-offsets, tlb-caches-translations, minor-vs-major-faults, copy-on-write-fork, working-set-thrashing]
+  depth: [multi-level-page-tables, clock-second-chance, fifo-belady-anomaly, optimal-replacement-yardstick, lru-scan-weakness]
+os-concurrency:
+  map: [increment-is-not-atomic, race-and-critical-section, mutex-one-holder, semaphore-counting-binary, coffman-conditions, global-lock-order]
+  depth: [compare-and-swap, monitor-definition, limit-contenders, databases-detect-deadlock]
+os-filesystems:
+  map: [inode-holds-metadata-not-name, rename-is-atomic, write-is-not-durable, fsync-guarantee, journaling, atomic-file-replace]
+  depth: [fsync-error-handling, crash-leaves-inconsistent-metadata, copy-on-write-filesystems, inode-exhaustion]
+sql-queries:
+  map: [logical-evaluation-order, inner-left-full-joins, one-to-many-multiplies-rows, three-valued-logic, not-in-null-trap, where-before-having]
+  depth: [null-in-unique-and-group, conditional-aggregates, sum-of-nothing-is-null]
+sql-schema:
+  map: [primary-key-definition, surrogate-plus-unique-natural, constraints-beat-app-checks, normalisation-one-fact-one-place, update-insert-delete-anomalies, many-to-many-join-table, denormalise-after-measuring]
+  depth: [uuidv7-over-uuidv4, postgres-fk-not-indexed, second-normal-form, composite-keys]
+sql-windows:
+  map: [window-keeps-every-row, over-clause-parts, top-n-per-group, rank-functions-ties, lag-and-lead, explain-analyze]
+  depth: [cte-inlining, sort-spills-to-disk, gaps-and-islands, default-range-frame-peers, scan-node-types]
+auth-basics:
+  map: [authn-vs-authz, 401-403-404, fast-hashes-crack, slow-password-hash, server-side-sessions, jwt-cannot-be-revoked, check-the-object]
+  depth: [slow-hash-arithmetic, salt-and-pepper, jwt-signed-not-encrypted]
+oauth-oidc:
+  map: [oauth-replaces-passwords, four-oauth-roles, access-token-not-identity, code-flow-steps, pkce-binds-code, grant-per-client, oidc-id-token]
+  depth: [sender-constrained-tokens, oidc-discovery-and-saml, id-token-validation-nonce, pkce-stops-mobile-interception]
+web-attacks:
+  map: [same-origin-policy, xss-kinds, contextual-output-encoding, csrf-mechanism, csrf-defences, parameterised-queries, ssrf-metadata-attack, broken-access-control-family]
+  depth: [origin-vs-site, imdsv2, cors-preflight, identifiers-need-allow-list]
+lld-design:
+  map: [single-responsibility, open-closed, dependency-inversion, composition-over-inheritance, strategy-pattern, lld-round-steps]
+  depth: [factory-and-builder, singleton-risk, uml-class-relationships, interface-segregation]
+architecture-styles:
+  map: [modular-monolith, microservices-costs-benefits, distributed-monolith, bounded-context, saga-compensations, cqrs, strangler-fig-steps]
+  depth: [ubiquitous-language, durable-saga-state, twelve-factor-operations, event-sourcing]
+testing-strategy:
+  map: [test-pyramid-layers, why-pyramid-shape, flaky-tests, test-double-kinds, consumer-driven-contracts, property-based-testing, four-load-shapes, chaos-experiment-steps]
+  depth: [testing-trophy, coordinated-omission, good-properties, dont-mock-what-you-dont-own]
+java-concurrency:
+  map: [three-concurrency-problems, volatile-not-atomic, atomicity-tools, hashmap-not-thread-safe, lock-ordering-deadlock, pool-sizing-formula, virtual-threads-model]
+  depth: [happens-before-edges, double-checked-locking-volatile, readwrite-stamped-lock, longadder-vs-atomiclong, concurrenthashmap-behaviour, completablefuture-common-pool, virtual-thread-pinning]
+python-runtime:
+  map: [gil-one-thread-bytecode, threads-for-io-bound, processes-for-cpu-bound, gil-not-thread-safe, event-loop-cooperative, blocking-call-freezes-loop]
+  depth: [free-threaded-cpython, keep-task-reference, refcount-and-cycle-collector, tracemalloc-find-allocations, late-binding-closures, is-vs-equals]
+linux-processes:
+  map: [fork-exec-creation, sigterm-vs-sigkill, graceful-shutdown-k8s, exit-code-137, oom-killer, fd-limit-leak, load-average-io]
+  depth: [other-common-signals, pid1-shell-init-fix, vsz-vs-rss, fd-leak-vs-limit, network-kernel-tools, strace-perf-tools, jvm-container-memory]
+networking-stack:
+  map: [dns-resolution-walk, dns-ttl-tradeoff, tcp-handshake-one-rtt, connection-reuse-matters, tls-three-guarantees, cold-start-rtt-count, http2-multiplexing, http3-quic]
+  depth: [tcp-flow-control, time-wait-purpose, ephemeral-port-exhaustion, zero-rtt-replay, debug-tools, close-wait-meaning, dns-load-balancing-coarse, http3-when-it-helps]
+postgres-internals:
+  map: [mvcc-row-versions-xmin-xmax, snapshot-readers-writers-no-block, dead-tuples-vacuum-bloat, isolation-level-snapshots, lost-update-mechanism, lost-update-fixes, ddl-lock-queue-outage]
+  depth: [xid-wraparound, no-dirty-reads, repeatable-read-behaviour, diagnose-lock-outage, replica-lag-conflicts, old-snapshots-block-vacuum]
+kubernetes:
+  map: [container-is-process, reconciliation-loop, workload-object-types, service-stable-endpoint, requests-scheduling, readiness-probe-role, liveness-probe-role, rolling-update-readiness]
+  depth: [namespaces-isolate-view, cgroups-cap-resources, control-plane-components, node-components, qos-classes, pdb-voluntary-disruption, secrets-base64-only]
+aws-core:
+  map: [iam-deny-wins-default-deny, roles-short-lived-credentials, least-privilege, public-vs-private-subnet, security-groups-vs-nacls, lambda-vs-containers, s3-characteristics, survive-az-failure]
+  depth: [nat-cost-fix, vpc-endpoints-for-aws-services, ebs-single-az, lambda-15-minute-limit, iam-policy-structure, savings-plans-spot]
+cicd-iac:
+  map: [fast-ci-feedback, build-once-promote-artifact, rolling-deploy, blue-green-deploy, canary-deploy, backward-compatible-one-step, terraform-plan-state]
+  depth: [supply-chain-hygiene, import-and-state-mv, drift-detection, modules-state-separation, remote-state-locking, forces-replacement-database]
+home-lab:
+  map: [pull-based-deploys, immutable-image-rollback, health-check-gates-deploy, tunnel-outbound-only, access-at-edge, offsite-encrypted-backups, restore-tests]
+  depth: [reaper-levels, fixed-rules-miss-pressure, sqlite-safe-copy, retention-7-4-12, autofix-ladder, no-fix-loops, machines-use-service-tokens]

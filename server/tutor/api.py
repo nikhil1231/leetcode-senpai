@@ -163,9 +163,8 @@ def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Dep
     sc = story.scale(summary)
     done = {r['lesson_id'] for r in store.list_design_records() if r.get('kind') == 'course_lesson' and r.get('tested_out_at')} \
         if section == 'system-design' else set()
-    worked = _worked(store, mine) if section == 'system-design' else set()
     step = progress.next_step(rep, tutor, active, mine[0]['_key'][len(prefix):] if mine else None, done,
-                              sessions=worked, designs=_designs() if section == 'system-design' else (),
+                              sessions=_worked(store, mine), designs=_designs(section),
                               play=_next_level(store) if section == 'system-design' else None)
     # The tutor's own suggestion is offered beside the course order, not over it: following it
     # every time hopped between areas and left lessons behind.
@@ -195,12 +194,12 @@ def _worked(store, mine):
     return out
 
 
-def _designs():
-    """Whole-design lessons in course order with the areas their ideas lean on."""
+def _designs(section='system-design'):
+    """A section's whole-design lessons in course order with the areas their ideas lean on."""
     c, out = kcat.CATALOG, []
-    pts = [p for p in kcat.active(c) if p['section'] == 'system-design']
+    pts = [p for p in kcat.active(c) if p['section'] == section]
     for k, title in lessons.titles().items():
-        if k[0] != 'system-design' or k[1].startswith(lessons.MAP_PREFIX):
+        if k[0] != section or k[1].startswith(lessons.MAP_PREFIX):
             continue
         mine = [p for p in pts if p['lesson'] == k[1]]
         if not mine or mine[0]['category'] not in lessons.DESIGN_AREAS:
@@ -271,7 +270,7 @@ class OverviewStep(BaseModel):
 @router.post('/map/{area}/step')
 def overview_step(area: str, body: OverviewStep, section: Section = 'system-design', store=Depends(store_for)):
     """Where he is in an area overview. A finished step marks its lesson's map ideas as seen (exposures,
-    once each; only system design is layered, so other courses mark none); finishing the overview counts
+    once each); finishing the overview counts
     the area as done for pass one, like a map session."""
     l = lessons.area_map(area, section)
     if not l or not l.get('overview'):
@@ -621,7 +620,7 @@ def _mark_worked(store, s, now):
     """A map session, or a design session opened from pass one, that he took part in counts for pass one."""
     l = lessons.get(s['section'], s['lesson']) or {}
     design = l.get('category') in lessons.DESIGN_AREAS
-    if s['section'] != 'system-design' or not (l.get('map') or design) or s['mode'] != 'teach':
+    if not (l.get('map') or design) or s['mode'] != 'teach':
         return
     if sum(t['role'] == 'learner' for t in s['turns']) < MAP_TURNS:
         return

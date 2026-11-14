@@ -262,7 +262,7 @@ Lesson: {lesson['title']}. {lesson['summary']}
 What it should leave him able to do (a map for you, not a checklist to read out; where he is on each comes with his latest message):
 {objectives}"""]
     if mode == 'teach' and session.get('layer') == 1 and not lesson.get('map'):
-        fixed.append(PASS_ONE)
+        fixed.append(PASS_ONE.format(close=PASS_ONE_SD if lesson.get('section') == 'system-design' else PASS_ONE_TRACK))
     elif mode == 'teach' and not lesson.get('map') and any(v.get('layer', 2) != 2 for v in views):
         fixed.append(layers_text(views))
     if blocks_allowed(mode):
@@ -393,7 +393,9 @@ This session aims for interview-ready: what a strong candidate can explain and d
 
 
 PASS_ONE = """## Pass one: map depth
-He opened this from pass one of the course: the big picture first. Walk the whole design end to end at map depth: the boxes, one request through them, the key choice at each box and its tradeoff, the one or two numbers that drive it. Name the deep dives without doing them, so he knows they're there. Then hand the design over to run in the simulator, and point him at the worked design or the Ripple Ops level for it if there is one. Thirty minutes, not three hours."""
+He opened this from pass one of the course: the big picture first. Walk the whole design end to end at map depth: the boxes, one request through them, the key choice at each box and its tradeoff, the one or two numbers that drive it. Name the deep dives without doing them, so he knows they're there.{close} Thirty minutes, not three hours."""
+PASS_ONE_SD = ' Then hand the design over to run in the simulator, and point him at the worked design or the Ripple Ops level for it if there is one.'
+PASS_ONE_TRACK = ' Then have him sketch it back to you in a few lines: the boxes, what goes wrong first, and how he would measure it.'
 
 
 def layers_text(views):

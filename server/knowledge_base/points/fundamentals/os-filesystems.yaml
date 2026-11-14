@@ -1,0 +1,176 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: os-filesystems
+source_hash: f99ef9e6227f0a12
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.os-filesystems.inode-holds-metadata-not-name
+  subtopic: Inodes and names
+  kind: fact
+  claim: 'A file''s identity is its inode: a numbered record of type, size, owner, permissions, timestamps, link count and pointers to its data (extents in ext4 and XFS); it does not hold the name, which lives in a directory entry mapping names to inode numbers.'
+  prompt: What does an inode hold, and where does a file's name live?
+  objectives:
+  - 0
+- id: fundamentals.os-filesystems.hard-vs-symbolic-link
+  subtopic: Inodes and names
+  kind: fact
+  claim: A hard link is another directory entry for the same inode and can't cross file systems or point at directories; a symbolic link is a small file containing a path, which can point anywhere, including at nothing.
+  prompt: What is the difference between a hard link and a symbolic link?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.os-filesystems.inode-holds-metadata-not-name
+- id: fundamentals.os-filesystems.deleted-open-file-keeps-space
+  subtopic: Inodes and names
+  kind: mechanism
+  claim: A file's data is freed only when its link count reaches zero and no process has it open, so deleting a log file a process still writes to frees no space.
+  prompt: Why does rm on a 20 GB log file sometimes free no disk space?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.os-filesystems.hard-vs-symbolic-link
+- id: fundamentals.os-filesystems.rename-is-atomic
+  subtopic: Inodes and names
+  kind: fact
+  claim: 'rename() within one file system just rewrites directory entries, and POSIX makes it atomic: anyone opening the name sees the old file or the new one, never a mix.'
+  prompt: Which POSIX operation is atomic and used to replace files safely?
+  objectives:
+  - 0
+  - 4
+  requires:
+  - fundamentals.os-filesystems.inode-holds-metadata-not-name
+- id: fundamentals.os-filesystems.inode-exhaustion
+  subtopic: Inodes and names
+  kind: fact
+  claim: A file system can run out of inodes (millions of tiny files) while df still shows free blocks; check with df -i.
+  prompt: A disk has free space but file creation fails with no space left. What do you check?
+  objectives:
+  - 0
+- id: fundamentals.os-filesystems.page-cache-reads
+  subtopic: From write() to the disk
+  kind: mechanism
+  claim: A file descriptor points at an open file table entry holding the offset and the inode; read() copies from the page cache or faults pages in on a miss, so hot files cost no I/O and free memory moves into buff/cache.
+  prompt: Why does free memory seem to disappear into buff/cache on a busy server?
+  objectives:
+  - 1
+- id: fundamentals.os-filesystems.write-is-not-durable
+  subtopic: From write() to the disk
+  kind: mechanism
+  claim: write() copies data into the page cache, marks pages dirty and returns; the kernel writes them back seconds to tens of seconds later, so a successful write() can be lost to power loss.
+  prompt: After write() returns success and the power fails two seconds later, what is in the file?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - fundamentals.os-filesystems.page-cache-reads
+- id: fundamentals.os-filesystems.fsync-guarantee
+  subtopic: From write() to the disk
+  kind: fact
+  claim: fsync(fd) blocks until the file's data and metadata are on stable storage and asks the device to flush its cache; fdatasync skips metadata not needed to read the data, and O_DIRECT bypasses the page cache for databases with their own buffer pools.
+  prompt: Which call guarantees a file's data has reached stable storage, and what is its lighter variant?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-filesystems.write-is-not-durable
+- id: fundamentals.os-filesystems.fsync-error-handling
+  subtopic: From write() to the disk
+  kind: fact
+  claim: If write-back fails, Linux reports the error once on the next fsync and may drop the dirty pages; after finding in 2018 that a retried fsync could report success for unwritten data, Postgres treats an fsync failure as a crash and recovers from its WAL.
+  prompt: Why does Postgres treat an fsync failure as a crash rather than retrying?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-filesystems.fsync-guarantee
+- id: fundamentals.os-filesystems.crash-leaves-inconsistent-metadata
+  subtopic: Crash consistency
+  kind: mechanism
+  claim: Appending a block touches the data block, the inode and the free-block bitmap, so a crash between those writes leaves them inconsistent; old file systems scanned everything with fsck at boot, which took hours on large disks.
+  prompt: Why can a crash in the middle of an append leave a file system inconsistent?
+  objectives:
+  - 3
+- id: fundamentals.os-filesystems.journaling
+  subtopic: Crash consistency
+  kind: mechanism
+  claim: Journaling (ext4, XFS, NTFS) writes intended changes to a log, commits, then applies them in place; recovery replays committed transactions in seconds. ext4's default data=ordered journals metadata only but writes data blocks first, so a crash never exposes another file's stale blocks.
+  prompt: What does ext4's default journaling mode protect after a crash?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-filesystems.crash-leaves-inconsistent-metadata
+- id: fundamentals.os-filesystems.copy-on-write-filesystems
+  subtopic: Crash consistency
+  kind: mechanism
+  claim: 'Copy-on-write file systems (ZFS, btrfs, APFS) never overwrite in place: they write new blocks and atomically switch a root pointer, which also makes snapshots nearly free and lets checksums catch silent corruption.'
+  prompt: How do copy-on-write file systems stay consistent after a crash?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-filesystems.crash-leaves-inconsistent-metadata
+- id: fundamentals.os-filesystems.fs-consistency-not-app-atomicity
+  subtopic: Crash consistency
+  kind: principle
+  claim: Journaling and copy-on-write keep the file system's own bookkeeping sane; they don't make your data durable or your multi-step update atomic.
+  prompt: Does a journaling file system make application updates atomic or durable?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-filesystems.journaling
+- id: fundamentals.os-filesystems.atomic-file-replace
+  subtopic: Updating a file safely
+  kind: procedure
+  claim: 'To replace a file safely: write the new contents to a temporary file in the same directory, fsync it, rename it over the original, then fsync the directory so the rename itself is durable.'
+  prompt: What are the steps to write a file so a crash leaves either the old or the new contents?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.os-filesystems.rename-is-atomic
+  - fundamentals.os-filesystems.fsync-guarantee
+- id: fundamentals.os-filesystems.overwrite-in-place-window
+  subtopic: Updating a file safely
+  kind: principle
+  claim: Overwriting a file in place (open with truncate, write, close) leaves a window where a crash leaves it empty or half-written.
+  prompt: What goes wrong if you update a config file by truncating and rewriting it?
+  objectives:
+  - 4
+- id: fundamentals.os-filesystems.fsync-before-rename
+  subtopic: Updating a file safely
+  kind: mechanism
+  claim: Without fsync before rename, the rename can reach disk before the data and leave the real name pointing at an empty file; this hit many applications on ext4 in 2009, and databases avoid it with a write-ahead log.
+  prompt: Why must the temporary file be fsynced before it is renamed over the original?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.os-filesystems.atomic-file-replace
+items:
+  os-filesystems-check-1-v2:
+  - fundamentals.os-filesystems.deleted-open-file-keeps-space
+  os-filesystems-check-2-v2:
+  - fundamentals.os-filesystems.journaling
+  os-filesystems-check-3-v2:
+  - fundamentals.os-filesystems.fsync-before-rename
+  os-filesystems-check-4-v2:
+  - fundamentals.os-filesystems.hard-vs-symbolic-link
+  os-filesystems-fire-1-v2:
+  - fundamentals.os-filesystems.fsync-guarantee
+  os-filesystems-fire-2-v2:
+  - fundamentals.os-filesystems.inode-holds-metadata-not-name
+  os-filesystems-fire-3-v2:
+  - fundamentals.os-filesystems.rename-is-atomic
+  os-filesystems-fire-4-v2:
+  - fundamentals.os-filesystems.inode-exhaustion
+  os-filesystems-fire-5-v2:
+  - fundamentals.os-filesystems.copy-on-write-filesystems
+  os-filesystems:b1:
+  - fundamentals.os-filesystems.inode-holds-metadata-not-name
+  os-filesystems:b3:
+  - fundamentals.os-filesystems.write-is-not-durable
+  - fundamentals.os-filesystems.fs-consistency-not-app-atomicity
+  os-filesystems:b7:
+  - fundamentals.os-filesystems.atomic-file-replace
+  - fundamentals.os-filesystems.fsync-before-rename

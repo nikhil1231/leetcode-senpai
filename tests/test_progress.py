@@ -158,6 +158,35 @@ def test_layers_are_tallied_per_lesson_and_area():
     assert area(r, 'distributed')['layers'][1]['total'] == 29
 
 
+def test_every_course_is_layered_and_optional_lessons_are_depth():
+    for section in ('ai', 'fundamentals'):
+        pts = [p for p in cat.active(C) if p['section'] == section]
+        assert {p['layer'] for p in pts} == {1, 2, 3}
+        assert all(p['layer'] == cat.DEPTH for p in pts if p['deep'])
+        assert {p['lesson'] for p in pts if p['layer'] == cat.MAP} == {p['lesson'] for p in pts if not p['deep']}
+
+
+def test_layers_files_are_per_section_and_name_real_points(tmp_path):
+    d = tmp_path / 'points' / 'ai'
+    d.mkdir(parents=True)
+    (tmp_path / 'layers-ai.yaml').write_text('rag:\n  map: [no-such-point]\n')
+    with pytest.raises(cat.CatalogError, match='layers-ai.yaml'):
+        cat.load(str(tmp_path / 'points'), layers={'ai': str(tmp_path / 'layers-ai.yaml')})
+
+
+def test_pass_one_runs_for_ai_with_its_designs():
+    r = rep([], section='ai')
+    designs = [{'lesson': 'design-research-agent', 'title': 'Research agent', 'needs': {'retrieval', 'agents'}}]
+    s = progress.next_step(r, tutor=True, designs=designs)
+    assert s['primary']['kind'] == 'map' and s['primary']['area'] == 'models'
+    s = progress.next_step(r, tutor=True, sessions={'retrieval', 'agents'}, designs=designs)
+    assert s['primary']['kind'] == 'learn' and s['primary']['lesson'] == 'design-research-agent' and s['primary']['layer'] == 1
+    done = {a['id'] for a in r['areas']} - set(progress.DESIGN_AREAS)
+    s = progress.next_step(r, tutor=True, sessions=done | {'design-research-agent'}, designs=designs)
+    learn = next(x for x in [s['primary'], *s['alternatives']] if x['kind'] == 'learn')
+    assert learn['layer'] == 2 and learn['why'].startswith('Interview pass')
+
+
 def test_priorities_resume_fix_review():
     wrong = [ans(p, NOW - DAY, False) for p in pids('request-flow', 6)]
     mis = [{'_key': 'drip:g', 'kind': 'gap', 'point': pids('guarantees', 1)[0], 'text': 'name the invariant', 'status': 'open',

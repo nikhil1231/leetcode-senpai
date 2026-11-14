@@ -804,7 +804,9 @@ def test_a_track_overview_is_its_own_lesson_and_page(client):
     assert d['section'] == 'ai' and d['lesson']['id'] == 'map-agents' and not d['resources'] and d['step'] == 0
     assert client.get('/api/tutor/map/agents').status_code == 404   # not a system design area
     r = ok(client.post('/api/tutor/map/agents/step?section=ai', json={'step': 2, 'finished': 0, 'answers': {'b2': True}}))
-    assert r == {'step': 2, 'mapped': False} and not client.store.list_knowledge('knowledge_events')
+    assert r == {'step': 2, 'mapped': False}
+    seen = {p for e in client.store.list_knowledge('knowledge_events') for p in e['points']}
+    assert seen == {p['id'] for p in kcat.active(kcat.CATALOG) if p['section'] == 'ai' and p['lesson'] == 'agents' and p['layer'] == kcat.MAP}
     assert ok(client.post('/api/tutor/map/agents/step?section=ai', json={'step': 6, 'done': True}))['mapped']
     assert client.store.get_knowledge('tutor_memory', 'lesson:ai:map-agents')['overview_answers'] == {'b2': True}
     client.replies.append('Sam wants Assist to tidy up old links. Agent or workflow?')
@@ -812,11 +814,23 @@ def test_a_track_overview_is_its_own_lesson_and_page(client):
     assert r['mode'] == 'review' and 'Step 4:' in client.chats[-1][0]['content']
 
 
+def test_track_overviews_teach_map_ideas_and_finishing_one_counts_for_pass_one(client):
+    pts, _ = lessons.points('fundamentals', 'map-security')
+    assert pts and {p['layer'] for p in pts} == {kcat.MAP} and {p['lesson'] for p in pts} == {'auth-basics', 'oauth-oidc', 'web-attacks'}
+    deep, _ = lessons.points('ai', 'map-inference')   # an optional area has no map ideas: its tour covers them all
+    assert deep and {p['layer'] for p in deep} == {kcat.DEPTH}
+    client.store.put_knowledge('tutor_memory', 'lesson:ai:map-models', {'mapped_at': 1})
+    assert api._worked(client.store, client.store.list_knowledge('tutor_memory')) == {'models'}
+    needs = {d['lesson']: d['needs'] for d in api._designs('ai')}
+    assert needs['design-research-agent'] == {'retrieval', 'agents'} and 'design-inference-platform' not in needs
+
+
 def test_course_categories_say_which_have_a_tour_and_the_palette_lists_them():
     from server import search_index
     from server.tracks import api as tracks_api
     body = tracks_api.get_track('fundamentals', FakeStore('alice'))
     assert all(c['overview'] for c in body['course'])
+    assert body['known']['web-attacks']['layers'][1]['total'] > 0 and body['known']['web-attacks']['state'] == 'new'
     routes = {x['route'] for x in search_index.lessons()}
     assert '#/ai/map/models' in routes and '#/fundamentals/map/quality' in routes and '#/system-design/map/queues' in routes
 

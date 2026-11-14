@@ -1,0 +1,203 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: lld-design
+source_hash: ebe4c554fbee2eec
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.lld-design.single-responsibility
+  subtopic: SOLID
+  kind: principle
+  claim: 'Single responsibility: a class should have one reason to change; an Invoice that calculates totals, renders a PDF and emails itself should split into Invoice, InvoiceRenderer and InvoiceMailer.'
+  prompt: What does the single responsibility principle say, and how would you fix a class that calculates, renders and emails?
+  objectives:
+  - 0
+- id: fundamentals.lld-design.open-closed
+  subtopic: SOLID
+  kind: principle
+  claim: 'Open/closed: code should be open for extension and closed for modification, so a new payment method or pricing rule is a new implementation rather than another case in a switch.'
+  prompt: Which principle does adding a case to a switch for every new carrier break, and what is the fix?
+  objectives:
+  - 0
+- id: fundamentals.lld-design.liskov-substitution
+  subtopic: SOLID
+  kind: principle
+  claim: 'Liskov substitution: a subtype must work anywhere its parent does, honouring its behavioural contract; Square extending Rectangle breaks code that sets width and height independently, and a subclass throwing UnsupportedOperationException is probably not a subtype.'
+  prompt: Why does Square extends Rectangle violate Liskov substitution?
+  objectives:
+  - 0
+- id: fundamentals.lld-design.interface-segregation
+  subtopic: SOLID
+  kind: principle
+  claim: 'Interface segregation: clients shouldn''t depend on methods they don''t use; a Machine interface with print, scan and fax should split into Printer, Scanner and Fax.'
+  prompt: What does interface segregation recommend for a Machine interface with print, scan and fax?
+  objectives:
+  - 0
+- id: fundamentals.lld-design.dependency-inversion
+  subtopic: SOLID
+  kind: principle
+  claim: 'Dependency inversion: high-level policy depends on abstractions, so OrderService takes a PaymentGateway interface through its constructor instead of creating a StripeClient, letting you swap providers and test with a fake.'
+  prompt: What does the D in SOLID say, and how is it usually achieved?
+  objectives:
+  - 0
+- id: fundamentals.lld-design.solid-is-a-means
+  subtopic: SOLID
+  kind: tradeoff
+  claim: 'SOLID is a means, not an end: applied dogmatically to a small script it produces a maze of one-method interfaces, so apply it where change is likely.'
+  prompt: When is applying SOLID everywhere a mistake?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.lld-design.single-responsibility
+- id: fundamentals.lld-design.composition-over-inheritance
+  subtopic: Composition over inheritance
+  kind: tradeoff
+  claim: Inheritance couples a subclass to its parent's internals (the fragile base class) and varies along one axis only, so combinations explode; composition gives an object parts it delegates to (a Duck has a FlyBehaviour), swappable at runtime. Keep inheritance for genuine is-a relationships with shallow hierarchies.
+  prompt: Why is composition often preferred over inheritance?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.lld-design.liskov-substitution
+- id: fundamentals.lld-design.strategy-pattern
+  subtopic: Patterns worth knowing
+  kind: fact
+  claim: Strategy swaps an algorithm at runtime behind one interface, such as discount types, route planners or a token-bucket versus sliding-window rate limiter.
+  prompt: Which pattern swaps an algorithm at runtime behind one interface?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.lld-design.open-closed
+- id: fundamentals.lld-design.observer-pattern
+  subtopic: Patterns worth knowing
+  kind: fact
+  claim: Observer notifies many listeners of a change without the subject knowing who they are, such as an order shipping triggering email, analytics and warehouse updates.
+  prompt: Which pattern lets an order notify email, analytics and the warehouse without knowing about them?
+  objectives:
+  - 1
+- id: fundamentals.lld-design.factory-and-builder
+  subtopic: Patterns worth knowing
+  kind: fact
+  claim: Factory creates objects without naming concrete classes (Notification.create("sms")); Builder constructs complex objects step by step, readably, such as HTTP requests or queries.
+  prompt: What problems do Factory and Builder solve?
+  objectives:
+  - 1
+- id: fundamentals.lld-design.adapter-pattern
+  subtopic: Patterns worth knowing
+  kind: fact
+  claim: Adapter makes an existing interface fit the one you need, such as wrapping a legacy vendor SDK behind your PaymentGateway interface.
+  prompt: Which pattern makes a legacy XML payment SDK usable through your own interface?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.lld-design.dependency-inversion
+- id: fundamentals.lld-design.decorator-pattern
+  subtopic: Patterns worth knowing
+  kind: mechanism
+  claim: Decorator adds behaviour by wrapping an object in another with the same interface, so retries, caching and logging stack in any combination without subclassing.
+  prompt: Which pattern adds retries, caching and logging around a client in different combinations?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.lld-design.composition-over-inheritance
+- id: fundamentals.lld-design.state-pattern
+  subtopic: Patterns worth knowing
+  kind: fact
+  claim: State models an object whose behaviour changes with its state, each state a class handling the same events, as in a vending machine, an order lifecycle or a TCP connection.
+  prompt: Which pattern fits a vending machine that responds differently when idle, holding credit or empty?
+  objectives:
+  - 1
+- id: fundamentals.lld-design.singleton-risk
+  subtopic: Patterns worth knowing
+  kind: tradeoff
+  claim: Singleton gives one shared instance but is hidden global state that couples code and makes testing hard; prefer creating one instance and injecting it. Command represents an action as an object, for undo or job queues.
+  prompt: Why is Singleton considered risky, and what should you do instead?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.lld-design.dependency-inversion
+- id: fundamentals.lld-design.uml-class-relationships
+  subtopic: UML on a whiteboard
+  kind: fact
+  claim: In a class diagram a plain line is association, a hollow diamond on the whole is aggregation (parts can exist alone), a filled diamond is composition (parts die with the whole), a hollow triangle is inheritance, a dashed line with triangle is realisation, and a dashed arrow is dependency; multiplicities go at the ends.
+  prompt: What does a filled diamond mean in a UML class diagram, compared with a hollow one?
+  objectives:
+  - 3
+- id: fundamentals.lld-design.sequence-diagrams
+  subtopic: UML on a whiteboard
+  kind: fact
+  claim: A sequence diagram shows lifelines across the top and messages as arrows down the page in time order, with dashed return arrows; it is the best way to walk one use case and exposes missing responsibilities quickly.
+  prompt: Which diagram shows messages between objects over time for one use case?
+  objectives:
+  - 3
+- id: fundamentals.lld-design.lld-round-steps
+  subtopic: Running the round
+  kind: procedure
+  claim: 'Run an LLD round as: clarify requirements and scope, name entities and responsibilities, sketch the class diagram, walk a use case as a sequence diagram, code the interesting part with interfaces at the seams, handle edge cases and concurrency, then extend the design live with a new requirement.'
+  prompt: What are the steps of a low-level design interview, in order?
+  objectives:
+  - 4
+- id: fundamentals.lld-design.extension-is-the-payoff
+  subtopic: Running the round
+  kind: principle
+  claim: 'Interviewers judge the live extension hardest: a design where a new vehicle type or pricing rule is one new class, with nothing else changing, is the payoff for every earlier step.'
+  prompt: Which step of an LLD round do interviewers judge hardest?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.lld-design.open-closed
+  - fundamentals.lld-design.lld-round-steps
+- id: fundamentals.lld-design.parking-lot-design
+  subtopic: Running the round
+  kind: procedure
+  claim: A parking lot design has ParkingLot, Floor, sized ParkingSpot, Vehicle, Ticket and gates; a SpotAllocator finds a fitting free spot, pricing sits behind a PricingStrategy (new rules as new classes or decorators), payment and storage are injected interfaces, and claiming a spot is atomic so two gates can't hand out the same one.
+  prompt: How does a parking lot design handle a new pricing rule and two gates assigning the same spot?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.lld-design.strategy-pattern
+  - fundamentals.lld-design.dependency-inversion
+  - fundamentals.lld-design.lld-round-steps
+items:
+  lld-design-check-1-v2:
+  - fundamentals.lld-design.liskov-substitution
+  lld-design-check-2-v2:
+  - fundamentals.lld-design.decorator-pattern
+  lld-design-check-3-v2:
+  - fundamentals.lld-design.composition-over-inheritance
+  lld-design-check-4-v2:
+  - fundamentals.lld-design.uml-class-relationships
+  lld-design-fire-1-v2:
+  - fundamentals.lld-design.dependency-inversion
+  lld-design-fire-2-v2:
+  - fundamentals.lld-design.strategy-pattern
+  lld-design-fire-3-v2:
+  - fundamentals.lld-design.state-pattern
+  lld-design-fire-4-v2:
+  - fundamentals.lld-design.singleton-risk
+  lld-design-fire-5-v2:
+  - fundamentals.lld-design.sequence-diagrams
+  lld-design:b1:
+  - fundamentals.lld-design.single-responsibility
+  - fundamentals.lld-design.open-closed
+  - fundamentals.lld-design.liskov-substitution
+  lld-design:b3:
+  - fundamentals.lld-design.strategy-pattern
+  - fundamentals.lld-design.decorator-pattern
+  - fundamentals.lld-design.adapter-pattern
+  lld-design:b4:
+  - fundamentals.lld-design.open-closed
+  - fundamentals.lld-design.dependency-inversion
+  lld-design:b6:
+  - fundamentals.lld-design.uml-class-relationships
+  lld-design:b8:
+  - fundamentals.lld-design.lld-round-steps
+  - fundamentals.lld-design.extension-is-the-payoff
+  lld-design:b9:
+  - fundamentals.lld-design.parking-lot-design
+  - fundamentals.lld-design.strategy-pattern
+  - fundamentals.lld-design.dependency-inversion

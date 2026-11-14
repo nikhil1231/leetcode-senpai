@@ -1,0 +1,65 @@
+# Layers for the ai knowledge points (see layers.yaml for what each layer means).
+# Keyed by lesson, then point slug. Points in the optional deep-dive lessons are depth without being listed. Hand-tagged.
+multi-agent:
+  map: [sub-agents-fresh-context, multi-agent-token-cost, coupled-work-fails-split, orchestrator-worker-briefs, memory-types, memory-persists-injection]
+  depth: [memgpt-vs-simple-memory, shallow-hierarchies, memory-retrieval]
+durable-agents:
+  map: [why-durable-execution, durable-execution-definition, interrupts-for-approval, idempotent-side-effects, reflection-needs-ground-truth, autonomy-set-by-mistake-cost, autonomy-ladder]
+  depth: [workflow-event-history, version-in-flight-runs, reflection-variants, model-calls-as-activities]
+llm-basics:
+  map: [token-definition-and-ratio, everything-metered-in-tokens, latency-formula, context-window-definition, stateless-calls-memory, temperature-choice, hallucination-cause, grounding-reduces-hallucination]
+  depth: [prefill-phase, decode-phase, top-p-top-k, temperature-zero-not-deterministic, token-heavy-content]
+prompting:
+  map: [prompt-five-components, delimit-inputs-as-data, output-contract-schema, validate-in-code, tool-calling-loop, app-executes-tools, eval-before-shipping-prompts]
+  depth: [discardable-reasoning, simple-schemas, constrained-decoding, version-prompts-with-outputs, bounded-repair-then-fallback]
+choosing-models:
+  map: [cheapest-model-that-passes, small-models-narrow-tasks, reasoning-models-think-first, own-evals-over-leaderboards, api-vs-open-weights, fine-tune-behaviour-not-facts]
+  depth: [thinking-cost-arithmetic, no-step-by-step-for-reasoners, distillation, model-tier-price-gap]
+embeddings:
+  map: [embedding-model-vectors, cosine-similarity, topic-over-detail, ann-tradeoff, bm25-vs-vector-strengths, cross-encoder-rerank]
+  depth: [normalisation-dot-product, hnsw-mechanism, hnsw-ef-search, ivf-pq, vector-memory-estimate, reciprocal-rank-fusion]
+rag:
+  map: [rag-pipeline-stages, chunk-size-range, acl-filter-in-search, grounded-prompt, inspect-retrieval-first, retrieval-metrics, finetune-vs-rag]
+  depth: [contextual-retrieval, citation-post-check, query-rewriting, parsing-quality, structured-data-sql]
+evals:
+  map: [eval-three-components, start-small-eval-set, read-outputs-error-analysis, deterministic-scorers-first, judge-for-rubric-criteria, ci-regression-suite, failures-become-eval-cases, always-have-baseline]
+  depth: [judge-position-bias, judge-verbosity-self-preference, overfitting-held-out-set, synthetic-only-data-pitfall, agent-trajectory-evals]
+evals-practice:
+  map: [error-analysis-loop, evaluator-only-for-recurring, code-checks-before-judges, validate-judge-on-held-out, guardrail-vs-evaluator]
+  depth: [correct-judge-rate, tpr-tnr-not-accuracy, pass-k-vs-pass-hat-k, structured-synthetic-data, one-expert-owns-labels]
+agents:
+  map: [simplest-structure-first, agent-when-steps-unknowable, workflow-benefits-over-agent, loop-budgets, trace-every-step, context-growth-problem, human-approval-irreversible, prompt-injection-untrusted-content]
+  depth: [mcp-interface-only, context-management-techniques, stopping-conditions]
+mcp:
+  map: [mcp-m-plus-n, when-plain-function-calling, host-client-server-roles, tools-resources-prompts-control, few-task-level-tools, mcp-results-are-injection]
+  depth: [sampling-roots-elicitation, initialize-capability-negotiation, mcp-json-rpc, list-changed-notifications, stdio-vs-streamable-http, remote-mcp-oauth-flow, cross-server-shadowing]
+serving:
+  map: [cost-per-request-formula, right-size-model-router, prompt-caching-stable-prefix, streaming-perceived-latency, retry-backoff-jitter, fallbacks-graceful-degradation, self-hosting-tradeoff]
+  depth: [kv-cache-limits-concurrency, continuous-batching, quantisation-tradeoff, throughput-vs-latency-batch-size, daily-cost-worked-example, timeouts-sized-to-output]
+guardrails:
+  map: [direct-vs-indirect-injection, models-cannot-separate-instructions, assume-model-fooled-limit-impact, authorisation-in-code, treat-output-untrusted, guardrail-stages]
+  depth: [block-exfiltration-paths, cross-user-leakage, limit-sensitive-logging, output-risks-and-transparency]
+ai-product:
+  map: [scope-the-job-first, check-ai-is-needed, autonomy-from-error-cost, sources-make-checking-cheap, fail-gracefully, implicit-feedback-beats-ratings]
+  depth: [feedback-with-trace-id, avoid-fake-confidence]
+design-support-assistant:
+  map: [resolution-with-recontact-metric, router-first, grounded-rag-with-citations, authorisation-in-code, escalation-triggers-and-handover, offline-eval-set, phased-rollout-shadow-first]
+  depth: [context-management, keeping-docs-fresh, latency-and-cost-levers, per-stage-eval-metrics]
+design-review-assistant:
+  map: [acceptance-rate-metric, precision-over-recall, queue-decouples-webhook, context-assembly, review-then-verify, offline-eval, prompt-injection-permissions]
+  depth: [comment-format, cost-controls, data-handling, diagnose-muting-fix]
+design-extraction-pipeline:
+  map: [straight-through-processing, extract-with-evidence, validate-in-code, route-by-risk-to-review, history-as-labels, shadow-then-safest-slice]
+  depth: [idempotent-by-content-hash, extraction-cost-arithmetic, batch-api-for-pipelines, text-layer-before-vision]
+design-research-agent:
+  map: [agree-time-cost-budget, lead-agent-plans, parallel-subagents-fresh-context, citation-checker, lethal-trifecta, research-agent-evals]
+  depth: [notes-outside-context, agent-input-cost-dominates, citation-precision]
+ai-coding-round:
+  map: [three-round-formats, three-phase-shape, four-scored-areas, control-signal, verification-signal, strong-workflow-order, hour-time-budget]
+  depth: [ask-recruiter-setup, take-home-defend, interview-ai-less-helpful, markdown-down-behaviours]
+ai-debugging:
+  map: [debug-loop-five-steps, hypothesise-out-loud, fix-small-decided, verify-full-checks, good-prompt-anatomy, symptom-fix, stop-after-two-prompts]
+  depth: [swallowed-error, special-casing-test, editing-the-test, invented-api, unjustified-optimisation, scope-creep]
+ai-workflow:
+  map: [delegation-test-checkability-cost, context-quality-drives-output, failing-test-as-spec, plan-before-edit, review-as-author-of-record, strong-answer-anatomy]
+  depth: [avoid-skill-atrophy, measure-impact, use-real-example-with-numbers]

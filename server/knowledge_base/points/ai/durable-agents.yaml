@@ -1,0 +1,188 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: durable-agents
+source_hash: d70ecd4a7ac4a076
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.durable-agents.why-durable-execution
+  subtopic: Why agents need durability
+  kind: principle
+  claim: Long-running agents (a 15-minute research run, a two-day approval wait) meet crashes, deploys, rate limits and human waits; if state lives only in memory each one throws the run away, re-spending tokens, re-asking approvers and repeating side effects.
+  prompt: What goes wrong for a long-running agent whose state lives only in memory?
+  objectives:
+  - 0
+- id: ai.durable-agents.durable-execution-definition
+  subtopic: Why agents need durability
+  kind: fact
+  claim: Durable execution persists a run's progress as it goes, so any worker can pick it up and continue from the last completed step.
+  prompt: What does durable execution mean for an agent run?
+  objectives:
+  - 0
+  requires:
+  - ai.durable-agents.why-durable-execution
+- id: ai.durable-agents.graph-checkpoints
+  subtopic: Why agents need durability
+  kind: mechanism
+  claim: In LangGraph an agent is a graph of nodes joined by edges, some conditional on what the model returned, with a shared state; a checkpointer (in-memory, SQLite, Postgres) saves the state after every step under a thread ID, so runs can resume, be inspected or be rewound and branched.
+  prompt: In LangGraph, what saves the graph's state after every step, and what is it keyed by?
+  objectives:
+  - 1
+  requires:
+  - ai.durable-agents.durable-execution-definition
+- id: ai.durable-agents.workflow-event-history
+  subtopic: Why agents need durability
+  kind: mechanism
+  claim: In Temporal-style workflows every call to the outside world is an activity whose result is recorded in an event history; after a crash the workflow code re-runs and completed activities return their recorded results, fast-forwarding to where it stopped, with timeouts and retries built in.
+  prompt: How does a replay-based workflow engine recover a run after a crash?
+  objectives:
+  - 1
+  requires:
+  - ai.durable-agents.durable-execution-definition
+- id: ai.durable-agents.interrupts-for-approval
+  subtopic: 'Interrupts: waiting for people'
+  kind: mechanism
+  claim: 'A durable agent waits for a person without holding a process: a LangGraph node calls interrupt(payload), the checkpoint is saved and the run stops, and the app later resumes the thread with the answer (Command(resume=...)); Temporal uses signals that may arrive days later.'
+  prompt: How does a durable agent wait days for human approval?
+  objectives:
+  - 1
+  requires:
+  - ai.durable-agents.graph-checkpoints
+- id: ai.durable-agents.approval-design
+  subtopic: 'Interrupts: waiting for people'
+  kind: procedure
+  claim: An approval step should show exactly what will happen (recipient, amount, diff), let the human edit as well as approve or reject, since edits are the best training and eval data, and time out into a safe default such as escalating or cancelling, never proceeding.
+  prompt: What should a human-approval step do if nobody answers before the timeout?
+  objectives:
+  - 1
+  - 4
+  requires:
+  - ai.durable-agents.interrupts-for-approval
+- id: ai.durable-agents.idempotent-side-effects
+  subtopic: Side effects and determinism
+  kind: mechanism
+  claim: A step can run twice on resume when the process dies after it acted but before completion was saved; reads don't mind, but writes need a stable idempotency key (run ID plus step ID) passed to the API, or a recorded intent checked before acting.
+  prompt: An agent crashes after sending an email but before checkpointing. What happens on resume, and how do you prevent harm?
+  objectives:
+  - 2
+  requires:
+  - ai.durable-agents.graph-checkpoints
+- id: ai.durable-agents.model-calls-as-activities
+  subtopic: Side effects and determinism
+  kind: principle
+  claim: Model calls, clocks and random numbers aren't deterministic, so in a replay-based engine they must be activities whose recorded output is reused; a direct call in workflow code would give a different answer on replay and take another path.
+  prompt: Why must an LLM call be an activity in a replay-based workflow engine?
+  objectives:
+  - 2
+  requires:
+  - ai.durable-agents.workflow-event-history
+- id: ai.durable-agents.version-in-flight-runs
+  subtopic: Side effects and determinism
+  kind: procedure
+  claim: A run started under one version of an agent may resume after the next deploy, so version workflows (Temporal's patching) or keep old graph node names working until old threads finish.
+  prompt: How do you deploy a new agent version without breaking runs already in flight?
+  objectives:
+  - 2
+  requires:
+  - ai.durable-agents.workflow-event-history
+- id: ai.durable-agents.reflection-variants
+  subtopic: Reflection
+  kind: fact
+  claim: 'Reflection is a model reviewing its output and trying again: Self-Refine uses the same model to critique and rewrite, evaluator-optimiser uses a separate judge, and Reflexion has the agent write a short lesson from a failed attempt into memory for the retry.'
+  prompt: What does Reflexion add to a retry?
+  objectives:
+  - 3
+- id: ai.durable-agents.reflection-needs-ground-truth
+  subtopic: Reflection
+  kind: principle
+  claim: Reflection works when the critique checks against something real, such as failing tests, compiler errors, a schema validator or an explicit rubric; self-correction with no new information rarely helps reasoning and can turn right answers wrong, because the critic shares the generator's blind spots.
+  prompt: When is a draft-critique-revise loop likely to help, and when not?
+  objectives:
+  - 3
+  requires:
+  - ai.durable-agents.reflection-variants
+- id: ai.durable-agents.cap-reflection-loops
+  subtopic: Reflection
+  kind: procedure
+  claim: Each reflection loop adds latency and cost, so cap iterations at two or three and check with an eval that the loop earns its cost.
+  prompt: How many reflection iterations should you allow, and how do you justify them?
+  objectives:
+  - 3
+  requires:
+  - ai.durable-agents.reflection-needs-ground-truth
+- id: ai.durable-agents.autonomy-set-by-mistake-cost
+  subtopic: Autonomy levels
+  kind: principle
+  claim: 'An agent''s autonomy is a product decision set by the cost of a mistake and how easily it can be undone, not by model capability, and it can differ per action: read freely, draft freely, send with approval, never delete.'
+  prompt: What should most decide an agent's autonomy level for an action?
+  objectives:
+  - 4
+- id: ai.durable-agents.autonomy-ladder
+  subtopic: Autonomy levels
+  kind: fact
+  claim: 'A practical autonomy ladder: suggest (a human acts), act with approval (a human approves each action), act with undo (reversible and visible), act and report (within limits, audited), and autonomous (monitoring and audits only).'
+  prompt: Name the levels of the autonomy ladder from least to most.
+  objectives:
+  - 4
+  requires:
+  - ai.durable-agents.autonomy-set-by-mistake-cost
+- id: ai.durable-agents.move-up-with-evidence
+  subtopic: Autonomy levels
+  kind: procedure
+  claim: Move an action up an autonomy level only when evidence supports it (approval rate near 100%, low edit rate, cheap mistakes), and keep the ability to move it back down.
+  prompt: When should you raise an agent action's autonomy level?
+  objectives:
+  - 4
+  requires:
+  - ai.durable-agents.autonomy-ladder
+- id: ai.durable-agents.expense-agent-design
+  subtopic: Autonomy levels
+  kind: procedure
+  claim: A reliable expense agent runs as a durable workflow keyed by expense ID, waits for manager approval as an interrupt with an escalating timeout, pays and writes the ledger with idempotency keys, records model calls, is versioned, and auto-approves only small in-policy expenses with audits.
+  prompt: What makes a production expense-approval agent reliable?
+  objectives:
+  - 0
+  - 2
+  - 4
+  requires:
+  - ai.durable-agents.interrupts-for-approval
+  - ai.durable-agents.idempotent-side-effects
+  - ai.durable-agents.autonomy-ladder
+items:
+  durable-agents-check-1-v2:
+  - ai.durable-agents.idempotent-side-effects
+  durable-agents-check-2-v2:
+  - ai.durable-agents.model-calls-as-activities
+  durable-agents-check-3-v2:
+  - ai.durable-agents.reflection-needs-ground-truth
+  durable-agents-check-4-v2:
+  - ai.durable-agents.autonomy-set-by-mistake-cost
+  durable-agents-fire-1-v2:
+  - ai.durable-agents.graph-checkpoints
+  durable-agents-fire-2-v2:
+  - ai.durable-agents.interrupts-for-approval
+  durable-agents-fire-3-v2:
+  - ai.durable-agents.reflection-variants
+  durable-agents-fire-4-v2:
+  - ai.durable-agents.autonomy-ladder
+  durable-agents-fire-5-v2:
+  - ai.durable-agents.approval-design
+  durable-agents:b10:
+  - ai.durable-agents.expense-agent-design
+  - ai.durable-agents.interrupts-for-approval
+  - ai.durable-agents.idempotent-side-effects
+  durable-agents:b3:
+  - ai.durable-agents.graph-checkpoints
+  - ai.durable-agents.interrupts-for-approval
+  durable-agents:b5:
+  - ai.durable-agents.idempotent-side-effects
+  durable-agents:b7:
+  - ai.durable-agents.reflection-needs-ground-truth
+  durable-agents:b9:
+  - ai.durable-agents.autonomy-ladder
+  - ai.durable-agents.move-up-with-evidence

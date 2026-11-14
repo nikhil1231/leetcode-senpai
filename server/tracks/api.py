@@ -27,6 +27,14 @@ def lesson_of(track, key):
     return courses.lessons(track)[key]
 
 
+def _known(store, section):
+    """What the knowledge model says you hold per lesson, by layer, from every source (as system design's)."""
+    from ..knowledge_base import api as kb_api, model as kmodel, progress as kprogress
+    now = time.time()
+    c, _, states, seen, mis = kb_api.evidence(store, now)
+    return kprogress.lessons(kmodel.views(c, states, seen, mis, now, kprogress.section_points(c, section)))
+
+
 @router.get('')
 def list_tracks(store=Depends(store_for)):
     """One summary row per track, for the section menu and Senpai."""
@@ -58,6 +66,7 @@ def get_track(track: str, store=Depends(store_for)):
         body = courses.overview(track, records, now, exercises)
         toured = set(overviews.areas(track))
         body['course'] = [{**c, 'overview': c['id'] in toured} for c in body['course']]
+        body['known'] = _known(store, track)
     elif meta['kind'] == 'experience':
         body = experience.overview(records, now, store.get_senpai('senpai', 'job_context'))
     else:

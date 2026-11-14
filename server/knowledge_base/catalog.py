@@ -3,8 +3,9 @@
 `points/<section>/<lesson>.yaml` holds a lesson's points and its item → point map;
 `points/<section>/_practice.yaml` maps items that belong to no lesson (skill drills, estimation
 templates). Titles, categories and order come from the lesson catalogs, never from these files.
-`layers.yaml` ranks system design points into three layers (map, interview, depth; see LAYERS);
-any other point is layer 2. A lesson edited since its points were drafted is reported as stale, and a ledger item with no
+`layers.yaml` (system design) and `layers-<section>.yaml` (the other courses) rank points into three
+layers (map, interview, depth; see LAYERS). A point in an optional deep-dive lesson is depth; any other
+point not listed is layer 2. A lesson edited since its points were drafted is reported as stale, and a ledger item with no
 points as unmapped. Neither is an error: that history just does not reach the knowledge base
 until the points are regenerated. Inconsistent files (duplicate ids, links to unknown points)
 fail loudly at import, like lessons do.
@@ -30,7 +31,8 @@ SECTIONS = {
 }
 SLUG = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
 MAX_POINTS_PER_ITEM = 3
-LAYERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'layers.yaml')
+LAYERS_FILES = {s: os.path.join(os.path.dirname(os.path.abspath(__file__)), 'layers.yaml' if s == 'system-design' else f'layers-{s}.yaml')
+                for s in SECTIONS}
 MAP, INTERVIEW, DEPTH = 1, 2, 3
 LAYERS = {MAP: 'Map', INTERVIEW: 'Interview-ready', DEPTH: 'Depth'}
 
@@ -106,7 +108,7 @@ def _check_point(p, section, lesson, objectives, where):
         raise CatalogError(f'{where}: {p["id"]} names an objective the lesson does not have')
 
 
-def load(folder=HERE, layers_file=None):
+def load(folder=HERE, layers=None):
     """-> {points, aliases, items, item_info, used_by, stale, unmapped, problems}."""
     points, raw_items, item_info, stale, problems, unmapped = {}, {}, {}, [], [], {}
     for section, meta in SECTIONS.items():
@@ -137,7 +139,7 @@ def load(folder=HERE, layers_file=None):
                     'kind': p['kind'], 'claim': p['claim'].strip(), 'prompt': p['prompt'].strip(),
                     'objectives': list(p.get('objectives') or []), 'requires': list(p.get('requires') or []),
                     'same_as': p.get('same_as') or None, 'retired': bool(p.get('retired')), 'order': len(points),
-                    'deep': bool(lesson.get('deep')), 'layer': INTERVIEW}
+                    'deep': bool(lesson.get('deep')), 'layer': DEPTH if lesson.get('deep') else INTERVIEW}
             for item, pids in (doc.get('items') or {}).items():
                 raw_items[item] = (where, pids)
         if PRACTICE in files:
@@ -145,14 +147,15 @@ def load(folder=HERE, layers_file=None):
             for item, pids in (_read(os.path.join(sdir, PRACTICE + '.yaml')).get('items') or {}).items():
                 raw_items[item] = (where, pids)
 
-    layers_file = layers_file or (LAYERS_FILE if folder == HERE else None)
-    for lesson, ranks in (_read(layers_file) if layers_file and os.path.exists(layers_file) else {}).items():
-        for name, layer in (('map', MAP), ('depth', DEPTH)):
-            for slug in (ranks or {}).get(name) or []:
-                pid = point_id('system-design', lesson, slug)
-                if pid not in points:
-                    raise CatalogError(f'layers.yaml: {lesson} names unknown point {pid}')
-                points[pid]['layer'] = layer
+    layers = layers if layers is not None else (LAYERS_FILES if folder == HERE else {})
+    for section, path in layers.items():
+        for lesson, ranks in (_read(path) if os.path.exists(path) else {}).items():
+            for name, layer in (('map', MAP), ('depth', DEPTH)):
+                for slug in (ranks or {}).get(name) or []:
+                    pid = point_id(section, lesson, slug)
+                    if pid not in points:
+                        raise CatalogError(f'{os.path.basename(path)}: {lesson} names unknown point {pid}')
+                    points[pid]['layer'] = layer
 
     aliases = {}
     for pid, p in points.items():

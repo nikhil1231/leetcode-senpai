@@ -1,0 +1,185 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: ai
+lesson: multi-agent
+source_hash: 4bd9259f5cc0ade9
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: ai.multi-agent.single-agent-context-dilution
+  subtopic: Why more than one agent
+  kind: mechanism
+  claim: A single agent accumulates every search result, file and tool output in one context, so cost per step grows and attention to any one thing drops as a broad task proceeds.
+  prompt: Why does a single agent degrade on broad tasks?
+  objectives:
+  - 0
+- id: ai.multi-agent.sub-agents-fresh-context
+  subtopic: Why more than one agent
+  kind: mechanism
+  claim: Splitting work gives each sub-agent a fresh context with only its piece, lets pieces run in parallel, and lets each be specialised with its own prompt, tools and model, so quality holds as breadth grows.
+  prompt: Why does an orchestrator-worker design keep quality up as a research task broadens?
+  objectives:
+  - 0
+  requires:
+  - ai.multi-agent.single-agent-context-dilution
+- id: ai.multi-agent.multi-agent-token-cost
+  subtopic: Why more than one agent
+  kind: fact
+  claim: Anthropic reported its multi-agent research system beat a single agent by about 90% on its internal research eval while using roughly 15 times the tokens of a chat (single agents about 4 times).
+  prompt: Roughly how many times a chat's tokens did Anthropic's multi-agent research system use?
+  objectives:
+  - 0
+  requires:
+  - ai.multi-agent.sub-agents-fresh-context
+- id: ai.multi-agent.coupled-work-fails-split
+  subtopic: Why more than one agent
+  kind: principle
+  claim: 'Splitting fails on coupled work: sub-agents that can''t see each other''s choices make conflicting implicit decisions (two visual styles, two API shapes), and the merge inherits the conflict. Ask whether you''d split it across people who can''t talk to each other.'
+  prompt: Which kind of task is the worst fit for independent worker agents, and why?
+  objectives:
+  - 0
+  requires:
+  - ai.multi-agent.sub-agents-fresh-context
+- id: ai.multi-agent.orchestrator-worker-briefs
+  subtopic: Patterns
+  kind: procedure
+  claim: In orchestrator-worker, a lead plans, briefs workers and synthesises their condensed results; each brief needs an objective, output format, tools, what's out of scope and an effort budget, or workers duplicate each other or wander.
+  prompt: What should a lead agent's brief to a worker include?
+  objectives:
+  - 1
+  requires:
+  - ai.multi-agent.sub-agents-fresh-context
+- id: ai.multi-agent.pipeline-handoffs
+  subtopic: Patterns
+  kind: mechanism
+  claim: A pipeline passes work through agents that each own a stage (triage, specialist, reviewer), and what moves at each hand-off, the full history or a summary, decides what the next agent knows.
+  prompt: What decides what the next agent knows in a pipeline of hand-offs?
+  objectives:
+  - 1
+- id: ai.multi-agent.router-pattern
+  subtopic: Patterns
+  kind: fact
+  claim: 'A router is one classification step that picks which specialised agent or plain workflow handles a request: cheap and predictable.'
+  prompt: What does the router pattern do?
+  objectives:
+  - 1
+- id: ai.multi-agent.generator-critic
+  subtopic: Patterns
+  kind: fact
+  claim: In generator and critic (evaluator-optimiser), one agent drafts and another judges against explicit criteria and sends it back; debate or voting reduces variance on judgement calls at a multiple of the cost.
+  prompt: Which pattern has one agent draft and another judge against criteria?
+  objectives:
+  - 1
+- id: ai.multi-agent.shallow-hierarchies
+  subtopic: Patterns
+  kind: principle
+  claim: Hierarchies of supervisors multiply cost and failure points, so few production systems go more than two levels deep.
+  prompt: Why do production multi-agent systems rarely go more than two levels deep?
+  objectives:
+  - 1
+  requires:
+  - ai.multi-agent.orchestrator-worker-briefs
+- id: ai.multi-agent.plan-outside-context
+  subtopic: Patterns
+  kind: procedure
+  claim: Keep the lead's plan and notes in an external store so they survive context trimming, have workers return condensed summaries with citations, and trace every agent's steps, since debugging emergent multi-agent behaviour without traces is hopeless.
+  prompt: Where should an orchestrator keep its plan, and why trace every agent?
+  objectives:
+  - 1
+  requires:
+  - ai.multi-agent.orchestrator-worker-briefs
+- id: ai.multi-agent.memory-types
+  subtopic: Memory types
+  kind: fact
+  claim: 'Working memory is the current context; semantic memory holds facts about the world and user ("region is eu-west-2"); episodic memory records past experiences (how a failed deploy was fixed); procedural memory is how to do things: system prompt, tools and saved skills.'
+  prompt: Name the four memory types with an example of each.
+  objectives:
+  - 2
+- id: ai.multi-agent.procedural-memory-review
+  subtopic: Memory types
+  kind: principle
+  claim: Procedural memory changes behaviour on every future run, so changes to it deserve the most review.
+  prompt: Which memory type deserves the most review, and why?
+  objectives:
+  - 2
+  requires:
+  - ai.multi-agent.memory-types
+- id: ai.multi-agent.what-to-write
+  subtopic: Designing memory
+  kind: tradeoff
+  claim: Writing everything to memory floods retrieval with noise; common policies are extracting salient facts at session end, an explicit remember() tool, or recording episodes only for failures and corrections.
+  prompt: What policies decide what an agent writes to memory?
+  objectives:
+  - 3
+  requires:
+  - ai.multi-agent.memory-types
+- id: ai.multi-agent.memory-retrieval
+  subtopic: Designing memory
+  kind: mechanism
+  claim: Memory is usually retrieved by embedding similarity combined with recency and importance, filtered by user and project, returning a few relevant items rather than the whole store.
+  prompt: How is agent memory usually retrieved?
+  objectives:
+  - 3
+  requires:
+  - ai.multi-agent.memory-types
+- id: ai.multi-agent.memory-update-forget
+  subtopic: Designing memory
+  kind: procedure
+  claim: Facts change, so store memories with timestamps and sources, let new facts supersede old ones, expire episodes, and let users see and delete what's remembered.
+  prompt: How should agent memory handle facts that change?
+  objectives:
+  - 3
+  requires:
+  - ai.multi-agent.memory-types
+- id: ai.multi-agent.memory-persists-injection
+  subtopic: Designing memory
+  kind: mechanism
+  claim: 'Memory turns a one-off prompt injection into a persistent one: an instruction saved from a phishing email returns in later sessions looking like the user''s preference. Defend by blocking or reviewing writes from untrusted content, storing provenance, confirming outbound actions, scoping per user, and never storing secrets.'
+  prompt: Why is long-term memory a security risk for an agent reading untrusted content, and how do you defend it?
+  objectives:
+  - 3
+  requires:
+  - ai.multi-agent.what-to-write
+- id: ai.multi-agent.memgpt-vs-simple-memory
+  subtopic: Designing memory
+  kind: fact
+  claim: 'MemGPT framed memory like an operating system, with the model paging information in and out of external storage via function calls; most production systems are simpler: a profile document, a fact store with retrieval, and past-session summaries.'
+  prompt: What did MemGPT propose, and what do most production memory systems use instead?
+  objectives:
+  - 3
+  requires:
+  - ai.multi-agent.memory-types
+items:
+  multi-agent-check-1-v2:
+  - ai.multi-agent.sub-agents-fresh-context
+  multi-agent-check-2-v2:
+  - ai.multi-agent.coupled-work-fails-split
+  multi-agent-check-3-v2:
+  - ai.multi-agent.memory-types
+  multi-agent-check-4-v2:
+  - ai.multi-agent.memory-persists-injection
+  multi-agent-fire-1-v2:
+  - ai.multi-agent.multi-agent-token-cost
+  multi-agent-fire-2-v2:
+  - ai.multi-agent.orchestrator-worker-briefs
+  multi-agent-fire-3-v2:
+  - ai.multi-agent.memory-types
+  multi-agent-fire-4-v2:
+  - ai.multi-agent.generator-critic
+  multi-agent-fire-5-v2:
+  - ai.multi-agent.procedural-memory-review
+  multi-agent:b4:
+  - ai.multi-agent.coupled-work-fails-split
+  - ai.multi-agent.sub-agents-fresh-context
+  multi-agent:b6:
+  - ai.multi-agent.memory-types
+  multi-agent:b8:
+  - ai.multi-agent.memory-persists-injection
+  multi-agent:b9:
+  - ai.multi-agent.sub-agents-fresh-context
+  - ai.multi-agent.coupled-work-fails-split
+  - ai.multi-agent.orchestrator-worker-briefs

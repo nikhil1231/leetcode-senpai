@@ -1,0 +1,210 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: os-concurrency
+source_hash: ed12c27a67f81c64
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.os-concurrency.increment-is-not-atomic
+  subtopic: Races and critical sections
+  kind: mechanism
+  claim: count++ is three steps (load, add, store), so two threads interleaving them lose updates.
+  prompt: Why can two threads running count++ lose updates?
+  objectives:
+  - 0
+- id: fundamentals.os-concurrency.race-and-critical-section
+  subtopic: Races and critical sections
+  kind: fact
+  claim: A race condition is code reading and writing shared state whose result depends on timing; the code touching that state is a critical section and needs mutual exclusion.
+  prompt: What is a critical section, and what does it need?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.os-concurrency.increment-is-not-atomic
+- id: fundamentals.os-concurrency.compare-and-swap
+  subtopic: Races and critical sections
+  kind: mechanism
+  claim: Every lock rests on an atomic hardware instruction such as test-and-set, compare-and-swap or load-linked/store-conditional; CAS sets a word to a new value only if it still holds the expected old value, and also powers lock-free counters and queues.
+  prompt: Which hardware instruction underlies most lock-free data structures, and what does it do?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.os-concurrency.race-and-critical-section
+- id: fundamentals.os-concurrency.mutex-one-holder
+  subtopic: The primitives
+  kind: fact
+  claim: A mutex has one holder at a time; other threads block until it is released, and only the holder may unlock it.
+  prompt: What does a mutex guarantee, and who may unlock it?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-concurrency.race-and-critical-section
+- id: fundamentals.os-concurrency.spinlock-when
+  subtopic: The primitives
+  kind: tradeoff
+  claim: A spinlock makes waiters loop instead of sleeping, which beats a context switch only when critical sections are a few hundred nanoseconds and each thread has its own core; modern mutexes spin briefly before sleeping anyway.
+  prompt: When is a spinlock better than a blocking mutex?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-concurrency.mutex-one-holder
+- id: fundamentals.os-concurrency.semaphore-counting-binary
+  subtopic: The primitives
+  kind: mechanism
+  claim: A semaphore is an integer with wait (decrement, block if it would go negative) and signal (increment, wake a waiter); a counting semaphore of N lets up to N threads through, such as a pool of 10 database connections, and a binary one can be signalled by any thread.
+  prompt: What does a counting semaphore initialised to 5 allow?
+  objectives:
+  - 1
+- id: fundamentals.os-concurrency.condition-variable-wait
+  subtopic: The primitives
+  kind: mechanism
+  claim: 'A condition variable lets a thread sleep inside a critical section until a condition might hold: wait atomically releases the mutex and sleeps, then re-acquires it before returning; signal wakes one waiter and broadcast wakes all.'
+  prompt: What does wait(cv, mutex) do with the mutex?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-concurrency.mutex-one-holder
+- id: fundamentals.os-concurrency.monitor-definition
+  subtopic: The primitives
+  kind: fact
+  claim: A monitor is a lock plus its condition variables with every method running under the lock; Java's synchronized with wait/notify and Python's threading.Condition are monitors.
+  prompt: What is a monitor?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-concurrency.condition-variable-wait
+- id: fundamentals.os-concurrency.read-write-lock
+  subtopic: The primitives
+  kind: tradeoff
+  claim: A read-write lock allows many readers or one writer, good for read-heavy data such as a routing table replaced every few minutes, at the risk of starving writers.
+  prompt: When does a read-write lock fit, and what is its risk?
+  objectives:
+  - 1
+- id: fundamentals.os-concurrency.recheck-in-while-loop
+  subtopic: Waiting in a loop
+  kind: principle
+  claim: 'Always re-check a condition in a while loop after waking from wait: under Mesa semantics a signal only makes the waiter runnable and another thread may take the item first, and spurious wakeups are allowed.'
+  prompt: Why must a thread re-check its condition in a while loop after wait() returns?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-concurrency.condition-variable-wait
+- id: fundamentals.os-concurrency.bounded-buffer
+  subtopic: Waiting in a loop
+  kind: procedure
+  claim: 'A bounded buffer uses one lock with two conditions: producers wait in a loop while it is full and notify not-empty, consumers wait in a loop while it is empty and notify not-full.'
+  prompt: How is a correct bounded buffer built from a lock and condition variables?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-concurrency.recheck-in-while-loop
+- id: fundamentals.os-concurrency.coffman-conditions
+  subtopic: Deadlock
+  kind: fact
+  claim: 'Deadlock needs all four Coffman conditions at once: mutual exclusion, hold and wait, no preemption, and circular wait; break any one and it cannot happen.'
+  prompt: What are the four Coffman conditions?
+  objectives:
+  - 3
+- id: fundamentals.os-concurrency.global-lock-order
+  subtopic: Deadlock
+  kind: procedure
+  claim: Acquiring locks in a global order (by account ID, address or a documented hierarchy) breaks circular wait; for transfers, always lock the lower account ID first whichever way the money moves.
+  prompt: How does locking the lower account ID first prevent deadlock, and which condition does it break?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-concurrency.coffman-conditions
+- id: fundamentals.os-concurrency.trylock-backoff
+  subtopic: Deadlock
+  kind: tradeoff
+  claim: Taking all locks at once, or using tryLock and releasing the first lock with a random back-off when the second is busy, breaks hold and wait; timeouts and aborting a transaction break no preemption.
+  prompt: Besides lock ordering, how can you break hold and wait or no preemption?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-concurrency.coffman-conditions
+- id: fundamentals.os-concurrency.transfer-deadlock
+  subtopic: Deadlock
+  kind: mechanism
+  claim: Two transfers that each lock source then destination deadlock when they run in opposite directions, each holding the lock the other needs; a thread dump such as jstack shows each blocked on a lock the other owns.
+  prompt: Why do two concurrent bank transfers sometimes hang, and how would you confirm it?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-concurrency.coffman-conditions
+- id: fundamentals.os-concurrency.databases-detect-deadlock
+  subtopic: Deadlock
+  kind: mechanism
+  claim: 'Databases detect deadlocks instead of preventing them: they find a cycle in the wait-for graph and abort one transaction, which the client should retry; the banker''s algorithm is rarely used because it needs maximum demands in advance.'
+  prompt: How do databases usually handle deadlocks between transactions?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-concurrency.coffman-conditions
+- id: fundamentals.os-concurrency.limit-contenders
+  subtopic: Deadlock
+  kind: mechanism
+  claim: Limiting how many threads contend at once, such as a semaphore with N-1 permits around N resources, makes a full cycle impossible.
+  prompt: How can a semaphore prevent the dining philosophers from deadlocking?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-concurrency.semaphore-counting-binary
+  - fundamentals.os-concurrency.coffman-conditions
+- id: fundamentals.os-concurrency.livelock
+  subtopic: Deadlock's relatives
+  kind: mechanism
+  claim: Livelock is threads changing state in response to each other without progress, as with naive tryLock-and-retry; random back-off breaks the symmetry.
+  prompt: Two threads keep releasing and retrying each other's locks with no progress and no blocking. What is it, and how do you fix it?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.os-concurrency.trylock-backoff
+- id: fundamentals.os-concurrency.starvation-fair-locks
+  subtopic: Deadlock's relatives
+  kind: tradeoff
+  claim: Starvation is one thread never getting a resource because others keep winning, caused by unfair locks, reader-preferring read-write locks or priority schedulers; fair FIFO locks fix it at some cost in throughput.
+  prompt: What causes starvation on locks, and what does fixing it cost?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.os-concurrency.read-write-lock
+items:
+  os-concurrency-check-1-v2:
+  - fundamentals.os-concurrency.recheck-in-while-loop
+  os-concurrency-check-2-v2:
+  - fundamentals.os-concurrency.global-lock-order
+  - fundamentals.os-concurrency.coffman-conditions
+  os-concurrency-check-3-v2:
+  - fundamentals.os-concurrency.spinlock-when
+  os-concurrency-check-4-v2:
+  - fundamentals.os-concurrency.livelock
+  os-concurrency-fire-1-v2:
+  - fundamentals.os-concurrency.semaphore-counting-binary
+  os-concurrency-fire-2-v2:
+  - fundamentals.os-concurrency.compare-and-swap
+  os-concurrency-fire-3-v2:
+  - fundamentals.os-concurrency.databases-detect-deadlock
+  os-concurrency-fire-4-v2:
+  - fundamentals.os-concurrency.monitor-definition
+  os-concurrency-fire-5-v2:
+  - fundamentals.os-concurrency.coffman-conditions
+  os-concurrency:b1:
+  - fundamentals.os-concurrency.mutex-one-holder
+  - fundamentals.os-concurrency.semaphore-counting-binary
+  - fundamentals.os-concurrency.condition-variable-wait
+  os-concurrency:b3:
+  - fundamentals.os-concurrency.recheck-in-while-loop
+  - fundamentals.os-concurrency.bounded-buffer
+  os-concurrency:b6:
+  - fundamentals.os-concurrency.global-lock-order
+  - fundamentals.os-concurrency.transfer-deadlock
+  os-concurrency:b8:
+  - fundamentals.os-concurrency.transfer-deadlock
+  - fundamentals.os-concurrency.global-lock-order
+  - fundamentals.os-concurrency.trylock-backoff

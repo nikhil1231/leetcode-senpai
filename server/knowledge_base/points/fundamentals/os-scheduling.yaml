@@ -1,0 +1,218 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: os-scheduling
+source_hash: 6c8d63a10c4ac0f2
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.os-scheduling.process-vs-thread
+  subtopic: Processes and threads
+  kind: fact
+  claim: A process is a running program with its own address space, open files and credentials; a thread is a line of execution inside a process with its own registers, program counter and stack, sharing the address space with its siblings.
+  prompt: What does a thread have of its own, and what does it share with other threads in its process?
+  objectives:
+  - 0
+- id: fundamentals.os-scheduling.threads-cheap-processes-isolated
+  subtopic: Processes and threads
+  kind: tradeoff
+  claim: Threads are cheap to create and communicate through shared memory but need synchronisation; processes are isolated, so a crash or memory corruption in one stays contained.
+  prompt: What do you gain and lose by using processes instead of threads?
+  objectives:
+  - 0
+- id: fundamentals.os-scheduling.thread-states
+  subtopic: Processes and threads
+  kind: mechanism
+  claim: A thread is running (on a CPU), ready (runnable, waiting for a CPU in the run queue) or blocked (waiting for I/O, a lock, a timer or a signal), plus new and terminated at either end.
+  prompt: What separates a ready thread from a blocked one?
+  objectives:
+  - 0
+- id: fundamentals.os-scheduling.woken-thread-is-ready
+  subtopic: Processes and threads
+  kind: mechanism
+  claim: 'When the event a blocked thread waits for arrives, it becomes ready, not running: it still has to be picked by the scheduler.'
+  prompt: What state is a thread in just after its disk read completes?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.os-scheduling.thread-states
+- id: fundamentals.os-scheduling.context-switch-cost
+  subtopic: Context switches
+  kind: fact
+  claim: A context switch saves one thread's registers and kernel state and restores another's, costing a few microseconds directly; the larger cost is indirect, because the new thread finds the CPU caches and TLB full of someone else's data.
+  prompt: What is the main indirect cost of a context switch?
+  objectives:
+  - 1
+- id: fundamentals.os-scheduling.process-switch-flushes-tlb
+  subtopic: Context switches
+  kind: mechanism
+  claim: A switch between processes also changes the address space, which can flush the TLB; a switch between threads of one process does not.
+  prompt: Why is switching between processes dearer than switching between threads of the same process?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-scheduling.context-switch-cost
+- id: fundamentals.os-scheduling.voluntary-involuntary-switches
+  subtopic: Context switches
+  kind: principle
+  claim: Switches are voluntary when a thread blocks on I/O or a lock and involuntary when the scheduler preempts it; thousands of involuntary switches per second on a busy service usually mean more runnable threads than cores (pidstat -w shows both).
+  prompt: What do many involuntary context switches per second usually indicate?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-scheduling.context-switch-cost
+- id: fundamentals.os-scheduling.preemptive-vs-cooperative
+  subtopic: Context switches
+  kind: tradeoff
+  claim: Preemptive schedulers take the CPU away using a timer interrupt; cooperative scheduling, as in event loops and many green-thread runtimes, only switches when the task yields, so one task that never yields freezes everything.
+  prompt: What goes wrong under cooperative scheduling when one task never yields?
+  objectives:
+  - 1
+- id: fundamentals.os-scheduling.scheduling-metrics
+  subtopic: Scheduling policies
+  kind: fact
+  claim: Turnaround time is arrival to completion, waiting time is time spent ready but not running, and response time is arrival to first run, which is what makes an interactive system feel fast.
+  prompt: Which scheduling metric decides how fast an interactive system feels?
+  objectives:
+  - 2
+- id: fundamentals.os-scheduling.fcfs-convoy-effect
+  subtopic: Scheduling policies
+  kind: mechanism
+  claim: 'Under FCFS one long job ahead of short ones makes them all wait: the convoy effect. Jobs of 24, 3 and 3 ms in that order wait 17 ms on average; shortest first, 3 ms.'
+  prompt: What is the convoy effect?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-scheduling.scheduling-metrics
+- id: fundamentals.os-scheduling.sjf-srtf-minimise-waiting
+  subtopic: Scheduling policies
+  kind: tradeoff
+  claim: SJF minimises average waiting time among non-preemptive policies and SRTF (its preemptive form) minimises it overall, but both need job lengths you rarely know and can starve long jobs.
+  prompt: Which policy minimises average waiting time when job lengths are known and preemption is allowed, and what is its catch?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-scheduling.scheduling-metrics
+  - fundamentals.os-scheduling.fcfs-convoy-effect
+- id: fundamentals.os-scheduling.round-robin-quantum
+  subtopic: Scheduling policies
+  kind: tradeoff
+  claim: Round robin gives each thread a quantum in turn, giving good response time; too small a quantum and switching overhead dominates, too large and it degenerates into FCFS.
+  prompt: What happens to round robin when the quantum is too small or too large?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-scheduling.scheduling-metrics
+  - fundamentals.os-scheduling.context-switch-cost
+- id: fundamentals.os-scheduling.mlfq-learns-short-jobs
+  subtopic: Scheduling policies
+  kind: mechanism
+  claim: MLFQ starts new jobs in the top queue with a short quantum, drops a job that uses its whole quantum a level, and periodically boosts everything back to the top; short and interactive jobs stay high, so it approximates SJF without knowing lengths.
+  prompt: In MLFQ, what happens to a job that uses its entire quantum, and why?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-scheduling.round-robin-quantum
+  - fundamentals.os-scheduling.sjf-srtf-minimise-waiting
+- id: fundamentals.os-scheduling.cfs-virtual-runtime
+  subtopic: How Linux does it
+  kind: mechanism
+  claim: Linux's CFS gives each runnable task a virtual runtime weighted by priority and always runs the task with the least, kept in a red-black tree, so a task that sleeps a lot runs promptly when it wakes.
+  prompt: How does CFS decide which task runs next?
+  objectives:
+  - 3
+- id: fundamentals.os-scheduling.eevdf-replaced-cfs
+  subtopic: How Linux does it
+  kind: fact
+  claim: Linux 6.6 (2023) replaced CFS with EEVDF (earliest eligible virtual deadline first), which keeps the fairness and gives latency-sensitive tasks better guarantees.
+  prompt: What replaced CFS as Linux's default scheduler, and in which kernel?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-scheduling.cfs-virtual-runtime
+- id: fundamentals.os-scheduling.nice-values
+  subtopic: How Linux does it
+  kind: fact
+  claim: Nice values run from -20 (favoured) to 19 (least CPU); each step is roughly a 10% change in relative CPU share under contention, and they don't matter when there is spare CPU.
+  prompt: What does a nice value of 19 mean, and when does it matter?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-scheduling.cfs-virtual-runtime
+- id: fundamentals.os-scheduling.realtime-classes-starve
+  subtopic: How Linux does it
+  kind: fact
+  claim: Real-time classes (SCHED_FIFO, SCHED_RR) always run before normal tasks, so a runaway real-time task can starve the whole machine.
+  prompt: What risk do Linux's real-time scheduling classes carry?
+  objectives:
+  - 3
+- id: fundamentals.os-scheduling.per-cpu-queues-affinity
+  subtopic: How Linux does it
+  kind: mechanism
+  claim: Each CPU has its own run queue; the kernel balances load between them while trying to keep a task on the CPU whose caches it warmed (affinity), and taskset or a cgroup cpuset can pin tasks.
+  prompt: Why does the kernel try to keep a task on the same CPU?
+  objectives:
+  - 3
+- id: fundamentals.os-scheduling.cpu-quota-throttling
+  subtopic: How Linux does it
+  kind: mechanism
+  claim: cgroup CPU quotas, which is what Kubernetes CPU limits are, pause a container once it spends its quota in each 100 ms period, showing up as latency spikes even on an idle node.
+  prompt: Why can a pod with a CPU limit show p99 latency spikes on a mostly idle node?
+  objectives:
+  - 3
+- id: fundamentals.os-scheduling.starvation-and-aging
+  subtopic: Starvation and priority inversion
+  kind: principle
+  claim: Starvation is a runnable task never getting the CPU because others always outrank it; aging fixes it by raising a task's priority the longer it waits, and MLFQ's boost is a form of aging.
+  prompt: How does aging prevent starvation?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.os-scheduling.mlfq-learns-short-jobs
+- id: fundamentals.os-scheduling.priority-inversion
+  subtopic: Starvation and priority inversion
+  kind: mechanism
+  claim: 'Priority inversion: a low-priority task holds a lock a high-priority task needs, and a medium-priority task that needs neither keeps preempting the low one, so the high task waits on the medium one indefinitely.'
+  prompt: Describe priority inversion with three tasks.
+  objectives:
+  - 4
+- id: fundamentals.os-scheduling.priority-inheritance
+  subtopic: Starvation and priority inversion
+  kind: mechanism
+  claim: Priority inheritance makes a task holding a lock that a higher-priority task wants run temporarily at that higher priority, so it can't be preempted by medium work, finishes and releases the lock; it fixed the Mars Pathfinder resets in 1997.
+  prompt: How does priority inheritance fix priority inversion?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.os-scheduling.priority-inversion
+items:
+  os-scheduling-check-1-v2:
+  - fundamentals.os-scheduling.sjf-srtf-minimise-waiting
+  os-scheduling-check-2-v2:
+  - fundamentals.os-scheduling.cpu-quota-throttling
+  os-scheduling-check-3-v2:
+  - fundamentals.os-scheduling.mlfq-learns-short-jobs
+  os-scheduling-check-4-v2:
+  - fundamentals.os-scheduling.priority-inheritance
+  os-scheduling-fire-1-v2:
+  - fundamentals.os-scheduling.fcfs-convoy-effect
+  os-scheduling-fire-2-v2:
+  - fundamentals.os-scheduling.thread-states
+  os-scheduling-fire-3-v2:
+  - fundamentals.os-scheduling.nice-values
+  os-scheduling-fire-4-v2:
+  - fundamentals.os-scheduling.eevdf-replaced-cfs
+  os-scheduling-fire-5-v2:
+  - fundamentals.os-scheduling.context-switch-cost
+  os-scheduling:b1:
+  - fundamentals.os-scheduling.thread-states
+  - fundamentals.os-scheduling.woken-thread-is-ready
+  os-scheduling:b4:
+  - fundamentals.os-scheduling.fcfs-convoy-effect
+  os-scheduling:b6:
+  - fundamentals.os-scheduling.priority-inversion
+  - fundamentals.os-scheduling.priority-inheritance

@@ -1,0 +1,182 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: testing-strategy
+source_hash: 4e15bf07b7ab8569
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.testing-strategy.test-pyramid-layers
+  subtopic: The pyramid
+  kind: fact
+  claim: The test pyramid has many unit tests (in memory, milliseconds, pinning logic), fewer integration tests against real dependencies such as Postgres in a container (catching SQL, serialisation and transaction bugs), and a handful of end-to-end tests for the journeys that make money.
+  prompt: What is each layer of the test pyramid for, and which should have the most tests?
+  objectives:
+  - 0
+- id: fundamentals.testing-strategy.why-pyramid-shape
+  subtopic: The pyramid
+  kind: principle
+  claim: Cost and flakiness grow up the pyramid while the precision of a failure drops; the ice-cream cone of mostly manual and end-to-end tests gives slow feedback and failures nobody can localise.
+  prompt: Why should a test suite be pyramid-shaped rather than an ice-cream cone?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.testing-strategy.test-pyramid-layers
+- id: fundamentals.testing-strategy.testing-trophy
+  subtopic: The pyramid
+  kind: tradeoff
+  claim: The testing trophy argues for more integration tests in front-end and service code where the unit is too thin to isolate; either way, test behaviour through public interfaces as close to real as is still fast and deterministic.
+  prompt: What does the testing trophy argue, and what do it and the pyramid agree on?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.testing-strategy.why-pyramid-shape
+- id: fundamentals.testing-strategy.flaky-tests
+  subtopic: The pyramid
+  kind: principle
+  claim: Flaky tests destroy trust because people re-run until green and miss real failures; the usual causes are sleeps instead of waiting for a condition, shared state, test order, real clocks and network calls, so quarantine and fix them rather than retrying forever.
+  prompt: What usually causes flaky tests, and what should you do about them?
+  objectives:
+  - 0
+- id: fundamentals.testing-strategy.test-double-kinds
+  subtopic: Test doubles
+  kind: fact
+  claim: A dummy fills a parameter and is never used; a stub returns canned answers; a spy is a stub that records calls; a mock is pre-programmed with expectations and fails if calls don't match; a fake is a working simpler implementation such as an in-memory repository.
+  prompt: How do stubs, spies, mocks and fakes differ?
+  objectives:
+  - 1
+- id: fundamentals.testing-strategy.mocks-couple-to-implementation
+  subtopic: Test doubles
+  kind: tradeoff
+  claim: Mocks verify interactions and couple tests to how code works, so behaviour-preserving refactors break them; fakes and stubs let you assert on state and outcomes, which survives refactoring.
+  prompt: A behaviour-preserving refactor breaks 40 tests. What is the likely cause?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.testing-strategy.test-double-kinds
+- id: fundamentals.testing-strategy.dont-mock-what-you-dont-own
+  subtopic: Test doubles
+  kind: procedure
+  claim: 'Don''t mock what you don''t own: wrap a third-party SDK in your own small interface, test your code against a fake of it, and test the adapter against the real thing in a few integration tests.'
+  prompt: How should you test code that uses a third-party SDK?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.testing-strategy.test-double-kinds
+  - fundamentals.lld-design.adapter-pattern
+- id: fundamentals.testing-strategy.consumer-driven-contracts
+  subtopic: Contract tests
+  kind: mechanism
+  claim: In consumer-driven contract testing (Pact), consumer tests record what they need from a mock provider, the contract is published to a broker, the provider's CI replays every consumer's contract against the real provider, and a can-I-deploy check confirms production versions are compatible.
+  prompt: In consumer-driven contract testing, who runs the contract against the real provider?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.testing-strategy.test-pyramid-layers
+- id: fundamentals.testing-strategy.contracts-replace-e2e
+  subtopic: Contract tests
+  kind: tradeoff
+  claim: Contract tests replace most cross-service end-to-end tests and the shared staging bottleneck, and tell providers exactly which fields consumers use; OpenAPI or protobuf compatibility checks cover similar ground with less ceremony.
+  prompt: Why do contract tests replace most end-to-end tests between services?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.testing-strategy.consumer-driven-contracts
+- id: fundamentals.testing-strategy.property-based-testing
+  subtopic: Property-based tests
+  kind: mechanism
+  claim: Property-based tests state something that should hold for all inputs and let a library (Hypothesis, QuickCheck, fast-check) generate hundreds of cases including empty lists, zero, negatives, huge numbers, NaN and unicode, finding bugs example tests miss.
+  prompt: How does a property-based test differ from an example-based one?
+  objectives:
+  - 3
+- id: fundamentals.testing-strategy.shrinking
+  subtopic: Property-based tests
+  kind: mechanism
+  claim: When a generated case fails, the library shrinks it to a minimal failing example, such as total=1, parts=2, which is far easier to debug.
+  prompt: What does shrinking do in property-based testing?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.testing-strategy.property-based-testing
+- id: fundamentals.testing-strategy.good-properties
+  subtopic: Property-based tests
+  kind: procedure
+  claim: Good properties are round trips (decode(encode(x)) == x), invariants (sorting preserves contents and orders the output), oracles (a fast implementation agrees with a slow obvious one) and idempotence (normalise twice equals once).
+  prompt: Name four kinds of property worth testing.
+  objectives:
+  - 3
+  requires:
+  - fundamentals.testing-strategy.property-based-testing
+- id: fundamentals.testing-strategy.four-load-shapes
+  subtopic: 'Performance tests: four shapes'
+  kind: fact
+  claim: A load test checks the SLO at expected peak; a stress test ramps until something breaks to find the ceiling and whether it recovers; a spike test checks autoscaling, pools and caches against a sudden jump; a soak test runs normal load for hours or days to find leaks and slow growth.
+  prompt: What does each of load, stress, spike and soak testing answer?
+  objectives:
+  - 4
+- id: fundamentals.testing-strategy.measure-percentiles-realistically
+  subtopic: 'Performance tests: four shapes'
+  kind: procedure
+  claim: Performance tests should measure p99 and higher latency, error rates and saturation, with a realistic request mix generated from outside the system under test.
+  prompt: What should a performance test measure, and where should load come from?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.testing-strategy.four-load-shapes
+- id: fundamentals.testing-strategy.coordinated-omission
+  subtopic: 'Performance tests: four shapes'
+  kind: mechanism
+  claim: Coordinated omission is a load generator waiting for each slow response before sending the next, so it stops sending exactly when the system struggles and under-reports worst latency; open-model tools such as k6 arrival-rate executors, wrk2 and Gatling open injection avoid it.
+  prompt: What is coordinated omission in load testing, and how do you avoid it?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.testing-strategy.measure-percentiles-realistically
+- id: fundamentals.testing-strategy.chaos-experiment-steps
+  subtopic: Chaos engineering
+  kind: procedure
+  claim: A chaos experiment defines steady state as a business metric (orders per minute, not CPU), hypothesises it holds under a failure, injects the failure (kill instances, add latency, fill a disk), limits the blast radius with a stop button, then learns, fixes and automates it.
+  prompt: What are the steps of a chaos experiment, and what comes first?
+  objectives:
+  - 4
+- id: fundamentals.testing-strategy.untested-resilience-fails
+  subtopic: Chaos engineering
+  kind: principle
+  claim: Resilience features that never run (retries, failover, circuit breakers, autoscaling) don't work when needed; Chaos Monkey made instance loss routine, and game days rehearse bigger scenarios such as region failover with the team that would be paged.
+  prompt: Why practise failures deliberately with chaos experiments and game days?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.testing-strategy.chaos-experiment-steps
+items:
+  testing-strategy-check-1-v2:
+  - fundamentals.testing-strategy.mocks-couple-to-implementation
+  testing-strategy-check-2-v2:
+  - fundamentals.testing-strategy.four-load-shapes
+  testing-strategy-check-3-v2:
+  - fundamentals.testing-strategy.shrinking
+  testing-strategy-check-4-v2:
+  - fundamentals.testing-strategy.consumer-driven-contracts
+  testing-strategy-fire-1-v2:
+  - fundamentals.testing-strategy.test-pyramid-layers
+  testing-strategy-fire-2-v2:
+  - fundamentals.testing-strategy.test-double-kinds
+  testing-strategy-fire-3-v2:
+  - fundamentals.testing-strategy.four-load-shapes
+  testing-strategy-fire-4-v2:
+  - fundamentals.testing-strategy.chaos-experiment-steps
+  testing-strategy-fire-5-v2:
+  - fundamentals.testing-strategy.coordinated-omission
+  testing-strategy:b1:
+  - fundamentals.testing-strategy.test-double-kinds
+  testing-strategy:b3:
+  - fundamentals.testing-strategy.property-based-testing
+  - fundamentals.testing-strategy.shrinking
+  testing-strategy:b7:
+  - fundamentals.testing-strategy.flaky-tests
+  - fundamentals.testing-strategy.test-pyramid-layers
+  - fundamentals.testing-strategy.consumer-driven-contracts

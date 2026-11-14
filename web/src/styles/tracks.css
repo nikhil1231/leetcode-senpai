@@ -317,3 +317,4 @@ body.section-track #active-run, body.section-track .topbar-side, body.section-tr
   .tr-health { position:static; }
   .tr-recent li { grid-template-columns:14px minmax(0,1fr) auto; } .tr-recent small { display:none; }
 }
+.sd-course-category>summary>.tr-tour { grid-column:2/-1; margin-top:12px; }

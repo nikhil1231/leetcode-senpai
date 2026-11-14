@@ -164,10 +164,6 @@
   // ---------- course views ----------
   const C = registry.course;
   const studyCat = (track, c) => (window.StudyPrompt?.button({ section: track, category: c.id }, c.title) || '');
-  function lessonCard(l) {
-    const state = l.checked ? 'Checked ✓' : l.opened ? `${l.activities_done}/${l.interactive} activities` : 'Not started';
-    return `<button type="button" class="sd-lesson-card tr-lesson-card ${l.checked ? 'is-done' : ''}" data-t="lesson" data-id="${l.id}"><span class="sd-eyebrow">${l.minutes} MIN · ${l.held}/${l.items} HELD</span><h3>${esc(l.title)}</h3><p class="tr-card-sum">${esc(l.summary.split('. ')[0])}.</p><span><span>${state}</span><span>Open →</span></span></button>`;
-  }
   const shortTitle = t => { const s = t.replace(/^AI pair round: /, ''); return s[0].toUpperCase() + s.slice(1); };
   const ROUND_STATUS = { solid: 'is-held', learning: 'is-held', shaky: 'is-shaky', fading: 'is-fading' };
   function loopHtml(rounds) {
@@ -186,16 +182,37 @@
   C.practise = hub('practise');
   C.progress = hub('progress');
   C.placement = ctx => window.Hub.placement(ctx.root, ctx.track, ctx.arg, { questionHtml, wireQuestion });
+  // The course map, in system design's format: per area, a ladder of the three layers (overview, interview-ready,
+  // depth) with the overview link in its first step, then lesson rows with a ring per layer.
+  const NO_LAYERS = { 1: { total: 0, seen: 0, held: 0 }, 2: { total: 0, seen: 0, held: 0 }, 3: { total: 0, seen: 0, held: 0 } };
+  function areaLayers(c, known) {
+    const out = JSON.parse(JSON.stringify(NO_LAYERS));
+    c.lessons.forEach(l => { const ls = known?.[l.id]?.layers; if (ls) [1, 2, 3].forEach(n => ['total', 'seen', 'held'].forEach(f => { out[n][f] += ls[n]?.[f] || 0; })); });
+    return out;
+  }
+  const trackStatus = (l, k) => l.checked ? 'Checked' : k?.state === 'covered' ? 'Covered' : l.opened ? `${l.activities_done}/${l.interactive} activities` : 'Not started';
   C.lessons = async ctx => {
     const d = await ctx.call('');
     if (ctx.stale()) return;
-    const tour = c => c.overview ? `<a class="sd-map-link" href="#/${esc(ctx.track)}/map/${esc(c.id)}">Start the overview →</a>` : '';
-    const catHtml = c => `<section class="tr-cat"><div class="tr-cat-head"><h3>${esc(c.title)}${studyCat(ctx.track, c)}</h3><p class="sd-muted">${esc(c.blurb)}</p>${tour(c)}</div><div class="sd-lesson-grid">${c.lessons.map(lessonCard).join('')}</div></section>`;
+    const known = d.known, layered = !!known && Object.keys(known).length > 0, T = esc(ctx.track);
+    const tour = (c, L) => c.overview ? `<a class="sd-map-link" href="#/${T}/map/${esc(c.id)}">${L[1].total && L[1].seen >= L[1].total ? 'Revisit the overview →' : 'Start the overview →'}</a>` : '';
+    const row = (l, n) => `<a class="sd-curriculum-topic hub-learn-row" href="#/${T}/lesson/${esc(l.id)}"><span class="sd-row-number">${String(n + 1).padStart(2, '0')}</span><span class="hub-learn-title">${esc(l.title)}${window.StudyPrompt?.button({ section: ctx.track, lesson: l.id }, l.title) || ''}</span><span class="sd-status ${l.checked ? 'is-done' : ''}">${trackStatus(l, known?.[l.id])}</span>${layered ? window.DesignMap.rings(known?.[l.id]?.layers) : ''}<span class="sd-muted">${l.minutes} min</span></a>`;
+    const head = () => `<div class="sd-lesson-head hub-learn-row" aria-hidden="true"><span></span><span>Lesson</span><span>Status</span>${layered ? '<span class="sd-rings"><span>Overview</span><span>Interview</span><span>Depth</span></span>' : ''}<span>Time</span></div>`;
+    const current = d.course.find(c => c.lessons.some(l => l.id === d.next_lesson?.id))?.id;
+    let number = 0;
+    const catHtml = (c, i) => {
+      const L = areaLayers(c, known), first = number;
+      number += c.lessons.length;
+      const done = c.lessons.filter(l => l.checked).length;
+      const ladder = L[1].total ? window.DesignMap.ladder(L, tour(c, L)) : c.overview ? `<div class="tr-tour">${tour(c, L)}</div>` : '';
+      return `<details class="sd-course-category"${c.id === current ? ' open' : ''}><summary><span class="sd-course-stage">${String(i + 1).padStart(2, '0')}</span><span><strong>${esc(c.title)}${studyCat(ctx.track, c)}</strong><small>${esc(c.blurb)}</small></span><span class="sd-category-total">${done}/${c.lessons.length} lessons checked</span>${ladder}</summary><div class="sd-course-lessons ${layered ? 'has-layers' : ''}">${head()}${c.lessons.map((l, j) => row(l, first + j)).join('')}</div></details>`;
+    };
     const core = d.course.filter(c => !c.deep), deep = d.course.filter(c => c.deep);
     const deepOpen = deep.some(c => c.lessons.some(l => l.opened));
+    const key = layered ? `<p class="sd-layer-key"><span>Each area is learned in three passes: <b>overview</b>, then <b>interview-ready</b>, then <b>depth</b>.</span><span><i class="sd-ring" style="--seen:100%;--held:0%"></i> covered</span><span><i class="sd-ring" style="--seen:100%;--held:100%"></i> you'd recall today</span></p>` : '';
     ctx.root.innerHTML = `<div class="sd-page-intro"><span class="sd-eyebrow">${core.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><h2>The course, in order.</h2><p>Home picks the next lesson for you; open any lesson here when you want to choose.</p></div>${loopHtml(d.rounds)}
-      ${core.map(catHtml).join('')}
-      ${deep.length ? `<details class="tr-deep"${deepOpen ? ' open' : ''}><summary><span class="sd-eyebrow">GOING DEEPER · OPTIONAL · ${deep.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><b>What happens under the hood</b><span class="sd-muted">Not needed for the course or its interviews, and never picked for you. A lesson here starts counting towards what you know once you open it.</span></summary>${deep.map(catHtml).join('')}</details>` : ''}`;
+      ${key}${core.map(catHtml).join('')}
+      ${deep.length ? `<details class="tr-deep"${deepOpen ? ' open' : ''}><summary><span class="sd-eyebrow">GOING DEEPER · OPTIONAL · ${deep.reduce((n, c) => n + c.lessons.length, 0)} LESSONS</span><b>What happens under the hood</b><span class="sd-muted">Not needed for the course or its interviews, and never picked for you. Everything here counts as depth. A lesson starts counting towards what you know once you open it.</span></summary>${deep.map((c, i) => catHtml(c, core.length + i)).join('')}</details>` : ''}`;
     wireActions(ctx.root, { go: n => ctx.go(n.dataset.view), lesson: n => ctx.go('lesson/' + n.dataset.id), exercise: n => ctx.go('exercise/' + n.dataset.id),
       section: n => window.AppSections.select(n.dataset.section, n.dataset.view) });
   };

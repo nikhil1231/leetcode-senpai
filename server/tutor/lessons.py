@@ -13,8 +13,8 @@ key so answers land on the real ledger item), and the map-layer ideas of every l
 Either way its points are the map-layer ideas of every lesson in the area.
 
 The AI and fundamentals courses have overviews too ("map-<category>" in their section), but only
-where one is authored; there is no fallback page, and their points are every idea in the area
-(those courses aren't layered).
+where one is authored; there is no fallback page. Their points are the area's map-layer ideas too,
+or every idea in an area with none tagged.
 """
 import re
 
@@ -28,7 +28,7 @@ from . import overviews
 SECTIONS = ('system-design', 'fundamentals', 'ai')
 NOTES_LIMIT = 32000
 MAP_PREFIX = 'map-'
-DESIGN_AREAS = ('designs', 'casebook')     # whole designs: practised once their areas are mapped, not mapped themselves
+DESIGN_AREAS = ('designs', 'casebook', 'design')     # whole designs (AI's is 'design'): practised once their areas are mapped, not mapped themselves
 MAP_BLOCKS = ('sim', 'outage', 'arch')
 
 
@@ -169,7 +169,8 @@ def points(section, key, catalog=None):
         return [p for p in kcat.active(c) if p['section'] == section and p['lesson'] in area and p['layer'] == kcat.MAP], []
     if key.startswith(MAP_PREFIX):
         area = set(area_lessons(key[len(MAP_PREFIX):], section))
-        return [p for p in kcat.active(c) if p['section'] == section and p['lesson'] in area], []
+        mine = [p for p in kcat.active(c) if p['section'] == section and p['lesson'] in area]
+        return [p for p in mine if p['layer'] == kcat.MAP] or mine, []
     own = [p for p in kcat.active(c) if p['section'] == section and p['lesson'] == key]
     ids = {p['id'] for p in own}
     needed = [c['points'][r] for p in own for r in p['requires'] if r not in ids]

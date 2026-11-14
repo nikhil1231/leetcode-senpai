@@ -199,7 +199,7 @@ def _pass_one(rep, sessions, designs, play, done):
     return out
 
 
-DESIGN_AREAS = ('designs', 'casebook')
+DESIGN_AREAS = ('designs', 'casebook', 'design')   # AI's whole designs are 'design'
 
 
 def next_step(rep, tutor=False, active=None, last_lesson=None, done=(), sessions=(), designs=(), play=None):

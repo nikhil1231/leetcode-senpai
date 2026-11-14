@@ -1,0 +1,192 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: sql-queries
+source_hash: 142b329ab897c3aa
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.sql-queries.logical-evaluation-order
+  subtopic: The order SQL actually runs in
+  kind: fact
+  claim: A SELECT is evaluated logically as FROM and JOIN, WHERE, GROUP BY, HAVING, SELECT (including window functions), DISTINCT, ORDER BY, then LIMIT; the planner may execute physically in another order but the meaning follows this one.
+  prompt: In what logical order are the clauses of a SELECT evaluated?
+  objectives:
+  - 0
+- id: fundamentals.sql-queries.where-cannot-see-aliases
+  subtopic: The order SQL actually runs in
+  kind: principle
+  claim: WHERE can't use a SELECT alias or an aggregate because SELECT and grouping haven't run yet, which is why HAVING exists; ORDER BY can use aliases, and filtering on a window function needs a subquery.
+  prompt: Why does WHERE amount > 100 fail when amount is a SELECT alias?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.sql-queries.logical-evaluation-order
+- id: fundamentals.sql-queries.inner-left-full-joins
+  subtopic: Joins
+  kind: fact
+  claim: An inner join keeps only matching pairs; a left join keeps every left row with NULLs where nothing matched; a full join keeps unmatched rows from both sides.
+  prompt: What happens to unmatched rows under inner, left and full joins?
+  objectives:
+  - 1
+- id: fundamentals.sql-queries.cross-join-row-explosion
+  subtopic: Joins
+  kind: fact
+  claim: A cross join returns every pair, so two 10,000-row tables give 100 million rows; a missing or always-true join condition does the same by accident.
+  prompt: A join of two 10,000-row tables returns 100 million rows. What is the likely cause?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.sql-queries.inner-left-full-joins
+- id: fundamentals.sql-queries.semi-and-anti-joins
+  subtopic: Joins
+  kind: mechanism
+  claim: A semi-join (WHERE EXISTS) returns left rows with at least one match, each once; an anti-join (WHERE NOT EXISTS, or LEFT JOIN with right.id IS NULL) returns left rows with no match.
+  prompt: How do you write a semi-join and an anti-join?
+  objectives:
+  - 1
+  - 4
+  requires:
+  - fundamentals.sql-queries.inner-left-full-joins
+- id: fundamentals.sql-queries.one-to-many-multiplies-rows
+  subtopic: Joins
+  kind: principle
+  claim: A join over a one-to-many relationship multiplies rows (a user with three orders appears three times), so summing a column of the one side afterwards double counts, a bug invisible with one order per user.
+  prompt: Why can summing a user column after joining to orders give the wrong total?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.sql-queries.inner-left-full-joins
+- id: fundamentals.sql-queries.left-join-row-count
+  subtopic: Joins
+  kind: procedure
+  claim: 'A left join returns one row per matching pair plus one NULL-extended row per unmatched left row: 4 users and 6 orders with one user orderless gives 7 rows.'
+  prompt: How many rows does users LEFT JOIN orders return with 6 orders and one user without orders?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.sql-queries.inner-left-full-joins
+- id: fundamentals.sql-queries.on-versus-where-filter
+  subtopic: Joins
+  kind: principle
+  claim: ON decides which rows match and WHERE filters the joined result; a WHERE condition on the right table of a left join removes the NULL-extended rows and turns it into an inner join, so it belongs in ON if unmatched left rows should survive.
+  prompt: Where should a condition on the right-hand table of a LEFT JOIN go, and why?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.sql-queries.inner-left-full-joins
+  - fundamentals.sql-queries.logical-evaluation-order
+- id: fundamentals.sql-queries.three-valued-logic
+  subtopic: NULL and three-valued logic
+  kind: mechanism
+  claim: NULL means unknown, so any comparison with it (even NULL = NULL) is unknown, and WHERE keeps only rows where the condition is true; WHERE city <> 'London' drops NULL cities. Use IS NULL, or IS DISTINCT FROM to compare treating NULLs as equal.
+  prompt: What does NULL = NULL evaluate to, and how do you test for a missing value?
+  objectives:
+  - 2
+- id: fundamentals.sql-queries.not-in-null-trap
+  subtopic: NULL and three-valued logic
+  kind: mechanism
+  claim: x NOT IN (subquery) returns no rows at all once the subquery yields a NULL, because x <> NULL is unknown for every x; NOT EXISTS has no such trap.
+  prompt: Why can WHERE id NOT IN (SELECT user_id FROM orders) return nothing?
+  objectives:
+  - 2
+  - 4
+  requires:
+  - fundamentals.sql-queries.three-valued-logic
+- id: fundamentals.sql-queries.count-star-vs-column
+  subtopic: NULL and three-valued logic
+  kind: fact
+  claim: COUNT(*) counts rows, including the NULL-filled ones an outer join adds; COUNT(col) skips NULLs, and SUM, AVG, MIN and MAX ignore NULLs, so AVG of 10, NULL and 20 is 15.
+  prompt: How do COUNT(*) and COUNT(column) differ, and what is AVG of 10, NULL and 20?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.sql-queries.three-valued-logic
+- id: fundamentals.sql-queries.null-in-unique-and-group
+  subtopic: NULL and three-valued logic
+  kind: fact
+  claim: A UNIQUE constraint allows many NULLs in most databases (Postgres 15 added NULLS NOT DISTINCT), while GROUP BY and DISTINCT treat NULLs as one group; COALESCE substitutes a default.
+  prompt: How do UNIQUE constraints and GROUP BY treat NULLs?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.sql-queries.three-valued-logic
+- id: fundamentals.sql-queries.group-by-select-rule
+  subtopic: Grouping and aggregates
+  kind: fact
+  claim: After GROUP BY every SELECT column must be grouped or aggregated (Postgres also allows columns functionally dependent on a grouped primary key).
+  prompt: What may appear in the SELECT list of a grouped query?
+  objectives:
+  - 3
+- id: fundamentals.sql-queries.where-before-having
+  subtopic: Grouping and aggregates
+  kind: principle
+  claim: Filter rows with WHERE before grouping, which is cheap and can use an index, and filter groups by an aggregate with HAVING; a non-aggregate condition in HAVING works but groups everything first.
+  prompt: When does a condition belong in WHERE rather than HAVING?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.sql-queries.logical-evaluation-order
+  - fundamentals.sql-queries.group-by-select-rule
+- id: fundamentals.sql-queries.conditional-aggregates
+  subtopic: Grouping and aggregates
+  kind: procedure
+  claim: 'Conditional aggregates count several things in one pass: COUNT(*) FILTER (WHERE status = ''refunded'') in Postgres, or SUM(CASE WHEN ... THEN 1 ELSE 0 END) anywhere.'
+  prompt: How do you count refunded and paid orders in a single grouped pass?
+  objectives:
+  - 3
+- id: fundamentals.sql-queries.sum-of-nothing-is-null
+  subtopic: Grouping and aggregates
+  kind: fact
+  claim: SUM over no rows is NULL, not zero, so wrap it in COALESCE(SUM(x), 0); NULLs sort first in DESC order in Postgres unless you add NULLS LAST.
+  prompt: What does SUM return over no rows, and how do you report zero instead?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.sql-queries.count-star-vs-column
+- id: fundamentals.sql-queries.subquery-kinds
+  subtopic: Subqueries and EXISTS
+  kind: fact
+  claim: A scalar subquery returns one value usable anywhere a value is; IN (subquery) suits positive membership; EXISTS and NOT EXISTS are correlated subqueries that stop at the first match and are planned as efficient semi- and anti-joins.
+  prompt: Why are EXISTS and NOT EXISTS efficient?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.sql-queries.semi-and-anti-joins
+items:
+  sql-queries-check-1-v2:
+  - fundamentals.sql-queries.where-cannot-see-aliases
+  sql-queries-check-2-v2:
+  - fundamentals.sql-queries.left-join-row-count
+  sql-queries-check-3-v2:
+  - fundamentals.sql-queries.count-star-vs-column
+  sql-queries-check-4-v2:
+  - fundamentals.sql-queries.not-in-null-trap
+  - fundamentals.sql-queries.semi-and-anti-joins
+  sql-queries-fire-1-v2:
+  - fundamentals.sql-queries.three-valued-logic
+  sql-queries-fire-2-v2:
+  - fundamentals.sql-queries.where-before-having
+  sql-queries-fire-3-v2:
+  - fundamentals.sql-queries.count-star-vs-column
+  sql-queries-fire-4-v2:
+  - fundamentals.sql-queries.cross-join-row-explosion
+  sql-queries-fire-5-v2:
+  - fundamentals.sql-queries.logical-evaluation-order
+  sql-queries:b1:
+  - fundamentals.sql-queries.logical-evaluation-order
+  - fundamentals.sql-queries.where-cannot-see-aliases
+  sql-queries:b5:
+  - fundamentals.sql-queries.not-in-null-trap
+  sql-queries:b7:
+  - fundamentals.sql-queries.on-versus-where-filter
+  - fundamentals.sql-queries.count-star-vs-column
+  - fundamentals.sql-queries.sum-of-nothing-is-null
+  sql-queries:b9:
+  - fundamentals.sql-queries.semi-and-anti-joins
+  - fundamentals.sql-queries.on-versus-where-filter
+  - fundamentals.sql-queries.where-before-having

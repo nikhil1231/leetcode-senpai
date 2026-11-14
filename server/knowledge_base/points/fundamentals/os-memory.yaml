@@ -1,0 +1,187 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: os-memory
+source_hash: '1244688446569109'
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.os-memory.virtual-memory-benefits
+  subtopic: Why virtual memory
+  kind: principle
+  claim: Each process gets its own virtual address space, translated by the MMU to physical addresses; this gives isolation (a bad pointer faults instead of corrupting another process), a large contiguous address space for every program, and lazy allocation, file mapping and sharing.
+  prompt: What three things does virtual memory buy a process?
+  objectives:
+  - 0
+- id: fundamentals.os-memory.pages-and-offsets
+  subtopic: Why virtual memory
+  kind: fact
+  claim: Memory is managed in pages, usually 4 KiB on x86-64 (16 KiB on Apple Silicon); a virtual address splits into a page number and an offset, and translation changes only the page number.
+  prompt: What is the default page size on x86-64, and which part of an address does translation change?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.os-memory.virtual-memory-benefits
+- id: fundamentals.os-memory.multi-level-page-tables
+  subtopic: Page tables and the TLB
+  kind: mechanism
+  claim: A page table maps virtual pages to physical frames with permission and status bits (present, accessed, dirty); because a flat table for a 48-bit space would need 2^36 entries, x86-64 uses a four-level tree (five on the newest CPUs) with no entries for unused regions.
+  prompt: Why does x86-64 use a multi-level page table rather than a flat one?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.os-memory.pages-and-offsets
+- id: fundamentals.os-memory.tlb-caches-translations
+  subtopic: Page tables and the TLB
+  kind: mechanism
+  claim: The TLB caches recent virtual-to-physical translations, from a few dozen to a couple of thousand entries; a hit costs nothing extra, a miss costs a page-table walk, and switching process flushes entries or tags them with an address-space ID.
+  prompt: What does the TLB cache, and what does a miss cost?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.os-memory.multi-level-page-tables
+- id: fundamentals.os-memory.tlb-reach
+  subtopic: Page tables and the TLB
+  kind: procedure
+  claim: 'TLB reach is entries times page size: 1,536 entries with 4 KiB pages map 6 MiB, so a 64 GiB buffer pool touched at random misses the TLB almost every time.'
+  prompt: How much memory can a 1,536-entry TLB map with 4 KiB pages?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.os-memory.tlb-caches-translations
+- id: fundamentals.os-memory.huge-pages-raise-reach
+  subtopic: Page tables and the TLB
+  kind: tradeoff
+  claim: 2 MiB huge pages make each TLB entry map 512 times more memory (1,536 entries reach 3 GiB), which helps big-heap programs like Postgres and JVMs; Transparent Huge Pages does it automatically but its compaction causes latency spikes, so several databases advise explicit huge pages instead.
+  prompt: Why do huge pages help a database with a large buffer pool, and why do some databases turn THP off?
+  objectives:
+  - 4
+  requires:
+  - fundamentals.os-memory.tlb-reach
+- id: fundamentals.os-memory.minor-vs-major-faults
+  subtopic: Page faults
+  kind: fact
+  claim: A minor fault maps a page already in memory (first touch of new memory, a cached library page, a copy-on-write copy) in microseconds; a major fault must read from disk (an uncached mapped file or swapped-out page) and takes milliseconds; an invalid access becomes SIGSEGV.
+  prompt: What separates a minor page fault from a major one?
+  objectives:
+  - 1
+- id: fundamentals.os-memory.demand-paging
+  subtopic: Page faults
+  kind: mechanism
+  claim: Demand paging means malloc of 1 GiB only reserves address space and frames are allocated on first touch, which is why virtual size (VSZ) is much larger than resident size (RSS).
+  prompt: Why is a process's VSZ often far larger than its RSS?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-memory.minor-vs-major-faults
+- id: fundamentals.os-memory.copy-on-write-fork
+  subtopic: Page faults
+  kind: mechanism
+  claim: After fork() parent and child share every page read-only; the first write to a page faults and copies just that page, which makes fork cheap, though copying page tables of a 100 GiB process still takes noticeable time.
+  prompt: Why is fork() fast even for a process using many gigabytes?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-memory.minor-vs-major-faults
+- id: fundamentals.os-memory.redis-snapshot-cow-growth
+  subtopic: Page faults
+  kind: tradeoff
+  claim: A forked snapshot (Redis BGSAVE) under heavy writes copies every page the parent touches, so memory can approach double; leave headroom, snapshot from a replica, and disable THP so a one-byte write copies 4 KiB, not 2 MiB.
+  prompt: Why does memory climb towards double while Redis runs BGSAVE under write load?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.os-memory.copy-on-write-fork
+  - fundamentals.os-memory.huge-pages-raise-reach
+- id: fundamentals.os-memory.optimal-replacement-yardstick
+  subtopic: Page replacement
+  kind: principle
+  claim: Belady's OPT evicts the page whose next use is furthest in the future; it is unbeatable but needs the future, so it is the yardstick for real policies.
+  prompt: Which replacement policy is optimal but impossible to implement?
+  objectives:
+  - 2
+- id: fundamentals.os-memory.fifo-belady-anomaly
+  subtopic: Page replacement
+  kind: fact
+  claim: 'FIFO evicts the oldest-loaded page regardless of use and suffers Belady''s anomaly: on some reference strings, more frames give more faults; stack algorithms such as LRU and OPT never do.'
+  prompt: What is Belady's anomaly, and which policies are immune?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-memory.optimal-replacement-yardstick
+- id: fundamentals.os-memory.lru-and-its-cost
+  subtopic: Page replacement
+  kind: tradeoff
+  claim: LRU evicts the least recently used page and works when the recent past predicts the near future, but exact LRU needs work on every access, too expensive to do in hardware.
+  prompt: Why isn't exact LRU used for page replacement?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-memory.optimal-replacement-yardstick
+- id: fundamentals.os-memory.clock-second-chance
+  subtopic: Page replacement
+  kind: mechanism
+  claim: Clock arranges pages in a circle with a hardware-set reference bit; the hand sweeps, clearing set bits and evicting the first page whose bit is already clear, a cheap LRU approximation (Linux refines it with active and inactive lists).
+  prompt: How does the Clock algorithm choose a page to evict?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-memory.lru-and-its-cost
+- id: fundamentals.os-memory.lru-scan-weakness
+  subtopic: Page replacement
+  kind: principle
+  claim: A loop over data slightly bigger than memory, or one big sequential scan, makes LRU evict exactly the pages needed next, so databases use scan-resistant variants such as clock-sweep with usage counts, LRU-K or a probation queue.
+  prompt: What access pattern is LRU's worst case, and how do databases defend against it?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.os-memory.lru-and-its-cost
+- id: fundamentals.os-memory.working-set-thrashing
+  subtopic: Working sets and thrashing
+  kind: mechanism
+  claim: 'If the working sets of running processes don''t fit in RAM the system thrashes: every process keeps faulting pages back in and evicting pages others need, so the CPU idles, the disk saturates and throughput collapses; more processes make it worse.'
+  prompt: A box shows an idle CPU, a saturated disk and constant swapping. What is happening?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-memory.minor-vs-major-faults
+- id: fundamentals.os-memory.swap-purpose-and-policy
+  subtopic: Working sets and thrashing
+  kind: tradeoff
+  claim: Swap holds evicted anonymous pages (heap and stack, which have no file to re-read); a little lets idle pages move out of the way, but latency-sensitive services often run with swap off or low swappiness and rely on the OOM killer, since a swapping server is slower than a restarted one.
+  prompt: What is swap for, and why do many latency-sensitive services avoid it?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.os-memory.working-set-thrashing
+items:
+  os-memory-check-1-v2:
+  - fundamentals.os-memory.tlb-caches-translations
+  os-memory-check-2-v2:
+  - fundamentals.os-memory.copy-on-write-fork
+  os-memory-check-3-v2:
+  - fundamentals.os-memory.fifo-belady-anomaly
+  os-memory-check-4-v2:
+  - fundamentals.os-memory.working-set-thrashing
+  os-memory-fire-1-v2:
+  - fundamentals.os-memory.pages-and-offsets
+  os-memory-fire-2-v2:
+  - fundamentals.os-memory.minor-vs-major-faults
+  os-memory-fire-3-v2:
+  - fundamentals.os-memory.optimal-replacement-yardstick
+  os-memory-fire-4-v2:
+  - fundamentals.os-memory.clock-second-chance
+  os-memory-fire-5-v2:
+  - fundamentals.os-memory.huge-pages-raise-reach
+  os-memory:b1:
+  - fundamentals.os-memory.tlb-reach
+  - fundamentals.os-memory.huge-pages-raise-reach
+  os-memory:b3:
+  - fundamentals.os-memory.redis-snapshot-cow-growth
+  - fundamentals.os-memory.copy-on-write-fork
+  os-memory:b7:
+  - fundamentals.os-memory.minor-vs-major-faults

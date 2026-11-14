@@ -1,0 +1,210 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: oauth-oidc
+source_hash: 91746db00b5adccf
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-14'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.oauth-oidc.oauth-replaces-passwords
+  subtopic: What OAuth is for
+  kind: principle
+  claim: OAuth replaces handing an app your password with a token granting that app specific access (scopes such as photos.read) for a limited time, which the user can revoke without changing their password.
+  prompt: What problem does OAuth solve?
+  objectives:
+  - 0
+- id: fundamentals.oauth-oidc.four-oauth-roles
+  subtopic: What OAuth is for
+  kind: fact
+  claim: 'OAuth has four roles: the resource owner (the user), the client (the app wanting access), the authorization server (signs in, asks consent, issues tokens) and the resource server (the API that accepts the token).'
+  prompt: What are the four OAuth roles?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.oauth-oidc.oauth-replaces-passwords
+- id: fundamentals.oauth-oidc.access-token-not-identity
+  subtopic: What OAuth is for
+  kind: principle
+  claim: An access token is meant for the resource server; the client shouldn't read it, and obtaining one does not prove who the user is. OpenID Connect fills that gap.
+  prompt: Does receiving an OAuth access token prove the user's identity to the client?
+  objectives:
+  - 0
+  - 3
+  requires:
+  - fundamentals.oauth-oidc.four-oauth-roles
+- id: fundamentals.oauth-oidc.code-flow-steps
+  subtopic: The authorization code flow with PKCE
+  kind: procedure
+  claim: In the code flow the app redirects the browser to /authorize with client_id, redirect_uri, scope, state and code_challenge; the user signs in and consents; the server redirects back with a one-time code; the app exchanges code and code_verifier at /token on the back channel for an access and refresh token.
+  prompt: Walk through the authorization code flow with PKCE.
+  objectives:
+  - 1
+  requires:
+  - fundamentals.oauth-oidc.four-oauth-roles
+- id: fundamentals.oauth-oidc.code-not-token-in-browser
+  subtopic: The authorization code flow with PKCE
+  kind: principle
+  claim: The browser only sees a short-lived single-use code, because URLs leak into history, logs and Referer headers; tokens travel only on the back channel.
+  prompt: Why does the authorization server return a code to the browser rather than the token?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.oauth-oidc.code-flow-steps
+- id: fundamentals.oauth-oidc.pkce-binds-code
+  subtopic: The authorization code flow with PKCE
+  kind: mechanism
+  claim: PKCE sends a hash of a per-flow secret (code_challenge) up front and requires the secret (code_verifier) to redeem the code, so a stolen code is useless to anyone who didn't start the flow; it is recommended for every client by RFC 9700 and OAuth 2.1.
+  prompt: What does PKCE add to the authorization code flow?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.oauth-oidc.code-flow-steps
+- id: fundamentals.oauth-oidc.pkce-stops-mobile-interception
+  subtopic: The authorization code flow with PKCE
+  kind: mechanism
+  claim: Without PKCE, a malicious app registering the same custom URL scheme can receive a mobile app's code and redeem it, since a public client has no secret; PKCE or claimed HTTPS redirect links (Universal Links, App Links) prevent it.
+  prompt: Without PKCE, what can a malicious app with the same URL scheme do?
+  objectives:
+  - 1
+  - 4
+  requires:
+  - fundamentals.oauth-oidc.pkce-binds-code
+- id: fundamentals.oauth-oidc.state-against-login-csrf
+  subtopic: The authorization code flow with PKCE
+  kind: mechanism
+  claim: A random state per login, stored in the session and checked on callback, ties the callback to the browser that started it, stopping login CSRF where an attacker's callback signs a victim into the attacker's account; PKCE also defeats it.
+  prompt: How does the state parameter prevent login CSRF?
+  objectives:
+  - 1
+  - 4
+  requires:
+  - fundamentals.oauth-oidc.code-flow-steps
+- id: fundamentals.oauth-oidc.exact-redirect-uri
+  subtopic: The authorization code flow with PKCE
+  kind: principle
+  claim: The authorization server must match redirect_uri exactly; prefix matching lets the victim's code go to an attacker's lookalike URL, and PKCE doesn't help because the attacker started the flow with their own verifier.
+  prompt: Which attack does PKCE not stop, and what does?
+  objectives:
+  - 1
+  - 4
+  requires:
+  - fundamentals.oauth-oidc.pkce-binds-code
+- id: fundamentals.oauth-oidc.grant-per-client
+  subtopic: Choosing a grant
+  kind: fact
+  claim: Web apps, SPAs and mobile apps use authorization code with PKCE (confidential web apps add a client secret, mobile uses the system browser); a backend service with no user uses client credentials; a TV or CLI uses the device authorization grant.
+  prompt: Which grant fits a backend job, a TV app and an SPA?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.oauth-oidc.code-flow-steps
+- id: fundamentals.oauth-oidc.implicit-and-password-retired
+  subtopic: Choosing a grant
+  kind: fact
+  claim: The implicit grant (token in the redirect URL fragment) and the resource owner password grant (the app collects the password) are retired.
+  prompt: Which OAuth grants are retired, and why?
+  objectives:
+  - 2
+- id: fundamentals.oauth-oidc.spa-backend-for-frontend
+  subtopic: Choosing a grant
+  kind: tradeoff
+  claim: An SPA is a public client using code plus PKCE, ideally through a backend-for-frontend so tokens stay off the browser.
+  prompt: How should an SPA keep OAuth tokens out of the browser?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.oauth-oidc.grant-per-client
+  - fundamentals.auth-basics.token-storage-xss-csrf
+- id: fundamentals.oauth-oidc.access-token-audience
+  subtopic: Tokens in practice
+  kind: mechanism
+  claim: Access tokens are short-lived and carry an audience; they are opaque (checked by introspection) or JWTs verified with keys from the JWKS endpoint, and an API must check aud or a token issued for one API works on all of them.
+  prompt: Why must a resource server check the aud of an access token?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.auth-basics.jwt-verify-signature
+- id: fundamentals.oauth-oidc.scopes-are-not-permissions
+  subtopic: Tokens in practice
+  kind: principle
+  claim: Scopes say what the app may do on the user's behalf, not what the user may do; the API still checks that this user may touch this object.
+  prompt: Do OAuth scopes replace per-object authorisation checks?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.auth-basics.check-the-object
+- id: fundamentals.oauth-oidc.refresh-rotation-reuse
+  subtopic: Tokens in practice
+  kind: mechanism
+  claim: 'Refresh tokens are long-lived and powerful: rotate them on every use, and if an already-rotated one is presented again, revoke the whole family, since reuse means one was stolen.'
+  prompt: What should the server do when a rotated refresh token is presented again?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.auth-basics.jwt-cannot-be-revoked
+- id: fundamentals.oauth-oidc.sender-constrained-tokens
+  subtopic: Tokens in practice
+  kind: fact
+  claim: Sender-constrained tokens (DPoP or mutual TLS) bind a token to a key the client holds, so a leaked bearer token alone isn't enough.
+  prompt: What do DPoP and mTLS-bound tokens protect against?
+  objectives:
+  - 1
+- id: fundamentals.oauth-oidc.oidc-id-token
+  subtopic: 'OpenID Connect: login on top of OAuth'
+  kind: fact
+  claim: 'OIDC adds the openid scope to the code flow and returns an ID token: a JWT for the client (aud = client_id) saying who signed in, when and how; the client reads it, while the access token goes to the API unread, and ID tokens are never sent to APIs.'
+  prompt: How does an ID token differ from an access token?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.oauth-oidc.access-token-not-identity
+- id: fundamentals.oauth-oidc.id-token-validation-nonce
+  subtopic: 'OpenID Connect: login on top of OAuth'
+  kind: procedure
+  claim: The client validates an ID token's signature from the provider's JWKS, iss, aud equal to its client_id and exp, plus the nonce it sent, which stops replay of an old ID token.
+  prompt: What stops an old ID token being replayed into a new login?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.oauth-oidc.oidc-id-token
+  - fundamentals.auth-basics.jwt-verify-signature
+- id: fundamentals.oauth-oidc.oidc-discovery-and-saml
+  subtopic: 'OpenID Connect: login on top of OAuth'
+  kind: fact
+  claim: OIDC discovery (/.well-known/openid-configuration) publishes the endpoints and keys, so sign-in takes a few lines with a library; SAML does the same job with XML assertions and remains common for workforce single sign-on.
+  prompt: What does OIDC discovery publish, and what older standard does the same job in enterprises?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.oauth-oidc.oidc-id-token
+items:
+  oauth-oidc-check-1-v2:
+  - fundamentals.oauth-oidc.code-not-token-in-browser
+  oauth-oidc-check-2-v2:
+  - fundamentals.oauth-oidc.exact-redirect-uri
+  oauth-oidc-check-3-v2:
+  - fundamentals.oauth-oidc.oidc-id-token
+  oauth-oidc-check-4-v2:
+  - fundamentals.oauth-oidc.refresh-rotation-reuse
+  oauth-oidc-fire-1-v2:
+  - fundamentals.oauth-oidc.grant-per-client
+  oauth-oidc-fire-2-v2:
+  - fundamentals.oauth-oidc.pkce-binds-code
+  oauth-oidc-fire-3-v2:
+  - fundamentals.oauth-oidc.implicit-and-password-retired
+  oauth-oidc-fire-4-v2:
+  - fundamentals.oauth-oidc.id-token-validation-nonce
+  oauth-oidc-fire-5-v2:
+  - fundamentals.oauth-oidc.grant-per-client
+  oauth-oidc:b5:
+  - fundamentals.oauth-oidc.grant-per-client
+  oauth-oidc:b7:
+  - fundamentals.oauth-oidc.pkce-stops-mobile-interception
+  - fundamentals.oauth-oidc.pkce-binds-code
+  oauth-oidc:b8:
+  - fundamentals.oauth-oidc.state-against-login-csrf
+  - fundamentals.oauth-oidc.pkce-binds-code
