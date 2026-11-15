@@ -47,12 +47,20 @@ def test_prompts_carry_the_claims_and_keep_notes_off_the_poster():
 
 def test_each_poster_gets_a_style_unlike_the_recent_ones():
     seen, library = [], []
-    for i in range(len(wall_gen.STYLES)):
+    light = len(wall_gen.STYLES) - len(wall_gen.DARK)
+    for i in range(light):
         st = wall_gen.pick_style(library, 'jc')
         seen.append(st['name'])
         library.append({'ok': True, 'created_at': i, 'style': st['name']})
-    assert len(set(seen)) == len(wall_gen.STYLES)                       # every look before any repeats
-    assert wall_gen.pick_style(library, 'jc')['name'] == seen[0]        # then the one used longest ago
+    assert len(set(seen)) == light                                       # different looks each time
+    for i in range(light, 40):
+        st = wall_gen.pick_style(library, 'jc')
+        seen.append(st['name'])
+        library.append({'ok': True, 'created_at': i, 'style': st['name']})
+    assert set(seen) == {s['name'] for s in wall_gen.STYLES}             # every look comes round
+    darks = [i for i, s in enumerate(seen) if s in wall_gen.DARK]
+    assert darks and all(b - a > wall_gen.DARK_GAP for a, b in zip(darks, darks[1:]))   # dark ones rarely: one night slot a day
+    assert wall_gen.pick_style(library[:light], 'jc')['name'] not in seen[:light]       # then one unused or used longest ago
     assert wall_gen.pick_style([{'ok': True, 'created_at': 1}], 'jc')['name'] != 'spectrum'   # old posters count as spectrum
     st = wall_gen.pick_style(library, 'jc')
     assert {c[1] for c in st['palette']} == {c[1] for c in wall_gen.PALETTE}              # always the same colours...

@@ -10,12 +10,12 @@ infographic of a whole lesson you have covered and hold badly, every weak idea o
 server/wall_gen.py makes them in the background on a cadence (an image model draws, a second
 model reviews) and keeps them; this module decides which lessons need one and which poster is up
 now. The poster changes only in waking hours, so the one up overnight was also up all evening
-and none is seen only asleep. Without a model, or before the first poster, a plain card stands in.
+and none is seen only asleep. Dark posters go up only at night (the day's last slot, or from 21:00), light ones by day. Without a model, or before the first poster, a plain card stands in.
 
 Surfaces: /wall cycles posters full screen (a TV, a projector, a Mac screensaver, a phone on
 StandBy); /wall?print=1 lays six out for a weekly colour print. Showing a poster records nothing,
 because a screen on the wall is not proof anyone looked. Pure: weight, posters, struggles, brief,
-wake_slot, shelf, current, rotate, to_make, stalest, fading_map. I/O: render_card, fit_image, the router.
+wake_slot, is_night, shelf, current, rotate, to_make, stalest, fading_map. I/O: render_card, fit_image, the router.
 Intent: docs/plans/ambient-learning.md.
 """
 import asyncio
@@ -143,6 +143,16 @@ def wake_slot(now_local, window, slot_hours):
     return day * per_day + min(per_day - 1, (minute - start) // slot)
 
 
+def is_night(now_local, window, slot_hours, after='21:00'):
+    """Whether the wallpaper is in its night look: from `after`, and all of the day's last waking slot, which the
+    night keeps."""
+    start, end = dcards.window(window)
+    per_day = max(1, (end - start) // max(1, round(slot_hours * 60)))
+    h, m = map(int, after.split(':'))
+    return now_local.hour * 60 + now_local.minute >= h * 60 + m or \
+        wake_slot(now_local, window, slot_hours) % per_day == per_day - 1
+
+
 def shelf(library, ranked, now=0, days=14, least=3):
     """The posters in rotation: every passing poster of a lesson you still struggle with made in the last `days`
     (all of them when now is 0), dealt one lesson at a time, the weakest lesson first and each lesson's newest
@@ -159,14 +169,19 @@ def shelf(library, ranked, now=0, days=14, least=3):
     return out + [p for p in good if p['_key'] not in used][:max(0, least - len(out))]
 
 
-def current(library, ranked, n, now=0, hold=0, fresh=0):
+def current(library, ranked, n, now=0, hold=0, fresh=0, night=None, dark=()):
     """The poster up in waking slot n, or None before there is one. A passing poster made by hand
     (pinned_at) in the last `hold` seconds goes up ahead of the rotation, the newest first. New posters
     (passing, made in the last `fresh` seconds, the newest 3) take every other slot, so a poster just made is
-    seen at once, and the rest of the shelf takes the slots between."""
+    seen at once, and the rest of the shelf takes the slots between. With `night` set, only posters whose style is
+    in `dark` (night) or not (day) take part, unless there are none of that look."""
     pinned = [p for p in library if p.get('ok') and p.get('pinned_at') and now - p['pinned_at'] < hold]
     if pinned:
         return max(pinned, key=lambda p: p['pinned_at'])
+    if night is not None:
+        look = [p for p in library if (p.get('style') in dark) == night]
+        if any(p.get('ok') for p in look):
+            return current(look, ranked, n, now, hold, fresh)
     new = sorted((p for p in library if p.get('ok') and 0 <= now - p['created_at'] < fresh), key=lambda p: -p['created_at'])[:3]
     on = shelf(library, ranked, now)
     mine = {p['_key'] for p in new}
@@ -413,10 +428,10 @@ def _wallpaper(uid, now):
     store = kb_api.get_store(uid)
     _, _, _, mis, views = _views(uid, now)
     ranked = struggles(views)
-    n = wake_slot(dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings())), config.DRIP_WINDOW,
-                  config.WALL_SLOT_HOURS)
+    local = dt.datetime.fromtimestamp(now, dcards.tz_for(store.get_settings()))
+    n = wake_slot(local, config.DRIP_WINDOW, config.WALL_SLOT_HOURS)
     p = current(store.list_knowledge(wall_gen.POSTERS), ranked, n, now, config.WALL_SLOT_HOURS * 3600,
-                config.WALL_FRESH_HOURS * 3600)
+                config.WALL_FRESH_HOURS * 3600, is_night(local, config.DRIP_WINDOW, config.WALL_SLOT_HOURS), wall_gen.DARK)
     if p or not ranked:
         return p, None
     b = brief(ranked[n % len(ranked)], views, mis)

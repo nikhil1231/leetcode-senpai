@@ -75,8 +75,28 @@ def test_the_poster_changes_only_in_waking_hours():
     assert shown == {0, 1, 2, 3}
 
 
+def test_night_is_the_last_slot_and_from_nine():
+    at = lambda d, h, m=0: dt.datetime(2026, 11, d, h, m)  # noqa: E731
+    night = lambda t, hours=2: wall.is_night(t, '08:30-22:30', hours)  # noqa: E731   last 2-hour slot from 20:30
+    assert not night(at(2, 8, 30)) and not night(at(2, 20, 29))
+    assert night(at(2, 20, 30)) and night(at(2, 23)) and night(at(3, 3)) and night(at(3, 8, 29))
+    assert not night(at(2, 20, 59), 1) and night(at(2, 21), 1)        # 1-hour slots: from nine, before the last slot
+
+
 def poster_doc(key, lesson, at, ok=True, points=('p',), version='v'):
     return {'_key': key, 'lesson': lesson, 'created_at': at, 'ok': ok, 'points': list(points), 'version': version}
+
+
+def test_dark_posters_go_up_only_at_night():
+    ranked = [{'lesson': 'a', 'points': ['p']}]
+    library = [poster_doc('l1', 'a', 1), {**poster_doc('d1', 'a', 2), 'style': 'midnight'}, poster_doc('l2', 'a', 3)]
+    day = {wall.current(library, ranked, n, night=False, dark={'midnight'})['_key'] for n in range(6)}
+    assert day == {'l1', 'l2'}
+    assert {wall.current(library, ranked, n, night=True, dark={'midnight'})['_key'] for n in range(6)} == {'d1'}
+    light = [p for p in library if p['_key'] != 'd1']
+    assert wall.current(light, ranked, 0, night=True, dark={'midnight'})['_key'] in {'l1', 'l2'}   # none dark: a light one
+    hand = {**poster_doc('hand', 'a', 8), 'style': 'midnight', 'pinned_at': 100}
+    assert wall.current(library + [hand], ranked, 0, now=150, hold=60, night=False, dark={'midnight'})['_key'] == 'hand'
 
 
 def test_shelf_deals_every_recent_poster_one_lesson_at_a_time():

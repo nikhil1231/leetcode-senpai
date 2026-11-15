@@ -35,11 +35,12 @@ PALETTE = (('tangerine', '#FFA41B', 'charcoal'), ('vermilion', '#FF5A1F', 'white
            ('sky cyan', '#1FB5F2', 'charcoal'), ('periwinkle violet', '#8C7BF2', 'white'),
            ('emerald teal', '#14C79A', 'charcoal'), ('lime green', '#8EE66B', 'charcoal'))
 # A poster's look: background and layout (the colours are PALETTE's). pick_style gives each new poster the look used
-# longest ago, so neighbours on the phone differ.
+# longest ago, so neighbours on the phone differ. Dark looks only go up at night (wall.current), one slot a day, so
+# pick_style draws one only after DARK_GAP light posters in a row.
 STYLES = (
     {'name': 'spectrum', 'background': 'a light off-white background (#F7F7F9)', 'topic': 'dark charcoal (#22232B)',
      'layout': 'Each panel is a full-width rounded block stacked down the poster, with its icon in a white circle at its right.'},
-    {'name': 'midnight', 'background': 'a deep midnight navy background (#0E1330)', 'topic': 'soft white (#EEF1FF)',
+    {'name': 'midnight', 'dark': True, 'background': 'a deep midnight navy background (#0E1330)', 'topic': 'soft white (#EEF1FF)',
      'layout': 'Each panel is a full-width rounded block stacked down the poster with a generous gap between blocks, so the vivid '
                'colours glow against the dark; the icon sits in a white circle at its right.'},
     {'name': 'steps', 'background': 'a warm cream background (#FFF3E0)', 'topic': 'deep navy (#14213D)',
@@ -54,22 +55,29 @@ STYLES = (
     {'name': 'outline', 'background': 'a clean white background (#FFFFFF)', 'topic': 'black (#111111)',
      'layout': 'A bold flat neo-brutalist look: each panel is a coloured card with a thick black outline and sharp square corners, '
                'stacked with a small gap, the takeaway in heavy type, the icon in a white square at its right.'},
-    {'name': 'dusk', 'background': 'a rich indigo-to-plum vertical gradient background (#1B1B4B to #3B1D6E)', 'topic': 'white (#FFFFFF)',
+    {'name': 'dusk', 'dark': True, 'background': 'a rich indigo-to-plum vertical gradient background (#1B1B4B to #3B1D6E)', 'topic': 'white (#FFFFFF)',
      'layout': 'Each panel is a rounded block inset from the edges and stacked down the poster, its icon in a white circle '
                'overlapping the block\'s top-left corner, the text beside it.'},
 )
 
 
+DARK = frozenset(s['name'] for s in STYLES if s.get('dark'))
+DARK_GAP = 6
+
+
 def pick_style(library, lesson=''):
     """The look used longest ago (never used first; 'spectrum' stands for posters made before styles), so consecutive
     posters differ, with the palette rotated by one colour per poster made so the same colours do not lead each time.
-    Ties break by the lesson's name, so the pick is repeatable. -> a style with its `palette`"""
+    A dark look waits until the last DARK_GAP passing posters were all light. Ties break by the lesson's name, so the
+    pick is repeatable. -> a style with its `palette`"""
     last, made = {}, 0
-    for p in library:
-        if p.get('ok'):
-            made += 1
-            last[p.get('style', 'spectrum')] = max(last.get(p.get('style', 'spectrum'), 0), p['created_at'])
-    pick = min(range(len(STYLES)), key=lambda i: (last.get(STYLES[i]['name'], -1), (i + sum(map(ord, lesson))) % len(STYLES)))
+    good = sorted((p for p in library if p.get('ok')), key=lambda p: p['created_at'])
+    for p in good:
+        made += 1
+        last[p.get('style', 'spectrum')] = max(last.get(p.get('style', 'spectrum'), 0), p['created_at'])
+    dark_ok = not any(p.get('style') in DARK for p in good[-DARK_GAP:])
+    pick = min((i for i in range(len(STYLES)) if dark_ok or not STYLES[i].get('dark')),
+               key=lambda i: (last.get(STYLES[i]['name'], -1), (i + sum(map(ord, lesson))) % len(STYLES)))
     r = made % len(PALETTE)
     return {**STYLES[pick], 'palette': PALETTE[r:] + PALETTE[:r]}
 
