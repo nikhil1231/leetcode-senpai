@@ -62,11 +62,27 @@ def test_pick_prefers_misconceptions_then_weak_then_seen_then_started_lessons():
     assert (p['id'], reason) == (other, 'misconception')
 
 
-def test_card_text_speaks_in_the_casts_voice_and_escapes_html():
+def test_card_text_puts_the_plain_question_first_and_escapes_html():
     p = {**kcat.CATALOG['points'][MISS], 'prompt': 'Is 1 < 2 & does it matter?'}
     text = cards.card_text(p)
-    assert text.startswith('<b>Marcus</b>\n') and '1 &lt; 2 &amp; does' in text and '<i>' not in text
-    assert cards.card_text(p, context='You just opened Uber.').startswith('<b>Marcus</b>\nYou just opened Uber. ')
+    assert text.startswith('<b>Is 1 &lt; 2 &amp; does it matter?</b>\n<i>Marcus: ') and not text.endswith(':</i>')
+    assert '<i>Marcus: You just opened Uber. ' in cards.card_text(p, context='You just opened Uber.')
+    composed = {'question': 'Which wins?', 'lead': 'Board meeting <today>.', 'options': ['a < b', 'b', 'c', 'd'], 'answer': 1}
+    text = cards.card_text(p, composed=composed)
+    assert text == '<b>Which wins?</b>\n<i>Marcus: Board meeting &lt;today&gt;.</i>\n\nA. a &lt; b\nB. b\nC. c\nD. d'
+    assert cards.card_text(p, composed={'question': 'Which wins?', 'lead': ''}) == '<b>Which wins?</b>'
+
+
+def test_a_composed_card_is_parsed_and_a_broken_option_set_is_dropped():
+    good = {'question': 'what bounds a pool?', 'lead': 'Coffee chat.', 'options': ['a', 'b', 'c', 'd'], 'answer': 2, 'why': 'C.'}
+    out = cards.parse_composed('Sure!\n```json\n' + json.dumps(good) + '\n```', True)
+    assert out == {**good, 'question': 'What bounds a pool?'}
+    for bad in ({'options': ['a', 'b', 'c']}, {'options': ['a', 'a', 'c', 'd']}, {'answer': 4}, {'answer': True}, {'answer': '1'}):
+        assert 'options' not in cards.parse_composed(json.dumps({**good, **bad}), True)
+    assert 'options' not in cards.parse_composed(json.dumps(good), False)
+    assert cards.parse_composed('no json here', True) is None and cards.parse_composed('{"question": "x"}', True) is None
+    opts, ans = cards.shuffled(['right', 'b', 'c', 'd'], 0, random.Random(1))
+    assert sorted(opts) == ['b', 'c', 'd', 'right'] and opts[ans] == 'right'
 
 
 # ---- the bot ---------------------------------------------------------------------------
@@ -124,9 +140,13 @@ def env(monkeypatch):
         if messages[0]['content'].startswith(cards.CHAT_SYSTEM):
             talks.append(messages)
             return {'content': f'"Reply {len(talks)}"', 'usage': {}}
-        assert messages[0]['content'] == assess.PHRASE_SYSTEM
-        phrasings.append(json.loads(messages[1]['content']))
-        return {'content': f'"Quick one from Ripple: {phrasings[-1]["QUESTION"]}"', 'usage': {}}
+        assert messages[0]['content'] == assess.COMPOSE_SYSTEM
+        p = json.loads(messages[1]['content'])
+        phrasings.append(p)
+        card = {'question': f'"Plain: {p["QUESTION"]}"', 'lead': 'Quick one from Ripple.', 'options': [], 'answer': None, 'why': ''}
+        if p['CHOICE']:
+            card.update(options=['Right one', 'Wrong one', 'Also wrong', 'Wrong too'], answer=0, why='Because it is.')
+        return {'content': '```json\n' + json.dumps(card) + '\n```', 'usage': {}}
     monkeypatch.setattr(llm, '_raw_chat', chat)
     # Everything has been covered in a lesson: Telegram only asks about ideas met elsewhere.
     kb_api.write_events(store, 'lesson', [{'key': 'all', 'kind': 'exposure', 'points': [p['id'] for p in kcat.active(kcat.CATALOG)]}],
@@ -158,7 +178,7 @@ def test_cards_go_out_on_schedule_and_wait_for_an_answer(env):
     clock.t = b.state['next_at'] + 1
     b.tick()
     assert len(tg.sent) == 1 and b.state['pending'] == 1 and b.state['sent'] == 1
-    assert tg.sent[0]['reply_markup']['inline_keyboard'][0][0]['callback_data'] == 'reveal:1'
+    assert tg.sent[0]['reply_markup']['inline_keyboard'][-1][0]['callback_data'] == 'reveal:1'
     clock.t = b.state['next_at'] + 1
     b.tick()
     assert len(tg.sent) == 1  # never two questions open at once
@@ -299,8 +319,8 @@ def test_a_partly_right_answer_opens_a_gap_and_the_follow_up_targets_it(env):
     clock.t += 120
     follow = b.send_card(clock.t)
     assert follow['point'] == c['point'] and follow['reason'] == 'gap'
-    assert b.phrasings[-1]['QUESTION'] == ask and b.phrasings[-1]['REASON'] == 'gap'   # the character asks the gap's question
-    assert follow['ask'] == f'Quick one from Ripple: {ask}' and ask in tg.last()
+    assert b.phrasings[-1]['QUESTION'] == ask and b.phrasings[-1]['REASON'] == 'gap'   # the card asks the gap's question
+    assert b.phrasings[-1]['FOCUS'] == piece and follow['ask'] == f'Plain: {ask}' and ask in tg.last()
     ask = follow['ask']
 
     grades.append({'verdict': 'right', 'feedback': 'Yes, last.'})
@@ -533,34 +553,92 @@ def test_the_grader_speaks_as_the_colleague_who_asked():
     p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
     payload = cards.grade_payload(p, 'my answer')
     assert payload['SPEAKER'] == voice.persona('priya') and 'SPEAKER' in cards.GRADE_SYSTEM and voice.FEEDBACK in cards.GRADE_SYSTEM
-    assert voice.lead('priya', p['id']) in cards.card_text(p)
+    assert voice.lead('priya', p['id']).rstrip(' :') in cards.card_text(p)
 
 
-def test_cards_are_phrased_by_their_character_and_graded_against_that_question(env):
+def test_cards_lead_with_the_plain_question_and_are_graded_against_it(env):
     b, store, tg, clock, grades = env
     c = b.send_card(clock.t)
     p = b.phrasings[-1]
     assert p['SPEAKER'] == voice.persona('priya') and p['IDEA'] and p['REASON'] == c['reason']
-    assert c['ask'] == f'Quick one from Ripple: {p["QUESTION"]}'          # quotes stripped
-    assert tg.sent[-1]['text'].startswith('<b>Priya</b>\nQuick one from Ripple:')
+    assert c['ask'] == f'Plain: {p["QUESTION"]}' and c['lead'] == 'Quick one from Ripple.'   # quotes stripped
+    assert tg.sent[-1]['text'].startswith(f'<b>Plain: ') and '<i>Priya: Quick one from Ripple.</i>' in tg.sent[-1]['text']
     grades.append({'verdict': 'right', 'feedback': 'Nice.', 'misconception': ''})
     tg.updates = [msg('dns, edge, lb, service, then the commit')]
     b.step(poll=0)
     assert b.prompts[-1]['QUESTION'] == c['ask']
 
 
-def test_a_self_introduction_is_dropped(env, monkeypatch):
+def _choice_card(b, clock):
+    b.rng.random = lambda: 0.9   # past OPEN_SHARE: a one-tap card
+    c = b.send_card(clock.t)
+    assert c['options'] and sorted(c['options']) == sorted(['Right one', 'Wrong one', 'Also wrong', 'Wrong too'])
+    assert c['options'][c['answer']] == 'Right one' and c['why'] == 'Because it is.'
+    return c
+
+
+def test_a_one_tap_card_shows_its_options_and_grades_the_tap(env):
     b, store, tg, clock, grades = env
-    monkeypatch.setattr(llm, '_raw_chat', lambda *a, **k: {'content': 'Priya here — what commits the write?'})
+    c = _choice_card(b, clock)
+    sent = tg.sent[-1]
+    rows = sent['reply_markup']['inline_keyboard']
+    assert [k['text'] for k in rows[0]] == ['A', 'B', 'C', 'D'] and rows[0][2]['callback_data'] == 'pick:1:2'
+    assert [k['callback_data'] for k in rows[1]] == ['reveal:1', 'skip:1']
+    assert f"\n\nA. {c['options'][0]}\nB. " in sent['text']
+    wrong = next(i for i in range(4) if i != c['answer'])
+    tg.updates = [press(f'pick:1:{wrong}'), press(f'pick:1:{c["answer"]}')]   # a second tap changes nothing
+    b.step(poll=0)
+    assert tg.last().startswith(f'❌ <b>Not quite.</b> It\'s {cards.LETTERS[c["answer"]]}: Right one Because it is.')
+    assert '<blockquote expandable><b>The idea</b>' in tg.last() and b.prompts == []   # no model to grade a tap
+    e = events(store)[-1]
+    assert (e['clean'], e['depth'], e['source']) == (False, 'recognise', 'telegram') and len(events(store)) == 1
+    saved = store.get_knowledge('drip', 'card-1')
+    assert (saved['status'], saved['verdict'], saved['picked']) == ('answered', 'wrong', wrong) and b.state['pending'] is None
+
+    c = _choice_card(b, clock)
+    tg.updates = [press(f'pick:{c["n"]}:{c["answer"]}')]
+    b.step(poll=0)
+    assert tg.last().startswith('✅ <b>Correct.</b> Because it is.') and events(store)[-1]['clean'] is True
+    assert b.state['right'] == 1 and b.state['answered'] == 2
+
+
+def test_a_one_tap_card_can_still_be_answered_in_words(env):
+    b, store, tg, clock, grades = env
+    c = _choice_card(b, clock)
+    grades.append({'verdict': 'right', 'feedback': 'Nice.'})
+    tg.updates = [msg('the right one, because reasons')]
+    b.step(poll=0)
+    assert b.prompts[-1]['QUESTION'] == c['ask'] and tg.last().startswith('✅ <b>Priya:</b> Nice.')
+    tg.updates = [msg('/next')]
+    b.step(poll=0)
+    nxt = store.get_knowledge('drip', f'card-{b.state["n"]}')
+    tg.updates = [msg('/next')]
+    b.step(poll=0)
+    assert tg.last().startswith('Still waiting on this one:') and tg.sent[-1]['reply_markup'] and nxt['status'] == 'pending'
+
+
+def test_a_self_introduction_is_dropped_from_the_lead(env, monkeypatch):
+    b, store, tg, clock, grades = env
+    card = {'question': 'what commits the write?', 'lead': 'Priya here — reviewing the deploy.', 'options': [], 'answer': None}
+    monkeypatch.setattr(llm, '_raw_chat', lambda *a, **k: {'content': json.dumps(card)})
     p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
-    assert assess.phrase(store, p, 'new') == 'What commits the write?'
+    assert assess.compose(store, p, 'new', choice=False) == {'question': 'What commits the write?', 'lead': 'Reviewing the deploy.'}
+
+
+def test_a_card_without_usable_options_keeps_its_plain_question(env, monkeypatch):
+    b, store, tg, clock, grades = env
+    calls = []
+    monkeypatch.setattr(llm, '_raw_chat', lambda *a, **k: calls.append(1) or {'content': '{"question": "What commits it?", "lead": "", "options": ["a"]}'})
+    p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
+    assert assess.compose(store, p, 'new') == {'question': 'What commits it?', 'lead': ''} and len(calls) == 2
 
 
 def test_without_the_model_cards_use_the_template(env, monkeypatch):
     b, store, tg, clock, grades = env
     monkeypatch.setattr(config, 'OPENROUTER_API_KEY', '')
-    b.send_card(clock.t)
-    assert b.phrasings == [] and any(lead in tg.sent[-1]['text'] for lead in voice.member('priya')['leads'])
+    c = b.send_card(clock.t)
+    assert b.phrasings == [] and any(lead.rstrip(' :') in tg.sent[-1]['text'] for lead in voice.member('priya')['leads'])
+    assert 'options' not in c and len(tg.sent[-1]['reply_markup']['inline_keyboard']) == 1
 
 
 def test_an_ignored_gap_stops_jumping_the_queue(env):

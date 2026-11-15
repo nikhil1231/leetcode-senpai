@@ -14,6 +14,7 @@ import datetime as dt
 import html
 import json
 import random
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -159,12 +160,62 @@ def speaker(point):
     return next(c for c in story.cast() if c['id'] == VOICE.get(point['kind'], 'jo'))
 
 
-def card_text(point, ask=None, context=None, phrased=None):
-    """A card: the cast member's name, then their message. Without `phrased` (which already nods to the
-    context), the context line, their opening line and the prompt."""
+def card_text(point, ask=None, context=None, composed=None):
+    """A card: the plain question in bold first, then the cast member's line under it, then the options
+    (A to D) when it is multiple choice. Without `composed` (the model's), the point's prompt and the cast
+    member's template opening line, after `context`."""
     who = speaker(point)
-    body = phrased or ' '.join(x for x in (context, voice.lead(who['id'], point['id']), ask or point['prompt']) if x)
-    return f'<b>{html.escape(who["name"])}</b>\n{html.escape(body, quote=False)}'
+    composed = composed or {}
+    question = composed.get('question') or ask or point['prompt']
+    lead = composed['lead'] if 'question' in composed else ' '.join(x for x in (context, voice.lead(who['id'], point['id']).rstrip(' :')) if x)
+    text = f'<b>{html.escape(question, quote=False)}</b>'
+    if lead:
+        text += f'\n<i>{html.escape(who["name"])}: {html.escape(lead, quote=False)}</i>'
+    if composed.get('options'):
+        text += '\n\n' + '\n'.join(f'{LETTERS[i]}. {html.escape(o, quote=False)}' for i, o in enumerate(composed['options']))
+    return text
+
+
+LETTERS = 'ABCD'
+OPEN_SHARE = 0.2   # this share of cards is an open question (type or say it); the rest are one tap
+
+
+def shuffled(options, answer, rng):
+    """-> (options, answer) in a random order, so the right one is not always where the model put it."""
+    order = list(range(len(options)))
+    rng.shuffle(order)
+    return [options[i] for i in order], order.index(answer)
+
+
+def parse_composed(raw, choice):
+    """The model's card as JSON -> {question, lead, options?, answer?, why?}, or None if it is unusable.
+    A broken option set keeps the plain question and drops the options."""
+    m = re.search(r'\{.*\}', raw or '', re.S)
+    try:
+        d = json.loads(m.group(0)) if m else None
+    except ValueError:
+        d = None
+    if not isinstance(d, dict):
+        return None
+    clean = lambda v, n: ' '.join(str(v or '').split()).strip('"“”')[:n]  # noqa: E731
+    q = clean(d.get('question'), 300)
+    if len(q) < 8:
+        return None
+    out = {'question': q[:1].upper() + q[1:], 'lead': clean(d.get('lead'), 200)}
+    opts = [clean(o, 140) for o in d.get('options') or []] if isinstance(d.get('options'), list) else []
+    ans = d.get('answer')
+    if (choice and len(opts) == len(LETTERS) and all(opts) and len(set(o.lower() for o in opts)) == len(opts)
+            and isinstance(ans, int) and not isinstance(ans, bool) and 0 <= ans < len(opts)):
+        out.update(options=opts, answer=ans, why=clean(d.get('why'), 400))
+    return out
+
+
+def choice_text(card, pick, point):
+    """After a tap: the verdict word, the right option, why, and the idea."""
+    right, ans = pick == card['answer'], card['answer']
+    head = '✅ <b>Correct.</b>' if right else f'❌ <b>Not quite.</b> It\'s {LETTERS[ans]}: {html.escape(card["options"][ans], quote=False)}'
+    why = f' {html.escape(card["why"], quote=False)}' if card.get('why') else ''
+    return f'{head}{why}\n\n{_idea(point)}'
 
 
 def depth(point):
@@ -294,8 +345,8 @@ def stats_text(summary, sent, answered, right, paused, note=''):
             + ('\nThe questions are paused: /resume when you\'re ready.' if paused else ''))
 
 
-HELP = ('Hi! Marcus, Priya, Jo and Sam will send you a few questions a day from what you\'re learning. Answer '
-        'however suits you: type it, send a voice note, or tap Show answer.\n\n/next  a question now\n'
+HELP = ('Hi! Marcus, Priya, Jo and Sam will send you a few questions a day from what you\'re learning. Most '
+        'have four options, so you can just tap one. You can also type an answer, send a voice note, or tap Show answer.\n\n/next  a question now\n'
         '/stats  how you\'re doing\n/frequency  questions a day (1 to 10)\n/pause  a break from the questions\n'
         '/resume  start them again\n/podcast  make today\'s episode\n/help  this message')
 

@@ -56,11 +56,21 @@ class Bot:
         self.store.put_knowledge(COLL, f'card-{c["n"]}', c)
 
     def say(self, text, buttons=None):
+        """`buttons`: one row of (label, data), or a list of such rows."""
         params = {'chat_id': self.chat, 'text': text, 'parse_mode': 'HTML', 'disable_web_page_preview': True}
         if buttons:
+            rows = buttons if isinstance(buttons[0], list) else [buttons]
             params['reply_markup'] = {'inline_keyboard': [[{'text': t, 'url': d} if d.startswith('https://') else
-                                                           {'text': t, 'callback_data': d} for t, d in buttons]]}
+                                                           {'text': t, 'callback_data': d} for t, d in row] for row in rows]}
         return self.tg.call('sendMessage', **params)
+
+    @staticmethod
+    def card_buttons(c):
+        """A letter per option (when the card has them), then Show answer and Skip."""
+        base = [('Show answer', f'reveal:{c["n"]}'), ('Skip', f'skip:{c["n"]}')]
+        if not c.get('options'):
+            return base
+        return [[(cards.LETTERS[i], f'pick:{c["n"]}:{i}') for i in range(len(c['options']))], base]
 
     def roll_day(self, now):
         today = cards.local_day(now, self.tz())
@@ -230,7 +240,7 @@ class Bot:
         elif cmd == '/next':
             pending = self.card(self.state['pending']) if self.state['pending'] is not None else None
             if pending and pending['status'] == 'pending':
-                self.say('Still waiting on this one:\n\n' + pending['text'], [('Show answer', f'reveal:{pending["n"]}'), ('Skip', f'skip:{pending["n"]}')])
+                self.say('Still waiting on this one:\n\n' + pending['text'], self.card_buttons(pending))
             else:
                 self.send_card(now)
         elif cmd == '/pause':
@@ -271,6 +281,21 @@ class Bot:
         if parts[0] == 'skip' and c['status'] == 'pending':
             self.close(c, 'skipped', now)
             self.say(cards.moment_text(point, 'skip', c['n']) if point else 'Skipped. It will come back another time.')
+        elif parts[0] == 'pick' and len(parts) == 3 and parts[2].isdigit() and c['status'] == 'pending' and point and c.get('options'):
+            pick = int(parts[2])
+            if pick >= len(c['options']):
+                return
+            right = pick == c['answer']
+            self.record(c, point, right, 'recognise', f'tapped {cards.LETTERS[pick]}: {c["options"][pick]}', now)
+            if right and c.get('gap'):
+                kb_api.resolve_open(self.store, point['id'], now, 'Picked the right answer on Telegram.', kind='gap')
+            feedback = cards.choice_text(c, pick, point)
+            c.update(status='answered', verdict='right' if right else 'wrong', picked=pick, answered_at=now,
+                     answer=c['options'][pick], feedback=c.get('why') or '')
+            self.put_card(c)
+            self.state['right'] += right
+            self.save()
+            self.say(feedback)
         elif parts[0] == 'reveal' and c['status'] == 'pending' and point:
             c.update(status='revealed', revealed_at=now)
             self.put_card(c)
@@ -352,16 +377,20 @@ class Bot:
         if gap:
             reason = 'gap'
         ask, line = (gap['ask'] if gap else None), (app['line'] if app else None)
-        recent = [(self.card(k) or {}).get('ask') for k in range(n - 1, max(0, n - 6), -1)]
-        phrased = assess.phrase(self.store, point, reason, ask, line, recent)
-        text = cards.card_text(point, ask, line, phrased)
-        msg = self.say(text, [('Show answer', f'reveal:{n}'), ('Skip', f'skip:{n}')])
+        recent = [(self.card(k) or {}).get('lead') for k in range(n - 1, max(0, n - 6), -1)]
+        beliefs = [m['text'] for m in mis if m.get('kind', 'belief') == 'belief' and m.get('point') == point['id'] and m.get('text')]
+        composed = assess.compose(self.store, point, reason, ask, line, recent, choice=self.rng.random() >= cards.OPEN_SHARE,
+                                  focus=gap['text'] if gap else None, beliefs=beliefs, rng=self.rng)
+        text = cards.card_text(point, ask, line, composed)
         c = {'n': n, 'point': point['id'], 'reason': reason, 'text': text, 'sent_at': now, 'status': 'pending',
-             'message_id': (msg or {}).get('message_id'), 'app': app['name'] if app else None}
-        if phrased:
-            c['ask'] = phrased   # the grader judges the answer against the question as it was asked
+             'app': app['name'] if app else None}
+        if composed:   # the grader judges a typed answer against the question as it was asked
+            c.update(ask=composed['question'], lead=composed['lead'],
+                     **{k: composed[k] for k in ('options', 'answer', 'why') if k in composed})
         if gap:
-            c.update(gap=gap['_key'], ask=phrased or gap['ask'], focus=gap['text'])
+            c.update(gap=gap['_key'], ask=c.get('ask') or gap['ask'], focus=gap['text'])
+        msg = self.say(text, self.card_buttons(c))
+        c['message_id'] = (msg or {}).get('message_id')
         self.put_card(c)
         self.state.update(pending=n, sent=self.state['sent'] + 1)
         self.save()
