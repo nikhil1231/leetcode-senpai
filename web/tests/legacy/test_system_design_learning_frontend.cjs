@@ -34,19 +34,19 @@ test('layer progress: a ladder per area with the current pass marked, a ring per
  c.known={'request-flow':{held:1,seen:4,total:12,state:'started',layers:{1:{total:3,seen:3,held:1},2:{total:5,seen:1,held:0},3:{total:4,seen:0,held:0}}}};
  h.ui.setCatalog(c,'curriculum');const html=h.ui.render('curriculum',c);
  assert.equal((html.match(/class="sd-step(?: is-[a-z]+)*"/g)||[]).length,3);
- assert.match(html,/sd-step is-done">.*?1 · Map ✓/s);
+ assert.match(html,/sd-step is-done">.*?1 · Overview ✓/s);
  assert.match(html,/sd-step is-now">.*?2 · Interview-ready <b>now<\/b>/s);
- assert.match(html,/Revisit the map →/);assert.match(html,/href="#\/system-design\/map\/foundations"/);
+ assert.match(html,/Revisit the overview →/);assert.match(html,/href="#\/system-design\/map\/foundations"/);
  assert.match(html,/--seen:100%;--held:33%/);assert.match(html,/--seen:20%;--held:0%/);
- assert.match(html,/aria-label="Map: 3 of 3 ideas covered, 1 you'd recall today"/);
+ assert.match(html,/aria-label="Overview: 3 of 3 ideas covered, 1 you'd recall today"/);
  assert.match(html,/class="sd-lesson-head hub-learn-row"/);
  assert.doesNotMatch(html,/NaN|undefined/);
 });
-test('unknown topic performance is visibly unassessed with no invented accuracy',()=>{
+test('an untouched lesson shows as not started, with no invented progress',()=>{
  const h=harness(),c=catalog();h.ui.setCatalog(c,'progress');
  const html=h.ui.render('progress',c);
- assert.match(html,/Not yet assessed/);assert.doesNotMatch(html,/NaN|undefined|Infinity/);
- assert.match(html,/No recorded checks yet/);
+ assert.match(html,/Not started/);assert.match(html,/0\/1 lessons done/);
+ assert.doesNotMatch(html,/NaN|undefined|Infinity|sd-ring/);
 });
 test('resume checkpoint is account scoped and older than one day is ignored',()=>{
  const key='sd-learning:v1:alice',saved=JSON.stringify({at:Date.now(),round:{settings:{},answers:[]}});
