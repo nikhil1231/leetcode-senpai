@@ -11,7 +11,7 @@
 .page-notes-marker:hover, .page-notes-marker.is-open { opacity: 1; background: rgba(var(--accent-rgb), .18); }
 .page-notes-ask svg, .page-notes-marker svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .page-notes-pop {
-  position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 10px; max-height: min(460px, 70vh); padding: 12px;
+  position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 10px; max-height: min(720px, 85vh); padding: 12px;
   background: var(--bg-elev); border: 1px solid var(--line-hi); border-radius: 12px; box-shadow: var(--shadow);
 }
 .page-notes-head { display: flex; align-items: flex-start; gap: 8px; }

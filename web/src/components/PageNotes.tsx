@@ -55,10 +55,14 @@ function contextFor(range: Range, main: Element): Context {
   };
 }
 
-// The outermost card (an element with a border or background) holding the passage, below <main>.
+// The outermost card (an element with a border or background) holding the passage, below <main>, and not much wider
+// than the passage's block: a full-screen panel (the tutor's chat) would put the marker and popover far from the text.
 function cardOf(node: Node) {
   let card: Element | null = null;
-  for (let el = elementOf(node); el && el.tagName !== "MAIN"; el = el.parentElement) {
+  const start = elementOf(node), block = start?.closest(BLOCK) ?? start;
+  const limit = block ? block.getBoundingClientRect().width * 1.3 + 64 : Infinity;
+  for (let el = start; el && el.tagName !== "MAIN"; el = el.parentElement) {
+    if (el.getBoundingClientRect().width > limit) break;
     const cs = getComputedStyle(el);
     if (parseFloat(cs.borderRightWidth) > 0 || !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(cs.backgroundColor)) card = el;
   }
@@ -254,7 +258,7 @@ function NotePopover({ range, note, draft, enabled, path, page, onSaved, onDelet
   const rects = range?.getClientRects();
   const side = range ? sideOf(range) : null;
   const width = Math.min(380, window.innerWidth - 16);
-  const tall = Math.min(460, window.innerHeight * 0.7);
+  const tall = Math.min(720, window.innerHeight * 0.85);
   const room = side ? Math.min(width, window.innerWidth - side.edge - 44 - 12) : 0;
   const style: CSSProperties = { width };
   if (rects?.length && side && room >= 260) {

@@ -82,7 +82,9 @@ export function turnsToMessages(session: Any, cast: TutorChatProps["cast"], bloc
 
 // base: how many turns the session had when the reply began. Once the stored session has more, it replaces the
 // preview in the same redraw (clearing the preview first would shrink the thread for a frame and jump the scroll).
-type Preview = { text: string; parts: ChatPart[]; mine?: string; speaker: string; base: number };
+// at: the index the stored reply will have, so it keeps the preview's id (the chat's scroll pin is held on it): after
+// the learner's turn when there is one, a message or an activity's answer or a design run.
+type Preview = { text: string; parts: ChatPart[]; mine?: string; speaker: string; base: number; at: number };
 
 const tip = (a: Record<string, unknown>) => Array.isArray(a.notes) ? (a.notes as string[]).join("\n") : "What this turn showed went into your knowledge model";
 
@@ -100,7 +102,8 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
   const run = async (path: string, body: Any, mine: string | undefined, speaker: string) => {
     setBusy(true); setError("");
     const base = live.current.session?.turns?.length || 0;
-    setPreview({ text: "", parts: [], mine, speaker, base });
+    const at = base + (body?.text || body?.block || body?.run ? 1 : 0);
+    setPreview({ text: "", parts: [], mine, speaker, base, at });
     let shown = { text: "", parts: [] as ChatPart[] };
     try {
       let stored: Any = null;
@@ -110,7 +113,7 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
         else if (e.type === "widget") shown = { ...shown, parts: [...shown.parts, { tool: "pending", args: { text: WIDGET[e.kind] || "One moment…" } }] };
         else if (e.type === "marker") { const hit = MARKERS.find(([re]) => re.test(e.text)); if (hit) shown = { ...shown, parts: [...shown.parts, hit[1](e.text.match(hit[0])!)] }; }
         else if (e.type === "done") stored = e.session ?? e;
-        if (e.type !== "done") setPreview({ ...shown, mine, speaker, base });
+        if (e.type !== "done") setPreview({ ...shown, mine, speaker, base, at });
       });
       if (stored) {
         live.current.onSession(stored);
@@ -145,7 +148,7 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
     if (!preview || stale) return out;
     if (preview.mine) out.push({ id: `t${preview.base}`, role: "user", text: preview.mine });
     const who = preview.speaker === "tutor" ? { name: "Tutor" } : (cast(preview.speaker) || { name: preview.speaker });
-    out.push({ id: `t${preview.base + (preview.mine ? 1 : 0)}`, role: "assistant", text: preview.text, parts: preview.parts, streaming: true, who: { ...who, key: preview.speaker } });
+    out.push({ id: `t${preview.at}`, role: "assistant", text: preview.text, parts: preview.parts, streaming: true, who: { ...who, key: preview.speaker } });
     return out;
   }, [session, cast, blocks, preview, stale, props.review]);
 
