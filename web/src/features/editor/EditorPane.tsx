@@ -116,7 +116,7 @@ function Result({ view, onRun, onSubmit, onAddCase }: { view: ResultView; onRun:
           <p className="editor-verdict is-bad">{r.status || "Error"}</p>{r.error !== r.status && <pre className="editor-error">{r.error}</pre>}
           <Block label="Failing input" value={r.input} />{(r.stdout || []).map((out: string, i: number) => <Block key={i} label={`Stdout · case ${i + 1}`} value={out} />)}
         </>
-      ) : <p className={`editor-verdict ${r.passed ? "is-good" : "is-bad"}`}>{r.passed ? "All cases match" : "Mismatch"} <span className="small">{r.correct ?? 0}/{r.total} cases · {r.runtime || ""}</span></p>}
+      ) : <p className={`editor-verdict ${r.passed && r.total ? "is-good" : "is-bad"}`}>{!r.total ? "No cases ran" : r.passed ? "All cases match" : "Mismatch"} <span className="small">{r.correct ?? 0}/{r.total} cases · {r.runtime || ""}</span></p>}
       {cases.length > 0 && (
         <>
           <div className="editor-case-tabs" role="tablist">{cases.map((c, i) => (

@@ -1607,7 +1607,8 @@ async def _hydrate_editor(store, slug, lc=None):
     older import predates it. The session is sent when there is one: LeetCode
     withholds a premium problem's starter code from anonymous requests."""
     p = store.get_problem(slug) or {}
-    if p.get("question_id") and p.get("starter_code") and p.get("content_html"):
+    if (p.get("question_id") and p.get("starter_code") and p.get("content_html")
+            and p.get("example_testcases")):
         return p
     try:
         meta = await leetcode.question(slug, lc)
@@ -1728,13 +1729,18 @@ async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user
     if _runs_left(s, store.get_recording(s["id"])) == 0:
         return {"ok": False, "runs_left": 0,
                 "error": "Interview mode: no Runs left — trace it by hand, then submit."}
+    # A blank test box runs the examples rather than nothing (0/0 "All cases match").
+    data_input = (body.data_input if leetcode.clean_input(body.data_input)
+                  else "\n".join(p.get("example_testcases") or []))
+    if not leetcode.clean_input(data_input):
+        return {"ok": False, "error": "The test input is empty. Add a case in Tests first."}
     result, err = await _judge_or_error(leetcode.run_code(
-        s["slug"], p["question_id"], body.code, body.data_input, lc))
+        s["slug"], p["question_id"], body.code, data_input, lc))
     if err:
         return {"ok": False, "error": err}
     doc = _append_recording(store, s, server_events=[{
         "t": body.t, "k": "run", "code": body.code,
-        "input": leetcode.clean_input(body.data_input)[:2000],
+        "input": leetcode.clean_input(data_input)[:2000],
         "result": recording.compact_run(result)}])
     return {"ok": True, "result": result, "truncated": bool(doc.get("truncated")),
             "runs_left": _runs_left(s, doc)}
