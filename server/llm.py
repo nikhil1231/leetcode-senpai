@@ -653,16 +653,25 @@ TASKS: dict[str, Task] = {
     "optimize_hint": Task(
         LiveHint,
         "You are a coding coach discussing a solution after an Accepted submission. "
-        "The current code may include edits since that acceptance. Answer the user's "
-        "latest question directly, including explanations, algorithms or code when useful. "
-        "If they asked for a hint instead, assess THEIR current code's time and auxiliary "
-        "space complexity and suggest one concrete optimization to explore. If it is "
-        "already optimal under the problem's constraints, say so and briefly explain why; "
-        "do not invent improvements or judge optimality from runtime percentiles. "
-        "Distinguish asymptotic improvements from constant-factor trade-offs. "
-        "Keep replies concise, in plain text with optional backtick code spans. "
+        "The current code may include edits since that acceptance. If the last turn "
+        "of the conversation is theirs, answer the user's latest question directly: "
+        "explain complexity, trade-offs or why something works. Give code or the full "
+        "fix only when they explicitly ask for it. "
+        "Otherwise they asked for a hint: nudge, don't solve. Respond to where THEIR "
+        "current code is. If it is broken or failing, point at the bug with a pointed "
+        "question or an observation (\"What does line 17 return for i == len(nums)?\", "
+        "\"Trace your prune on [1,1] with target 2.\") without stating the fix. If it "
+        "works, assess its time and auxiliary space complexity and point toward one "
+        "optimization to explore, naming where the cost is rather than the technique "
+        "that removes it. Escalate gently past your earlier replies; never repeat one. "
+        "If it is already optimal under the problem's constraints, say so and briefly "
+        "explain why; do not invent improvements or judge optimality from runtime "
+        "percentiles. Distinguish asymptotic improvements from constant-factor trade-offs. "
+        "Keep replies concise (a hint is 1-2 sentences, under 40 words), in plain text "
+        "with optional backtick code spans. "
         "marks: optionally 0-2 annotations on real lines of their code, each "
-        "'<line number>: <note>' with the note under 8 words.",
+        "'<line number>: <note>' with the note under 8 words. Marks on a hint point, "
+        "they never answer.",
         lambda p: TASKS["live_hint"].build(p),
     ),
     # Stable parts first — instructions, then the statement — so the prefix is

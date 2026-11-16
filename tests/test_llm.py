@@ -122,8 +122,8 @@ async def test_optimization_coach_can_confirm_optimality_and_answer_followups(en
         "chat": "Candidate: Why is it optimal?"})
     assert "Already optimal" in result["hint"]
     assert "already optimal" in seen["system"] and "do not invent improvements" in seen["system"]
-    assert "Answer the user's latest question directly" in seen["system"]
-    assert "NEVER GIVE AWAY THE ANSWER" not in seen["system"]
+    assert "answer the user's latest question directly" in seen["system"]
+    assert "nudge, don't solve" in seen["system"]
     assert "Candidate: Why is it optimal?" in seen["prompt"]
     assert "  1 | return 0" in seen["prompt"]
 
