@@ -1743,7 +1743,7 @@ async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user
         "input": leetcode.clean_input(data_input)[:2000],
         "result": recording.compact_run(result)}])
     return {"ok": True, "result": result, "truncated": bool(doc.get("truncated")),
-            "runs_left": _runs_left(s, doc)}
+            "runs_left": _runs_left(s, doc), "data_input": data_input}
 
 
 @app.post("/api/editor/submit")

@@ -202,7 +202,7 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
               <ol className="walk-steps">{steps.map((st, i) => <li key={i} className={i === steps.length - 1 ? "is-latest" : ""}>{coachText(st.text)}</li>)}</ol>
               {!walk.done && <div className="walk-actions"><button id="btn-walk-next" className="button is-small" type="button" title="Reads your code as it is now" disabled={busy === "walk"} aria-busy={busy === "walk" || undefined} onClick={giveUpStep}>Next step</button><span className="note-meta">Got it from here? Just keep writing.</span></div>}</div>
           )}
-          {!chat.length && !coachPending && !walk && <p id="coach-empty" className="coach-empty">{optimizing ? (active.chat_available ? "Accepted! Ask a follow-up below, or request an optimization hint. End keeps your accepted solution and returns to rating." : "Enable the coach to discuss optimizations or ask follow-up questions. End keeps your accepted solution.")
+          {!chat.length && !coachPending && !walk && <p id="coach-empty" className="coach-empty">{optimizing ? (active.chat_available ? "Accepted! Ask a follow-up below, or request an optimization hint. Stop optimizing keeps your accepted solution and returns to rating." : "Enable the coach to discuss optimizations or ask follow-up questions. Stop optimizing keeps your accepted solution.")
             : active.chat_available ? "Stuck? Think out loud below, or ask for a hint. The interviewer reads your code and points, without giving the fix." : active.hints_available ? "Stuck? A hint reads the code you've written and points, without giving the fix."
             : active.kind === "mock" ? "A mock runs without hints — it's you and the clock." : "No hints for this one."}</p>}
         </div>
@@ -223,7 +223,7 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
             <IconBtn id="btn-give-up" label={giveArmed ? "Sure? Click again" : "Give up"} hidden={!active.give_up_available || Boolean(walk)} className="give-up-btn" disabled={starting || busy === "walk"} busy={busy === "walk"}
               onClick={async () => { if (!giveArmed) { armGive(); return; } disarmGive(); await giveUpStep(); }} svg={<><path d="M4 22V4" /><path d="M4 4h13l-2 4 2 4H4" /></>} />
           </div>
-          <IconBtn id="btn-end-run" label={endArmed ? "Sure? Click again" : "End"} hidden={!active.end_available} className="end-btn" disabled={starting || busy === "end"} busy={busy === "end"}
+          <IconBtn id="btn-end-run" label={endArmed ? "Sure? Click again" : optimizing ? "Stop optimizing" : "End"} hidden={!active.end_available} className="end-btn" disabled={starting || busy === "end"} busy={busy === "end"}
             onClick={() => { if (!endArmed) { armEnd(); return; } disarmEnd(); void endRun(); }} svg={<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />} />
           <div className="run-menu">
             <button id="btn-run-menu" className="button is-ghost icon-button" type="button" aria-haspopup="menu" aria-expanded={menu} aria-controls="run-menu" aria-label="More run actions" data-tip="More"

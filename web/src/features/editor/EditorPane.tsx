@@ -217,6 +217,8 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
     r.judge(kind, input).then(({ res, code }) => {
       if (res.runs_left != null) { L.runsLeft = res.runs_left; setEd({ runsLeft: res.runs_left }); }
       if (!res.ok) { setView({ kind: "error", message: res.error }); return; }
+      // A blank box was run on the examples: show them in Tests too.
+      if (kind === "run" && !input.trim() && res.data_input) setInput(res.data_input);
       if (res.truncated) markTruncated();
       if (kind === "run") r.lastRunCode = code; else r.submits += 1;
       r.persist();
@@ -247,6 +249,8 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
         if (Array.isArray(saved.checked)) chk = saved.checked;
         r.lastRunCode = saved.lastRunCode ?? null; r.submits = saved.submits || 0;
       } else Object.assign(r, { lastLogged: state.code, seq: state.seq });
+      // A blank box opens with the examples, the same cases a blank Run uses.
+      if (!inp.trim()) inp = (state.example_testcases || []).join("\n");
       r.input = inp; r.checked = chk; setInput(inp); setChecked(chk);
       live.current = { judging: false, confirming: false, runsLeft: state.runs_left ?? null, edges: state.planned_edge_cases || [], readOnlyNow: false, starter: state.starter_code };
       const marks = lineMarks(CM), errorMark = lineMarks(CM), readOnly = new CM.Compartment();

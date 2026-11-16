@@ -53,8 +53,9 @@ export class EditorRun {
   abandon() { if (!this.sessionId) this.settle?.reject(new Error("The run didn't start.")); }
 
   persist() {
-    // A finished run's draft has no future; a pending one has no key yet (adoption writes it).
-    if (this.finished || !this.sessionId) return;
+    // A finished run's draft has no future; a pending one has no key yet (adoption writes it). Before the buffer loads
+    // there's nothing to save: an empty draft written then would win over the server's code on load.
+    if (this.finished || !this.sessionId || this.getCode() === null) return;
     try {
       const saved: Saved = { code: this.currentCode(), lastLogged: this.lastLogged, queue: this.queue, inflight: this.inflight, seq: this.seq,
         input: this.input, checked: this.checked, lastRunCode: this.lastRunCode, submits: this.submits };

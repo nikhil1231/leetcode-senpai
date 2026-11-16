@@ -42,6 +42,12 @@ describe("EditorRun", () => {
     expect(run.queue).toHaveLength(0);
   });
 
+  it("saves no draft before the buffer loads, so the server's code opens", () => {
+    const run = new EditorRun("s1", "two-sum", Math.floor(Date.now() / 1000));
+    run.input = "[1]"; run.persist();
+    expect(EditorRun.restore("s1")).toBeNull();
+  });
+
   it("keeps unsent events in storage and restores them", () => {
     const code = { v: "x = 1" }, run = make(code);
     run.tick();

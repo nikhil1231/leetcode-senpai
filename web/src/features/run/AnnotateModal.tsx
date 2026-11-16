@@ -237,7 +237,10 @@ export function AnnotateModal({ initial, onClose }: { initial: Any; onClose: (op
     const eligible = llm && a.via === "editor" && !!a.code && a.confidence == null && !a.unsolved && !followupSeen.has(followupKey(a));
     if (eligible) {
       setStage("followup");
-      requestGrade(a.id).then((r) => {
+      // Code that already has a grade (an optimise run stopped without a better Accepted) isn't graded again.
+      const graded = a.solution_grading_status === "viewed" && a.solution_grade
+        ? Promise.resolve({ grading_status: "viewed", graded: a.solution_grade }) : requestGrade(a.id);
+      graded.then((r) => {
         if (cur.current.id !== a.id || followupSeen.has(followupKey(a))) return;
         const q = r && r.grading_status === "viewed" && r.graded && (r.graded.followup || "").trim();
         if (!q) { followupSeen.add(followupKey(a)); setStage("review"); initGrade(cur.current); } else setFollowup(q);
@@ -251,7 +254,6 @@ export function AnnotateModal({ initial, onClose }: { initial: Any; onClose: (op
   const keepOptimizing = async () => {
     try {
       const res = await api("/editor/optimize", "POST", { attempt_id: attempt.id });
-      followupSeen.delete(followupKey(attempt));
       onClose({ next: false });
       setActive(res.active);
       toast("Optimizing — submit a better version, or Stop optimizing to keep this one.");
