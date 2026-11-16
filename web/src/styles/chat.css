@@ -3,7 +3,7 @@
    button that stays at the foot of the thread. Colours come from the app's tokens, so a section's theme follows.
    --thread-max sets the column's width; a narrow panel (the page coach) just fills. */
 .ch-thread { --thread-max: 46rem; display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.ch-log { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 8px 2px 0; }
+.ch-log { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 8px 2px 0; }
 .ch-log > * { width: 100%; max-width: var(--thread-max); }
 
 /* Messages */
@@ -31,6 +31,9 @@
 .ch-thread [data-tip]:hover::before, .ch-thread [data-tip]:focus-visible::before { opacity: 1; transform: translateX(-50%); }
 .ch-thread .tu-recorded[data-tip]::before { left: 0; transform: translateY(2px); }
 .ch-thread .tu-recorded[data-tip]:hover::before, .ch-thread .tu-recorded[data-tip]:focus-visible::before { transform: none; }
+/* The composer's buttons sit at the right edge, so their tips open leftwards instead of running past the log. */
+.ch-composer-actions [data-tip]::before { left: auto; right: 0; transform: translateY(2px); }
+.ch-composer-actions [data-tip]:hover::before, .ch-composer-actions [data-tip]:focus-visible::before { transform: none; }
 .ch-who { display: flex; align-items: baseline; gap: 6px; margin: 0 6px 4px; font-size: 13px; }
 .ch-who b { font-weight: 600; }
 .ch-msg[data-speaker="priya"] .ch-who b { color: var(--red); }
