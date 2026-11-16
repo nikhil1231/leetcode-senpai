@@ -308,6 +308,84 @@ def compact_submit(result):
     }
 
 
+# ---- the timeline the post-solve modal draws ------------------------------------
+# One bar for the whole solve: planning (before the recording starts), then each
+# stretch of the recording as work (edits and runs), quiet (a minute or more with
+# neither, the tab still showing), other tab (the page hidden or unfocused) or
+# paused. Quiet is not called idle: it may be thinking, notes on paper or a break,
+# and the log can't tell which. Marks are the moments that changed the course:
+# runs, submits, hints, the approach explained, a reset.
+
+PHASE_KINDS = ("plan", "work", "quiet", "away", "paused")
+_RANK = {"work": 0, "quiet": 1, "away": 2, "paused": 3}
+MIN_SEGMENT_MS = 1_000
+
+
+def _open_spans(events, start_kind, end_kind, end_t):
+    out, opened = [], None
+    for ev in events:
+        if ev.get("k") == start_kind and opened is None:
+            opened = ev["t"]
+        elif ev.get("k") == end_kind and opened is not None:
+            out.append((opened, ev["t"]))
+            opened = None
+    if opened is not None:
+        out.append((opened, end_t))
+    return out
+
+
+def _quiet_spans(events, end_t, min_gap=IDLE_GAP_MS):
+    """Stretches of a minute or more with no edit or judging, from the start on. A
+    pause or resume closes one: the paused time is its own kind."""
+    work = sorted({0, end_t, *(ev["t"] for ev in events
+                                if ev.get("k") in ("d", "run", "sub", "reset", "pause", "resume")
+                                or (ev.get("k") == "c" and ev.get("t", 0) > 0))})
+    return [(a, b) for a, b in zip(work, work[1:]) if b - a >= min_gap]
+
+
+def _mark(ev):
+    k, r = ev.get("k"), ev.get("result") or {}
+    if k == "run":
+        return {"kind": "run", "ok": bool(r.get("passed")), "error": bool(r.get("error")),
+                "correct": r.get("correct"), "total": r.get("total")}
+    if k == "sub":
+        return {"kind": "submit", "status": r.get("status"), "correct": r.get("correct"),
+                "total": r.get("total")}
+    if k == "hint":
+        return {"kind": "hint", "level": ev.get("level"), "text": _clip(ev.get("text"), 300) or None}
+    if k == "giveup":
+        return {"kind": "explained", "step": ev.get("step") or 1,
+                "text": _clip(ev.get("text"), 400) or None}
+    if k in ("reset", "end"):
+        return {"kind": k}
+    return None
+
+
+def phases(events, plan_ms=0):
+    """The solve as a bar: {duration_ms, segments, marks, totals}, all on one clock
+    that starts when planning did (`plan_ms` before the recording)."""
+    plan_ms = max(0, int(plan_ms or 0))
+    end = events[-1]["t"] if events else 0
+    spans = ([(a, b, "quiet") for a, b in _quiet_spans(events, end)]
+             + [(a, b, "away") for a, b in _open_spans(events, "blur", "focus", end)]
+             + [(a, b, "paused") for a, b in _open_spans(events, "pause", "resume", end)])
+    cuts = sorted({0, end, *(t for a, b, _ in spans for t in (a, b) if 0 <= t <= end)})
+    segments = [{"kind": "plan", "from": 0, "to": plan_ms}] if plan_ms else []
+    for a, b in zip(cuts, cuts[1:]):
+        kind = max((k for s, e, k in spans if s <= a and b <= e), key=_RANK.get, default="work")
+        if segments and segments[-1]["kind"] != "plan" and (
+                segments[-1]["kind"] == kind or b - a < MIN_SEGMENT_MS):
+            segments[-1]["to"] = b + plan_ms   # a sliver joins the stretch before it
+        else:
+            segments.append({"kind": kind, "from": a + plan_ms, "to": b + plan_ms})
+    totals = {k: 0 for k in PHASE_KINDS}
+    for s in segments:
+        totals[s["kind"]] += s["to"] - s["from"]
+    marks = [{"t": ev.get("t", 0) + plan_ms, **m} for ev in events if (m := _mark(ev))]
+    return {"duration_ms": end + plan_ms, "plan_ms": plan_ms, "segments": segments,
+            "marks": marks, "totals": totals}
+
+
 # ---- the timeline the LLM reads -------------------------------------------------
 # Deltas aren't listed one by one: at 10s granularity they're noise. What's kept
 # is where time went (stalls, time away, pauses, big rewrites), every judging with
@@ -378,13 +456,14 @@ def unified_diff(a, b, context=1):
     return "\n".join(out)
 
 
-def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
-    """A compact, human-readable account of a recorded solve, for a prompt."""
+def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS, offset_ms=0):
+    """A compact, human-readable account of a recorded solve, for a prompt. Times
+    read `offset_ms` later than the log's, so they can count from when planning began."""
     s = summary(events)
+    at = lambda ms: mmss(ms + offset_ms) if ms is not None else "never"  # noqa: E731
     head = [
-        f"Solve lasted {_dur(s['duration_ms'])}. First edit {mmss(s['first_edit_ms'])}, "
-        f"first run {mmss(s['first_run_ms']) if s['first_run_ms'] is not None else 'never'}, "
-        f"first submit {mmss(s['first_submit_ms']) if s['first_submit_ms'] is not None else 'never'}.",
+        f"Solve lasted {_dur(s['duration_ms'])}. First edit {at(s['first_edit_ms'])}, "
+        f"first run {at(s['first_run_ms'])}, first submit {at(s['first_submit_ms'])}.",
         f"{s['runs']} runs ({s['runs_failed']} not matching), {s['submits']} submits "
         f"({s['failed_submits']} failed). Idle {_dur(s['idle_ms'])} in stretches of a minute "
         f"or more; paused {_dur(s['paused_ms'])}; away from the tab {_dur(s['away_ms'])}.",
@@ -454,7 +533,7 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS):
     def render():
         lines = list(head)
         for t, text, diff in entries:
-            lines.append(f"[{mmss(t)}] {text}")
+            lines.append(f"[{mmss(t + offset_ms)}] {text}")
             if diff:
                 lines.append("  what changed before the next judging:")
                 lines.extend("    " + line for line in diff.splitlines())

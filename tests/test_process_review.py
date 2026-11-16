@@ -84,7 +84,7 @@ async def test_the_pace_line_counts_planning_and_says_how_much(monkeypatch):
     await enrich.review_process(store, recorded)
     assert seen[0][1]["timeline"].startswith(
         "Interview pace for Easy is 15m; this solve took 17:00 of clock time "
-        "(05:00 planning, then the coding below) (over pace).")
+        "(05:00 planning, then the coding below, whose times continue the same clock) (over pace).")
 
 
 async def test_an_interview_mode_solve_is_read_as_one(monkeypatch):
@@ -128,3 +128,18 @@ async def test_sweep_reviews_rated_recorded_solves_and_full_enrichment_keeps_it(
 def test_an_unrated_solve_waits_for_its_rating(monkeypatch):
     store, recorded, _ = _store(rated=False)
     assert enrich.needs_process_review(store) == []
+
+
+async def test_the_review_sees_the_plan_grade_and_planning_on_the_same_clock(monkeypatch):
+    store, recorded, _ = _store()
+    store.update_attempt(recorded, {"plan_status": "planned", "plan_time_sec": 120})
+    store.upsert_enrichment(recorded, {"attempt_id": recorded, "plan_grade": {
+        "approach_verdict": "partial", "held": "pivoted", "missing_step": "indegree counts",
+        "note": "BFS alone ignores order."}})
+    seen = _llm(monkeypatch, {**REVIEW, "diagnosis": "The plan lacked indegree counts."})
+    doc, _ = await enrich.review_process(store, recorded)
+    payload = seen[0][1]
+    assert payload["plan_grade"] == ("approach partial; plan pivoted; missing: indegree counts; "
+                                     "BFS alone ignores order.")
+    assert "[03:00] submit: Wrong Answer" in payload["timeline"]
+    assert doc["process_review"]["diagnosis"] == "The plan lacked indegree counts."

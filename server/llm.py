@@ -125,6 +125,7 @@ class SolutionGrade(BaseModel):
 
 class ProcessReview(BaseModel):
     # Flat, like PlanGrade: strings rather than nested objects.
+    diagnosis: str = Field("", description="one or two sentences: where the time went and why, plan and process together")
     stuck_points: list[str] = Field(default_factory=list, description="up to 3, each 'mm:ss — where the time went and the likely reason'")
     fixes: list[str] = Field(default_factory=list, description="one per failure that led to a change: 'what broke -> what fixed it'")
     missed_edge_cases: list[str] = Field(default_factory=list, description="edge cases a failing input exposed that the plan did not name")
@@ -503,11 +504,17 @@ TASKS: dict[str, Task] = {
     "review_process": Task(
         ProcessReview,
         "You review HOW a coding-interview practice solve went, from a timeline of "
-        "the solver's editor session: idle stretches, time away, runs against test "
-        "input, submissions, and the code changes between a failed submission and "
-        "the next attempt. Their pre-coding plan and final accepted code are given "
-        "for context; the plan and the code are graded elsewhere, so judge the "
-        "process in between. stuck_points: up to 3 real stalls or detours, each "
+        "the solver's editor session: quiet stretches, time on another tab, runs "
+        "against test input, submissions, hints, and the code changes between a "
+        "failed submission and the next attempt. Their pre-coding plan, its grade "
+        "when there is one, and the final accepted code are given too. A quiet "
+        "stretch is a minute or more with no edits or runs: it may be thinking, notes "
+        "or a break, so don't call it idle or distracted unless the log shows more. "
+        "diagnosis: one or two sentences saying where the time went and why, and "
+        "connect the plan to the process when one caused the other (for example a "
+        "plan missing one step that the solver then patched around). Name the step "
+        "that was missing, not just that something was. Mention a hint or an "
+        "explained approach when it was the turning point. stuck_points: up to 3 real stalls or detours, each "
         "'mm:ss — where the time went and the likely reason'. A stall is a minute "
         "or more of no progress; reading and planning before the first edit is "
         "not one unless it ran several minutes. Empty is fine. fixes: one per failure that led to a change, 'what broke -> "
@@ -515,15 +522,18 @@ TASKS: dict[str, Task] = {
         "edge cases a failing input exposed that the plan did not name, a few words "
         "each; empty if none. testing_habit: one short line on how they used Run "
         "before submitting. takeaway: one sentence, the single change that would "
-        "most help next time. When the solve ran over the interview pace given, "
-        "say where the overrun came from. Be concrete, cite times, keep every "
-        "string short.",
+        "most help next time, specific to what happened here: the idea or the "
+        "check that would have saved the time, not a general habit. When the solve "
+        "ran over the interview pace given, say where the overrun came from. Times "
+        "count from when planning began. Be concrete, cite times, keep every "
+        "string short. Plain words, British English, no em dashes.",
         lambda p: (
             f"Problem: {p.get('title')} ({p.get('difficulty')}, {p.get('category')}).\n"
             f"Canonical key ideas: {p.get('canonical') or '(unknown)'}\n"
             f"--- plan written before coding ---\n"
             f"Approach: {p.get('predicted_approach') or '(none)'}\n"
             f"Planned edge cases: {json.dumps(p.get('planned_edge_cases') or [])}\n"
+            f"Plan grade: {p.get('plan_grade') or '(not graded)'}\n"
             f"Solver note after solving: {p.get('note') or '(none)'}\n"
             f"--- timeline (mm:ss since the solve started) ---\n{p.get('timeline')}\n"
             f"--- final accepted code ({p.get('lang')}) ---\n{_trunc(p.get('code'), 1500)}"

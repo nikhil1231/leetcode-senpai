@@ -7,6 +7,7 @@ import { useOverview, useLeetcodeStatus } from "@/lib/queries";
 import { useRun } from "@/lib/run-store";
 import { useToast } from "@/lib/toast";
 import { DifficultyBadge } from "@/components/ui/Badge";
+import { CodeView, SolveTimeline } from "./SolveTimeline";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -20,7 +21,7 @@ const Tag = ({ verdict, labels = PLAN_VERDICTS }: { verdict: string; labels?: Re
 const followupSeen = new Set<string>();
 const followupKey = (a: Any) => `${a.id}|${a.code || ""}`;
 
-function Facts({ attempt }: { attempt: Any }) {
+function Facts({ attempt, optimal }: { attempt: Any; optimal: boolean }) {
   const untimed = attempt.time_taken_sec == null && attempt.source === "detected";
   const was = (key: string) => { const b = (attempt.before_optimize || {})[key]; return b != null && b !== attempt[key] ? <> <span className="small">(was {pct(b)})</span></> : null; };
   const perf = [["Runtime", "runtime_percentile"], ["Memory", "memory_percentile"]].filter(([, k]) => attempt[k] != null);
@@ -36,6 +37,8 @@ function Facts({ attempt }: { attempt: Any }) {
     if (attempt.first_ac_time_taken_sec != null) facts.push(<>First AC <b>{fmtTime(solveSecOf(attempt, "first_ac_time_taken_sec"))}</b></>);
   }
   if (attempt.wrong_before_ac != null) facts.push(<>Wrong subs <b>{attempt.wrong_before_ac}</b></>);
+  const help = [attempt.hint_level_used ? `${attempt.hint_level_used} hint${attempt.hint_level_used === 1 ? "" : "s"}` : null, attempt.gave_up ? "approach explained" : null].filter(Boolean);
+  if (help.length) facts.push(<>Help <b>{help.join(" · ")}</b></>);
   if (attempt.lang) facts.push(<>Lang <b>{attempt.lang}</b></>);
   if (attempt.interview) facts.push(<b>Interview mode</b>);
   return (
@@ -43,10 +46,11 @@ function Facts({ attempt }: { attempt: Any }) {
       {perf.length > 0 && (
         <div id="annotate-perf" className="solve-perf">{perf.map(([label, key]) => {
           const v = attempt[key];
-          return <div key={key} className={`solve-perf-stat${v < 50 ? " is-low" : ""}`}><span className="solve-perf-label">{label}</span>
+          return <div key={key} className={`solve-perf-stat${v < 50 ? (optimal ? " is-calm" : " is-low") : ""}`}><span className="solve-perf-label">{label}</span>
             <span className="solve-perf-value">beats <b>{pct(v)}</b>{was(key)}</span><span className="solve-perf-bar"><i style={{ width: `${Math.max(0, Math.min(100, v))}%` }} /></span></div>;
         })}</div>
       )}
+      {optimal && perf.some(([, k]) => attempt[k] < 50) && <p id="annotate-perf-note" className="small solve-perf-note">The complexity is optimal, so these percentiles come down to constant factors (the language, recursion, which containers you used) and LeetCode&apos;s timing noise. Resubmitting the same code can move them a long way.</p>}
       <div id="annotate-facts" className="facts">{facts.map((f, i) => <span key={i}>{f}</span>)}</div>
     </>
   );
@@ -92,22 +96,33 @@ function PlanCard({ attempt, onGrade }: { attempt: Any; onGrade: (id: string) =>
   );
 }
 
-function Process({ attempt, llm }: { attempt: Any; llm: boolean }) {
+// Where the time went: the bar (no LLM), then the coach's read of it when there is one: what caused the time to go where
+// it did, the one change for next time, and the details (stalls, fixes, edge cases a failure exposed) folded away.
+function TimeSpent({ attempt, llm }: { attempt: Any; llm: boolean }) {
   const r = attempt.recording;
   const known = (attempt.enrichment || {}).process_review;
-  const q = useQuery({ queryKey: ["api", "review-process", attempt.id], enabled: !!r && llm && !known, retry: false, staleTime: Infinity, queryFn: () => api(`/attempt/${attempt.id}/review-process`, "POST") });
+  const fresh = known && known.diagnosis !== undefined;
+  const q = useQuery({ queryKey: ["api", "review-process", attempt.id], enabled: !!r && llm && !fresh, retry: false, staleTime: Infinity, queryFn: () => api(`/attempt/${attempt.id}/review-process`, "POST") });
   if (!r) return null;
-  const at = (ms: number | null) => (ms == null ? "—" : fmtClock(Math.round(ms / 1000)));
-  const stats = `first run ${at(r.first_run_ms)} · ${r.runs} run${r.runs === 1 ? "" : "s"} · ${r.failed_submits} failed submit${r.failed_submits === 1 ? "" : "s"}`;
-  const review = known || q.data?.review;
-  const stuck: string[] = (review?.stuck_points || []).slice(0, 2);
+  const review = q.data?.review || known;
+  const stuck: string[] = review?.stuck_points || [], fixes: string[] = review?.fixes || [], edges: string[] = review?.missed_edge_cases || [];
   return (
-    <section id="annotate-process" className="plan-card annotate-row" aria-labelledby="annotate-process-heading">
-      <div className="plan-card-head"><h3 id="annotate-process-heading" className="plan-card-title">How it went</h3></div>
+    <section id="annotate-process" className="plan-card annotate-time" aria-labelledby="annotate-process-heading">
+      <div className="plan-card-head"><h3 id="annotate-process-heading" className="plan-card-title">Where the time went</h3></div>
+      <SolveTimeline attempt={attempt} />
       <div id="annotate-process-body">
-        <p className="small process-stats">{stats}</p>
-        {llm && !known && q.isLoading && <div className="grading"><span className="spinner" /><span className="grading-text">Reading how it went…</span></div>}
-        {review && <>{stuck.length > 0 && <ul className="process-list">{stuck.map((x, i) => <li key={i}>{x}</li>)}</ul>}{review.takeaway && <p className="process-next"><b>Next time:</b> {review.takeaway}</p>}</>}
+        {llm && !fresh && q.isLoading && <div className="grading"><span className="spinner" /><span className="grading-text">Reading the timeline…</span></div>}
+        {review && <>
+          {review.diagnosis && <p className="process-diagnosis">{review.diagnosis}</p>}
+          {review.takeaway && <p className="process-next"><b>Next time:</b> {review.takeaway}</p>}
+          {(stuck.length > 0 || fixes.length > 0 || edges.length > 0 || review.testing_habit) && (
+            <details className="annotate-more"><summary>Details</summary>
+              {stuck.length > 0 && <><h4 className="process-sub">Slow stretches</h4><ul className="process-list">{stuck.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
+              {fixes.length > 0 && <><h4 className="process-sub">What broke and how you fixed it</h4><ul className="process-list">{fixes.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
+              {edges.length > 0 && <><h4 className="process-sub">Cases a failure exposed</h4><ul className="process-list">{edges.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
+              {review.testing_habit && <p className="small"><b>Testing:</b> {review.testing_habit}</p>}
+            </details>)}
+        </>}
         {!review && q.data?.error && <p className="missed small">Couldn&apos;t read the run: {q.data.error}</p>}
       </div>
     </section>
@@ -171,7 +186,7 @@ function NeedsCookie({ state, note, onSaved }: { state?: string; note?: string; 
 
 // The post-solve modal. An Accepted from the editor first gets the interviewer's follow-up ("can we do better?"), with
 // no feedback yet, so you can still improve it yourself. Then the review: the solution grade leads, the plan and how
-// the run went sit below in one line each, and choosing a confidence saves. Grading starts as the modal opens.
+// the run went sit below (the timeline full width), the accepted code folds away last, and choosing a confidence saves. Grading starts as the modal opens.
 export function AnnotateModal({ initial, onClose }: { initial: Any; onClose: (opts?: { next?: boolean }) => void }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -293,7 +308,7 @@ export function AnnotateModal({ initial, onClose }: { initial: Any; onClose: (op
             {attempt.difficulty && <DifficultyBadge difficulty={attempt.difficulty} />}
           </div>
           <div id="annotate-problem-meta" className="solved-problem-meta">{meta}</div>
-          <Facts attempt={attempt} />
+          <Facts attempt={attempt} optimal={grade.kind === "ok" && !!grade.g.optimal} />
           {attempt.in_library === false && (
             <div id="annotate-library" className="solved-problem-meta"><span>Not in your library — logged, but it won&apos;t be scheduled.</span>
               <button className="button is-small is-link" disabled={adding} onClick={addToLibrary}>{adding ? "Adding…" : "Add to library"}</button></div>
@@ -328,7 +343,9 @@ export function AnnotateModal({ initial, onClose }: { initial: Any; onClose: (op
                 </div>
               </section>
             )}
-            <div className="annotate-rows"><PlanCard attempt={attempt} onGrade={gradePlan} /><Process attempt={attempt} llm={llm} /></div>
+            <TimeSpent attempt={attempt} llm={llm} />
+            <div className="annotate-rows"><PlanCard attempt={attempt} onGrade={gradePlan} /></div>
+            {attempt.code && <CodeView code={attempt.code} lang={attempt.lang} />}
           </div>
         )}
 

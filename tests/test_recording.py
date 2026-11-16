@@ -200,3 +200,49 @@ def test_a_reset_reads_as_a_restart():
     assert rec.clean_client_event({"t": 2_000, "k": "reset"}) == {"t": 2_000, "k": "reset"}
     assert "[00:02] reset the code to the starter" in rec.timeline_for_llm(events)
     assert rec.summary(events)["chain_ok"] is True
+
+
+def test_phases_split_the_solve_into_plan_work_quiet_and_away():
+    ev = [
+        {"t": 0, "k": "c", "code": "x"},
+        {"t": 10_000, "k": "d", "f": 0, "to": 1, "s": "y"},
+        {"t": 20_000, "k": "run", "code": "y", "result": {"passed": False, "correct": 1, "total": 3}},
+        # 3 minutes with nothing, two of them on another tab
+        {"t": 80_000, "k": "blur"},
+        {"t": 200_000, "k": "focus"},
+        {"t": 200_000, "k": "hint", "level": 1, "text": "Think about order."},
+        {"t": 210_000, "k": "d", "f": 0, "to": 1, "s": "z"},
+        {"t": 230_000, "k": "sub", "code": "z", "result": {"status": "Accepted", "correct": 9, "total": 9}},
+    ]
+    p = rec.phases(ev, plan_ms=60_000)
+    kinds = [(s["kind"], s["from"], s["to"]) for s in p["segments"]]
+    assert kinds == [("plan", 0, 60_000), ("work", 60_000, 80_000), ("quiet", 80_000, 140_000),
+                     ("away", 140_000, 260_000), ("quiet", 260_000, 270_000), ("work", 270_000, 290_000)]
+    assert p["duration_ms"] == 290_000
+    assert sum(p["totals"].values()) == p["duration_ms"]
+    assert [(m["t"], m["kind"]) for m in p["marks"]] == [(80_000, "run"), (260_000, "hint"), (290_000, "submit")]
+    assert p["marks"][-1]["status"] == "Accepted" and p["marks"][1]["text"] == "Think about order."
+
+
+def test_phases_fold_slivers_and_rank_pause_over_away():
+    ev = [
+        {"t": 0, "k": "c", "code": "x"},
+        {"t": 100_000, "k": "d", "f": 0, "to": 1, "s": "y"},   # 100s quiet from the start
+        {"t": 100_200, "k": "pause"},
+        {"t": 100_300, "k": "blur"},
+        {"t": 400_000, "k": "focus"},
+        {"t": 400_000, "k": "resume"},
+        {"t": 400_500, "k": "giveup", "step": 1, "text": "Count indegrees."},
+        {"t": 410_000, "k": "run", "code": "y", "result": {"passed": True}},
+    ]
+    p = rec.phases(ev)
+    assert [s["kind"] for s in p["segments"]] == ["quiet", "paused", "work"]
+    assert p["totals"]["plan"] == 0 and p["totals"]["paused"] >= 299_000
+    assert {"kind": "explained", "step": 1, "text": "Count indegrees.", "t": 400_500} in p["marks"]
+
+
+def test_timeline_offset_counts_from_the_start_of_planning():
+    ev = [{"t": 0, "k": "c", "code": "a"},
+          {"t": 30_000, "k": "run", "code": "a", "result": {"passed": True, "correct": 1, "total": 1}}]
+    text = rec.timeline_for_llm(ev, offset_ms=120_000)
+    assert "first run 02:30" in text and "[02:30] run" in text

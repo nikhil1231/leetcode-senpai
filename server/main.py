@@ -1904,6 +1904,23 @@ async def api_grade_plan(attempt_id: str, uid: str = Depends(auth.require_user))
             "plan": _plan_review(store, attempt, enrichment)}
 
 
+@app.get("/api/attempt/{attempt_id}/timeline")
+def api_attempt_timeline(attempt_id: str, uid: str = Depends(auth.require_user)):
+    """Where an in-editor solve's time went, as a bar (recording.phases). No LLM;
+    null for a solve with no recording."""
+    store = get_store(uid)
+    attempt = store.get_attempt(attempt_id)
+    if not attempt:
+        raise HTTPException(404, "no such attempt")
+    rec = attempt.get("recording_id") and store.get_recording(attempt["recording_id"])
+    events = recording.parse(rec.get("events")) if rec else []
+    if not events:
+        return {"timeline": None}
+    return {"timeline": {**recording.phases(events, plans.plan_sec(attempt) * 1000),
+                         "finished_on": attempt.get("finished_on"),
+                         "truncated": bool(rec.get("truncated"))}}
+
+
 @app.post("/api/attempt/{attempt_id}/review-process")
 async def api_review_process(attempt_id: str, uid: str = Depends(auth.require_user)):
     """The coach's read of how an in-editor solve went (stuck points, fixes, a
