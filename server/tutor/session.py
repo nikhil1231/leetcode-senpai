@@ -21,7 +21,9 @@ career brief), so lessons connect to the job he wants; "cv" mode interviews him 
 session opened to close one gap carries it as `focus` and starts there.
 
 Lessons are layered (knowledge_base/layers.yaml): map, interview-ready, depth. A lesson session
-teaches to interview depth and parks depth ideas until asked; an area overview ("map-<area>", MAP)
+teaches to interview depth and parks depth ideas until asked, activities included (an activity takes
+the layer of the idea it mainly tests); a whole-design lesson (DESIGN) is run as a design round he
+drives, kept on the whiteboard, with the lesson as the answer key rather than the script; an area overview ("map-<area>", MAP)
 covers a whole area at map depth in one sitting and ends on a design in the simulator. In both
 the tutor can hand over the game levels, worked designs and internals simulators that practise
 the lesson ([[play rN]], resources.py) as links under its message.
@@ -38,9 +40,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .. import llm, voice
+from ..knowledge_base import catalog as kcat
 from . import board, lessons, resources, rig, story
 
-PROMPT_VERSION = 19
+PROMPT_VERSION = 20
 MAX_TURNS = 120
 HISTORY_TURNS = 60      # chat messages the tutor sees; older ones are covered by the summary
 NOTES_CONTEXT = 6       # recent turns the note-taker sees around the latest learner message
@@ -265,6 +268,8 @@ What it should leave him able to do (a map for you, not a checklist to read out;
         fixed.append(PASS_ONE.format(close=PASS_ONE_SD if lesson.get('section') == 'system-design' else PASS_ONE_TRACK))
     elif mode == 'teach' and not lesson.get('map') and any(v.get('layer', 2) != 2 for v in views):
         fixed.append(layers_text(views))
+    if mode == 'teach' and lessons.is_design(lesson):
+        fixed.append(DESIGN)
     if blocks_allowed(mode):
         res = lesson_resources(lesson)
         fixed.append((ACTIONS_MAP if lesson.get('map') else ACTIONS).format(
@@ -335,14 +340,37 @@ Scale: Ripple's size is {story_state['users']}, and that is the only figure for 
         changing.append(f"## Where he is on the page\nHe has read the overview on the page up to {'the end' if at > n else f'step {at} of {n}'}. "
                         "Ask whether he wants to start from there or from the top; don't re-teach steps he says he's got.")
     if blocks_allowed(mode):
-        tools = '\n'.join(f'- {t["key"]} ({t["type"]}): {t["about"]}' for t in lessons.tools(lesson) if t['key'] not in session['shown'])
-        if tools:
-            changing.append(f"Activities from this lesson you haven't used yet (one line saying what to do, then the marker; never two in a row, each once; you'll see how he did):\n{tools}")
+        changing.extend(activities_text(session, lesson))
+    if mode == 'teach' and lessons.is_design(lesson):
+        changing.append(design_so_far(session))
     if not blocks_allowed(mode):
         changing.append("""## Private notes
 Keep anything you must stay consistent about (a planted flaw, an incident's state, what he has told you) in a short <private>…</private> block at the end of a message, under 120 words; he never sees it. Everything else in your message is what he sees, so every message must have something for him outside the block. Your notes so far:
 """ + (session.get('notes') or '(none yet)'))
     return '\n\n'.join(fixed), '\n\n'.join(changing)
+
+
+def activities_text(session, lesson):
+    """The unused activities, with depth ones held back unless the session aims at depth."""
+    line = lambda t: f'- {t["key"]} ({t["type"]}): {t["about"]}'  # noqa: E731
+    left = [t for t in lessons.tools(lesson) if t['key'] not in session['shown']]
+    deep = [t for t in left if t['layer'] == kcat.DEPTH and session.get('layer') != kcat.DEPTH]
+    core = [t for t in left if t not in deep]
+    out = []
+    if core:
+        out.append("Activities from this lesson you haven't used yet (one line saying what to do, then the marker; never two in a row, "
+                   "each once; you'll see how he did):\n" + '\n'.join(map(line, core)))
+    if deep:
+        out.append("Depth activities: these test ideas beyond interview depth. Hand one over only if he asks to go deeper, or once "
+                   "everything else in the lesson is solid:\n" + '\n'.join(map(line, deep)))
+    return out
+
+
+def design_so_far(session):
+    """His design as it stands: the last diagram on the board and the decisions in the private notes."""
+    drawn = [b for t in session['turns'] if t['role'] == 'tutor' for b in t.get('boards') or []]
+    return ("## His design so far\nOn the whiteboard now:\n" + (board.source(drawn[-1]) if drawn else '(nothing drawn yet)')
+            + "\n\nYour private notes (his decisions so far):\n" + (session.get('notes') or '(none yet)'))
 
 
 # The end of the prompt is what a model weighs most, and the lesson notes before it are long: the voice, again, in brief.
@@ -390,6 +418,16 @@ This session aims for interview-ready: what a strong candidate can explain and d
 {map}
 - Depth ideas are for later. Don't teach them unprompted: name one when it comes up, so he knows it exists, and go into it only if he asks or has everything else:
 {depth}"""
+
+
+DESIGN = """## How to run a design lesson
+This lesson is a whole design, and the point is that he designs it. Run it like a 45-minute design round with you on his side: requirements, estimates, API, data model, the high-level design, then one or two deep dives.
+- At each stage, ask what he would do before you show anything. Build on his choices: if one works, keep it, even when the notes chose something else, and say what it costs. If it breaks a requirement, say which one and let him fix it. Give him the notes' answer only when he's stuck or asks.
+- The lesson notes are what you judge his design against, not a script. Don't walk their sections or the activities in page order.
+- Activities are checks, not the next step. Hand one over after he has made that call himself and it tests the choice he just made, or when he asks. Most stages need none (this outweighs the advice below to use activities generously).
+- Keep the design on the whiteboard. Once he has settled the main boxes, draw them, then redraw the diagram whenever he adds or changes a part, with the new part marked state: new. It is his design, so use his choices and his names.
+- Deep dives come once the high-level design is on the board, and only one or two. Start each from a part of the diagram, keep to what an interviewer would ask about that part, and finish on what it changes on the board (a TTL, a new box, a different write path). If one is heading into internals the round wouldn't reach, stop, name it as something to read later, and go back to the design.
+- Keep a short list of his decisions so far in a <private>…</private> block at the end of a message (he never sees it, and it replaces the last one), so later stages can build on them."""
 
 
 PASS_ONE = """## Pass one: map depth

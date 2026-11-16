@@ -109,7 +109,7 @@ def _check_point(p, section, lesson, objectives, where):
 
 
 def load(folder=HERE, layers=None):
-    """-> {points, aliases, items, item_info, used_by, stale, unmapped, problems}."""
+    """-> {points, aliases, items, primary, item_info, used_by, stale, unmapped, problems}."""
     points, raw_items, item_info, stale, problems, unmapped = {}, {}, {}, [], [], {}
     for section, meta in SECTIONS.items():
         known, info = lessons(section), items(section)
@@ -196,7 +196,8 @@ def load(folder=HERE, layers=None):
     for item, i in item_info.items():
         if item not in item_map:
             unmapped.setdefault(i['section'], []).append(item)
-    return {'points': points, 'aliases': aliases, 'items': item_map, 'item_info': item_info,
+    primary = {item: raw_items[item][1][0] for item in item_map}   # the point an item mainly tests, before aliasing
+    return {'points': points, 'aliases': aliases, 'items': item_map, 'primary': primary, 'item_info': item_info,
             'used_by': used_by, 'stale': stale, 'unmapped': unmapped, 'problems': problems}
 
 

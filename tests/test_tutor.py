@@ -926,3 +926,40 @@ def test_the_system_prompt_stays_the_same_all_session_and_the_state_rides_on_his
     assert ses.NOW_HEADER not in ''.join(m['content'] for m in third[1:-1])     # earlier turns go back as they were
     assert third[1:len(second) - 1] == second[1:-1]                            # so the conversation so far is a stable prefix
     assert '◐ partly shown' in third[-1]['content'] and 'b1 (' not in third[-1]['content']
+
+
+# ---- whole-design lessons -------------------------------------------------------------------
+
+LINKS = lessons.get('system-design', 'design-links')
+
+
+def test_an_activity_takes_the_layer_of_the_idea_it_mainly_tests():
+    layers = {t['key']: t['layer'] for t in lessons.tools(LINKS)}
+    assert layers['b10'] == kcat.DEPTH                     # the refill race: a depth idea
+    assert layers['b1'] == layers['b9'] == kcat.INTERVIEW  # its own lesson's layer, not an alias's
+    assert lessons.block_layer(LINKS, {'key': 'b999'}) == kcat.INTERVIEW
+
+
+def test_depth_activities_are_held_back_unless_the_session_aims_at_depth():
+    s = ses.new('s', LINKS, 'teach', 0)
+    core, deep = ses.activities_text(s, LINKS)
+    assert '- b10 ' in deep and '- b10 ' not in core and '- b9 ' in core and 'asks to go deeper' in deep
+    s['layer'] = kcat.DEPTH
+    assert len(ses.activities_text(s, LINKS)) == 1
+    s['shown'] = [t['key'] for t in lessons.tools(LINKS)]
+    assert ses.activities_text(s, LINKS) == []
+
+
+def test_a_design_lesson_is_a_round_he_drives_and_keeps_his_design_in_view():
+    s = ses.new('s', LINKS, 'teach', 0)
+    p = ses.system(s, LINKS, [], [], {}, story.scale(summary(0)))
+    assert 'How to run a design lesson' in p and 'ask what he would do before you show anything' in p
+    assert '## His design so far' in p and '(nothing drawn yet)' in p
+    assert 'How to run a design lesson' not in system(ses.new('s', L, 'teach', 0))
+    assert 'How to run a design lesson' not in ses.system(ses.new('s', LINKS, 'interview', 0), LINKS, [], [], {}, story.scale(summary(0)))
+    assert lessons.is_design(LINKS) and lessons.is_design(lessons.get('ai', 'design-research-agent')) and not lessons.is_design(L)
+    diagram = '```diagram\ntitle: {t}\nnodes:\n  - {{id: cdn, label: CDN, kind: cdn}}\n  - {{id: db, label: Postgres, kind: db}}\nedges:\n  - [cdn, db]\n```'
+    for title in ('First sketch', 'With Redis'):
+        ses.add_reply(s, 'Here it is.\n' + diagram.format(t=title) + '\n<private>codes: random + PK</private>', LINKS, 1)
+    text = ses.design_so_far(s)
+    assert 'title: With Redis' in text and 'First sketch' not in text and 'codes: random + PK' in text

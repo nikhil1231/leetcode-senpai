@@ -93,6 +93,24 @@ def get(section, key):
             'objectives': list(l.get('objectives') or []), 'blocks': l['blocks']}
 
 
+def is_design(lesson):
+    """A whole-design lesson (design a link shortener, an inference platform…), taught as a design he builds."""
+    if lesson.get('map'):
+        return False
+    section = lesson.get('section', 'system-design')
+    return any(lesson['id'] in area_lessons(a, section) for a in DESIGN_AREAS
+               if section == 'system-design' or a in courses.COURSES.get(section, {}).get('order', {}))
+
+
+def block_layer(lesson, block, catalog=None):
+    """The layer (1 map, 2 interview, 3 depth) of the idea a block mainly tests: the layer of the first point
+    its ledger item maps to, in its own lesson. An unmapped block is interview-ready."""
+    c = catalog or kcat.CATALOG
+    src = block.get('from') or {'lesson': lesson['id'], 'key': block.get('key')}
+    pid = c.get('primary', {}).get(f"{src['lesson']}:{src['key']}")
+    return c['points'][pid]['layer'] if pid in c['points'] else kcat.INTERVIEW
+
+
 def _first_line(b):
     text = b.get('title') or b.get('prompt') or b.get('say') or b.get('name') or b.get('intro') or ''
     return re.sub(r'\s+', ' ', re.sub(r'[*`_>#]', '', str(text))).strip()[:140]
@@ -100,8 +118,8 @@ def _first_line(b):
 
 def tools(lesson):
     """Blocks the tutor may show: every interactive block, with a one-line description (a simulator's
-    intro or first challenge too, so the tutor knows what it does) and `words`, its own text for
-    recognising a mention of it (session.implied)."""
+    intro or first challenge too, so the tutor knows what it does), `words`, its own text for
+    recognising a mention of it (session.implied), and the layer of the idea it tests."""
     out = []
     for b in lesson['blocks']:
         if b['type'] == 'md' or 'key' not in b:
@@ -112,7 +130,7 @@ def tools(lesson):
             about = f'{about}. {re.sub(r"\s+", " ", str(extra)).strip()[:160]}'
         words = ' '.join(str(x) for x in (b.get('title'), b.get('name'), b.get('intro'), b.get('prompt'), b.get('company'),
                                           *(c.get('text') for c in b.get('challenges') or [] if isinstance(c, dict))) if x)
-        out.append({'key': b['key'], 'type': b['type'], 'about': about, 'words': words})
+        out.append({'key': b['key'], 'type': b['type'], 'about': about, 'words': words, 'layer': block_layer(lesson, b)})
     return out
 
 
