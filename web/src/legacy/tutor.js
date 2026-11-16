@@ -408,7 +408,10 @@
       saved: {}, recall: t.ctx.recall, pitch: t.ctx.pitch, save() {},
       done(k, correct) {
         Promise.resolve(t.ctx.done?.(k, correct)).catch(() => {});
-        if (T === t && t.session?.status === 'active' && typeof correct === 'boolean') send({block: {key: k, correct}});
+        if (T === t && t.session?.status === 'active' && typeof correct === 'boolean') {
+          const answer = String(wrap.querySelector(`[data-block="${k}"]`)?.dataset.answer || '').slice(0, 2000);
+          send({block: {key: k, correct, ...(answer ? {answer} : {})}});
+        }
       },
     });
     wrap._handle = handle;

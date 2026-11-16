@@ -488,6 +488,7 @@ def _replace_review(store, old, new, now):
 class BlockResult(BaseModel):
     key: str = Field(pattern=r'^b\d{1,3}$')
     correct: bool
+    answer: str = Field(default='', max_length=2000)   # what he chose, as the block describes it
 
 
 class Objective(BaseModel):
@@ -568,7 +569,8 @@ async def _turn(sid, body, store):
             raise HTTPException(422, 'That block is not in this lesson.')
         now = time.time()
         if body.block:
-            s['turns'].append({'role': 'block', 'block': body.block.key, 'correct': body.block.correct, 'key': body.key, 'at': now})
+            s['turns'].append({'role': 'block', 'block': body.block.key, 'correct': body.block.correct, 'key': body.key, 'at': now,
+                               **({'answer': body.block.answer.strip()} if body.block.answer.strip() else {})})
         if design:
             s['turns'].append({'role': 'run', 'design': body.run.turn, 'key': body.key, 'at': now, 'availability': body.run.availability,
                                'text': rig.result_text(_run_summary(body.run, design))})

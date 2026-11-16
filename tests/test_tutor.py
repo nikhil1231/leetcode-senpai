@@ -109,6 +109,8 @@ def test_messages_are_a_chat_and_blocks_read_as_learner_turns():
     assert m[0]['content'] == ses.OPENING and m[3]['content'].endswith('[[activity b1]]')
     assert m[4]['content'].startswith('(I did the activity') and m[4]['content'].endswith('got it wrong.)')
     assert ses.messages(s, L, debrief=True)[-1]['content'].startswith('(The session has ended')
+    s['turns'][-1]['answer'] = 'Hash the URL → Weak; Random code → Clean'
+    assert ses.messages(s, L)[4]['content'].endswith('got it wrong. My answer: Hash the URL → Weak; Random code → Clean)')
 
 
 def test_parse_strips_markers_and_keeps_only_valid_new_activities():
@@ -275,8 +277,8 @@ def test_a_session_from_start_to_finish(client):
 
     client.replies.append('Nice. Now: why delete rather than set?')
     client.notes.append(notes(resolved=[mis[0]['_key']]))
-    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0002', 'block': {'key': 'b1', 'correct': True}}))
-    assert client.chats[-1][-1]['content'].startswith('(I did the activity') and client.payloads[-1]['LATEST_ACTIVITIES']
+    s = ok(client.post(f'/api/tutor/sessions/{s["id"]}/turns', json={'key': 'turn-0002', 'block': {'key': 'b1', 'correct': True, 'answer': 'Delete the key'}}))
+    assert client.chats[-1][-1]['content'].startswith('(I did the activity') and client.chats[-1][-1]['content'].endswith('My answer: Delete the key)') and client.payloads[-1]['LATEST_ACTIVITIES']
     assert client.payloads[-1]['OPEN_MISCONCEPTIONS'][0]['point'] == DELETE
     assert client.store.list_knowledge('knowledge_misconceptions')[0]['status'] == 'resolved'
 

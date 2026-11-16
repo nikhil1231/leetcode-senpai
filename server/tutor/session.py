@@ -456,7 +456,8 @@ def _block_text(t, lesson):
     if t['role'] == 'run':
         return t['text']
     about = next((x['about'] for x in lessons.tools(lesson) if x['key'] == t['block']), t['block'])
-    return f'(I did the activity "{about}" and got it {"right" if t["correct"] else "wrong"}.)'
+    mine = f' My answer: {t["answer"]}' if t.get('answer') else ''
+    return f'(I did the activity "{about}" and got it {"right" if t["correct"] else "wrong"}.{mine})'
 
 
 def messages(session, lesson, debrief=False):
