@@ -1103,6 +1103,8 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 .run-chat-host { --chat-bg: var(--bg-elev); display: flex; flex-direction: column; min-height: 0; max-width: 64ch; width: 100%; margin: 12px auto 0; }
 .active-run:not(.has-editor) .run-chat .ch-log { max-height: 50vh; }
 .run-chat .ch-msg.is-hint .ch-bubble { padding: 11px 13px; border: 1px solid rgba(245, 181, 68, .3); border-radius: 12px; background: rgba(245, 181, 68, .06); font-size: 13.5px; line-height: 1.55; }
+.run-chat .ch-msg.is-me .ch-bubble, .run-chat .ch-msg.is-them .ch-bubble { font-size: 13.5px; line-height: 1.55; }
+.run-chat .ch-msg.is-me .ch-bubble { padding: 8px 14px; border-radius: 16px; }
 .run-chat .ch-msg.is-hint.is-latest .ch-bubble { animation: hint-in .25s ease-out; }
 .run-chat .ch-msg .note-action { align-self: flex-end; margin-top: 4px; }
 .run-chat .ch-typing span { background: var(--amber); }
@@ -3005,6 +3007,14 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .active-run.has-editor .active-notes:has(+ .run-chat-host) { flex: 0 1 auto; max-height: 45%; }
 .active-run.has-editor .active-notes:has(+ .run-chat-host):not(:has(> :not(.hidden):not(.coach-empty))) { flex: none; padding-bottom: 0; }
 .active-run.has-editor .run-chat-host { flex: 1 1 0; max-width: none; margin: 0; padding: 0 14px 4px; }
+/* The coach column is narrow: the text takes the full width and the mic and send sit on a row beneath it. */
+.active-run.has-editor .run-chat .ch-composer { border-radius: 16px; padding: 6px 8px 8px 4px; }
+.active-run.has-editor .run-chat .ch-composer > .dictate-wrap { position: static; }
+.active-run.has-editor .run-chat .ch-input { min-height: 0; font-size: 13.5px; line-height: 1.55; padding: 6px 8px 4px 10px; scrollbar-width: thin; }
+.active-run.has-editor .run-chat .ch-composer-actions { position: static; align-self: flex-end; margin-top: 4px; }
+.active-run.has-editor .run-chat .ch-send { width: 30px; height: 30px; }
+.active-run.has-editor .run-chat .ch-composer .dictate-btn { right: 44px; bottom: 9px; }
+@media (pointer: coarse) { .active-run.has-editor .run-chat .ch-input { font-size: 16px; } }   /* below 16px iOS zooms on focus */
 .active-run.has-editor .active-notes:not(:has(> :not(.hidden):not(.coach-empty))) .coach-empty { display: block; }
 .coach-empty { margin: 0; padding: 2px; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .active-run.has-editor .coach-actions { order: 0; flex: none; margin: 0; padding: 12px 14px; border-top: 1px solid var(--line); }

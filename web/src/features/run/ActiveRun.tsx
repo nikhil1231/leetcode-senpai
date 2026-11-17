@@ -80,11 +80,13 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
       const body: Any = code == null ? {} : { code };
       if (message) body.message = message;
       const r = await api("/session/hint", "POST", body);
-      setCoachPending(null);
       const cur = useRun.getState().active;
-      if (!cur || cur.session_id !== sessionId) return true;
-      if (r.hint == null) { patchActive({ hints_available: Boolean(r.available), chat: r.chat || cur.chat }); toast(r.available ? "Couldn't get a reply just now — try again." : overview?.llm_enabled ? "No more hints for this one." : "Hints need the coach enabled."); return true; }
-      patchActive({ hint_level: r.level, chat: r.chat, hints: [...(cur.hints || []), r.hint], hints_available: r.available !== false });
+      if (!cur || cur.session_id !== sessionId) { setCoachPending(null); return true; }
+      // The reply's chat replaces the pending message in one update, so the thread never renders without it (which
+      // would collapse the room under the pinned message and jump the scroll).
+      const settle = (patch: Any) => useRun.setState({ coachPending: null, active: { ...cur, ...patch } });
+      if (r.hint == null) { settle({ hints_available: Boolean(r.available), chat: r.chat || cur.chat }); toast(r.available ? "Couldn't get a reply just now — try again." : overview?.llm_enabled ? "No more hints for this one." : "Hints need the coach enabled."); return true; }
+      settle({ hint_level: r.level, chat: r.chat, hints: [...(cur.hints || []), r.hint], hints_available: r.available !== false });
       ed?.showMarks(r.marks || []);
       return true;
     } catch (e) { setCoachPending(null); toast((e as Error).message); return false; }
@@ -100,7 +102,7 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
   const messages: ChatMessage[] = chat.map((m, i) => ({ id: `c${i}`, role: m.role === "me" ? "user" : "assistant", text: m.text, time: m.t == null ? undefined : fmtTime(m.t),
     className: m.role === "me" ? "" : `is-hint${i === lastCoach ? " is-latest" : ""}`,
     after: i === lastCoach ? <button className="note-action" type="button" onClick={() => ed?.clearMarks()}>Clear marks</button> : undefined }));
-  if (coachPending?.text) messages.push({ id: "pending", role: "user", text: coachPending.text, time: coachPending.t == null ? undefined : fmtTime(coachPending.t) });
+  if (coachPending?.text) messages.push({ id: `c${chat.length}`, role: "user", text: coachPending.text, time: coachPending.t == null ? undefined : fmtTime(coachPending.t) });
   const over = Boolean(active.par_sec) && elapsed >= active.par_sec;
   const diff = active.difficulty || "";
 
