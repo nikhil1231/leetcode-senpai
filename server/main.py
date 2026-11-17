@@ -2689,7 +2689,7 @@ def api_problem_facets(uid: str = Depends(auth.require_user)):
         if difficulty:
             difficulties[difficulty] = difficulties.get(difficulty, 0) + 1
     return {
-        "categories": _facet_rows(categories, neetcode150.CATEGORY_ORDER),
+        "categories": _facet_rows(categories, neetcode150.MAP_CATEGORY_ORDER),
         "difficulties": _facet_rows(difficulties, ["Easy", "Medium", "Hard"]),
         "total": total,
     }

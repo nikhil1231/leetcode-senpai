@@ -10,7 +10,7 @@ so SM-2 and FSRS share one interface; see fsrs_engine.py for the FSRS side.
 import datetime as dt
 
 from . import config, plans, curriculum
-from .neetcode150 import CATEGORY_FAMILIES, CATEGORY_ORDER, FAMILY_ORDER
+from .neetcode150 import CATEGORY_FAMILIES, CATEGORY_ORDER, FAMILY_ORDER, MAP_CATEGORY_ORDER, is_practice
 
 CONF_TO_Q = {1: 3, 2: 4, 3: 5}  # low / medium / high on SM-2's 0..5 scale
 # Recall grade -> quality. A vague gist is a lapse and a missing key step is Hard:
@@ -46,6 +46,12 @@ def _in_library(p):
     if p.get("packs"):
         return True
     return bool(p.get("in_neetcode150", True))
+
+
+def _dsa_library(p):
+    """In the library and a DSA problem: the pool for new picks, drills and sprints.
+    Concurrency and SQL problems are chosen from their own pages and only come back as reviews."""
+    return _in_library(p) and not is_practice(p.get("neetcode_category"))
 
 
 def _is_sprint_attempt(a):
@@ -280,9 +286,10 @@ def _mean(xs, default):
     return sum(xs) / len(xs) if xs else default
 
 
-def topic_stats(problems, attempts, enrichments=None):
+def topic_stats(problems, attempts, enrichments=None, categories=CATEGORY_ORDER):
     """Per NeetCode category: coverage, avg confidence, independence rate,
-    avg % beaten, mastery/weakness. Ordered weakest first."""
+    avg % beaten, mastery/weakness. Ordered weakest first. `categories` is the
+    DSA list unless asked otherwise, so practice topics stay out of DSA analytics."""
     by_cat = {}
     for p in problems:
         if not _in_library(p):
@@ -327,7 +334,7 @@ def topic_stats(problems, attempts, enrichments=None):
             c["rt"].append(a["runtime_percentile"])
 
     out = []
-    for cat in CATEGORY_ORDER:
+    for cat in categories:
         c = by_cat.get(cat)
         if not c:
             continue
@@ -385,7 +392,7 @@ def topic_tree(problems, attempts, enrichments=None):
     solved-weighted mean of its topics' mastery — i.e. the quality of the work
     you have actually done, with breadth reported separately by coverage.
     """
-    rows = {s["category"]: s for s in topic_stats(problems, attempts, enrichments)}
+    rows = {s["category"]: s for s in topic_stats(problems, attempts, enrichments, MAP_CATEGORY_ORDER)}
     families = []
     for family in FAMILY_ORDER:
         topics = [rows[c] for c in CATEGORY_FAMILIES[family] if c in rows]
@@ -395,8 +402,11 @@ def topic_tree(problems, attempts, enrichments=None):
         solved = sum(t["solved"] for t in topics)
         weighted = sum(t["mastery"] * t["solved"] for t in topics)
         mastery = weighted / solved if solved else 0.0
+        practice = any(is_practice(t["category"]) for t in topics)
+        for t in topics:
+            t["practice"] = practice
         families.append({
-            "family": family,
+            "family": family, "practice": practice,
             "total": total,
             "solved": solved,
             "coverage": round(solved / total, 3) if total else 0.0,
@@ -476,7 +486,7 @@ def build_drill_lane(
     today_d = _today(today)
     settings = settings or {}
     exclude_slugs = set(exclude_slugs or ())
-    prob_by_slug = {p["slug"]: p for p in problems if _in_library(p)}
+    prob_by_slug = {p["slug"]: p for p in problems if _dsa_library(p)}
     if not prob_by_slug:
         return []
 
@@ -568,7 +578,7 @@ def build_sprint_round(
     if limit <= 0:
         return []
 
-    prob_by_slug = {p["slug"]: p for p in problems if _in_library(p)}
+    prob_by_slug = {p["slug"]: p for p in problems if _dsa_library(p)}
     if not prob_by_slug:
         return []
 
@@ -1054,7 +1064,7 @@ def build_daily_queue(problems, attempts, reviews, settings, today=None, enrichm
     # Score unattempted candidates by topic weakness + breadth + mistake density.
     scored = []
     for p in problems:
-        if p["slug"] in attempted or not _in_library(p):
+        if p["slug"] in attempted or not _dsa_library(p):
             continue
         cat = p["neetcode_category"]
         st = stats.get(cat, {})
@@ -1167,9 +1177,11 @@ def _goal_progress(attempts, settings, today_d):
 # ---- overview -------------------------------------------------------------------
 def overview(problems, attempts, reviews, today=None):
     today_d = _today(today)
-    total_problems = sum(1 for p in problems if _in_library(p))
+    # Solved/total is the DSA count, as on the Topics map; practice solves still count for streak and XP.
+    total_problems = sum(1 for p in problems if _dsa_library(p))
+    practice = {p["slug"] for p in problems if is_practice(p.get("neetcode_category"))}
     solved_attempts = _solved_attempts(attempts)
-    solved = len({a["slug"] for a in solved_attempts if not ended_unsolved(a)})
+    solved = len({a["slug"] for a in solved_attempts if not ended_unsolved(a)} - practice)
     due = sum(1 for r in reviews if r.get("due_date") and r["due_date"] <= _iso(today_d))
     leeches = sum(1 for r in reviews if r.get("leech"))
     dates = {

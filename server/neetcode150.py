@@ -228,9 +228,25 @@ CATEGORY_FAMILIES = {
     "Greedy & Math": ["Greedy", "Intervals", "Math & Geometry", "Bit Manipulation"],
 }
 
+# Practice outside DSA: LeetCode's concurrency and SQL problems (packs.py), linked from
+# the Fundamentals lessons. They have their own families on the Topics map and are
+# reviewed like any problem, but stay out of DSA analytics and new-problem picks.
+PRACTICE_FAMILIES = {
+    "Concurrency": ["Concurrency"],
+    "SQL": ["SQL Basics", "SQL Joins", "SQL Aggregation", "SQL Subqueries", "SQL Windows"],
+}
+CATEGORY_FAMILIES.update(PRACTICE_FAMILIES)
+PRACTICE_CATEGORIES = [c for cats in PRACTICE_FAMILIES.values() for c in cats]
+MAP_CATEGORY_ORDER = CATEGORY_ORDER + PRACTICE_CATEGORIES
+
 FAMILY_ORDER = list(CATEGORY_FAMILIES.keys())
 
 OTHER_FAMILY = "Other"  # categories from non-NeetCode packs land here
+
+
+def is_practice(category):
+    """A concurrency or SQL category: practised and reviewed, never a DSA topic."""
+    return category in PRACTICE_CATEGORIES
 
 
 def family_of(category):

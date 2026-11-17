@@ -400,3 +400,12 @@ def test_sessions_include_behavioural_and_stack_blocks():
     assert session['outside'] == []
     block = next(b for b in session['blocks'] if b['kind'] == 'behavioural_answer')
     assert block['action'] == {'type': 'track', 'track': 'experience', 'view': 'drill'}
+
+
+def test_concurrency_and_sql_lessons_link_their_leetcode_topics():
+    from server.neetcode150 import PRACTICE_CATEGORIES
+    links = courses.COURSES['fundamentals']['leetcode']
+    assert set(links) <= set(courses.lessons('fundamentals'))
+    assert {c for cats in links.values() for c in cats} == set(PRACTICE_CATEGORIES)
+    assert courses.public_lesson('fundamentals', 'sql-windows')['leetcode'] == ['SQL Windows']
+    assert courses.public_lesson('fundamentals', 'kubernetes')['leetcode'] == []

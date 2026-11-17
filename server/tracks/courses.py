@@ -33,6 +33,15 @@ COURSES = {
             'architecture': ['lld-design', 'architecture-styles'],
             'quality': ['testing-strategy'],
         },
+        # LeetCode topics that practise a lesson (neetcode150.PRACTICE_FAMILIES). The problems live in the
+        # LeetCode section; the lesson links to them.
+        'leetcode': {
+            'java-concurrency': ['Concurrency'],
+            'python-runtime': ['Concurrency'],
+            'os-concurrency': ['Concurrency'],
+            'sql-queries': ['SQL Basics', 'SQL Joins', 'SQL Aggregation', 'SQL Subqueries'],
+            'sql-windows': ['SQL Windows'],
+        },
     },
     'ai': {
         'categories': [
@@ -168,7 +177,7 @@ def public_lesson(track, key, record=None):
     lesson = lessons(track)[key]
     checks = [public_question(q) for q in lesson['questions'].values() if q['kind'] == 'quiz']
     return {k: v for k, v in lesson.items() if k != 'questions'} | {
-        'checks': checks, 'state': {'activities': (record or {}).get('activities', {}),
+        'checks': checks, 'leetcode': COURSES[track].get('leetcode', {}).get(key, []), 'state': {'activities': (record or {}).get('activities', {}),
                                     'opened_at': (record or {}).get('opened_at'),
                                     'checked_at': (record or {}).get('checked_at')}}
 

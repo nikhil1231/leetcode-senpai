@@ -47,12 +47,12 @@ async def import_pack(store, pack_name, auth=None, fetch_metadata=True):
                     or existing.get("neetcode_category")
                     or "Arrays & Hashing")
         store.upsert_problem(_problem_doc(slug, existing, meta, category,
-                                          _merge_packs(existing, pack_name)))
+                                          _merge_packs(existing, pack_name), cat_map.get(slug)))
     return {"pack": pack_name, "total": len(slugs),
             "metadata_fetched": fetched, "metadata_failed": failed}
 
 
-def _problem_doc(slug, existing, meta, category, packs_list):
+def _problem_doc(slug, existing, meta, category, packs_list, pack_category=None):
     doc = {
         "slug": slug,
         "title": (meta["title"] if meta else None) or existing.get("title") or _title_from_slug(slug),
@@ -64,7 +64,8 @@ def _problem_doc(slug, existing, meta, category, packs_list):
         "in_library": bool(packs_list),
     }
     if config.LEARNING_FEATURES['taxonomy']:
-        doc.update(curriculum.classify(slug, (meta or {}).get('tags') or existing.get('leetcode_tags', []), existing))
+        doc.update(curriculum.classify(slug, (meta or {}).get('tags') or existing.get('leetcode_tags', []), existing,
+                                       pack_category))
     elif existing.get('neetcode_category'):
         doc['neetcode_category'] = existing['neetcode_category']
     doc["in_neetcode150"] = "neetcode150" in packs_list

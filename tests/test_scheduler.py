@@ -662,11 +662,11 @@ def test_topic_tree_carries_topic_stats_rows_through_unchanged():
 
 
 def test_topic_tree_families_partition_every_known_category():
-    from server.neetcode150 import CATEGORY_FAMILIES, CATEGORY_ORDER
+    from server.neetcode150 import CATEGORY_FAMILIES, MAP_CATEGORY_ORDER
 
     grouped = [c for cats in CATEGORY_FAMILIES.values() for c in cats]
 
-    assert grouped == CATEGORY_ORDER  # no gaps, no duplicates, same order
+    assert grouped == MAP_CATEGORY_ORDER  # no gaps, no duplicates, same order
 
 
 # ---- review board segmentation --------------------------------------------------

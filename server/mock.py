@@ -13,10 +13,6 @@ from . import scheduler
 MOCK_DURATION_SEC = 60 * 60
 
 
-def _in_library(p):
-    return scheduler._in_library(p)
-
-
 def assemble(store, today=None):
     """Pick 3 problems: a due review, a new-from-strong-topic, a new-from-weak."""
     today = today or dt.date.today()
@@ -34,13 +30,13 @@ def assemble(store, today=None):
     due.sort(key=lambda r: r["due_date"])
     pool = due or reviews
     for r in pool:
-        if r["slug"] in pm:
+        if r["slug"] in pm and scheduler._dsa_library(pm[r["slug"]]):
             picks.append(_item(pm[r["slug"]], "review"))
             break
 
     def _new_from(cat):
         for p in problems:
-            if (p.get("neetcode_category") == cat and _in_library(p)
+            if (p.get("neetcode_category") == cat and scheduler._dsa_library(p)
                     and p["slug"] not in attempted
                     and p["slug"] not in {x["slug"] for x in picks}):
                 return _item(p, "new")
@@ -61,7 +57,7 @@ def assemble(store, today=None):
         for p in problems:
             if len(picks) >= 3:
                 break
-            if _in_library(p) and p["slug"] not in attempted and p["slug"] not in have:
+            if scheduler._dsa_library(p) and p["slug"] not in attempted and p["slug"] not in have:
                 picks.append(_item(p, "new"))
                 have.add(p["slug"])
     return picks[:3]

@@ -73,6 +73,8 @@ def classify(slug, tags=(), existing=None, pack_category=None):
         cat, origin = override, 'override'
     elif slug in REVIEWED:
         cat, origin = REVIEWED[slug], 'reviewed'
+    elif practice_category(slug):
+        cat, origin = practice_category(slug), 'pack'
     elif category_of(slug) or pack_category:
         cat, origin = category_of(slug) or pack_category, 'pack'
     else:
@@ -83,6 +85,12 @@ def classify(slug, tags=(), existing=None, pack_category=None):
     return {'neetcode_category': cat, 'taxonomy_version': VERSION,
             'classification_origin': origin,
             'skill_ids': PROBLEM_SKILLS.get(slug, [CATEGORY_SKILLS[cat]] if cat in CATEGORY_SKILLS else [])}
+
+
+def practice_category(slug):
+    """The concurrency or SQL category a problem from those packs belongs to, else None."""
+    from .packs import PRACTICE_CATEGORY
+    return PRACTICE_CATEGORY.get(slug)
 
 
 def skill_options(skill_ids):

@@ -87,6 +87,63 @@ GRIND_75 = [
     "largest-rectangle-in-histogram",
 ]
 
+# ---- Concurrency and SQL (practice for the Fundamentals lessons) -----------------
+# Every LeetCode concurrency problem, and SQL 50 plus the classic SQL set, grouped by
+# what the lesson they practise teaches. Categories are neetcode150.PRACTICE_FAMILIES.
+CONCURRENCY = {
+    "Concurrency": [
+        "print-in-order", "print-foobar-alternately", "print-zero-even-odd",
+        "building-h2o", "fizz-buzz-multithreaded", "the-dining-philosophers",
+        "traffic-light-controlled-intersection", "design-bounded-blocking-queue",
+        "web-crawler-multithreaded",
+    ],
+}
+
+SQL = {
+    "SQL Basics": [
+        "recyclable-and-low-fat-products", "find-customer-referee", "big-countries",
+        "article-views-i", "invalid-tweets", "triangle-judgement", "fix-names-in-a-table",
+        "patients-with-a-condition", "find-users-with-valid-e-mails", "delete-duplicate-emails",
+    ],
+    "SQL Joins": [
+        "combine-two-tables", "replace-employee-id-with-the-unique-identifier",
+        "product-sales-analysis-i", "customer-who-visited-but-did-not-make-any-transactions",
+        "employee-bonus", "customers-who-never-order", "employees-earning-more-than-their-managers",
+        "rising-temperature", "average-time-of-process-per-machine", "students-and-examinations",
+        "managers-with-at-least-5-direct-reports", "confirmation-rate",
+        "the-number-of-employees-which-report-to-each-employee",
+    ],
+    "SQL Aggregation": [
+        "duplicate-emails", "not-boring-movies", "average-selling-price", "project-employees-i",
+        "percentage-of-users-attended-a-contest", "queries-quality-and-percentage",
+        "monthly-transactions-i", "immediate-food-delivery-ii",
+        "number-of-unique-subjects-taught-by-each-teacher",
+        "user-activity-for-the-past-30-days-i", "classes-more-than-5-students",
+        "find-followers-count", "biggest-single-number", "customers-who-bought-all-products",
+        "primary-department-for-each-employee", "count-salary-categories",
+        "group-sold-products-by-the-date", "list-the-products-ordered-in-a-period",
+    ],
+    "SQL Subqueries": [
+        "second-highest-salary", "nth-highest-salary", "employees-whose-manager-left-the-company",
+        "game-play-analysis-iv", "product-sales-analysis-iii", "product-price-at-a-given-date",
+        "department-highest-salary", "movie-rating", "friend-requests-ii-who-has-the-most-friends",
+        "investments-in-2016", "trips-and-users",
+    ],
+    "SQL Windows": [
+        "rank-scores", "consecutive-numbers", "exchange-seats", "last-person-to-fit-in-the-bus",
+        "restaurant-growth", "department-top-three-salaries", "human-traffic-of-stadium",
+    ],
+}
+
+
+def _grouped_pack(label, groups):
+    slugs = [s for cat_slugs in groups.values() for s in cat_slugs]
+    return {"label": label, "slugs": slugs,
+            "category_map": {s: cat for cat, cat_slugs in groups.items() for s in cat_slugs}}
+
+
+PRACTICE_CATEGORY = {s: cat for groups in (CONCURRENCY, SQL) for cat, slugs in groups.items() for s in slugs}
+
 
 def _neetcode_pack():
     slugs = []
@@ -108,6 +165,8 @@ PACKS = {
     "neetcode150": _neetcode_pack(),
     "blind75": _derived_pack("Blind 75", BLIND_75),
     "grind75": _derived_pack("Grind 75", GRIND_75),
+    "concurrency": _grouped_pack("Concurrency", CONCURRENCY),
+    "sql": _grouped_pack("SQL", SQL),
 }
 
 

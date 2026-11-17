@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import uvicorn  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from server import auth, config, connectivity, llm, main, poller  # noqa: E402
+from server import auth, config, connectivity, llm, main, packs, poller  # noqa: E402
 from server.neetcode150 import NEETCODE_150  # noqa: E402
 from tests.fake_store import FakeStore  # noqa: E402
 
@@ -34,6 +34,14 @@ def seed(store):
                 "slug": slug, "title": slug.replace("-", " ").title(), "difficulty": DIFFICULTY[(n + i) % 4],
                 "neetcode_category": category, "in_library": True, "frontend_id": n,
                 "packs": ["neetcode150"], "url": f"https://leetcode.com/problems/{slug}/", "similar_slugs": [],
+            })
+    for name in ("concurrency", "sql"):   # practice for the Fundamentals lessons
+        for slug, category in packs.get_pack(name)["category_map"].items():
+            n += 1
+            store.upsert_problem({
+                "slug": slug, "title": slug.replace("-", " ").title(), "difficulty": DIFFICULTY[n % 2],
+                "neetcode_category": category, "in_library": True, "frontend_id": n,
+                "packs": [name], "url": f"https://leetcode.com/problems/{slug}/", "similar_slugs": [],
             })
 
 

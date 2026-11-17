@@ -1277,6 +1277,8 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 }
 .topic-map-head > div:first-child { flex-shrink: 0; }
 .topic-map-head .section-title { margin: 0 0 6px; }
+.topic-practice-head { margin: 28px 0 4px; }
+.topic-practice-note { margin: 0 0 12px; color: var(--text-2); }
 .topic-map-head .bar { flex: 1; height: 8px; }
 .topic-map-count { font-size: 30px; font-weight: 680; letter-spacing: -.035em; line-height: 1; }
 .topic-map-count .small { font-size: 13px; font-weight: 500; margin-left: 5px; }

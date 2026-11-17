@@ -173,6 +173,18 @@
         <div class="tr-round-links">${r.id === 'assisted' ? `<button type="button" class="tr-chip is-lead" data-t="go" data-view="round">Playbook →</button>` : ''}${r.lessons.map(l => `<button type="button" class="tr-chip ${l.checked ? 'is-held' : ''}" data-t="lesson" data-id="${l.id}" title="${l.held}/${l.items} held">${l.checked ? '✓ ' : ''}${esc(l.title.split(' - ')[0].replace(/^AI system design: /, 'Design: '))}</button>`).join('')}${r.exercises.map(e => `<button type="button" class="tr-chip is-ex ${ROUND_STATUS[e.status] || ''}" data-t="exercise" data-id="${e.id}">▶ ${esc(shortTitle(e.title))}</button>`).join('')}${(ROUND_LINKS[r.id] || []).map(([s, v, label]) => `<button type="button" class="tr-chip is-ex" data-t="section" data-section="${s}" data-view="${v}">↗ ${esc(label)}</button>`).join('')}</div></div>
         <div class="tr-round-meter"><span class="tr-round-pct">${r.pct}%</span><div class="sd-course-bar"><span style="width:${r.pct}%"></span></div><small>${r.held} of ${r.items} held</small></div></li>`).join('')}</ol></section>`;
   }
+  // The LeetCode topics that practise this lesson (concurrency, SQL). The problems live in the LeetCode section.
+  async function leetcodeChips(slot, cats, stale) {
+    if (!slot || !cats?.length) return;
+    const tree = await window.H.api('/topics/tree').catch(() => []);
+    if (!slot.isConnected || stale()) return;
+    const rows = Object.fromEntries(tree.flatMap(f => f.topics).map(t => [t.category, t]));
+    slot.innerHTML = `<div class="rp-practice"><b>Practise on LeetCode:</b>${cats.map(c => {
+      const t = rows[c];
+      return `<button type="button" class="rp-chip" data-lc="${esc(c)}">${esc(c)}${t ? ` · ${t.solved}/${t.total}` : ''}</button>`;
+    }).join('')}</div>`;
+    slot.onclick = e => { const b = e.target.closest('[data-lc]'); if (b) window.AppSections.go('/leetcode/topics?topic=' + encodeURIComponent(b.dataset.lc)); };
+  }
   const hub = view => async ctx => {
     const slot = document.createElement('div');
     ctx.root.replaceChildren(slot);
@@ -235,7 +247,7 @@
     ctx.root.innerHTML = `<div class="sd-breadcrumb">${btn('← Lessons', 'go', 'data-view="lessons"')}<span>/ ${esc(flat[idx]?.cat || '')}</span></div>
       <div class="sd-page-intro sd-rich-intro"><span class="sd-eyebrow">LESSON ${idx + 1} OF ${flat.length} · ${lesson.minutes} MIN · ${lesson.interactive} ACTIVITIES</span><h2 tabindex="-1">${esc(lesson.title)}</h2><p>${inline(lesson.summary)}</p></div><div class="tr-tutor-slot"></div>
       <div class="sd-rich-layout"><article class="sd-rich"><div class="sd-goals"><b>By the end you can</b><ul>${lesson.objectives.map(o => `<li>${inline(o)}</li>`).join('')}</ul></div>
-        <div class="tr-blocks"></div><div class="tr-practice-slot"></div>
+        <div class="tr-blocks"></div><div class="tr-leetcode-slot"></div><div class="tr-practice-slot"></div>
         <section class="sd-panel tr-check"><span class="sd-eyebrow">LESSON CHECK · ${checks.length} QUESTIONS</span><h3>Check what stuck</h3><p class="sd-muted">Answer without scrolling back. These come back in Quickfire as they fade.</p><div class="tr-check-slot">${btn('Start the check', 'check-start', '', true)}</div></section>
         <footer class="sd-lesson-foot"><details><summary>Further reading</summary><ul>${lesson.sources.map(([t, u]) => `<li><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a></li>`).join('')}</ul></details>
         <div class="sd-actions">${next ? btn('Next lesson: ' + esc(next.title) + ' →', 'lesson', `data-id="${next.id}"`) : btn('Back to the overview', 'go', 'data-view="home"')}</div></footer></article>
@@ -258,6 +270,7 @@
       });
       ctx.onLeave(() => handle.destroy());
       window.NightShift?.chips(ctx.root.querySelector('.tr-practice-slot'), ctx.track, lesson.id);
+      leetcodeChips(ctx.root.querySelector('.tr-leetcode-slot'), lesson.leetcode, ctx.stale);
       if (ctx.track === 'ai') window.RippleOps?.levelsFor(lesson.id).then(ls => {   // the Ripple Assist chapters that use this lesson
         const slot = ctx.root.querySelector('.tr-practice-slot');
         if (!ls.length || !slot?.isConnected || ctx.stale()) return;
