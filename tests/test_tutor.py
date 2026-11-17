@@ -16,7 +16,7 @@ DELETE = 'sd.cache-aside.delete-beats-set'
 
 
 def notes(**over):
-    base = {'objectives': [], 'evidence': [], 'misconceptions': [], 'resolved': [], 'summary': '', 'story_event': ''}
+    base = {'objectives': [], 'evidence': [], 'misconceptions': [], 'gaps': [], 'resolved': [], 'summary': '', 'story_event': ''}
     return {**base, **over}
 
 
@@ -170,6 +170,42 @@ def test_notes_keep_only_grounded_evidence():
         'Shown: Misses times requests', 'Cleared up: thinks TTL fixes it']
 
 
+def test_gaps_are_kept_only_in_the_overview_check_and_only_when_grounded():
+    gap = {'point': MISS, 'missing': 'database load is requests times the miss rate', 'ask': 'A cache hits 95%; how much load reaches the DB?',
+           'quote': 'not sure'}
+    teach = fresh()
+    teach['turns'].append({'role': 'learner', 'text': 'not sure', 'key': 'k1', 'at': 1})
+    assert ses.apply_notes(teach, notes(gaps=[gap]), *ses.latest_learner(teach), {MISS}, set(), 2)[0]['gaps'] == []
+    assert ses.notes_payload(teach, L, [], [], [])['RECORD_GAPS'] is False
+    s = ses.new('s2', L, 'review', 0)
+    s['turns'].append({'role': 'learner', 'text': "I'm not sure, something about TTLs?", 'key': 'k1', 'at': 1})
+    said, blocks = ses.latest_learner(s)
+    assert ses.notes_payload(s, L, [], [], [])['RECORD_GAPS'] is True
+    writes, _ = ses.apply_notes(s, notes(gaps=[gap, {**gap, 'quote': 'words he never said'}, {**gap, 'point': 'sd.other.x'},
+                                               {**gap, 'ask': ' '}]), said, blocks, {MISS}, set(), 2)
+    assert writes['gaps'] == [gap]
+    assert ses.recorded_notes(writes, {}, []) == ['To practise: database load is requests times the miss rate']
+    both = notes(gaps=[gap], misconceptions=[{'point': MISS, 'text': 'thinks TTLs set DB load', 'quote': 'something about TTLs'}])
+    assert ses.apply_notes(s, both, said, blocks, {MISS}, set(), 3)[0]['gaps'] == []   # a wrong belief is recorded as that
+
+
+def test_a_wrong_claim_the_tutor_replied_past_comes_back_to_it_next_turn():
+    wrong = notes(misconceptions=[{'point': MISS, 'text': 'thinks 99% is only slightly better', 'quote': 'ten times better'}])
+    for mode, told in (('teach', True), ('review', True), ('explain', False)):
+        s = fresh(mode)
+        ses.apply_notes(s, wrong, *ses.latest_learner(s), {MISS}, set(), 2)
+        assert s['flagged'] == [{'text': 'thinks 99% is only slightly better', 'quote': 'ten times better'}]
+        assert ('"ten times better": thinks 99% is only slightly better' in system(s)) is told, mode   # Jo and Marcus stay in role
+        ses.apply_notes(s, notes(), *ses.latest_learner(s), {MISS}, set(), 3)
+        assert s['flagged'] == [] and 'A wrong claim from his previous message' not in system(s)
+
+
+def test_the_overview_check_asks_for_fresh_cases_and_comes_back_to_misses():
+    s = ses.new('s3', lessons.area_map('storage'), 'review', 0)
+    text = system(s)
+    assert 'Use new cases, not the page' in text and 'Come back to what he missed' in text and 'saved' in text
+
+
 def test_objectives_never_regress_and_a_correct_block_can_demonstrate():
     s = ses.new('s1', L, 'teach', 0)
     s['turns'].append({'role': 'block', 'block': 'b1', 'correct': True, 'key': 'k1', 'at': 1})
@@ -267,7 +303,7 @@ def test_a_session_from_start_to_finish(client):
         'text': 'Every read misses and hits the database at once. On writes I would just set the new value.'}))
     assert s['turns'][-1]['show_block'] == 'b1' and s['turns'][-1]['say'] == 'Ooh, right. Try this one.'
     assert s['shown'] == ['b1'] and s['objectives'][2]['status'] == 'working'
-    assert s['turns'][-1]['recorded'] == {'evidence': 1, 'misconceptions': 1, 'resolved': 0}
+    assert s['turns'][-1]['recorded'] == {'evidence': 1, 'misconceptions': 1, 'gaps': 0, 'resolved': 0}
     assert client.payloads[-1]['LATEST'].startswith('Every read misses')
     assert client.chats[-1][-1] == {'role': 'user', 'content': 'Every read misses and hits the database at once. On writes I would just set the new value.'}
     events = client.store.list_knowledge('knowledge_events')
@@ -763,6 +799,30 @@ def test_the_overview_check_is_a_conversation_of_its_own_beside_the_tutor_sessio
     assert client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'indexes', 'mode': 'review', 'key': 'sess-ov-x2'}).status_code == 422
     assert 'review' not in {m['id'] for m in ok(client.get('/api/tutor'))['modes']}
     assert ok(client.post('/api/tutor/map/storage/step', json={'step': 30}))['step'] == 10   # 8 steps, the check, the wrap-up
+
+
+def test_a_miss_in_the_overview_check_becomes_a_gap_that_outlives_the_check(client):
+    client.replies.append('Ripple Notes stores each note as a row. How would you find all of one user\'s notes fast?')
+    ok(client.post('/api/tutor/sessions', json={'section': 'system-design', 'lesson': 'map-storage', 'mode': 'review', 'key': 'sess-ov-gap'}))
+    point = client.payloads[-1]['POINTS'][0]['id'] if client.payloads else next(
+        p['id'] for p in lessons.points('system-design', 'map-storage')[0])
+    client.replies.append('An index on user_id. We\'ll come back to this.')
+    client.notes.append(notes(gaps=[{'point': point, 'missing': 'an index turns a scan into a lookup', 'ask': 'Why is the query slow without one?',
+                                     'quote': 'no idea'}]))
+    r = ok(client.post('/api/tutor/sessions/sess-ov-gap/turns', json={'key': 'turn-gap1', 'text': 'No idea, honestly.'}))
+    assert client.payloads[-1]['RECORD_GAPS'] is True
+    assert r['turns'][-1]['recorded']['gaps'] == 1 and r['turns'][-1]['recorded_notes'] == ['To practise: an index turns a scan into a lookup']
+    gap = client.store.list_knowledge('knowledge_misconceptions')[0]
+    assert (gap['kind'], gap['status'], gap['point'], gap['ask']) == ('gap', 'open', point, 'Why is the query slow without one?')
+    client.replies.append('Right, that\'s it.')
+    client.notes.append(notes(resolved=[gap['_key']]))   # the second try in the same check doesn't close it
+    ok(client.post('/api/tutor/sessions/sess-ov-gap/turns', json={'key': 'turn-gap2', 'text': 'Without an index it scans every row.'}))
+    assert gap['_key'] in {m['key'] for m in client.payloads[-1]['OPEN_MISCONCEPTIONS']}
+    assert client.store.list_knowledge('knowledge_misconceptions')[0]['status'] == 'open'
+    client.replies.append('Not quite.')
+    client.notes.append(RuntimeError('notes down'))
+    r = ok(client.post('/api/tutor/sessions/sess-ov-gap/turns', json={'key': 'turn-gap3', 'text': 'Something else.'}))
+    assert 'flagged' not in r   # a failed note-taker leaves nothing stale for the next turn
 
 
 def test_area_map_over_http_and_a_map_session_counts_for_pass_one(client):

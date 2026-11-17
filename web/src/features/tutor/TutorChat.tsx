@@ -51,8 +51,8 @@ export function turnParts(turn: Any, at: number, blocks: TutorChatProps["blocks"
   if (turn.links?.length) parts.push({ tool: "links", args: { links: turn.links } });
   if (turn.move) parts.push({ tool: "move", args: turn.move });
   const r = turn.recorded || {};
-  const seen = (r.evidence || 0) + (r.misconceptions || 0) + (r.resolved || 0);
-  if (seen) parts.push({ tool: "recorded", args: { n: seen, ...(turn.recorded_notes?.length ? { notes: turn.recorded_notes } : {}) } });
+  const seen = (r.evidence || 0) + (r.misconceptions || 0) + (r.resolved || 0), gaps = r.gaps || 0;
+  if (seen || gaps) parts.push({ tool: "recorded", args: { n: seen, ...(gaps ? { gaps } : {}), ...(turn.recorded_notes?.length ? { notes: turn.recorded_notes } : {}) } });
   return parts;
 }
 
@@ -162,7 +162,9 @@ function TutorChatView({ props, handle }: { props: TutorChatProps; handle: Ref<T
     move: (a) => <div className="tu-move"><button type="button" className="button is-primary" onClick={() => live.current.onMove(a)}>Carry on in {String(a.title)} →</button></div>,
     pending: (a) => <div className="ch-card is-pending">{String(a.text)}</div>,
     noted: () => <span className="ch-chip">Noted</span>,
-    recorded: (a) => <span className="tu-recorded" tabIndex={0} aria-description={tip(a)} data-tip={tip(a)}>Recorded {Number(a.n)} {Number(a.n) === 1 ? "thing" : "things"} you showed</span>,
+    recorded: (a) => <span className="tu-recorded" tabIndex={0} aria-description={tip(a)} data-tip={tip(a)}>{[
+      Number(a.n) ? `Recorded ${Number(a.n)} ${Number(a.n) === 1 ? "thing" : "things"} you showed` : "",
+      a.gaps ? `Saved ${Number(a.gaps)} to practise` : ""].filter(Boolean).join(" · ")}</span>,
   }), []);
 
   const ended = session?.status === "ended";

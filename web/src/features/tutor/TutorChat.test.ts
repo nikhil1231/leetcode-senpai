@@ -21,6 +21,10 @@ describe("turnsToMessages", () => {
     ]);
     expect(m[2]).toMatchObject({ className: "tu-debrief", who: { name: "Tutor", role: "Debrief" }, parts: [{ tool: "move" }] });
   });
+  it("shows ideas saved to practise beside what was recorded", () => {
+    const m = turnsToMessages({ turns: [{ role: "tutor", speaker: "tutor", say: "Not quite.", recorded: { evidence: 0, misconceptions: 0, gaps: 1, resolved: 0 }, recorded_notes: ["To practise: why delete beats set"] }] }, cast, []);
+    expect(m[0].parts).toEqual([{ tool: "recorded", args: { n: 0, gaps: 1, notes: ["To practise: why delete beats set"] } }]);
+  });
   it("leaves the debrief out of an overview's check", () => {
     expect(turnsToMessages(session, cast, [], true).map((x) => x.role)).toEqual(["assistant", "user"]);
   });

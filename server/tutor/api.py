@@ -821,9 +821,11 @@ async def _reply(store, s, l):
         store.put_knowledge('tutor_sessions', s['id'], s)
         return public(s)
     s.pop('error', None)
-    writes, event = ({'evidence': [], 'misconceptions': [], 'resolved': []}, '')
-    if notes:
-        writes, event = ses.apply_notes(s, notes, said, blocks, ctx['allowed'], {m['_key'] for m in ctx['open']}, now)
+    writes, event = ({'evidence': [], 'misconceptions': [], 'gaps': [], 'resolved': []}, '')
+    s.pop('flagged', None)   # shown to the tutor this turn; the notes below set this turn's
+    if notes:   # a gap opened in this session stays open past a quick second try: the later practice is what settles it
+        fresh = lambda m: m.get('kind') == 'gap' and max(m['created_at'], m.get('updated_at') or 0) >= s['created_at']  # noqa: E731
+        writes, event = ses.apply_notes(s, notes, said, blocks, ctx['allowed'], {m['_key'] for m in ctx['open'] if not fresh(m)}, now)
     turn = ses.add_reply(s, text, l, now)
     turn['recorded'] = {k: len(v) for k, v in writes.items()}
     turn['recorded_notes'] = ses.recorded_notes(writes, ctx['claims'], ctx['open'])
@@ -835,6 +837,8 @@ async def _reply(store, s, l):
          'strength': 'soft', 'note': e['quote'][:500], 'ref': s['id']} for i, e in enumerate(writes['evidence'])], now)
     for i, m in enumerate(writes['misconceptions']):
         kb_api.add_misconception(store, SOURCE, f'{s["id"]}-{n}-{i}', m['point'], m['text'], m['quote'], now)
+    for i, g in enumerate(writes['gaps']):
+        kb_api.open_gap(store, SOURCE, f'{s["id"]}-{n}-g{i}', g['point'], g['missing'], g['ask'], g['quote'], now)
     for key in writes['resolved']:
         kb_api.set_misconception(store, key, 'resolved', 'Corrected in a tutor session.', now)
     _remember(store, s, now, event)
