@@ -423,7 +423,9 @@ DRILL_CACHE_FLAG = "pattern_sprint_drills"
 DRILL_CACHE_TARGET = 3
 
 
-def _pending(store):
+def _pending(store, dismissed=False):
+    """Recent solves still waiting for a rating. `dismissed` also returns the ones
+    closed unrated, which Today offers to rate: until rated, a solve can't move its card."""
     pm = _problem_map(store)
     cutoff = time.time() - PENDING_MAX_AGE_SEC
     out = []
@@ -434,7 +436,7 @@ def _pending(store):
             continue
         if a.get("confidence") is not None or a.get("source") == "backfill":
             continue
-        if a.get("annotation_dismissed_at"):
+        if a.get("annotation_dismissed_at") and not dismissed:
             continue
         if (a.get("solved_at") or 0) < cutoff:
             continue
@@ -1791,8 +1793,8 @@ async def api_editor_submit(body: EditorJudge, uid: str = Depends(auth.require_u
 
 
 @app.get("/api/pending")
-def api_pending(uid: str = Depends(auth.require_user)):
-    return {"pending": _pending(get_store(uid))}
+def api_pending(dismissed: bool = False, uid: str = Depends(auth.require_user)):
+    return {"pending": _pending(get_store(uid), dismissed)}
 
 
 # ---- attempts -------------------------------------------------------------------

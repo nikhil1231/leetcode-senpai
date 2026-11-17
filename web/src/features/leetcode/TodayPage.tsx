@@ -41,7 +41,8 @@ function QueueRow({ it, q, overdue = false, onStart, onImport }: { it: Any; q: A
   const label = it.grading_status === "pending" ? "Grading..." : it.grading_status === "ready" ? "View grade" : it.grading_status === "failed" ? "Retry" : "Recall";
   const meta: { text: string; overdue?: boolean }[] = [];
   if (lane === "drill" && it.reason) meta.push({ text: it.reason });
-  if (due) meta.push(due);
+  if (it.unrated) meta.push({ text: "solved, not rated yet" });
+  else if (due) meta.push(due);
   void onImport;
   return (
     <li className="q-row" data-recall-card={it.recall_attempt_id || ""}>
@@ -54,7 +55,7 @@ function QueueRow({ it, q, overdue = false, onStart, onImport }: { it: Any; q: A
         {it.grading_status === "failed" && <span className="tag recall-status-tag is-danger is-light">failed</span>}
       </div>
       {meta.length > 0 && <div className="q-meta" title={meta.map((m) => m.text).join(" · ")}>{meta.map((m, i) => <span key={i} className={m.overdue ? "is-overdue" : undefined}>{m.text}</span>)}</div>}
-      <button className={`button q-action ${recall ? "is-recall" : "is-start"}`} onClick={() => onStart(it)}>{recall ? label : "Start"}</button>
+      <button className={`button q-action ${recall ? "is-recall" : "is-start"}`} onClick={() => onStart(it)}>{it.unrated ? "Rate" : recall ? label : "Start"}</button>
     </li>
   );
 }
@@ -134,21 +135,30 @@ export function TodayPage() {
   const start = useStartFlow();
   const setSprint = useFlow((s) => s.setSprint);
   const openLearning = useFlow((s) => s.openLearning);
+  const openAnnotate = useFlow((s) => s.openAnnotate);
   const query = useQuery({
     queryKey: ["api", "today-page"],
     queryFn: async () => {
-      const [q, report, mock, families, board] = await Promise.all([
+      const [q, report, mock, families, board, pending] = await Promise.all([
         api("/today"), api("/report/latest").catch(() => ({ report: null })), api("/mock/status").catch(() => ({})),
         api("/topics/tree").catch(() => []), api("/reviews/schedule").catch(() => []),
+        api("/pending?dismissed=true").catch(() => ({ pending: [] })),
       ]);
-      return { q, report: report.report, mock, families, board };
+      // A solve moves its card only once rated: rows with an unrated one offer the rating instead of a fresh start.
+      const unrated = new Map<string, Any>();
+      for (const p of [...(pending.pending || [])].reverse()) unrated.set(p.slug, p);
+      const mark = (it: Any) => (unrated.has(it.slug) ? { ...it, unrated: unrated.get(it.slug) } : it);
+      return {
+        q: { ...q, new: (q.new || []).map(mark), drills: q.drills && q.drills.map(mark) }, report: report.report, mock, families,
+        board: (board as Any[]).map((s) => ({ ...s, items: s.items.map(mark) })),
+      };
     },
   });
   if (query.isLoading) return <Loader message="Loading your queue…" />;
   if (query.error || !query.data) return <LoadError error={query.error} retry={() => query.refetch()} />;
   const { q, report, mock, families, board } = query.data as Any;
 
-  const go = (it: Any) => start(it.slug, it.kind, it.mode || "", it.title, it.category || "", it.recall_attempt_id || null, it.grading_status || null);
+  const go = (it: Any) => it.unrated ? openAnnotate(it.unrated) : start(it.slug, it.kind, it.mode || "", it.title, it.category || "", it.recall_attempt_id || null, it.grading_status || null);
   const waiting = (board as Any[]).filter((s) => s.key === "overdue" || s.key === "due").reduce((n, s) => n + s.count, 0);
   const due: Any[] = (board as Any[]).filter((s) => s.key === "overdue" || s.key === "due").flatMap((s) => s.items.map((it: Any) => ({ ...it, overdue: s.key === "overdue" })));
   const queue = [...due, ...q.new, ...(q.drills || [])];
@@ -185,7 +195,7 @@ export function TodayPage() {
   return (
     <>
       <SectionHome section="leetcode"
-        next={lead ? { kicker: kicker(lead), title: lead.title, why: whyOf(lead), button: <button type="button" className="button is-primary" onClick={() => go(lead)}>{lead.mode === "recall" ? "Recall" : "Start"}</button> }
+        next={lead ? { kicker: kicker(lead), title: lead.title, why: whyOf(lead), button: <button type="button" className="button is-primary" onClick={() => go(lead)}>{lead.unrated ? "Rate" : lead.mode === "recall" ? "Recall" : "Start"}</button> }
           : { kicker: "Next step", title: "Nothing is due", why: "Every review is done for now. Import a pack in Discover, or run a sprint.", button: <button type="button" className="button is-primary" onClick={() => router.push("/leetcode/discover")}>Open Discover</button> }}
         alts={[...(second ? [{ title: second.title, why: kicker(second), onClick: () => go(second) }] : []), { title: "Sprint round", why: "Several quick problems against the clock.", onClick: () => setSprint(true) }]}
         stats={[["Reviews due", waiting, waiting > 0], ["New queued", q.new.length]]} />
