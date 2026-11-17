@@ -434,7 +434,7 @@
       return `<g class="sd-arch-node is-${esc(n.kind || 'service')} ${hidden ? 'is-missing' : ''}${n.state ? ' is-state-' + esc(n.state) : ''}" data-node="${esc(n.id)}" transform="translate(${p.x},${p.y})"><rect x="${-h}" y="-26" width="${2 * h}" height="52" rx="8"/><g class="sd-arch-icon" transform="translate(${-h + 20},0)">${hidden ? '<text x="0" y="5" text-anchor="middle" class="sd-arch-q">?</text>' : KIND_ICON[n.kind || 'service'] || KIND_ICON.service}</g><text class="sd-arch-label" x="${-h + 36}" y="${n.note ? -2 : 4}">${hidden ? 'Missing piece' : esc(n.label)}</text>${n.note && !hidden ? `<text class="sd-arch-note" x="${-h + 36}" y="12">${esc(n.note)}</text>` : ''}</g>`;
     }).join('');
     const svg = `<div class="sd-arch-wrap"><svg class="sd-arch" style="max-width:${(cols * W_ + 40) * 1.1}px" viewBox="0 0 ${cols * W_ + 40} ${rows * H_ + 20}" role="img" aria-label="${esc(b.title || 'Architecture diagram')}"><defs><marker id="sd-arrow-${b.key}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>${edges}${boxes}${labels.join('')}</svg></div>`;
-    const paths = b.paths ? `<div class="sd-arch-paths">${b.paths.map((p, i) => button('▶ ' + p.label, 'path', `data-i="${i}"`)).join('')}</div><div class="sd-arch-caption" aria-live="polite"></div>` : '';
+    const paths = b.paths ? `<div class="sd-arch-paths" role="group" aria-label="Scenarios">${b.paths.map((p, i) => button(p.label, 'path', `data-i="${i}" aria-pressed="false"`)).join('')}</div><div class="sd-arch-stepper" hidden>${button('← Back', 'prev')}<div class="sd-arch-caption" aria-live="polite"></div>${button('Next →', 'next')}</div>` : '';
     const quiz = b.missing ? `<div class="sd-prompt">${md(b.prompt || 'Which component belongs in the missing box?')}</div>${choiceButtons(b)}<div class="sd-reveal" hidden></div>` : '';
     const build = !b.missing && !b.board && !b.plain && b.edges.length >= 3 ? `<div class="sd-arch-build">${button('Wire it yourself first', 'build')}<span class="sd-arch-build-status sd-muted" aria-live="polite"></span>${button('Show all connections', 'giveup', 'hidden')}</div>` : '';
     const legend = [['hot', 'struggling'], ['down', 'failed'], ['new', 'new']].filter(([st]) => nodes.some(n => n.state === st))
@@ -442,7 +442,6 @@
     return frame(b, `${b.caption ? `<div class="sd-prompt">${md(b.caption)}</div>` : ''}${build}${svg}${legend ? `<div class="sd-arch-legend">${legend}</div>` : ''}${paths}${quiz}`, b.title);
   };
   W.arch = (el, b, ctx) => {
-    let timer = null;
     // Build mode: connections are hidden; click two components to find each one.
     const want = new Set(b.edges.map(([a, c]) => a + '>' + c));
     const found = new Set(), pairs = []; let first = null, misses = 0, started = false;
@@ -471,22 +470,29 @@
       found.add(key); el.querySelectorAll(`[data-edge="${CSS.escape(key)}"]`).forEach(x => x.classList.add('is-found'));
       status(); if (found.size === want.size) finishBuild(false);
     }));
-    el.querySelectorAll('[data-b=path]').forEach(n => n.addEventListener('click', () => {
-      clearInterval(timer);
-      const path = b.paths[Number(n.dataset.i)], cap = el.querySelector('.sd-arch-caption');
+    // Scenarios: toggle one on, then step through it with Back and Next. Nothing plays on its own.
+    let path = null, at = 0;
+    const stepper = el.querySelector('.sd-arch-stepper');
+    const draw = () => {
       el.querySelectorAll('.sd-arch-edge,.sd-arch-elabel').forEach(e => e.classList.remove('is-lit', 'is-past'));
-      let i = 0;
-      const step = () => {
-        if (!el.isConnected || i >= path.steps.length) { clearInterval(timer); if (i >= path.steps.length) ctx.done(b, null); return; }
-        el.querySelectorAll('.sd-arch-edge.is-lit,.sd-arch-elabel.is-lit').forEach(e => { e.classList.remove('is-lit'); e.classList.add('is-past'); });
-        const [a, c, note] = path.steps[i];
-        const key = el.querySelector(`.sd-arch-edge[data-edge="${CSS.escape(a + '>' + c)}"]`) ? a + '>' + c : c + '>' + a;
-        el.querySelectorAll(`[data-edge="${CSS.escape(key)}"]`).forEach(e => e.classList.add('is-lit'));
-        cap.innerHTML = `<span class="sd-step-n">${i + 1}/${path.steps.length}</span> ${inline(note || '')}`;
-        i++;
-      };
-      step(); timer = setInterval(step, b.speed || 1900);
+      if (!path) { stepper.hidden = true; return; }
+      stepper.hidden = false;
+      const keyOf = ([a, c]) => el.querySelector(`.sd-arch-edge[data-edge="${CSS.escape(a + '>' + c)}"]`) ? a + '>' + c : c + '>' + a;
+      path.steps.forEach((st, k) => { if (k <= at) el.querySelectorAll(`[data-edge="${CSS.escape(keyOf(st))}"]`).forEach(e => e.classList.add(k === at ? 'is-lit' : 'is-past')); });
+      el.querySelectorAll(`[data-edge="${CSS.escape(keyOf(path.steps[at]))}"]`).forEach(e => { e.classList.remove('is-past'); e.classList.add('is-lit'); });
+      el.querySelector('.sd-arch-caption').innerHTML = `<span class="sd-step-n">${at + 1}/${path.steps.length}</span> ${inline(path.steps[at][2] || '')}`;
+      el.querySelector('[data-b=prev]').disabled = at === 0;
+      el.querySelector('[data-b=next]').disabled = at === path.steps.length - 1;
+      if (at === path.steps.length - 1) ctx.done(b, null);
+    };
+    el.querySelectorAll('[data-b=path]').forEach(n => n.addEventListener('click', () => {
+      const next = b.paths[Number(n.dataset.i)];
+      path = path === next ? null : next; at = 0;
+      el.querySelectorAll('[data-b=path]').forEach(o => { const on = !!path && o === n; o.classList.toggle('is-on', on); o.setAttribute('aria-pressed', String(on)); });
+      draw();
     }));
+    el.querySelector('[data-b=prev]')?.addEventListener('click', () => { if (path && at > 0) { at--; draw(); } });
+    el.querySelector('[data-b=next]')?.addEventListener('click', () => { if (path && at < path.steps.length - 1) { at++; draw(); } });
     el.querySelectorAll('[data-b=pick]').forEach(n => n.addEventListener('click', () => {
       const i = Number(n.dataset.i), ok = i === b.answer;
       el.dataset.answer = b.choices[i]; ctx.save(b, { i });

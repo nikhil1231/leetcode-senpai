@@ -178,7 +178,10 @@
 .sd-arch-edge.is-past line { stroke:rgba(var(--accent-rgb),0.47); }
 @keyframes sd-flow { to { stroke-dashoffset:-12; } }
 .sd-arch-paths { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-.sd-arch-caption { min-height:24px; margin-top:10px; font-size:13px; color:var(--text); }
+.sd-arch-paths .button.is-on { background:var(--accent-soft); border-color:var(--accent); color:var(--text); }
+.sd-arch-stepper { display:flex; align-items:center; gap:10px; margin-top:10px; }
+.sd-arch-stepper[hidden] { display:none; }
+.sd-arch-caption { flex:1; min-height:24px; font-size:13px; color:var(--text); }
 .sd-step-n { font:600 11px var(--font-mono); color:var(--accent); margin-right:6px; }
 
 /* Interview */
