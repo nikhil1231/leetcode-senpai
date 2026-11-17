@@ -42,6 +42,9 @@
   const SETTLE_MS = 5000;     // longest a submit waits for the accurate transcript
   const SEGMENT_MS = 12000;   // cut a new audio segment at the first pause after this
   const IDLE_MS = 60000;      // give up re-listening after a minute of silence
+  const NET_TRIES = 4;        // Chrome's speech service drops now and then: retry this many times before saying so
+  let lastEnded = Promise.resolve();  // the previous recogniser has fully ended (Chrome runs one at a time)
+  let lastRec = null;
   const pending = new Set();  // sessions not yet finalised (transcript may still change)
   const armed = new WeakSet(); // fields whose mic is held for a reply, to come back on after it
   let active = null;
@@ -68,7 +71,6 @@
     "not-allowed": "Microphone access is blocked for this site.",
     "service-not-allowed": "Dictation isn't available in this browser.",
     "audio-capture": "No microphone found.",
-    "network": "Dictation needs a network connection.",
     "language-not-supported": "Dictation doesn't support this language.",
   };
   const MIME = window.MediaRecorder && ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
@@ -154,19 +156,22 @@
     ui: (state) => buttonUi(btn, state === "idle" && armed.has(field) ? "armed" : state),
   });
 
-  async function start(sink) {
-    if (active) stop(active);
+  // A fresh recogniser for the session. Starting one while the last is still winding down (a
+  // stop the settle timeout gave up on) makes Chrome fail with "network" until a reload, so
+  // the old one gets a moment to end, then is aborted.
+  async function recognise(s) {
+    const wait = (ms) => Promise.race([lastEnded, new Promise((r) => setTimeout(r, ms))]);
+    await wait(800);
+    if (lastRec) { try { lastRec.abort(); } catch (e) { /* already over */ } await wait(400); }
+    if (s.halted) { finish(s); return; }
     const rec = new Recognition();
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = LANG;
-    const s = { sink, el: sink.el, rec, prefix: sink.get(), done: [], run: [], interim: "", parts: [],
-                stream: null, mr: null, segStart: 0, halted: false, finished: false, abandoned: false,
-                error: null, heard: Date.now() };
-    s.settled = new Promise((r) => { s.resolve = r; });
-    active = s;
-    pending.add(s);
-    setUi(s, "listening");
+    let ended;
+    lastEnded = new Promise((r) => { ended = r; });
+    lastRec = rec;
+    s.rec = rec;
 
     rec.onresult = (e) => {
       if (!live(s)) { cancel(s); return; }
@@ -180,6 +185,7 @@
       s.run = finals;
       s.interim = interim.join(" ");
       s.heard = Date.now();
+      s.netTries = 0;
       render(s);
     };
     rec.onerror = (e) => {
@@ -188,14 +194,36 @@
     };
     // Chrome ends a session on silence or a hiccup; keep listening until told to stop.
     rec.onend = () => {
+      ended();
+      if (lastRec === rec) lastRec = null;
       s.done.push(...s.run, s.interim);
       s.run = [];
       s.interim = "";
+      const net = s.error === "network";
       const again = !s.halted && !FATAL[s.error] && live(s) && Date.now() - s.heard < (s.sink.idleMs || IDLE_MS);
       s.error = null;
-      if (again) { try { rec.start(); return; } catch (err) { /* fall through */ } }
+      if (again && net) {
+        // A dropped connection to the speech service: a new recogniser after a short wait usually works.
+        s.rec = null;
+        if (++s.netTries <= NET_TRIES) { setTimeout(() => { if (!s.halted && live(s)) recognise(s); else finish(s); }, 400 * s.netTries); return; }
+        notify("Dictation lost its connection to the speech service. Click the mic to try again.");
+      } else if (again) {
+        try { rec.start(); return; } catch (err) { /* fall through */ }
+      }
       finish(s);
     };
+    try { rec.start(); } catch (err) { ended(); finish(s); }
+  }
+
+  async function start(sink) {
+    if (active) stop(active);
+    const s = { sink, el: sink.el, rec: null, prefix: sink.get(), done: [], run: [], interim: "", parts: [],
+                stream: null, mr: null, segStart: 0, halted: false, finished: false, abandoned: false,
+                error: null, heard: Date.now(), netTries: 0 };
+    s.settled = new Promise((r) => { s.resolve = r; });
+    active = s;
+    pending.add(s);
+    setUi(s, "listening");
 
     // Record from the same moment recognition starts, so no words are missing from the audio.
     if (wantAudio()) {
@@ -205,7 +233,7 @@
       if (s.halted) { releaseMic(s); finish(s); return s; }  // stopped while the mic opened
       if (s.stream) record(s);
     }
-    try { rec.start(); } catch (err) { finish(s); }
+    await recognise(s);
     return s;
   }
 
@@ -215,16 +243,18 @@
     if (active === s) active = null;
     releaseMic(s);
     setUi(s, s.parts.length ? "transcribing" : "idle");
+    if (!s.rec) { finish(s); return; }  // between recognisers: nothing to wind down
     try { s.rec.stop(); } catch (e) { finish(s); }
   }
 
   // Immediate: keep what's shown, drop words still in flight (the user is typing).
   function cancel(s) {
     s.halted = true;
-    s.rec.onresult = null;
     if (active === s) active = null;
     releaseMic(s);
     setUi(s, s.parts.length ? "transcribing" : "idle");
+    if (!s.rec) { finish(s); return; }
+    s.rec.onresult = null;
     try { s.rec.abort(); } catch (e) { finish(s); }
   }
 
