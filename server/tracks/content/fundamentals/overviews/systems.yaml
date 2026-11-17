@@ -184,10 +184,10 @@ finish:
     prompt: |
       On an 8-core API machine the load average is 30, the CPUs are 15% busy, and requests are slow. Where do you look first?
     choices:
-      - The CPU scheduler, by lowering the reporting job's nice value
+      - The CPU scheduler, by lowering the reporting job's nice value, since a load of 30 on 8 cores means a long run queue
       - Disk I/O, with `iostat -xz`, since load average also counts tasks waiting on the disk
-      - The TLS settings, since handshakes are expensive
-      - Nowhere yet: add more cores
+      - The TLS settings, since handshakes are expensive and slow requests often come from renegotiation
+      - Nowhere yet: a load of 30 on 8 cores means the machine is too small, so add more cores first
     answer: 1
     reveal: |
       Load average counts runnable tasks and tasks in uninterruptible sleep, which is almost always disk I/O. With the CPUs mostly idle, the 30 is threads blocked on the disk, so `iostat -xz` (latency and queue per device) and `pidstat -d` (which process) are the next steps. More cores or a different nice value won't help threads that aren't waiting for a CPU, and TLS work would show up as CPU time.

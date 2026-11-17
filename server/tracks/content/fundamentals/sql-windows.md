@@ -138,8 +138,8 @@ prompt: "EXPLAIN ANALYZE shows `Nested Loop (rows=12 estimated, 1,840,000 actual
 choices:
   - text: The planner underestimated the outer rows, so it chose a nested loop doing 1.8M lookups
   - text: The index on the inner table is corrupt and needs a REINDEX to fix
-  - text: Nested loops are always slow and should be disabled
-  - text: The server needs more CPU cores to run the 1.8 million lookups in parallel
+  - text: Nested loops are always slow on large tables, so set `enable_nestloop = off` for this query and let the planner pick a hash join
+  - text: The server needs more CPU cores, so Postgres can split the 1.8 million index lookups across parallel workers
 answer: 0
 reveal: |
   A nested loop is excellent for 12 outer rows and terrible for 1.8 million: each one is a separate index lookup with random reads. A hash join would have been far cheaper. The estimate is the bug. Run ANALYZE so the statistics are fresh; if columns are correlated (city and postcode), add extended statistics (`CREATE STATISTICS`); check for a function on the filtered column or a type mismatch that hides it from the statistics. Turning off nested loops globally fixes one query and breaks others.

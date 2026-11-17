@@ -66,8 +66,8 @@ prompt: A new model tops a public leaderboard by 6 points. On your 300-case supp
 choices:
   - Switch, because the leaderboard gap shows it is the stronger model overall
   - Keep the current model, and look at the cases the new one fixes to see if they matter
-  - Switch only for traffic that arrives outside business hours
-  - Run the leaderboard's own benchmark on your traffic to settle it
+  - Switch only for traffic that arrives outside business hours, when the slower responses matter less to users
+  - Run the leaderboard's own benchmark on a sample of your traffic, and switch if the 6-point gap holds up
 answer: 1
 reveal: |
   Your eval is the decision-maker; the leaderboard measured something else. One point on 300 cases is three cases, inside noise. Read them: if the new model fixes a high-stakes category (refund policy, safety), routing just that category to it may be worth the cost. Otherwise you'd double the bill and slow every user for nothing measurable.

@@ -116,10 +116,10 @@ finish:
     prompt: |
       Ripple wants to serve an 8B model in BF16 on one 80 GB GPU, for chats of up to 8,000 tokens. Roughly how many chats fit at once, and what limits it?
     choices:
-      - About 5, limited by the GPU's arithmetic speed
+      - About 5, limited by the GPU's arithmetic speed, since every chat needs a full forward pass per token
       - About 60, limited by the memory left for the KV cache once the weights are loaded
-      - No real limit, because decode only depends on memory bandwidth
-      - One at a time, because each chat needs the whole GPU
+      - No real limit, because decode speed depends only on memory bandwidth and the weights are shared by every chat
+      - One at a time, because each chat needs the whole GPU to itself while it generates tokens
     answer: 1
     reveal: |
       The weights take 16 GB, leaving roughly 64 GB. At about 128 KB per token, an 8,000-token chat needs about 1 GB of KV cache, so around 60 fit (a little fewer once the engine's own overhead is counted). Bandwidth decides how fast each step runs, not how many chats fit, and batching is exactly what lets many chats share one GPU.

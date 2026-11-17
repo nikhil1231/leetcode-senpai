@@ -30,7 +30,7 @@ prompt: The service sends "charge $40" to the processor and the call times out a
 choices:
   - Retry the charge immediately with a new request, since the first one most likely never arrived
   - Mark the payment failed and tell the user to try again with the same card
-  - Record it as UNKNOWN, then resolve it with the same idempotency key, a status query or the webhook
+  - Record it as UNKNOWN, then settle it by retrying with the same key, a status query or the webhook
   - Assume it succeeded and ship the order, then refund later if the settlement disagrees
 answer: 2
 reveal: |

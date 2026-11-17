@@ -183,7 +183,7 @@ prompt: Your service charges cards through a provider, then records the charge i
 choices:
   - Your idempotency table — the key was stored
   - Nothing in your system; you must pass an idempotency key to the provider so it spots the retry
-  - The database transaction rolls back the charge
+  - The database transaction rolls back, and the provider's charge is reversed along with it
   - The provider sees the same card and amount within minutes and declines the second charge
 answer: 1
 reveal: |

@@ -92,10 +92,10 @@ finish:
     prompt: |
       An async Python service has to fetch 5,000 partner URLs and lightly parse each response. What's the best approach?
     choices:
-      - Start 5,000 threads, one per URL
-      - Use an async HTTP client, limit it to about 100 requests at a time with a semaphore, and run them as tasks in a task group
-      - Use a process pool with 5,000 processes
-      - Call `requests.get` for each URL inside the async handler
+      - Start 5,000 threads, one per URL, so every request can wait on the network at the same time
+      - Use an async HTTP client, cap it at about 100 requests at a time with a semaphore, and run them in a task group
+      - Use a process pool with 5,000 processes, so each fetch gets its own interpreter and the GIL can't hold it back
+      - Call `requests.get` for each URL inside the async handler, since the handler is already async and that keeps the code simple
     answer: 1
     reveal: |
       The work is almost all waiting on the network, which is what asyncio handles cheaply on one thread. A semaphore stops it opening 5,000 sockets at once, and a task group cancels the rest if something fails badly. Thousands of threads or processes cost far more memory for no gain, and a synchronous `requests.get` inside an async handler blocks the whole event loop for every request.

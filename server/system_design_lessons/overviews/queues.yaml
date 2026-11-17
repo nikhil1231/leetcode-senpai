@@ -219,10 +219,10 @@ finish:
     prompt: |
       Every new link must appear in search, and new creators should get a welcome email. Neither may slow down or break saving a link. Which design do you propose?
     choices:
-      - The API saves the link, then calls the search index and the email provider before replying
-      - The API publishes "link created" to the log first, then saves the link
-      - The API saves the link and an outbox row in one transaction; a relay publishes to the log; search and email each consume it idempotently, with retries and a dead-letter queue
-      - A nightly batch job copies the day's new links to search and sends the emails
+      - The API saves the link, then calls the search index and the email provider before replying, retrying each call a few times if it fails
+      - The API publishes "link created" to the log first, then saves the link, so search and email hear about it as early as possible
+      - The API saves the link and an outbox row in one transaction; a relay publishes it, and search and email consume it idempotently
+      - A nightly batch job copies the day's new links to search and sends the welcome emails, so nothing extra runs while saving
     answer: 2
     reveal: |
       The outbox makes saving and publishing atomic, and the log lets search and email each work at their own pace without affecting the request. Consumers acknowledge after the work and deduplicate, so redelivery is harmless, and a broken message ends up in the DLQ instead of blocking the rest. Calling both systems inside the request ties link creation to their speed and availability. Publishing first can announce a link that was never saved. A nightly batch works, but leaves new links out of search and creators without their email for up to a day.

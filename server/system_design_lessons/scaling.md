@@ -88,9 +88,9 @@ explain: The early steps often deliver 10× gains for days of work; sharding del
 ```predict
 prompt: The API tier's CPU is at 25% while p99 latency has tripled and throughput has flattened. Someone proposes doubling the API instances. What should you check first?
 choices:
-  - Nothing — doubling instances always helps latency
+  - Nothing; doubling the instances always helps latency, because each one then handles half as many requests
   - Saturation further down: database CPU, lock waits, pool waits, a slow downstream service
-  - The API instances' memory, since a leak causes garbage-collection pauses
+  - The API instances' memory, since a slow leak causes long garbage-collection pauses that show up in p99
   - The load balancer's algorithm, which may be sending most traffic to a few instances
 answer: 1
 reveal: |

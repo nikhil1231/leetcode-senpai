@@ -149,7 +149,7 @@ Clients heartbeat every ~30 s; presence entries expire after ~60 s without one. 
 prompt: A 1,000-member group receives 50 messages/s during a live event. With per-user channels, each message is published to every member's channel. What's the delivery load, and what changes for very large channels?
 choices:
   - 50 deliveries/s — the broker sends one copy per message and every member's client reads it
-  - 50,000 deliveries/s for this group; huge channels switch to one subscription per gateway, fanned out locally
+  - 50,000 deliveries/s; huge channels use one subscription per gateway and fan out locally
   - 1,000 deliveries/s — one per member, since messages in a burst are batched together
   - The database must store 1,000 copies of each message, one per member's inbox, at 50,000 writes/s
 answer: 1

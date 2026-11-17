@@ -145,10 +145,10 @@ When a gateway restarts, every client on it reconnects. If all of them do so ins
 ```predict
 prompt: A gateway holding 500,000 connections crashes. Clients reconnect after a fixed 1 s delay. Each reconnect needs an auth check and a "fetch missed messages" query. What's the most likely next failure?
 choices:
-  - None — the other gateways have spare connection capacity
+  - None; the other gateways have spare connection capacity, so the 500,000 clients are spread across them within a few seconds
   - Auth and the message store get ~500k requests in a second and overload, causing more retries
   - Clients lose the messages that arrived while they were disconnected from the gateway
-  - The load balancer will route everyone back to the crashed gateway
+  - The load balancer keeps routing everyone back to the crashed gateway, because their sessions are pinned to it
 answer: 1
 reveal: |
   The connections themselves fit elsewhere; the **synchronised side effects** of reconnecting don't. Jittered backoff spreads 500k reconnects over, say, 30 s (~17k/s). Local token validation and cached recent messages make each one cheap. Load shedding with retry-after keeps the system from collapsing while it catches up.

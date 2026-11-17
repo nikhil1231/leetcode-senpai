@@ -239,8 +239,8 @@ prompt: A nightly analytics job iterates over all 5M products, reading each one 
 choices:
   - The analytics job holds read locks on the products table that block the morning's writes
   - The scan's one-off keys evicted the hot working set, so morning traffic misses until it rebuilds
-  - Redis forgets everything at midnight because TTLs are counted from the start of each day
-  - LRU caches cannot hold more than one million keys
+  - Redis forgets everything at midnight, because TTLs are counted from the start of each day rather than from the write
+  - LRU caches cannot hold more than one million keys, so the other four million products fall through to the database
 answer: 1
 reveal: |
   This is **scan pollution**. Under LRU, "recently used" is the only signal, so a one-pass scan makes cold keys look hot and pushes out the genuinely popular ones. Fixes: let batch jobs **bypass** the cache (or use their own), switch to **LFU**/W-TinyLFU, or read from a replica instead of through the cache.

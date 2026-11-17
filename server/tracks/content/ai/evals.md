@@ -58,8 +58,8 @@ prompt: You swap to a cheaper model. On your 400-case eval set the overall pass 
 choices:
   - Ship it; one point on 400 cases is within run-to-run noise
   - Break results down by category, and read the newly failing cases first
-  - Reject it; any drop on the eval set means the cheaper model is worse
-  - Increase the eval set to 10,000 synthetic cases first
+  - Reject it; any drop on the eval set means the cheaper model is worse, however small the drop looks
+  - Grow the eval set to 10,000 synthetic cases first, so a one-point change becomes statistically meaningful
 answer: 1
 reveal: |
   Aggregates hide concentrated regressions. The 1-point drop might be spread thinly as noise, or it might be refunds going from 95% to 60% while easy categories improve. With 400 cases, one point is four cases, so read them. Also compare cost and latency: if the cheap model is 5× cheaper and the failures are minor style issues, shipping may be right. If they're all in a high-stakes category, it isn't. Decide on the breakdown, not the headline.

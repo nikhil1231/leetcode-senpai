@@ -86,10 +86,10 @@ finish:
     prompt: |
       A judge flags 5% of support answers as unfaithful. Checked against 200 expert labels, it catches 40% of the real failures and passes 99% of the good answers. What do you conclude?
     choices:
-      - About 5% of answers are unfaithful, as the judge says
-      - The judge misses most real failures, so the true rate is much higher than 5%. Fix the judge and check it again before using its numbers
-      - The judge is 99% accurate, so it can be trusted
-      - Switch the judge to a 1 to 10 score, to get more detail
+      - About 5% of answers are unfaithful, as the judge says, because 99% agreement on good answers shows its flags can be trusted
+      - The judge misses most real failures, so the true rate is well above 5%. Fix the judge and recheck it before using its numbers
+      - The judge is 99% accurate overall, so it can be trusted and the 200 expert labels can be retired
+      - Switch the judge from pass or fail to a 1 to 10 score, so you get more detail on how unfaithful each answer is
     answer: 1
     reveal: |
       Passing 99% of good answers is easy when most answers are good. What matters is that it catches only 40% of failures, so most unfaithful answers get through. Correcting for that gives a true rate of about 10%, double what it reports. A 1 to 10 score is less reliable than pass or fail per criterion. The fix is a better rubric or examples, checked again on held-out labels.

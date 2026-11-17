@@ -101,7 +101,10 @@
   const R = {}, W = {};
 
   // ---------- Predict ----------
-  R.predict = b => frame(b, `<div class="sd-prompt">${md(b.prompt)}</div><div class="sd-predict-choices">${b.choices.map((c, i) => `<button type="button" class="sd-option" data-b="pick" data-i="${i}"><span class="sd-option-key">${String.fromCharCode(65 + i)}</span><span>${inline(c)}</span></button>`).join('')}</div><div class="sd-reveal" hidden></div>`, b.title);
+  // Shown in a stable shuffled order, so the answer's authored position (usually second) gives nothing away.
+  // data-i stays the authored index, which is what `answer` and saved state refer to.
+  const choiceButtons = b => `<div class="sd-predict-choices">${shuffle(b.choices.map((c, i) => ({ c, i })), b.key + b.prompt).map(({ c, i }, k) => `<button type="button" class="sd-option" data-b="pick" data-i="${i}"><span class="sd-option-key">${String.fromCharCode(65 + k)}</span><span>${inline(c)}</span></button>`).join('')}</div>`;
+  R.predict = b => frame(b, `<div class="sd-prompt">${md(b.prompt)}</div>${choiceButtons(b)}<div class="sd-reveal" hidden></div>`, b.title);
   W.predict = (el, b, ctx) => {
     el.querySelectorAll('[data-b=pick]').forEach(n => n.addEventListener('click', () => {
       const i = Number(n.dataset.i), ok = i === b.answer;
@@ -432,7 +435,7 @@
     }).join('');
     const svg = `<div class="sd-arch-wrap"><svg class="sd-arch" style="max-width:${(cols * W_ + 40) * 1.1}px" viewBox="0 0 ${cols * W_ + 40} ${rows * H_ + 20}" role="img" aria-label="${esc(b.title || 'Architecture diagram')}"><defs><marker id="sd-arrow-${b.key}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>${edges}${boxes}${labels.join('')}</svg></div>`;
     const paths = b.paths ? `<div class="sd-arch-paths">${b.paths.map((p, i) => button('▶ ' + p.label, 'path', `data-i="${i}"`)).join('')}</div><div class="sd-arch-caption" aria-live="polite"></div>` : '';
-    const quiz = b.missing ? `<div class="sd-prompt">${md(b.prompt || 'Which component belongs in the missing box?')}</div><div class="sd-predict-choices">${b.choices.map((c, i) => `<button type="button" class="sd-option" data-b="pick" data-i="${i}"><span class="sd-option-key">${String.fromCharCode(65 + i)}</span><span>${inline(c)}</span></button>`).join('')}</div><div class="sd-reveal" hidden></div>` : '';
+    const quiz = b.missing ? `<div class="sd-prompt">${md(b.prompt || 'Which component belongs in the missing box?')}</div>${choiceButtons(b)}<div class="sd-reveal" hidden></div>` : '';
     const build = !b.missing && !b.board && !b.plain && b.edges.length >= 3 ? `<div class="sd-arch-build">${button('Wire it yourself first', 'build')}<span class="sd-arch-build-status sd-muted" aria-live="polite"></span>${button('Show all connections', 'giveup', 'hidden')}</div>` : '';
     const legend = [['hot', 'struggling'], ['down', 'failed'], ['new', 'new']].filter(([st]) => nodes.some(n => n.state === st))
       .map(([st, l]) => `<span class="sd-arch-key is-state-${st}">${l}</span>`).join('');

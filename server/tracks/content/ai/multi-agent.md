@@ -127,8 +127,8 @@ prompt: An email assistant has long-term memory and reads incoming mail. A phish
 choices:
   - text: The assistant ignores it, because models are trained not to trust instructions in emails
   - text: It was saved as a memory and comes back as trusted context, so the invoice is CC'd to the attacker
-  - text: The memory store rejects it as malformed
-  - text: It only affects the session in which the email was read
+  - text: The memory store rejects it as malformed, since it arrived inside an email rather than from the user
+  - text: It only affects the session in which the email was read, and is gone by the time the user asks a week later
 answer: 1
 reveal: |
   Memory turns a one-off injection into a persistent one: the instruction is written once, then retrieved into future contexts looking like the user's own preference. Defences: don't let content from untrusted sources write memories (or quarantine and review those writes), store provenance with each memory and down-rank untrusted ones, require confirmation for new recipients and other outbound actions, and show users what's remembered.

@@ -55,7 +55,7 @@ When memory runs out, the **OOM killer** picks a process (by `oom_score`) and SI
 prompt: A Java pod has a 2 GiB memory limit and `-Xmx2g`. Under load it's restarted repeatedly, with exit code 137 and no Java OutOfMemoryError in the logs. Why?
 choices:
   - A bug in the JVM's garbage collector that crashes it before it can log the error
-  - Heap plus metaspace, stacks and direct buffers exceed the 2 GiB cgroup limit, so the kernel kills it
+  - Heap plus metaspace, stacks and buffers go over the 2 GiB cgroup limit, so the kernel kills it
   - The liveness probe times out during GC pauses, so Kubernetes restarts the pod
   - Exit code 137 means the application called System.exit(137)
 answer: 1

@@ -61,7 +61,7 @@ Use **histograms** for latency so you can compute percentiles across instances. 
 prompt: Traces are head-sampled at 1%. A bug causes 0.05% of checkouts to fail after 9 seconds. Engineers search the tracing system for an example and find almost nothing. Why, and what fixes it?
 choices:
   - The tracing system drops spans longer than a few seconds, so the 9 s requests never appear
-  - Only 1% of the rare failures are traced; tail-based sampling that keeps errors and slow requests captures them
+  - Only 1% of the rare failures are traced; tail-based sampling keeps errors and slow requests
   - Failed requests can't be traced, because the span is never closed when the request errors
   - Traces only record successful requests, so failures must be found in the logs instead
 answer: 1

@@ -100,10 +100,10 @@ The video is encoded at several **renditions** (240p … 4K, at different bitrat
 ```predict
 prompt: A viewer presses play on a popular video. Where do the bytes come from?
 choices:
-  - The application servers stream the file from object storage, so access can be checked
+  - The application servers stream the file from object storage, so access can be checked on every request a viewer makes
   - Manifest then segments from a nearby CDN edge; on a miss an origin shield, rarely object storage
   - The nearest region's object storage bucket, replicated from the original upload
-  - Peer-to-peer from other viewers by default
+  - Peer-to-peer from other viewers watching the same video, since a popular video has plenty of nearby copies
 answer: 1
 reveal: |
   Segments are just static files with immutable URLs, so they cache perfectly at CDN edges. Popular videos reach hit ratios near 100%. An origin shield collapses misses from many edges into one fetch. Application servers only handle metadata, authentication and signed URLs, never video bytes.

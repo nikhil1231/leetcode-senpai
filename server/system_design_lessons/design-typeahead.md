@@ -29,7 +29,7 @@ case: typeahead
 prompt: Why can't the server answer "top 10 completions for 'how to m'" by querying the search-log table at request time?
 choices:
   - SQL can't do prefix matching with LIKE unless the column has a full-text index
-  - It would aggregate millions of matching queries per keystroke — far beyond 50 ms at 200k requests/s
+  - It would aggregate millions of matching queries per keystroke, far beyond 50 ms at 200k requests/s
   - Logs are encrypted at rest, so they can't be queried from the request path
   - It would return too few results, because most prefixes have under ten logged queries
 answer: 1

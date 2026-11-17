@@ -86,8 +86,8 @@ prompt: You asked the AI to fix a flaky date-parsing bug. It replies "Fixed! I r
 choices:
   - The fix is verified, so move on to the next phase of the round
   - The claim is invented; run the tests yourself before trusting the answer
-  - The AI must have hidden tool access that the interview platform provides
-  - Ask it to run them again and paste the output, to be sure
+  - The AI must have hidden tool access that the interview platform provides, so the result can be trusted
+  - Ask it to run the tests again and paste the full output into the chat, to be sure
 answer: 1
 reveal: |
   A chat-only assistant can't run anything, so "I ran the tests" is a fluent fabrication. The code may still be right, but the claim is worth nothing. This is the general rule: the AI's report of verification is never verification. Only checks *you* ran count, and in the walkthrough, report only checks you actually executed. Saying "it claimed the tests pass, but it can't run code, so I ran them" is a good moment to narrate.

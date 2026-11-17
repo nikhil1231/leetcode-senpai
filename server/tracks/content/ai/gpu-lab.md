@@ -57,8 +57,8 @@ prompt: The Q8_0 file is about 8.5 GB and your card has 8 GB, part of which Wind
 choices:
   - About half the Q4 speed, because the file is roughly twice the size
   - It loads with some layers on the CPU, and decode drops to a fraction of Q4
-  - Exactly the same speed, because 8-bit numbers are simpler to compute
-  - It refuses to start, since GPU memory can never be shared with the CPU
+  - Exactly the same speed as Q4, because 8-bit numbers are simpler to compute and the extra size is mostly padding
+  - It refuses to start with an out-of-memory error, since GPU memory can never be shared with the CPU
 answer: 1
 reveal: |
   Ollama and llama.cpp offload the layers that don't fit to the CPU, whose memory is many times slower (dual-channel DDR4 is about 50 GB/s against the GPU's 448). Every decode step now waits on the slowest part, so the speed falls off a cliff, often to a few tokens per second. Fitting in GPU memory isn't a nicety, it's the whole game, which is why 4-bit quantisation is so popular on consumer cards. (If it fits on your Mac's unified memory, you'll see roughly the halving the first option predicts.)

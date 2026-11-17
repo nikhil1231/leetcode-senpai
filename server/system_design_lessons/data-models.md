@@ -109,9 +109,9 @@ Denormalise when a read path is hot and the copied data changes rarely (or can b
 prompt: A social app copies each author's display name and avatar URL into every post document so feeds render without joins. Users can change their display name. What's the real cost?
 choices:
   - None — the copies cost a little storage, and nothing else changes
-  - Every rename must update all that user's posts (maybe millions), or old posts show the old name for a while
+  - Every rename must update all of that user's posts, or old posts show the old name for a while
   - The feed becomes slower, because each post document is larger to read
-  - Display names can no longer change, because posts would disagree with the profile forever
+  - Display names can no longer change at all, because every post would disagree with the profile forever
 answer: 1
 reveal: |
   Denormalisation moves work from reads to writes. A prolific user's rename becomes a large fan-out update, usually done asynchronously, so old posts show stale names for a while. Many systems instead store only `author_id` in posts and resolve names through a hot cache. Pick based on how often the copied data changes and how stale it may be.

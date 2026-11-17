@@ -199,7 +199,7 @@ A server's real user is a model reading descriptions, so tool design is prompt d
 prompt: A team connects six MCP servers to their coding agent, exposing 140 tools in total. Simple tasks get slower and the agent sometimes picks the wrong tool. What's the most likely cause?
 choices:
   - MCP adds a network round trip to every single tool call, and with six servers connected those round trips add up
-  - Every tool definition is sent on every turn, so the model reads thousands of tokens of tools and must pick among near-duplicates
+  - Every tool definition is sent each turn, so the model reads thousands of tokens and picks among near-duplicates
   - Each server negotiates a different protocol version, so some of the tools quietly fall back to a slower compatibility mode
   - The servers' tool calls run strictly one at a time, so a single slow server blocks every other server's calls
 answer: 1

@@ -41,7 +41,7 @@ Where vectors live: a dedicated vector database, or alongside your data with **p
 prompt: A support search uses pure vector search. Users report that searching for error code **E-4021** returns articles about other errors. Why?
 choices:
   - The HNSW index is missing the newest articles, so older ones about other errors fill the results
-  - Embeddings capture general meaning, so similar error codes land close together and exact IDs aren't matched
+  - Embeddings capture general meaning, so similar error codes land close together and exact IDs don't match
   - The query is too short to embed, so it needs expanding with an LLM before searching
   - Cosine similarity ignores digits, so E-4021 and E-4012 become the same vector
 answer: 1

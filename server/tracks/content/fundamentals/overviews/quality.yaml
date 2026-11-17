@@ -65,10 +65,10 @@ finish:
     prompt: |
       You join the team with the slow, flaky end-to-end suite. What do you do first?
     choices:
-      - Add more end-to-end tests for checkout
-      - Quarantine and fix the flaky tests, add unit and integration tests for the checkout logic, and keep a few end-to-end journeys
-      - Require 100% line coverage on every pull request
-      - Configure CI to retry failing tests until they pass
+      - Add more end-to-end tests for checkout, since those are the only tests that exercise the whole flow the way a customer does
+      - Quarantine and fix the flaky tests, test checkout logic with unit and integration tests, and keep a few end-to-end journeys
+      - Require 100% line coverage on every pull request, so nothing new can reach checkout untested
+      - Configure CI to retry failing tests up to three times, so a flaky failure no longer blocks a merge
     answer: 1
     reveal: |
       The suite isn't trusted because it's flaky, and it's slow because everything is tested from the top. Fixing the flaky tests restores trust, and moving most checks down to unit and integration tests makes failures fast and precise, leaving a few end-to-end journeys as the final proof. More end-to-end tests make both problems worse, a coverage target measures lines run rather than things checked, and automatic retries hide real failures.

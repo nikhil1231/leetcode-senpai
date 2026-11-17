@@ -122,7 +122,7 @@ steps: |
 prompt: A shared job queue serves 2,000 customers. One customer bulk-imports 3 million records, enqueueing 3 million jobs in a minute. Other customers report that their jobs, normally done in seconds, now take hours. What's the best fix?
 choices:
   - Add more workers until the import finishes quickly, then scale back down automatically
-  - Per-tenant queues (or a fair scheduler) so workers round-robin across tenants, plus per-tenant limits
+  - Per-tenant queues or a fair scheduler, so workers take turns across tenants, plus per-tenant limits
   - Make the queue LIFO so new jobs from other customers run before the import's backlog
   - Give the import's jobs a lower priority flag inside the same FIFO queue
 answer: 1

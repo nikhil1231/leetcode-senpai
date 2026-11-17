@@ -114,9 +114,9 @@ finish:
     prompt: |
       Ripple wants to tag every new link with one of 12 categories, about 200,000 links a day. Which setup do you start with?
     choices:
-      - The largest reasoning model at temperature 1, answering in free text
-      - A small model at temperature 0, constrained to a schema with the 12 categories, validated in code and measured on a labelled test set
-      - Fine-tune a model on the categories before trying anything else
+      - The largest reasoning model at temperature 1, answering in free text, so it can explain its choice when a link fits two categories
+      - A small model at temperature 0, held to a schema of the 12 categories, validated in code and measured on a labelled set
+      - Fine-tune a model on the 12 categories before trying anything else, since 200,000 links a day is too many for prompting alone
       - A mid-sized model told to "think step by step", with the category taken from the last line of its answer
     answer: 1
     reveal: |

@@ -132,8 +132,8 @@ find:
 ```predict
 prompt: Alice's confirm succeeds, but the response is lost. Her app retries with the same booking_id. What does the server return?
 choices:
-  - 410 — the hold no longer exists because the seat is booked
-  - 200 with the same booking_id — the seat is booked under it, so this is a retry
+  - 410 Gone, because the hold no longer exists once the seat has been booked by the first request
+  - 200 with the same booking_id: the seat is booked under it, so it's a retry
   - A second booking, since the retry carries a valid booking_id and a seat number
   - 409 Conflict, because the seat is already booked and can't be confirmed twice
 answer: 1

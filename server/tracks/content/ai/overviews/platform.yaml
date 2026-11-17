@@ -164,10 +164,10 @@ finish:
     prompt: |
       Every night at 1am, interactive latency on the shared 70B pool spikes. A data team's backfill runs at that time through the same model alias. What's the proper fix?
     choices:
-      - Add 50% more GPUs to the 70B pool
-      - Give batch work its own priority class and token quota, and run it through the batch queue on idle capacity, paused when interactive load rises
-      - Ask the data team to move the backfill to the afternoon
-      - Switch the router to round robin, so load spreads evenly
+      - Add 50% more GPUs to the 70B pool, so there is enough headroom for the backfill and interactive traffic at once
+      - Give batch work its own priority class and token quota, and run it on idle capacity, paused when interactive load rises
+      - Ask the data team to move the backfill to the afternoon, when the pool is quieter and there is room for both
+      - Switch the router to round robin, so the backfill's requests spread evenly across every replica instead of piling up
     answer: 1
     reveal: |
       The problem is two kinds of traffic sharing one pool with nothing to separate them. A priority class and quota in the gateway, and the batch queue on the platform side, let the backfill use idle GPUs without hurting interactive users, and pause it when they need the capacity. More GPUs would sit idle most of the day, moving the job only moves the clash, and round robin ignores the cache and load information the router needs.

@@ -182,8 +182,8 @@ prompt: A "people you may know" feature explores friends of friends of friends o
 choices:
   - Switch to a faster graph database and run six hops live on every page view
   - Cap depth at two or three, prune by mutual friends, and precompute offline
-  - Add more indexes on the friendships table so each hop is cheaper
-  - Shard the friendships table by user ID so the hops spread across machines
+  - Add more indexes on the friendships table so each hop is a cheap index lookup, then run six hops live
+  - Shard the friendships table by user ID, so the hops spread across machines and run in parallel
 answer: 1
 reveal: |
   Six hops at 200 neighbours is 200⁶ = 6.4 × 10¹³ paths, and in a connected social graph it reaches nearly everyone. Better hardware doesn't change that, indexes make each hop cheaper but not fewer, and sharding makes hops cross the network. Constrain the question: few hops, ranked by mutual friends, and compute heavy suggestions in a batch or stream job.

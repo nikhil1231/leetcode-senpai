@@ -117,10 +117,10 @@ finish:
     prompt: |
       Ripple's partner API accepts JWTs. A token a partner was issued for a different Ripple service also works against the payouts API, and a logged-in partner can read other partners' payouts by changing an ID. What fixes both?
     choices:
-      - A longer signing key
-      - Check that each token's audience is the payouts API, and load each payout to check it belongs to the caller
-      - A Content-Security-Policy on the partner dashboard
-      - Moving the API to HTTPS only
+      - A longer signing key, rotated now, so that tokens issued for other services stop verifying
+      - Check each token's audience is the payouts API, and check each payout belongs to the caller
+      - A Content-Security-Policy on the partner dashboard, so a page can't send a token or a payout ID anywhere else
+      - Moving the API to HTTPS only, so tokens and payout IDs can't be read or changed on the way
     answer: 1
     reveal: |
       The first problem is a missing audience check: a correctly signed token for another service shouldn't be accepted here. The second is broken object-level authorisation: being a valid partner doesn't make every payout yours. A longer key doesn't help when the signature is already valid, a CSP is for XSS, and HTTPS protects tokens in transit but doesn't decide who may use them.

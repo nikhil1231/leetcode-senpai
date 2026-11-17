@@ -113,10 +113,10 @@ finish:
     prompt: |
       Twenty minutes into the round, the AI's patch makes every visible test pass. The bug report mentions both back-to-back bookings and bookings that end at midnight. What do you do next?
     choices:
-      - Move on to the feature, since the tests pass
-      - Read the diff against the bug report, run the full suite, and test the midnight case yourself, saying what you're checking as you go
-      - Ask the AI to confirm that every case in the bug report is now fixed
-      - Ask the AI to rewrite the booking module so the problem can't come back
+      - Move on to the feature, since every visible test passes and the interviewer will see that the bug is fixed
+      - Read the diff against the bug report, run the full suite, and test the midnight case yourself, saying what you're checking
+      - Ask the AI to go through the bug report and confirm that both back-to-back and midnight bookings are now handled
+      - Ask the AI to rewrite the booking module more cleanly, with clearer time handling, so the problem can't come back
     answer: 1
     reveal: |
       Passing the visible tests isn't proof: they may not cover the midnight case at all. Reading the diff against the report, running the suite and testing the uncovered case yourself is verification, and narrating it is communication, two of the four things being scored. Asking the AI to confirm is taking its word for it, and a rewrite adds new risk and hides what changed.

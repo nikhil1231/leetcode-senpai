@@ -96,10 +96,10 @@ finish:
     prompt: |
       Creators ask the bot "how many links did I create last month?" and get vague or wrong answers. What do you change?
     choices:
-      - Use bigger chunks, so more of the help centre fits in each passage
+      - Use bigger chunks, so more of the help centre fits in each passage and the answer has more context to draw on
       - Give the bot a tool that runs a query on the creator's own data, and answer from the result
-      - Fine-tune the model on examples of link counts
-      - Add more help-centre articles about link counts
+      - Fine-tune the model on examples of creators asking about link counts and the right answers
+      - Add more help-centre articles about link counts, so retrieval finds a relevant passage every time
     answer: 1
     reveal: |
       The answer lives in Ripple's database, not in any document, so no amount of retrieval over the help centre can find it. A tool call that counts the creator's links (with the usual check that they own the data) gives the model a real number to answer from. Fine-tuning can't teach facts that change every day, and more articles still won't contain this creator's numbers.

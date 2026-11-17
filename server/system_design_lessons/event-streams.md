@@ -67,7 +67,7 @@ items:
 prompt: A topic has 8 partitions keyed by `account_id`, and per-account ordering matters. You increase it to 16 partitions to get more throughput. What changes for ordering?
 choices:
   - Nothing — Kafka moves existing data to keep keys in place
-  - Many accounts' new events hash to a different partition than their old ones, so new events can be processed first
+  - Many accounts' new events hash to a different partition from their old ones, so new can overtake old
   - Ordering is lost for every account until the topic is recreated with 16 partitions from scratch
   - Kafka refuses to add partitions to keyed topics, so you must create a new topic and migrate
 answer: 1

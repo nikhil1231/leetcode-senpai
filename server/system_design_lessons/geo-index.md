@@ -124,8 +124,8 @@ paths:
 ```predict
 prompt: A "drivers near me" query searches only the geohash cell containing the rider, at precision 6 (~1.2 km × 0.6 km). The rider stands 20 m from a cell edge. What goes wrong?
 choices:
-  - Nothing — at precision 6 a cell is over a kilometre wide, so 20 m from the edge makes no difference
-  - Drivers just across the edge, perhaps the closest, are missed; query the neighbouring cells too, then filter by distance
+  - Nothing; at precision 6 a cell is over a kilometre wide, so being 20 m from the edge makes no difference to who is found
+  - Drivers just across the edge, maybe the closest, are missed; query the neighbouring cells and filter by distance
   - The query returns drivers from the whole city, because short prefixes match too many cells
   - Geohash cells overlap at their edges, so drivers near the boundary appear twice in the results
 answer: 1

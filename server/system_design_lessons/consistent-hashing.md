@@ -119,9 +119,9 @@ fix: |
 prompt: A load balancer uses consistent hashing on user ID so each user's requests reach the same backend (useful for local caches). One backend dies. What happens to users?
 choices:
   - Every user is reassigned to a new backend, and all local caches go cold
-  - Only that backend's users move — spread across survivors with virtual nodes — everyone else stays
+  - Only that backend's users move, spread across the survivors by virtual nodes
   - Users on the dead backend get errors until it returns, since their hash still points to it
-  - The load balancer switches to round robin
+  - The load balancer switches to round robin until the backend returns, so every user loses their cache
 answer: 1
 reveal: |
   That's the whole point: membership changes only affect the keys owned by the changed node. With virtual nodes, its users spread across all remaining backends instead of doubling one neighbour's load. Their local cache entries are lost, but nobody else's are.

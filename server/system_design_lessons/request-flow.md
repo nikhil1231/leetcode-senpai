@@ -88,7 +88,7 @@ prompt: Your service's p50 latency is 30 ms, but users on mobile networks compla
 choices:
   - The server logs record when the response is sent, not when the request arrived
   - DNS, TCP and TLS setup on a fresh connection over a slow mobile link come before the server sees it
-  - The database is cold for the first request
+  - The database is cold for the first request of a session, so it reads from disk instead of memory
   - The app's first request waits for its own local cache to load before it is sent
 answer: 1
 reveal: |

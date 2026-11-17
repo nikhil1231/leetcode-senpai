@@ -73,8 +73,8 @@ prompt: A consumer of a 12-partition topic hits a message it can't deserialise a
 choices:
   - A single error in the logs, after which the consumer skips the message and carries on
   - Lag on that one partition climbs while the other 11 are fine, and health checks still pass
-  - The whole topic stops, since one consumer group processes all 12 partitions together
-  - Kafka moves the bad message to a dead-letter topic after three failed polls
+  - The whole topic stops, since one consumer group processes all 12 partitions together and waits for the slowest
+  - Kafka moves the bad message to a dead-letter topic after three failed polls, and the consumer carries on
 answer: 1
 reveal: |
   Kafka has no per-message acknowledgement or automatic dead-lettering — a consumer group's progress per partition is just an offset. If the consumer won't move past offset N, everything after N in that partition waits. That's why Kafka consumers implement their own retry topics and DLQs, and why **per-partition lag** (and its age) is the metric to alert on, not "is the process up".

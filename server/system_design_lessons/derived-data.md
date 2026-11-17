@@ -140,8 +140,8 @@ Large systems drift. Hardware flips bits, a bug corrupts a transformation, someo
 ```predict
 prompt: A service writes a new order to its database and then publishes an OrderPlaced event to a broker, in two separate calls. Which is the most robust change?
 choices:
-  - Retry the broker publish three times, then log an error and move on
-  - Publish first, so the event always exists before the order does
+  - Retry the broker publish three times with backoff, then log an error and move on so the request isn't blocked
+  - Publish first, so the event always exists before the order does and consumers never miss one
   - Write an outbox row in the same transaction, and let a relay publish in order
   - Wrap both calls in a try/catch and delete the order if the publish fails
 answer: 2

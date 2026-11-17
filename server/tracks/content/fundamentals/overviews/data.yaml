@@ -145,10 +145,10 @@ finish:
     prompt: |
       The payouts service reads a creator's balance, checks in code that it covers the payout, then writes the new balance. Under load, two payouts sometimes both succeed and the balance goes below zero. What do you change?
     choices:
-      - Add an index on creator_id, so the read is faster
+      - Add an index on creator_id, so the read and the write happen closer together and the two payouts are less likely to overlap
       - Make it one guarded UPDATE (`amount = amount - 30 WHERE amount >= 30`), and add `CHECK (amount >= 0)` as a backstop
-      - Put a cache in front of the balances table
-      - Run vacuum more often
+      - Put a cache in front of the balances table, so both payouts see the same balance instead of reading it separately
+      - Run vacuum more often, so stale row versions from earlier payouts aren't read as the current balance
     answer: 1
     reveal: |
       This is a lost update: both requests read the same balance under read committed and each write their own result. A single guarded UPDATE does the check and the change atomically, and the CHECK constraint makes a negative balance impossible from any code path. A faster read only narrows the race, a cache makes the stale read more likely, and vacuum has nothing to do with it.

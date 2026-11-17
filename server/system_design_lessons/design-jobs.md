@@ -25,9 +25,9 @@ case: jobs
 ```predict
 prompt: The API inserts a job row and then publishes a message to the queue, returning 202 after both. What happens if the process crashes between the INSERT commit and the publish?
 choices:
-  - The job is lost forever
+  - The job is lost forever, because neither the row nor the message survives a crash before the response
   - The job row exists but nobody processes it, unless dispatch is recoverable (an outbox or polling)
-  - The queue publishes it automatically once the database transaction commits
+  - The queue picks it up automatically once the database transaction commits, since the broker watches the jobs table
   - The client is told it failed, retries, and the second attempt creates a duplicate job row
 answer: 1
 reveal: |

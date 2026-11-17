@@ -136,8 +136,8 @@ prompt: A producer publishes an order event and gets a publisher confirm from Ra
 choices:
   - The warehouse service has received the order and acknowledged it to the broker
   - The broker has accepted the message and stored it per the queue's durability settings
-  - The message will be delivered exactly once, since the broker has recorded it
-  - The order is now saved in the database the order service writes to
+  - The message will be delivered exactly once, since the broker has recorded it and will remove duplicates for you
+  - The order is now saved in the database the order service writes to, because the confirm waits for that commit
 answer: 1
 reveal: |
   A confirm covers the hop to the broker only. Processing is the consumer's job (and its ack), delivery is still at-least-once, and the database knows nothing about it. Each hop has its own acknowledgement and its own failure window, which is why end-to-end reliability is designed hop by hop.

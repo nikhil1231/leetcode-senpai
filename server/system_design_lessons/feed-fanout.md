@@ -139,8 +139,8 @@ prompt: A user with 40 million followers deletes a post one minute after publish
 choices:
   - One database delete, since every timeline copy references the same post row
   - Removing or rewriting the copy in up to 40M timelines — and until that's done, followers still see it
-  - Nothing extra, because each copied post carries a TTL and expires from timelines on its own
-  - Rebuilding the timeline cache from the posts table, which takes a few minutes
+  - Nothing extra, because each copied post carries a TTL, so it expires from every timeline on its own without any work
+  - Rebuilding the timeline cache from the posts table, which takes a few minutes but then shows the right posts to everyone
 answer: 1
 reveal: |
   Copies must be chased down. Storing IDs only and filtering at hydration makes the delete take effect immediately for everyone (the post lookup returns "deleted"), with timeline cleanup done lazily. This is one more reason big accounts are pulled at read time in hybrid designs.

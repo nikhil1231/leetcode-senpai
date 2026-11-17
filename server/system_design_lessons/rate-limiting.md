@@ -122,7 +122,7 @@ If Redis is unreachable, does every request get rejected (**fail closed**) or al
 prompt: The central Redis used for rate limiting goes down. Your limiter is configured to fail closed for all endpoints. What happens?
 choices:
   - Only clients already over their limit are blocked, using the last counts held in memory
-  - Every API request is rejected: the limiter has become a single point of failure for the API
+  - Every API request is rejected: the limiter is now a single point of failure
   - Requests are queued at the gateway until Redis returns, then processed in order
   - Each gateway switches to local limits automatically, so traffic continues roughly as before
 answer: 1

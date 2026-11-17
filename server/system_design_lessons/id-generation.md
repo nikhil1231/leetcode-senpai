@@ -47,7 +47,7 @@ A B-tree primary key keeps entries sorted. Monotonic IDs always insert at the ri
 prompt: A table with 500M rows uses UUIDv4 primary keys, and insert throughput has dropped while disk reads rise, even though inserts don't read data. A teammate proposes switching new rows to UUIDv7. Why would that help?
 choices:
   - It wouldn't — every UUID is 128 bits, so the index treats v4 and v7 the same way
-  - UUIDv7 starts with a timestamp, so new keys land at the index's right edge and the hot pages stay in memory
+  - UUIDv7 starts with a timestamp, so new keys land at the index's right edge and its hot pages stay cached
   - UUIDv7 is shorter, so more keys fit in each index page and fewer pages are read from disk
   - UUIDv7 skips the uniqueness check, since its timestamp prefix can't collide
 answer: 1

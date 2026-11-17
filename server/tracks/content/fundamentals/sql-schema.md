@@ -123,8 +123,8 @@ A normalised schema can need many joins for one page, and some aggregates are to
 prompt: 'A forum shows each thread''s reply count on the list page. With 50 million replies, `SELECT thread_id, COUNT(*) FROM replies GROUP BY thread_id` for a page of threads has become slow. You add `threads.reply_count`. What is the simplest way to keep it correct?'
 choices:
   - text: Increment it in the same transaction that inserts the reply
-  - text: A nightly job that recounts every thread
-  - text: Increment it in the application after the insert commits
+  - text: A nightly job that recounts every thread, so the count is rebuilt from the replies table and can never drift for long
+  - text: Increment it in the application after the insert commits, so the reply is never held up by a lock on the thread row
   - text: Cache the GROUP BY result in Redis for an hour
 answer: 0
 reveal: |

@@ -177,10 +177,10 @@ finish:
     prompt: |
       At 9pm the dashboard is slow. The API servers are at 30% CPU, Postgres is at 95% CPU, and the preview service is timing out. Marcus wants to double the API servers. What do you do first?
     choices:
-      - Double the API servers, since more servers always means more capacity
-      - Let the preview calls fail fast with a fallback, turn off optional work, and look at the queries keeping Postgres busy
-      - Restore Postgres from last night's backup to get a fresh copy
-      - Raise every rate limit, so fewer requests are rejected
+      - Double the API servers as Marcus says, so there are more workers to wait on Postgres and the preview service
+      - Let preview calls fail fast with a fallback, turn off optional work, and find the queries keeping Postgres busy
+      - Restore Postgres from last night's backup, to get a fresh copy without whatever is making the current one slow
+      - Raise every rate limit, so fewer creators' requests are rejected while the dashboard is slow
     answer: 1
     reveal: |
       The narrowest point is Postgres, and the hanging preview service is tying up threads. A circuit breaker with a fallback frees the threads, shedding optional work takes load off the database, and its busiest queries are where a cache or an index helps. More API servers would open more database connections and make it worse. A restore doesn't add capacity, and raising rate limits lets more load in.

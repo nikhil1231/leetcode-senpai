@@ -141,10 +141,10 @@ finish:
     prompt: |
       Assist will handle refund requests: read the request, check it against policy, refund up to $20 automatically, ask a manager above that (which can take days), then record the refund. Which design?
     choices:
-      - An agent loop in memory, with the prompt saying "never refund more than $20"
-      - A durable workflow with a checkpoint per step, the manager's approval as an interrupt, refunds with an idempotency key, and the $20 limit enforced in code with regular audits
-      - An orchestrator with several worker agents and a critic agent that reviews every refund
-      - A single model call that returns yes or no for each request
+      - An agent loop in memory that waits for the manager's reply, with the system prompt saying "never refund more than $20" and a log of every refund it makes
+      - A durable workflow with a checkpoint per step, the manager's approval as an interrupt, idempotent refunds, and the $20 limit enforced in code
+      - An orchestrator that hands each step to its own worker agent, with a critic agent that reviews every refund against the policy before it goes out
+      - A single model call that reads the request and the policy and returns yes or no, with anything over $20 emailed to a manager
     answer: 1
     reveal: |
       The steps are known, so a workflow fits better than an open-ended loop. It has to survive days of waiting and deploys, so its state is checkpointed and the approval waits durably. The refund is a side effect, so it needs an idempotency key, and the $20 limit is a rule for code, not for a prompt the model might not follow. Multiple agents add cost with nothing independent to split, and a single yes-or-no call can't wait for a manager or record anything.

@@ -198,10 +198,10 @@ finish:
     prompt: |
       EU creators want to create links quickly even when the Atlantic link is down. A teammate proposes a second leader in Europe, with the later timestamp winning whenever both regions edit the same thing. What's the main problem?
     choices:
-      - None. Timestamps settle every conflict, and two leaders double write capacity
-      - Clock skew means the later edit can lose, and during a cut both sides can break rules such as unique short codes and the ten-link limit. Give each creator a home region that owns their writes instead
-      - It needs consistent hashing to decide which leader gets each write
-      - The replicas would need synchronous replication across the Atlantic, which is too slow
+      - None. Timestamps settle every conflict without coordination, and two leaders also double write capacity, which helps at peak
+      - Clock skew can make the later edit lose, and during a cut both sides can break rules like unique short codes. Give each creator a home region for writes
+      - It needs consistent hashing to decide which leader gets each write, or both regions will take the same keys and conflict all the time
+      - Both leaders would need synchronous replication across the Atlantic to stay in step, which adds too much latency to every write
     answer: 1
     reveal: |
       Last-write-wins trusts clocks that disagree by tens of milliseconds, so a later edit can be silently dropped. And with both sides accepting writes during a partition, each can hand out the same short code or let a creator past their limit, because neither can see the other's writes. Giving each creator a home region keeps one authority for their data, so rules can be checked in one place, while still keeping most writes close to the user.

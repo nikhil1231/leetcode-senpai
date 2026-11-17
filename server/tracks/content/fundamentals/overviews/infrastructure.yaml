@@ -138,10 +138,10 @@ finish:
     prompt: |
       A new release passes CI and starts a rolling update, but it crashes on startup because an environment variable is missing in production. What keeps creators from seeing errors?
     choices:
-      - Nothing; a rolling update replaces the pods whatever happens
-      - The readiness probe. New pods never become ready, so the rollout stalls with the old pods still serving, and you roll back
-      - A liveness probe that checks the database
-      - A higher CPU limit on the new pods
+      - Nothing; a rolling update replaces the pods whatever happens, so creators see errors until you push a fix
+      - The readiness probe. New pods never become ready, so the rollout stalls while the old pods keep serving
+      - A liveness probe that checks the database, so Kubernetes restarts the new pods until they come up healthy
+      - A higher CPU limit on the new pods, so they have room to finish starting before traffic arrives
     answer: 1
     reveal: |
       A rolling update only moves on when new pods are ready, so with a readiness probe a crashing version never takes traffic and the old pods keep serving. It's the same idea as the home server's health check before a deploy counts. A liveness probe that checks the database would make things worse during a database blip, and CPU limits have nothing to do with a missing variable.

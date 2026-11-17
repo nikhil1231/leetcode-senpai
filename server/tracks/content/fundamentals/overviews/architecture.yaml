@@ -88,10 +88,10 @@ finish:
     prompt: |
       Notifications and billing are modules in Ripple's monolith. Notifications has its own team shipping daily and needs 50 times its normal capacity during campaigns. Billing changes weekly and its load is steady. What do you do?
     choices:
-      - Split both into services, along with every other module
+      - Split both into services, along with every other module, so each team can deploy and scale on its own
       - Split notifications into a service fed by events, and keep billing as a module
-      - Keep both, and scale the whole monolith up for campaigns
-      - Rewrite billing as a service first, because it handles money
+      - Keep both in the monolith, and scale the whole thing up during campaigns, since one deployable is simpler to run
+      - Rewrite billing as a service first, because it handles money and needs the strongest isolation
     answer: 1
     reveal: |
       Notifications has both reasons to split: a separate team that deploys on its own schedule, and a load pattern unlike the rest of the system. Billing has neither, so splitting it would only add network calls and distributed transactions. Scaling the whole monolith for one module's spikes is expensive, and splitting everything at once is how teams end up with a distributed monolith.

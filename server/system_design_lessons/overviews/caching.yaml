@@ -130,10 +130,10 @@ finish:
     prompt: |
       At peak, Ripple's Redis cluster restarts and comes back empty. Postgres was sized for the 5% of reads that used to miss. What protects it?
     choices:
-      - Add more Redis servers, so the cache has more room to fill
-      - Nothing is needed, because the cache refills within a few seconds
-      - Limit concurrent database queries and reject or serve stale beyond that, coalesce refills, and let traffic back in as the cache warms
-      - Raise every TTL, so keys stay in the cache longer once they're back
+      - Add more Redis servers, so the cache has more room and refills faster once it starts taking traffic again
+      - Nothing is needed, because the cache refills within a few seconds and Postgres only has to cope until then
+      - Cap concurrent database queries and shed or serve stale beyond that, coalesce refills, and let traffic in as it warms
+      - Raise every TTL, so keys stay in the cache longer once they're back and fewer reads ever miss again
     answer: 2
     reveal: |
       With an empty cache every request is a miss, so Postgres suddenly gets twenty times the load it was sized for, and a slow database makes refills slower still. It needs a limit on how much work it accepts, coalescing so each key is fetched once, and a gradual return of traffic while the cache warms. More Redis servers and longer TTLs don't help an empty cache, and "a few seconds" is exactly the window in which the database falls over.

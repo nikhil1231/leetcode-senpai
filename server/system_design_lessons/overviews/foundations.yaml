@@ -168,10 +168,10 @@ finish:
     prompt: |
       Marcus expects ten times today's traffic next year: about 12,000 redirects a second and 120 new links a second at peak. Postgres sits at 30% CPU today. What do you propose?
     choices:
-      - Shard Postgres by creator now, because migrating later is risky
-      - Put a cache in front for the hot links, add a read replica, keep one primary, and say which number would make you shard
-      - Split the API into microservices so each part can scale on its own
-      - Do nothing, since one machine can handle anything at this size
+      - Shard Postgres by creator now, because migrating a live database later is risky and ten times the traffic will need it
+      - Cache the hot links, add a read replica, keep one primary, and say which number would make you shard
+      - Split the API into microservices, so redirects and link creation can each scale on their own
+      - Do nothing for now, since at 30% CPU Postgres has plenty of headroom and one machine can handle this size
     answer: 1
     reveal: |
       Redirects are reads of a small set of popular links, so a cache absorbs most of them, and a replica takes the reads that miss. 120 writes a second is far below what one primary handles, so sharding would add cost and failure modes for nothing. Naming the trigger (for example, sustained writes above 5,000 a second) shows you've thought about the next step without taking it early. Microservices don't add capacity on their own, and doing nothing ignores that 12,000 reads a second at peak is more than you'd want on one database.

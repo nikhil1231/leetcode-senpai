@@ -55,9 +55,9 @@ So a `write()` that returned success is **not durable**. Power loss in the next 
 prompt: A program writes 100 KB to a file with write(), checks the return value (100 KB written), prints "saved", and the machine loses power two seconds later. After reboot, what is in the file?
 choices:
   - text: Exactly the 100 KB, because write() succeeded
-  - text: Possibly nothing, part of it, or all of it - the data may have been only in the page cache
+  - text: Nothing, some or all of it: the data may only have been in the page cache
   - text: The 100 KB, because journaling file systems make every write durable as soon as it returns
-  - text: A corrupted file system that needs fsck
+  - text: A corrupted file system that needs fsck before it will mount, since the write was interrupted halfway
 answer: 1
 reveal: |
   write() succeeded at copying the bytes into the page cache. Whether any of them reached the disk depends on when write-back ran. A journaling file system keeps its own metadata consistent (so no fsck needed, and with ext4's default data=ordered mode, no garbage from other files), but it doesn't make your data durable. Only fsync (or fdatasync, or opening with O_SYNC) gives that guarantee.
