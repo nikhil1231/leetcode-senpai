@@ -199,6 +199,14 @@ def test_priorities_resume_fix_review():
     assert progress.general('Specify the invariant precisely, such as at most one CONFIRMED booking.') == 'Specify the invariant precisely.'
 
 
+def test_resume_an_area_overview_over_everything_else():
+    r = rep([ans(p, NOW - DAY, False) for p in pids('request-flow', 6)])
+    area = next(a for a in r['areas'] if a['id'] not in progress.DESIGN_AREAS)
+    s = progress.next_step(r, tutor=True, active={'lesson': 'map-' + area['id'], 'lesson_title': 'Overview: X', 'overview': True})
+    assert s['primary']['kind'] == 'resume' and s['primary']['title'].endswith('Overview: X') and 'part-way' in s['primary']['why']
+    assert all(a.get('lesson') != 'map-' + area['id'] for a in s['alternatives'])
+
+
 # ---- placement pickers ------------------------------------------------------------------
 
 def test_track_placement_one_question_per_untested_lesson():

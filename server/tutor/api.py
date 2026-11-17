@@ -149,12 +149,19 @@ def next_step(section: Literal['system-design', 'fundamentals', 'ai'], store=Dep
     mine = sorted((m for m in store.list_knowledge('tutor_memory') if m.get('_key', '').startswith(prefix)),
                   key=lambda m: -(m.get('last_at') or 0))
     titles = {l['id']: l['title'] for a in rep['areas'] for l in a['lessons']}
+    title = lambda k: titles.get(k) or (lessons.get(section, k) or {}).get('title')
     active = None
-    for m in mine:
+    for m in mine:   # an open tutor session, area overviews included
         s = _live(store, store.get_knowledge('tutor_sessions', m['active'])) if m.get('active') else None
-        if s:
-            active = {'lesson': s['lesson'], 'lesson_title': titles.get(s['lesson'], s['lesson'])}
+        if s and title(s['lesson']):
+            active = {'lesson': s['lesson'], 'lesson_title': title(s['lesson'])}
             break
+    if not active:   # else an overview he is part-way through on the page
+        for m in mine:
+            k = m['_key'][len(prefix):]
+            if k.startswith(lessons.MAP_PREFIX) and m.get('overview_step') and not m.get('mapped_at') and title(k):
+                active = {'lesson': k, 'lesson_title': title(k), 'overview': True}
+                break
     last = next((m for m in mine if m.get('summary')), None)
     lesson = last['_key'][len(prefix):] if last else None
     previously = {'lesson': lesson, 'lesson_title': titles.get(lesson, lesson), 'summary': last['summary'],

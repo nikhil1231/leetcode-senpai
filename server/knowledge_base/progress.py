@@ -218,9 +218,12 @@ def next_step(rep, tutor=False, active=None, last_lesson=None, done=(), sessions
     titles = {l['id']: l['title'] for _, l in lessons}
     via = 'with the tutor' if tutor else ''
     found = []
-    if tutor and active and active.get('lesson') in titles:
-        found.append({'kind': 'resume', 'lesson': active['lesson'], 'title': f'Pick up your session on {titles[active["lesson"]]}',
-                      'why': 'You left a tutor session open. It remembers where you got to.', 'label': 'Continue the session', 'tutor': True})
+    name = active and (active.get('lesson_title') if active.get('lesson') not in titles else titles[active['lesson']])
+    if tutor and name:
+        found.append({'kind': 'resume', 'lesson': active['lesson'], 'title': f'Pick up where you left off: {name}',
+                      'why': ('You are part-way through this overview. It opens where you stopped.' if active.get('overview')
+                              else 'You left a tutor session open. It remembers where you got to.'),
+                      'label': 'Continue', 'tutor': True})
     for m in rep['misconceptions'][:1]:
         found.append({'kind': 'fix', 'lesson': m['lesson'], 'point': m['point'], 'key': m['key'],
                       'title': f'Clear up {m["lesson_title"]}',
@@ -259,7 +262,7 @@ def next_step(rep, tutor=False, active=None, last_lesson=None, done=(), sessions
                       'label': 'Start Quickfire', 'tutor': False})
     alternatives, kinds = [], {found[0]['kind']}
     for f in found[1:]:
-        if f['kind'] not in kinds:
+        if f['kind'] not in kinds and not (f.get('lesson') and f.get('lesson') == found[0].get('lesson')):
             alternatives.append(f)
             kinds.add(f['kind'])
     return {'primary': found[0], 'alternatives': alternatives[:2]}

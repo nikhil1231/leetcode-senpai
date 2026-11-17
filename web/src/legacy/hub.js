@@ -55,7 +55,7 @@
     root.innerHTML = window.SectionHome.html({
       section,
       note: d.tutor && STORY.has(section) ? `Set at ${esc(d.company.name)}: ${esc(d.company.label)}, ${esc(d.company.users)}.` : '',
-      next: {kicker: p.tutor ? 'Your tutor suggests' : 'Next step', title: p.title, why: esc(p.why), button: btn(p.label, 'primary', '', true)},
+      next: {kicker: p.kind === 'resume' ? 'Where you left off' : p.tutor ? 'Your tutor suggests' : 'Next step', title: p.title, why: esc(p.why), button: btn(p.label, 'primary', '', true)},
       alts: d.alternatives.map((a, i) => ({title: a.title, why: a.why, attrs: `data-hub="alt" data-i="${i}"`})),
       extra: prev,
     });

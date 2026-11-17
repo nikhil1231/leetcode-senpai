@@ -1,13 +1,12 @@
 "use client";
 import type { ReactNode } from "react";
-import { NextUpBanner } from "@/components/nextup/NextUp";
 import { ReadinessCard, type Stat } from "@/components/readiness/ReadinessCard";
 import { SECTIONS, type SectionId } from "@/lib/sections";
 
 export interface HomeAlt { title: string; why?: string; onClick: () => void }
 
 // The one layout every section Home uses (LeetCode Today, System Design, Fundamentals, AI, Experience, Practical): the
-// section's heading, the plan's next step as a slim line, then this section's own next step with up to two
+// section's heading, then this section's own next step with up to two
 // alternatives on the left and the readiness card on the right, then whatever the section lists below. A section
 // supplies content; this owns the arrangement.
 export function SectionHome({ section, next, alts = [], extra, below, note, stats, details }: {
@@ -23,7 +22,6 @@ export function SectionHome({ section, next, alts = [], extra, below, note, stat
         <h2 id={section === "leetcode" ? undefined : "sd-heading"} tabIndex={-1}>{meta.tagline}</h2>
         {note && <p className="sh-note">{note}</p>}
       </header>
-      <div className="sh-plan"><NextUpBanner /></div>
       <div className="sh-layout">
         <div className="sh-main">
           <section className="hub-next">
