@@ -174,7 +174,7 @@ async def record_editor_solve(store, session, sub, code, events):
     known = {
         "details": {"runtime_percentile": sub.get("runtime_percentile"),
                     "memory_percentile": sub.get("memory_percentile"),
-                    "lang": leetcode.EDITOR_LANG, "code": code},
+                    "lang": session.get("lang") or leetcode.EDITOR_LANG, "code": code},
         "wrong": summary["failed_submits"],
         "failed_tests": recording.failed_tests(events),
         "extra": {"via": "editor", "finished_on": None, "recording": summary,
@@ -207,7 +207,7 @@ def record_unsolved(store, session, code, now):
         'timing': {'elapsed_sec': run_clock(session, now) + plans.plan_sec(session),
                    'pause_sec': session.get('paused_sec', 0), 'source': 'measured'},
         "runtime_percentile": None, "memory_percentile": None,
-        "lang": leetcode.EDITOR_LANG if extra else None,
+        "lang": (session.get("lang") or leetcode.EDITOR_LANG) if extra else None,
         "wrong_before_ac": wrong, "submission_id": None, "code": code or None,
         "confidence": None, "independence": None, "mistake_note": None,
         "approach": None, "source": "ended", "kind": session.get("kind", "adhoc"),
@@ -349,7 +349,7 @@ async def record_editor_improvement(store, session, sub, code, events):
         store.update_session(session["id"], {"status": "completed"})
         return None
     match = {"id": sub["submission_id"], "timestamp": sub["finished_at"]}
-    details = {"code": code, "lang": leetcode.EDITOR_LANG,
+    details = {"code": code, "lang": session.get("lang") or leetcode.EDITOR_LANG,
                "runtime_percentile": sub.get("runtime_percentile"),
                "memory_percentile": sub.get("memory_percentile")}
     fields = _supersede_fields(prior, match, details,

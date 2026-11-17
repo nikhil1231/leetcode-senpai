@@ -126,3 +126,28 @@ def test_case_verdicts_trust_the_judge_over_text():
     # No per-case string: a correct run passed everything, else compare text.
     assert leetcode._case_verdicts({"correct_answer": True}, ["b"], ["a"], 1) == [True]
     assert leetcode._case_verdicts({}, ["a", "b"], ["a"], 2) == [True, False]
+
+
+SQL_CASE = '{"headers":{"Person":["personId","lastName"]},"rows":{"Person":[[1,"Wang"]]}}'
+
+
+async def test_a_database_problem_is_judged_in_mysql(lc):
+    await leetcode.run_code("combine-two-tables", "175", "SELECT 1", SQL_CASE, AUTH, leetcode.SQL_LANG)
+    await leetcode.submit_code("combine-two-tables", "175", "SELECT 1", AUTH, leetcode.SQL_LANG)
+    assert [body["lang"] for _, body, _ in lc["posts"]] == ["mysql", "mysql"]
+    assert lc["posts"][0][1]["data_input"] == SQL_CASE
+
+
+def test_editor_fields_pick_python_then_mysql_and_keep_the_schema():
+    py = leetcode._editor_fields({"codeSnippets": [{"langSlug": "java", "code": "j"},
+                                                   {"langSlug": "python3", "code": "p"}]})
+    assert py == {"starter_code": "p", "editor_lang": "python3"}
+    meta = json.dumps({"database": True, "database_schema": {"Person": {"personId": "INT"}}})
+    sql = leetcode._editor_fields({"metaData": meta, "codeSnippets": [
+        {"langSlug": "mysql", "code": "# MySQL\n"}, {"langSlug": "pythondata", "code": "import pandas"}]})
+    assert sql == {"starter_code": "# MySQL\n", "editor_lang": "mysql",
+                   "sql_schema": {"Person": {"personId": "INT"}}}
+    assert leetcode._editor_fields({"metaData": "not json", "codeSnippets": [
+        {"langSlug": "mysql", "code": "q"}]})["sql_schema"] is None
+    assert leetcode._editor_fields({"codeSnippets": [{"langSlug": "bash", "code": "b"}]}) == {
+        "starter_code": None, "editor_lang": None}

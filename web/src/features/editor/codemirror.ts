@@ -9,7 +9,16 @@ export async function loadCodeMirror() {
   return {
     ...state, ...view, ...commands, ...language, python: python.python, oneDarkHighlightStyle: theme.oneDarkHighlightStyle,
     closeBrackets: autocomplete.closeBrackets, closeBracketsKeymap: autocomplete.closeBracketsKeymap,
+    autocompletion: autocomplete.autocompletion, completionKeymap: autocomplete.completionKeymap,
   };
+}
+
+// MySQL for the database problems, with the problem's tables and columns to complete. Loaded only for those.
+export async function sqlLanguage(schema: Record<string, string[]>) {
+  const { sql, MySQL, SQLDialect } = await import("@codemirror/lang-sql");
+  // Case-insensitive names, so completing `Address` or `firstName` doesn't wrap it in backticks.
+  const dialect = SQLDialect.define({ ...MySQL.spec, caseInsensitiveIdentifiers: true });
+  return sql({ dialect, schema, upperCaseKeywords: true });
 }
 export type CM = Awaited<ReturnType<typeof loadCodeMirror>>;
 export const preloadCodeMirror = () => { loadCodeMirror().catch(() => {}); };

@@ -86,7 +86,8 @@ def test_the_plan_prefetches_what_a_new_run_opens_with(client):
     assert r["editor"] == {"available": True, "can_judge": True, "starter_code": STARTER,
                            "example_testcases": ["[2,7,11,15]\n9", "[3,2,4]\n6"],
                            "interview_runs": main.config.INTERVIEW_RUN_LIMIT,
-                           "par_sec": main.config.SOLVE_PAR_SEC["Easy"]}
+                           "par_sec": main.config.SOLVE_PAR_SEC["Easy"],
+                           "lang": "python3", "sql_schema": None}
     # Without asking for it, the recall modal pays for none of it.
     assert client.get("/api/problem/two-sum/recall-context").json()["editor"] is None
 
@@ -150,7 +151,7 @@ def test_a_recording_from_before_the_end_state_was_kept_still_appends(client):
 
 
 def test_a_full_log_drops_edits_but_keeps_judgings_and_says_so(client, monkeypatch):
-    async def run_code(slug, qid, code, data_input, auth):
+    async def run_code(slug, qid, code, data_input, auth, lang="python3"):
         return {"status": "Accepted", "passed": True, "correct": 1, "total": 1,
                 "cases": [], "error": None}
     monkeypatch.setattr(main.leetcode, "run_code", run_code)
@@ -179,7 +180,7 @@ def test_the_log_refuses_server_only_events_and_finished_runs(client):
 
 
 def test_run_logs_the_pending_deltas_then_the_judging(client, monkeypatch):
-    async def run_code(slug, qid, code, data_input, auth):
+    async def run_code(slug, qid, code, data_input, auth, lang="python3"):
         assert (slug, qid) == ("two-sum", "1")
         return {"status": "Accepted", "passed": False, "correct": 0, "total": 1,
                 "cases": [{"input": data_input, "output": "[0,0]", "expected": "[0,1]",
@@ -199,7 +200,7 @@ def test_run_logs_the_pending_deltas_then_the_judging(client, monkeypatch):
 
 
 def test_the_last_input_run_reopens_on_any_device(client, monkeypatch):
-    async def run_code(slug, qid, code, data_input, auth):
+    async def run_code(slug, qid, code, data_input, auth, lang="python3"):
         return {"status": "Accepted", "passed": True, "correct": 1, "total": 1,
                 "cases": [], "error": None}
     monkeypatch.setattr(main.leetcode, "run_code", run_code)
@@ -238,7 +239,7 @@ def test_a_judge_refusal_is_an_answer_not_an_error(client, monkeypatch):
 
 
 def _submits(monkeypatch, verdicts):
-    async def submit_code(slug, qid, code, auth):
+    async def submit_code(slug, qid, code, auth, lang="python3"):
         return verdicts.pop(0)
     monkeypatch.setattr(main.leetcode, "submit_code", submit_code)
 
@@ -455,7 +456,7 @@ def test_mock_runs_can_use_the_editor_and_older_clients_stay_on_leetcode(client)
 
 
 def test_interview_mode_caps_runs_and_rides_along_to_the_solve(client, monkeypatch):
-    async def run_code(slug, qid, code, data_input, auth):
+    async def run_code(slug, qid, code, data_input, auth, lang="python3"):
         return {"status": "Accepted", "passed": True, "correct": 1, "total": 1,
                 "cases": [], "error": None}
     monkeypatch.setattr(main.leetcode, "run_code", run_code)
@@ -757,3 +758,61 @@ def test_giving_up_without_an_llm_uses_the_cached_summary(client):
     last = client.post("/api/session/give-up", json={"seen": 1}).json()
     assert last["steps"][-1]["text"] == "Look each one up. That's O(n) time and O(n) space."
     assert last["done"] is True
+
+
+SQL_STARTER = "# Write your MySQL query statement below\n"
+SQL_CASE = '{"headers":{"Person":["personId"]},"rows":{"Person":[[1]]}}'
+
+
+@pytest.fixture
+def sql_client(client, monkeypatch):
+    client.store.upsert_problem({"slug": "combine-two-tables", "title": "Combine Two Tables",
+                                 "difficulty": "Easy", "neetcode_category": "SQL Joins", "in_library": True,
+                                 "url": "https://lc/combine-two-tables", "similar_slugs": [],
+                                 "content_html": "<p>Tables</p>"})
+
+    async def question(slug, auth=None):
+        return {"question_id": "175", "starter_code": SQL_STARTER, "editor_lang": "mysql",
+                "sql_schema": {"Person": {"personId": "INT"}}, "example_testcases": [SQL_CASE]}
+    monkeypatch.setattr(main.leetcode, "question", question)
+    seen = []
+
+    async def run_code(slug, qid, code, data, lc, lang="python3"):
+        seen.append(("run", lang))
+        return {"passed": True, "cases": [], "total": 1, "correct": 1}
+
+    async def submit_code(slug, qid, code, lc, lang="python3"):
+        seen.append(("submit", lang))
+        return {"accepted": False, "submission_id": 9, "finished_at": 1, "status": "Wrong Answer"}
+    monkeypatch.setattr(main.leetcode, "run_code", run_code)
+    monkeypatch.setattr(main.leetcode, "submit_code", submit_code)
+    client.judged = seen
+    return client
+
+
+def test_a_sql_problem_opens_in_mysql_with_its_schema_and_is_judged_in_mysql(sql_client):
+    pre = sql_client.get("/api/problem/combine-two-tables/recall-context?editor=1").json()["editor"]
+    assert pre["available"] and pre["lang"] == "mysql" and pre["sql_schema"] == {"Person": {"personId": "INT"}}
+    r = sql_client.post("/api/session/start", json={"slug": "combine-two-tables", "surface": "editor"}).json()
+    sid = r["session_id"]
+    assert r["editor"]["lang"] == "mysql" and r["editor"]["code"] == SQL_STARTER
+    assert sql_client.store.get_recording(sid)["lang"] == "mysql"
+    body = {"session_id": sid, "code": "SELECT 1", "data_input": "", "t": 1000, "seq": None, "events": []}
+    assert sql_client.post("/api/editor/run", json=body).json()["data_input"] == SQL_CASE
+    sql_client.post("/api/editor/submit", json=body)
+    assert sql_client.judged == [("run", "mysql"), ("submit", "mysql")]
+
+
+def test_a_sql_run_started_before_hydration_is_still_mysql(sql_client):
+    sid = sql_client.post("/api/session/start", json={"slug": "combine-two-tables", "surface": "editor"}
+                          ).json()["session_id"]
+    assert sql_client.store.sessions[sid]["lang"] == "mysql"   # from its SQL category
+    state = sql_client.get(f"/api/editor/state?session_id={sid}").json()
+    assert state["lang"] == "mysql" and state["code"] == SQL_STARTER
+
+
+def test_a_python_problem_stays_python(client):
+    sid = _start(client)
+    state = client.get(f"/api/editor/state?session_id={sid}").json()
+    assert state["lang"] == "python3" and state["sql_schema"] is None
+    assert client.store.sessions[sid]["lang"] == "python3"

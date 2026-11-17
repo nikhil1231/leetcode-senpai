@@ -4,7 +4,9 @@ import { api } from "@/lib/api";
 import { useLayout, useEditorUi, STATEMENT_PCT, CONSOLE_PX } from "./editor-store";
 import { errorLine } from "./diff";
 import { EditorRun, FLUSH_MS, TICK_MS } from "./session";
-import { findLine, historyKeys, lineMarks, loadCodeMirror, type CM } from "./codemirror";
+import { findLine, historyKeys, lineMarks, loadCodeMirror, sqlLanguage, type CM } from "./codemirror";
+import { SqlBlock, SqlTests } from "./SqlTables";
+import { completionSchema, parseCases } from "./sqlio";
 import { sanitizeProblemHtml } from "@/components/ProblemStatement";
 import type { Active, EditorPayload } from "@/lib/run-store";
 import { useToast } from "@/lib/toast";
@@ -79,7 +81,17 @@ function Statement({ state, url, hidden, onHide, onShow }: { state: EditorPayloa
 
 type ResultView = { kind: "none" } | { kind: "pending"; text: string } | { kind: "error"; message: string } | { kind: "doubts"; doubts: string[] } | { kind: "run"; r: Any } | { kind: "submit"; r: Any };
 
-function Result({ view, onRun, onSubmit, onAddCase }: { view: ResultView; onRun: () => void; onSubmit: () => void; onAddCase: (input: string) => void }) {
+// A database problem's input, output and expected answer as tables: input above, output beside expected.
+function SqlIo({ input, output, expected, ok, inputLabel = "Input" }: { input: unknown; output: unknown; expected: unknown; ok: boolean; inputLabel?: string }) {
+  return (
+    <>
+      <SqlBlock label={inputLabel} value={input} />
+      <div className="editor-io-split"><SqlBlock label="Output" value={output} against={ok ? undefined : expected} cls={ok ? "" : "is-off"} /><SqlBlock label="Expected" value={expected} against={ok ? undefined : output} mark="is-missing" /></div>
+    </>
+  );
+}
+
+function Result({ view, sql, onRun, onSubmit, onAddCase }: { view: ResultView; sql: boolean; onRun: () => void; onSubmit: () => void; onAddCase: (input: string) => void }) {
   const [pickedCase, setPickedCase] = useState<number | null>(null);
   useEffect(() => { setPickedCase(null); }, [view]);
   if (view.kind === "none") return <p className="small editor-pending">Run ({MOD}&apos;) to see each case here.</p>;
@@ -100,7 +112,8 @@ function Result({ view, onRun, onSubmit, onAddCase }: { view: ResultView; onRun:
       <>
         <p className={`editor-verdict ${good ? "is-good" : "is-bad"}`}>{r.status || ""} <span className="small">{r.correct ?? "?"}/{r.total ?? "?"} tests{beats}</span></p>
         <Block label="Error" value={r.error} cls="is-error" />
-        <div className="editor-io-split"><div className="editor-io-main"><Block label="Failing input" value={r.input} /><Block label="Output" value={r.output} cls="is-off" /><Block label="Expected" value={r.expected} /></div><div><Block label="Stdout" value={r.stdout} /></div></div>
+        {sql ? <SqlIo inputLabel="Failing input" input={r.input} output={r.output} expected={r.expected} ok={false} />
+          : <div className="editor-io-split"><div className="editor-io-main"><Block label="Failing input" value={r.input} /><Block label="Output" value={r.output} cls="is-off" /><Block label="Expected" value={r.expected} /></div><div><Block label="Stdout" value={r.stdout} /></div></div>}
         {!good && r.input && <button id="editor-add-case" className="button is-small" type="button" onClick={() => onAddCase(r.input)}>Add to test input</button>}
       </>
     );
@@ -114,7 +127,7 @@ function Result({ view, onRun, onSubmit, onAddCase }: { view: ResultView; onRun:
       {r.error ? (
         <>
           <p className="editor-verdict is-bad">{r.status || "Error"}</p>{r.error !== r.status && <pre className="editor-error">{r.error}</pre>}
-          <Block label="Failing input" value={r.input} />{(r.stdout || []).map((out: string, i: number) => <Block key={i} label={`Stdout · case ${i + 1}`} value={out} />)}
+          {sql ? <SqlBlock label="Failing input" value={r.input} /> : <Block label="Failing input" value={r.input} />}{(r.stdout || []).map((out: string, i: number) => <Block key={i} label={`Stdout · case ${i + 1}`} value={out} />)}
         </>
       ) : <p className={`editor-verdict ${r.passed && r.total ? "is-good" : "is-bad"}`}>{!r.total ? "No cases ran" : r.passed ? "All cases match" : "Mismatch"} <span className="small">{r.correct ?? 0}/{r.total} cases · {r.runtime || ""}</span></p>}
       {cases.length > 0 && (
@@ -122,8 +135,9 @@ function Result({ view, onRun, onSubmit, onAddCase }: { view: ResultView; onRun:
           <div className="editor-case-tabs" role="tablist">{cases.map((c, i) => (
             <button key={i} className={`editor-case-tab ${ok(c) ? "is-good" : "is-bad"}`} type="button" role="tab" aria-selected={i === sel} onClick={() => setPickedCase(i)}>{ok(c) ? "✓" : "✗"} Case {i + 1}</button>))}</div>
           <div id="editor-case" role="tabpanel">
-            <div className="editor-io-split"><div className="editor-io-main"><Block label="Input" value={cases[sel].input} /><Block label="Output" value={cases[sel].output} cls={ok(cases[sel]) ? "" : "is-off"} /><Block label="Expected" value={cases[sel].expected} /></div>
-              <div><Block label="Stdout" value={cases[sel].stdout} /></div></div>
+            {sql ? <SqlIo input={cases[sel].input} output={cases[sel].output} expected={cases[sel].expected} ok={ok(cases[sel])} />
+              : <div className="editor-io-split"><div className="editor-io-main"><Block label="Input" value={cases[sel].input} /><Block label="Output" value={cases[sel].output} cls={ok(cases[sel]) ? "" : "is-off"} /><Block label="Expected" value={cases[sel].expected} /></div>
+              <div><Block label="Stdout" value={cases[sel].stdout} /></div></div>}
           </div>
         </>
       )}
@@ -154,6 +168,7 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
   const live = useRef({ judging: false, confirming: false, runsLeft: null as number | null, edges: [] as string[], readOnlyNow: false, starter: "" });
   const pane = useRef<HTMLDivElement>(null);
   const sessionId = active.session_id as string | null;
+  const sql = state?.lang === "mysql";
 
   // The run object lives for the life of the pane (one pane per run; a new run remounts it).
   if (!run.current) run.current = new EditorRun(sessionId, active.slug, active.started_at);
@@ -233,7 +248,8 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
   useEffect(() => {
     if (!state || !state.available || !host.current || cm.current) return;
     let destroyed = false;
-    loadCodeMirror().then((CM) => {
+    const sqlCases = () => parseCases((state.example_testcases || []).join("\n")) || [];
+    Promise.all([loadCodeMirror(), sql ? sqlLanguage(completionSchema(state.sql_schema, sqlCases())) : null]).then(([CM, sqlLang]) => {
       if (destroyed || !host.current) return;
       if (state.now_ms != null) r.offsetMs = state.now_ms - (Date.now() - r.startedAtMs);
       setEd({ canJudge: !!state.can_judge, runsLeft: state.runs_left ?? null });
@@ -260,13 +276,15 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
           doc,
           extensions: [
             CM.lineNumbers(), CM.highlightActiveLineGutter(), CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.indentOnInput(),
-            CM.highlightActiveLine(), CM.indentUnit.of("    "), CM.python(),
-            // Interview mode is a plain buffer: what a shared doc or whiteboard gives you.
-            ...(state.interview ? [] : [CM.bracketMatching(), CM.closeBrackets(), CM.syntaxHighlighting(CM.oneDarkHighlightStyle)]),
+            CM.highlightActiveLine(), CM.indentUnit.of("    "), sqlLang ?? CM.python(),
+            // Interview mode is a plain buffer: what a shared doc or whiteboard gives you. SQL completes the problem's
+            // tables and columns outside it.
+            ...(state.interview ? [] : [CM.bracketMatching(), CM.closeBrackets(), CM.syntaxHighlighting(CM.oneDarkHighlightStyle),
+              ...(sqlLang ? [CM.autocompletion({ activateOnTyping: true })] : [])]),
             CM.keymap.of([
               { key: "Mod-'", run: () => { judgeRef.current("run"); return true; } },
               { key: "Mod-Enter", run: () => { judgeRef.current("submit"); return true; } },
-              ...(state.interview ? [] : CM.closeBracketsKeymap), ...CM.defaultKeymap, ...historyKeys(CM), CM.indentWithTab,
+              ...(state.interview ? [] : [...CM.closeBracketsKeymap, ...(sqlLang ? CM.completionKeymap : [])]), ...CM.defaultKeymap, ...historyKeys(CM), CM.indentWithTab,
             ]),
             readOnly.of(CM.EditorState.readOnly.of(false)), marks.field, errorMark.field, CM.EditorView.theme({}, { dark: true }),
           ],
@@ -404,13 +422,14 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
               <div id="editor-edges" className="editor-edges"><span className="label-sm">Planned edge cases — tick each once you&apos;ve checked it</span>
                 {edges.map((c) => <label className="editor-edge" key={c}><input type="checkbox" checked={checked.includes(c)} onChange={(e) => tickEdge(c, e.target.checked)} /> {c}</label>)}</div>
             )}
-            <label className="label-sm" htmlFor="editor-input">Test input <span className="help-inline">one argument per line, case after case</span></label>
-            <textarea id="editor-input" className="editor-input" rows={4} spellCheck={false} value={input} onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "'" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); judge("run"); } }} />
+            {sql ? <SqlTests input={input} onChange={setInput} schema={state.sql_schema} onRun={() => judge("run")} examples={state.example_testcases || []} /> : <>
+              <label className="label-sm" htmlFor="editor-input">Test input <span className="help-inline">one argument per line, case after case</span></label>
+              <textarea id="editor-input" className="editor-input" rows={4} spellCheck={false} value={input} onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "'" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); judge("run"); } }} /></>}
             {!canJudge && <p className="small editor-nocookie"><button id="editor-set-cookie" className="console-tool" type="button" onClick={() => setCookie(true)}>Set your LeetCode cookie</button> to run and submit.</p>}
           </div>
           <div id="editor-result" className={`console-panel editor-result${tab === "result" ? "" : " hidden"}`} data-panel="result" aria-live="polite">
-            <Result view={view} onRun={() => judge("run")} onSubmit={() => judge("submit")} onAddCase={addCase} />
+            <Result view={view} sql={sql} onRun={() => judge("run")} onSubmit={() => judge("submit")} onAddCase={addCase} />
           </div>
         </div>
       </div>

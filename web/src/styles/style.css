@@ -2955,6 +2955,35 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
 .editor-io-main .editor-io pre { font-size: 13.5px; }
 .editor-io.is-off pre { border-color: rgba(251, 113, 133, .45); }
 .editor-io > span { display: block; margin-bottom: 3px; font-size: 11px; color: var(--muted); }
+/* Database problems: tests and answers as tables */
+.sql-tests { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.sql-tests .editor-input { min-height: 72px; }
+.sql-tests-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+.sql-tests-head .editor-case-tabs { align-items: center; margin: 0; }
+.sql-tests-head .console-tool { font-size: 12px; }
+.sql-hint, .sql-bad { margin: 0; }
+.sql-bad { color: var(--amber); }
+.sql-table-wrap { margin: 0 0 6px; }
+.sql-table-name { margin: 0 0 4px; font: 600 12px/1.4 var(--font-mono); color: var(--text-2); }
+.sql-table-name .small { margin-left: 6px; font-family: var(--font); font-weight: 500; color: var(--muted); }
+.sql-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); }
+.sql-table { border-collapse: collapse; font: 12.5px/1.45 var(--font-mono); min-width: 100%; }
+.sql-table th, .sql-table td { padding: 4px 10px; border-bottom: 1px solid var(--line-soft); text-align: left; white-space: nowrap; }
+.sql-table tr:last-child td { border-bottom: 0; }
+.sql-table th { color: var(--text-2); font-weight: 600; background: var(--panel); }
+.sql-table td.is-null, .sql-cell.is-null { color: var(--muted); font-style: italic; }
+.sql-table tr.is-off td { background: rgba(251, 113, 133, .1); color: var(--red); }
+.sql-table tr.is-missing td { background: rgba(245, 181, 68, .1); color: var(--amber); }
+.sql-type { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.sql-table.is-edit td { padding: 0; }
+.sql-table.is-edit th { padding-right: 14px; }
+.sql-cell { width: 100%; min-width: 7ch; padding: 4px 10px; border: 0; background: transparent; color: var(--text); font: inherit; }
+.sql-cell:focus { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--bg-elev); }
+.sql-row-tool { width: 1%; padding: 0 8px !important; }
+.sql-row-tool .console-tool { font-size: 14px; }
+.sql-add-row { margin-top: 4px; font-size: 12px; }
+.sql-io .sql-scroll { margin-top: 0; }
+.editor-io.is-off .sql-scroll { border-color: rgba(251, 113, 133, .45); }
 .predict-surface { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; cursor: pointer; }
 .predict-surface-group { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 4px 14px; }
 .predict-surface-group .predict-surface { margin-right: 0; }

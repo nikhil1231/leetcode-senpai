@@ -33,7 +33,7 @@ export function PredictModal({ ctx, onClose }: { ctx: Ctx & { interview?: boolea
   useEffect(() => { approachRef.current?.focus(); preload?.(); }, [preload]);
   const sec = Math.max(0, Math.round((now - opened.current) / 1000));
   const limit = problem.data?.plan_soft_limit_sec || DEFAULT_LIMIT;
-  // SQL has no complexity target, and the editor is Python only: with no Python starter the run is on LeetCode.
+  // SQL has no complexity target. The editor writes Python and MySQL: a problem with neither starter is solved on LeetCode.
   const sql = /^SQL /.test(problem.data?.category || "");
   const noEditor = problem.data?.editor?.available === false;
   const lc = onLeetcode || noEditor;
@@ -83,7 +83,7 @@ export function PredictModal({ ctx, onClose }: { ctx: Ctx & { interview?: boolea
                 <input type="checkbox" id="predict-interview" checked={interview && !lc} disabled={lc}
                   onChange={(e) => { setInterview(e.target.checked); try { localStorage.setItem(KEY, e.target.checked ? "1" : "0"); } catch { /* per-browser nicety */ } }} /> Interview mode
               </label>
-              <label className="predict-surface small" title={noEditor ? "The app's editor is Python only, so this one is solved on LeetCode" : "Open LeetCode's own page instead of solving in the app's editor"}>
+              <label className="predict-surface small" title={noEditor ? "The app's editor has no starter code for this one, so it's solved on LeetCode" : "Open LeetCode's own page instead of solving in the app's editor"}>
                 <input type="checkbox" id="predict-on-leetcode" checked={lc} disabled={noEditor} onChange={(e) => setOnLeetcode(e.target.checked)} /> Solve on LeetCode
               </label>
             </span>

@@ -19,8 +19,11 @@ BASE_URL = "https://leetcode.com"
 GRAPHQL_URL = f"{BASE_URL}/graphql"
 TIMEOUT = 15.0
 
-# The one language the in-app editor writes.
+# The languages the in-app editor writes: Python, and MySQL for the database problems
+# (which have no Python snippet). A problem's language is the first of these it has.
 EDITOR_LANG = "python3"
+SQL_LANG = "mysql"
+EDITOR_LANGS = (EDITOR_LANG, SQL_LANG)
 # Judging is queued: poll its check endpoint until it lands, within reason.
 JUDGE_POLL_SEC = 0.8
 JUDGE_WAIT_SEC = 25.0
@@ -82,6 +85,7 @@ query questionData($titleSlug: String!) {
     questionFrontendId
     exampleTestcaseList
     codeSnippets { langSlug code }
+    metaData
     title
     titleSlug
     difficulty
@@ -205,10 +209,24 @@ async def question(slug, auth=None):
         # What the in-app editor needs: the id LeetCode's judge is keyed by (not
         # the number shown on the site), the starter code and the example inputs.
         "question_id": str(q["questionId"]) if q.get("questionId") else None,
-        "starter_code": next((s["code"] for s in (q.get("codeSnippets") or [])
-                              if s.get("langSlug") == EDITOR_LANG), None),
+        **_editor_fields(q),
         "example_testcases": list(q.get("exampleTestcaseList") or []),
     }
+
+
+def _editor_fields(q):
+    """The editor's language and starter code, and for a database problem its tables'
+    column types ({table: {column: "INT"}}) for completion and typed test cells."""
+    snippets = {s.get("langSlug"): s.get("code") for s in q.get("codeSnippets") or []}
+    lang = next((lang for lang in EDITOR_LANGS if snippets.get(lang)), None)
+    out = {"starter_code": snippets.get(lang) if lang else None, "editor_lang": lang}
+    if lang == SQL_LANG:
+        try:
+            schema = json.loads(q.get("metaData") or "{}").get("database_schema")
+        except (ValueError, AttributeError):
+            schema = None
+        out["sql_schema"] = schema if isinstance(schema, dict) else None
+    return out
 
 
 def _ac_rate(stats_json):
@@ -444,11 +462,12 @@ def _case_verdicts(d, answers, expected, total):
             for i in range(total)]
 
 
-async def run_code(slug, question_id, code, data_input, auth):
+async def run_code(slug, question_id, code, data_input, auth, lang=EDITOR_LANG):
     """Auth required. Judge `code` on `data_input` against LeetCode's reference
-    answer, like the editor's Run. Raises JudgeError when it can't be judged."""
+    answer, like the editor's Run. Raises JudgeError when it can't be judged.
+    A database problem's case is one line of JSON tables, its answer a JSON table."""
     data_input = clean_input(data_input)
-    body = {"lang": EDITOR_LANG, "question_id": str(question_id),
+    body = {"lang": lang, "question_id": str(question_id),
             "typed_code": code, "data_input": data_input}
     _, d = await _judge(slug, "interpret_solution", body, "check/", auth)
     total = d.get("total_testcases") or 0
@@ -480,9 +499,9 @@ async def run_code(slug, question_id, code, data_input, auth):
     }
 
 
-async def submit_code(slug, question_id, code, auth):
+async def submit_code(slug, question_id, code, auth, lang=EDITOR_LANG):
     """Auth required. Submit `code` for judging on the full test set."""
-    body = {"lang": EDITOR_LANG, "question_id": str(question_id), "typed_code": code}
+    body = {"lang": lang, "question_id": str(question_id), "typed_code": code}
     job, d = await _judge(slug, "submit", body, "v2/check/", auth)
     finished = d.get("task_finish_time")
     return {
