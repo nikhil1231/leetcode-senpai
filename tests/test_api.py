@@ -2049,7 +2049,7 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
     seen = {}
 
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         execution_status="unknown"):
+                         execution_status="unknown", asked=None):
         seen.update({"claim_time": claim_time, "claim_space": claim_space})
         return {"score": 4, "optimal": False, "analysis": "one-pass hashmap",
                 "positives": ["Uses the right lookup structure"],
@@ -2082,7 +2082,7 @@ def test_grade_solution_endpoint_success(client, monkeypatch):
 
 def test_grade_solution_endpoint_failure(client, monkeypatch):
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         execution_status="unknown"):
+                         execution_status="unknown", asked=None):
         return None, "AuthError: invalid API key"
 
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)
@@ -2183,7 +2183,7 @@ def test_grade_solution_never_blames_the_cookie_for_an_outage(client, monkeypatc
 
 def test_grade_solution_before_rating_grades_without_moving_the_card(client, monkeypatch):
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         execution_status="unknown"):
+                         execution_status="unknown", asked=None):
         return {"score": 3, "optimal": False, "followup": "Can we avoid the second pass?",
                 "improve": ["One pass is enough"]}, None
 
@@ -2261,7 +2261,7 @@ def test_poll_records_fresh_solve_without_grading_before_annotation(client, monk
     calls = []
 
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         execution_status="unknown"):
+                         execution_status="unknown", asked=None):
         calls.append(slug)
         return {"score": 5, "optimal": True, "analysis": "optimal",
                 "improvements": [], "inferred_time": "O(n)",
@@ -2914,7 +2914,7 @@ def test_resume_and_browser_storage_scope_follow_authenticated_user(client, monk
 # ---- a solution grade that lands after the rating reaches the schedule ----------
 def _grading_to(monkeypatch, score):
     async def fake_grade(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         execution_status="unknown"):
+                         execution_status="unknown", asked=None):
         return {"score": score, "optimal": False, "analysis": "", "positives": [],
                 "negatives": [], "inferred_time": "O(n)", "inferred_space": "O(n)"}, None
     monkeypatch.setattr(main.llm, "enabled", lambda *a, **k: True)

@@ -138,7 +138,7 @@ export function FlowHost() {
       {active && runHost && createPortal(<ActiveRun onSolved={onSolved} />, runHost)}
       {predict && <PredictModal ctx={predict} onClose={() => setPredict(null)} />}
       {flow.recall && <RecallModal req={flow.recall} onClose={() => { flow.openRecall(null); qc.invalidateQueries(); }} />}
-      {flow.annotate && <AnnotateModal key={String(flow.annotate.id)} initial={flow.annotate} onClose={closeAnnotate} />}
+      {flow.annotate && <AnnotateModal key={`${flow.annotate.id}|${flow.annotate.submission_id ?? ""}`} initial={flow.annotate} onClose={closeAnnotate} />}
       {flow.sprintOpen && <SprintModal onClose={() => flow.setSprint(false)} />}
       {flow.mockOpen && <MockModal onClose={() => flow.setMock(false)} />}
       {flow.detailId && <DetailModal id={flow.detailId} onClose={() => flow.openDetail(null)} />}

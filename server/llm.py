@@ -498,7 +498,12 @@ TASKS: dict[str, Task] = {
             f"Solver claimed time={p.get('claim_time') or '?'}, space={p.get('claim_space') or '?'}.\n"
             f"Execution status: {p.get('execution_status', 'unknown')}\n"
             f"Statement and constraints: {p.get('statement') or '(unknown; do not invent)'}\n"
-            f"--- submitted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
+            + (("Follow-ups already asked on earlier versions of this code (it has been resubmitted since): "
+                + " | ".join(p["asked"]) + "\nDon't ask one of these again if this code has acted on it; "
+                "ask about the next improvement instead, or leave followup empty if none is left. "
+                "Only if the code still hasn't acted on it, say what is still missing in new words.\n")
+               if p.get("asked") else "")
+            + f"--- submitted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
         ),
     ),
     "review_process": Task(

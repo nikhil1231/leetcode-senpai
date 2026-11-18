@@ -324,7 +324,8 @@ export function AnnotateModal({ initial, onClose }: { initial: Any; onClose: (op
             <p className="followup-kicker">Interviewer</p>
             <p id="annotate-followup-text" className="followup-text">{followup ? `Correct. ${followup}` : <><span className="spinner" /> Reading your code…</>}</p>
             <div id="annotate-followup-actions" className="followup-actions">
-              {followup && <button className="button is-primary" type="button" onClick={keepOptimizing}>Try it</button>}
+              {followup ? <button className="button is-primary" type="button" onClick={keepOptimizing}>Try it</button>
+                : <button className="button" type="button" title="Back to the editor now; the grade carries on in the background" onClick={keepOptimizing}>Keep optimizing</button>}
               <button className="button" type="button" onClick={finishFollowup}>I&apos;m done, show feedback</button>
             </div>
           </section>

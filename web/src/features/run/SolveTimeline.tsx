@@ -1,16 +1,16 @@
 "use client";
 // Where a solve's time went, as one bar on one clock: planning, then the in-editor recording split into work (edits and
 // runs), quiet stretches (a minute or more with neither: thinking, notes or a break, the log can't tell), another tab and
-// pauses. The moments that turned it (submits, hints, the approach explained) sit on the bar and are listed under it.
+// pauses. "Keep optimizing" runs follow on the same clock after a divider, their editing striped green. The moments that turned it (submits, hints, the approach explained) sit on the bar and are listed under it.
 // From server/recording.py `phases`; no LLM. The coach's read of it (process review) goes underneath when there is one.
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/hooks";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
-type Segment = { kind: string; from: number; to: number };
-type Mark = { t: number; kind: string; ok?: boolean; status?: string; correct?: number; total?: number; level?: number; step?: number; text?: string };
-type Timeline = { duration_ms: number; plan_ms: number; segments: Segment[]; marks: Mark[]; totals: Record<string, number>; finished_on?: string; truncated?: boolean };
+type Segment = { kind: string; from: number; to: number; opt?: boolean };
+type Mark = { t: number; kind: string; ok?: boolean; status?: string; correct?: number; total?: number; level?: number; step?: number; text?: string; opt?: boolean };
+type Timeline = { duration_ms: number; plan_ms: number; segments: Segment[]; marks: Mark[]; totals: Record<string, number>; finished_on?: string; truncated?: boolean; optimize_from?: number | null };
 
 const clock = (ms: number) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const mins = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)} min`);
@@ -20,9 +20,14 @@ const LEGEND: [string, string, string][] = [
   ["quiet", "Quiet", "A minute or more with no edits or runs, on this tab: thinking, notes or a break"],
   ["away", "Other tab", "The editor tab was hidden or out of focus"],
   ["paused", "Paused", "The clock was paused"],
+  ["optimize", "Optimising", "Editing and running after the first Accepted, to improve it"],
 ];
 
 function moment(m: Mark): string | null {
+  const said = momentOf(m);
+  return said && m.opt ? `${said} (optimising)` : said;
+}
+function momentOf(m: Mark): string | null {
   if (m.kind === "submit") return m.status === "Accepted" ? "Accepted" : `${m.status || "Failed"}${m.total ? ` (${m.correct}/${m.total} tests)` : ""}`;
   if (m.kind === "hint") return `Hint ${m.level ?? ""}`.trim();
   if (m.kind === "explained") return (m.step || 1) > 1 ? `Walkthrough, step ${m.step}` : "Approach explained";
@@ -33,7 +38,7 @@ function moment(m: Mark): string | null {
 const pinOf = (m: Mark) => (m.kind === "submit" ? (m.status === "Accepted" ? "is-ac" : "is-wa") : m.kind === "hint" || m.kind === "explained" ? "is-help" : "is-other");
 
 export function SolveTimeline({ attempt }: { attempt: Any }) {
-  const q = useApi<{ timeline: Timeline | null }>(attempt.recording_id ? `/attempt/${attempt.id}/timeline` : null, { staleTime: Infinity });
+  const q = useApi<{ timeline: Timeline | null }>(attempt.recording_id ? `/attempt/${attempt.id}/timeline?sub=${attempt.submission_id ?? ""}` : null, { staleTime: Infinity });
   const tl = q.data?.timeline;
   if (!attempt.recording_id) return null;
   if (q.isLoading) return <p className="small muted">Loading the timeline…</p>;
@@ -47,7 +52,8 @@ export function SolveTimeline({ attempt }: { attempt: Any }) {
       <div className="tl-track" role="img" aria-label={`Timeline of ${clock(tl.duration_ms)}: ${LEGEND.filter(([k]) => tl.totals[k]).map(([k, l]) => `${l} ${mins(tl.totals[k])}`).join(", ")}`}>
         <div className="tl-pins">{key.map((m, i) => <span key={i} className={`tl-pin ${pinOf(m)}`} style={{ left: at(m.t) }} title={`${clock(m.t)} ${moment(m)}`} />)}</div>
         <div className="tl-bar">{tl.segments.map((s, i) => <span key={i} className={`tl-seg is-${s.kind}`} style={{ left: at(s.from), width: at(s.to - s.from) }}
-          title={`${clock(s.from)}–${clock(s.to)} ${LEGEND.find(([k]) => k === s.kind)?.[1] || s.kind} (${mins(s.to - s.from)})`} />)}</div>
+          title={`${clock(s.from)}–${clock(s.to)} ${LEGEND.find(([k]) => k === s.kind)?.[1] || s.kind}${s.opt && s.kind !== "optimize" ? " while optimising" : ""} (${mins(s.to - s.from)})`} />)}
+          {tl.optimize_from != null && <span className="tl-opt-start" style={{ left: at(tl.optimize_from) }} title={`${clock(tl.optimize_from)} Kept optimizing after the first Accepted`} />}</div>
         <div className="tl-runs">{runs.map((m, i) => <span key={i} className={`tl-run${m.ok ? " is-ok" : ""}`} style={{ left: at(m.t) }} title={`${clock(m.t)} run: ${m.ok ? "all cases matched" : m.total ? `${m.correct ?? 0}/${m.total} matched` : "failed"}`} />)}</div>
         <div className="tl-axis"><span style={{ left: 0 }}>0:00</span>{ticks.map((t) => <span key={t} style={{ left: at(t) }}>{clock(t)}</span>)}<span style={{ right: 0 }}>{clock(tl.duration_ms)}</span></div>
       </div>

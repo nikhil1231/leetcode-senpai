@@ -707,6 +707,7 @@ async def _grade_solution(store, attempt, lc=None):
             attempt.get("complexity_time") or attempt.get("complexity_target_time"),
             attempt.get("complexity_space") or attempt.get("complexity_target_space"),
             execution_status=assessment.observed(attempt),
+            asked=attempt.get("followups_asked"),
         )
     except Exception as exc:  # defensive; coach already swallows LLM errors
         graded, err = None, str(exc)
@@ -1936,7 +1937,10 @@ def api_attempt_timeline(attempt_id: str, uid: str = Depends(auth.require_user))
     events = recording.parse(rec.get("events")) if rec else []
     if not events:
         return {"timeline": None}
-    return {"timeline": {**recording.phases(events, plans.plan_sec(attempt) * 1000),
+    rounds = [recording.parse((store.get_recording(rid) or {}).get("events"))
+              for rid in attempt.get("optimize_recording_ids") or []]
+    base = recording.phases(events, plans.plan_sec(attempt) * 1000)
+    return {"timeline": {**recording.with_optimize(base, rounds),
                          "finished_on": attempt.get("finished_on"),
                          "truncated": bool(rec.get("truncated"))}}
 

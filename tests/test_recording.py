@@ -246,3 +246,16 @@ def test_timeline_offset_counts_from_the_start_of_planning():
           {"t": 30_000, "k": "run", "code": "a", "result": {"passed": True, "correct": 1, "total": 1}}]
     text = rec.timeline_for_llm(ev, offset_ms=120_000)
     assert "first run 02:30" in text and "[02:30] run" in text
+
+
+def test_optimize_rounds_join_the_bar_after_the_solve():
+    solve = [{"t": 0, "k": "c", "code": "x"},
+             {"t": 30_000, "k": "sub", "code": "x", "result": {"status": "Accepted", "correct": 9, "total": 9}}]
+    opt = [{"t": 0, "k": "c", "code": "x"},
+           {"t": 20_000, "k": "sub", "code": "y", "result": {"status": "Accepted", "correct": 9, "total": 9}}]
+    p = rec.with_optimize(rec.phases(solve, plan_ms=10_000), [opt])
+    assert p["optimize_from"] == 40_000 and p["duration_ms"] == 60_000
+    assert p["segments"][-1] == {"kind": "optimize", "from": 40_000, "to": 60_000, "opt": True}
+    assert p["totals"]["optimize"] == 20_000 and sum(p["totals"].values()) == 60_000
+    assert [(m["t"], m.get("opt", False)) for m in p["marks"]] == [(40_000, False), (60_000, True)]
+    assert rec.with_optimize(rec.phases(solve), [])["optimize_from"] is None

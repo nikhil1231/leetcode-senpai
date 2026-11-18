@@ -255,7 +255,7 @@ async def recall_hint(store, slug, recall_text, previous):
 
 
 async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_space=None,
-                         execution_status="unknown"):
+                         execution_status="unknown", asked=None):
     """Grade an accepted solution's code against the canonical optimal approach.
 
     Runs as soon as a solve is Accepted, before it's rated, so it reads only the
@@ -279,7 +279,7 @@ async def grade_solution(store, slug, code, lang=None, claim_time=None, claim_sp
         "canon_space": (canonical or {}).get("space"),
         "code": code, "lang": lang,
         "claim_time": claim_time, "claim_space": claim_space,
-        "execution_status": execution_status,
+        "execution_status": execution_status, "asked": asked or [],
         "statement": statement_text(p.get("content_html"), limit=12000),
     }, settings=settings)
 

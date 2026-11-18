@@ -2005,6 +2005,8 @@ pre.code {
 .tl-seg.is-quiet, .tl-swatch.is-quiet { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 3px, transparent 3px 7px); }
 .tl-seg.is-away, .tl-swatch.is-away { background: color-mix(in srgb, var(--muted) 75%, transparent); }
 .tl-seg.is-paused, .tl-swatch.is-paused { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+.tl-seg.is-optimize, .tl-swatch.is-optimize { background: repeating-linear-gradient(135deg, var(--green) 0 4px, color-mix(in srgb, var(--green) 55%, transparent) 4px 8px); }
+.tl-opt-start { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); }
 .tl-pins, .tl-runs, .tl-axis { position: absolute; left: 0; right: 0; }
 .tl-pins { top: 0; height: 32px; pointer-events: none; }
 .tl-pin { position: absolute; top: 2px; width: 2px; height: 30px; margin-left: -1px; border-radius: 1px; pointer-events: auto; }

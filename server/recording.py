@@ -316,7 +316,7 @@ def compact_submit(result):
 # and the log can't tell which. Marks are the moments that changed the course:
 # runs, submits, hints, the approach explained, a reset.
 
-PHASE_KINDS = ("plan", "work", "quiet", "away", "paused")
+PHASE_KINDS = ("plan", "work", "quiet", "away", "paused", "optimize")
 _RANK = {"work": 0, "quiet": 1, "away": 2, "paused": 3}
 MIN_SEGMENT_MS = 1_000
 
@@ -384,6 +384,29 @@ def phases(events, plan_ms=0):
     marks = [{"t": ev.get("t", 0) + plan_ms, **m} for ev in events if (m := _mark(ev))]
     return {"duration_ms": end + plan_ms, "plan_ms": plan_ms, "segments": segments,
             "marks": marks, "totals": totals}
+
+
+def with_optimize(base, rounds):
+    """`base` (from `phases`) with each "Keep optimizing" run's events joined on
+    after it, on the same clock. Editing in those runs counts as "optimize", so
+    the bar shows how long went on improving an already-Accepted solution; their
+    quiet, away and paused stretches stay what they are. `optimize_from` is where
+    the first run starts, None without one."""
+    out = {**base, "segments": list(base["segments"]), "marks": list(base["marks"]),
+           "totals": dict(base["totals"]), "optimize_from": None}
+    for events in rounds:
+        if not events:
+            continue
+        p, at = phases(events), out["duration_ms"]
+        if out["optimize_from"] is None:
+            out["optimize_from"] = at
+        for s in p["segments"]:
+            kind = "optimize" if s["kind"] == "work" else s["kind"]
+            out["segments"].append({"kind": kind, "from": s["from"] + at, "to": s["to"] + at, "opt": True})
+            out["totals"][kind] += s["to"] - s["from"]
+        out["marks"] += [{**m, "t": m["t"] + at, "opt": True} for m in p["marks"]]
+        out["duration_ms"] = at + p["duration_ms"]
+    return out
 
 
 # ---- the timeline the LLM reads -------------------------------------------------

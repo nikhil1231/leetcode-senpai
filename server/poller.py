@@ -323,6 +323,9 @@ def _supersede_fields(prior, match, details, extra_wrong):
         # Any stored grade was of code that no longer exists here.
         "solution_grade": None, "solution_grading_status": None,
         "solution_grading_error": None,
+        # The interviewer's question to the code it replaces, so the next grade
+        # knows what's been asked and moves on instead of repeating it.
+        "followups_asked": _followups_asked(prior),
         "resubmissions": (prior.get("resubmissions") or 0) + 1,
         # Set once, on the first improvement, and carried from there.
         "first_ac_at": prior.get("first_ac_at") or prev_ts,
@@ -338,6 +341,12 @@ def _supersede_fields(prior, match, details, extra_wrong):
     if prior.get("wrong_before_ac") is not None and extra_wrong:
         fields["wrong_before_ac"] = prior["wrong_before_ac"] + extra_wrong
     return fields
+
+
+def _followups_asked(prior):
+    asked = list(prior.get("followups_asked") or [])
+    q = ((prior.get("solution_grade") or {}).get("followup") or "").strip()
+    return asked + [q] if q and q not in asked else asked
 
 
 async def record_editor_improvement(store, session, sub, code, events):
