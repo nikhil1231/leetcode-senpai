@@ -1,6 +1,6 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { fmtTime } from "@/lib/format";
 import { useToast } from "@/lib/toast";
@@ -13,11 +13,20 @@ type Any = any;
 const LIMIT = 60;
 
 // Pattern sprint: read each statement without opening LeetCode, choose the pattern, add one short reason. 60 seconds a
-// prompt. Next saves and moves on; Skip leaves the rep unanswered; Finish grades the answers saved so far.
+// prompt. Next (or Enter) saves and moves on; Skip leaves the rep unanswered; Finish grades the answers saved so far.
+// The round is fetched once, outside TanStack Query: the /api/rev watcher invalidates every query after each submit,
+// which would refetch /sprint/start and swap the reps mid-round.
 export function SprintModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const round = useQuery({ queryKey: ["sprint-round"], staleTime: Infinity, gcTime: 0, retry: false, queryFn: () => api("/sprint/start", "POST", {}) });
+  const [round, setRound] = useState<{ data?: Any; error?: Error; isLoading: boolean }>({ isLoading: true });
+  const started = useRef(false);
+  const whyRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    api("/sprint/start", "POST", {}).then((data) => setRound({ data, isLoading: false }), (error) => setRound({ error, isLoading: false }));
+  }, []);
   const topics = useQuery({ queryKey: ["api", "/topics"], queryFn: () => api("/topics") });
   const [stage, setStage] = useState<"intro" | "rep" | "grading" | "summary" | "error">("intro");
   const [index, setIndex] = useState(0);
@@ -31,7 +40,7 @@ export function SprintModal({ onClose }: { onClose: () => void }) {
   const reps: Any[] = round.data?.reps || [];
 
   useEffect(() => { if (stage !== "rep") return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [stage]);
-  useEffect(() => { if (round.error) toast((round.error as Error).message); }, [round.error, toast]);
+  useEffect(() => { if (round.error) toast(round.error.message); }, [round.error, toast]);
 
   const rep = reps[index];
   const categories: string[] = useMemo(() => {
@@ -75,11 +84,11 @@ export function SprintModal({ onClose }: { onClose: () => void }) {
           <button id="btn-close-sprint" className="button is-ghost icon-button" type="button" aria-label="Close" title="Close" onClick={onClose}>&times;</button></div>
         <div id="sprint-body">
           {round.isLoading && <Loader message="Building sprint round..." />}
-          {round.error && <p className="missed"><b>Could not start sprint:</b> {(round.error as Error).message}</p>}
+          {round.error && <p className="missed"><b>Could not start sprint:</b> {round.error.message}</p>}
           {round.data && !reps.length && <p className="empty">No sprint reps available. Import more problems or finish a few attempts first.</p>}
           {round.data && reps.length > 0 && stage === "intro" && (
             <div className="sprint-intro"><h3>Pattern sprint rules</h3><p>Read each statement without opening LeetCode, choose the pattern, and add one short reason for the signal you noticed.</p>
-              <ul><li>You get 60 seconds per prompt.</li><li>Next saves your answer and immediately moves on.</li><li>Skip leaves the rep unanswered; Finish grades the answers saved so far.</li></ul>
+              <ul><li>You get 60 seconds per prompt.</li><li>Next (or Enter) saves your answer and immediately moves on.</li><li>Skip leaves the rep unanswered; Finish grades the answers saved so far.</li></ul>
               <div className="overlay-actions"><button id="btn-begin-sprint" className="button is-primary" onClick={() => { setStartedAt(Math.floor(Date.now() / 1000)); setStage("rep"); }}>Start</button></div></div>
           )}
           {stage === "rep" && rep && (
@@ -91,9 +100,9 @@ export function SprintModal({ onClose }: { onClose: () => void }) {
               </section>
               <section className="sprint-answer">
                 <label className="label-sm">Pattern / category</label>
-                <div className="select is-fullwidth"><select id="sprint-category" value={category} onChange={(e) => setCategory(e.target.value)}><option value="" disabled>Choose category</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+                <div className="pill-group sprint-categories" id="sprint-category" role="group" aria-label="Pattern / category">{categories.map((c) => <button key={c} type="button" className={category === c ? "sel" : ""} aria-pressed={category === c} onClick={() => { setCategory(c); whyRef.current?.focus(); }}>{c}</button>)}</div>
                 <label className="label-sm">Why</label>
-                <input id="sprint-why" className="input" type="text" placeholder="One line: key signal in the statement" value={why} onChange={(e) => setWhy(e.target.value)} />
+                <input ref={whyRef} id="sprint-why" className="input" type="text" placeholder="One line: key signal in the statement" value={why} onChange={(e) => setWhy(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !saving) { e.preventDefault(); void submit(); } }} />
                 <div className="overlay-actions" id="sprint-actions">
                   <button className="button is-ghost" onClick={skip}>Skip</button>
                   <button className="button is-ghost" onClick={() => { setIndex(reps.length); void summarise(results); }}>Finish</button>

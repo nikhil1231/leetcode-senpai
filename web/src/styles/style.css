@@ -1607,6 +1607,7 @@ body.has-active-session .topic-start, body.has-active-session .topic-recall { di
 .sprint-prompt { max-height: 62vh; }
 .sprint-answer { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elev); }
 .sprint-answer .label-sm:first-child { margin-top: 0; }
+.sprint-categories button { flex: 1 1 auto; min-width: 0; padding: 7px 10px; }
 .sprint-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(78px, 1fr)); gap: 10px; margin-bottom: 22px; }
 .sprint-summary-grid div {
   padding: 14px;
