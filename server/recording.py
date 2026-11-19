@@ -316,9 +316,72 @@ def compact_submit(result):
 # and the log can't tell which. Marks are the moments that changed the course:
 # runs, submits, hints, the approach explained, a reset.
 
-PHASE_KINDS = ("plan", "work", "quiet", "away", "paused", "optimize")
-_RANK = {"work": 0, "quiet": 1, "away": 2, "paused": 3}
+PHASE_KINDS = ("plan", "work", "quiet", "talk", "away", "paused", "optimize")
+_RANK = {"work": 0, "quiet": 1, "talk": 2, "away": 3, "paused": 4}
 MIN_SEGMENT_MS = 1_000
+
+
+# ---- speech ----------------------------------------------------------------------
+# What was said aloud while solving (background voice capture): transcript text only,
+# never audio, in a list beside the events rather than in them. A clip's transcript
+# arrives after later edits, so mixing it into the ordered, delta-chained log would
+# break its order. `t` is on the recording's clock and is negative for planning, which
+# happens before the clock starts.
+
+SPEECH_MAX_CHARS = 40_000
+SPEECH_MAX_CLIP_MS = 180_000
+SPEECH_MIN_T = -6 * 3_600_000
+TALK_JOIN_MS = 10_000
+
+
+def clean_speech(entry):
+    """One clip's {t, dur, text, stt}, validated and clipped; None when unusable."""
+    if not isinstance(entry, dict):
+        return None
+    try:
+        t, dur = int(entry["t"]), int(entry["dur"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    text = " ".join(str(entry.get("text") or "").split())
+    if not text or dur <= 0 or t < SPEECH_MIN_T:
+        return None
+    out = {"t": t, "dur": min(dur, SPEECH_MAX_CLIP_MS), "text": text[:SPEECH_MAX_CHARS]}
+    if entry.get("stt"):
+        out["stt"] = str(entry["stt"])[:80]
+    return out
+
+
+def merge_speech(existing, new, max_chars=SPEECH_MAX_CHARS):
+    """Sorted by `t`, one entry per `t` (a retried upload replaces itself), total text
+    capped. Returns (speech, truncated); the earliest speech is what's kept."""
+    by_t = {e["t"]: e for e in (existing or [])}
+    for e in new or []:
+        if (c := clean_speech(e)):
+            by_t[c["t"]] = c
+    out, used, truncated = [], 0, False
+    for e in sorted(by_t.values(), key=lambda e: e["t"]):
+        if used + len(e["text"]) > max_chars:
+            truncated = True
+            break
+        used += len(e["text"])
+        out.append(e)
+    return out, truncated
+
+
+def speech_spans(speech, join_ms=TALK_JOIN_MS):
+    """[(from, to)] on the recording's clock, clips under `join_ms` apart counted as one."""
+    spans = []
+    for e in sorted(speech or [], key=lambda e: e["t"]):
+        a, b = e["t"], e["t"] + e["dur"]
+        if spans and a - spans[-1][1] < join_ms:
+            spans[-1][1] = max(spans[-1][1], b)
+        else:
+            spans.append([a, b])
+    return [(a, b) for a, b in spans]
+
+
+def talk_ms(speech):
+    return sum(b - a for a, b in speech_spans(speech))
 
 
 def _open_spans(events, start_kind, end_kind, end_t):
@@ -361,12 +424,18 @@ def _mark(ev):
     return None
 
 
-def phases(events, plan_ms=0):
-    """The solve as a bar: {duration_ms, segments, marks, totals}, all on one clock
-    that starts when planning did (`plan_ms` before the recording)."""
+def phases(events, plan_ms=0, speech=()):
+    """The solve as a bar: {duration_ms, segments, marks, totals, speech}, all on one
+    clock that starts when planning did (`plan_ms` before the recording). Speech turns
+    the part of a quiet stretch it covers into `talk`; it never changes work, away or
+    paused. `speech` in the result is the talk lane: [{from, to}] on the same clock."""
     plan_ms = max(0, int(plan_ms or 0))
     end = events[-1]["t"] if events else 0
-    spans = ([(a, b, "quiet") for a, b in _quiet_spans(events, end)]
+    quiet = _quiet_spans(events, end)
+    talking = speech_spans(speech)
+    spans = ([(a, b, "quiet") for a, b in quiet]
+             + [(max(a, s), min(b, e), "talk") for a, b in quiet for s, e in talking
+                if max(a, s) < min(b, e)]
              + [(a, b, "away") for a, b in _open_spans(events, "blur", "focus", end)]
              + [(a, b, "paused") for a, b in _open_spans(events, "pause", "resume", end)])
     cuts = sorted({0, end, *(t for a, b, _ in spans for t in (a, b) if 0 <= t <= end)})
@@ -382,22 +451,26 @@ def phases(events, plan_ms=0):
     for s in segments:
         totals[s["kind"]] += s["to"] - s["from"]
     marks = [{"t": ev.get("t", 0) + plan_ms, **m} for ev in events if (m := _mark(ev))]
+    lane = [{"from": max(0, a + plan_ms), "to": min(end + plan_ms, b + plan_ms)} for a, b in talking
+            if min(end + plan_ms, b + plan_ms) > max(0, a + plan_ms)]
     return {"duration_ms": end + plan_ms, "plan_ms": plan_ms, "segments": segments,
-            "marks": marks, "totals": totals}
+            "marks": marks, "totals": totals, "speech": lane}
 
 
-def with_optimize(base, rounds):
+def with_optimize(base, rounds, round_speech=()):
     """`base` (from `phases`) with each "Keep optimizing" run's events joined on
     after it, on the same clock. Editing in those runs counts as "optimize", so
     the bar shows how long went on improving an already-Accepted solution; their
     quiet, away and paused stretches stay what they are. `optimize_from` is where
-    the first run starts, None without one."""
+    the first run starts, None without one. `round_speech` is each round's `speech`,
+    in step with `rounds`; it joins the talk lane on the same shift."""
     out = {**base, "segments": list(base["segments"]), "marks": list(base["marks"]),
            "totals": dict(base["totals"]), "optimize_from": None}
-    for events in rounds:
+    out["speech"] = list(base.get("speech") or [])
+    for i, events in enumerate(rounds):
         if not events:
             continue
-        p, at = phases(events), out["duration_ms"]
+        p, at = phases(events, 0, round_speech[i] if i < len(round_speech) else ()), out["duration_ms"]
         if out["optimize_from"] is None:
             out["optimize_from"] = at
         for s in p["segments"]:
@@ -405,6 +478,7 @@ def with_optimize(base, rounds):
             out["segments"].append({"kind": kind, "from": s["from"] + at, "to": s["to"] + at, "opt": True})
             out["totals"][kind] += s["to"] - s["from"]
         out["marks"] += [{**m, "t": m["t"] + at, "opt": True} for m in p["marks"]]
+        out["speech"] += [{"from": s["from"] + at, "to": s["to"] + at} for s in p["speech"]]
         out["duration_ms"] = at + p["duration_ms"]
     return out
 
@@ -479,9 +553,34 @@ def unified_diff(a, b, context=1):
     return "\n".join(out)
 
 
-def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS, offset_ms=0):
+SPEECH_SHARE = 0.4        # of the prompt's character budget, so talk can't crowd out the edits
+SAID_JOIN_MS = 3_000
+
+
+def _overlap(spans, a, b):
+    return sum(max(0, min(b, e) - max(a, s)) for s, e in spans)
+
+
+def _said_lines(speech, budget):
+    """[(t, text)]: clips under SAID_JOIN_MS apart read as one line, and every line is
+    shortened to its share of `budget` rather than dropped, so the timestamps all stay."""
+    lines = []
+    for e in sorted(speech or [], key=lambda e: e["t"]):
+        if lines and e["t"] - lines[-1][2] < SAID_JOIN_MS:
+            lines[-1][1] += " " + e["text"]
+            lines[-1][2] = e["t"] + e["dur"]
+        else:
+            lines.append([e["t"], e["text"], e["t"] + e["dur"]])
+    if not lines:
+        return []
+    each = max(60, int(budget) // len(lines) - 24)
+    return [(t, _one_line(text, each)) for t, text, _ in lines]
+
+
+def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS, offset_ms=0, speech=()):
     """A compact, human-readable account of a recorded solve, for a prompt. Times
-    read `offset_ms` later than the log's, so they can count from when planning began."""
+    read `offset_ms` later than the log's, so they can count from when planning began.
+    `speech` (see merge_speech) adds `said:` lines, each keeping its timestamp when clipped."""
     s = summary(events)
     at = lambda ms: mmss(ms + offset_ms) if ms is not None else "never"  # noqa: E731
     head = [
@@ -505,7 +604,9 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS, offset_ms=0):
         if k in ("d", "run", "sub") and t in gap_ends:
             start, length = gap_ends.pop(t)
             where = f", then edited {_lines(code, ev['f'], ev['to'])}" if k == "d" and code else ""
-            entries.append([start, f"no edits or runs for {_dur(length)}{where}", None])
+            talking = _overlap(speech_spans(speech), start, start + length) * 2 >= length
+            entries.append([start, f"no edits or runs for {_dur(length)}{where}"
+                                   + (", talking through it" if talking else ""), None])
         if k == "c":
             code = ev.get("code") or ""
         elif k == "d" and code is not None:
@@ -551,12 +652,13 @@ def timeline_for_llm(events, max_chars=TIMELINE_MAX_CHARS, offset_ms=0):
             if t - away_from >= AWAY_MIN_MS:
                 entries.append([away_from, f"away from the tab {_dur(t - away_from)}", None])
             away_from = None
-    entries.sort(key=lambda e: e[0])
+    said = _said_lines(speech, max_chars * SPEECH_SHARE)
+    entries = sorted(entries + [[t, f'said: "{text}"', None] for t, text in said], key=lambda e: e[0])
 
     def render():
         lines = list(head)
         for t, text, diff in entries:
-            lines.append(f"[{mmss(t + offset_ms)}] {text}")
+            lines.append(f"[{mmss(max(0, t + offset_ms))}] {text}")
             if diff:
                 lines.append("  what changed before the next judging:")
                 lines.extend("    " + line for line in diff.splitlines())

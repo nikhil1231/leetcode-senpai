@@ -2003,6 +2003,7 @@ pre.code {
 .tl-seg.is-plan, .tl-swatch.is-plan { background: rgba(var(--accent-rgb), .45); }
 .tl-seg.is-work, .tl-swatch.is-work { background: var(--accent); }
 .tl-seg.is-quiet, .tl-swatch.is-quiet { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 3px, transparent 3px 7px); }
+.tl-seg.is-talk, .tl-swatch.is-talk { background: rgba(var(--accent-2-rgb, 167, 139, 250), .55); }
 .tl-seg.is-away, .tl-swatch.is-away { background: color-mix(in srgb, var(--muted) 75%, transparent); }
 .tl-seg.is-paused, .tl-swatch.is-paused { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
 .tl-seg.is-optimize, .tl-swatch.is-optimize { background: repeating-linear-gradient(135deg, var(--green) 0 4px, color-mix(in srgb, var(--green) 55%, transparent) 4px 8px); }
@@ -2018,6 +2019,9 @@ pre.code {
 .tl-runs { top: 34px; height: 7px; }
 .tl-run { position: absolute; width: 2px; height: 7px; margin-left: -1px; background: var(--muted); }
 .tl-run.is-ok { background: var(--green); }
+.tl-track.has-talk { padding-bottom: 36px; }
+.tl-talk { position: absolute; left: 0; right: 0; top: 43px; height: 4px; }
+.tl-talk span { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: 2px; background: rgba(var(--accent-2-rgb, 167, 139, 250), .85); }
 .tl-axis { bottom: 0; height: 16px; }
 .tl-axis span { position: absolute; font-size: 11px; color: var(--muted); transform: translateX(-50%); font-variant-numeric: tabular-nums; }
 .tl-axis span:first-child { transform: none; }

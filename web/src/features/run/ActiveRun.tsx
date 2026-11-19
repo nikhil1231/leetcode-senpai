@@ -1,4 +1,5 @@
 "use client";
+import { settleVoice } from "@/lib/voice";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
@@ -122,6 +123,7 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
     setBusy("end"); const sessionId = active.session_id;
     try {
       const code = await codeForCoach();
+      await settleVoice();   // the last thing said still lands on this run
       const r = await api("/session/end", "POST", code == null ? {} : { code });
       pauseReq.current++; ed?.discard(sessionId); onSolved(r);
     } catch (e) { setBusy(null); disarmEnd(); toast((e as Error).message); return; }

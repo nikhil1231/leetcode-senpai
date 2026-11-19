@@ -143,3 +143,22 @@ async def test_the_review_sees_the_plan_grade_and_planning_on_the_same_clock(mon
                                      "BFS alone ignores order.")
     assert "[03:00] submit: Wrong Answer" in payload["timeline"]
     assert doc["process_review"]["diagnosis"] == "The plan lacked indegree counts."
+
+
+async def test_speech_reaches_the_review_with_a_caveat_and_old_recordings_are_untouched(monkeypatch):
+    store, recorded, _ = _store()
+    rec = store.get_recording("sess1")
+    rec["speech"] = [{"t": 5_000, "dur": 20_000, "text": "I'll use a hash map for complements"}]
+    rec["speech_failed_ms"] = 12_000
+    store.save_recording("sess1", rec)
+    seen = _llm(monkeypatch, REVIEW)
+    await enrich.review_process(store, recorded)
+    timeline = seen[0][1]["timeline"]
+    assert '[00:05] said: "I\'ll use a hash map for complements"' in timeline
+    assert "thought aloud for 00:20" in timeline and "machine-made" in timeline
+    assert "00:12 of speech was heard but not transcribed" in timeline
+    # A recording with no speech reads exactly as before.
+    store2, recorded2, _ = _store()
+    seen2 = _llm(monkeypatch, REVIEW)
+    await enrich.review_process(store2, recorded2)
+    assert "said:" not in seen2[0][1]["timeline"] and "thought aloud" not in seen2[0][1]["timeline"]

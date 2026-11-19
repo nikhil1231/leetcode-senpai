@@ -2,7 +2,8 @@
 // Where a solve's time went, as one bar on one clock: planning, then the in-editor recording split into work (edits and
 // runs), quiet stretches (a minute or more with neither: thinking, notes or a break, the log can't tell), another tab and
 // pauses. "Keep optimizing" runs follow on the same clock after a divider, their editing striped green. The moments that turned it (submits, hints, the approach explained) sit on the bar and are listed under it.
-// From server/recording.py `phases`; no LLM. The coach's read of it (process review) goes underneath when there is one.
+// With voice capture on, the part of a quiet stretch where you were speaking is its own kind, and a thin lane under the bar
+// shows everything said, planning included. From server/recording.py `phases`; no LLM. The coach's read of it (process review) goes underneath when there is one.
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/hooks";
 
@@ -10,7 +11,7 @@ import { useApi } from "@/lib/hooks";
 type Any = any;
 type Segment = { kind: string; from: number; to: number; opt?: boolean };
 type Mark = { t: number; kind: string; ok?: boolean; status?: string; correct?: number; total?: number; level?: number; step?: number; text?: string; opt?: boolean };
-type Timeline = { duration_ms: number; plan_ms: number; segments: Segment[]; marks: Mark[]; totals: Record<string, number>; finished_on?: string; truncated?: boolean; optimize_from?: number | null };
+type Timeline = { duration_ms: number; plan_ms: number; segments: Segment[]; marks: Mark[]; totals: Record<string, number>; speech?: { from: number; to: number }[]; finished_on?: string; truncated?: boolean; optimize_from?: number | null };
 
 const clock = (ms: number) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const mins = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)} min`);
@@ -18,6 +19,7 @@ const LEGEND: [string, string, string][] = [
   ["plan", "Planning", "Before the editor opened"],
   ["work", "Editing and running", "Edits or runs less than a minute apart"],
   ["quiet", "Quiet", "A minute or more with no edits or runs, on this tab: thinking, notes or a break"],
+  ["talk", "Talking it through", "A quiet stretch where you were speaking (voice capture)"],
   ["away", "Other tab", "The editor tab was hidden or out of focus"],
   ["paused", "Paused", "The clock was paused"],
   ["optimize", "Optimising", "Editing and running after the first Accepted, to improve it"],
@@ -46,15 +48,17 @@ export function SolveTimeline({ attempt }: { attempt: Any }) {
   const at = (t: number) => `${Math.max(0, Math.min(100, (t / tl.duration_ms) * 100))}%`;
   const key = tl.marks.filter((m) => moment(m));
   const runs = tl.marks.filter((m) => m.kind === "run");
+  const talk = tl.speech || [];
   const ticks = Array.from({ length: Math.floor(tl.duration_ms / 600_000) }, (_, i) => (i + 1) * 600_000).filter((t) => t < tl.duration_ms - 120_000);
   return (
     <div className="solve-timeline">
-      <div className="tl-track" role="img" aria-label={`Timeline of ${clock(tl.duration_ms)}: ${LEGEND.filter(([k]) => tl.totals[k]).map(([k, l]) => `${l} ${mins(tl.totals[k])}`).join(", ")}`}>
+      <div className={`tl-track${talk.length ? " has-talk" : ""}`} role="img" aria-label={`Timeline of ${clock(tl.duration_ms)}: ${LEGEND.filter(([k]) => tl.totals[k]).map(([k, l]) => `${l} ${mins(tl.totals[k])}`).join(", ")}`}>
         <div className="tl-pins">{key.map((m, i) => <span key={i} className={`tl-pin ${pinOf(m)}`} style={{ left: at(m.t) }} title={`${clock(m.t)} ${moment(m)}`} />)}</div>
         <div className="tl-bar">{tl.segments.map((s, i) => <span key={i} className={`tl-seg is-${s.kind}`} style={{ left: at(s.from), width: at(s.to - s.from) }}
           title={`${clock(s.from)}–${clock(s.to)} ${LEGEND.find(([k]) => k === s.kind)?.[1] || s.kind}${s.opt && s.kind !== "optimize" ? " while optimising" : ""} (${mins(s.to - s.from)})`} />)}
           {tl.optimize_from != null && <span className="tl-opt-start" style={{ left: at(tl.optimize_from) }} title={`${clock(tl.optimize_from)} Kept optimizing after the first Accepted`} />}</div>
         <div className="tl-runs">{runs.map((m, i) => <span key={i} className={`tl-run${m.ok ? " is-ok" : ""}`} style={{ left: at(m.t) }} title={`${clock(m.t)} run: ${m.ok ? "all cases matched" : m.total ? `${m.correct ?? 0}/${m.total} matched` : "failed"}`} />)}</div>
+        {talk.length > 0 && <div className="tl-talk">{talk.map((s, i) => <span key={i} style={{ left: at(s.from), width: at(s.to - s.from) }} title={`${clock(s.from)}–${clock(s.to)} you were speaking`} />)}</div>}
         <div className="tl-axis"><span style={{ left: 0 }}>0:00</span>{ticks.map((t) => <span key={t} style={{ left: at(t) }}>{clock(t)}</span>)}<span style={{ right: 0 }}>{clock(tl.duration_ms)}</span></div>
       </div>
       <ul className="tl-legend">{LEGEND.filter(([k]) => tl.totals[k] > 0).map(([k, label, help]) => (

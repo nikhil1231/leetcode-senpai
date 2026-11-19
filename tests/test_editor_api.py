@@ -816,3 +816,74 @@ def test_a_python_problem_stays_python(client):
     state = client.get(f"/api/editor/state?session_id={sid}").json()
     assert state["lang"] == "python3" and state["sql_schema"] is None
     assert client.store.sessions[sid]["lang"] == "python3"
+
+
+# ---- background voice capture ------------------------------------------------------
+
+def _speak(client, sid, **kw):
+    body = {"session_id": sid, "t": 5000, "dur": 4000, "audio": "AAAA", **kw}
+    return client.post("/api/editor/speech", json=body)
+
+
+def test_a_spoken_clip_is_kept_as_text_never_returned_or_stored_as_audio(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda s=None: True)
+    monkeypatch.setattr(main.llm, "transcribe", lambda audio, fmt, lang=None: "use a hash map")
+    sid = _start(client)
+    r = _speak(client, sid)
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    doc = client.store.get_recording(sid)
+    assert [(e["t"], e["dur"], e["text"]) for e in doc["speech"]] == [(5000, 4000, "use a hash map")]
+    assert "AAAA" not in str(doc) and not doc.get("speech_failed_ms")
+    _speak(client, sid, t=5000)                       # a retried upload replaces itself
+    assert len(client.store.get_recording(sid)["speech"]) == 1
+    _speak(client, sid, t=-30_000)                    # spoken while planning
+    assert [e["t"] for e in client.store.get_recording(sid)["speech"]] == [-30_000, 5000]
+
+
+def test_speech_does_not_disturb_the_event_log(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda s=None: True)
+    monkeypatch.setattr(main.llm, "transcribe", lambda audio, fmt, lang=None: "hm")
+    sid = _start(client)
+    client.get(f"/api/editor/state?session_id={sid}")
+    before = client.store.get_recording(sid)["events"]
+    _speak(client, sid)
+    assert client.store.get_recording(sid)["events"] == before
+
+
+def test_speech_before_the_editor_loads_still_leaves_the_starter_checkpoint(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda s=None: True)
+    monkeypatch.setattr(main.llm, "transcribe", lambda audio, fmt, lang=None: "hm")
+    sid = _start(client)
+    _speak(client, sid, t=-5000)
+    state = client.get(f"/api/editor/state?session_id={sid}").json()
+    assert state["code"] == STARTER and _events(client, sid)[0]["k"] == "c"
+    assert client.store.get_recording(sid)["speech"][0]["t"] == -5000
+
+
+def test_a_failed_transcription_is_counted_not_lost_silently(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda s=None: True)
+    monkeypatch.setattr(main.llm, "transcribe", lambda audio, fmt, lang=None: None)
+    sid = _start(client)
+    assert _speak(client, sid, dur=4000).json() == {"ok": False}
+    _speak(client, sid, t=9000, dur=1500)
+    doc = client.store.get_recording(sid)
+    assert doc["speech_failed_ms"] == 5500 and not doc.get("speech")
+
+
+def test_speech_needs_the_coach_and_an_active_run(client, monkeypatch):
+    sid = _start(client)
+    monkeypatch.setattr(main.llm, "enabled", lambda s=None: False)
+    assert _speak(client, sid).status_code == 503
+    monkeypatch.setattr(main.llm, "enabled", lambda s=None: True)
+    assert _speak(client, "no-such-run").status_code == 409
+    assert _speak(client, sid, t=-10**9).status_code == 422
+
+
+def test_the_timeline_route_carries_the_talk_lane(client, monkeypatch):
+    monkeypatch.setattr(main.llm, "enabled", lambda s=None: True)
+    monkeypatch.setattr(main.llm, "transcribe", lambda audio, fmt, lang=None: "talking")
+    sid = _start(client)
+    client.get(f"/api/editor/state?session_id={sid}")
+    _speak(client, sid, t=0, dur=1000)
+    aid = client.store.add_attempt({"slug": "two-sum", "solved_at": 100, "recording_id": sid})
+    assert client.get(f"/api/attempt/{aid}/timeline").json()["timeline"]["speech"] is not None

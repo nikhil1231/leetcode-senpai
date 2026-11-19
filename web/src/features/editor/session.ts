@@ -42,6 +42,8 @@ export class EditorRun {
   }
 
   nowMs() { return Math.max(0, Date.now() - this.startedAtMs + this.offsetMs); }
+  // A wall-clock time on the run's clock; negative before the run began (planning), which nowMs would clamp.
+  clockAt(wallMs: number) { return wallMs - this.startedAtMs + this.offsetMs; }
   currentCode() { return this.getCode() ?? this.lastLogged; }
 
   adopt(sessionId: string, startedAtSec: number, serverNowMs?: number | null) {

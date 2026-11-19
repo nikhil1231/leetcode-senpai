@@ -9,6 +9,7 @@ import { useToast } from "@/lib/toast";
 import { useUi } from "@/lib/ui-store";
 import { useRoute } from "@/lib/nav";
 import { preloadCodeMirror } from "@/features/editor/codemirror";
+import { VoiceFab } from "@/components/VoiceFab";
 import { ActiveRun } from "./ActiveRun";
 import { AnnotateModal } from "./AnnotateModal";
 import { CookieModal } from "./CookieModal";
@@ -136,6 +137,7 @@ export function FlowHost() {
   return (
     <>
       {active && runHost && createPortal(<ActiveRun onSolved={onSolved} />, runHost)}
+      <VoiceFab planning={!!predict} />
       {predict && <PredictModal ctx={predict} onClose={() => setPredict(null)} />}
       {flow.recall && <RecallModal req={flow.recall} onClose={() => { flow.openRecall(null); qc.invalidateQueries(); }} />}
       {flow.annotate && <AnnotateModal key={`${flow.annotate.id}|${flow.annotate.submission_id ?? ""}`} initial={flow.annotate} onClose={closeAnnotate} />}

@@ -2,3 +2,20 @@
 a.section-option, a.go-tutor, a.go-settings, a.readiness-chip, .design-nav a, a.rd-nav-link, a.hub-stand-link, a.sh-all, a.rd-link { text-decoration: none; }
 a.section-option, a.readiness-chip, a.sh-all { color: inherit; }
 .nav a { text-decoration: none; }
+
+/* Voice capture button (components/VoiceFab.tsx): above modals, draggable, parked at the right until moved. */
+.voice-fab { position: fixed; right: 20px; bottom: 140px;   /* clear of the coach composer until dragged */
+  z-index: 130; width: 48px; height: 48px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: grab; touch-action: none; user-select: none;
+  color: var(--muted, #98a0b3); background: var(--panel, #1b1f2a); border: 1px solid var(--line, rgba(255,255,255,.14));
+  box-shadow: 0 6px 18px rgba(0,0,0,.35); transition: color .15s, border-color .15s, background .15s; }
+.voice-fab:active { cursor: grabbing; }
+.voice-fab:focus-visible { outline: 2px solid var(--accent, #7c86ff); outline-offset: 2px; }
+.voice-fab.is-listening, .voice-fab.is-speaking { color: var(--on-accent, #fff); background: var(--accent, #7c86ff); border-color: transparent; }
+.voice-fab.is-held { color: var(--accent, #7c86ff); border-color: var(--accent, #7c86ff); }
+.voice-fab.is-starting { color: var(--accent, #7c86ff); animation: voice-pulse 1s ease-in-out infinite; }
+.voice-fab.is-error { color: #ff8a8a; border-color: #ff8a8a; }
+.voice-fab.is-speaking { box-shadow: 0 0 0 5px rgba(var(--accent-rgb, 124, 134, 255), .28), 0 6px 18px rgba(0,0,0,.35); }
+.voice-fab .voice-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+@keyframes voice-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .voice-fab.is-starting { animation: none; } }

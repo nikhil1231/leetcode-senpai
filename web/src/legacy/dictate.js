@@ -62,6 +62,7 @@
     },
     hold(field) { return window.Dictate.settle(field); },  // no dictation here: nothing to remember
     resume() {},
+    isListening: () => false,  // background voice capture steps aside while this is true (see "dictate-state")
   };
 
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -131,7 +132,11 @@
     s.sink.set(compose(s.prefix, [...s.done, ...s.run], s.interim));
   }
 
-  const setUi = (s, state) => s.sink.ui(state);
+  const setUi = (s, state) => {
+    s.sink.ui(state);
+    window.Dictate.isListening = () => !!active && !active.halted;
+    window.dispatchEvent(new Event("dictate-state"));
+  };
 
   function buttonUi(btn, state) {
     btn.classList.toggle("is-armed", state === "armed");

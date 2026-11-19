@@ -259,3 +259,85 @@ def test_optimize_rounds_join_the_bar_after_the_solve():
     assert p["totals"]["optimize"] == 20_000 and sum(p["totals"].values()) == 60_000
     assert [(m["t"], m.get("opt", False)) for m in p["marks"]] == [(40_000, False), (60_000, True)]
     assert rec.with_optimize(rec.phases(solve), [])["optimize_from"] is None
+
+
+# ---- speech: what was said aloud, kept beside the events -------------------------
+
+def _say(t, dur, text="hello"):
+    return {"t": t, "dur": dur, "text": text}
+
+
+def test_clean_speech_validates_and_collapses_whitespace():
+    assert rec.clean_speech({"t": 5, "dur": 2000, "text": "  a   b\n c ", "stt": "m"}) == {
+        "t": 5, "dur": 2000, "text": "a b c", "stt": "m"}
+    for bad in (None, {}, {"t": "x", "dur": 1, "text": "a"}, {"t": 1, "dur": 0, "text": "a"},
+                {"t": 1, "dur": 5, "text": "  "}, {"t": rec.SPEECH_MIN_T - 1, "dur": 5, "text": "a"}):
+        assert rec.clean_speech(bad) is None
+    assert rec.clean_speech({"t": 0, "dur": 10**9, "text": "a"})["dur"] == rec.SPEECH_MAX_CLIP_MS
+
+
+def test_merge_speech_sorts_dedupes_by_start_and_caps_text():
+    first, cut = rec.merge_speech([], [_say(9000, 1000, "b"), _say(1000, 1000, "a")])
+    assert [e["text"] for e in first] == ["a", "b"] and not cut
+    again, _ = rec.merge_speech(first, [_say(1000, 1000, "a, retried"), {"junk": 1}])
+    assert [e["text"] for e in again] == ["a, retried", "b"]
+    capped, cut = rec.merge_speech([], [_say(1, 1, "x" * 60), _say(2, 1, "y" * 60)], max_chars=100)
+    assert [e["text"][0] for e in capped] == ["x"] and cut
+
+
+def test_talk_splits_a_quiet_stretch_and_never_touches_away_or_paused():
+    ev = [{"t": 0, "k": "c", "code": "x"},
+          {"t": 10_000, "k": "d", "f": 0, "to": 1, "s": "y"},
+          {"t": 250_000, "k": "d", "f": 0, "to": 1, "s": "z"}]
+    # Talking from 40s to 100s (two clips 5s apart count as one stretch), nothing else.
+    p = rec.phases(ev, plan_ms=0, speech=[_say(40_000, 30_000), _say(75_000, 25_000)])
+    assert [(s["kind"], s["from"], s["to"]) for s in p["segments"]] == [
+        ("work", 0, 10_000), ("quiet", 10_000, 40_000), ("talk", 40_000, 100_000),
+        ("quiet", 100_000, 250_000)]
+    assert p["speech"] == [{"from": 40_000, "to": 100_000}]
+    assert sum(p["totals"].values()) == p["duration_ms"] and p["totals"]["talk"] == 60_000
+    away = rec.phases(ev + [{"t": 20_000, "k": "blur"}, {"t": 200_000, "k": "focus"}], speech=[_say(40_000, 60_000)])
+    assert away["totals"]["talk"] == 0 and away["totals"]["away"] == 180_000
+
+
+def test_planning_speech_lands_in_the_plan_stretch_lane():
+    ev = [{"t": 0, "k": "c", "code": "x"}, {"t": 30_000, "k": "d", "f": 0, "to": 1, "s": "y"}]
+    p = rec.phases(ev, plan_ms=60_000, speech=[_say(-50_000, 20_000)])
+    assert p["speech"] == [{"from": 10_000, "to": 30_000}]
+    assert [s["kind"] for s in p["segments"]][0] == "plan" and p["totals"]["talk"] == 0
+
+
+def test_without_speech_the_bar_is_unchanged():
+    ev = [{"t": 0, "k": "c", "code": "x"}, {"t": 200_000, "k": "d", "f": 0, "to": 1, "s": "y"}]
+    assert rec.phases(ev)["speech"] == []
+    assert rec.phases(ev)["totals"]["talk"] == 0
+
+
+def test_timeline_interleaves_said_lines_and_marks_talking_gaps():
+    ev = [{"t": 0, "k": "c", "code": "x = 1\n"},
+          {"t": 10_000, "k": "d", "f": 0, "to": 1, "s": "y"},
+          {"t": 250_000, "k": "d", "f": 0, "to": 1, "s": "z"}]
+    quiet = rec.timeline_for_llm(ev)
+    assert "no edits or runs for 4m" in quiet and "talking through it" not in quiet and "said:" not in quiet
+    text = rec.timeline_for_llm(ev, speech=[_say(20_000, 100_000, "first idea"), _say(121_000, 5000, "then this"),
+                                            _say(200_000, 20_000, "a bug")])
+    assert "talking through it" in text
+    assert '[00:20] said: "first idea then this"' in text and '[03:20] said: "a bug"' in text
+    assert text.index("first idea") < text.index("a bug")
+
+
+def test_speech_has_its_own_budget_and_keeps_its_timestamps():
+    ev = [{"t": 0, "k": "c", "code": "x"}, {"t": 5000, "k": "d", "f": 0, "to": 1, "s": "y"}]
+    speech = [_say(i * 20_000, 5000, "word " * 400) for i in range(1, 11)]
+    text = rec.timeline_for_llm(ev, max_chars=3000, speech=speech)
+    assert len(text) <= 3000
+    assert all(f"[{rec.mmss(i * 20_000)}] said:" in text for i in range(1, 11))
+
+
+def test_optimise_rounds_carry_their_speech_on_the_shifted_clock():
+    first = [{"t": 0, "k": "c", "code": "x"}, {"t": 200_000, "k": "d", "f": 0, "to": 1, "s": "y"}]
+    base = rec.phases(first, plan_ms=0, speech=[_say(40_000, 30_000)])
+    again = [{"t": 0, "k": "c", "code": "y"}, {"t": 150_000, "k": "d", "f": 0, "to": 1, "s": "z"}]
+    out = rec.with_optimize(base, [again], [[_say(20_000, 30_000)]])
+    assert out["speech"] == [{"from": 40_000, "to": 70_000}, {"from": 220_000, "to": 250_000}]
+    assert out["totals"]["talk"] == 60_000

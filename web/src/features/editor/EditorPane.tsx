@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useLayout, useEditorUi, STATEMENT_PCT, CONSOLE_PX } from "./editor-store";
 import { errorLine } from "./diff";
+import { setSpeechTarget, settleVoice } from "@/lib/voice";
 import { EditorRun, FLUSH_MS, TICK_MS } from "./session";
 import { findLine, historyKeys, lineMarks, loadCodeMirror, sqlLanguage, type CM } from "./codemirror";
 import { SqlBlock, SqlTests } from "./SqlTables";
@@ -229,7 +230,7 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
     }
     L.confirming = false; L.judging = true;
     setEd({ judging: true }); showErrorLine(null); showConsole("result"); setView({ kind: "pending", text: `${kind === "run" ? "Running" : "Judging"}…` });
-    r.judge(kind, input).then(({ res, code }) => {
+    (kind === "submit" ? settleVoice() : Promise.resolve()).then(() => r.judge(kind, input)).then(({ res, code }) => {
       if (res.runs_left != null) { L.runsLeft = res.runs_left; setEd({ runsLeft: res.runs_left }); }
       if (!res.ok) { setView({ kind: "error", message: res.error }); return; }
       // A blank box was run on the examples: show them in Tests too.
@@ -338,6 +339,12 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
   }, [r, setEd, showMarks, markTruncated]);
 
   useEffect(() => { r.input = input; r.persist(); }, [input, r]);
+
+  // Where background voice capture sends what was said (lib/voice.ts): this run, once the server has it.
+  useEffect(() => {
+    setSpeechTarget(() => (r.sessionId && !r.finished ? { sessionId: r.sessionId, toRunMs: (wall) => r.clockAt(wall) } : null));
+    return () => setSpeechTarget(null);
+  }, [r]);
 
   const resetToStarter = () => {
     const c = cm.current, L = live.current;

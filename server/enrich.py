@@ -264,8 +264,15 @@ def _plan_grade_line(grade):
 
 
 def _process_timeline(attempt, rec, difficulty=None):
+    speech = rec.get("speech") or []
     text = recording.timeline_for_llm(recording.parse(rec.get("events")),
-                                      offset_ms=plans.plan_sec(attempt) * 1000)
+                                      offset_ms=plans.plan_sec(attempt) * 1000, speech=speech)
+    if speech:
+        text = (f"The learner thought aloud for {recording.mmss(recording.talk_ms(speech))}; "
+                "transcripts are machine-made and may include background speech.\n" + text)
+    if rec.get("speech_failed_ms"):
+        text = (f"About {recording.mmss(rec['speech_failed_ms'])} of speech was heard but not "
+                "transcribed.\n" + text)
     par = config.SOLVE_PAR_SEC.get(difficulty)
     taken = plans.solve_sec(attempt)
     if par and taken is not None:

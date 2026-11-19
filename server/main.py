@@ -207,6 +207,13 @@ class EditorLog(BaseModel):
     events: list[dict] = Field(default_factory=list, max_length=500)
 
 
+class EditorSpeech(BaseModel):
+    session_id: str
+    t: int                      # on the run's clock; negative while planning
+    dur: int = Field(ge=1, le=recording.SPEECH_MAX_CLIP_MS)
+    audio: str = Field(max_length=8_000_000)   # base64 WAV: 120 s at 16 kHz mono is ~5 MB
+
+
 class EditorJudge(BaseModel):
     session_id: str
     code: str = Field(max_length=recording.MAX_TEXT)
@@ -1660,7 +1667,7 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
         optimizing = {k: prior.get(k) for k in ("runtime_percentile", "memory_percentile")}
     available = bool(p.get("question_id") and starter)
     doc = store.get_recording(s["id"])
-    if available and not doc:
+    if available and not (doc or {}).get("events"):   # a clip of speech may have made the doc first
         doc = _append_recording(store, s, server_events=[{"t": 0, "k": "c", "code": starter}])
     return _editor_state(s, p, starter, available, doc, lc, optimizing)
 
@@ -1714,6 +1721,30 @@ def api_editor_log(body: EditorLog, uid: str = Depends(auth.require_user)):
     s = _editor_session(store, body.session_id)
     doc = _append_recording(store, s, body.events, body.seq)
     return {"ok": True, "seq": doc.get("seq", 0), "truncated": bool(doc.get("truncated"))}
+
+
+@app.post("/api/editor/speech")
+async def api_editor_speech(body: EditorSpeech, uid: str = Depends(auth.require_user)):
+    """One spoken clip from background voice capture (web/src/lib/listen.ts): transcribed
+    and kept as text on the run's recording, never the audio. Never returns the text."""
+    store = get_store(uid)
+    if not llm.enabled(store.get_settings()):
+        raise HTTPException(503, "Voice capture needs the coach.")
+    s = _editor_session(store, body.session_id)
+    if body.t < recording.SPEECH_MIN_T:
+        raise HTTPException(422, "Clip time out of range.")
+    text = await asyncio.to_thread(llm.transcribe, body.audio, "wav")
+    with _recording_lock(store.uid):
+        doc = store.get_recording(s["id"]) or _blank_recording(s)
+        if text:
+            doc["speech"], cut = recording.merge_speech(
+                doc.get("speech"), [{"t": body.t, "dur": body.dur, "text": text, "stt": model_areas.model_for("stt")}])
+            if cut:
+                doc["speech_truncated"] = True
+        else:
+            doc["speech_failed_ms"] = doc.get("speech_failed_ms", 0) + body.dur
+        store.save_recording(s["id"], doc)
+    return {"ok": bool(text)}
 
 
 def _runs_left(s, doc):
@@ -1937,10 +1968,11 @@ def api_attempt_timeline(attempt_id: str, uid: str = Depends(auth.require_user))
     events = recording.parse(rec.get("events")) if rec else []
     if not events:
         return {"timeline": None}
-    rounds = [recording.parse((store.get_recording(rid) or {}).get("events"))
-              for rid in attempt.get("optimize_recording_ids") or []]
-    base = recording.phases(events, plans.plan_sec(attempt) * 1000)
-    return {"timeline": {**recording.with_optimize(base, rounds),
+    rids = attempt.get("optimize_recording_ids") or []
+    round_docs = [store.get_recording(rid) or {} for rid in rids]
+    rounds = [recording.parse(d.get("events")) for d in round_docs]
+    base = recording.phases(events, plans.plan_sec(attempt) * 1000, rec.get("speech") or ())
+    return {"timeline": {**recording.with_optimize(base, rounds, [d.get("speech") or () for d in round_docs]),
                          "finished_on": attempt.get("finished_on"),
                          "truncated": bool(rec.get("truncated"))}}
 
