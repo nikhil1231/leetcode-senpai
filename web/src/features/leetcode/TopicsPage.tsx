@@ -30,7 +30,7 @@ export const CompactState = ({ state }: { state?: string }) => (
 function TopicModal({ topic, onClose }: { topic: Any; onClose: () => void }) {
   const start = useStartFlow();
   const router = useRouter();
-  const q = useQuery({ queryKey: ["api", "topic-problems", topic.category], queryFn: () => api(`/problems?category=${encodeURIComponent(topic.category)}&sort=difficulty`) });
+  const q = useQuery({ queryKey: ["api", "topic-problems", topic.category, !!topic.practice], queryFn: () => api(`/problems?category=${encodeURIComponent(topic.category)}&sort=${topic.practice ? "acceptance" : "difficulty"}`) });
   const rows: Any[] = q.data || [];
   const row = (r: Any, i: number) => {
     const done = r.attempt_count > 0;
