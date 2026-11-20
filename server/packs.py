@@ -118,7 +118,7 @@ SQL = {
         "percentage-of-users-attended-a-contest", "queries-quality-and-percentage",
         "monthly-transactions-i", "immediate-food-delivery-ii",
         "number-of-unique-subjects-taught-by-each-teacher",
-        "user-activity-for-the-past-30-days-i", "classes-more-than-5-students",
+        "user-activity-for-the-past-30-days-i", "classes-with-at-least-5-students",
         "find-followers-count", "biggest-single-number", "customers-who-bought-all-products",
         "primary-department-for-each-employee", "count-salary-categories",
         "group-sold-products-by-the-date", "list-the-products-ordered-in-a-period",
