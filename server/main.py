@@ -514,6 +514,8 @@ def _problem_sort_key(sort):
         return lambda p: (p.get("title", "").lower(), number_key(p))
     if sort == "difficulty":
         return lambda p: (difficulty_order.get(p.get("difficulty"), 99), number_key(p))
+    if sort == "acceptance":  # LeetCode's % solved, highest (easiest) first; unknown last
+        return lambda p: (p.get("ac_rate") is None, -(p.get("ac_rate") or 0), number_key(p))
     if sort == "due_date":
         return lambda p: (p.get("due_date") is None, p.get("due_date") or "", number_key(p))
     if sort == "last_attempt":
@@ -1288,7 +1290,7 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "plan_status": body.plan_status,
         "plan_time_sec": body.plan_time_sec,
         "surface": body.surface,
-        "lang": _editor_lang(prob, settings.get("editor_lang")) if body.surface == "editor" else None,
+        "lang": _editor_lang(prob, _remembered_langs(settings)) if body.surface == "editor" else None,
         "interview": body.surface == "editor" and (body.interview or body.kind == "mock"),
         # Fixed when the run starts: the lesson it opens with doesn't shift under it.
         "takeaway": takeaway,
@@ -1567,12 +1569,19 @@ def _problem_langs(p):
     return langs
 
 
+def _remembered_langs(settings):
+    """The languages the user last picked: one for programming problems, one for database problems."""
+    return (settings.get("editor_lang"), settings.get("editor_sql_lang"))
+
+
 def _editor_lang(p, wanted=None):
-    """The language to write a problem in here: `wanted` (a run's pick, or the user's last) when the problem has
-    a starter for it, else MySQL for a database problem and Python for the rest. Before the problem's snippets
-    are fetched, its SQL category or Database tag says which."""
-    if wanted in _problem_langs(p):
-        return wanted
+    """The language to write a problem in here: `wanted` (a run's pick, or the last ones the user picked, as a
+    tuple) when the problem has a starter for one, else MySQL for a database problem and Python for the rest.
+    Before the problem's snippets are fetched, its SQL category or Database tag says which."""
+    have = _problem_langs(p)
+    for lang in wanted if isinstance(wanted, (tuple, list)) else (wanted,):
+        if lang in have:
+            return lang
     if p.get("editor_lang"):
         return p["editor_lang"]
     sql = ((p.get("neetcode_category") or "").startswith("SQL ")
@@ -1726,15 +1735,14 @@ def _editor_lang_fields(p, wanted=None, starters=None):
 async def api_editor_lang(body: EditorLang, uid: str = Depends(auth.require_user),
                           lc=Depends(auth.leetcode_auth)):
     """Switch a run to another language. Later Runs and Submits are judged in it, and a new run opens in it
-    too (a database dialect aside: that only means something on a database problem)."""
+    too: a database dialect is remembered apart from the programming language, each for its own kind of problem."""
     store = get_store(uid)
     s = _editor_session(store, body.session_id)
     p = await _hydrate_editor(store, s["slug"], lc)
     if body.lang not in _problem_langs(p):
         raise HTTPException(422, "This problem has no starter code in that language.")
     store.update_session(s["id"], {"lang": body.lang})
-    if body.lang not in leetcode.SQL_LANGS:
-        store.update_settings({"editor_lang": body.lang})
+    store.update_settings({"editor_sql_lang" if body.lang in leetcode.SQL_LANGS else "editor_lang": body.lang})
     return {"ok": True, "lang": body.lang}
 
 
@@ -2897,7 +2905,7 @@ async def api_recall_context(slug: str, editor: bool = False,
     prefetch = None
     if editor:
         p = await _hydrate_editor(store, slug, lc)
-        langs = _editor_lang_fields(p, store.get_settings().get("editor_lang"))
+        langs = _editor_lang_fields(p, _remembered_langs(store.get_settings()))
         prefetch = {
             "available": bool(p.get("question_id") and p.get("starter_code")),
             "can_judge": leetcode.has_auth(lc),

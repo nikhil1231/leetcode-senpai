@@ -492,6 +492,16 @@ def test_problems_sort_modes(client, sort, expected):
     assert _problem_slugs(client, f"?sort={sort}") == expected
 
 
+def test_problems_sort_by_acceptance_puts_highest_first_and_unknown_last(client):
+    for slug, ac in [("hard-one", 30.5), ("easy-one", 71.2), ("unknown", None), ("mid-one", 50.0)]:
+        _add_problem(client.store, slug, slug, "Medium", "SQL Joins", 1)
+        client.store.upsert_problem({"slug": slug, "ac_rate": ac})
+
+    got = client.get("/api/problems?category=SQL%20Joins&sort=acceptance").json()
+
+    assert [p["slug"] for p in got] == ["easy-one", "mid-one", "hard-one", "unknown"]
+
+
 def test_today_drill_lifecycle_cross_flow(client, monkeypatch):
     for slug, title, diff, cat in [
         ("valid-parentheses", "Valid Parentheses", "Easy", "Stack"),

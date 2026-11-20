@@ -877,15 +877,18 @@ def test_a_language_the_problem_has_no_starter_for_is_refused(poly_client):
     assert poly_client.store.sessions[sid]["lang"] == "python3"
 
 
-def test_a_database_dialect_is_not_remembered_for_the_next_problem(sql_client, monkeypatch):
+def test_a_database_dialect_is_remembered_apart_from_the_programming_language(sql_client, monkeypatch):
     async def question(slug, auth=None):
         return {"question_id": "175", "starter_code": SQL_STARTER, "editor_lang": "mysql", "example_testcases": [SQL_CASE],
                 "snippets": {"mysql": SQL_STARTER, "postgresql": "-- PostgreSQL\n"}}
     monkeypatch.setattr(main.leetcode, "question", question)
     sid = sql_client.post("/api/session/start", json={"slug": "combine-two-tables", "surface": "editor"}
                           ).json()["session_id"]
+    sql_client.store.update_settings({"editor_lang": "cpp"})
     assert sql_client.post("/api/editor/lang", json={"session_id": sid, "lang": "postgresql"}).json()["ok"]
-    assert not sql_client.store.get_settings().get("editor_lang")
+    assert sql_client.store.get_settings()["editor_lang"] == "cpp"   # the other kind of problem keeps its own
+    nxt = sql_client.post("/api/session/start", json={"slug": "combine-two-tables", "surface": "editor"}).json()
+    assert nxt["editor"]["lang"] == "postgresql" and nxt["editor"]["code"] == "-- PostgreSQL\n"
 
 
 def test_the_language_switch_is_logged_for_the_timeline():
