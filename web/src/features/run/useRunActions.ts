@@ -23,7 +23,7 @@ export function pendingRun(ctx: Ctx, body: StartBody) {
   const editor = e && body.surface === "editor" ? {
     available: e.available, can_judge: e.can_judge, content_html: ctx.content_html, starter_code: e.starter_code, example_testcases: e.example_testcases,
     code: e.starter_code, seq: 0, last_input: null, planned_edge_cases: body.planned_edge_cases || [], interview: body.interview,
-    runs_left: body.interview ? e.interview_runs : null, edges_checked: [], optimizing: null, truncated: false,
+    runs_left: body.interview ? e.interview_runs : null, lang: e.lang, langs: e.langs, starters: e.starters, sql_schema: e.sql_schema, edges_checked: [], optimizing: null, truncated: false,
   } : null;
   return { active, editor };
 }

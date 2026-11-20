@@ -87,7 +87,8 @@ def test_the_plan_prefetches_what_a_new_run_opens_with(client):
                            "example_testcases": ["[2,7,11,15]\n9", "[3,2,4]\n6"],
                            "interview_runs": main.config.INTERVIEW_RUN_LIMIT,
                            "par_sec": main.config.SOLVE_PAR_SEC["Easy"],
-                           "lang": "python3", "sql_schema": None}
+                           "lang": "python3", "sql_schema": None, "starters": {"python3": STARTER},
+                           "langs": [{"slug": "python3", "name": "Python"}]}
     # Without asking for it, the recall modal pays for none of it.
     assert client.get("/api/problem/two-sum/recall-context").json()["editor"] is None
 
@@ -816,6 +817,86 @@ def test_a_python_problem_stays_python(client):
     state = client.get(f"/api/editor/state?session_id={sid}").json()
     assert state["lang"] == "python3" and state["sql_schema"] is None
     assert client.store.sessions[sid]["lang"] == "python3"
+
+
+# ---- other languages -------------------------------------------------------------
+
+CPP = "class Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) {\n        \n    }\n};\n"
+
+
+@pytest.fixture
+def poly_client(client, monkeypatch):
+    """Two Sum with a Python and a C++ snippet, as LeetCode serves it."""
+    async def question(slug, auth=None):
+        return {"question_id": "1", "starter_code": STARTER, "editor_lang": "python3",
+                "snippets": {"python3": STARTER, "cpp": CPP},
+                "example_testcases": ["[2,7,11,15]\n9"]}
+    monkeypatch.setattr(main.leetcode, "question", question)
+    seen = []
+
+    async def run_code(slug, qid, code, data, lc, lang="python3"):
+        seen.append(("run", lang))
+        return {"passed": True, "cases": [], "total": 1, "correct": 1}
+
+    async def submit_code(slug, qid, code, lc, lang="python3"):
+        seen.append(("submit", lang))
+        return {"accepted": False, "submission_id": 9, "finished_at": 1, "status": "Wrong Answer"}
+    monkeypatch.setattr(main.leetcode, "run_code", run_code)
+    monkeypatch.setattr(main.leetcode, "submit_code", submit_code)
+    client.judged = seen
+    return client
+
+
+def test_the_state_lists_every_language_with_its_starter(poly_client):
+    sid = _start(poly_client)
+    state = poly_client.get(f"/api/editor/state?session_id={sid}").json()
+    assert state["lang"] == "python3" and state["code"] == STARTER
+    assert state["langs"] == [{"slug": "python3", "name": "Python"}, {"slug": "cpp", "name": "C++"}]
+    assert state["starters"] == {"python3": STARTER, "cpp": CPP}
+
+
+def test_switching_language_judges_in_it_and_the_next_run_opens_in_it(poly_client):
+    sid = _start(poly_client)
+    poly_client.get(f"/api/editor/state?session_id={sid}")   # hydrates the snippets
+    r = poly_client.post("/api/editor/lang", json={"session_id": sid, "lang": "cpp"})
+    assert r.json() == {"ok": True, "lang": "cpp"}
+    body = {"session_id": sid, "code": CPP, "data_input": "", "t": 1000, "seq": None, "events": []}
+    poly_client.post("/api/editor/run", json=body)
+    poly_client.post("/api/editor/submit", json=body)
+    assert poly_client.judged == [("run", "cpp"), ("submit", "cpp")]
+    assert poly_client.get(f"/api/editor/state?session_id={sid}").json()["lang"] == "cpp"
+    nxt = poly_client.post("/api/session/start", json={"slug": "two-sum", "surface": "editor"}).json()
+    assert nxt["editor"]["lang"] == "cpp" and nxt["editor"]["code"] == CPP
+    assert poly_client.store.get_recording(nxt["session_id"])["lang"] == "cpp"
+
+
+def test_a_language_the_problem_has_no_starter_for_is_refused(poly_client):
+    sid = _start(poly_client)
+    r = poly_client.post("/api/editor/lang", json={"session_id": sid, "lang": "rust"})
+    assert r.status_code == 422
+    assert poly_client.store.sessions[sid]["lang"] == "python3"
+
+
+def test_a_database_dialect_is_not_remembered_for_the_next_problem(sql_client, monkeypatch):
+    async def question(slug, auth=None):
+        return {"question_id": "175", "starter_code": SQL_STARTER, "editor_lang": "mysql", "example_testcases": [SQL_CASE],
+                "snippets": {"mysql": SQL_STARTER, "postgresql": "-- PostgreSQL\n"}}
+    monkeypatch.setattr(main.leetcode, "question", question)
+    sid = sql_client.post("/api/session/start", json={"slug": "combine-two-tables", "surface": "editor"}
+                          ).json()["session_id"]
+    assert sql_client.post("/api/editor/lang", json={"session_id": sid, "lang": "postgresql"}).json()["ok"]
+    assert not sql_client.store.get_settings().get("editor_lang")
+
+
+def test_the_language_switch_is_logged_for_the_timeline():
+    ev = recording.clean_client_event({"t": 5, "k": "lang", "lang": "cpp", "junk": 1})
+    assert ev == {"t": 5, "k": "lang", "lang": "cpp"}
+    assert recording.clean_client_event({"t": 5, "k": "lang"}) is None
+
+
+def test_the_feeds_language_names_map_to_slugs():
+    assert [leetcode.lang_slug(n) for n in ("C++", "Python3", "Go", "python3", "C#", "Racket", None)] == [
+        "cpp", "python3", "golang", "python3", "csharp", None, None]
 
 
 # ---- background voice capture ------------------------------------------------------

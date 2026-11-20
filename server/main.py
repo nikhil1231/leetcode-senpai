@@ -214,6 +214,11 @@ class EditorSpeech(BaseModel):
     audio: str = Field(max_length=8_000_000)   # base64 WAV: 120 s at 16 kHz mono is ~5 MB
 
 
+class EditorLang(BaseModel):
+    session_id: str
+    lang: str = Field(max_length=20)
+
+
 class EditorJudge(BaseModel):
     session_id: str
     code: str = Field(max_length=recording.MAX_TEXT)
@@ -1283,14 +1288,14 @@ def api_session_start(body: StartSession, bg: BackgroundTasks,
         "plan_status": body.plan_status,
         "plan_time_sec": body.plan_time_sec,
         "surface": body.surface,
-        "lang": _editor_lang(prob) if body.surface == "editor" else None,
+        "lang": _editor_lang(prob, settings.get("editor_lang")) if body.surface == "editor" else None,
         "interview": body.surface == "editor" and (body.interview or body.kind == "mock"),
         # Fixed when the run starts: the lesson it opens with doesn't shift under it.
         "takeaway": takeaway,
     }
     # An editor run opens on the starter code. Recorded here, in the same write
     # as the session, so the editor needn't ask /editor/state for it afterwards.
-    starter = prob.get("starter_code")
+    starter = _starter(prob, doc.get("lang"))
     first = None
     if (doc["surface"] == "editor" and doc["kind"] != "optimize"
             and prob.get("question_id") and starter):
@@ -1382,7 +1387,7 @@ async def api_session_hint(body: Optional[HintRequest] = None,
         code = (body.code if body and body.code is not None else None) or doc.get("code") or ""
         if optimizing and not code:
             code = (store.get_attempt(s.get("optimizes")) or {}).get("code") or ""
-        if optimizing or message or not coach.untouched(code, prob.get("starter_code")):
+        if optimizing or message or not coach.untouched(code, _starter(prob, s.get("lang"))):
             events = recording.parse(doc["events"]) if doc.get("events") else []
             hint = await coach.live_hint(
                 prob, s, code, chat, recording.last_judged(events), clock // 60, settings=settings)
@@ -1448,7 +1453,7 @@ async def api_session_give_up(body: Optional[GiveUpRequest] = None,
     if src != "cached" and llm.enabled(settings):
         doc = store.get_recording(s["id"]) or {}
         code = (body.code if body and body.code is not None else None) or doc.get("code")
-        if coach.untouched(code, prob.get("starter_code")):
+        if coach.untouched(code, _starter(prob, s.get("lang"))):
             code = None
         events = recording.parse(doc["events"]) if doc.get("events") else []
         step = await coach.give_up_step(prob, s, code, steps, s.get("give_up_track"),
@@ -1486,7 +1491,7 @@ async def api_session_end(body: Optional[HintRequest] = None,
     if not _assisted(s):
         raise HTTPException(400, "nothing to end on this run")
     code = body.code if body and body.code is not None else (store.get_recording(s["id"]) or {}).get("code")
-    if coach.untouched(code, (store.get_problem(s["slug"]) or {}).get("starter_code")):
+    if coach.untouched(code, _starter(store.get_problem(s["slug"]) or {}, s.get("lang"))):
         code = None
     _log_server_event(store, s, {"k": "end"})
     async with _poll_lock(uid):
@@ -1553,14 +1558,31 @@ def _run_ms(s):
     return max(0, int(time.time() * 1000) - s["started_at"] * 1000)
 
 
-def _editor_lang(p):
-    """The language a problem is written in here: MySQL for a database problem, else Python.
-    Before the problem's snippets are fetched, its SQL category or Database tag says which."""
+def _problem_langs(p):
+    """{language slug: starter code} the editor can write a problem in. A problem imported before every
+    snippet was kept has just its default language."""
+    langs = dict(p.get("snippets") or {})
+    if p.get("starter_code"):   # from before the language was kept, it was Python
+        langs.setdefault(p.get("editor_lang") or leetcode.EDITOR_LANG, p["starter_code"])
+    return langs
+
+
+def _editor_lang(p, wanted=None):
+    """The language to write a problem in here: `wanted` (a run's pick, or the user's last) when the problem has
+    a starter for it, else MySQL for a database problem and Python for the rest. Before the problem's snippets
+    are fetched, its SQL category or Database tag says which."""
+    if wanted in _problem_langs(p):
+        return wanted
     if p.get("editor_lang"):
         return p["editor_lang"]
     sql = ((p.get("neetcode_category") or "").startswith("SQL ")
            or "Database" in (p.get("leetcode_tags") or []))
     return leetcode.SQL_LANG if sql else leetcode.EDITOR_LANG
+
+
+def _starter(p, lang=None):
+    """A problem's starter code in `lang` (its default language when unnamed or unknown)."""
+    return _problem_langs(p).get(lang) or p.get("starter_code")
 
 
 def _blank_recording(s):
@@ -1629,7 +1651,7 @@ async def _hydrate_editor(store, slug, lc=None):
     withholds a premium problem's starter code from anonymous requests."""
     p = store.get_problem(slug) or {}
     if (p.get("question_id") and p.get("starter_code") and p.get("content_html")
-            and p.get("example_testcases")):
+            and p.get("example_testcases") and p.get("snippets") is not None):
         return p
     try:
         meta = await leetcode.question(slug, lc)
@@ -1641,6 +1663,7 @@ async def _hydrate_editor(store, slug, lc=None):
                                    "editor_lang", "sql_schema") if meta.get(k)}
     if meta.get("content_html") and not p.get("content_html"):
         fields["content_html"] = meta["content_html"]
+    fields["snippets"] = meta.get("snippets") or {}   # even none: an empty one says it has been looked for
     if fields:
         store.upsert_problem({"slug": slug, **fields})
         p = {**p, **fields}
@@ -1655,24 +1678,27 @@ async def api_editor_state(session_id: str, uid: str = Depends(auth.require_user
     store = get_store(uid)
     s = _editor_session(store, session_id)
     p = await _hydrate_editor(store, s["slug"], lc)
-    if s.get("lang") and s["lang"] != _editor_lang(p):   # started before the snippets said otherwise
-        store.update_session(s["id"], {"lang": _editor_lang(p)})
-        s = {**s, "lang": _editor_lang(p)}
-    starter = p.get("starter_code")
+    lang = _editor_lang(p, s.get("lang"))
+    if s.get("lang") and s["lang"] != lang:   # started before the snippets said otherwise
+        store.update_session(s["id"], {"lang": lang})
+        s = {**s, "lang": lang}
+    starters = _problem_langs(p)
     optimizing = None
     if s.get("kind") == "optimize":
-        # An optimize run starts from — and resets to — the code that was accepted.
+        # An optimize run starts from — and resets to — the code that was accepted, in the language it was written in.
         prior = store.get_attempt(s.get("optimizes")) or {}
-        starter = prior.get("code") or starter
+        if prior.get("code") and (not prior.get("lang") or leetcode.lang_slug(prior["lang"]) == lang):
+            starters[lang] = prior["code"]
         optimizing = {k: prior.get(k) for k in ("runtime_percentile", "memory_percentile")}
+    starter = starters.get(lang) or p.get("starter_code")
     available = bool(p.get("question_id") and starter)
     doc = store.get_recording(s["id"])
     if available and not (doc or {}).get("events"):   # a clip of speech may have made the doc first
         doc = _append_recording(store, s, server_events=[{"t": 0, "k": "c", "code": starter}])
-    return _editor_state(s, p, starter, available, doc, lc, optimizing)
+    return _editor_state(s, p, starter, available, doc, lc, optimizing, starters)
 
 
-def _editor_state(s, p, starter, available, doc, lc, optimizing=None):
+def _editor_state(s, p, starter, available, doc, lc, optimizing=None, starters=None):
     """What the editor opens with, from data the caller already holds."""
     code = starter
     if doc:
@@ -1685,12 +1711,31 @@ def _editor_state(s, p, starter, available, doc, lc, optimizing=None):
             "planned_edge_cases": plans.planned_edge_cases(s)[:3],
             "interview": bool(s.get("interview")), "runs_left": _runs_left(s, doc),
             "edges_checked": (doc or {}).get("edges_checked") or [],
-            "optimizing": optimizing, **_editor_lang_fields(p),
+            "optimizing": optimizing, **_editor_lang_fields(p, s.get("lang"), starters),
             "truncated": bool((doc or {}).get("truncated"))}
 
 
-def _editor_lang_fields(p):
-    return {"lang": _editor_lang(p), "sql_schema": p.get("sql_schema")}
+def _editor_lang_fields(p, wanted=None, starters=None):
+    """The language the editor opens in, the ones it can switch to, and each one's starter code."""
+    starters = starters if starters is not None else _problem_langs(p)
+    return {"lang": _editor_lang(p, wanted), "sql_schema": p.get("sql_schema"), "starters": starters,
+            "langs": [{"slug": k, "name": name} for k, name in leetcode.LANG_NAMES.items() if k in starters]}
+
+
+@app.post("/api/editor/lang")
+async def api_editor_lang(body: EditorLang, uid: str = Depends(auth.require_user),
+                          lc=Depends(auth.leetcode_auth)):
+    """Switch a run to another language. Later Runs and Submits are judged in it, and a new run opens in it
+    too (a database dialect aside: that only means something on a database problem)."""
+    store = get_store(uid)
+    s = _editor_session(store, body.session_id)
+    p = await _hydrate_editor(store, s["slug"], lc)
+    if body.lang not in _problem_langs(p):
+        raise HTTPException(422, "This problem has no starter code in that language.")
+    store.update_session(s["id"], {"lang": body.lang})
+    if body.lang not in leetcode.SQL_LANGS:
+        store.update_settings({"editor_lang": body.lang})
+    return {"ok": True, "lang": body.lang}
 
 
 @app.post("/api/editor/optimize")
@@ -1708,7 +1753,9 @@ def api_editor_optimize(body: EditorOptimize, uid: str = Depends(auth.require_us
     store.cancel_active_sessions()
     doc = {"slug": a["slug"], "started_at": int(time.time()), "status": "active",
            "kind": "optimize", "optimizes": a["id"], "attempt_id": None, "hint_level": 0,
-           "paused_at": None, "paused_sec": 0, "surface": "editor", "lang": _editor_lang(prob), "interview": False,
+           "paused_at": None, "paused_sec": 0, "surface": "editor", "interview": False,
+           # The language it was accepted in, so the code and the judge agree.
+           "lang": _editor_lang(prob, leetcode.lang_slug(a.get("lang")) or a.get("lang")),
            # The solve's clock runs on from where it stopped, not from zero.
            "elapsed_base_sec": a.get("time_taken_sec"), "plan_time_sec": plans.plan_sec(a)}
     sid = store.add_session(doc)
@@ -1787,7 +1834,7 @@ async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user
     if not leetcode.clean_input(data_input):
         return {"ok": False, "error": "The test input is empty. Add a case in Tests first."}
     result, err = await _judge_or_error(leetcode.run_code(
-        s["slug"], p["question_id"], body.code, data_input, lc, _editor_lang(p)))
+        s["slug"], p["question_id"], body.code, data_input, lc, _editor_lang(p, s.get("lang"))))
     if err:
         return {"ok": False, "error": err}
     doc = _append_recording(store, s, server_events=[{
@@ -1806,7 +1853,7 @@ async def api_editor_submit(body: EditorJudge, uid: str = Depends(auth.require_u
     store = get_store(uid)
     s, p = await _editor_judging(store, body, lc)
     result, err = await _judge_or_error(leetcode.submit_code(
-        s["slug"], p["question_id"], body.code, lc, _editor_lang(p)))
+        s["slug"], p["question_id"], body.code, lc, _editor_lang(p, s.get("lang"))))
     if err:
         return {"ok": False, "error": err}
     doc = _append_recording(store, s, server_events=[{
@@ -2850,12 +2897,13 @@ async def api_recall_context(slug: str, editor: bool = False,
     prefetch = None
     if editor:
         p = await _hydrate_editor(store, slug, lc)
+        langs = _editor_lang_fields(p, store.get_settings().get("editor_lang"))
         prefetch = {
             "available": bool(p.get("question_id") and p.get("starter_code")),
             "can_judge": leetcode.has_auth(lc),
-            "starter_code": p.get("starter_code"),
+            "starter_code": langs["starters"].get(langs["lang"]) or p.get("starter_code"),
             "example_testcases": p.get("example_testcases") or [],
-            "interview_runs": config.INTERVIEW_RUN_LIMIT, **_editor_lang_fields(p),
+            "interview_runs": config.INTERVIEW_RUN_LIMIT, **langs,
             "par_sec": config.SOLVE_PAR_SEC.get(p.get("difficulty")),
         }
     return {

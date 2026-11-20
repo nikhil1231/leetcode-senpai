@@ -2911,6 +2911,8 @@ body.has-editor-run .sidebar, body.has-editor-run .topbar { display: none; }
   padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer;
 }
 .console-tool:hover { color: var(--text); }
+.console-lang { padding: 2px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); color: var(--text-2); }
+.console-lang:disabled { opacity: .5; cursor: default; }
 .console-keys kbd { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); }
 .console-panel { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow: auto; padding: 12px 16px 14px; }
 .console-panel.hidden { display: none; }

@@ -19,11 +19,30 @@ BASE_URL = "https://leetcode.com"
 GRAPHQL_URL = f"{BASE_URL}/graphql"
 TIMEOUT = 15.0
 
-# The languages the in-app editor writes: Python, and MySQL for the database problems
-# (which have no Python snippet). A problem's language is the first of these it has.
+# The languages the in-app editor writes, by LeetCode's slug, in the order its picker lists them.
+# A problem offers the ones it has a snippet for; its default is the first of Python, then MySQL
+# (the database problems have no Python snippet), and the user's last pick wins where it exists.
 EDITOR_LANG = "python3"
 SQL_LANG = "mysql"
 EDITOR_LANGS = (EDITOR_LANG, SQL_LANG)
+SQL_LANGS = ("mysql", "postgresql", "mssql", "oraclesql")
+LANG_NAMES = {
+    "python3": "Python", "cpp": "C++", "java": "Java", "javascript": "JavaScript",
+    "typescript": "TypeScript", "golang": "Go", "rust": "Rust", "c": "C", "csharp": "C#",
+    "kotlin": "Kotlin", "swift": "Swift", "ruby": "Ruby", "php": "PHP", "scala": "Scala",
+    "dart": "Dart", "mysql": "MySQL", "postgresql": "PostgreSQL", "mssql": "MS SQL Server",
+    "oraclesql": "Oracle",
+}
+# What a submission's language is called on LeetCode's pages, to its slug.
+_LANG_SLUGS = {name.lower(): slug for slug, name in LANG_NAMES.items()}
+_LANG_SLUGS.update({"python": "python3", "go": "golang", "ms sql server": "mssql"})
+
+
+def lang_slug(name):
+    """A language as the feed names it ("C++", "Python3", "Go") or already a slug, as the slug; else None."""
+    key = str(name or "").strip().lower()
+    return key if key in LANG_NAMES else _LANG_SLUGS.get(key)
+
 # Judging is queued: poll its check endpoint until it lands, within reason.
 JUDGE_POLL_SEC = 0.8
 JUDGE_WAIT_SEC = 25.0
@@ -215,11 +234,13 @@ async def question(slug, auth=None):
 
 
 def _editor_fields(q):
-    """The editor's language and starter code, and for a database problem its tables'
-    column types ({table: {column: "INT"}}) for completion and typed test cells."""
+    """The editor's default language and its starter code, every language's starter ({slug: code}),
+    and for a database problem its tables' column types ({table: {column: "INT"}}) for completion
+    and typed test cells."""
     snippets = {s.get("langSlug"): s.get("code") for s in q.get("codeSnippets") or []}
     lang = next((lang for lang in EDITOR_LANGS if snippets.get(lang)), None)
-    out = {"starter_code": snippets.get(lang) if lang else None, "editor_lang": lang}
+    out = {"starter_code": snippets.get(lang) if lang else None, "editor_lang": lang,
+           "snippets": {k: snippets[k] for k in LANG_NAMES if snippets.get(k)}}
     if lang == SQL_LANG:
         try:
             schema = json.loads(q.get("metaData") or "{}").get("database_schema")

@@ -32,7 +32,7 @@ VERSION = 1
 
 CODE_KINDS = ("c", "run", "sub")
 # What the browser may append; judging events are written by the server alone.
-CLIENT_KINDS = ("c", "d", "pause", "resume", "blur", "focus", "edge", "reset")
+CLIENT_KINDS = ("c", "d", "pause", "resume", "blur", "focus", "edge", "reset", "lang")
 # A pause in activity at least this long counts as a stall worth naming.
 IDLE_GAP_MS = 60_000
 # Keep a recording well inside Firestore's 1 MiB document limit. Past the first
@@ -113,6 +113,9 @@ def clean_client_event(ev):
         if not isinstance(case, str) or not case.strip():
             return None
         return {"t": t, "k": k, "case": case.strip()[:80], "on": bool(ev.get("on"))}
+    if k == "lang":
+        lang = ev.get("lang")
+        return {"t": t, "k": k, "lang": lang[:20]} if isinstance(lang, str) and lang else None
     return {"t": t, "k": k}
 
 

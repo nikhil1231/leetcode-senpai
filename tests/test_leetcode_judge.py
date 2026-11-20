@@ -141,13 +141,13 @@ async def test_a_database_problem_is_judged_in_mysql(lc):
 def test_editor_fields_pick_python_then_mysql_and_keep_the_schema():
     py = leetcode._editor_fields({"codeSnippets": [{"langSlug": "java", "code": "j"},
                                                    {"langSlug": "python3", "code": "p"}]})
-    assert py == {"starter_code": "p", "editor_lang": "python3"}
+    assert py == {"starter_code": "p", "editor_lang": "python3", "snippets": {"python3": "p", "java": "j"}}
     meta = json.dumps({"database": True, "database_schema": {"Person": {"personId": "INT"}}})
     sql = leetcode._editor_fields({"metaData": meta, "codeSnippets": [
         {"langSlug": "mysql", "code": "# MySQL\n"}, {"langSlug": "pythondata", "code": "import pandas"}]})
-    assert sql == {"starter_code": "# MySQL\n", "editor_lang": "mysql",
+    assert sql == {"starter_code": "# MySQL\n", "editor_lang": "mysql", "snippets": {"mysql": "# MySQL\n"},
                    "sql_schema": {"Person": {"personId": "INT"}}}
     assert leetcode._editor_fields({"metaData": "not json", "codeSnippets": [
         {"langSlug": "mysql", "code": "q"}]})["sql_schema"] is None
     assert leetcode._editor_fields({"codeSnippets": [{"langSlug": "bash", "code": "b"}]}) == {
-        "starter_code": None, "editor_lang": None}
+        "starter_code": None, "editor_lang": None, "snippets": {}}

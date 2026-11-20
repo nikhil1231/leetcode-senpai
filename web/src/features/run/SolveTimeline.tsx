@@ -80,12 +80,11 @@ export function CodeView({ code, lang }: { code: string; lang?: string }) {
   useEffect(() => {
     if (!open || !host.current) return;
     let view: { destroy(): void } | null = null, gone = false;
-    import("@/features/editor/codemirror").then(({ loadCodeMirror }) => loadCodeMirror()).then((CM) => {
+    import("@/features/editor/codemirror").then(async ({ loadCodeMirror, languageFor, langSlug }) => [await loadCodeMirror(), await languageFor(langSlug(lang) || "python3")] as const).then(([CM, langExt]) => {
       if (gone || !host.current) return;
-      const py = !lang || lang.startsWith("python");
       view = new CM.EditorView({ parent: host.current, state: CM.EditorState.create({ doc: code, extensions: [
         CM.lineNumbers(), CM.EditorState.readOnly.of(true), CM.EditorView.editable.of(false), CM.EditorView.lineWrapping,
-        CM.syntaxHighlighting(CM.oneDarkHighlightStyle), ...(py ? [CM.python()] : []),
+        CM.syntaxHighlighting(CM.oneDarkHighlightStyle), langExt,
       ] }) });
     }).catch(() => { /* the <pre> below stays */ });
     return () => { gone = true; view?.destroy(); };

@@ -5,7 +5,7 @@ import { useLayout, useEditorUi, STATEMENT_PCT, CONSOLE_PX } from "./editor-stor
 import { errorLine } from "./diff";
 import { setSpeechTarget, settleVoice } from "@/lib/voice";
 import { EditorRun, FLUSH_MS, TICK_MS } from "./session";
-import { findLine, historyKeys, lineMarks, loadCodeMirror, sqlLanguage, type CM } from "./codemirror";
+import { findLine, historyKeys, isSql, languageFor, lineMarks, loadCodeMirror, type CM } from "./codemirror";
 import { SqlBlock, SqlTests } from "./SqlTables";
 import { completionSchema, parseCases } from "./sqlio";
 import { sanitizeProblemHtml } from "@/components/ProblemStatement";
@@ -156,6 +156,7 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
   const patch = useLayout((s) => s.patch);
   const setEd = useEditorUi((s) => s.set);
   const canJudge = useEditorUi((s) => s.canJudge);
+  const judging = useEditorUi((s) => s.judging);
   const [state, setState] = useState<EditorPayload | null>(prefetched);
   const [failure, setFailure] = useState<string | null>(null);
   const [tab, setTab] = useState<"tests" | "result">("tests");
@@ -165,11 +166,13 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
   const [notice, setNotice] = useState("");
   const host = useRef<HTMLDivElement>(null);
   const run = useRef<EditorRun | null>(null);
-  const cm = useRef<{ CM: CM; view: Any; marks: Any; errorMark: Any; readOnly: Any } | null>(null);
-  const live = useRef({ judging: false, confirming: false, runsLeft: null as number | null, edges: [] as string[], readOnlyNow: false, starter: "" });
+  const cm = useRef<{ CM: CM; view: Any; marks: Any; errorMark: Any; readOnly: Any; make: (langExt: Any, sql: boolean) => Any[] } | null>(null);
+  const live = useRef({ judging: false, confirming: false, runsLeft: null as number | null, edges: [] as string[], readOnlyNow: false, starters: {} as Record<string, string>, lang: "", schema: {} as Record<string, string[]> });
+  const [langPick, setLangPick] = useState<string | null>(null);
   const pane = useRef<HTMLDivElement>(null);
   const sessionId = active.session_id as string | null;
-  const sql = state?.lang === "mysql";
+  const lang: string | undefined = langPick ?? state?.lang;
+  const sql = isSql(lang);
 
   // The run object lives for the life of the pane (one pane per run; a new run remounts it).
   if (!run.current) run.current = new EditorRun(sessionId, active.slug, active.started_at);
@@ -250,7 +253,8 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
     if (!state || !state.available || !host.current || cm.current) return;
     let destroyed = false;
     const sqlCases = () => parseCases((state.example_testcases || []).join("\n")) || [];
-    Promise.all([loadCodeMirror(), sql ? sqlLanguage(completionSchema(state.sql_schema, sqlCases())) : null]).then(([CM, sqlLang]) => {
+    const schema = isSql(state.lang) ? completionSchema(state.sql_schema, sqlCases()) : {};
+    Promise.all([loadCodeMirror(), languageFor(state.lang || "python3", schema)]).then(([CM, langExt]) => {
       if (destroyed || !host.current) return;
       if (state.now_ms != null) r.offsetMs = state.now_ms - (Date.now() - r.startedAtMs);
       setEd({ canJudge: !!state.can_judge, runsLeft: state.runs_left ?? null });
@@ -269,29 +273,27 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
       // A blank box opens with the examples, the same cases a blank Run uses.
       if (!inp.trim()) inp = (state.example_testcases || []).join("\n");
       r.input = inp; r.checked = chk; setInput(inp); setChecked(chk);
-      live.current = { judging: false, confirming: false, runsLeft: state.runs_left ?? null, edges: state.planned_edge_cases || [], readOnlyNow: false, starter: state.starter_code };
+      live.current = { judging: false, confirming: false, runsLeft: state.runs_left ?? null, edges: state.planned_edge_cases || [], readOnlyNow: false,
+        starters: { ...(state.starters || {}), [state.lang || "python3"]: state.starter_code }, lang: state.lang || "python3", schema };
+      if (saved && saved.drafts) r.drafts = saved.drafts;
       const marks = lineMarks(CM), errorMark = lineMarks(CM), readOnly = new CM.Compartment();
-      const view = new CM.EditorView({
-        parent: host.current,
-        state: CM.EditorState.create({
-          doc,
-          extensions: [
-            CM.lineNumbers(), CM.highlightActiveLineGutter(), CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.indentOnInput(),
-            CM.highlightActiveLine(), CM.indentUnit.of("    "), sqlLang ?? CM.python(),
-            // Interview mode is a plain buffer: what a shared doc or whiteboard gives you. SQL completes the problem's
-            // tables and columns outside it.
-            ...(state.interview ? [] : [CM.bracketMatching(), CM.closeBrackets(), CM.syntaxHighlighting(CM.oneDarkHighlightStyle),
-              ...(sqlLang ? [CM.autocompletion({ activateOnTyping: true })] : [])]),
-            CM.keymap.of([
-              { key: "Mod-'", run: () => { judgeRef.current("run"); return true; } },
-              { key: "Mod-Enter", run: () => { judgeRef.current("submit"); return true; } },
-              ...(state.interview ? [] : [...CM.closeBracketsKeymap, ...(sqlLang ? CM.completionKeymap : [])]), ...CM.defaultKeymap, ...historyKeys(CM), CM.indentWithTab,
-            ]),
-            readOnly.of(CM.EditorState.readOnly.of(false)), marks.field, errorMark.field, CM.EditorView.theme({}, { dark: true }),
-          ],
-        }),
-      });
-      cm.current = { CM, view, marks, errorMark, readOnly };
+      // Everything but the document, so a language switch can start a fresh state (and so a fresh undo history).
+      const make = (ext: Any, isSqlLang: boolean) => [
+        CM.lineNumbers(), CM.highlightActiveLineGutter(), CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.indentOnInput(),
+        CM.highlightActiveLine(), CM.indentUnit.of("    "), ext,
+        // Interview mode is a plain buffer: what a shared doc or whiteboard gives you. SQL completes the problem's
+        // tables and columns outside it.
+        ...(state.interview ? [] : [CM.bracketMatching(), CM.closeBrackets(), CM.syntaxHighlighting(CM.oneDarkHighlightStyle),
+          ...(isSqlLang ? [CM.autocompletion({ activateOnTyping: true })] : [])]),
+        CM.keymap.of([
+          { key: "Mod-'", run: () => { judgeRef.current("run"); return true; } },
+          { key: "Mod-Enter", run: () => { judgeRef.current("submit"); return true; } },
+          ...(state.interview ? [] : [...CM.closeBracketsKeymap, ...(isSqlLang ? CM.completionKeymap : [])]), ...CM.defaultKeymap, ...historyKeys(CM), CM.indentWithTab,
+        ]),
+        readOnly.of(CM.EditorState.readOnly.of(false)), marks.field, errorMark.field, CM.EditorView.theme({}, { dark: true }),
+      ];
+      const view = new CM.EditorView({ parent: host.current, state: CM.EditorState.create({ doc, extensions: make(langExt, isSql(state.lang)) }) });
+      cm.current = { CM, view, marks, errorMark, readOnly, make };
       r.getCode = () => view.state.doc.toString();
       if (state.truncated) markTruncated();
       timers.push(setInterval(() => r.tick(), TICK_MS), setInterval(() => r.flush(markTruncated), FLUSH_MS));
@@ -348,12 +350,28 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
 
   const resetToStarter = () => {
     const c = cm.current, L = live.current;
-    if (!c || L.readOnlyNow || !L.starter) return;
+    const starter = L.starters[L.lang];
+    if (!c || L.readOnlyNow || !starter) return;
     r.tick();
-    if (r.lastLogged === L.starter) return;
-    c.view.dispatch({ changes: { from: 0, to: c.view.state.doc.length, insert: L.starter } });
-    r.note("reset"); r.queue.push({ t: r.nowMs(), k: "c", code: L.starter }); r.lastLogged = L.starter; r.persist();
+    if (r.lastLogged === starter) return;
+    c.view.dispatch({ changes: { from: 0, to: c.view.state.doc.length, insert: starter } });
+    r.note("reset"); r.queue.push({ t: r.nowMs(), k: "c", code: starter }); r.lastLogged = starter; r.persist();
     toast("Back to the starter code — Ctrl/⌘ + Z undoes it.");
+  };
+  // Another language: the server judges in it from now on, and the buffer shows what was last written in it (the
+  // starter the first time). The language the run was in keeps its code for the way back.
+  const switchLang = async (next: string) => {
+    const c = cm.current, L = live.current;
+    if (!c || next === L.lang || L.readOnlyNow || L.judging) return;
+    try { await r.send(() => api("/editor/lang", "POST", { session_id: r.sessionId, lang: next })); }
+    catch (e) { toast((e as Error).message || "Couldn't switch the language."); return; }
+    r.tick();
+    r.drafts[L.lang] = r.currentCode();
+    const code = r.drafts[next] ?? L.starters[next] ?? "";
+    const langExt = await languageFor(next, L.schema);
+    c.view.setState(c.CM.EditorState.create({ doc: code, extensions: c.make(langExt, isSql(next)) }));
+    L.lang = next; setLangPick(next);
+    r.note("lang", { lang: next }); r.queue.push({ t: r.nowMs(), k: "c", code }); r.lastLogged = code; showErrorLine(null); r.persist();
   };
   const addCase = (inp: string) => {
     showConsole("tests");
@@ -384,6 +402,7 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
   if (!state) return <p className="small">Opening the editor…</p>;
   if (!state.available) return <p className="small">This problem can&apos;t be edited here yet — <a className="editor-lc-link" href={active.url} target="_blank" rel="noopener">solve it on LeetCode ↗</a></p>;
   const edges: string[] = state.planned_edge_cases || [];
+  const langs: { slug: string; name: string }[] = state.langs || [];
   const consoleHeight = () => (document.getElementById("editor-console")?.getBoundingClientRect().height ?? 0);
   const setH = (h: number | null) => {
     const work = pane.current?.querySelector(".editor-work")?.getBoundingClientRect();
@@ -418,6 +437,10 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
             </div>
             <div className="console-tools">
               {state.interview && <span className="editor-mode" title="No highlighting or auto-closing brackets, and a couple of Runs: trace it by hand">Interview mode</span>}
+              {langs.length > 1 && (
+                <select id="editor-lang" className="console-tool console-lang" aria-label="Language" title="Language: Run and Submit are judged in it" value={lang} disabled={!!active.is_paused || judging}
+                  onChange={(e) => { void switchLang(e.target.value); }}>
+                  {langs.map((l) => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select>)}
               <button id="editor-copy" className="console-tool" type="button" onClick={async () => { try { await navigator.clipboard.writeText(r.currentCode()); toast("Code copied"); } catch { toast("Couldn't copy — select the code instead."); } }}>Copy</button>
               <button id="editor-reset" className="console-tool" type="button" title={`Put the starter code back (${MOD}Z undoes it)`} onClick={resetToStarter}>Reset</button>
               <span className="console-keys" title={`Run (${MOD}') · Submit (${MOD}Enter)`}><kbd>{MOD}&apos;</kbd> run</span>

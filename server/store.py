@@ -371,7 +371,7 @@ class FirestoreStore:
     # is needed one slug at a time (the recall and sprint modals) — never across
     # the whole catalog. Keeping it out of the catalog read keeps every hot
     # endpoint small; get_problem still returns the complete document.
-    CATALOG_OMIT = ("content_html", "starter_code", "example_testcases", "sql_schema")
+    CATALOG_OMIT = ("content_html", "starter_code", "snippets", "example_testcases", "sql_schema")
 
     def list_problems(self):
         # Global catalog; cache key is not per-user.

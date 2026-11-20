@@ -13,12 +13,44 @@ export async function loadCodeMirror() {
   };
 }
 
-// MySQL for the database problems, with the problem's tables and columns to complete. Loaded only for those.
-export async function sqlLanguage(schema: Record<string, string[]>) {
-  const { sql, MySQL, SQLDialect } = await import("@codemirror/lang-sql");
+// The SQL dialects a database problem can be judged in (LeetCode's slugs).
+const SQL_DIALECTS = ["mysql", "postgresql", "mssql", "oraclesql"];
+export const isSql = (lang?: string | null) => SQL_DIALECTS.includes(lang || "");
+
+// A language as the feed names it ("C++", "Python3", "Go") or already a slug, as the slug; "" when unknown.
+const FEED_NAMES: Record<string, string> = { "c++": "cpp", "c#": "csharp", go: "golang", python: "python3", "ms sql server": "mssql", oracle: "oraclesql" };
+export function langSlug(name?: string | null) { const k = String(name || "").trim().toLowerCase(); return FEED_NAMES[k] || k; }
+
+// A database problem's dialect, with the problem's tables and columns to complete. Loaded only for those.
+export async function sqlLanguage(schema: Record<string, string[]>, lang = "mysql") {
+  const { sql, MySQL, PostgreSQL, MSSQL, PLSQL, SQLDialect } = await import("@codemirror/lang-sql");
+  const base = { postgresql: PostgreSQL, mssql: MSSQL, oraclesql: PLSQL }[lang] ?? MySQL;
   // Case-insensitive names, so completing `Address` or `firstName` doesn't wrap it in backticks.
-  const dialect = SQLDialect.define({ ...MySQL.spec, caseInsensitiveIdentifiers: true });
+  const dialect = SQLDialect.define({ ...base.spec, caseInsensitiveIdentifiers: true });
   return sql({ dialect, schema, upperCaseKeywords: true });
+}
+
+// Highlighting and indentation for a language, loaded the first time it is used. Python is the default for anything
+// unlisted, and the languages CodeMirror has no package of its own for use its older stream parsers.
+export async function languageFor(lang: string, schema: Record<string, string[]> = {}) {
+  if (isSql(lang)) return sqlLanguage(schema, lang);
+  const stream = async (mode: unknown) => (await import("@codemirror/language")).StreamLanguage.define(mode as never);
+  switch (lang) {
+    case "cpp": case "c": return (await import("@codemirror/lang-cpp")).cpp();
+    case "java": return (await import("@codemirror/lang-java")).java();
+    case "javascript": return (await import("@codemirror/lang-javascript")).javascript();
+    case "typescript": return (await import("@codemirror/lang-javascript")).javascript({ typescript: true });
+    case "golang": return (await import("@codemirror/lang-go")).go();
+    case "rust": return (await import("@codemirror/lang-rust")).rust();
+    case "php": return (await import("@codemirror/lang-php")).php();
+    case "csharp": return stream((await import("@codemirror/legacy-modes/mode/clike")).csharp);
+    case "kotlin": return stream((await import("@codemirror/legacy-modes/mode/clike")).kotlin);
+    case "scala": return stream((await import("@codemirror/legacy-modes/mode/clike")).scala);
+    case "dart": return stream((await import("@codemirror/legacy-modes/mode/clike")).dart);
+    case "swift": return stream((await import("@codemirror/legacy-modes/mode/swift")).swift);
+    case "ruby": return stream((await import("@codemirror/legacy-modes/mode/ruby")).ruby);
+    default: return (await import("@codemirror/lang-python")).python();
+  }
 }
 export type CM = Awaited<ReturnType<typeof loadCodeMirror>>;
 export const preloadCodeMirror = () => { loadCodeMirror().catch(() => {}); };

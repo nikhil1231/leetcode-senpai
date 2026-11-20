@@ -13,7 +13,7 @@ const STORE_PREFIX = "editor-run:v1:";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Event = Record<string, any>;
 interface Inflight { seq: number; events: Event[] }
-interface Saved { code: string; lastLogged: string; queue: Event[]; inflight: Inflight | null; seq: number; input: string; checked: string[]; lastRunCode: string | null; submits: number }
+interface Saved { code: string; lastLogged: string; queue: Event[]; inflight: Inflight | null; seq: number; input: string; checked: string[]; lastRunCode: string | null; submits: number; drafts?: Record<string, string> }
 
 export class EditorRun {
   sessionId: string | null;
@@ -29,6 +29,8 @@ export class EditorRun {
   checked: string[] = [];
   lastRunCode: string | null = null;
   submits = 0;
+  // What was written in each language the run has left, so switching back finds it where it was. This browser only.
+  drafts: Record<string, string> = {};
   finished = false;
   truncated = false;
   ready: Promise<void>;
@@ -60,7 +62,7 @@ export class EditorRun {
     if (this.finished || !this.sessionId || this.getCode() === null) return;
     try {
       const saved: Saved = { code: this.currentCode(), lastLogged: this.lastLogged, queue: this.queue, inflight: this.inflight, seq: this.seq,
-        input: this.input, checked: this.checked, lastRunCode: this.lastRunCode, submits: this.submits };
+        input: this.input, checked: this.checked, lastRunCode: this.lastRunCode, submits: this.submits, drafts: this.drafts };
       localStorage.setItem(STORE_PREFIX + this.sessionId, JSON.stringify(saved));
     } catch { /* storage full or blocked: the server copy still stands */ }
   }
