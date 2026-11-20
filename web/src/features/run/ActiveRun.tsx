@@ -200,7 +200,7 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
           <button id="btn-coach-toggle" className="panel-toggle" type="button" aria-label="Hide the coach" title="Hide the coach">&#x203A;</button></div>
         <div className="active-notes" onClick={(e) => e.stopPropagation()}>
           {critique && <div id="plan-check-panel" className="plan-critique"><div className="plan-critique-title"><span>Plan check</span><span>{verdict}</span></div>{items.length ? <ul>{items.map((i, n) => <li key={n}>{i}</li>)}</ul> : <p className="small">No specific concerns.</p>}</div>}
-          {nudge && <div id="nudge" className="nudge">{nudge}</div>}
+          {nudge && <div id="nudge" className="nudge">{nudge}<button id="btn-nudge-close" className="nudge-close" type="button" aria-label="Close" title="Close" onClick={() => setNudge(null)}>&times;</button></div>}
           {walk && (
             <div id="give-up-panel" className="give-up-panel"><div className="note-head"><span>Walkthrough</span><span className="note-meta">{walk.done ? "that's all of it" : "write each step, then ask for the next"}</span></div>
               <ol className="walk-steps">{steps.map((st, i) => <li key={i} className={i === steps.length - 1 ? "is-latest" : ""}>{coachText(st.text)}</li>)}</ol>

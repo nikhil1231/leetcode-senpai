@@ -1096,6 +1096,9 @@ body.has-active-session .overview { opacity: .26; pointer-events: none; }
 }
 .active-run .active-notes > .give-up-panel { border-color: rgba(167, 139, 250, .38); background: rgba(167, 139, 250, .08); color: var(--text); }
 .active-run .active-notes > .plan-critique { border-color: rgba(124, 134, 255, .38); }
+.active-run .active-notes > .nudge { position: relative; padding-right: 40px; }
+.nudge-close { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--text-2); font-size: 18px; line-height: 1; cursor: pointer; }
+.nudge-close:hover, .nudge-close:focus-visible { background: rgba(255, 255, 255, .06); color: var(--text); }
 .hint-card { border-color: rgba(245, 181, 68, .3); background: rgba(245, 181, 68, .06); }
 .hint-card p { margin: 0; }
 .hint-card.is-latest { color: var(--text); animation: hint-in .25s ease-out; }
