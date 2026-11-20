@@ -308,7 +308,7 @@
     const live = () => st.rows.filter(v => visible(st, v, snapshot(), me.xid));
     if (stmt === 'select') { const v = live()[0]; me.read = v ? v.balance : null; say(`SELECT balance → ${me.read}`); return st; }
     if (stmt === 'update' || stmt === 'update-from-read' || stmt === 'for-update') {
-      const head = st.rows.find(v => v.xmax == null || st.aborted.includes(v.xmax));
+      const head = st.rows.find(v => !st.aborted.includes(v.xmin) && (v.xmax == null || st.aborted.includes(v.xmax)));
       const holder = head.lockedBy && head.lockedBy !== me.xid ? head.lockedBy
         : head.xmax == null && !st.committed.includes(head.xmin) && head.xmin !== me.xid && !st.aborted.includes(head.xmin) ? head.xmin : null;
       if (holder) { me.wait = { stmt, on: holder }; say(`${stmt === 'for-update' ? 'SELECT … FOR UPDATE' : 'UPDATE'} waits: xid ${holder} holds the row`); return st; }
