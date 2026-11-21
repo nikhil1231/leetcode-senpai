@@ -43,6 +43,8 @@ AREAS = [
          'and scenarios, and handover notes.', 'structured', lambda: config.TUTOR_NOTES_MODEL),
     Area('analysis', 'Analysis', "Problem enrichment, Senpai's daily plan and run reviews, and mistake explanations.",
          'structured', lambda: config.LLM_MODEL),
+    Area('run_coach', 'Problem coach', 'Hints and replies while you solve a problem, and the chat after it is '
+         'accepted.', 'structured', lambda: '~openai/gpt-sol-latest'),
     Area('sd_tutor', 'System design coach', 'Hints and replies while you work a design.', 'structured',
          lambda: os.environ.get('SD_TUTOR_MODEL', 'openai/gpt-6.1-sol')),
     Area('sd_assessor', 'System design assessor', 'Marking a finished design against the criteria.', 'structured',

@@ -10,7 +10,7 @@ import html
 import re
 import time
 
-from . import llm, plans
+from . import llm, model_areas, plans
 
 
 # ---- problem-level cached content -----------------------------------------------
@@ -105,7 +105,7 @@ async def live_hint(prob, s, code, chat, last_judged, minutes, settings=None):
         "statement": statement_text(prob.get("content_html")),
         "plan": plan, "minutes": minutes, "last_judged": last_judged,
         "chat": transcript(chat), "code": numbered(code)[:6000],
-    }, settings=settings)
+    }, settings={**(settings or {}), "llm_model": model_areas.model_for("run_coach")})
     text = " ".join(((res or {}).get("hint") or "").split())
     if not text:
         return None
