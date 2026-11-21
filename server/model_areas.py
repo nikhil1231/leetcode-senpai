@@ -55,6 +55,10 @@ AREAS = [
     Area('podcast_writer', 'Podcast script', "Writes Ripple After Dark when the scheduled job didn't.", 'chat',
          lambda: 'anthropic/claude-opus-5.5'),
     Area('podcast_voice', 'Podcast voices', 'Reads the episode aloud.', 'speech', lambda: 'google/gemini-3.8-flash-tts'),
+    Area('coding_gen', 'Coding exercises', 'Writes and checks the repositories in Coding Practice.', 'chat',
+         lambda: 'anthropic/claude-sonnet-5.5'),
+    Area('coding', 'Coding examiner and assistant', 'Marks Coding Practice answers and plays the AI assistant in AI-assisted sessions.',
+         'chat', lambda: 'anthropic/claude-sonnet-5.5'),
     Area('stt', 'Dictation', 'Transcribes spoken answers before grading.', 'stt', lambda: config.STT_MODEL),
 ]
 BY_KEY = {a.key: a for a in AREAS}

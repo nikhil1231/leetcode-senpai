@@ -276,6 +276,25 @@ cd web && npm install && npm test      # vitest (components, stores, editor log)
 cd web && npm run typecheck
 ```
 
+## Coding Practice (Practical Coding → Coding practice)
+
+`/practical/coding`, code in `server/coding/` and `web/src/features/coding/`. There are two tabs, each with its own level (1 to 5) and history.
+
+- **Code Reading** offers three kinds of exercise. In *comprehension* you trace what the code does, with no bug needed. In *bug localisation* you get a symptom-only report and explain the root cause. In *debug and repair* you edit the code, run the visible tests and submit; hidden tests run at submission. The viewer is read-only apart from repair. Clicking a line number drops a reference like `[worker.py:42-58]` into the explanation (shift-click makes a range), and so does selecting code. References are kept as text and parsed into `{path, start, end}` on both sides (`spec.parse_refs`). Chips under the box jump back to the code. The box is `data-dictate`, so you can speak the explanation instead of typing it.
+- **AI-Assisted** covers *feature* and *bug fix* tasks with an assistant tab, editable code, the test runner, a diff of your changes and a soft time budget. In most sessions (`spec.NO_MISTAKE_SHARE` is 35% without one) a mistake is planted. The flawed patch is written with the exercise and checked by running it: it passes the visible tests and fails a hidden one. The first time you ask for code it is delivered as the assistant's reply. Every other turn is the model (`coding` area), which knows its patch is flawed and admits it once you show evidence. Applying a patch is recorded. Correctness (tests 65%, explanation 35%) and how you used the AI (five dimensions from the examiner) are marked separately. The review says whether a mistake was planted and whether you caught it.
+- **Generation** (`generate.py`, `coding_gen` area, Claude through LocalRouter) asks for a fresh repository from a spec (`spec.choose`): difficulty dimensions, the weakest categories and skills from recent results, and a scenario not used recently. The model writes `<<<FILE|HIDDEN|FIX|FLAWED path>>>` blocks. Findings quote code, and their line numbers are computed here.
+- **Validation** (`validate.py`, `runner.py`) runs before anything is served:
+  - Files must parse, and no comment may give the answer away.
+  - A fresh model, shown only what you see, has to reach the key findings. The examiner marks its answer.
+  - Executable exercises are also run: the baseline works, the bug reproduces, hidden tests catch it, the reference fix passes everything, any flawed patch behaves as planned, and results repeat.
+- **Queue** (`queue.py`) keeps about two validated exercises per mode in the `coding_ex` track store. Generation runs one at a time in the background after you open the page or start or submit an exercise. It never blocks starting one. Picking uses your latest results; an exercise made for a level two away is replaced. Hand-written exercises in `fallback.py` cover the case where nothing is ready or no model is configured.
+- **Marking** (`grade.py`, `coding` area) checks meaning against hidden findings, not wording or line numbers. Without a model the attempt is still saved: reading exercises are self-marked against the findings, and repair is marked on the tests. Attempts (score, reasoning score, category, skills, hints used, misconceptions, AI signals) live in the `coding` track store and drive the level and the next choice.
+- **Sandbox** (`sandbox.py`, `sandbox_boot.py`): generated and edited code runs only in a child process.
+  - That process runs as `nobody`, in a throwaway directory, with a scrubbed environment and limits on CPU (15 s), memory (768 MB), files, processes and wall time (20 s). At most two run at once.
+  - An audit hook refuses sockets, subprocesses, native code and file access outside the work directory.
+  - The API container cannot create namespaces, so network isolation is the hook, not the kernel. A dedicated runner container with `--network none` would harden this.
+  - Hidden tests, reference fixes, findings, rubrics and the assistant's plan are never in an API response before submission.
+
 ## Quickfire
 
 The **Quickfire** tab (called Light practice in code, routes, and storage) is a stream of short exercises: breaking inputs, state

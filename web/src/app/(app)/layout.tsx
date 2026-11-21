@@ -26,6 +26,7 @@ import "@/styles/page-coach.css";
 import "@/styles/page-notes.css";
 import "@/styles/chat.css";
 import "@/styles/readiness.css";
+import "@/styles/coding.css";
 import "@/styles/themes.css";
 import "@/styles/app.css";
 

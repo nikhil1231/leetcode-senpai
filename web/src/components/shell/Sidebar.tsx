@@ -21,7 +21,7 @@ const SD_NAV = [
 export const TRACK_NAV: Record<string, [string, string, string][]> = {
   course: [["", "Home", "i-today"], ["lessons", "Learn", "i-topics"], ["practise", "Practise", "i-drill"], ["progress", "What you know", "i-insights"]],
   experience: [["", "Home", "i-today"], ["stories", "Story bank", "i-playbook"], ["drill", "Timed answers", "i-drill"], ["dives", "Deep dives", "i-topics"], ["mistakes", "Mistakes book", "i-insights"]],
-  practical: [["", "Home", "i-today"], ["mistakes", "Mistakes book", "i-insights"]],
+  practical: [["", "Home", "i-today"], ["coding", "Coding practice", "i-drill"], ["mistakes", "Mistakes book", "i-insights"]],
   readiness: [["", "Home", "i-today"], ["tutor", "Tutor", "i-tutor"]],
 };
 const TRACK_KIND: Record<string, string> = { fundamentals: "course", ai: "course", experience: "experience", practical: "practical", readiness: "readiness" };

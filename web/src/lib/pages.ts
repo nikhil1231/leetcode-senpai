@@ -9,7 +9,7 @@ export const TRACK_VIEWS: [string, string, [string, string][]][] = [
   ["fundamentals", "Fundamentals", [["", "Home"], ["lessons", "Learn"], ["practise", "Practise"], ["progress", "What you know"]]],
   ["ai", "AI Engineering", [["", "Home"], ["lessons", "Learn"], ["practise", "Practise"], ["progress", "What you know"]]],
   ["experience", "Experience", [["", "Home"], ["stories", "Story bank"], ["drill", "Timed answers"], ["dives", "Deep dives"], ["mistakes", "Mistakes book"]]],
-  ["practical", "Practical Coding", [["", "Home"], ["mistakes", "Mistakes book"]]],
+  ["practical", "Practical Coding", [["", "Home"], ["coding", "Coding practice"], ["mistakes", "Mistakes book"]]],
   ["readiness", "Overview", [["", "Interview readiness"], ["tutor", "Tutor"]]],
 ];
 
