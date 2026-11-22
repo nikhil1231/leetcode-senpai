@@ -1,4 +1,4 @@
-"""The ready queue: about two validated exercises per mode, topped up in the background and never waited on.
+"""The ready queue: two validated exercises per category, topped up in the background and never waited on.
 
 Starting an exercise only takes one that is already stored. Generation runs one at a time for the whole process (the box is
 shared, and LocalRouter has limited slots), is triggered by opening the section or taking an exercise, and stops once the
@@ -42,6 +42,10 @@ def ready(store, mode, exs=None):
     return [e for e in (exs if exs is not None else exercises(store)) if e.get('mode') == mode and e.get('status') == 'ready']
 
 
+def categories(mode):
+    return [c for c in S.CATEGORIES[mode] if EXECUTABLE_ON or c not in S.EXECUTABLE]
+
+
 def generating(uid, mode):
     return (uid, mode) in _busy
 
@@ -57,7 +61,8 @@ def make(spec):
 
 
 async def refill(uid, mode):
-    """Top the buffer up. Safe to call as often as you like: one run per user and mode, and it stops when full."""
+    """Top every category up to its buffer. Safe to call as often as you like: one run per user and mode, and it makes
+    nothing when every category is full, so opening an exercise only costs a generation after one has been taken."""
     key = (uid, mode)
     if key in _busy or not model_io.available():
         return
@@ -70,12 +75,14 @@ async def refill(uid, mode):
                 exs, done = exercises(store), attempts(store)
                 level = S.difficulty(done, mode)
                 fresh = [e for e in ready(store, mode, exs) if e.get('source') != 'curated' and not S.stale(e, level)]
-                if len(fresh) >= S.TARGET_READY:
+                short = [c for c in categories(mode) if len([e for e in fresh if e['category'] == c]) < S.TARGET_READY]
+                if not short:
                     break
+                category = min(short, key=lambda c: len([e for e in fresh if e['category'] == c]))
                 for old in [e for e in ready(store, mode, exs) if S.stale(e, level)][:1]:
                     store.delete_track_record(EX, old['id'])      # made for an older level: replace, don't serve
                 recent = [e.get('archetype') for e in sorted(exs, key=lambda e: -e.get('created_at', 0))[:12]]
-                spec = S.choose(done, mode, recent_archetypes=recent, executable=EXECUTABLE_ON)
+                spec = S.choose(done, mode, recent_archetypes=recent, executable=EXECUTABLE_ON, category=category)
                 try:
                     ex = await asyncio.to_thread(make, spec)
                 except Exception as e:   # a failed attempt is logged, never shown as a broken exercise

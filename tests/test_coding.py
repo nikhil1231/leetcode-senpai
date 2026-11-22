@@ -185,9 +185,11 @@ async def test_refill_stops_at_the_target_and_never_serves_a_failed_validation(s
         return ex
     monkeypatch.setattr(queue, 'make', fake_make)
     await queue.refill('alice', 'reading')
-    assert len(queue.ready(store, 'reading')) == S.TARGET_READY and n['made'] == S.TARGET_READY + 1
+    full = S.TARGET_READY * len(queue.categories('reading'))
+    assert len(queue.ready(store, 'reading')) == full and n['made'] == full + 1
+    assert all(len([e for e in queue.ready(store, 'reading') if e['category'] == c]) == S.TARGET_READY for c in queue.categories('reading'))
     await queue.refill('alice', 'reading')
-    assert n['made'] == S.TARGET_READY + 1                            # full: nothing more is made
+    assert n['made'] == full + 1                            # full: nothing more is made
 
 
 # ---- Phase 2: repair, in the real sandbox ----

@@ -81,13 +81,13 @@ def overview(uid: str = Depends(auth.require_user)):
     exs = queue.exercises(store)
     modes = {}
     for m in S.MODES:
-        modes[m] = {**_summary(done, m), 'ready': len([e for e in queue.ready(store, m, exs) if e.get('source') != 'curated']),
+        modes[m] = {**_summary(done, m), 'ready': len([e for e in queue.ready(store, m, exs) if e.get('source') != 'curated']), 'target': S.TARGET_READY * len(queue.categories(m)),
                     'overreliance': S.overreliance(done) if m == 'assisted' else False, 'generating': queue.generating(uid, m), 'error': queue.errors.get((uid, m)),
                     'open': next((a['id'] for a in sorted(done, key=lambda a: -a['started_at'])
                                   if a['mode'] == m and a['status'] == 'open'), None)}
         queue.kick(uid, m) if m == 'reading' or modes[m]['attempts'] or modes[m]['open'] else None
     recent = sorted((a for a in done if a['status'] == 'submitted'), key=lambda a: -a['submitted_at'])[:12]
-    return {'modes': modes, 'model': model_io.available(), 'target': S.TARGET_READY,
+    return {'modes': modes, 'model': model_io.available(),
             'recent': [{k: a.get(k) for k in ('id', 'mode', 'category', 'difficulty', 'score', 'process', 'title', 'submitted_at', 'hints_used')}
                        for a in recent]}
 

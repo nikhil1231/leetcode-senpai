@@ -30,11 +30,11 @@ export interface Attempt {
   last_run?: { rows: TestRow[]; at: number; timed_out: boolean; loaderror: string } | null;
 }
 export interface ModeSummary {
-  level: number; attempts: number; recent_score: number | null; by_category: Record<string, number | null>; ready: number; generating: boolean;
+  level: number; attempts: number; recent_score: number | null; by_category: Record<string, number | null>; ready: number; target: number; generating: boolean;
   error: string | null; open: string | null; overreliance?: boolean;
 }
 export interface Overview {
-  modes: Record<Mode, ModeSummary>; model: boolean; target: number;
+  modes: Record<Mode, ModeSummary>; model: boolean;
   recent: { id: string; mode: Mode; category: string; difficulty: number; score: number | null; process: number | null; title: string; submitted_at: number; hints_used: number }[];
 }
 export const CATEGORY_LABELS: Record<string, string> = {

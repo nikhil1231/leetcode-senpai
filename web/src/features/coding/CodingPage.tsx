@@ -58,7 +58,7 @@ export function CodingPage() {
             {m.overreliance && <p className="cw-flaw is-missed">Recently you took a flawed suggestion without catching it. Slow down on the next one: read the patch, and run the tests before you trust it.</p>}
             <div className="cw-kicker">Level {m.level} of 5 · {m.attempts} done{m.recent_score != null ? ` · recent average ${m.recent_score}` : ""}</div>
             <h2>{m.open ? "You have an exercise open" : "A fresh repository, ready now"}</h2>
-            <p className="cw-note">{ov.data.model ? (m.ready >= ov.data.target ? `${m.ready} new ones are checked and waiting.` : m.generating ? `Preparing more in the background (${m.ready} ready).` : `${m.ready} ready.`) : "No model is configured, so you get the hand-written exercises."}{m.error ? ` The last attempt to make one failed: ${m.error}` : ""}</p>
+            <p className="cw-note">{ov.data.model ? (m.ready >= m.target ? `${m.ready} new ones are checked and waiting.` : m.generating ? `Preparing more in the background (${m.ready} ready).` : `${m.ready} ready.`) : "No model is configured, so you get the hand-written exercises."}{m.error ? ` The last attempt to make one failed: ${m.error}` : ""}</p>
           </div>
           <div className="cw-card-go">
             {m.open && <button className="button is-primary" type="button" onClick={() => resume(m.open!)}>Continue</button>}

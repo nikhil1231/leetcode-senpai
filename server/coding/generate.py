@@ -38,6 +38,12 @@ def _dim_text(level):
     return '\n'.join(f'- {k}: {v}' for k, v in S.dims(level).items())
 
 
+MARKSCHEME_RULE = (
+    '\nThe "model_answer" is marked against the findings and the review: it must state every finding (every key one first) '
+    'and every step of "execution_path", including the behaviour of each function the findings name, so that nothing the '
+    'learner is marked on is missing from it.\n')
+
+
 def build_prompt(spec):
     cat, lang, level = spec['category'], spec['language'], spec['difficulty']
     skills = ', '.join(S.SKILLS[s] for s in spec['skills'])
@@ -76,7 +82,7 @@ def build_prompt(spec):
             '"fix_summary" (how a maintainer would fix it, 1-3 sentences).\n')
     else:
         task = build_executable(spec)
-    return base + task + '\nOutput format: the <<<META>>> block first, then every file in its own block, for example\n<<<META>>>\n{...json...}\n<<<END>>>\n<<<FILE exports/store.py>>>\n...code...\n<<<END>>>\nThe path follows FILE after one space, with no quotes or path=.'
+    return base + task + MARKSCHEME_RULE + '\nOutput format: the <<<META>>> block first, then every file in its own block, for example\n<<<META>>>\n{...json...}\n<<<END>>>\n<<<FILE exports/store.py>>>\n...code...\n<<<END>>>\nThe path follows FILE after one space, with no quotes or path=.'
 
 
 def build_executable(spec):

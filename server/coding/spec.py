@@ -24,7 +24,7 @@ CATEGORY_LABELS = {'comprehension': 'Code comprehension', 'localisation': 'Bug l
 EXECUTABLE = ('repair', 'feature', 'bugfix')   # categories whose code is edited and run (Python, in the sandbox)
 LANGUAGES = {'python': ('py',), 'javascript': ('js', 'mjs'), 'go': ('go',), 'java': ('java',)}
 READING_LANGUAGES = [('python', 5), ('javascript', 2), ('go', 2), ('java', 1)]
-TARGET_READY = 2           # validated exercises kept per mode
+TARGET_READY = 2           # validated exercises kept per category
 LEVELS = 5
 MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES = 14, 24_000, 90_000
 
@@ -196,14 +196,14 @@ def weakness(attempts, mode, key, values):
     return {v: (1 - max(0, min(100, sum(s) / len(s))) / 100) if s else 0.5 for v, s in scores.items()}
 
 
-def choose(attempts, mode, rng=None, recent_archetypes=(), executable=False):
+def choose(attempts, mode, rng=None, recent_archetypes=(), executable=False, category=None):
     """The next exercise to make or serve: {mode, category, difficulty, skills, language, archetype}. Leans toward the
     categories and skills with the weakest recent results, and never repeats a recent scenario."""
     rng = rng or random
     cats = [c for c in CATEGORIES[mode] if executable or c not in EXECUTABLE]
     level = difficulty(attempts, mode)
     wc = weakness(attempts, mode, 'category', cats)
-    category = rng.choices(cats, weights=[0.4 + wc[c] for c in cats])[0]
+    category = category if category in cats else rng.choices(cats, weights=[0.4 + wc[c] for c in cats])[0]
     ws = weakness(attempts, mode, 'skills', list(SKILLS))
     skills = [s for s, _ in sorted(ws.items(), key=lambda kv: -kv[1] - rng.random() * 0.15)[:2]]
     fresh = [a for a in ARCHETYPES if a not in set(recent_archetypes)] or ARCHETYPES
