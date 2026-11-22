@@ -43,7 +43,14 @@
 
 .cw-explain { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; position: sticky; bottom: 8px; box-shadow: 0 -6px 20px rgba(0, 0, 0, .25); }
 .cw-explain-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-.cw-text { width: 100%; min-height: 96px; }
+.cw-field { position: relative; }
+.cw-field .cw-text { display: block; width: 100%; min-height: 96px; background: transparent; color: transparent; caret-color: var(--text); position: relative; }
+.cw-field .cw-text::selection { background: rgba(var(--accent-rgb), .35); }
+/* The words are drawn underneath by .cw-mirror (same box, same wrapping) so references can look like chips. */
+.cw-mirror { position: absolute; inset: 0; padding-right: 40px; overflow: auto; scrollbar-color: transparent transparent; white-space: pre-wrap; overflow-wrap: break-word; pointer-events: none; resize: none; border-color: transparent !important; color: var(--text); }
+.cw-reftok { background: var(--accent-soft); color: var(--text); border-radius: 5px; box-shadow: 0 0 0 1px var(--accent-line); }
+.cw-cm-wrap { position: relative; }
+.cw-selref { position: absolute; z-index: 5; white-space: nowrap; box-shadow: 0 4px 14px rgba(0, 0, 0, .4); }
 .cw-explain-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .cw-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .cw-chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--text); cursor: pointer; }

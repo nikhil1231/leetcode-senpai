@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { mdHtml as mdToHtml } from "@/lib/lesson-md";
 import { useToast } from "@/lib/toast";
 import { CodeViewer, type Focus } from "./CodeViewer";
-import { parseRefs, insertRef, refToken, type Ref } from "./refs";
+import { parseRefs, refSpans, deleteRefAt, insertRef, refToken, type Ref } from "./refs";
 import { Assistant, type ChatMsg } from "./Assistant";
 import { ReviewPanel } from "./Review";
 import { TestPanel, type RunResult } from "./TestPanel";
@@ -26,7 +26,6 @@ export function Workspace({ exercise, attempt, onAttempt, onNext }: {
   const [files, setFiles] = useState<Record<string, string>>({ ...exercise.files, ...(attempt.files || {}) });
   const [text, setText] = useState(attempt.explanation || "");
   const [focus, setFocus] = useState<Focus | null>(null);
-  const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [hints, setHints] = useState<string[]>(attempt.hints || []);
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<RunResult | null>(() => (attempt.last_run ? { ...attempt.last_run, passed: attempt.last_run.rows.filter((r) => r.status === "passed").length, total: attempt.last_run.rows.length } : null));
@@ -43,6 +42,8 @@ export function Workspace({ exercise, attempt, onAttempt, onNext }: {
   const submitted = attempt.status === "submitted";
   const counts = useMemo(() => Object.fromEntries(Object.entries(files).map(([p, c]) => [p, c.split("\n").length - (c.endsWith("\n") ? 1 : 0)])), [files]);
   const refs = useMemo(() => parseRefs(text, counts), [text, counts]);
+  const spans = useMemo(() => refSpans(text, counts), [text, counts]);
+  const mirror = useRef<HTMLDivElement>(null);
   const referenced = useMemo(() => new Set(refs.map((r) => r.path)), [refs]);
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now() / 1000), 1000); return () => clearInterval(t); }, []);
@@ -97,6 +98,16 @@ export function Workspace({ exercise, attempt, onAttempt, onNext }: {
     const out = insertRef(text, at, to, r);
     setText(out.text); dirty.current = true;
     requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(out.cursor, out.cursor); });
+  };
+  // A reference is one unit in the text: Backspace or Delete beside it takes the whole thing.
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    if ((e.key !== "Backspace" && e.key !== "Delete") || el.selectionStart !== el.selectionEnd) return;
+    const out = deleteRefAt(el.value, el.selectionStart, e.key === "Delete", counts);
+    if (!out) return;
+    e.preventDefault();
+    setText(out.text); dirty.current = true;
+    requestAnimationFrame(() => el.setSelectionRange(out.cursor, out.cursor));
   };
   const onPick = (start: number, end: number, extend: boolean) => { setFocus({ start, end, n: Date.now() }); addRef({ path, start, end }, extend); };
 
@@ -173,10 +184,9 @@ export function Workspace({ exercise, attempt, onAttempt, onNext }: {
               <span className="cw-path">{path}</span>
               <span className="cw-bar-hint">{readOnly ? "Click a line number to reference it. Shift-click for a range." : "Edit here. Click a line number to reference it."}</span>
               {!readOnly && files[path] !== exercise.files[path] && <button className="button is-small" type="button" onClick={resetFile}>Reset file</button>}
-              {selection && !submitted && <button className="button is-small" type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => addRef({ path, ...selection })}>Reference lines {selection.start}{selection.end > selection.start ? `-${selection.end}` : ""}</button>}
             </div>
             <CodeViewer key={path} path={path} code={files[path] ?? ""} language={exercise.language} readOnly={readOnly} focus={focus}
-              onChange={(c) => { setFiles((f) => ({ ...f, [path]: c })); dirty.current = true; }} onPick={onPick} onSelect={setSelection} />
+              onChange={(c) => { setFiles((f) => ({ ...f, [path]: c })); dirty.current = true; }} onPick={onPick} onReference={submitted ? undefined : (r) => addRef({ path, ...r })} />
           </div>
         </div>
       </div>
@@ -189,9 +199,20 @@ export function Workspace({ exercise, attempt, onAttempt, onNext }: {
             <label htmlFor="cw-text"><b>Your explanation</b></label>
             <span className="cw-note">Type it, or use the mic to say it. Click lines in the code to drop references like <code>[file:12-30]</code> into it.</span>
           </div>
-          <textarea id="cw-text" ref={box} className="textarea cw-text" data-dictate rows={5} autoComplete="off" spellCheck={false}
+          <div className="cw-field">
+          <div className="textarea cw-mirror" ref={mirror} aria-hidden="true">
+            {(() => {
+              const out: React.ReactNode[] = []; let at = 0;
+              spans.forEach((s, i) => { out.push(text.slice(at, s.from), <mark key={i} className="cw-reftok">{text.slice(s.from, s.to)}</mark>); at = s.to; });
+              out.push(text.slice(at), "\n");
+              return out;
+            })()}
+          </div>
+          <textarea id="cw-text" ref={box} className="textarea cw-text" data-dictate rows={5} autoComplete="off" spellCheck={false} onKeyDown={onKey}
+            onScroll={(e) => { if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop; }}
             placeholder={exercise.can_run ? "Say what the bug was, why it happened, and how your change fixes it. Reference the code where it helps." : "Say what happens, where it goes wrong, and why. Reference the code where it helps; you don't have to pin one line."}
             value={text} onChange={(e) => { setText(e.target.value); dirty.current = true; }} onBlur={save} />
+          </div>
           <div className="cw-explain-foot">
             <div className="cw-chips" aria-label="References in your explanation">
               {refs.length === 0 ? <span className="cw-note">No references yet. They are optional.</span> :

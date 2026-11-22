@@ -128,8 +128,22 @@
   }
 
   // ---- live recognition --------------------------------------------------------------
+  // If the field changed under us (a code reference dropped in, an edit), what is there now is the new
+  // starting point: the words already heard stay where they are, and only later ones are added.
   function render(s) {
-    s.sink.set(compose(s.prefix, [...s.done, ...s.run], s.interim));
+    const heard = [...s.done, ...s.run];
+    if (s.shown != null) {
+      const now = s.sink.get();
+      if (now !== s.shown) {
+        const tail = (s.shownInterim || "").trim();
+        const at = tail ? now.lastIndexOf(tail) : -1;
+        s.prefix = at >= 0 ? now.slice(0, at) + now.slice(at + tail.length) : now;   // half-heard words are re-added when they settle
+        s.skip = s.pieces;   // the words heard so far are already in the text
+      }
+    }
+    const shown = compose(s.prefix, heard.slice(s.skip || 0), s.interim);
+    s.shown = shown; s.pieces = heard.length; s.shownInterim = s.interim;
+    s.sink.set(shown);
   }
 
   const setUi = (s, state) => {

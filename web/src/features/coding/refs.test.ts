@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { insertRef, parseRefs, refToken } from "./refs";
+import { deleteRefAt, insertRef, parseRefs, refToken } from "./refs";
 
 const counts = { "worker.py": 80, "jobq/queue.py": 40 };
 
@@ -24,5 +24,17 @@ describe("insertRef", () => {
     const out = insertRef("see the ack", 7, 7, r);
     expect(out.text).toBe("see the [worker.py:3] ack");
     expect(out.text.slice(0, out.cursor)).toBe("see the [worker.py:3]");
+  });
+});
+
+describe("deleteRefAt", () => {
+  const counts = { "a.py": 50 };
+  it("removes a whole reference and one space on Backspace", () => {
+    const t = "so [a.py:3-5] then";
+    expect(deleteRefAt(t, 13, false, counts)).toEqual({ text: "so then", cursor: 2 });
+  });
+  it("removes it on Delete from the start, and ignores plain text", () => {
+    expect(deleteRefAt("[a.py:3] x", 0, true, counts)?.text).toBe("x");
+    expect(deleteRefAt("hello", 3, false, counts)).toBeNull();
   });
 });
