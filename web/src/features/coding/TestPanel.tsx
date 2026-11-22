@@ -31,31 +31,16 @@ export function Rows({ rows, showMessages = true }: { rows: TestRow[]; showMessa
   );
 }
 
-// Runs the visible tests against your files (in the sandbox on the server) and shows your changes so far. The hidden
-// tests are only run when you submit.
-export function TestPanel({ run, running, onRun, diff, onChanges }: {
-  run: RunResult | null; running: boolean; onRun: () => void; diff: string; onChanges: () => void; onOpen: (p: string, a?: number, b?: number) => void;
-}) {
-  const [tab, setTab] = useState<"tests" | "changes">("tests");
+// The body of the tests dock: the visible tests' results, or your changes so far. The tabs and Run button live in the
+// workspace's dock. The hidden tests are only run when you submit.
+export function TestPanel({ tab, run, diff }: { tab: "tests" | "changes"; run: RunResult | null; diff: string }) {
+  if (tab === "changes") return <Diff text={diff} />;
+  if (!run) return <p className="cw-note">No runs yet.</p>;
   return (
-    <section className="cw-testpanel" aria-label="Tests">
-      <div className="cw-testbar">
-        <div className="cw-tabs">
-          <button type="button" className={`cw-tabbtn ${tab === "tests" ? "is-on" : ""}`} onClick={() => setTab("tests")}>Tests</button>
-          <button type="button" className={`cw-tabbtn ${tab === "changes" ? "is-on" : ""}`} onClick={() => { setTab("changes"); onChanges(); }}>Your changes</button>
-        </div>
-        <span className="cw-note">{run ? (run.timed_out ? "Timed out." : `${run.passed} of ${run.total} visible tests pass.`) : "Run the visible tests any time. More checks run when you submit."}</span>
-        <button className="button is-small is-primary" type="button" disabled={running} onClick={() => { setTab("tests"); onRun(); }}>{running ? "Running…" : "Run tests"}</button>
-      </div>
-      {tab === "tests" ? (
-        run ? (
-          <>
-            {run.loaderror && <pre className="cw-test-msg">{run.loaderror}</pre>}
-            {run.crashed && <p className="cw-note">The test run crashed before reporting. Check for an infinite loop or an import error.</p>}
-            <Rows rows={run.rows} />
-          </>
-        ) : <p className="cw-note">No runs yet.</p>
-      ) : <Diff text={diff} />}
-    </section>
+    <>
+      {run.loaderror && <pre className="cw-test-msg">{run.loaderror}</pre>}
+      {run.crashed && <p className="cw-note">The test run crashed before reporting. Check for an infinite loop or an import error.</p>}
+      <Rows rows={run.rows} />
+    </>
   );
 }

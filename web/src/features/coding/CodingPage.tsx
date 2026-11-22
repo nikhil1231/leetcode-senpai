@@ -34,7 +34,7 @@ export function CodingPage() {
       <section className="tab cw-tab" id="tab-coding">
         <Workspace key={session.attempt.id} exercise={session.exercise} attempt={session.attempt}
           onAttempt={(a) => setSession((s) => (s ? { ...s, attempt: a } : s))}
-          onNext={(category) => start.mutate({ category, new: true })} />
+          onNext={(category) => start.mutate({ category, new: true })} onExit={() => { setSession(null); qc.invalidateQueries({ queryKey: ["coding"] }); }} />
       </section>
     );
   }
