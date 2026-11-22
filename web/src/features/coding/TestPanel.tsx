@@ -31,6 +31,30 @@ export function Rows({ rows, showMessages = true }: { rows: TestRow[]; showMessa
   );
 }
 
+// Split view for the dock: the list of tests on the left, the selected test's output on the right.
+export function SplitRows({ rows }: { rows: TestRow[] }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const cur = rows.find((r) => r.id === sel) ?? rows.find((r) => r.status !== "passed" && r.status !== "skipped") ?? rows[0];
+  return (
+    <div className="cw-split">
+      <ul className="cw-tests cw-split-list">
+        {rows.map((r) => (
+          <li key={r.id} className={`is-${r.status}${cur && r.id === cur.id ? " is-sel" : ""}`}>
+            <button type="button" className="cw-test-row" onClick={() => setSel(r.id)} aria-current={cur && r.id === cur.id}>
+              <span className="cw-test-mark" aria-label={r.status}>{r.status === "passed" ? "✓" : r.status === "skipped" ? "–" : "✕"}</span>
+              <span className="cw-test-name">{r.id.replace(/^.*\./, "")}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="cw-split-out">
+        {cur && <div className="cw-split-title">{cur.id}</div>}
+        {cur?.message ? <pre className="cw-test-msg">{cur.message}</pre> : <p className="cw-note">{cur?.status === "passed" ? "Passed. No output." : "No output."}</p>}
+      </div>
+    </div>
+  );
+}
+
 // The body of the tests dock: the visible tests' results, or your changes so far. The tabs and Run button live in the
 // workspace's dock. The hidden tests are only run when you submit.
 export function TestPanel({ tab, run, diff }: { tab: "tests" | "changes"; run: RunResult | null; diff: string }) {
@@ -40,7 +64,7 @@ export function TestPanel({ tab, run, diff }: { tab: "tests" | "changes"; run: R
     <>
       {run.loaderror && <pre className="cw-test-msg">{run.loaderror}</pre>}
       {run.crashed && <p className="cw-note">The test run crashed before reporting. Check for an infinite loop or an import error.</p>}
-      <Rows rows={run.rows} />
+      <SplitRows rows={run.rows} />
     </>
   );
 }

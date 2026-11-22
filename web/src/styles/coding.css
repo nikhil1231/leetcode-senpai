@@ -166,3 +166,10 @@
   .cwf-explain .cw-field { flex: none; }
   .cwf-task { max-height: 38vh; }
 }
+
+.cw-split { display: flex; gap: 12px; flex: 1 1 auto; min-height: 0; }
+.cw-split-list { flex: 0 0 38%; max-width: 420px; max-height: none; overflow: auto; border-right: 1px solid var(--line); padding-right: 8px; }
+.cw-split-list li.is-sel .cw-test-row { background: var(--panel2); }
+.cw-split-out { flex: 1 1 0; min-width: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.cw-split-title { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: var(--muted, inherit); word-break: break-all; }
+.cw-split-out .cw-test-msg { margin: 0; max-height: none; flex: 1 1 auto; }
