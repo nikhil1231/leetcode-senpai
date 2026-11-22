@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { mdHtml as mdToHtml } from "@/lib/lesson-md";
 import { useToast } from "@/lib/toast";
@@ -45,6 +45,22 @@ export function Workspace({ exercise, attempt, onAttempt, onNext }: {
   const spans = useMemo(() => refSpans(text, counts), [text, counts]);
   const mirror = useRef<HTMLDivElement>(null);
   const referenced = useMemo(() => new Set(refs.map((r) => r.path)), [refs]);
+
+  // While working, the whole exercise fits the window: the page itself never scrolls, the panes inside do.
+  const root = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el || submitted) return;
+    const fit = () => {
+      if (window.innerWidth <= 900) { el.style.height = ""; return; }
+      el.style.height = "0px";   // measure the top without this block's own height pushing the page
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      el.style.height = `${Math.max(420, window.innerHeight - top - 18)}px`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => { window.removeEventListener("resize", fit); el.style.height = ""; };
+  }, [submitted]);
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now() / 1000), 1000); return () => clearInterval(t); }, []);
 
@@ -134,7 +150,7 @@ export function Workspace({ exercise, attempt, onAttempt, onNext }: {
   const elapsed = Math.max(0, Math.round((submitted ? attempt.started_at + (attempt.elapsed_sec || 0) : now) - attempt.started_at));
 
   return (
-    <div className="cw">
+    <div className={`cw ${submitted ? "" : "is-fit"}`} ref={root}>
       <header className="cw-head">
         <div className="cw-title">
           <span className="cw-kicker">{CATEGORY_LABELS[exercise.category] ?? exercise.category} · {exercise.language} · level {exercise.difficulty}</span>

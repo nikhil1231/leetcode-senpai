@@ -1,9 +1,18 @@
 /* Coding practice: the shared workspace (task, files, code, explanation) and its home. Tokens only, so it follows the section. */
 .cw-tab { max-width: none; }
-.cw-back { margin-bottom: 10px; }
-.cw { display: flex; flex-direction: column; gap: 12px; }
-.cw-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.cw-head h2 { margin: 2px 0 0; font-size: 22px; }
+.cw { display: flex; flex-direction: column; gap: 10px; }
+@media (min-width: 901px) {
+  .cw.is-fit .cw-main { flex: 1; min-height: 0; align-items: stretch; }
+  .cw.is-fit .cw-task, .cw.is-fit .cw-tree { max-height: none; min-height: 0; }
+  .cw.is-fit .cw-code { min-height: 0; }
+  .cw.is-fit .cw-viewer { min-height: 0; }
+  .cw.is-fit .cw-cm-wrap { flex: 1; min-height: 0; }
+  .cw.is-fit .cw-cm { height: 100%; min-height: 0; }
+  .cw.is-fit .cw-explain { position: static; box-shadow: none; }
+  .cw.is-fit .cw-text { min-height: 80px; }
+}
+.cw-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cw-head h2 { margin: 0; font-size: 19px; }
 .cw-kicker { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .cw-actions { display: flex; align-items: center; gap: 10px; }
 .cw-clock { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 14px; }

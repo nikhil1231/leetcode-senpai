@@ -32,7 +32,6 @@ export function CodingPage() {
   if (session) {
     return (
       <section className="tab cw-tab" id="tab-coding">
-        <button className="button is-small cw-back" type="button" onClick={() => { setSession(null); qc.invalidateQueries({ queryKey: ["coding"] }); }}>← Coding practice</button>
         <Workspace key={session.attempt.id} exercise={session.exercise} attempt={session.attempt}
           onAttempt={(a) => setSession((s) => (s ? { ...s, attempt: a } : s))}
           onNext={(category) => start.mutate({ category, new: true })} />

@@ -135,13 +135,22 @@
     if (s.shown != null) {
       const now = s.sink.get();
       if (now !== s.shown) {
+        // The words half-heard at that moment stay where they are, with the new text after them; the next
+        // sentence that settles fills that slot, and everything after goes past the inserted text.
         const tail = (s.shownInterim || "").trim();
         const at = tail ? now.lastIndexOf(tail) : -1;
-        s.prefix = at >= 0 ? now.slice(0, at) + now.slice(at + tail.length) : now;   // half-heard words are re-added when they settle
+        s.slot = at >= 0 ? { before: now.slice(0, at), after: now.slice(at + tail.length) } : null;
+        s.prefix = now;
         s.skip = s.pieces;   // the words heard so far are already in the text
       }
     }
-    const shown = compose(s.prefix, heard.slice(s.skip || 0), s.interim);
+    const rest = heard.slice(s.skip || 0);
+    let shown;
+    if (s.slot) {
+      const filled = rest.length > 0;
+      const head = compose(s.slot.before, filled ? [rest[0]] : [], filled ? "" : s.interim) + s.slot.after;
+      shown = compose(head, rest.slice(1), filled ? s.interim : "");
+    } else shown = compose(s.prefix, rest, s.interim);
     s.shown = shown; s.pieces = heard.length; s.shownInterim = s.interim;
     s.sink.set(shown);
   }
