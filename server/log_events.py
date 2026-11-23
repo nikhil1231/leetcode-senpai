@@ -2,6 +2,7 @@
 import asyncio
 import collections
 import logging
+import sys
 import threading
 from typing import Optional
 
@@ -55,17 +56,41 @@ class ToastLogHandler(logging.Handler):
             self._local.active = False
 
 
+class _StderrHandler(logging.StreamHandler):
+    """A stream handler that writes to whatever `sys.stderr` is now, not the one captured at import
+    (pytest and uvicorn's reloader swap it out)."""
+
+    @property
+    def stream(self):
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, value):
+        pass
+
+
 _HANDLER: Optional[ToastLogHandler] = None
+_STREAM: Optional[logging.StreamHandler] = None
 
 
 def install():
-    """Attach the handler to the root logger."""
-    global _HANDLER
+    """Attach the toast handler to the root logger, and keep warnings on stderr.
+
+    A handler on the root logger suppresses logging's last-resort stderr writer (which only fires
+    when no handler is configured), so capturing warnings for toasts would otherwise be the only
+    place they went and the container logs (`docker logs`, journald, the whats dashboard) would
+    show nothing. Keep both: the toasts are for the learner, the stderr lines are for the operator."""
+    global _HANDLER, _STREAM
     root = logging.getLogger()
     if _HANDLER is None:
         _HANDLER = ToastLogHandler()
     if not any(isinstance(h, ToastLogHandler) for h in root.handlers):
         root.addHandler(_HANDLER)
+    if _STREAM is None:
+        _STREAM = _StderrHandler()
+        _STREAM.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    if not any(isinstance(h, _StderrHandler) for h in root.handlers):
+        root.addHandler(_STREAM)
 
 
 def get_warnings(since: int = 0, limit: int = 50) -> list[dict]:

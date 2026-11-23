@@ -1,5 +1,7 @@
 import asyncio
+import io
 import logging
+import sys
 import pytest
 from fastapi.testclient import TestClient
 
@@ -51,6 +53,17 @@ def test_exception_info_is_included_in_captured_message():
     events = log_events.get_warnings()
     assert len(events) == 1
     assert "Operation failed (connection refused)" in events[0]["message"]
+
+
+def test_warnings_also_reach_stderr(monkeypatch):
+    """install() puts a handler on the root logger, which suppresses logging's last-resort stderr
+    writer (it only fires when no handler is configured). Warnings must still go to stderr, or the
+    container logs (`docker logs`, the whats dashboard) would show nothing."""
+    stream = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stream)
+    logging.getLogger("test.stderr").warning("a warning the operator should see")
+    assert "a warning the operator should see" in stream.getvalue()
+    assert any("operator should see" in e["message"] for e in log_events.get_warnings())
 
 
 def test_api_log_warnings_endpoint():

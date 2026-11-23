@@ -204,7 +204,7 @@ excluded. Chat stays in memory until refreshed or cleared with **New chat**.
 Plain chat tries LocalRouter first when it serves the selected model, then falls back to OpenRouter.
 When a Claude model is blocked on OpenRouter, chat and structured requests use `~openai/gpt-sol-latest` instead.
 OpenRouter calls require `OPENROUTER_API_KEY`; core practice still works without it.
-New server warnings and errors appear as toasts in the main app. If the live stream is interrupted, the app checks for them in the background.
+New server warnings and errors appear as toasts in the main app. If the live stream is interrupted, the app checks for them in the background. They are written to the server's stderr too, so the container logs (`docker logs`, the whats dashboard) still show them.
 
 API details: [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs).
 
