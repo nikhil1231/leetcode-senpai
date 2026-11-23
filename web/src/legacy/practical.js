@@ -35,6 +35,15 @@
     warm.catch(() => { worker?.terminate(); worker = null; });
     return warm;
   }
+  const CANCELLED = 'Run cancelled.';
+  // Stops the run in flight: the worker is terminated (a stuck loop can't be interrupted any other way) and restarts on the next run.
+  function cancelRun() {
+    if (!waiting.size) return false;
+    worker?.terminate(); worker = null;
+    for (const w of waiting.values()) { clearTimeout(w.timer); w.reject(new Error(CANCELLED)); }
+    waiting.clear();
+    return true;
+  }
   async function runPython(files, modules) {
     if (!worker) spawn();
     await warm;
@@ -103,9 +112,9 @@
     const ex = data.exercise, review = ex.category === 'review';
     let attempt = data.attempt;
     const names = [...ex.files, ...ex.readonly];
-    let active = names[0], hintsShown = 0, lastRun = null, saveTimer = null, clock = null, dirty = false;
+    let shell = null, active = names[0], hintsShown = 0, lastRun = null, saveTimer = null, clock = null, dirty = false;
     const editors = {};
-    ctx.onLeave(() => { clearInterval(clock); clearTimeout(saveTimer); if (dirty) save().catch(() => {}); Object.values(editors).forEach(v => v.destroy()); });
+    ctx.onLeave(() => { cancelRun(); const sh = shell; shell = null; if (sh) setTimeout(() => sh.unmount(), 0); clearInterval(clock); clearTimeout(saveTimer); if (dirty) save().catch(() => {}); Object.values(editors).forEach(v => v.destroy()); });
 
     const pair = !!ex.pair, back = ctx.back || '← Exercises';
     let mode = data.llm ? 'ask' : 'log';
@@ -123,18 +132,20 @@
     }
     const contents = { ...ex.starter, ...attempt.files };
     const briefHtml = `<section class="sd-panel tr-brief"><details ${pair && chat.length ? '' : 'open'}><summary><b>Brief</b></summary>${md(ex.brief)}</details>
-        ${ex.hints?.length ? `<div class="tr-hints"></div>${btn('Show a hint', 'hint')}` : ''}
         ${review ? '' : `<details><summary><b>${pair ? 'Self-check' : 'Rubric'}</b></summary><ul class="tr-plain">${ex.rubric.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`}</section>`;
-    ctx.root.innerHTML = intro + `<div class="tr-work ${pair ? 'is-pair' : ''}">
-      ${pair ? `<div class="tr-col">${briefHtml}${pairHtml()}</div>` : briefHtml}
-      <section class="tr-ide"><div class="tr-tabs" role="tablist">${names.map(n => `<button type="button" role="tab" class="tr-tab ${n === active ? 'is-active' : ''}" data-t="tab" data-name="${esc(n)}">${esc(n)}${ex.readonly.includes(n) ? ' <span class="sd-muted">read-only</span>' : ''}</button>`).join('')}</div>
-        <div class="tr-editors">${names.map(n => `<div class="tr-editor" data-file="${esc(n)}" ${n === active ? '' : 'hidden'}></div>`).join('')}</div>
-        ${review ? `<label class="tr-field"><span>Your review</span><small>One comment per issue: where, why it matters, what to do instead. Mark severity (blocking or nit).</small><textarea class="textarea tr-review" rows="12" maxlength="12000">${esc(attempt.review || '')}</textarea></label>
-          <div class="sd-actions">${btn('Submit review', 'submit', '', true)}${btn('Show the answer', 'reveal')}</div>`
-        : `<div class="sd-actions">${btn('Run tests', 'run', 'title="Ctrl/Cmd + Enter"', true)}${btn('Submit', 'submit')}${btn('Reset this file', 'reset')}${btn('Show solution', 'reveal')}<span class="tr-status sd-muted"></span></div>
-          <div class="tr-output"></div>`}
-      </section></div><div class="tr-after"></div>`;
-    const elapsedEl = ctx.root.querySelector('.tr-elapsed');
+    // The same full-screen frame as a coding challenge (resizable brief and console, coach rail); the exercise fills its slots.
+    ctx.root.innerHTML = '';
+    shell = window.PracticalShell.mount(ctx.root, { kicker: `${CAT[ex.category]} · ${ex.minutes} MIN`, title: ex.title, backLabel: back, consoleLabel: review ? 'Marking' : 'Tests', onBack: () => ctx.go('home') });
+    const sl = shell.slots;
+    sl.statement.innerHTML = briefHtml;
+    sl.coach.innerHTML = `${pair ? pairHtml() : ''}<section class="sd-panel tr-hintbox"><span class="sd-eyebrow">HINTS</span><div class="tr-hints"></div>${ex.hints?.length ? btn('Show a hint', 'hint') : '<p class="sd-muted">This one has no hints.</p>'}</section>`;
+    sl.work.innerHTML = `<div class="tr-tabs" role="tablist">${names.map(n => `<button type="button" role="tab" class="tr-tab ${n === active ? 'is-active' : ''}" data-t="tab" data-name="${esc(n)}">${esc(n)}${ex.readonly.includes(n) ? ' <span class="sd-muted">read-only</span>' : ''}</button>`).join('')}</div>
+      <div class="tr-editors">${names.map(n => `<div class="tr-editor" data-file="${esc(n)}" ${n === active ? '' : 'hidden'}></div>`).join('')}</div>
+      ${review ? `<label class="tr-field"><span>Your review</span><small>One comment per issue: where, why it matters, what to do instead. Mark severity (blocking or nit).</small><textarea class="textarea tr-review" rows="8" maxlength="12000">${esc(attempt.review || '')}</textarea></label>` : ''}`;
+    sl.actions.innerHTML = review ? `${btn('Show the answer', 'reveal')}${btn('Submit review', 'submit', '', true)}`
+      : `<span class="tr-status sd-muted"></span>${btn('Reset this file', 'reset')}${btn('Show solution', 'reveal')}<button type="button" class="button is-ghost" data-t="stop" hidden>Cancel run</button>${btn('Run tests', 'run', 'title="Ctrl/Cmd + Enter"')}${btn('Submit', 'submit', '', true)}`;
+    sl.console.innerHTML = '<div class="tr-output"></div><div class="tr-after"></div>';
+    const elapsedEl = sl.clock; elapsedEl.textContent = fmt(Date.now() / 1000 - attempt.started_at);
     clock = setInterval(() => { elapsedEl.textContent = fmt((Date.now() / 1000) - attempt.started_at); }, 1000);
     const status = t => { const s = ctx.root.querySelector('.tr-status'); if (s) s.textContent = t; };
     const current = () => { const out = {}; ex.files.forEach(n => { out[n] = editors[n] ? editors[n].state.doc.toString() : contents[n]; }); return out; };
@@ -180,7 +191,7 @@
     }
     function showDone(res, tests, checks) {
       const a = res.attempt, after = ctx.root.querySelector('.tr-after');
-      ctx.root.querySelectorAll('.tr-ide .sd-actions button').forEach(b => { b.disabled = true; });
+      shell.unfold(); ctx.root.querySelectorAll('.tr-actions button').forEach(b => { b.disabled = true; });
       after.innerHTML = `<section class="sd-panel"><span class="sd-eyebrow">${a.clean ? 'CLEAN' : 'NOT CLEAN YET'} · ${fmt(a.elapsed_sec || 0)}</span><h3>${a.clean ? 'Done, and it counts.' : review && a.needs_self_mark ? 'Mark your review' : 'Submitted. It will come back for another go.'}</h3>
         ${res.message && !pair ? `<p class="sd-muted">${esc(res.message)}</p>` : ''}
         ${review ? reviewMarking(res) : `${pair ? processHtml(a, res.message) : ''}${resultsHtml(tests, 'Tests')}${checks ? resultsHtml(checks, 'Hidden checks') : ''}`}
@@ -250,12 +261,19 @@
       go: n => ctx.go(n.dataset.view),
       tab: n => { active = n.dataset.name; ctx.root.querySelectorAll('.tr-tab').forEach(t => t.classList.toggle('is-active', t === n)); ctx.root.querySelectorAll('.tr-editor').forEach(e => { e.hidden = e.dataset.file !== active; }); editors[active]?.focus(); },
       hint: n => { const box = ctx.root.querySelector('.tr-hints'); box.insertAdjacentHTML('beforeend', `<p class="tr-hint"><b>Hint ${hintsShown + 1}:</b> ${T.inline(ex.hints[hintsShown])}</p>`); hintsShown++; if (hintsShown >= ex.hints.length) n.remove(); },
-      run: async n => { n.disabled = true; try { await run(); } catch (e) { ctx.root.querySelector('.tr-output').innerHTML = `<p class="tr-error">${esc(e.message)}</p>`; } finally { n.disabled = false; } },
+      run: async n => {
+        const stop = ctx.root.querySelector('[data-t=stop]');
+        n.disabled = true; stop.hidden = false;
+        try { await run(); } catch (e) { ctx.root.querySelector('.tr-output').innerHTML = e.message === CANCELLED ? `<p class="sd-muted">${CANCELLED}</p>` : `<p class="tr-error">${esc(e.message)}</p>`; }
+        finally { n.disabled = false; stop.hidden = true; }
+      },
+      stop: () => { cancelRun(); },
       reset: () => { if (!ex.files.includes(active) || !confirm(`Reset ${active} to the starter code?`)) return; const v = editors[active]; v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: ex.starter[active] } }); },
       reveal: async () => {
         if (!confirm('Show the solution now? This attempt will no longer count as held. You can still finish it.')) return;
         const r = await ctx.call(`/attempts/${attempt.id}/reveal`, 'POST', {});
         attempt = (await ctx.call('/exercises/' + ex.id)).attempt || attempt;
+        shell.unfold();
         const after = ctx.root.querySelector('.tr-after');
         after.innerHTML = `<section class="sd-panel"><h3>Solution</h3>${review ? `<ul class="tr-plain">${r.issues.map(i => `<li><b>${esc(i.title)}.</b> ${esc(i.detail)}</li>`).join('')}</ul>` : Object.entries(r.solution).map(([nm, code]) => `<h4 class="tr-sub"><code>${esc(nm)}</code></h4><pre class="tr-code">${esc(code)}</pre>`).join('')}${md(r.discussion)}</section>`;
       },
@@ -269,6 +287,7 @@
           return;
         }
         if (!lastRun) { try { await run(); } catch (e) { toast(e.message, 'error'); return; } }
+        shell.unfold();
         ctx.root.querySelector('.tr-after').innerHTML = rubricHtml();
         ctx.root.querySelector('.tr-after').scrollIntoView({ behavior: 'smooth' });
       },

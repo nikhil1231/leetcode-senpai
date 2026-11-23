@@ -24,6 +24,7 @@ import { loadCodeMirror } from "@/features/editor/codemirror";
 import { ToastBoundary } from "@/lib/toast";
 import { mountTutorChat } from "@/features/tutor/TutorChat";
 import { mountChat } from "@/components/chat/mount";
+import { mountPracticalShell } from "@/features/coding/PracticalShell";
 import { enterChatScreen, leaveChatScreen } from "@/lib/chat-screen";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,6 +59,7 @@ export function installBridge() {
   };
   w.ASSET_VER = "";
   w.SenpaiChat = { mount: mountChat, tutor: mountTutorChat, screen: enterChatScreen, leaveScreen: leaveChatScreen };   // the shared chat (components/chat) for legacy modules
+  w.PracticalShell = { mount: mountPracticalShell };   // the coding challenge's full-screen frame, for the Practical exercises
   w.Views = {};
   w.loadCodeMirrorLegacy = async () => { if (!w.CM) w.CM = await loadCodeMirror(); return w.CM; };
 

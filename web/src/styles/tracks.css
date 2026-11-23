@@ -318,3 +318,22 @@ body.section-track #active-run, body.section-track .topbar-side, body.section-tr
   .tr-recent li { grid-template-columns:14px minmax(0,1fr) auto; } .tr-recent small { display:none; }
 }
 .sd-course-category>summary>.tr-tour { grid-column:2/-1; margin-top:12px; }
+
+/* Practical exercise inside the coding challenge's frame (.cwf, see features/coding/PracticalShell.tsx). */
+.cwf .tr-ide { flex:1 1 0; min-height:150px; display:flex; flex-direction:column; overflow:hidden; background:var(--bg); }
+.cwf .tr-tabs { flex:none; }
+.cwf .tr-editors { flex:1 1 0; min-height:0; border:0; border-radius:0; display:flex; flex-direction:column; overflow:hidden; }
+.cwf .tr-editor { flex:1 1 0; min-height:0; overflow:auto; }
+.cwf .tr-editor[hidden] { display:none; }
+.cwf .tr-editor .cm-editor { height:100%; }
+.cwf .tr-readme, .cwf .tr-code { max-height:none; border-radius:0; }
+.cwf .tr-field { flex:none; padding:10px 14px; }
+.cwf .tr-brief { position:static; max-height:none; overflow:visible; border:0; background:none; padding:0; }
+.cwf .tr-actions { gap:8px; }
+.cwf .tr-actions .tr-status { margin:0 4px 0 0; font-size:12px; }
+.cwf .tr-console { gap:0; }
+.cwf .tr-output { margin-top:0; }
+.cwf .tr-after .sd-panel:first-child { margin-top:0; }
+.cwf .tr-coach { display:flex; flex-direction:column; gap:14px; padding:12px 14px; overflow:auto; min-height:0; flex:1 1 0; }
+.cwf .tr-coach .tr-pair { margin:0; }
+.cwf .tr-coach .tr-pair-log { max-height:40vh; }
