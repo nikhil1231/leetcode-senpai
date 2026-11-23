@@ -477,18 +477,32 @@ async def run(get_store):
     """Own the bot for the app's lifetime. Every failure is logged and retried; nothing else waits on it."""
     global RUNNING
     uid = config.DEV_UID if config.local_mode() else config.ACCESS_UID
-    bot, delay = None, 5
-    while True:
-        try:
-            if bot is None:
-                bot = await asyncio.to_thread(Bot, await asyncio.to_thread(get_store, uid))
-                await asyncio.to_thread(register)
-                RUNNING = bot
-            await asyncio.to_thread(bot.step)
-            delay = 5
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.warning('Drip loop failed; retrying in %ss', delay, exc_info=True)
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, 300)
+    bot, delay, failures = None, 5, 0
+    try:
+        while True:
+            try:
+                if bot is None:
+                    bot = await asyncio.to_thread(Bot, await asyncio.to_thread(get_store, uid))
+                    await asyncio.to_thread(register)
+                    RUNNING = bot
+                await asyncio.to_thread(bot.step)
+                delay = 5
+                failures = 0
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                failures += 1
+                if failures >= 3:
+                    log.warning('Drip loop failed (%s consecutive failures); retrying in %ss', failures, delay, exc_info=True)
+                    tg = getattr(bot, 'tg', telegram)
+                    if hasattr(tg, 'close'):
+                        await asyncio.to_thread(tg.close)
+                else:
+                    log.info('Drip loop transient failure (%s/3); retrying in %ss: %s', failures, delay, e)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 300)
+    finally:
+        RUNNING = None
+        tg = getattr(bot, 'tg', telegram)
+        if hasattr(tg, 'close'):
+            await asyncio.to_thread(tg.close)

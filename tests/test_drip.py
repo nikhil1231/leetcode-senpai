@@ -770,3 +770,112 @@ def test_a_gap_ignored_twice_rests_for_a_week_and_is_not_asked(env):
     assert gap['parked_until'] >= clock.t + 6 * DAY
     c = b.send_card(clock.t)
     assert not c or c.get('gap') != 'telegram:gap-1'
+
+
+def test_telegram_client_reuse_and_close(monkeypatch):
+    import httpx
+    from server.drip import telegram
+    telegram.close()
+    try:
+        c1 = telegram.get_client()
+        assert isinstance(c1, httpx.Client)
+        assert not c1.is_closed
+        c2 = telegram.get_client()
+        assert c1 is c2
+        telegram.close()
+        assert c1.is_closed
+        c3 = telegram.get_client()
+        assert c3 is not c1
+        assert not c3.is_closed
+    finally:
+        telegram.close()
+
+
+def test_telegram_call_upload_download(monkeypatch):
+    import httpx
+    from server.drip import telegram
+
+    monkeypatch.setattr(config, 'TELEGRAM_API', 'https://mock.telegram.org')
+    monkeypatch.setattr(config, 'TELEGRAM_BOT_TOKEN', 'mock-token')
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url_path = request.url.path
+        if url_path.endswith('/sendMessage'):
+            payload = json.loads(request.content)
+            return httpx.Response(200, json={'ok': True, 'result': {'message_id': 123, 'text': payload.get('text')}})
+        if url_path.endswith('/sendAudio'):
+            return httpx.Response(200, json={'ok': True, 'result': {'message_id': 124}})
+        if url_path.endswith('/getFile'):
+            return httpx.Response(200, json={'ok': True, 'result': {'file_path': 'voice/test.oga'}})
+        if 'file/botmock-token/voice/test.oga' in url_path:
+            return httpx.Response(200, content=b'fake-audio-bytes')
+        return httpx.Response(404, json={'ok': False, 'description': 'Not Found'})
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(telegram, 'get_client', lambda: mock_client)
+
+    try:
+        res = telegram.call('sendMessage', chat_id=123, text='hello')
+        assert res['message_id'] == 123
+        assert res['text'] == 'hello'
+
+        up_res = telegram.upload('sendAudio', 'audio', 'audio.mp3', b'mp3data', 'audio/mpeg', chat_id=123)
+        assert up_res['message_id'] == 124
+
+        content = telegram.download('file-123')
+        assert content == b'fake-audio-bytes'
+    finally:
+        mock_client.close()
+
+
+@pytest.mark.asyncio
+async def test_drip_run_failure_threshold_logs_info_then_warning(monkeypatch):
+    import asyncio
+    from server.drip import bot as drip_mod
+    logs = []
+
+    class FakeLogger:
+        def info(self, msg, *args, **kwargs):
+            logs.append(('INFO', msg % args if args else msg))
+        def warning(self, msg, *args, **kwargs):
+            logs.append(('WARNING', msg % args if args else msg))
+
+    monkeypatch.setattr(drip_mod, 'log', FakeLogger())
+
+    async def fast_sleep(_):
+        return
+
+    monkeypatch.setattr(drip_mod.asyncio, 'sleep', fast_sleep)
+
+    step_count = 0
+    closed = []
+
+    class MockTg:
+        def close(self):
+            closed.append(True)
+
+    class FailingBot:
+        def __init__(self):
+            self.tg = MockTg()
+        def step(self):
+            nonlocal step_count
+            step_count += 1
+            if step_count <= 4:
+                raise ConnectionResetError("Connection reset by peer")
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(drip_mod, 'Bot', lambda store: FailingBot())
+    monkeypatch.setattr(drip_mod, 'register', lambda: None)
+
+    with pytest.raises(asyncio.CancelledError):
+        await drip_mod.run(lambda uid: FakeStore('me'))
+
+    info_logs = [entry for entry in logs if entry[0] == 'INFO']
+    warning_logs = [entry for entry in logs if entry[0] == 'WARNING']
+    assert len(info_logs) == 2
+    assert "transient failure (1/3)" in info_logs[0][1]
+    assert "transient failure (2/3)" in info_logs[1][1]
+    assert len(warning_logs) == 2
+    assert "3 consecutive failures" in warning_logs[0][1]
+    assert "4 consecutive failures" in warning_logs[1][1]
+    assert len(closed) >= 1
