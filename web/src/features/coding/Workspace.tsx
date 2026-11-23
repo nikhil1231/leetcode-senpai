@@ -156,6 +156,11 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
 
   const leave = async () => { dirty.current = true; await save(); onExit(); };
   const explainOn = dock === "explain" || !exercise.can_run;
+  // The explanation grows to fit what you've written instead of scrolling inside a fixed box.
+  useEffect(() => {
+    const el = box.current; if (submitted || !el || layout.console) return;
+    el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`;
+  }, [text, submitted, explainOn, layout.console]);
   const consoleHeight = () => pane.current?.querySelector(".editor-console")?.getBoundingClientRect().height ?? 0;
   const setH = (h: number | null) => {
     const work = pane.current?.querySelector(".editor-work")?.getBoundingClientRect();
@@ -217,19 +222,6 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   );
   const clockEl = <span className={`cw-clock ${exercise.minutes && elapsed > exercise.minutes * 60 ? "is-over" : ""}`} aria-label="Time on this exercise">{clock(elapsed)}{exercise.minutes ? ` / ${exercise.minutes}:00` : ""}</span>;
 
-  if (submitted) {
-    return (
-      <div className="cw">
-        <header className="cw-head">{title}<div className="cw-actions">{clockEl}</div></header>
-        <div className="cw-main">
-          <aside className="cw-task">{taskBody}</aside>
-          <div className="cw-code">{tree}{viewer}</div>
-        </div>
-        <ReviewPanel attempt={attempt} onAttempt={onAttempt} onOpen={open} onNext={onNext} category={exercise.category} />
-      </div>
-    );
-  }
-
   const tab = (id: "tests" | "changes" | "explain", label: string, on = () => setDock(id)) => (
     <button type="button" role="tab" aria-selected={(id === "explain" ? explainOn : dock === id)} className="pane-tab" onClick={on}>{label}</button>
   );
@@ -239,11 +231,11 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
         <button className="button is-ghost is-small" type="button" onClick={leave} title="Back to Coding practice. Your work is saved.">‹ Back</button>
         {title}
         {clockEl}
-        <div className="cwf-actions">
+        {!submitted && <div className="cwf-actions">
           <button className="button is-ghost" type="button" onClick={() => onNext()} title="Skip this one and start another">Skip</button>
           {exercise.can_run && <button className="button" type="button" disabled={running} onClick={runTests}>{running ? "Running…" : "Run tests"}</button>}
           <button className="button is-primary" type="button" disabled={busy} onClick={submit}>{busy ? "Marking…" : "Submit"}</button>
-        </div>
+        </div>}
       </header>
       <div ref={pane} className={`editor-pane cwf-pane${layout.hidden ? " statement-hidden" : ""}${layout.console ? " console-folded" : ""}`}>
         <div className="editor-statement">
@@ -266,18 +258,21 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
             onDoubleClick={() => setH(null)} />
           <div className="editor-console">
             <div className="console-head">
-              <div className="pane-tabs" role="tablist">
-                {exercise.can_run && tab("tests", `Tests${run ? ` ${run.passed}/${run.total}` : ""}`)}
-                {exercise.can_run && tab("changes", "Your changes", () => { setDock("changes"); showChanges(); })}
-                {tab("explain", "Your explanation")}
-              </div>
+              {submitted ? <div className="pane-tabs"><span className="pane-title">Review</span></div> : (
+                <div className="pane-tabs" role="tablist">
+                  {exercise.can_run && tab("tests", `Tests${run ? ` ${run.passed}/${run.total}` : ""}`)}
+                  {exercise.can_run && tab("changes", "Your changes", () => { setDock("changes"); showChanges(); })}
+                  {tab("explain", "Your explanation")}
+                </div>
+              )}
               <div className="console-tools">
-                {exercise.can_run && !explainOn && <span>{run ? (run.timed_out ? "Timed out." : `${run.passed} of ${run.total} visible tests pass`) : "More checks run when you submit"}</span>}
+                {!submitted && exercise.can_run && !explainOn && <span>{run ? (run.timed_out ? "Timed out." : `${run.passed} of ${run.total} visible tests pass`) : "More checks run when you submit"}</span>}
                 <button className="panel-toggle" type="button" aria-label="Collapse the console" title="Collapse the console" onClick={() => patch({ console: !layout.console })}>&#x2304;</button>
               </div>
             </div>
-            {!explainOn && <div className="console-panel"><TestPanel tab={dock === "changes" ? "changes" : "tests"} run={run} diff={diffText} /></div>}
-            <div className={`console-panel cwf-explain${explainOn ? "" : " hidden"}`}>
+            {submitted ? <div className="console-panel"><ReviewPanel attempt={attempt} onAttempt={onAttempt} onOpen={open} onNext={onNext} category={exercise.category} /></div> : null}
+            {!submitted && !explainOn && <div className="console-panel"><TestPanel tab={dock === "changes" ? "changes" : "tests"} run={run} diff={diffText} /></div>}
+            {!submitted && <div className={`console-panel cwf-explain${explainOn ? "" : " hidden"}`}>
               <div className="cw-field">
                 <div className="textarea cw-mirror" ref={mirror} aria-hidden="true">
                   {(() => {
@@ -296,7 +291,7 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
                 {refs.length === 0 ? <span className="cw-note">No references yet. They are optional.</span> :
                   refs.map((r, i) => <button key={i} type="button" className="cw-chip" onClick={() => open(r.path, r.start, r.end)}>{refToken(r).slice(1, -1)}</button>)}
               </div>
-            </div>
+            </div>}
           </div>
         </div>
       </div>
