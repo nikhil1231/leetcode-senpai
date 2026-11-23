@@ -1,6 +1,6 @@
 "use client";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { queryClient } from "./query-client";
 import { api } from "./api";
 import { ToastProvider, useToast } from "./toast";
@@ -13,19 +13,26 @@ interface LogEvent {
   message: string;
 }
 
-// Watcher that streams and polls backend log warnings/errors and surfaces them as toasts.
+interface LogBatch {
+  boot: string;
+  latest_id: number;
+  events: LogEvent[];
+}
+
+// SSE for quick delivery, polling for buffered proxies, lost connections and server restarts.
 function LogWatcher() {
   const toast = useToast();
-  const lastIdRef = useRef<number>(-1);
 
   useEffect(() => {
     let stopped = false;
     let es: EventSource | null = null;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let lastId = -1;
+    let boot: string | undefined;
+    let polling = false;
 
     const handleEvent = (ev: LogEvent) => {
-      if (typeof ev.id === "number" && ev.id > lastIdRef.current) {
-        lastIdRef.current = ev.id;
+      if (typeof ev.id === "number" && ev.id > lastId) {
+        lastId = ev.id;
         const clean = (ev.message || "").split("\n")[0].trim();
         const short = clean.length > 220 ? clean.slice(0, 217) + "…" : clean;
         const prefix = ev.level === "ERROR" ? "Error" : "Warning";
@@ -35,61 +42,38 @@ function LogWatcher() {
     };
 
     const poll = async () => {
-      if (stopped || document.visibilityState !== "visible") return;
+      if (stopped || polling || document.visibilityState !== "visible") return;
+      polling = true;
       try {
-        if (lastIdRef.current === -1) {
-          const res = await api<{ latest_id: number; events: LogEvent[] }>("/logs/warnings");
-          lastIdRef.current = res.latest_id || 0;
-          return;
-        }
-        const res = await api<{ latest_id: number; events: LogEvent[] }>(
-          `/logs/warnings?since=${lastIdRef.current}`
-        );
-        for (const ev of res.events || []) {
-          handleEvent(ev);
-        }
-        if (res.latest_id && res.latest_id > lastIdRef.current) {
-          lastIdRef.current = res.latest_id;
+        const res = await api<LogBatch>(boot === undefined ? "/logs/warnings" :
+          `/logs/warnings?since=${lastId}&boot=${encodeURIComponent(boot)}`);
+        if (stopped) return;
+        if (res.boot !== boot || lastId === -1) {
+          if (boot === undefined) lastId = res.latest_id; // Don't replay old warnings on page load.
+          else {
+            lastId = 0;
+            for (const ev of res.events) handleEvent(ev);
+          }
+          boot = res.boot;
+          es?.close();
+          if (typeof EventSource !== "undefined") {
+            es = new EventSource(`/api/logs/warnings/stream?since=${lastId}`);
+            es.onmessage = (e) => {
+              try { handleEvent(JSON.parse(e.data)); } catch { /* malformed event */ }
+            };
+          }
+        } else {
+          for (const ev of res.events) handleEvent(ev);
         }
       } catch {
         /* offline or server restarting */
+      } finally {
+        polling = false;
       }
     };
 
-    const start = async () => {
-      try {
-        const init = await api<{ latest_id: number }>("/logs/warnings");
-        if (lastIdRef.current === -1) {
-          lastIdRef.current = init.latest_id || 0;
-        }
-      } catch {
-        lastIdRef.current = 0;
-      }
-      if (stopped) return;
-
-      if (typeof EventSource !== "undefined") {
-        try {
-          es = new EventSource(`/api/logs/warnings/stream?since=${lastIdRef.current}`);
-          es.onmessage = (e) => {
-            try {
-              const data = JSON.parse(e.data);
-              handleEvent(data);
-            } catch {}
-          };
-          es.onerror = () => {
-            if (!pollTimer && !stopped) {
-              pollTimer = setInterval(poll, 3000);
-            }
-          };
-        } catch {}
-      }
-
-      if (!pollTimer && !stopped) {
-        pollTimer = setInterval(poll, 3000);
-      }
-    };
-
-    start();
+    void poll();
+    const pollTimer = setInterval(poll, 3000);
 
     const onVisible = () => {
       if (document.visibilityState === "visible") poll();
@@ -100,7 +84,7 @@ function LogWatcher() {
       stopped = true;
       document.removeEventListener("visibilitychange", onVisible);
       if (es) es.close();
-      if (pollTimer) clearInterval(pollTimer);
+      clearInterval(pollTimer);
     };
   }, [toast]);
 

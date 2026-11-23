@@ -68,15 +68,11 @@ def reply(ex, files, chat, text):
     """Blocking. -> {text, patch, planted}. In a session with a planted mistake, the first request for code gets the flawed
     patch that was written and run with the exercise, with its confident message: the model is not asked to be wrong (strong
     models decline to, or flag it). Every other turn is the model. Raises model_io.ModelError."""
-    from .. import llm, model_areas
     plan = ex.get('assistant_plan') or {}
     if plan.get('kind') and not delivered(chat) and ASKS_FOR_CODE.search(text):
         return {'text': plan['message'], 'patch': dict(plan['flawed_files']), 'planted': True}
-    try:
-        raw = llm._raw_chat(model_areas.model_for('coding'), messages(ex, files, chat, text), options={'timeout': 240, 'think': False})
-    except (RuntimeError, ValueError) as e:
-        raise model_io.ModelError(str(e)) from e
-    explanation, patch = parse(raw['content'])
+    content, _ = model_io.complete('coding', messages(ex, files, chat, text), timeout=240, max_tokens=model_io.REPOSITORY_TOKENS)
+    explanation, patch = parse(content)
     ok = set(ex.get('editable') or [])
     return {'text': explanation or '(no explanation)', 'patch': {p: c for p, c in patch.items() if p in ok}, 'planted': False}
 

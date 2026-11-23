@@ -266,5 +266,5 @@ def _is_test(path):
 
 def generate(spec):
     """Blocking: one model call, then assembly. Raises GenError or model_io.ModelError."""
-    text, model = model_io.chat('coding_gen', SYSTEM, build_prompt(spec), timeout=600)
+    text, model = model_io.chat('coding_gen', SYSTEM, build_prompt(spec), timeout=600, max_tokens=model_io.REPOSITORY_TOKENS)
     return assemble(spec, text, model)

@@ -23,10 +23,11 @@ describe("LogWatcher in Providers", () => {
         callCount++;
         if (callCount === 1) {
           // Initial cursor query
-          return { latest_id: 10, events: [] };
+          return { boot: "first", latest_id: 10, events: [] };
         }
         // Next poll returns a new warning
         return {
+          boot: "first",
           latest_id: 11,
           events: [
             {
@@ -61,5 +62,21 @@ describe("LogWatcher in Providers", () => {
     const toastEl = document.getElementById("toast")!;
     expect(toastEl.textContent).toContain("Warning: LocalRouter failed; falling back to OpenRouter");
     expect(toastEl.classList.contains("hidden")).toBe(false);
+  });
+
+  it("shows errors even when a restarted server's cursor is lower", async () => {
+    const error = { id: 1, t: 1234567, level: "ERROR", name: "server.coding", message: "Examiner failed" };
+    const api = vi.spyOn(apiModule, "api").mockImplementation(async (path) => {
+      if (path === "/logs/warnings") return { boot: "first", latest_id: 100, events: [] };
+      if (path === "/logs/warnings?since=100&boot=first") return { boot: "second", latest_id: 1, events: [error] };
+      return {};
+    });
+
+    render(<Providers><div>app content</div></Providers>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+
+    expect(document.getElementById("toast")).toHaveTextContent("Error: Examiner failed");
+    expect(api).toHaveBeenCalledWith("/logs/warnings?since=100&boot=first");
   });
 });

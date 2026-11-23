@@ -201,11 +201,10 @@ includes up to 12,000 characters of current page text, visible drafts, selection
 and feedback, plus the last eight chat turns. Settings and credential dialogs are
 excluded. Chat stays in memory until refreshed or cleared with **New chat**.
 
-All coaching requests use OpenRouter. Existing saved OpenAI and Gemini
-choices are read as `openai/<model>` and `google/<model>` respectively;
-practice history is unchanged. Direct OpenAI/Gemini API keys are no longer
-used. Configure the OpenRouter key before deploying this migration.
-Without it, coaching is disabled while core practice features still work.
+Plain chat tries LocalRouter first when it serves the selected model, then falls back to OpenRouter.
+When a Claude model is blocked on OpenRouter, chat and structured requests use `~openai/gpt-sol-latest` instead.
+OpenRouter calls require `OPENROUTER_API_KEY`; core practice still works without it.
+New server warnings and errors appear as toasts in the main app. If the live stream is interrupted, the app checks for them in the background.
 
 API details: [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs).
 
@@ -288,6 +287,7 @@ cd web && npm run typecheck
   - A fresh model, shown only what you see, has to reach the key findings. The examiner marks its answer.
   - Executable exercises are also run: the baseline works, the bug reproduces, hidden tests catch it, the reference fix passes everything, any flawed patch behaves as planned, and results repeat.
 - **Queue** (`queue.py`) keeps about two validated exercises per mode in the `coding_ex` track store. Generation runs one at a time in the background after you open the page or start or submit an exercise. It never blocks starting one. Picking uses your latest results; an exercise made for a level two away is replaced. Hand-written exercises in `fallback.py` cover the case where nothing is ready or no model is configured.
+- If a model reply hits the output limit, background generation pauses for that mode until a Coding Practice model choice changes or the server restarts. Ready and hand-written exercises remain playable.
 - **Marking** (`grade.py`, `coding` area) checks meaning against hidden findings, not wording or line numbers. Without a model the attempt is still saved: reading exercises are self-marked against the findings, and repair is marked on the tests. Attempts (score, reasoning score, category, skills, hints used, misconceptions, AI signals) live in the `coding` track store and drive the level and the next choice.
 - **Sandbox** (`sandbox.py`, `sandbox_boot.py`): generated and edited code runs only in a child process.
   - That process runs as `nobody`, in a throwaway directory, with a scrubbed environment and limits on CPU (15 s), memory (768 MB), files, processes and wall time (20 s). At most two run at once.

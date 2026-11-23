@@ -74,9 +74,10 @@ def get_warnings(since: int = 0, limit: int = 50) -> list[dict]:
         return items[-limit:] if limit else items
 
 
-def latest_id() -> int:
+def snapshot(since: int) -> dict:
+    # Read the cursor and its batch together so a concurrent log cannot be skipped.
     with _LOCK:
-        return _SEQ
+        return {"events": [e for e in _BUFFER if e["id"] > since][-50:], "latest_id": _SEQ}
 
 
 def subscribe(loop: asyncio.AbstractEventLoop, q: asyncio.Queue):

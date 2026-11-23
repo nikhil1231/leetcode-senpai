@@ -904,9 +904,10 @@ def api_rev(uid: str = Depends(auth.require_user)):
 
 
 @app.get("/api/logs/warnings")
-def api_log_warnings(since: int = 0, uid: str = Depends(auth.require_user)):
+def api_log_warnings(since: int = 0, boot: Optional[str] = None, uid: str = Depends(auth.require_user)):
     """Recent server log warnings and errors for frontend toasts."""
-    return {"events": log_events.get_warnings(since=since), "latest_id": log_events.latest_id()}
+    data = log_events.snapshot(since if boot in (None, store_mod.BOOT) else 0)
+    return JSONResponse({**data, "boot": store_mod.BOOT}, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/logs/warnings/stream")
@@ -918,6 +919,7 @@ async def api_log_warnings_stream(request: Request, since: Optional[int] = None,
 
     async def events():
         try:
+            yield ": connected\n\n"
             if since is not None:
                 for ev in log_events.get_warnings(since=since):
                     yield f"id: {ev['id']}\ndata: {json.dumps(ev)}\n\n"
@@ -933,7 +935,7 @@ async def api_log_warnings_stream(request: Request, since: Optional[int] = None,
             log_events.unsubscribe(loop, q)
 
     return StreamingResponse(events(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+                             headers=chat_stream.HEADERS)
 
 
 def _practice_store(uid):

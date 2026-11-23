@@ -7,7 +7,7 @@ startup and on every save, as voice.apply does, so call sites ask `model_for(key
 
 Kinds and where their models come from:
   chat        plain text chat: LocalRouter's models (free, the Claude subscriptions) and OpenRouter's text models.
-              Anthropic models only through LocalRouter (llm.forbidden_model); a fallback to OpenRouter refuses them.
+              Anthropic models normally run only on LocalRouter; the OpenRouter fallback uses GPT Sol Latest.
   structured  JSON-schema output: OpenRouter models that support structured outputs, never Anthropic.
   vision      structured, reading an image too.
   image       draws images.

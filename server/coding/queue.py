@@ -10,6 +10,7 @@ import asyncio
 import logging
 import time
 
+from .. import model_areas
 from ..store import get_store
 from . import fallback, generate, model_io, spec as S, validate
 
@@ -21,6 +22,7 @@ EXECUTABLE_ON = True   # repair exercises are generated too: their tests run in 
 _busy: set = set()
 _sem = None
 errors: dict = {}      # (uid, mode) -> last failure, for the overview
+_truncated: dict = {}  # (uid, mode) -> model choices at the last output-limit failure
 
 
 def _lock():
@@ -62,10 +64,14 @@ def make(spec):
 
 async def refill(uid, mode):
     """Top every category up to its buffer. Safe to call as often as you like: one run per user and mode, and it makes
-    nothing when every category is full, so opening an exercise only costs a generation after one has been taken."""
+    nothing when every category is full. Truncation pauses the queue until its model choices change."""
     key = (uid, mode)
     if key in _busy or not model_io.available():
         return
+    models = (model_areas.model_for('coding_gen'), model_areas.model_for('coding'))
+    if _truncated.get(key) == models:
+        return
+    _truncated.pop(key, None)
     _busy.add(key)
     try:
         async with _lock():
@@ -89,6 +95,9 @@ async def refill(uid, mode):
                     failures += 1
                     errors[key] = f'{type(e).__name__}: {e}'[:300]
                     log.warning('coding: generation failed for %s %s: %s', mode, spec['category'], e)
+                    if isinstance(e, model_io.OutputLimitError):
+                        _truncated[key] = models
+                        break
                     continue
                 errors.pop(key, None)
                 store.put_track_record(EX, ex['id'], ex)

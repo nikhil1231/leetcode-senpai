@@ -1,6 +1,7 @@
 """HTTP API for Coding Practice: /api/coding/... Answers are saved before any model call; hidden material is released only
 after a submission (`grade.review`) and never appears in `spec.public` or `public_attempt`."""
 import asyncio
+import logging
 import secrets
 import time
 
@@ -12,6 +13,7 @@ from ..store import get_store
 from ..tracks.http import put
 from . import assistant, grade, model_io, queue, runner, sandbox, spec as S
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/coding', tags=['coding'])
 AT, EX = queue.AT, queue.EX
 ATTEMPT_PUBLIC = ('id', 'mode', 'category', 'exercise_id', 'status', 'started_at', 'explanation', 'hints_used', 'revision',
@@ -196,8 +198,10 @@ async def submit(aid: str, body: SubmitBody, store=Depends(store_for)):
         try:
             result = await _grade(ex, saved, refs, tests)
         except model_io.ModelError as e:
+            log.warning('Coding examiner could not mark the answer: %s', e)
             message = f'The examiner could not mark this just now ({e}). ' + ('Your tests are marked below.' if tests else 'Your answer is saved: mark yourself against the findings below.')
     else:
+        log.warning('Coding examiner disabled: configure LocalRouter or an OpenRouter API key')
         message = 'The examiner is off, so ' + ('only the tests mark this one.' if tests else 'mark yourself against the findings below.')
     if tests:
         result = _combine(tests, result)

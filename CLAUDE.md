@@ -79,12 +79,9 @@ voice (`server/voice.py`) follows the same rules; keep the two in step.
 - **LocalRouter first.** When `LOCALROUTER_URL` is set, every plain chat call whose model LocalRouter serves (Claude
   Sonnet/Opus on Nikhil's subscriptions, free, 8 at once) goes there first and falls back to OpenRouter on failure
   (`llm._local_first`). Structured, speech, image and transcription calls are OpenRouter only.
-- **Never use Anthropic models (`anthropic/…`) through OpenRouter.** They are far too expensive for this app. The
-  rule is on OpenRouter only (Nikhil, 2026-11-13): through LocalRouter any conversation area may use them.
-  `llm._openrouter_allowed` refuses the OpenRouter leg, so an Anthropic chat whose LocalRouter call fails errors
-  instead of paying, except for the callers in `llm.ANTHROPIC_EXCEPTIONS` (Nikhil, 2026-11-12): the podcast's
-  scriptwriter (~$0.20 an episode) and the tutor's voice. The tutor's prompt is built to cache
-  (`session.prompt`, `llm.cache_marks`) for that paid fallback.
+- **Do not pay for Anthropic models through OpenRouter.** Claude can run on LocalRouter; when blocked on
+  OpenRouter, text and vision requests use `~openai/gpt-sol-latest`. The only paid Anthropic exceptions are
+  the podcast scriptwriter and the tutor's voice (`llm.ANTHROPIC_EXCEPTIONS`).
 - Paid model calls are for the app's runtime features only. One-off content work (drafting,
   linking, mapping, rewriting lessons) is done by the agent in its own session, not scripted
   through OpenRouter; scripts that need answers export prompts and import the agent's answers

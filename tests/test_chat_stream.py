@@ -117,9 +117,9 @@ def test_the_stream_refuses_empty_and_cut_off_replies(monkeypatch):
         collect(monkeypatch, chunk(finish='stop') + 'data: [DONE]\n\n')
     with pytest.raises(RuntimeError, match='output limit'):
         collect(monkeypatch, chunk('Half') + chunk(finish='length'))
-    # An Anthropic model falls back to openai/gpt-sol-latest on OpenRouter
+    # An Anthropic model falls back to the Sol Latest alias on OpenRouter.
     pieces, seen = collect(monkeypatch, chunk('x') + chunk(finish='stop') + 'data: [DONE]\n\n', model='anthropic/claude-opus-5.5')
-    assert pieces[0] == {'text': 'x'} and seen['body']['model'] == 'openai/gpt-sol-latest'
+    assert pieces[0] == {'text': 'x'} and seen['body']['model'] == '~openai/gpt-sol-latest'
 
 
 # ---- caching and reasoning ------------------------------------------------------------------
@@ -224,7 +224,6 @@ def test_the_anthropic_ban_falls_back_to_sol_latest_on_openrouter(local, monkeyp
     post_to(monkeypatch, local, local_status=503)
     r = llm._raw_chat(SONNET, [{'role': 'user', 'content': 'hi'}])   # falls back to sol latest on OpenRouter
     assert r['via'] == 'openrouter' and local == ['lr.test', 'openrouter.ai']
-    assert llm.OPENROUTER_FALLBACK_MODEL == 'openai/gpt-sol-latest'
 
 
 def test_unset_or_unreachable_localrouter_means_openrouter(monkeypatch):
