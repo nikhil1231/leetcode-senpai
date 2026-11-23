@@ -18,7 +18,9 @@ export function bestMatch(text: string, a: Anchor): number {
     for (let k = 0; k < a.suffix.length && text[end + k] === a.suffix[k]; k++) s++;
     if (s > score) { best = i; score = s; }
   }
-  return best;
+  // A repeat of the word elsewhere (another message in the same chat) shares almost none of the surrounding text.
+  const need = Math.floor((a.prefix.length + a.suffix.length) / 2);
+  return score >= need ? best : -1;
 }
 
 export function flatten(root: Node, skip: string): Flat {
