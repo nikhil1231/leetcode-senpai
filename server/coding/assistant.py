@@ -10,7 +10,7 @@ import re
 from . import model_io, runner
 
 SYSTEM = (
-    "You are an AI coding assistant pairing with a software engineer on a task in an unfamiliar Python repository. Write like a "
+    "You are an AI coding assistant pairing with a software engineer on a task in an unfamiliar repository. Use the repository’s language (Java or Python), standard library and existing test conventions. Write like a "
     "capable colleague: direct, concise, plain British English, no flattery, no em dashes. You cannot run code or tests; never "
     "claim to have run anything. When you propose code, give complete replacement files in PATCH blocks, one per file:\n"
     "<<<PATCH path/to/file.py>>>\n...whole file...\n<<<END>>>\n"
@@ -53,7 +53,7 @@ def messages(ex, files, chat, text):
     repo = '\n\n'.join(f'### {p}\n{c}' for p, c in files.items())[:60_000]
     history = [{'role': 'assistant' if m['role'] == 'assistant' else 'user', 'content': m['text'] + ('\n(patch offered: ' + ', '.join(m['patch']) + ')' if m.get('patch') else '')}
                for m in chat[-16:]]
-    context = f"TASK:\n{ex['task']}\n\nTHE REPOSITORY NOW (including the learner's edits):\n{repo}"
+    context = f"LANGUAGE: {ex['language']}\nTASK:\n{ex['task']}\n\nTHE REPOSITORY NOW (including the learner's edits):\n{repo}"
     return [{'role': 'system', 'content': SYSTEM + '\n\n' + guidance(ex, chat)}, {'role': 'user', 'content': context}, {'role': 'assistant', 'content': 'Understood. What would you like to do?'},
             *history, {'role': 'user', 'content': text}]
 
@@ -93,7 +93,9 @@ ASSESS = (
     "You are the examiner for an AI-assisted coding exercise. You are given the task, the timeline of what the learner did (their "
     "messages to the assistant, its replies and patches, whether each patch was applied, test runs), the final code change and test "
     "results, and what the assistant was secretly set to do. Judge how well the learner worked with the AI, separately from whether "
-    "the code is right. Be specific, quote what they did, no flattery, British English, no em dashes. Reply with one JSON object only."
+    "the code is right. Give at most two transferable habits: for each, cite the observed action and explain a concrete "
+    "method to use with an AI on a different task. Avoid file-specific fixes, cosmetic nits and repeated advice. "
+    "Treat tentative hypotheses as exploration, not settled misconceptions, and ignore dictated fillers. Be specific, quote what they did, no flattery, British English, no em dashes. Reply with one JSON object only."
 )
 ASSESS_SCHEMA = (
     '{"prompt_quality":{"score":0-100,"note":""},"independent_investigation":{"score":0-100,"note":"did they read the code and form '

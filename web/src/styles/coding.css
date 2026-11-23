@@ -173,3 +173,30 @@
 .cw-split-out { flex: 1 1 0; min-width: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
 .cw-split-title { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: var(--muted, inherit); word-break: break-all; }
 .cw-split-out .cw-test-msg { margin: 0; max-height: none; flex: 1 1 auto; }
+
+/* Review: a short coaching layer above the supporting evidence. */
+.cw-review { line-height: 1.65; max-width: 1100px; margin-inline: auto; width: 100%; min-width: 0; box-sizing: border-box; overflow-wrap: anywhere; }
+.cw-review .cw-summary { max-width: 78ch; margin: 20px 0; }
+.cw-takeaways { background: var(--panel2); border: 1px solid var(--line-hi); border-radius: 10px; padding: 18px 22px; margin: 20px 0; }
+.cw-takeaways h3 { margin: 0 0 14px; color: var(--text); font-size: 17px; }
+.cw-takeaways ol { padding-left: 22px; margin: 0; }
+.cw-takeaways li + li { border-top: 1px solid var(--line-soft); margin-top: 18px; padding-top: 18px; }
+.cw-takeaways h4 { font-size: 15px; margin: 0 0 8px; }
+.cw-takeaways p { margin: 8px 0 0; max-width: 80ch; }
+.cw-coaching { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px 28px; margin-bottom: 22px; }
+.cw-review li + li { margin-top: 8px; }
+.cw-review .cw-review-section { border-top: 1px solid var(--line); margin-top: 0; padding: 14px 0; }
+.cw-review-section > summary { cursor: pointer; font-weight: 600; padding: 5px 0; color: var(--text-2); }
+.cw-review-section[open] > summary { margin-bottom: 16px; }
+.cw-review summary:focus-visible { outline: 2px solid var(--line-hi); outline-offset: 4px; }
+.cw-review code { background: var(--panel2); border-radius: 4px; padding: 1px 4px; font-size: .92em; }
+.cw-findings .cw-finding-note { margin: 8px 0 0; color: var(--muted); }
+.cw-review .cw-findings li { padding: 14px; }
+@media (max-width: 600px) {
+  .cw-review { padding: 14px; }
+  .cw-takeaways { padding: 14px; }
+  .cw-review .cw-findings li { grid-template-columns: 1fr; }
+  .cw-review .cw-findings li > .cw-chips { grid-column: 1; }
+}
+
+.cw-takeaways .cw-note { font-size: 14px; color: var(--text-2); }

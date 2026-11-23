@@ -1,10 +1,14 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 COPY --from=ghcr.io/astral-sh/uv:0.11.6 /uv /usr/local/bin/uv
 
 ENV PYTHONUNBUFFERED=1 \
     PORT=8080 \
     PATH="/app/.venv/bin:$PATH" \
     UV_PYTHON_DOWNLOADS=never
+
+# Java exercises use a pinned runtime with the restrictive sandbox policy enabled.
+# Java 24+ removed that facility; never silently run exercises without it.
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-21-jdk-headless && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

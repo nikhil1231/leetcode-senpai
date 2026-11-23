@@ -9,8 +9,10 @@ export interface TestRow { id: string; status: "passed" | "failed" | "error" | "
 export interface TestSummary { passed: number; total: number; failed: string[] }
 export interface Finding { id: string; text: string; key: boolean; locations: Ref[] }
 export interface Result {
-  score: number; process: number | null; process_note: string; by: "examiner" | "self";
+  score: number; process: number | null; process_note: string; by: "examiner" | "self" | "tests";
   findings: { id: string; met: boolean; note: string }[]; misconceptions: string[]; strengths: string[]; improve: string[]; summary: string;
+  takeaways?: { principle: string; evidence: string; next_time: string }[];
+  omissions?: string[]; communication?: string[]; feedback_version?: number;
   alternative_accepted?: boolean; test_score?: number; explanation_score?: number;
   tests?: { visible: TestRow[]; hidden: TestRow[]; visible_summary: TestSummary; hidden_summary: TestSummary; timed_out: boolean };
 }

@@ -21,9 +21,10 @@ NO_MISTAKE_SHARE = 0.35    # sessions where the assistant is right, so suspicion
 MINUTES = {1: 20, 2: 25, 3: 35, 4: 45, 5: 50}              # test runs per attempt
 CATEGORY_LABELS = {'comprehension': 'Code comprehension', 'localisation': 'Bug localisation', 'repair': 'Debug and repair',
                    'feature': 'Feature', 'bugfix': 'Bug fix'}
-EXECUTABLE = ('repair', 'feature', 'bugfix')   # categories whose code is edited and run (Python, in the sandbox)
-LANGUAGES = {'python': ('py',), 'javascript': ('js', 'mjs'), 'go': ('go',), 'java': ('java',)}
-READING_LANGUAGES = [('python', 5), ('javascript', 2), ('go', 2), ('java', 1)]
+EXECUTABLE = ('repair', 'feature', 'bugfix')   # categories whose code is edited and run (Python or Java, in the sandbox)
+LANGUAGES = {'python': ('py',), 'javascript': ('js', 'mjs'), 'go': ('go',), 'java': ('java',), 'typescript': ('ts', 'tsx')}
+READING_LANGUAGES = [('java', 70), ('python', 25), ('go', 2.5), ('typescript', 2.5)]
+EXECUTION_LANGUAGES = [('java', 70), ('python', 25)]
 TARGET_READY = 2           # validated exercises kept per category
 LEVELS = 5
 MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES = 14, 24_000, 90_000
@@ -207,7 +208,7 @@ def choose(attempts, mode, rng=None, recent_archetypes=(), executable=False, cat
     ws = weakness(attempts, mode, 'skills', list(SKILLS))
     skills = [s for s, _ in sorted(ws.items(), key=lambda kv: -kv[1] - rng.random() * 0.15)[:2]]
     fresh = [a for a in ARCHETYPES if a not in set(recent_archetypes)] or ARCHETYPES
-    langs = [('python', 1)] if category in EXECUTABLE else READING_LANGUAGES
+    langs = EXECUTION_LANGUAGES if category in EXECUTABLE else READING_LANGUAGES
     language = rng.choices([l for l, _ in langs], weights=[w for _, w in langs])[0]
     plan = None
     if mode == 'assisted':
@@ -215,6 +216,21 @@ def choose(attempts, mode, rng=None, recent_archetypes=(), executable=False, cat
         plan = None if rng.random() < (0.15 if careless else NO_MISTAKE_SHARE) else rng.choice(list(MISTAKES))
     return {'plan': plan, 'mode': mode, 'category': category, 'difficulty': level, 'skills': skills, 'language': language,
             'archetype': rng.choice(fresh)}
+
+
+def language_deficits(records, executable=False):
+    """Largest deficit first: balance exercises actually served, or served plus the ready buffer.
+
+    Reading gets 70/25/2.5/2.5; execution renormalises the Java/Python weights to 70/95 and 25/95.
+    Old JavaScript exercises remain readable but do not enter the new target distribution.
+    """
+    weights = EXECUTION_LANGUAGES if executable else READING_LANGUAGES
+    counts = {lang: 0 for lang, _ in weights}
+    for r in records:
+        if (r.get('category') in EXECUTABLE) == executable and r.get('language') in counts:
+            counts[r['language']] += 1
+    total, scale = sum(counts.values()) + 1, sum(w for _, w in weights)
+    return {lang: total * weight / scale - counts[lang] for lang, weight in weights}
 
 
 def overreliance(attempts):

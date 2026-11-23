@@ -404,8 +404,9 @@ def _resolve(ex):
 def pick(mode, category=None, seen=()):
     pool = [e for e in CURATED if e['mode'] == mode and (category is None or e['category'] == category)] or [e for e in CURATED if e['mode'] == mode]
     fresh = [e for e in pool if e['title'] not in seen]
-    if not fresh:   # this category's hand-written ones are used up: a different unseen one beats repeating one just done
-        fresh = [e for e in CURATED if e['mode'] == mode and e['title'] not in seen] or pool
+    if not fresh:
+        # An explicit repair request must not turn into a read-only exercise when the fallback was seen.
+        fresh = pool if category else [e for e in CURATED if e['mode'] == mode and e['title'] not in seen] or pool
     ex = _resolve(copy.deepcopy(fresh[0 if len(fresh) == 1 else secrets.randbelow(len(fresh))]))
     ex.update(id='ex_' + secrets.token_hex(8), created_at=time.time())
     return ex

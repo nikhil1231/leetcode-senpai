@@ -21,12 +21,26 @@ def overlay(ex, learner=None, fixed=False):
     return files
 
 
+def _run(ex, files, tests, hidden=None):
+    if ex.get('language') == 'java':
+        from . import java_sandbox
+        result = java_sandbox.run_tests(files, tests, hidden=hidden)
+    elif ex.get('language', 'python') != 'python':
+        raise sandbox.SandboxError('Only Python and Java execution is supported')
+    else:
+        result = sandbox.run_tests(files, modules(tests), hidden=hidden)
+    if result.get('loaderror') or result.get('timed_out') or result.get('crashed') or not result.get('rows'):
+        result['rows'] = [*(result.get('rows') or []), {'id': 'runner.execution', 'status': 'error',
+                         'message': result.get('loaderror') or ('Test run timed out' if result.get('timed_out') else 'Test run did not finish')}]
+    return result
+
+
 def run_visible(ex, learner=None):
-    return sandbox.run_tests(overlay(ex, learner), modules(ex['visible_tests']))
+    return _run(ex, overlay(ex, learner), ex['visible_tests'])
 
 
 def run_hidden(ex, learner=None, fixed=False):
-    return sandbox.run_tests(overlay(ex, learner, fixed), modules(ex['hidden_tests']), hidden=ex['hidden_tests'])
+    return _run(ex, overlay(ex, learner, fixed), ex['hidden_tests'], hidden=ex['hidden_tests'])
 
 
 def learner_rows(result, keep_messages=True):

@@ -115,7 +115,7 @@ async def start(mode: str, body: StartBody, uid: str = Depends(auth.require_user
     now = time.time()
     a = put(store, AT, 'at_' + secrets.token_hex(8),
             {'kind': 'attempt', 'mode': mode, 'category': ex['category'], 'exercise_id': ex['id'], 'difficulty': ex['difficulty'],
-             'skills': ex['skills'], 'title': ex['title'], 'status': 'open', 'started_at': now, 'updated_at': now,
+             'language': ex['language'], 'skills': ex['skills'], 'title': ex['title'], 'status': 'open', 'started_at': now, 'updated_at': now,
              'explanation': '', 'hints_used': 0, 'files': {}, 'runs': []})
     queue.kick(uid, mode)
     return {'attempt': public_attempt(a, ex), 'exercise': S.public(ex)}
