@@ -373,3 +373,38 @@ def test_overreliance_is_read_from_recent_sessions_and_makes_planted_mistakes_le
     assert S.overreliance(careless) and not S.overreliance(careless[:2])
     share = lambda done: sum(S.choose(done, 'assisted', random.Random(i), executable=True)['plan'] is None for i in range(300))
     assert share(careless) < share([])
+
+
+def test_practical_coach_uses_live_rules_and_only_public_context(monkeypatch):
+    from server.coding import coach
+    ex = {'task': 'Trace the request', 'model_answer': 'SECRET ANSWER', 'assistant_plan': {'secret': True}}
+    captured = {}
+
+    def ask(area, system, prompt, **kwargs):
+        captured.update(area=area, system=system, prompt=prompt)
+        return {'text': 'What changes here? [a.py:2] [missing.py:1]'}, 'model'
+
+    monkeypatch.setattr(coach.model_io, 'ask_json', ask)
+    out = coach.reply(ex, FILES, [{'role': 'user', 'text': 'I checked f'}], 'My draft', 'Where next?')
+    assert out['refs'] == [{'path': 'a.py', 'start': 2, 'end': 2}]
+    assert captured['system'].startswith(llm.TASKS['live_hint'].system)
+    assert captured['area'] == 'run_coach'
+    assert 'SECRET ANSWER' not in captured['prompt'] and 'assistant_plan' not in captured['prompt']
+    assert '2:     return 1' in captured['prompt'] and 'My draft' in captured['prompt'] and 'I checked f' in captured['prompt']
+
+
+def test_practical_coach_saved_counted_resumed_and_unavailable(client, monkeypatch):
+    monkeypatch.setattr(api.model_io, 'available', lambda: True)
+    monkeypatch.setattr(api.coach, 'reply', lambda *args: {'text': 'Trace this call.', 'refs': []})
+    start = client.post('/api/coding/reading/start', json={'category': 'localisation'}).json()
+    aid = start['attempt']['id']
+    url = f'/api/coding/attempts/{aid}/coach'
+    response = client.post(url, json={'message': 'Where next?', 'explanation': 'My draft'})
+    assert response.status_code == 200
+    assert [m['role'] for m in response.json()['chat']] == ['user', 'assistant']
+    resumed = client.post('/api/coding/reading/start', json={}).json()['attempt']
+    assert resumed['coach_chat'] == response.json()['chat'] and resumed['hints_used'] == 1
+    assert resumed['hints'] == []  # coach turns must not unlock unseen canned hints
+    monkeypatch.setattr(api.model_io, 'available', lambda: False)
+    assert client.post(url, json={}).status_code == 503
+    assert client.post('/api/coding/reading/start', json={}).json()['attempt']['hints_used'] == 1

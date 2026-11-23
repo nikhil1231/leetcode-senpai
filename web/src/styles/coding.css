@@ -173,3 +173,14 @@
 .cw-split-out { flex: 1 1 0; min-width: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
 .cw-split-title { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: var(--muted, inherit); word-break: break-all; }
 .cw-split-out .cw-test-msg { margin: 0; max-height: none; flex: 1 1 auto; }
+
+/* Practical coding uses the live editor's coach column and shared rail. */
+.cwf.active-run.has-editor { position: fixed; margin: 0; border: 0; border-radius: 0; }
+.cwf-head { grid-column: 1 / -1; }
+.cwf-pane { grid-column: 1; min-width: 0; }
+@media (max-width: 960px) {
+  .cwf.active-run.has-editor { display: block; height: 100dvh; overflow: auto; }
+  .cwf .run-chat-host { min-height: 360px; }
+  .cwf .run-coach { min-height: 440px; }
+  .cwf.coach-hidden .run-coach { min-height: 0; }
+}

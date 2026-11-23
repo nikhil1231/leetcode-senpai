@@ -11,13 +11,13 @@ from pydantic import BaseModel, Field
 from .. import auth
 from ..store import get_store
 from ..tracks.http import put
-from . import assistant, grade, model_io, queue, runner, sandbox, spec as S
+from . import assistant, coach, grade, model_io, queue, runner, sandbox, spec as S
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/coding', tags=['coding'])
 AT, EX = queue.AT, queue.EX
 ATTEMPT_PUBLIC = ('id', 'mode', 'category', 'exercise_id', 'status', 'started_at', 'explanation', 'hints_used', 'revision',
-                  'submitted_at', 'elapsed_sec', 'files', 'runs', 'chat', 'last_run')
+                  'submitted_at', 'elapsed_sec', 'files', 'runs', 'chat', 'last_run', 'coach_chat')
 
 
 def store_for(uid: str = Depends(auth.require_user)):
@@ -33,7 +33,7 @@ def public_attempt(a, ex=None):
     if 'chat' in out:
         out['chat'] = [_shown(m) for m in out['chat'] or []]
     out['refs'] = S.parse_refs(a.get('explanation', ''), ex['files']) if ex else []
-    out['hints'] = (ex.get('hints') or [])[:a.get('hints_used', 0)] if ex else []
+    out['hints'] = (ex.get('hints') or [])[:a.get('hint_ladder_used', a.get('hints_used', 0))] if ex else []
     if a.get('status') == 'submitted':
         out['result'] = a.get('result')
         out['needs_self_mark'] = not a.get('result')
@@ -153,10 +153,10 @@ def hint(aid: str, store=Depends(store_for)):
     ex = _exercise(store, a)
     if a['status'] != 'open':
         raise HTTPException(409, 'This attempt is already submitted')
-    n = a.get('hints_used', 0)
+    n = a.get('hint_ladder_used', a.get('hints_used', 0))
     if n >= len(ex.get('hints') or []):
         raise HTTPException(409, 'No more hints')
-    saved = put(store, AT, aid, {**a, 'hints_used': n + 1}, a['revision'])
+    saved = put(store, AT, aid, {**a, 'hints_used': a.get('hints_used', 0) + 1, 'hint_ladder_used': n + 1}, a['revision'])
     return {'hints': ex['hints'][:n + 1], 'revision': saved['revision']}
 
 
@@ -261,6 +261,39 @@ def _combine(tests, marked):
 class AssistBody(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     files: dict[str, str] = Field(default_factory=dict)
+
+
+class CoachBody(BaseModel):
+    message: str = Field(default='', max_length=4000)
+    files: dict[str, str] = Field(default_factory=dict)
+    explanation: str = Field(default='', max_length=30000)
+
+
+@router.post('/attempts/{aid}/coach')
+async def coach_chat(aid: str, body: CoachBody, store=Depends(store_for)):
+    a = _attempt(store, aid)
+    ex = _exercise(store, a)
+    if a['status'] != 'open':
+        raise HTTPException(409, 'This attempt is already submitted')
+    if not model_io.available():
+        raise HTTPException(503, 'The coach needs a model, and none is configured.')
+    chat = list(a.get('coach_chat') or [])
+    if len(chat) >= S.MAX_ASSIST * 2:
+        raise HTTPException(429, 'This session has reached its coach message limit.')
+    files = runner.overlay(ex, {**(a.get('files') or {}), **_learner_files(ex, body.files)})
+    try:
+        out = await asyncio.to_thread(coach.reply, ex, files, chat, body.explanation, body.message)
+    except model_io.ModelError as e:
+        raise HTTPException(502, f'The coach did not answer ({e}). Try again.') from e
+    a = _attempt(store, aid)
+    if a['status'] != 'open':
+        raise HTTPException(409, 'This attempt is already submitted')
+    chat = list(a.get('coach_chat') or []) + [
+        {'id': secrets.token_hex(4), 'role': 'user', 'text': body.message or 'Give me a hint', 'at': time.time()},
+        {'id': secrets.token_hex(4), 'role': 'assistant', **out, 'at': time.time()}]
+    saved = put(store, AT, aid, {**a, 'coach_chat': chat, 'hints_used': a.get('hints_used', 0) + 1,
+                                 'hint_ladder_used': a.get('hint_ladder_used', a.get('hints_used', 0))}, a['revision'])
+    return {'chat': chat, 'revision': saved['revision']}
 
 
 @router.post('/attempts/{aid}/assist')

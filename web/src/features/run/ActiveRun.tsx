@@ -10,8 +10,9 @@ import { clockNow, useRun } from "@/lib/run-store";
 import { useToast } from "@/lib/toast";
 import { useUi } from "@/lib/ui-store";
 import { EditorHead, EditorPane } from "@/features/editor/EditorPane";
-import { COACH_PX, useEditorUi, useLayout } from "@/features/editor/editor-store";
+import { useEditorUi, useLayout } from "@/features/editor/editor-store";
 import { useRunActions } from "./useRunActions";
+import { CoachSidebar, coachWidth } from "@/features/editor/CoachSidebar";
 import { Chat, type ChatMessage } from "@/components/chat/Chat";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,14 +44,12 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
   const setCookie = useUi((s) => s.setCookie);
   const openAnnotate = useFlow((s) => s.openAnnotate);
   const layout = useLayout((s) => s.layout);
-  const patchLayout = useLayout((s) => s.patch);
   const [, force] = useState(0);
   const [menu, setMenu] = useState(false);
   const [giveArmed, armGive, disarmGive] = useArmed();
   const [endArmed, armEnd, disarmEnd] = useArmed();
   const [busy, setBusy] = useState<string | null>(null);
   const pauseReq = useRef(0);
-  const root = useRef<HTMLElement>(null);
 
   // One tick a second drives the clock and its nudges.
   useEffect(() => { const t = setInterval(() => force((n) => n + 1), 1000); return () => clearInterval(t); }, []);
@@ -158,19 +157,13 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
     } catch (e) { toast((e as Error).message); } finally { setBusy(null); }
   };
   const checkSolve = () => window.dispatchEvent(new CustomEvent("senpai-detect-solves", { detail: { force: true } }));
-  const cw = Number(layout.coachW) ? Math.round(Math.min(COACH_PX.max, Math.max(COACH_PX.min, Number(layout.coachW)))) : null;
+  const cw = coachWidth(layout.coachW);
   const critique = active.plan_check;
   const items = critique ? [...(critique.nudges || []).filter(Boolean).map((n: string) => `${n}`), ...(critique.missing_edge_cases || []).filter(Boolean).map((m: string) => `Check ${m}.`)] : [];
   const verdict = critique ? ({ ready: "Looks ready", revise: "Worth revisiting" } as Any)[critique.overall_verdict] || "Plan check" : "";
-  const dragCoach = (e: React.PointerEvent) => {
-    e.preventDefault(); const t = e.currentTarget as HTMLElement; t.setPointerCapture(e.pointerId);
-    const right = root.current!.querySelector("#run-coach")!.getBoundingClientRect().right;
-    const move = (ev: PointerEvent) => patchLayout({ coachW: right - ev.clientX }); const up = () => { t.removeEventListener("pointermove", move); t.removeEventListener("pointerup", up); };
-    t.addEventListener("pointermove", move); t.addEventListener("pointerup", up);
-  };
 
   return (
-    <section ref={root} id="active-run" className={`active-run${active.is_paused ? " is-paused" : ""}${hasEditor ? " has-editor" : ""}${layout.coach ? " coach-hidden" : ""}`} style={cw ? ({ "--coach-w": `${cw}px` } as React.CSSProperties) : undefined}>
+    <section id="active-run" className={`active-run${active.is_paused ? " is-paused" : ""}${hasEditor ? " has-editor" : ""}${layout.coach ? " coach-hidden" : ""}`} style={cw ? ({ "--coach-w": cw } as React.CSSProperties) : undefined}>
       <div className="active-run-inner" aria-live="polite">
         <div className="active-kicker"><span className="dot" /><span id="active-status">{active.is_paused ? "Run paused" : "Current run"}</span></div>
         <h2 id="active-title">{active.title}</h2>
@@ -192,12 +185,7 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
         </div>
       </div>
       {hasEditor && <EditorPane key={`${active.slug}`} active={active} prefetched={editor} />}
-      <aside id="run-coach" className="run-coach" aria-label="Coach" onClick={(e) => { if (layout.coach || (e.target as HTMLElement).closest("#btn-coach-toggle")) patchLayout({ coach: !layout.coach }); }}>
-        <div id="coach-split" className="editor-split coach-split" role="separator" aria-orientation="vertical" aria-label="Resize the coach" tabIndex={0} title="Drag to resize · double-click to reset"
-          onClick={(e) => e.stopPropagation()} onPointerDown={dragCoach} onDoubleClick={() => patchLayout({ coachW: null })}
-          onKeyDown={(e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); const w = root.current!.querySelector("#run-coach")!.getBoundingClientRect().width; patchLayout({ coachW: w + (e.key === "ArrowLeft" ? 20 : -20) }); }} />
-        <div className="coach-head"><span className="coach-title">Coach</span><span id="coach-model" className="coach-model-name">{overview?.llm_enabled ? overview.llm_model : "off"}</span>
-          <button id="btn-coach-toggle" className="panel-toggle" type="button" aria-label="Hide the coach" title="Hide the coach">&#x203A;</button></div>
+      <CoachSidebar model={overview?.llm_enabled ? overview.llm_model : "off"}>
         <div className="active-notes" onClick={(e) => e.stopPropagation()}>
           {critique && <div id="plan-check-panel" className="plan-critique"><div className="plan-critique-title"><span>Plan check</span><span>{verdict}</span></div>{items.length ? <ul>{items.map((i, n) => <li key={n}>{i}</li>)}</ul> : <p className="small">No specific concerns.</p>}</div>}
           {nudge && <div id="nudge" className="nudge">{nudge}<button id="btn-nudge-close" className="nudge-close" type="button" aria-label="Close" title="Close" onClick={() => setNudge(null)}>&times;</button></div>}
@@ -242,7 +230,7 @@ export function ActiveRun({ onSolved }: { onSolved: (res: Any) => void }) {
             )}
           </div>
         </div>
-      </aside>
+      </CoachSidebar>
     </section>
   );
 }
