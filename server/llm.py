@@ -856,6 +856,7 @@ def forbidden_model(model: str) -> bool:
 # Callers allowed to fall back to an Anthropic model on OpenRouter when LocalRouter fails, both Nikhil's decisions on
 # 2026-11-12: the podcast's fallback scriptwriter (server/podcast_drama.py) and the tutor's voice.
 ANTHROPIC_EXCEPTIONS = {"podcast fallback", "tutor"}
+OPENROUTER_FALLBACK_MODEL = "~openai/gpt-sol-latest"
 
 
 def valid_model(model: str) -> bool:
@@ -867,8 +868,6 @@ def _selected(settings: Optional[dict] = None) -> tuple[str, str]:
     # Old Firestore settings may still name openai/gemini. All requests now
     # use OpenRouter; the saved model vendor becomes part of the model ID.
     model = normalize_model((settings or {}).get("llm_model") or config.LLM_MODEL)
-    if forbidden_model(model):
-        model = "openai/gpt-5.6-luna"
     return "openrouter", model
 
 
@@ -878,6 +877,8 @@ def enabled(settings: Optional[dict] = None) -> bool:
 
 def current_model(settings: Optional[dict] = None) -> dict:
     provider, model = _selected(settings)
+    if forbidden_model(model):
+        model = OPENROUTER_FALLBACK_MODEL
     return {"provider": provider, "model": model, "enabled": enabled(settings)}
 
 
@@ -925,7 +926,7 @@ def available_models() -> list[str]:
 
 
 def model_options(settings: Optional[dict] = None) -> dict:
-    _, selected = _selected(settings)
+    selected = current_model(settings)["model"]
     return {"openrouter": sorted(set(available_models()) | {selected})}
 
 
@@ -959,35 +960,23 @@ def _raw_generate(provider: str, model: str, system: str, prompt: str, schema, *
     """Single transport choke point; tests replace this to avoid network calls."""
     if provider != "openrouter":
         raise ValueError(f"unsupported LLM provider {provider}")
-    if forbidden_model(model):
-        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+    model = _resolve_openrouter_model(model)
     extra = {}
     if options:
         extra = {"reasoning": {"enabled": False} if options.get("think") is False else {"effort": options["effort"], "exclude": True},
                  "max_tokens": options["max_tokens"]}
-    resp = httpx.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-            "X-Title": "LeetCode Senpai",
-        },
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            "response_format": _response_format(schema),
-            "provider": {"require_parameters": True},
-            "stream": False,
-            **extra,
-        },
-        timeout=(options or {}).get("timeout", 60),
-    )
-    # Keep provider response bodies out of the UI (they can echo prompts); log only.
+    body = {
+        "model": model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+        "response_format": _response_format(schema),
+        "provider": {"require_parameters": True},
+        "stream": False,
+        **extra,
+    }
+    resp = _post_openrouter_chat(body, (options or {}).get("timeout", 60))
+    # Provider response bodies can echo prompts; don't include them in warning toasts.
     if resp.is_error:
-        log.warning("OpenRouter HTTP %s for %s: %s", resp.status_code, model, resp.text[:500])
+        log.warning("OpenRouter HTTP %s for %s", resp.status_code, model)
         raise RuntimeError(f"OpenRouter request failed (HTTP {resp.status_code})")
     data = resp.json()
     if data.get("error"):
@@ -1030,9 +1019,12 @@ def cache_marks(model: str, messages: list, ttl: Optional[str] = None) -> list:
     return out
 
 
-def _openrouter_allowed(model: str, options: dict):
-    if forbidden_model(model) and options.get("allow_anthropic") not in ANTHROPIC_EXCEPTIONS:
-        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+def _resolve_openrouter_model(model: str, allow_anthropic: Optional[str] = None) -> str:
+    """Use Sol for text/vision calls whose selected model is blocked on OpenRouter."""
+    if forbidden_model(model) and allow_anthropic not in ANTHROPIC_EXCEPTIONS:
+        log.warning("Anthropic model %s not allowed on OpenRouter; falling back to %s", model, OPENROUTER_FALLBACK_MODEL)
+        return OPENROUTER_FALLBACK_MODEL
+    return model
 
 
 def _chat_body(model: str, messages: list, options: dict, stream: bool) -> dict:
@@ -1050,6 +1042,19 @@ def _headers():
 
 
 OPENROUTER_CHAT = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _post_openrouter_chat(body: dict, timeout: float):
+    resp = httpx.post(OPENROUTER_CHAT, timeout=timeout, json=body, headers=_headers())
+    if resp.status_code == 400 and body.get("reasoning", {}).get("enabled") is False and REASONING_REQUIRED.search(resp.text):
+        resp = httpx.post(OPENROUTER_CHAT, timeout=timeout, json={**body, "reasoning": _LOW_REASONING}, headers=_headers())
+    return resp
+
+
+class OutputLimitError(RuntimeError):
+    pass
+
+
 _LOCAL = {"at": 0.0, "ttl": 0.0, "models": frozenset()}
 
 
@@ -1089,7 +1094,7 @@ def _raw_local_chat(model: str, messages: list, *, timeout: float = 600) -> dict
     except httpx.HTTPError as e:
         raise RuntimeError(f"LocalRouter unreachable ({type(e).__name__})") from e
     if resp.is_error:
-        log.warning("LocalRouter HTTP %s for %s: %s", resp.status_code, model, resp.text[:300])
+        log.warning("LocalRouter HTTP %s for %s", resp.status_code, model)
         raise RuntimeError(f"LocalRouter request failed (HTTP {resp.status_code})")
     data = resp.json()
     choices = data.get("choices") or []
@@ -1106,27 +1111,23 @@ def _raw_chat(model: str, messages: list, *, options=None) -> dict:
     (False: no reasoning, or low if the model insists), effort, cache (mark the prompt for caching, cache_marks),
     cache_ttl, and `allow_anthropic`, naming a caller allowed past the Anthropic ban (ANTHROPIC_EXCEPTIONS)."""
     options = options or {}
-    body = _chat_body(model, messages, options, False)
     if _local_first(model, options):
         try:
             return {**_raw_local_chat(model, messages, timeout=options.get("timeout", 60)), "usage": {}, "via": "localrouter"}
         except RuntimeError as e:
             log.warning("LocalRouter failed for %s (%s); falling back to OpenRouter", model, e)
-    _openrouter_allowed(model, options)   # the ban is on OpenRouter only
-    resp = httpx.post(OPENROUTER_CHAT, timeout=options.get("timeout", 60), json=body, headers=_headers())
-    if resp.status_code == 400 and body.get("reasoning", {}).get("enabled") is False and REASONING_REQUIRED.search(resp.text):
-        resp = httpx.post(OPENROUTER_CHAT, timeout=options.get("timeout", 60),
-                          json={**body, "reasoning": _LOW_REASONING}, headers=_headers())
+    model = _resolve_openrouter_model(model, options.get("allow_anthropic"))
+    resp = _post_openrouter_chat(_chat_body(model, messages, options, False), options.get("timeout", 60))
     if resp.is_error:
-        log.warning("OpenRouter HTTP %s for %s: %s", resp.status_code, model, resp.text[:500])
+        log.warning("OpenRouter HTTP %s for %s", resp.status_code, model)
         raise RuntimeError(f"OpenRouter request failed (HTTP {resp.status_code})")
     data = resp.json()
     choices = data.get("choices") or []
     content = (choices[0].get("message") or {}).get("content") if choices else None
+    if choices and choices[0].get("finish_reason") == "length":
+        raise OutputLimitError("OpenRouter response exceeded the output limit")
     if data.get("error") or not isinstance(content, str) or not content.strip():
         raise RuntimeError("OpenRouter returned no reply")
-    if choices[0].get("finish_reason") == "length":
-        raise RuntimeError("OpenRouter response exceeded the output limit")
     return {"content": content, "model": data.get("model", model), "usage": data.get("usage") or {}, "via": "openrouter"}
 
 
@@ -1135,7 +1136,6 @@ async def _raw_chat_stream(model: str, messages: list, *, options=None):
     first when it serves the model; OpenRouter if that fails before any text arrived (after, the error stands).
     Raises like `_raw_chat` (nothing at all, a cut-off reply, or HTTP errors). Tests replace this."""
     options = options or {}
-    body = _chat_body(model, messages, options, True)
     timeout = options.get("timeout", 60)
     if _local_first(model, options):
         sent = False
@@ -1149,7 +1149,8 @@ async def _raw_chat_stream(model: str, messages: list, *, options=None):
             if sent:
                 raise
             log.warning("LocalRouter failed for %s (%s); falling back to OpenRouter", model, e)
-    _openrouter_allowed(model, options)
+    model = _resolve_openrouter_model(model, options.get("allow_anthropic"))
+    body = _chat_body(model, messages, options, True)
     async for piece in _sse(OPENROUTER_CHAT, body, _headers(), timeout, model, "OpenRouter"):
         yield piece
 
@@ -1167,7 +1168,7 @@ async def _sse(url: str, body: dict, headers: dict, timeout: float, model: str, 
                             and REASONING_REQUIRED.search(text)):
                         body = {**body, "reasoning": _LOW_REASONING}
                         continue
-                    log.warning("%s HTTP %s for %s: %s", name, resp.status_code, model, text[:500])
+                    log.warning("%s HTTP %s for %s", name, resp.status_code, model)
                     raise RuntimeError(f"{name} request failed (HTTP {resp.status_code})")
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
@@ -1211,7 +1212,7 @@ def _raw_speech(model: str, input, voice: Optional[str] = None, instructions: Op
                       headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "Content-Type": "application/json",
                                "X-Title": "LeetCode Senpai"})
     if resp.is_error:
-        log.warning("OpenRouter speech HTTP %s for %s: %s", resp.status_code, model, resp.text[:300])
+        log.warning("OpenRouter speech HTTP %s for %s", resp.status_code, model)
         raise RuntimeError(f"OpenRouter speech failed (HTTP {resp.status_code})")
     rate = re.search(r"rate=(\d+)", resp.headers.get("content-type", ""))
     return (int(rate.group(1)) if rate else 24000), resp.content
@@ -1221,11 +1222,9 @@ def _raw_speech(model: str, input, voice: Optional[str] = None, instructions: Op
 # The wall's posters: one model draws, another looks. Both are plain transport choke points
 # that tests replace; callers (server/wall_gen.py) decide what to do when they fail.
 def _post(body, timeout):
-    resp = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=timeout, json=body,
-                      headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}", "Content-Type": "application/json",
-                               "X-Title": "LeetCode Senpai"})
+    resp = _post_openrouter_chat(body, timeout)
     if resp.is_error:
-        log.warning("OpenRouter HTTP %s for %s: %s", resp.status_code, body["model"], resp.text[:500])
+        log.warning("OpenRouter HTTP %s for %s", resp.status_code, body["model"])
         raise RuntimeError(f"OpenRouter request failed (HTTP {resp.status_code})")
     data = resp.json()
     choices = data.get("choices") or []
@@ -1258,8 +1257,7 @@ def _raw_image(model: str, prompt: str, aspect: str, edit: Optional[tuple] = Non
 def _raw_look(model: str, system: str, prompt: str, image: bytes, mime: str, schema) -> dict:
     """A structured verdict on a picture from a vision model -> the parsed, validated dict."""
     import base64
-    if forbidden_model(model):
-        raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
+    model = _resolve_openrouter_model(model)
     url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
     _, message = _post({"model": model, "stream": False, "response_format": _response_format(schema),
                         "provider": {"require_parameters": True},
@@ -1300,7 +1298,7 @@ def _raw_transcribe(audio_b64: str, fmt: str, language: Optional[str]) -> Option
         json=body,
     )
     if resp.is_error:
-        log.warning("OpenRouter STT HTTP %s for %s: %s", resp.status_code, _stt_model(), resp.text[:300])
+        log.warning("OpenRouter STT HTTP %s for %s", resp.status_code, _stt_model())
         return None
     text = resp.json().get("text")
     return text.strip() if isinstance(text, str) else None

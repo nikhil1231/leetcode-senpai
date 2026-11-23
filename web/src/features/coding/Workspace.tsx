@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CoachSidebar, coachWidth } from "@/features/editor/CoachSidebar";
+import { Chat, type ChatMessage } from "@/components/chat/Chat";
 import { api } from "@/lib/api";
 import { mdHtml as mdToHtml } from "@/lib/lesson-md";
 import { useToast } from "@/lib/toast";
@@ -27,7 +29,10 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   const [files, setFiles] = useState<Record<string, string>>({ ...exercise.files, ...(attempt.files || {}) });
   const [text, setText] = useState(attempt.explanation || "");
   const [focus, setFocus] = useState<Focus | null>(null);
-  const [hints, setHints] = useState<string[]>(attempt.hints || []);
+  const [coachChat, setCoachChat] = useState<NonNullable<Attempt["coach_chat"]>>(attempt.coach_chat || []);
+  const [coachPending, setCoachPending] = useState<string | null>(null);
+  const coachLock = useRef(false);
+  const [hints] = useState<string[]>(attempt.hints || []);
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<RunResult | null>(() => (attempt.last_run ? { ...attempt.last_run, passed: attempt.last_run.rows.filter((r) => r.status === "passed").length, total: attempt.last_run.rows.length } : null));
   const [running, setRunning] = useState(false);
@@ -132,9 +137,17 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   };
   const onPick = (start: number, end: number, extend: boolean) => { setFocus({ start, end, n: Date.now() }); addRef({ path, start, end }, extend); };
 
-  const hint = async () => {
-    try { const r = await api(`/coding/attempts/${attempt.id}/hint`, "POST"); setHints(r.hints); revision.current = r.revision; }
-    catch (e) { toast((e as Error).message); }
+  const askCoach = async (message = "") => {
+    if (coachLock.current || submitted || busy) return;
+    coachLock.current = true; setCoachPending(message || "Give me a hint");
+    try {
+      await save();
+      const r = await api(`/coding/attempts/${attempt.id}/coach`, "POST", { message, files: editedFiles() || {}, explanation: box.current?.value ?? text });
+      revision.current = r.revision; setCoachChat(r.chat);
+      const mark = r.chat.at(-1)?.refs?.[0];
+      if (mark) open(mark.path, mark.start, mark.end);
+    } catch (e) { toast((e as Error).message); throw e; }
+    finally { coachLock.current = false; setCoachPending(null); }
   };
   const submit = async () => {
     const el = box.current;
@@ -156,6 +169,11 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
 
   const leave = async () => { dirty.current = true; await save(); onExit(); };
   const explainOn = dock === "explain" || !exercise.can_run;
+  // The explanation grows to fit what you've written instead of scrolling inside a fixed box.
+  useEffect(() => {
+    const el = box.current; if (submitted || !el || layout.console) return;
+    el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`;
+  }, [text, submitted, explainOn, layout.console]);
   const consoleHeight = () => pane.current?.querySelector(".editor-console")?.getBoundingClientRect().height ?? 0;
   const setH = (h: number | null) => {
     const work = pane.current?.querySelector(".editor-work")?.getBoundingClientRect();
@@ -176,7 +194,6 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
     <>
       <div className="cw-md" dangerouslySetInnerHTML={{ __html: mdToHtml(exercise.task) }} />
       {hints.map((h, i) => <p key={i} className="cw-hint"><b>Hint {i + 1}.</b> {h}</p>)}
-      {!submitted && hints.length < exercise.hint_count && <button className="button is-small" type="button" onClick={hint}>{hints.length ? "Another hint" : "Give me a hint"}</button>}
       {!submitted && hints.length > 0 && <p className="cw-note">Hints are counted in how this one is marked.</p>}
     </>
   );
@@ -217,33 +234,20 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   );
   const clockEl = <span className={`cw-clock ${exercise.minutes && elapsed > exercise.minutes * 60 ? "is-over" : ""}`} aria-label="Time on this exercise">{clock(elapsed)}{exercise.minutes ? ` / ${exercise.minutes}:00` : ""}</span>;
 
-  if (submitted) {
-    return (
-      <div className="cw">
-        <header className="cw-head">{title}<div className="cw-actions">{clockEl}</div></header>
-        <div className="cw-main">
-          <aside className="cw-task">{taskBody}</aside>
-          <div className="cw-code">{tree}{viewer}</div>
-        </div>
-        <ReviewPanel attempt={attempt} onAttempt={onAttempt} onOpen={open} onNext={onNext} category={exercise.category} />
-      </div>
-    );
-  }
-
   const tab = (id: "tests" | "changes" | "explain", label: string, on = () => setDock(id)) => (
     <button type="button" role="tab" aria-selected={(id === "explain" ? explainOn : dock === id)} className="pane-tab" onClick={on}>{label}</button>
   );
   return (
-    <div className="cwf">
+    <div className={`cwf active-run has-editor${layout.coach ? " coach-hidden" : ""}`} style={{ "--coach-w": coachWidth(layout.coachW) } as React.CSSProperties}>
       <header className="cwf-head">
         <button className="button is-ghost is-small" type="button" onClick={leave} title="Back to Coding practice. Your work is saved.">‹ Back</button>
         {title}
         {clockEl}
-        <div className="cwf-actions">
+        {!submitted && <div className="cwf-actions">
           <button className="button is-ghost" type="button" onClick={() => onNext()} title="Skip this one and start another">Skip</button>
           {exercise.can_run && <button className="button" type="button" disabled={running} onClick={runTests}>{running ? "Running…" : "Run tests"}</button>}
-          <button className="button is-primary" type="button" disabled={busy} onClick={submit}>{busy ? "Marking…" : "Submit"}</button>
-        </div>
+          <button className="button is-primary" type="button" disabled={busy || coachPending !== null} onClick={submit}>{busy ? "Marking…" : "Submit"}</button>
+        </div>}
       </header>
       <div ref={pane} className={`editor-pane cwf-pane${layout.hidden ? " statement-hidden" : ""}${layout.console ? " console-folded" : ""}`}>
         <div className="editor-statement">
@@ -266,18 +270,21 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
             onDoubleClick={() => setH(null)} />
           <div className="editor-console">
             <div className="console-head">
-              <div className="pane-tabs" role="tablist">
-                {exercise.can_run && tab("tests", `Tests${run ? ` ${run.passed}/${run.total}` : ""}`)}
-                {exercise.can_run && tab("changes", "Your changes", () => { setDock("changes"); showChanges(); })}
-                {tab("explain", "Your explanation")}
-              </div>
+              {submitted ? <div className="pane-tabs"><span className="pane-title">Review</span></div> : (
+                <div className="pane-tabs" role="tablist">
+                  {exercise.can_run && tab("tests", `Tests${run ? ` ${run.passed}/${run.total}` : ""}`)}
+                  {exercise.can_run && tab("changes", "Your changes", () => { setDock("changes"); showChanges(); })}
+                  {tab("explain", "Your explanation")}
+                </div>
+              )}
               <div className="console-tools">
-                {exercise.can_run && !explainOn && <span>{run ? (run.timed_out ? "Timed out." : `${run.passed} of ${run.total} visible tests pass`) : "More checks run when you submit"}</span>}
+                {!submitted && exercise.can_run && !explainOn && <span>{run ? (run.timed_out ? "Timed out." : `${run.passed} of ${run.total} visible tests pass`) : "More checks run when you submit"}</span>}
                 <button className="panel-toggle" type="button" aria-label="Collapse the console" title="Collapse the console" onClick={() => patch({ console: !layout.console })}>&#x2304;</button>
               </div>
             </div>
-            {!explainOn && <div className="console-panel"><TestPanel tab={dock === "changes" ? "changes" : "tests"} run={run} diff={diffText} /></div>}
-            <div className={`console-panel cwf-explain${explainOn ? "" : " hidden"}`}>
+            {submitted ? <div className="console-panel"><ReviewPanel attempt={attempt} onAttempt={onAttempt} onOpen={open} onNext={onNext} category={exercise.category} /></div> : null}
+            {!submitted && !explainOn && <div className="console-panel"><TestPanel tab={dock === "changes" ? "changes" : "tests"} run={run} diff={diffText} /></div>}
+            {!submitted && <div className={`console-panel cwf-explain${explainOn ? "" : " hidden"}`}>
               <div className="cw-field">
                 <div className="textarea cw-mirror" ref={mirror} aria-hidden="true">
                   {(() => {
@@ -296,10 +303,26 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
                 {refs.length === 0 ? <span className="cw-note">No references yet. They are optional.</span> :
                   refs.map((r, i) => <button key={i} type="button" className="cw-chip" onClick={() => open(r.path, r.start, r.end)}>{refToken(r).slice(1, -1)}</button>)}
               </div>
-            </div>
+            </div>}
           </div>
         </div>
       </div>
+      <CoachSidebar>
+        <div className="active-notes" onClick={(e) => e.stopPropagation()}>
+          {!coachChat.length && <p className="coach-empty">Think out loud below, or ask for a hint. The coach points at relevant code without giving the answer.</p>}
+          <p className="cw-note">Coach help is counted when this exercise is marked.</p>
+        </div>
+        <div className="run-chat-host" onClick={(e) => e.stopPropagation()}>
+          <Chat className="run-chat" messages={[
+            ...coachChat.map((m): ChatMessage => ({ ...m, after: m.refs?.length ? <div className="cw-chips">{m.refs.map((r, i) => <button key={i} type="button" className="cw-chip" onClick={() => open(r.path, r.start, r.end)}>{refToken(r).slice(1, -1)}</button>)}<button type="button" className="note-action" onClick={() => setFocus(null)}>Clear marks</button></div> : undefined })),
+            ...(coachPending === null ? [] : [{ id: "pending", role: "user" as const, text: coachPending }]),
+          ]} running={coachPending !== null} disabled={submitted || busy} composer={!submitted} inputId="practical-coach-input"
+            placeholder="Message the interviewer" label="Talk to the interviewer" typingLabel="The interviewer is typing" onSend={askCoach} />
+        </div>
+        {!submitted && <div className="coach-actions" onClick={(e) => e.stopPropagation()}>
+          <button className="button is-small" type="button" disabled={coachPending !== null || busy} onClick={() => { void askCoach().catch(() => {}); }}>{coachChat.length ? "Another hint" : "Give me a hint"}</button>
+        </div>}
+      </CoachSidebar>
     </div>
   );
 }

@@ -57,7 +57,7 @@ export function AIModels() {
       })}
       <p className="help">
         Free models run on LocalRouter, this box&apos;s gateway to the Claude subscriptions{q.data.localrouter ? "" : " (not configured here, so none are listed)"}.
-        If it fails, a call falls back to OpenRouter, except Anthropic models, which are never used through OpenRouter. Everything else is paid on OpenRouter.
+        If LocalRouter cannot answer, the call goes to OpenRouter, usually with the same model. Most Claude calls use GPT Sol Latest there instead.
       </p>
     </div>
   );

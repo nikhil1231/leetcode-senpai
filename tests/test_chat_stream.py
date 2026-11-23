@@ -112,13 +112,14 @@ def test_the_stream_yields_pieces_then_the_model_and_usage(monkeypatch):
     assert seen['body']['stream'] is True and seen['body']['reasoning'] == {'enabled': False}
 
 
-def test_the_stream_refuses_empty_cut_off_and_anthropic_replies(monkeypatch):
+def test_the_stream_refuses_empty_and_cut_off_replies(monkeypatch):
     with pytest.raises(RuntimeError, match='no reply'):
         collect(monkeypatch, chunk(finish='stop') + 'data: [DONE]\n\n')
     with pytest.raises(RuntimeError, match='output limit'):
         collect(monkeypatch, chunk('Half') + chunk(finish='length'))
-    with pytest.raises(ValueError, match='Anthropic'):
-        collect(monkeypatch, chunk('x'), model='anthropic/claude-opus-5.5')
+    # An Anthropic model falls back to the Sol Latest alias on OpenRouter.
+    pieces, seen = collect(monkeypatch, chunk('x') + chunk(finish='stop') + 'data: [DONE]\n\n', model='anthropic/claude-opus-5.5')
+    assert pieces[0] == {'text': 'x'} and seen['body']['model'] == '~openai/gpt-sol-latest'
 
 
 # ---- caching and reasoning ------------------------------------------------------------------
@@ -216,14 +217,13 @@ def test_openrouter_takes_over_when_localrouter_fails_or_lacks_the_model(local, 
     assert local == ['openrouter.ai']
 
 
-def test_the_anthropic_ban_is_on_openrouter_only(local, monkeypatch):
+def test_the_anthropic_ban_falls_back_to_sol_latest_on_openrouter(local, monkeypatch):
     post_to(monkeypatch, local)
     assert llm._raw_chat(SONNET, [{'role': 'user', 'content': 'hi'}])['via'] == 'localrouter'   # any caller, free
     local.clear()
     post_to(monkeypatch, local, local_status=503)
-    with pytest.raises(ValueError, match='Anthropic'):
-        llm._raw_chat(SONNET, [{'role': 'user', 'content': 'hi'}])   # no paid fallback without an exception
-    assert local == ['lr.test']
+    r = llm._raw_chat(SONNET, [{'role': 'user', 'content': 'hi'}])   # falls back to sol latest on OpenRouter
+    assert r['via'] == 'openrouter' and local == ['lr.test', 'openrouter.ai']
 
 
 def test_unset_or_unreachable_localrouter_means_openrouter(monkeypatch):

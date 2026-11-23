@@ -324,12 +324,26 @@ def test_valid_model_accepts_latest_aliases():
     assert not llm.valid_model("openai")
 
 
-def test_anthropic_models_are_never_used_through_openrouter():
+def test_anthropic_models_cannot_be_selected_for_openrouter():
     from server import llm
     for model in ('anthropic/claude-sonnet-5.5', '~anthropic/claude-latest', ' Anthropic/claude-opus-5.5'):
         assert llm.forbidden_model(model) and not llm.valid_model(model.strip())
     assert not llm.forbidden_model('openai/gpt-5.6-luna') and llm.valid_model('openai/gpt-5.6-luna')
-    assert llm._selected({'llm_model': 'anthropic/claude-sonnet-5.5'})[1] == 'openai/gpt-5.6-luna'
-    import pytest
-    with pytest.raises(ValueError, match='never used'):
-        llm._raw_generate('openrouter', 'anthropic/claude-haiku-5.5', 's', 'p', None)
+
+
+def test_structured_tasks_use_sol_if_a_saved_model_is_blocked(monkeypatch):
+    import httpx
+    from pydantic import BaseModel
+    from server import llm
+
+    class Review(BaseModel):
+        score: int
+
+    def post(url, *, json, **kwargs):
+        assert json['model'] == '~openai/gpt-sol-latest'
+        assert json['response_format']['json_schema']['strict'] is True
+        return httpx.Response(200, json={'choices': [{'message': {'content': '{"score":80}'}}]})
+
+    monkeypatch.setattr(llm.httpx, 'post', post)
+    raw = llm._raw_generate('openrouter', 'anthropic/claude-haiku-5.5', 's', 'p', Review)
+    assert Review.model_validate_json(raw).score == 80

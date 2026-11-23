@@ -10,6 +10,7 @@ intentionally waits so the review is scheduled immediately.
 import asyncio
 import contextlib
 import datetime as dt
+import json
 import logging
 import os
 import random
@@ -26,11 +27,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import (assessment, auth, chat_stream, coach, config, connectivity, enrich, gamify, importer, insights,
-               leetcode, llm, mock, neetcode150, packs, page_coach, page_notes, plans, poller, practice,
+               leetcode, llm, log_events, mock, neetcode150, packs, page_coach, page_notes, plans, poller, practice,
                practice_offline, practice_queue, recording, scheduler, learning_evidence, curriculum, learning_sequences, voice)
 from . import model_areas
 from . import store as store_mod
 from .store import get_store
+
+log_events.install()
 from .system_design import router as system_design_router
 from .system_design_learning import router as system_design_learning_router
 from .system_design_numbers import router as system_design_numbers_router
@@ -898,6 +901,41 @@ def api_rev(uid: str = Depends(auth.require_user)):
     """
     return {"rev": get_store(uid).revisions(), "date": _today_iso(),
             "writes": store_mod.write_count(), "boot": store_mod.BOOT}
+
+
+@app.get("/api/logs/warnings")
+def api_log_warnings(since: int = 0, boot: Optional[str] = None, uid: str = Depends(auth.require_user)):
+    """Recent server log warnings and errors for frontend toasts."""
+    data = log_events.snapshot(since if boot in (None, store_mod.BOOT) else 0)
+    return JSONResponse({**data, "boot": store_mod.BOOT}, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/logs/warnings/stream")
+async def api_log_warnings_stream(request: Request, since: Optional[int] = None, uid: str = Depends(auth.require_user)):
+    """SSE stream of server log warnings and errors."""
+    loop = asyncio.get_running_loop()
+    q = asyncio.Queue()
+    log_events.subscribe(loop, q)
+
+    async def events():
+        try:
+            yield ": connected\n\n"
+            if since is not None:
+                for ev in log_events.get_warnings(since=since):
+                    yield f"id: {ev['id']}\ndata: {json.dumps(ev)}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=20.0)
+                    yield f"id: {ev['id']}\ndata: {json.dumps(ev)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            log_events.unsubscribe(loop, q)
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers=chat_stream.HEADERS)
 
 
 def _practice_store(uid):
@@ -3386,7 +3424,7 @@ def code_updated_at():
 # What still works without the internet: Quickfire (local mirror), the in-memory
 # freshness check, liveness, and the LeetCode status probe (which reports
 # "unknown" on its own). Everything else needs Firestore.
-_OFFLINE_PATHS = ("/api/practice", "/api/rev", "/api/health", "/api/leetcode-status")
+_OFFLINE_PATHS = ("/api/practice", "/api/rev", "/api/health", "/api/leetcode-status", "/api/logs/warnings")
 OFFLINE_MESSAGE = "You're offline. Quickfire still works; everything else needs a connection."
 
 

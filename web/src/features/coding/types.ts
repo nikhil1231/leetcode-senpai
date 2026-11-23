@@ -28,6 +28,7 @@ export interface Review {
 export interface Attempt {
   id: string; mode: Mode; category: string; status: "open" | "submitted" | "abandoned"; started_at: number; explanation: string; hints_used: number;
   revision: number; refs: Ref[]; hints: string[]; result?: Result | null; review?: Review | null; needs_self_mark?: boolean; elapsed_sec?: number;
+  coach_chat?: { id: string; role: "user" | "assistant"; text: string; refs?: Ref[] }[];
   files?: Record<string, string>; runs?: unknown[]; chat?: import("./Assistant").ChatMsg[];
   last_run?: { rows: TestRow[]; at: number; timed_out: boolean; loaderror: string } | null;
 }

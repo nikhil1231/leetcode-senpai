@@ -1,11 +1,13 @@
 """Coding Practice: the pure rules (references, difficulty, choice), what the browser may see, generation parsing, and the
 HTTP flow with the model stubbed out."""
+import json
 import random
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from server import auth, main
+from server import auth, config, llm, main, model_areas
 from server.coding import api, assistant, fallback, generate, grade, queue, runner, spec as S, validate
 
 FILES = {'a.py': 'def f():\n    return 1\n\n\ndef g():\n    return 2\n', 'pkg/b.py': 'x = 1\n'}
@@ -144,6 +146,45 @@ def test_flow_start_hint_save_submit_review_without_leaking(client, store, monke
     assert ov['modes']['reading']['attempts'] == 1 and ov['recent'][0]['score'] == 82
 
 
+@pytest.mark.parametrize('serve_local', [False, True])
+def test_examiner_marks_via_sol_when_claude_is_unavailable(client, store, monkeypatch, serve_local):
+    model = 'anthropic/claude-sonnet-5.5'
+    monkeypatch.setattr(model_areas, '_chosen', {'coding': model})
+    monkeypatch.setattr(config, 'OPENROUTER_API_KEY', 'test')
+    monkeypatch.setattr(config, 'LOCALROUTER_URL', 'http://lr.test')
+    monkeypatch.setattr(llm, '_local_models', lambda: {model} if serve_local else set())
+
+    def post(url, *, json: dict, **kwargs):
+        if url == 'http://lr.test/chat/completions':
+            assert json['model'] == model
+            return httpx.Response(429)
+        assert url == llm.OPENROUTER_CHAT
+        if json['model'] != '~openai/gpt-sol-latest':
+            return httpx.Response(404)
+        if json.get('max_tokens', 0) < 4_000:
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'length', 'message': {'content': ''}}]})
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': reply}}]})
+
+    monkeypatch.setattr(llm.httpx, 'post', post)
+    opened = client.post('/api/coding/reading/start', json={'category': 'localisation'}).json()
+    at = opened['attempt']
+    ex = store.get_track_record(queue.EX, opened['exercise']['id'])
+    reply = json.dumps({'correctness': 84,
+        'findings': [{'id': f['id'], 'met': True, 'note': 'Covered.'} for f in ex['findings']],
+        'reasoning': {'score': 80, 'note': 'Traced the state change.'},
+        'takeaways': [{'principle': 'Trace state changes.', 'evidence': 'Located the update.',
+                       'next_time': 'Compare state before and after each mutation.'}],
+        'strengths': [], 'misconceptions': [], 'omissions': [], 'communication': [],
+        'summary': 'The cursor moved too far.'})
+    response = client.post(f"/api/coding/attempts/{at['id']}/submit", json={
+        'explanation': 'The cursor is advanced one entry too far.', 'revision': at['revision'],
+    })
+    out = response.json()
+    assert response.status_code == 200 and out['message'] is None
+    assert out['attempt']['result']['by'] == 'examiner'
+    assert out['attempt']['result']['score'] == 84 and not out['attempt']['needs_self_mark']
+
+
 def test_without_a_model_the_attempt_is_saved_and_self_marked(client, monkeypatch):
     monkeypatch.setattr(api.model_io, 'available', lambda: False)
     r = client.post('/api/coding/reading/start', json={'category': 'comprehension'}).json()
@@ -190,6 +231,40 @@ async def test_refill_stops_at_the_target_and_never_serves_a_failed_validation(s
     assert all(len([e for e in queue.ready(store, 'reading') if e['category'] == c]) == S.TARGET_READY for c in queue.categories('reading'))
     await queue.refill('alice', 'reading')
     assert n['made'] == full + 1                            # full: nothing more is made
+
+
+async def test_truncated_generation_stops_until_the_model_changes(store, monkeypatch):
+    monkeypatch.setattr(queue, 'get_store', lambda uid: store)
+    monkeypatch.setattr(queue, '_truncated', {})
+    monkeypatch.setattr(queue, 'errors', {})
+    monkeypatch.setattr(queue, 'EXECUTABLE_ON', False)
+    monkeypatch.setattr(config, 'LOCALROUTER_URL', '')
+    monkeypatch.setattr(config, 'OPENROUTER_API_KEY', 'test')
+    monkeypatch.setattr(model_areas, '_chosen', {'coding_gen': 'anthropic/claude-sonnet-5.5'})
+    calls = 0
+
+    def post(url, **kwargs):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'length', 'message': {'content': ''}}]})
+
+    monkeypatch.setattr(llm.httpx, 'post', post)
+    await queue.refill('alice', 'reading')
+    await queue.refill('alice', 'reading')
+    assert calls == 1 and not queue.generating('alice', 'reading')
+    assert not queue.ready(store, 'reading')
+    assert 'exceeded the output limit' in queue.errors['alice', 'reading']
+    assert queue.take(store, 'reading')['source'] == 'curated'
+
+    def recover(spec):
+        ex = generate.assemble({**SPEC, 'category': spec['category']}, REPLY, 'm')
+        return {**ex, 'difficulty': spec['difficulty'], 'status': 'ready'}
+
+    model_areas._chosen['coding_gen'] = 'openai/gpt-6.1-sol'
+    monkeypatch.setattr(queue, 'make', recover)
+    await queue.refill('alice', 'reading')
+    assert len(queue.ready(store, 'reading')) == S.TARGET_READY * len(queue.categories('reading'))
+    assert ('alice', 'reading') not in queue.errors
 
 
 # ---- Phase 2: repair, in the real sandbox ----
@@ -306,3 +381,38 @@ def test_overreliance_is_read_from_recent_sessions_and_makes_planted_mistakes_le
     assert S.overreliance(careless) and not S.overreliance(careless[:2])
     share = lambda done: sum(S.choose(done, 'assisted', random.Random(i), executable=True)['plan'] is None for i in range(300))
     assert share(careless) < share([])
+
+
+def test_practical_coach_uses_live_rules_and_only_public_context(monkeypatch):
+    from server.coding import coach
+    ex = {'task': 'Trace the request', 'model_answer': 'SECRET ANSWER', 'assistant_plan': {'secret': True}}
+    captured = {}
+
+    def ask(area, system, prompt, **kwargs):
+        captured.update(area=area, system=system, prompt=prompt)
+        return {'text': 'What changes here? [a.py:2] [missing.py:1]'}, 'model'
+
+    monkeypatch.setattr(coach.model_io, 'ask_json', ask)
+    out = coach.reply(ex, FILES, [{'role': 'user', 'text': 'I checked f'}], 'My draft', 'Where next?')
+    assert out['refs'] == [{'path': 'a.py', 'start': 2, 'end': 2}]
+    assert captured['system'].startswith(llm.TASKS['live_hint'].system)
+    assert captured['area'] == 'run_coach'
+    assert 'SECRET ANSWER' not in captured['prompt'] and 'assistant_plan' not in captured['prompt']
+    assert '2:     return 1' in captured['prompt'] and 'My draft' in captured['prompt'] and 'I checked f' in captured['prompt']
+
+
+def test_practical_coach_saved_counted_resumed_and_unavailable(client, monkeypatch):
+    monkeypatch.setattr(api.model_io, 'available', lambda: True)
+    monkeypatch.setattr(api.coach, 'reply', lambda *args: {'text': 'Trace this call.', 'refs': []})
+    start = client.post('/api/coding/reading/start', json={'category': 'localisation'}).json()
+    aid = start['attempt']['id']
+    url = f'/api/coding/attempts/{aid}/coach'
+    response = client.post(url, json={'message': 'Where next?', 'explanation': 'My draft'})
+    assert response.status_code == 200
+    assert [m['role'] for m in response.json()['chat']] == ['user', 'assistant']
+    resumed = client.post('/api/coding/reading/start', json={}).json()['attempt']
+    assert resumed['coach_chat'] == response.json()['chat'] and resumed['hints_used'] == 1
+    assert resumed['hints'] == []  # coach turns must not unlock unseen canned hints
+    monkeypatch.setattr(api.model_io, 'available', lambda: False)
+    assert client.post(url, json={}).status_code == 503
+    assert client.post('/api/coding/reading/start', json={}).json()['attempt']['hints_used'] == 1

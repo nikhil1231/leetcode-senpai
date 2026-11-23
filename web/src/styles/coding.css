@@ -156,8 +156,8 @@
 .cwf-code .cw-cm { height: 100%; min-height: 0; }
 .cwf-explain { gap: 8px; }
 .cwf-explain.hidden { display: none; }
-.cwf-explain .cw-field { flex: 1 1 auto; min-height: 84px; }
-.cwf-explain .cw-field .cw-text { height: 100%; min-height: 84px; resize: none; }
+.cwf-explain .cw-field { flex: none; min-height: 84px; }
+.cwf-explain .cw-field .cw-text { height: auto; min-height: 84px; resize: none; }
 @media (max-width: 960px) {
   .cwf { display: block; overflow: auto; }
   .cwf-head { flex-wrap: wrap; }
@@ -200,3 +200,13 @@
 }
 
 .cw-takeaways .cw-note { font-size: 14px; color: var(--text-2); }
+/* Practical coding uses the live editor's coach column and shared rail. */
+.cwf.active-run.has-editor { position: fixed; margin: 0; border: 0; border-radius: 0; }
+.cwf-head { grid-column: 1 / -1; }
+.cwf-pane { grid-column: 1; min-width: 0; }
+@media (max-width: 960px) {
+  .cwf.active-run.has-editor { display: block; height: 100dvh; overflow: auto; }
+  .cwf .run-chat-host { min-height: 360px; }
+  .cwf .run-coach { min-height: 440px; }
+  .cwf.coach-hidden .run-coach { min-height: 0; }
+}

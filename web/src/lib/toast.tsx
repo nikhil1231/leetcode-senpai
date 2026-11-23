@@ -11,13 +11,41 @@ export const useToast = () => useContext(ToastContext);
 // One line at the bottom of the screen for a few seconds (the #toast element of the old app).
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState<string | null>(null);
+  const queue = useRef<string[]>([]);
+  const isShowing = useRef<boolean>(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toast = useCallback((m: string) => {
-    setMessage(m);
+
+  const processNext = useCallback(() => {
+    if (queue.current.length === 0) {
+      isShowing.current = false;
+      setMessage(null);
+      return;
+    }
+    isShowing.current = true;
+    const next = queue.current.shift()!;
+    setMessage(next);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setMessage(null), 3200);
+    timer.current = setTimeout(() => {
+      processNext();
+    }, 3500);
   }, []);
-  useEffect(() => { globalToast = toast; return () => { if (timer.current) clearTimeout(timer.current); }; }, [toast]);
+
+  const toast = useCallback((m: string) => {
+    if (!m) return;
+    if (queue.current.includes(m)) return;
+    queue.current.push(m);
+    if (!isShowing.current) {
+      processNext();
+    }
+  }, [processNext]);
+
+  useEffect(() => {
+    globalToast = toast;
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [toast]);
+
   return (
     <ToastContext.Provider value={toast}>
       {children}
