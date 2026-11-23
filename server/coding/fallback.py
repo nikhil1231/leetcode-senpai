@@ -402,10 +402,12 @@ def _resolve(ex):
 
 
 def pick(mode, category=None, seen=()):
+    from . import spec as S
     pool = [e for e in CURATED if e['mode'] == mode and (category is None or e['category'] == category)] or [e for e in CURATED if e['mode'] == mode]
     fresh = [e for e in pool if e['title'] not in seen]
     if not fresh:   # this category's hand-written ones are used up: a different unseen one beats repeating one just done
-        fresh = [e for e in CURATED if e['mode'] == mode and e['title'] not in seen] or pool
+        compat = (lambda e: (e['category'] in S.EXECUTABLE) == (category in S.EXECUTABLE)) if category else (lambda e: True)
+        fresh = [e for e in CURATED if e['mode'] == mode and compat(e) and e['title'] not in seen] or pool
     ex = _resolve(copy.deepcopy(fresh[0 if len(fresh) == 1 else secrets.randbelow(len(fresh))]))
     ex.update(id='ex_' + secrets.token_hex(8), created_at=time.time())
     return ex

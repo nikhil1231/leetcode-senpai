@@ -856,6 +856,7 @@ def forbidden_model(model: str) -> bool:
 # Callers allowed to fall back to an Anthropic model on OpenRouter when LocalRouter fails, both Nikhil's decisions on
 # 2026-11-12: the podcast's fallback scriptwriter (server/podcast_drama.py) and the tutor's voice.
 ANTHROPIC_EXCEPTIONS = {"podcast fallback", "tutor"}
+OPENROUTER_FALLBACK_MODEL = "openai/gpt-sol-latest"
 
 
 def valid_model(model: str) -> bool:
@@ -1035,6 +1036,14 @@ def _openrouter_allowed(model: str, options: dict):
         raise ValueError(f"{model}: Anthropic models are never used through OpenRouter")
 
 
+def _resolve_openrouter_model(model: str, options: dict) -> tuple[str, bool]:
+    """When an Anthropic chat model cannot be used on OpenRouter, fall back to OPENROUTER_FALLBACK_MODEL."""
+    if forbidden_model(model) and options.get("allow_anthropic") not in ANTHROPIC_EXCEPTIONS:
+        log.warning("Anthropic model %s not allowed on OpenRouter; falling back to %s", model, OPENROUTER_FALLBACK_MODEL)
+        return OPENROUTER_FALLBACK_MODEL, True
+    return model, False
+
+
 def _chat_body(model: str, messages: list, options: dict, stream: bool) -> dict:
     body = {"model": model, "stream": stream, "max_tokens": options.get("max_tokens", 1500), "usage": {"include": True},
             "messages": cache_marks(model, messages, options.get("cache_ttl")) if options.get("cache") else messages}
@@ -1112,7 +1121,12 @@ def _raw_chat(model: str, messages: list, *, options=None) -> dict:
             return {**_raw_local_chat(model, messages, timeout=options.get("timeout", 60)), "usage": {}, "via": "localrouter"}
         except RuntimeError as e:
             log.warning("LocalRouter failed for %s (%s); falling back to OpenRouter", model, e)
-    _openrouter_allowed(model, options)   # the ban is on OpenRouter only
+    fallback_model, fell_back = _resolve_openrouter_model(model, options)
+    if fell_back:
+        model = fallback_model
+        body = _chat_body(model, messages, options, False)
+    else:
+        _openrouter_allowed(model, options)   # the ban is on OpenRouter only
     resp = httpx.post(OPENROUTER_CHAT, timeout=options.get("timeout", 60), json=body, headers=_headers())
     if resp.status_code == 400 and body.get("reasoning", {}).get("enabled") is False and REASONING_REQUIRED.search(resp.text):
         resp = httpx.post(OPENROUTER_CHAT, timeout=options.get("timeout", 60),
@@ -1149,7 +1163,12 @@ async def _raw_chat_stream(model: str, messages: list, *, options=None):
             if sent:
                 raise
             log.warning("LocalRouter failed for %s (%s); falling back to OpenRouter", model, e)
-    _openrouter_allowed(model, options)
+    fallback_model, fell_back = _resolve_openrouter_model(model, options)
+    if fell_back:
+        model = fallback_model
+        body = _chat_body(model, messages, options, True)
+    else:
+        _openrouter_allowed(model, options)
     async for piece in _sse(OPENROUTER_CHAT, body, _headers(), timeout, model, "OpenRouter"):
         yield piece
 

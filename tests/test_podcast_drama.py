@@ -173,9 +173,9 @@ def test_nothing_to_teach_means_no_episode(monkeypatch):
 def test_the_ban_on_anthropic_models_has_only_its_named_exceptions():
     assert llm.ANTHROPIC_EXCEPTIONS == {'podcast fallback', 'tutor'}
     with pytest.raises(ValueError):
-        llm._raw_chat('anthropic/claude-opus-5.5', [], options={})
+        llm._openrouter_allowed('anthropic/claude-opus-5.5', options={})
     with pytest.raises(ValueError):
-        llm._raw_chat('anthropic/claude-opus-5.5', [], options={'allow_anthropic': 'page coach'})
+        llm._openrouter_allowed('anthropic/claude-opus-5.5', options={'allow_anthropic': 'page coach'})
     with pytest.raises(ValueError):
         llm._raw_speech('anthropic/whatever', 'hi')
     assert 'podcast fallback' in llm.ANTHROPIC_EXCEPTIONS
