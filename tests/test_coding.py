@@ -147,7 +147,7 @@ def test_flow_start_hint_save_submit_review_without_leaking(client, store, monke
 
 
 @pytest.mark.parametrize('serve_local', [False, True])
-def test_examiner_marks_via_sol_when_claude_is_unavailable(client, monkeypatch, serve_local):
+def test_examiner_marks_via_sol_when_claude_is_unavailable(client, store, monkeypatch, serve_local):
     model = 'anthropic/claude-sonnet-5.5'
     monkeypatch.setattr(model_areas, '_chosen', {'coding': model})
     monkeypatch.setattr(config, 'OPENROUTER_API_KEY', 'test')
@@ -165,9 +165,17 @@ def test_examiner_marks_via_sol_when_claude_is_unavailable(client, monkeypatch, 
             return httpx.Response(200, json={'choices': [{'finish_reason': 'length', 'message': {'content': ''}}]})
         return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': reply}}]})
 
-    reply = json.dumps({'correctness': 84, 'findings': [], 'summary': 'The cursor moved too far.'})
     monkeypatch.setattr(llm.httpx, 'post', post)
-    at = client.post('/api/coding/reading/start', json={'category': 'localisation'}).json()['attempt']
+    opened = client.post('/api/coding/reading/start', json={'category': 'localisation'}).json()
+    at = opened['attempt']
+    ex = store.get_track_record(queue.EX, opened['exercise']['id'])
+    reply = json.dumps({'correctness': 84,
+        'findings': [{'id': f['id'], 'met': True, 'note': 'Covered.'} for f in ex['findings']],
+        'reasoning': {'score': 80, 'note': 'Traced the state change.'},
+        'takeaways': [{'principle': 'Trace state changes.', 'evidence': 'Located the update.',
+                       'next_time': 'Compare state before and after each mutation.'}],
+        'strengths': [], 'misconceptions': [], 'omissions': [], 'communication': [],
+        'summary': 'The cursor moved too far.'})
     response = client.post(f"/api/coding/attempts/{at['id']}/submit", json={
         'explanation': 'The cursor is advanced one entry too far.', 'revision': at['revision'],
     })

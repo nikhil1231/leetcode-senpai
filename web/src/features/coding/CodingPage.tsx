@@ -51,6 +51,7 @@ export function CodingPage() {
         ))}
       </div>
       <p className="help">{info[2]}</p>
+      <p className="cw-note">{mode === "reading" ? "Reading mix: 70% Java, 25% Python, 5% Go and TypeScript. Repair exercises use Java and Python." : "Runnable exercises: mostly Java, with Python in roughly a 70:25 ratio."}</p>
       <div className="cw-card">
         <div className="cw-card-main">
           <div>

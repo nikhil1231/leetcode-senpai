@@ -89,6 +89,8 @@ async def refill(uid, mode):
                     store.delete_track_record(EX, old['id'])      # made for an older level: replace, don't serve
                 recent = [e.get('archetype') for e in sorted(exs, key=lambda e: -e.get('created_at', 0))[:12]]
                 spec = S.choose(done, mode, recent_archetypes=recent, executable=EXECUTABLE_ON, category=category)
+                deficits = S.language_deficits([e for e in exs if e.get('status') in ('ready', 'served')], category in S.EXECUTABLE)
+                spec['language'] = max(deficits, key=deficits.get)
                 try:
                     ex = await asyncio.to_thread(make, spec)
                 except Exception as e:   # a failed attempt is logged, never shown as a broken exercise
@@ -129,7 +131,11 @@ def take(store, mode, category=None):
     weak = S.weakness(done, mode, 'category', list(S.CATEGORIES[mode]))
     pool = [e for e in ready(store, mode, exs) if category in (None, e['category'])]
     if pool:
-        best = min(pool, key=lambda e: (S.fit(e, level), -weak.get(e['category'], 0.5), e.get('created_at', 0)))
+        served = [e for e in exs if e.get('status') == 'served']
+        deficits = {run: S.language_deficits(served, run) for run in (True, False)}
+        best = min(pool, key=lambda e: (S.fit(e, level),
+                   -deficits[e['category'] in S.EXECUTABLE].get(e.get('language'), -1),
+                   -weak.get(e['category'], 0.5), e.get('created_at', 0)))
         return store.put_track_record(EX, best['id'], {**best, 'status': 'served', 'served_at': time.time()}, best.get('revision'))
     seen = {e['title'] for e in exs if e.get('source') == 'curated'}
     ex = fallback.pick(mode, category, seen)

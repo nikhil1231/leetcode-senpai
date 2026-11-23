@@ -41,7 +41,8 @@ def _dim_text(level):
 MARKSCHEME_RULE = (
     '\nThe "model_answer" is marked against the findings and the review: it must state every finding (every key one first) '
     'and every step of "execution_path", including the behaviour of each function the findings name, so that nothing the '
-    'learner is marked on is missing from it.\n')
+    'learner is marked on is missing from it. Criteria must assess only the task requested, accept equivalent reasoning, '
+    'and distinguish required understanding from optional deeper observations. Do not add cosmetic requirements.\n')
 
 
 def build_prompt(spec):
@@ -82,11 +83,14 @@ def build_prompt(spec):
             '"fix_summary" (how a maintainer would fix it, 1-3 sentences).\n')
     else:
         task = build_executable(spec)
-    return base + task + MARKSCHEME_RULE + '\nOutput format: the <<<META>>> block first, then every file in its own block, for example\n<<<META>>>\n{...json...}\n<<<END>>>\n<<<FILE exports/store.py>>>\n...code...\n<<<END>>>\nThe path follows FILE after one space, with no quotes or path=.'
+        if lang == 'java':
+            task = task.replace('tests/test_visible.py', 'tests/VisibleTest.java').replace('tests/test_hidden.py', 'tests/HiddenTest.java')
+    example = 'exports/Store.java' if lang == 'java' else f'exports/store.{ext}'
+    return base + task + MARKSCHEME_RULE + '\nOutput format: the <<<META>>> block first, then every file in its own block, for example\n<<<META>>>\n{...json...}\n<<<END>>>\n<<<FILE ' + example + '>>>\n...code...\n<<<END>>>\nThe path follows FILE after one space, with no quotes or path=.'
 
 
 def build_executable(spec):
-    """Repair (and, in AI-assisted mode, bug-fix and feature) exercises: Python with unittest tests the sandbox can run."""
+    """Executable Python/unittest or Java/standard-library exercises with tests the sandbox can run."""
     common = (
         "The repository is Python 3 using only the standard library, laid out as a package folder plus `tests/`. Tests use "
         "`unittest` and must be fast and deterministic: no network, no real sleeping (inject a fake clock), no randomness "
@@ -95,6 +99,17 @@ def build_executable(spec):
         "Blocks: every source file and `tests/test_visible.py` go in <<<FILE path>>> blocks; `tests/test_hidden.py` goes in a "
         "<<<HIDDEN tests/test_hidden.py>>> block; the reference solution goes in <<<FIX path>>> blocks, each the COMPLETE "
         "replacement of one source file that changes.\n")
+    if spec['language'] == 'java':
+        common = (
+            "Use Java 21 and only its standard library. No Maven, Gradle, JUnit or dependencies. Source files live in package "
+            "folders matching their package declarations. Tests are public classes tests.VisibleTest and tests.HiddenTest, "
+            "with public static void testDescriptiveName() methods taking no arguments. Each test must be independent and "
+            "throw AssertionError on failure (Java assert is enabled). No main method or custom test runner. Tests import "
+            "your public production classes. Use fake clocks, no networking, subprocesses, native code or real sleeps. "
+            "Keep state in memory: no filesystem writes. Production code must compile on Java 21. No preview features. "
+            "Put sources and tests/VisibleTest.java in FILE blocks, tests/HiddenTest.java in a HIDDEN block, and COMPLETE "
+            "replacement production files in FIX blocks. Tests are read-only. "
+        )
     if spec['category'] == 'repair':
         return common + (
             "Plant one realistic bug (possibly spread over two functions or files, or a missing operation) and write a bug report "
@@ -220,12 +235,18 @@ def assemble(spec, text, model):
         raise GenError('missing hints or rubric')
     visible = {p: c for p, c in files.items() if _is_test(p)}
     if spec['category'] in S.EXECUTABLE:
+        if spec['language'] not in dict(S.EXECUTION_LANGUAGES):
+            raise GenError('execution supports Python and Java only')
         if not visible or not blocks['HIDDEN'] or not blocks['FIX']:
             raise GenError('an executable exercise needs visible tests, hidden tests and a reference fix')
+        if any(not _is_test(p) or p in files for p in blocks['HIDDEN']):
+            raise GenError('hidden tests must be separate test files, not source replacements')
         for p in blocks['FIX']:
-            if p not in files or _is_test(p):
+            if p not in files or _is_test(p) or not p.endswith(tuple('.' + ext for ext in S.LANGUAGES[spec['language']])):
                 raise GenError(f'the reference fix replaces {p}, which is not a source file')
         for p, code in blocks['FIX'].items():
+            if not p.endswith('.py'):
+                continue
             try:
                 ast.parse(code, p)
             except SyntaxError as e:
@@ -235,7 +256,7 @@ def assemble(spec, text, model):
         'kind': 'exercise', 'id': 'ex_' + secrets.token_hex(8), 'mode': spec['mode'], 'category': spec['category'],
         'language': spec['language'], 'difficulty': spec['difficulty'], 'skills': spec['skills'], 'archetype': spec['archetype'],
         'title': str(meta.get('title') or 'Untitled')[:90], 'task': str(meta['task'])[:5000], 'files': files,
-        'editable': [] if spec['category'] not in S.EXECUTABLE else sorted(p for p in files if not _is_test(p) and p != 'README.md'),
+        'editable': [] if spec['category'] not in S.EXECUTABLE else sorted(p for p in files if not _is_test(p) and p.endswith(tuple('.' + ext for ext in S.LANGUAGES[spec['language']]))),
         'visible_tests': visible, 'hidden_tests': blocks['HIDDEN'], 'reference_fix': blocks['FIX'],
         'findings': findings, 'rubric': rubric, 'hints': hints, 'review': meta['review'] if isinstance(meta.get('review'), dict) else {'expected_behaviour': str(meta.get('review') or '')},
         'model_answer': str(meta['model_answer'])[:2500], 'fix_summary': str(meta.get('fix_summary') or '')[:800],
@@ -251,6 +272,10 @@ def _plan(spec, meta, blocks):
     if not blocks['FLAWED'] or not p.get('message'):
         raise GenError('the assistant plan needs a flawed patch and its message')
     for path, code in blocks['FLAWED'].items():
+        if not S.safe_path(path) or path not in blocks['FILE'] or _is_test(path):
+            raise GenError('flawed patches must replace existing source files only')
+        if not path.endswith('.py'):
+            continue
         try:
             ast.parse(code, path)
         except SyntaxError as e:
