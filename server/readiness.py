@@ -197,7 +197,7 @@ def compute(store, now=None):
     for section in ('system-design', 'fundamentals', 'ai'):
         rep = progress.report(c, states, week_ago, seen, mis, now, section)
         units[section] = knowledge_unit(rep)
-    units['experience'] = experience_unit(experience.overview(b['tracks'].get('experience', []), now))
+    units['experience'] = experience_unit(experience.overview(b['tracks'].get('experience', []), now, material=b.get('career')))
     units['practical'] = practical_unit(practical.overview(b['tracks'].get('practical', []), now))
     try:
         alloc = policy.effective_allocation(service.load_plan(store, now), now)

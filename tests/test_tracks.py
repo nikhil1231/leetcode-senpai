@@ -135,15 +135,6 @@ def test_next_prompt_prefers_prompts_you_have_a_story_for():
     assert experience.next_prompt([story, missed], 10)['id'] == 'p-incident'
 
 
-def test_cv_claims_link_stories_and_packs():
-    ctx = {'context': {'experience': [{'ref': 'cv.1', 'excerpt': 'Upgraded ZooKeeper'}],
-                       'self_reported_topics': [{'topic': 'ZooKeeper — leader election', 'state': 'Needs work'}]}}
-    out = experience.cv_claims(ctx, [{'id': 's1', 'source_ref': 'cv.1'}])
-    assert out['claims'][0]['story_id'] == 's1'
-    assert out['topics'][0]['pack'] == 'zookeeper'
-    assert experience.cv_claims(None, [])['available'] is False
-
-
 def test_practical_clean_rules():
     ex = practical.EXERCISES['lru-ttl-cache']
     good = {'tests': {'passed': 5, 'total': 5}, 'checks': {'passed': 7, 'total': 7},

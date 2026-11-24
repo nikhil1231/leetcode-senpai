@@ -164,7 +164,16 @@ def bundle(store, now=None):
     rows = sorted(rows + tracks_senpai.capability_rows(tracks, now), key=lambda r: r['id'])
     return {'settings': settings, 'problems': problems, 'attempts': attempts, 'reviews': reviews,
             'answers': answers, 'learning': learning, 'design': design, 'rows': rows, 'events': events,
-            'tracks': tracks, 'today': today, 'now': now}
+            'tracks': tracks, 'career': _career(store), 'today': today, 'now': now}
+
+
+def _career(store):
+    """Notion stories, questions, answers and applications via Job Scout (None when not synced or unreadable)."""
+    try:
+        return jobscout.material(store)
+    except Exception as exc:
+        log.warning('Career material unavailable: %s', type(exc).__name__)
+        return None
 
 
 def _track_records(store):
@@ -298,7 +307,7 @@ def prepare_session(store, now=None, *, budget=None, mode=None, depth=None, obje
                                quickfire_topics(), budget=int(budget or s.get('senpai_session_minutes') or 60),
                                mode=mode or s.get('senpai_mode', 'mixed'), depth=depth or s.get('senpai_depth', 'balanced'),
                                objective=objective, llm_enabled=llm.enabled(s),
-                               tracks=tracks_senpai.material(b.get('tracks') or {}, now))
+                               tracks=tracks_senpai.material(b.get('tracks') or {}, now, b.get('career')))
     if save:
         store.put_senpai('senpai_sessions', b['today'], session)
     return session
@@ -428,7 +437,7 @@ def week_brief(store, b, now=None):
         cv_at = [(store.get_knowledge('tutor_memory', 'cv') or {}).get('last_at') or 0]
         goal, plan = career.goal(b['settings'], job), load_plan(store, now)
         out = brief_mod.build(goal, job, plan, b['rows'], course_summary(b['design'], now)['lessons'],
-                              tracks_senpai.material(b.get('tracks') or {}, now), b['attempts'], b['problems'],
+                              tracks_senpai.material(b.get('tracks') or {}, now, b.get('career')), b['attempts'], b['problems'],
                               ignored_gaps(store), cv_at, now, llm.enabled(b['settings']))
         return {**out, 'split': time_split(plan, goal, {r['id'] for r in b['rows']}, now)}
     except Exception:

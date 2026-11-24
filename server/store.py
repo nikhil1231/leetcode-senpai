@@ -649,7 +649,7 @@ class FirestoreStore:
     # One subcollection per record type under users/{uid}. Documents in
     # `senpai` (plan, state, job_context) carry a revision for compare-and-swap.
     SENPAI = ('senpai', 'senpai_plans', 'senpai_decisions', 'senpai_proposals',
-              'senpai_interventions', 'senpai_sessions', 'senpai_weekly', 'senpai_teaching')
+              'senpai_interventions', 'senpai_sessions', 'senpai_weekly', 'senpai_teaching', 'senpai_career')
 
     def _senpai(self, coll):
         if coll not in self.SENPAI:

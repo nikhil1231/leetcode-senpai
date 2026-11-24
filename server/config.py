@@ -145,6 +145,9 @@ SOLVE_PAR_SEC = {"Easy": 15 * 60, "Medium": 25 * 60, "Hard": 40 * 60}
 JOB_SCOUT_URL = os.environ.get("JOB_SCOUT_URL", "").rstrip("/")
 JOB_SCOUT_TOKEN = os.environ.get("JOB_SCOUT_TOKEN", "")
 JOB_SCOUT_PUBLIC_URL = os.environ.get("JOB_SCOUT_PUBLIC_URL", "https://jobs.nikhil.ing").rstrip("/")
+# The Notion databases that hold your stories and question bank (Interviews → Behavioural), for "edit in Notion" links.
+NOTION_STORIES_URL = os.environ.get("NOTION_STORIES_URL", "https://www.notion.so/422d0de69f6481aeb062cbd50a2f80a4")
+NOTION_QUESTIONS_URL = os.environ.get("NOTION_QUESTIONS_URL", "https://www.notion.so/422d0de69f6481898a8de381780e383d")
 
 # Services on the box (a Telegram bot, the Threads card, …) call /api/knowledge without a
 # browser sign-in: "name:token,name2:token2". A token acts as the owner (ACCESS_UID) and its

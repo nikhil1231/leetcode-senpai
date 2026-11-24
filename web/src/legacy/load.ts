@@ -8,7 +8,7 @@ const ORDER = [
   "visualise-notes", "section-home", "sd-blocks", "sd-sims", "sd-sims-2", "sim-clock", "sd-widgets", "fund-models", "fund-sims", "dist-models", "dist-sims",
   "core-models", "core-sims", "ai-models", "ai-sims", "sd-stress", "sd-walkthrough", "sd-builder-calc", "ai-sim", "sd-sim", "sd-builder", "sd-outage", "sd-game",
   "sd-simulators", "sd-lesson", "tutor", "sd-numbers", "sd-map", "hub", "sd-redesign", "sd-ledger", "sd-papers", "sd-drills", "system-design-learning", "system-design", "tracks",
-  "experience", "practical", "tutor-home", "ai-round", "nightshift-engine", "nightshift", "dictate",
+  "practical", "tutor-home", "ai-round", "nightshift-engine", "nightshift", "dictate",
 ];
 
 let loading: Promise<void> | null = null;

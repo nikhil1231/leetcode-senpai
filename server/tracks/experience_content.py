@@ -90,14 +90,33 @@ PROMPTS = [
     _p('p-reliability', 'Tell me about a time you made a system more reliable.', ['technical', 'impact'],
        ['How did you know where the risk was?', 'What did you measure?', 'What trade-off did you accept?'],
        'Evidence-driven (incidents, metrics, SLOs), targeted fixes, and reliability numbers before and after.'),
-    _p('p-why-leave', 'Why are you leaving your current role, and why this kind of role?', ['growth'],
-       ['What would make you stay?', 'What do you want to be doing in three years?'],
-       'Positive and forward-looking: what you want to do more of, linked to this role. No criticism of your employer.'),
+    _p('p-why-leave', 'Why did you leave Goldman Sachs, and why this kind of role now?', ['growth'],
+       ['What would have made you stay?', 'What do you want to be doing in three years?'],
+       'Positive and forward-looking: what you wanted to do more of, linked to this role. No criticism of your employer.'),
     _p('p-ai-usage', 'How do you use AI tools in your engineering work, and where do you not trust them?', ['growth', 'technical'],
        ['Give an example where it was wrong.', 'How do you review AI-written code?'],
        'Concrete, effective usage, healthy scepticism, verification habits, and an example of catching an error.'),
+    # The same five were added to the Notion question bank; these are the fallback when Job Scout is unreachable.
+    _p('p-intro', 'Tell me about yourself.', ['growth'],
+       ['Why are you looking now?', 'What are you strongest at?'],
+       'Ninety seconds: where you have worked, one or two things you built, and why this kind of role is next.'),
+    _p('p-career-break', 'You have been away from full-time work since 2024. What have you been doing, and why come back now?',
+       ['growth'], ['What did you build in that time?', 'How have you kept your skills current?'],
+       'Brief and matter-of-fact about the reason, then concrete about what you built and learned, and why you are ready now.'),
+    _p('p-why-company', 'Why do you want to work here?', ['growth'],
+       ['What do you know about what this team builds?', 'What else are you looking at?'],
+       'Specific to the company: its product, engineering problems or domain, linked to what you have done and want to do.'),
+    _p('p-why-industry', 'Why this industry?', ['growth'],
+       ['What do you find hard about it?', 'Where do you see it going?'],
+       'A genuine, specific reason connected to your own experience, not a generic interest.'),
+    _p('p-built-recently', 'What have you built recently, and what did you learn from it?', ['growth', 'technical'],
+       ['What would you do differently?', 'How did you test it?'],
+       'One real project: the problem, the design choices you made, what broke, and what you learned.'),
 ]
 PROMPT_IDS = {p['id'] for p in PROMPTS}
+BY_ID = {p['id']: p for p in PROMPTS}
+KINDS = {'p-intro': 'Introduction', **dict.fromkeys(('p-why-leave', 'p-career-break', 'p-why-company', 'p-why-industry'),
+                                                    'Motivation')}
 
 # Self-check after a timed answer. Clean needs at least five ticks, including role, result and fit.
 STAR_CHECKS = [
@@ -235,3 +254,13 @@ PACKS = [
 ]
 PACK_IDS = {p['id'] for p in PACKS}
 DIVE_QUESTIONS = {q['id']: {**q, 'pack': p['id']} for p in PACKS for q in p['questions']}
+
+# Notion Technical-knowledge tracker topics (matched by name prefix) and the deep-dive questions that test them, so
+# a pack's results can be offered back to the tracker as a suggested State.
+TRACKER_TOPICS = {
+    'ZooKeeper — quorum': ['zk-quorum'], 'ZooKeeper — write path': ['zk-write-path'],
+    'ZooKeeper — sessions': ['zk-sessions', 'zk-fencing'], 'ZooKeeper — leader election': ['zk-election'],
+    'ZooKeeper — operations': ['zk-operations', 'zk-fit'],
+    'Model Ops': ['orc-atomic', 'orc-stateless', 'orc-recovery', 'orc-buy-vs-build'],
+    'OAuth2 / JWT': ['oauth-validate', 'oauth-flow', 'oauth-storage', 'oauth-revoke'],
+}

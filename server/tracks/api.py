@@ -45,7 +45,7 @@ def list_tracks(store=Depends(store_for)):
         if meta['kind'] == 'course':
             o = courses.overview(tid, records, now)
         elif meta['kind'] == 'experience':
-            o = experience.overview(records, now)
+            o = experience.overview(records, now, material=experience._material(store))
         else:
             o = practical.overview(records, now)
         out.append({'id': tid, **meta, 'knowledge': o['knowledge'], 'total': o['total'], 'pct': o['pct'], 'due': o['due']})
@@ -68,7 +68,8 @@ def get_track(track: str, store=Depends(store_for)):
         body['course'] = [{**c, 'overview': c['id'] in toured} for c in body['course']]
         body['known'] = _known(store, track)
     elif meta['kind'] == 'experience':
-        body = experience.overview(records, now, store.get_senpai('senpai', 'job_context'))
+        body = experience.overview(records, now, store.get_senpai('senpai', 'job_context'), experience._material(store))
+        body['links'] = experience.links(body)
     else:
         body = practical.overview(records, now)
     return {'track': {'id': track, **meta}, 'llm': llm.enabled(store.get_settings()), **body}

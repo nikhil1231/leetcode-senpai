@@ -58,7 +58,7 @@ async def tick(uids=None, now=None):
             log.exception('Daily learning review failed for user %s', uid)
 
 
-SYNC_EVERY = 6 * 3600
+SYNC_EVERY = 2 * 3600   # interview dates and role packs move prep focus, so keep it fairly fresh
 
 
 async def _sync_job_scout(store, now=None):

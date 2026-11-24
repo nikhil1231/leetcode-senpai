@@ -63,8 +63,8 @@ def capability_rows(records_by_track, now):
     return rows
 
 
-def material(records_by_track, now):
-    """Per track, what a session could do next."""
+def material(records_by_track, now, career=None):
+    """Per track, what a session could do next. `career`: Job Scout's Notion material, for Experience."""
     out = {}
     for track in ('fundamentals', 'ai'):
         o = courses.overview(track, records_by_track.get(track, []), now)
@@ -78,8 +78,8 @@ def material(records_by_track, now):
                                               'category': cat_of.get(nxt['id'])},
                       'next_by_category': {k: v for k, v in by_cat.items() if v}}
     recs = records_by_track.get('experience', [])
-    o = experience.overview(recs, now)
-    prompt = experience.BY_PROMPT[o['next_prompt']]
+    o = experience.overview(recs, now, material=career)
+    prompt = next(p for p in o['prompts'] if p['id'] == o['next_prompt'])
     out['experience'] = {'due': o['due'], 'mistakes': len(o['mistakes']['fix']), 'stories': len(o['stories']),
                          'gaps': sum(1 for c in o['coverage'] if not c['stories']), 'next_prompt': prompt['text']}
     o = practical.overview(records_by_track.get('practical', []), now)

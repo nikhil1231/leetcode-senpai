@@ -337,3 +337,13 @@ body.section-track #active-run, body.section-track .topbar-side, body.section-tr
 .cwf .tr-coach { display:flex; flex-direction:column; gap:14px; padding:12px 14px; overflow:auto; min-height:0; flex:1 1 0; }
 .cwf .tr-coach .tr-pair { margin:0; }
 .cwf .tr-coach .tr-pair-log { max-height:40vh; }
+
+/* Experience: applications in flight and model answers (web/src/features/experience) */
+.ex-week .ex-apps { list-style:none; margin:8px 0; padding:0; display:flex; flex-wrap:wrap; gap:6px 18px; }
+.ex-week .ex-pack { margin-left:8px; font-size:12.5px; }
+.ex-week .ex-ranked { margin:8px 0 4px; padding-left:20px; }
+.ex-week .ex-ranked li { margin:4px 0; }
+.ex-model p { line-height:1.6; }
+.ex-caveat { border-left:3px solid var(--amber); padding:6px 10px; background:color-mix(in srgb, var(--amber) 8%, transparent); border-radius:4px; }
+.ex-story-body ul { padding-left:20px; }
+.ex-story-body li, .ex-story-body p { line-height:1.55; margin:4px 0; }
