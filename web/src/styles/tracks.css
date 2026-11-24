@@ -341,8 +341,11 @@ body.section-track #active-run, body.section-track .topbar-side, body.section-tr
 /* Experience: applications in flight and model answers (web/src/features/experience) */
 .ex-week .ex-apps { list-style:none; margin:8px 0; padding:0; display:flex; flex-wrap:wrap; gap:6px 18px; }
 .ex-week .ex-pack { margin-left:8px; font-size:12.5px; }
-.ex-week .ex-ranked { margin:8px 0 4px; padding-left:20px; }
+.ex-week .ex-sub { margin:10px 0 2px; }
+.ex-week .ex-rehearse { margin:2px 0 4px; padding-left:20px; }
+.ex-week .ex-ranked { margin:2px 0 4px; padding-left:20px; }
 .ex-week .ex-ranked li { margin:4px 0; }
+.ex-week .ex-ranked .tr-link, .ex-week .ex-rehearse .tr-link { display:block; }   /* a block keeps the list number on the first line when the question wraps */
 .ex-model p { line-height:1.6; }
 .ex-caveat { border-left:3px solid var(--amber); padding:6px 10px; background:color-mix(in srgb, var(--amber) 8%, transparent); border-radius:4px; }
 .ex-story-body ul { padding-left:20px; }

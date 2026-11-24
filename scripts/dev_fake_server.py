@@ -108,6 +108,11 @@ async def fake_stream(model, messages, options=None):
 def build():
     store = FakeStore("dev")
     seed(store)
+    if os.environ.get("CAREER_JSON"):   # a Job Scout /api/senpai/context export, for the Experience pages
+        import json, time
+        ctx = json.load(open(os.environ["CAREER_JSON"]))
+        store.put_senpai("senpai_career", "material", {k: ctx.get(k) or [] for k in ("stories", "questions", "general_answers", "applications")}
+                         | {"fetched_at": time.time()})
     for name, module in list(sys.modules.items()):   # modules import get_store by name, so patch each binding
         if name.startswith("server") and hasattr(module, "get_store"):
             module.get_store = lambda uid: store

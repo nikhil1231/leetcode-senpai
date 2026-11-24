@@ -72,7 +72,9 @@ function ThisWeek({ d }: { d: Experience }) {
         ))}
       </ul>
       {f.shared_themes.length > 0 && <p className="sd-muted">Shared across them: {f.shared_themes.map((t) => <span key={t} className="tr-tag">{t}</span>)}</p>}
-      {f.stories.length > 0 && <p><b>Stories to rehearse:</b> {f.stories.map((id, i) => <span key={id}>{i ? ", " : ""}<button type="button" className="tr-link" onClick={() => go("story/" + id)}>{story(id)?.title || id}</button></span>)}</p>}
+      {f.stories.length > 0 && <><p className="ex-sub"><b>Stories to rehearse</b></p>
+        <ul className="ex-rehearse">{f.stories.map((id) => <li key={id}><button type="button" className="tr-link" onClick={() => go("story/" + id)}>{story(id)?.title || id}</button></li>)}</ul>
+        <p className="ex-sub"><b>Questions, most useful first</b></p></>}
       <ol className="ex-ranked">
         {f.ranked.slice(0, 5).map((r) => (
           <li key={r.id}><button type="button" className="tr-link" onClick={() => go("drill/" + r.id)}>{r.text}</button>
