@@ -23,3 +23,5 @@ export const shortLocalDate = (ts: number | null | undefined) => {
 };
 
 export const leetcodeProblemUrl = (slug: string) => `https://leetcode.com/problems/${encodeURIComponent(slug)}/`;
+// A custom concurrency question (server/concurrency): written here, so it has no page on LeetCode.
+export const isCustomSlug = (slug?: string | null) => !!slug && slug.startsWith("cc-");

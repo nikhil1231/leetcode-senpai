@@ -108,14 +108,14 @@ function Result({ view, sql, onRun, onSubmit, onAddCase }: { view: ResultView; s
   }
   if (view.kind === "submit") {
     const r = view.r, good = r.accepted;
-    const beats = [r.runtime_percentile != null ? `runtime beats ${Math.round(r.runtime_percentile)}%` : "", r.memory_percentile != null ? `memory beats ${Math.round(r.memory_percentile)}%` : ""].filter(Boolean).map((b) => ` · ${b}`).join("");
+    const beats = r.measured ? ` · ${Math.round(r.measured.wall_ms)} ms · CPU ${Math.round(r.measured.cpu_ms)} ms` : [r.runtime_percentile != null ? `runtime beats ${Math.round(r.runtime_percentile)}%` : "", r.memory_percentile != null ? `memory beats ${Math.round(r.memory_percentile)}%` : ""].filter(Boolean).map((b) => ` · ${b}`).join("");
     return (
       <>
         <p className={`editor-verdict ${good ? "is-good" : "is-bad"}`}>{r.status || ""} <span className="small">{r.correct ?? "?"}/{r.total ?? "?"} tests{beats}</span></p>
         <Block label="Error" value={r.error} cls="is-error" />
         {sql ? <SqlIo inputLabel="Failing input" input={r.input} output={r.output} expected={r.expected} ok={false} />
-          : <div className="editor-io-split"><div className="editor-io-main"><Block label="Failing input" value={r.input} /><Block label="Output" value={r.output} cls="is-off" /><Block label="Expected" value={r.expected} /></div><div><Block label="Stdout" value={r.stdout} /></div></div>}
-        {!good && r.input && <button id="editor-add-case" className="button is-small" type="button" onClick={() => onAddCase(r.input)}>Add to test input</button>}
+          : <div className="editor-io-split"><div className="editor-io-main"><Block label={r.custom ? "Failing test" : "Failing input"} value={r.input} /><Block label={r.custom ? "What happened" : "Output"} value={r.output} cls="is-off" /><Block label="Expected" value={r.expected} /></div><div><Block label="Stdout" value={r.stdout} /></div></div>}
+        {!good && r.input && !r.custom && <button id="editor-add-case" className="button is-small" type="button" onClick={() => onAddCase(r.input)}>Add to test input</button>}
       </>
     );
   }
@@ -137,7 +137,7 @@ function Result({ view, sql, onRun, onSubmit, onAddCase }: { view: ResultView; s
             <button key={i} className={`editor-case-tab ${ok(c) ? "is-good" : "is-bad"}`} type="button" role="tab" aria-selected={i === sel} onClick={() => setPickedCase(i)}>{ok(c) ? "✓" : "✗"} Case {i + 1}</button>))}</div>
           <div id="editor-case" role="tabpanel">
             {sql ? <SqlIo input={cases[sel].input} output={cases[sel].output} expected={cases[sel].expected} ok={ok(cases[sel])} />
-              : <div className="editor-io-split"><div className="editor-io-main"><Block label="Input" value={cases[sel].input} /><Block label="Output" value={cases[sel].output} cls={ok(cases[sel]) ? "" : "is-off"} /><Block label="Expected" value={cases[sel].expected} /></div>
+              : <div className="editor-io-split"><div className="editor-io-main"><Block label={r.custom ? "Test" : "Input"} value={cases[sel].input} /><Block label={r.custom ? "Result" : "Output"} value={cases[sel].output} cls={ok(cases[sel]) ? "" : "is-off"} /><Block label="Expected" value={cases[sel].expected} /></div>
               <div><Block label="Stdout" value={cases[sel].stdout} /></div></div>}
           </div>
         </>
@@ -452,7 +452,8 @@ export function EditorPane({ active, prefetched }: { active: Active; prefetched:
               <div id="editor-edges" className="editor-edges"><span className="label-sm">Planned edge cases — tick each once you&apos;ve checked it</span>
                 {edges.map((c) => <label className="editor-edge" key={c}><input type="checkbox" checked={checked.includes(c)} onChange={(e) => tickEdge(c, e.target.checked)} /> {c}</label>)}</div>
             )}
-            {sql ? <SqlTests input={input} onChange={setInput} schema={state.sql_schema} onRun={() => judge("run")} examples={state.example_testcases || []} /> : <>
+            {state.custom ? <p className="small editor-custom-note">Run tries the example tests three times each. Submit runs every test, the hidden ones too, 20 times over to catch races; a test that hangs is reported as a likely deadlock with where each thread was waiting.</p>
+              : sql ? <SqlTests input={input} onChange={setInput} schema={state.sql_schema} onRun={() => judge("run")} examples={state.example_testcases || []} /> : <>
               <label className="label-sm" htmlFor="editor-input">Test input <span className="help-inline">one argument per line, case after case</span></label>
               <textarea id="editor-input" className="editor-input" rows={4} spellCheck={false} value={input} onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "'" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); judge("run"); } }} /></>}

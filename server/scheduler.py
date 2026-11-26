@@ -292,7 +292,7 @@ def topic_stats(problems, attempts, enrichments=None, categories=CATEGORY_ORDER)
     DSA list unless asked otherwise, so practice topics stay out of DSA analytics."""
     by_cat = {}
     for p in problems:
-        if not _in_library(p):
+        if not _in_library(p) or p.get("source") == "custom":   # custom questions are listed apart from the pack
             continue
         c = by_cat.setdefault(
             p["neetcode_category"],

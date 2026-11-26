@@ -44,6 +44,7 @@ from .system_design_session import router as system_design_session_router
 from .activity import router as activity_router
 from .tracks.api import router as tracks_router
 from .coding.api import router as coding_router
+from .concurrency import api as concurrency
 from .readiness import router as readiness_router
 from .knowledge_base.api import router as knowledge_router
 from .tutor.api import router as tutor_router
@@ -114,6 +115,7 @@ app.include_router(system_design_session_router)
 app.include_router(activity_router)
 app.include_router(tracks_router)
 app.include_router(coding_router)
+app.include_router(concurrency.router)
 app.include_router(readiness_router)
 app.include_router(search_router)
 app.include_router(senpai_router)
@@ -721,13 +723,14 @@ async def _grade_solution(store, attempt, lc=None):
     try:
         # Graded as soon as it's Accepted, before any rating: the claim is the
         # plan's target, or a complexity typed on an older solve.
-        graded, err = await coach.grade_solution(
+        custom = concurrency.is_custom(store.get_problem(attempt["slug"]))
+        graded, err = await (concurrency.grade_solution(store, attempt) if custom else coach.grade_solution(
             store, attempt["slug"], code, attempt.get("lang"),
             attempt.get("complexity_time") or attempt.get("complexity_target_time"),
             attempt.get("complexity_space") or attempt.get("complexity_target_space"),
             execution_status=assessment.observed(attempt),
             asked=attempt.get("followups_asked"),
-        )
+        ))
     except Exception as exc:  # defensive; coach already swallows LLM errors
         graded, err = None, str(exc)
     if not graded:
@@ -1538,6 +1541,7 @@ async def api_session_end(body: Optional[HintRequest] = None,
     _log_server_event(store, s, {"k": "end"})
     async with _poll_lock(uid):
         aid = poller.record_unsolved(store, s, code, int(time.time()))
+    concurrency.finished(uid, s["slug"])
     return {"ok": True, "attempt_id": aid, "pending": _pending(store)}
 
 
@@ -1699,6 +1703,8 @@ async def _hydrate_editor(store, slug, lc=None):
     older import predates it. The session is sent when there is one: LeetCode
     withholds a premium problem's starter code from anonymous requests."""
     p = store.get_problem(slug) or {}
+    if concurrency.is_custom(p):   # written here, never on LeetCode
+        return p
     if (p.get("question_id") and p.get("starter_code") and p.get("content_html")
             and p.get("example_testcases") and p.get("snippets") is not None):
         return p
@@ -1752,7 +1758,8 @@ def _editor_state(s, p, starter, available, doc, lc, optimizing=None, starters=N
     code = starter
     if doc:
         code = doc.get("code") or starter
-    return {"available": available, "can_judge": leetcode.has_auth(lc),
+    return {"available": available, "can_judge": concurrency.is_custom(p) or leetcode.has_auth(lc),
+            "custom": concurrency.is_custom(p),
             "content_html": p.get("content_html"), "starter_code": starter,
             "example_testcases": p.get("example_testcases") or [],
             "code": code, "seq": (doc or {}).get("seq", 0), "now_ms": _run_ms(s),
@@ -1876,6 +1883,13 @@ async def api_editor_run(body: EditorJudge, uid: str = Depends(auth.require_user
     if _runs_left(s, store.get_recording(s["id"])) == 0:
         return {"ok": False, "runs_left": 0,
                 "error": "Interview mode: no Runs left — trace it by hand, then submit."}
+    if concurrency.is_custom(p):
+        result = await concurrency.editor_run(store, p, body.code)
+        doc = _append_recording(store, s, server_events=[{
+            "t": body.t, "k": "run", "code": body.code, "input": "visible tests",
+            "result": recording.compact_run(result)}])
+        return {"ok": True, "result": result, "truncated": bool(doc.get("truncated")),
+                "runs_left": _runs_left(s, doc), "data_input": ""}
     # A blank test box runs the examples rather than nothing (0/0 "All cases match").
     data_input = (body.data_input if leetcode.clean_input(body.data_input)
                   else "\n".join(p.get("example_testcases") or []))
@@ -1900,8 +1914,13 @@ async def api_editor_submit(body: EditorJudge, uid: str = Depends(auth.require_u
     feed — and comes back with the pending list so the rating modal opens at once."""
     store = get_store(uid)
     s, p = await _editor_judging(store, body, lc)
-    result, err = await _judge_or_error(leetcode.submit_code(
-        s["slug"], p["question_id"], body.code, lc, _editor_lang(p, s.get("lang"))))
+    measured = None
+    if concurrency.is_custom(p):
+        result, measured = await concurrency.editor_submit(store, p, body.code)
+        err = None
+    else:
+        result, err = await _judge_or_error(leetcode.submit_code(
+            s["slug"], p["question_id"], body.code, lc, _editor_lang(p, s.get("lang"))))
     if err:
         return {"ok": False, "error": err}
     doc = _append_recording(store, s, server_events=[{
@@ -1915,6 +1934,9 @@ async def api_editor_submit(body: EditorJudge, uid: str = Depends(auth.require_u
         async with _poll_lock(uid):
             out["attempt_id"] = await record(
                 store, s, result, body.code, recording.parse(doc["events"]))
+        if measured is not None and out["attempt_id"]:
+            store.update_attempt(out["attempt_id"], {"custom_measured": measured})
+            concurrency.finished(uid, s["slug"])
         out["pending"] = _pending(store)
     return out
 
@@ -1952,6 +1974,9 @@ def _schedule_solve(store, attempt):
         current, attempt["confidence"], 'solution' if attempt.get('unsolved') else assessment.independence(attempt),
         solution_score=None,
         plan_cap=plans.quality_cap(plans.plan_status(attempt), plan_held))
+    if concurrency.is_custom(store.get_problem(slug)) and not concurrency.wants_review_card(
+            {**attempt, "independence": assessment.independence(attempt)}, current):
+        return None   # a custom question that went well is practice, not a card
     _save_card(store, slug, new_state, attempt.get("id"))
     return new_state
 
@@ -2948,7 +2973,8 @@ async def api_recall_context(slug: str, editor: bool = False,
         langs = _editor_lang_fields(p, _remembered_langs(store.get_settings()))
         prefetch = {
             "available": bool(p.get("question_id") and p.get("starter_code")),
-            "can_judge": leetcode.has_auth(lc),
+            "can_judge": concurrency.is_custom(p) or leetcode.has_auth(lc),
+            **({"custom": True} if concurrency.is_custom(p) else {}),
             "starter_code": langs["starters"].get(langs["lang"]) or p.get("starter_code"),
             "example_testcases": p.get("example_testcases") or [],
             "interview_runs": config.INTERVIEW_RUN_LIMIT, **langs,
@@ -2957,6 +2983,7 @@ async def api_recall_context(slug: str, editor: bool = False,
     return {
         "editor": prefetch,
         "slug": slug,
+        "custom": concurrency.is_custom(p),
         "title": p.get("title", slug),
         "difficulty": p.get("difficulty"),
         "plan_soft_limit_sec": plans.plan_soft_limit_sec(p.get("difficulty")),

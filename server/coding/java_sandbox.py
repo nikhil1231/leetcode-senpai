@@ -25,9 +25,12 @@ JVM = ['-Xms16m', '-Xmx128m', '-Xss512k', '-XX:+UseSerialGC', '-XX:ActiveProcess
        '-XX:CompressedClassSpaceSize=32m', '-XX:MaxMetaspaceSize=96m', '-XX:ReservedCodeCacheSize=32m', '-XX:-UsePerfData']
 
 
-def _child():
+def _child(nproc=64, overrides=None, cpus=None):
     os.setsid()
-    for key, limits in {**sandbox.LIMITS, resource.RLIMIT_AS: (2 << 30, 2 << 30), resource.RLIMIT_NPROC: (64, 64)}.items():
+    if cpus and hasattr(os, 'sched_setaffinity'):   # Linux: keep a busy-looping test to a share of the shared box
+        os.sched_setaffinity(0, set(sorted(os.sched_getaffinity(0))[:cpus]))
+    for key, limits in {**sandbox.LIMITS, resource.RLIMIT_AS: (2 << 30, 2 << 30), resource.RLIMIT_NPROC: (nproc, nproc),
+                        **(overrides or {})}.items():
         resource.setrlimit(key, limits)
     if os.geteuid() == 0:
         os.setgroups([])
@@ -35,13 +38,14 @@ def _child():
         os.setuid(sandbox.NOBODY)
 
 
-def _run(command, root, wall):
+def _run(command, root, wall, nproc=64, limits=None, cpus=None):
+    """`nproc` counts threads too (a JVM starts about twenty of its own); `limits` overrides sandbox.LIMITS entries."""
     # File-backed output is bounded by RLIMIT_FSIZE; a printing loop cannot exhaust the API's memory.
     with tempfile.TemporaryFile() as output:
         proc = subprocess.Popen(command, cwd=root,
                                 env={'PATH': '/usr/bin:/bin', 'HOME': root, 'LANG': 'C.UTF-8', 'TZ': 'UTC'},
                                 stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                                preexec_fn=_child, close_fds=True)
+                                preexec_fn=lambda: _child(nproc, limits, cpus), close_fds=True)
         timed_out = False
         try:
             proc.wait(timeout=wall)

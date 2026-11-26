@@ -1,4 +1,5 @@
 "use client";
+import { isCustomSlug } from "@/lib/format";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
@@ -40,7 +41,7 @@ function Grade({ g, recall, attemptId }: { g: Any; recall: Any; attemptId: strin
       {positives.length > 0 && <div className="grade-bullets grade-positives"><b>What you had</b><ul>{positives.map((x, i) => <li key={i}>{x}</li>)}</ul></div>}
       {negatives.length > 0 && <div className="grade-bullets grade-negatives"><b>What was missing</b><ul>{negatives.map((x, i) => <li key={i}>{x}</li>)}</ul></div>}
       <div className="grade-meta small">{recall.category && <span>{recall.category}</span>}<span>Next review scheduled</span>
-        {recall.slug && <a href={`https://leetcode.com/problems/${encodeURIComponent(recall.slug)}/editorial/`} target="_blank" rel="noopener">Read the editorial ↗</a>}</div>
+        {recall.slug && !isCustomSlug(recall.slug) && <a href={`https://leetcode.com/problems/${encodeURIComponent(recall.slug)}/editorial/`} target="_blank" rel="noopener">Read the editorial ↗</a>}</div>
       {attemptId && (
         <div className="recall-clarify"><label className="label-sm" htmlFor="recall-clarify-text">Ask about this grade</label>
           <div className="recall-clarify-row">

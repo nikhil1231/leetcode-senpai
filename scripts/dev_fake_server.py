@@ -2,6 +2,7 @@
 
     uv run scripts/dev_fake_server.py            # http://127.0.0.1:8000
     FAKE_CHAT=1 uv run scripts/dev_fake_server.py   # chats answer with canned replies, streamed slowly
+    CONCURRENCY_JSON='/tmp/q_*.json' uv run scripts/dev_fake_server.py   # with generated concurrency questions
 
 Auth is bypassed and nothing is persisted, so it is the safe thing to point `web/` (or a browser) at while
 building UI. Model calls are rejected, so every LLM feature shows its non-LLM state. With FAKE_CHAT the plain chats
@@ -113,6 +114,12 @@ def build():
         ctx = json.load(open(os.environ["CAREER_JSON"]))
         store.put_senpai("senpai_career", "material", {k: ctx.get(k) or [] for k in ("stories", "questions", "general_answers", "applications")}
                          | {"fetched_at": time.time()})
+    if os.environ.get("CONCURRENCY_JSON"):   # a glob of generated questions (one JSON each) for the custom concurrency list
+        import glob, json
+        from server.concurrency import queue as concurrency_queue
+        for path in sorted(glob.glob(os.environ["CONCURRENCY_JSON"])):
+            q = json.load(open(path))
+            store.put_track_record(concurrency_queue.QK, q["id"], q)
     for name, module in list(sys.modules.items()):   # modules import get_store by name, so patch each binding
         if name.startswith("server") and hasattr(module, "get_store"):
             module.get_store = lambda uid: store

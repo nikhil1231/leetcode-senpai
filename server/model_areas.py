@@ -59,6 +59,8 @@ AREAS = [
          lambda: 'anthropic/claude-sonnet-5.5'),
     Area('coding', 'Coding examiner and assistant', 'Marks Coding Practice answers and plays the AI assistant in AI-assisted sessions.',
          'chat', lambda: 'anthropic/claude-sonnet-5.5'),
+    Area('concurrency_gen', 'Concurrency questions', 'Writes the custom concurrency questions and solves them '
+         'independently to check they are fair.', 'chat', lambda: 'anthropic/claude-sonnet-5.5'),
     Area('stt', 'Dictation', 'Transcribes spoken answers before grading.', 'stt', lambda: config.STT_MODEL),
 ]
 BY_KEY = {a.key: a for a in AREAS}

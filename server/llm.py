@@ -506,6 +506,41 @@ TASKS: dict[str, Task] = {
             + f"--- submitted code ({p.get('lang')}) ---\n{_trunc(p.get('code'))}"
         ),
     ),
+    "grade_concurrency": Task(
+        SolutionGrade,
+        "You review an accepted solution to a custom Java concurrency question out of 5, as a senior engineer would in "
+        "an interview. There is no runtime or memory percentile here: instead you are given what was measured when its "
+        "tests ran (each test 20 times), next to the same numbers for the reference solution, and any flags drawn from "
+        "them. Use the measurements as evidence, never as the verdict on their own: a small difference is noise. "
+        "Look for the problems that matter in concurrent code even when every test passed: busy-waiting or spinning "
+        "where a thread should block (CPU time far above the reference's is the usual sign), serialising work that "
+        "should run in parallel (one coarse lock, synchronized on everything, a metric such as the most readers inside "
+        "at once well below the reference's), waiting with if instead of while, notify where notifyAll is needed, "
+        "sleeping to force an order, holding a lock while doing slow work, a lock order that could deadlock, swallowed "
+        "interrupts, and a heavier tool than the problem needs (a lock where a latch, a semaphore or an atomic would do) "
+        "or a lighter one that is only correct by luck. Score 5 only for a correct, idiomatic solution that blocks "
+        "rather than spins and allows the concurrency the statement asks for; 3 or 4 for a correct solution with one of "
+        "the problems above (cap it at 4, or 3 when it busy-waits or serialises work that should be parallel); 1 or 2 "
+        "for code that passes by luck or is hard to follow. Set optimal=true when it is as concurrent and as cheap as "
+        "the reference in the ways that matter. Treat a different valid approach fairly. Keep analysis to one or two "
+        "sentences. positives and negatives are short bullets; negatives empty when there is nothing meaningful. "
+        "improve: up to 3 concrete changes, each once. followup: the question an interviewer would ask next to push "
+        "towards the most valuable improvement, without naming the fix; empty when there is none. inferred_time and "
+        "inferred_space: leave empty unless the question is about an algorithm's cost. Plain words, British English, "
+        "no em dashes.",
+        lambda p: (
+            f"Question: {p.get('title')} (level {p.get('level')} of 5; it centres on {p.get('primary_tool') or 'unknown'}).\n"
+            f"Statement: {p.get('statement')}\n"
+            f"Key ideas of the reference solution: {p.get('key_ideas')}\n"
+            f"--- reference solution ---\n{_trunc(p.get('reference'), 4000)}\n"
+            f"Execution status: {p.get('execution_status', 'unknown')}\n"
+            f"Measured (learner vs reference): {p.get('measured') or '(not measured)'}\n"
+            f"Flags from the measurements: {p.get('flags') or 'none'}\n"
+            + (("Follow-ups already asked on earlier versions of this code: " + " | ".join(p["asked"])
+                + "\nDon't ask one again if the code has acted on it.\n") if p.get("asked") else "")
+            + f"--- submitted code (java) ---\n{_trunc(p.get('code'), 6000)}"
+        ),
+    ),
     "review_process": Task(
         ProcessReview,
         "You review HOW a coding-interview practice solve went, from a timeline of "

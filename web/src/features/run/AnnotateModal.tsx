@@ -2,7 +2,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { fmtTime, pct, solveSecOf } from "@/lib/format";
+import { fmtTime, isCustomSlug, pct, solveSecOf } from "@/lib/format";
 import { useOverview, useLeetcodeStatus } from "@/lib/queries";
 import { useRun } from "@/lib/run-store";
 import { useToast } from "@/lib/toast";
@@ -153,7 +153,7 @@ function SolutionGrade({ g, attempt }: { g: Any; attempt: Any }) {
       <div className="hero-improve"><h4>How to improve</h4>{improve.length ? <ul>{improve.map((x, i) => <li key={i}>{x}</li>)}</ul> : <p className="small">Nothing to change: this is optimal and clean.</p>}</div>
       {cx}
       {positives.length > 0 && <details className="annotate-more"><summary>What worked</summary><ul className="process-list">{positives.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></details>}
-      {attempt.slug && <p className="small grade-editorial"><a href={`https://leetcode.com/problems/${encodeURIComponent(attempt.slug)}/editorial/`} target="_blank" rel="noopener">Read the editorial ↗</a></p>}
+      {attempt.slug && !isCustomSlug(attempt.slug) && <p className="small grade-editorial"><a href={`https://leetcode.com/problems/${encodeURIComponent(attempt.slug)}/editorial/`} target="_blank" rel="noopener">Read the editorial ↗</a></p>}
     </>
   );
 }
@@ -296,14 +296,15 @@ export function AnnotateModal({ initial, onClose }: { initial: Any; onClose: (op
 
   const untimed = attempt.time_taken_sec == null && attempt.source === "detected";
   const GRADING = ["Reading your code…", "Checking it against the optimum…", "Writing it up…"];
-  const meta = [attempt.neetcode_category, attempt.slug].filter(Boolean).join(" · ");
+  const custom = isCustomSlug(attempt.slug);
+  const meta = [attempt.neetcode_category, custom ? "Custom question" : attempt.slug].filter(Boolean).join(" · ");
   return (
     <div className="overlay">
       <div className="overlay-card box annotate-wide" role="dialog" aria-modal="true" aria-labelledby="annotate-heading">
         <h2 className={`modal-title${attempt.unsolved ? "" : " celebrate"}`} id="annotate-heading">{attempt.unsolved ? "Run ended" : "Solved!"}</h2>
         <div className="solved-problem">
           <div className="solved-problem-main">
-            <a id="annotate-problem-link" href={attempt.url || `https://leetcode.com/problems/${attempt.slug}/`} target="_blank" rel="noopener">
+            <a id="annotate-problem-link" href={custom ? "/leetcode/topics?topic=Concurrency" : attempt.url || `https://leetcode.com/problems/${attempt.slug}/`} {...(custom ? {} : { target: "_blank", rel: "noopener" })}>
               <span id="annotate-problem-id">{attempt.frontend_id ? `#${attempt.frontend_id} · ` : ""}</span><span id="annotate-title">{attempt.title}</span></a>
             {attempt.difficulty && <DifficultyBadge difficulty={attempt.difficulty} />}
           </div>

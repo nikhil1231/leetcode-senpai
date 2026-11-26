@@ -3190,3 +3190,20 @@ body.section-track .foot-chips { display: none; }
 .evidence-table th:first-child, .evidence-table td:first-child { text-align: left; }
 .evidence-table td { padding: 6px 8px; border-top: 1px solid var(--line-soft); text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .evidence-table td:first-child { color: var(--text); }
+
+/* custom concurrency questions, in the Concurrency topic modal */
+.cc-custom { margin-top: 22px; padding-top: 6px; border-top: 1px solid var(--line); }
+.cc-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cc-head .topic-section-head { margin: 12px 0 4px; }
+.cc-level-now { color: var(--text-2); margin-right: auto; }
+.cc-note { margin: 2px 0 8px; color: var(--text-2); }
+.cc-status { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.cc-level {
+  justify-self: start; padding: 2px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line);
+}
+.cc-tool { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 104px; }
+.cc-row.is-done .topic-problem-title { color: var(--text-2); }
+.cc-reasons { display: grid; gap: 6px; margin: 10px 0 12px; padding: 0; border: 0; }
+.cc-reason { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.editor-custom-note { margin: 0; color: var(--text-2); line-height: 1.5; }

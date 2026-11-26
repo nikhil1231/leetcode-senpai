@@ -35,9 +35,11 @@ export function PredictModal({ ctx, onClose }: { ctx: Ctx & { interview?: boolea
   const limit = problem.data?.plan_soft_limit_sec || DEFAULT_LIMIT;
   // SQL has no complexity target. The editor writes Python and MySQL: a problem with neither starter is solved on LeetCode.
   const sql = /^SQL /.test(problem.data?.category || "");
+  // A custom concurrency question has no complexity target either: it is judged on correctness and measured cost.
+  const noComplexity = sql || !!problem.data?.custom;
   const noEditor = problem.data?.editor?.available === false;
   const lc = onLeetcode || noEditor;
-  const ready = useMemo(() => Boolean(approach.trim() && (sql || time.trim())), [approach, time, sql]);
+  const ready = useMemo(() => Boolean(approach.trim() && (noComplexity || time.trim())), [approach, time, noComplexity]);
 
   const go = (status: "planned" | "blank" | "skipped") => {
     if (status === "planned" && !ready) return;
@@ -72,7 +74,7 @@ export function PredictModal({ ctx, onClose }: { ctx: Ctx & { interview?: boolea
           <textarea id="predict-approach" ref={approachRef} className="textarea" data-dictate rows={4} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={approach}
             onChange={(e) => setApproach(e.target.value)} placeholder={sql ? "e.g. LEFT JOIN payouts to creators so creators with no payout stay in, then keep the rows where the payout id IS NULL." : "e.g. a sliding window over character counts. Grow the right edge, and shrink from the left while a character repeats, because any window containing a repeat can't be the answer."} />
           <p className="help predict-graded">Graded on whether an interviewer would let you start coding. Bounds, base cases and edge cases are judged with your code, not here.</p>
-          {!sql && <div id="predict-complexities" className="mt-2">
+          {!noComplexity && <div id="predict-complexities" className="mt-2">
             <ComplexityFields idPrefix="predict" time={time} space={space} onTime={setTime} onSpace={setSpace} timeLabel="Target time" spaceLabel="Target space"
               onEnterTime={() => (ready ? go("planned") : approachRef.current?.focus())} />
           </div>}
@@ -83,13 +85,13 @@ export function PredictModal({ ctx, onClose }: { ctx: Ctx & { interview?: boolea
                 <input type="checkbox" id="predict-interview" checked={interview && !lc} disabled={lc}
                   onChange={(e) => { setInterview(e.target.checked); try { localStorage.setItem(KEY, e.target.checked ? "1" : "0"); } catch { /* per-browser nicety */ } }} /> Interview mode
               </label>
-              <label className="predict-surface small" title={noEditor ? "The app's editor has no starter code for this one, so it's solved on LeetCode" : "Open LeetCode's own page instead of solving in the app's editor"}>
+              {!problem.data?.custom && <label className="predict-surface small" title={noEditor ? "The app's editor has no starter code for this one, so it's solved on LeetCode" : "Open LeetCode's own page instead of solving in the app's editor"}>
                 <input type="checkbox" id="predict-on-leetcode" checked={lc} disabled={noEditor} onChange={(e) => setOnLeetcode(e.target.checked)} /> Solve on LeetCode
-              </label>
+              </label>}
             </span>
             <button id="btn-skip-predict" className="button is-ghost" type="button" title="Start without planning" onClick={() => go("skipped")}>Skip</button>
             <button id="btn-blank-predict" className="button is-ghost" type="button" title="Start the run and record that you had no plan" onClick={() => go("blank")}>No idea yet</button>
-            <button id="btn-start-predict" className="button is-primary" type="button" disabled={!ready} title={sql ? "Needs an approach" : "Needs an approach and a time target"} onClick={() => go("planned")}>Lock in &amp; start</button>
+            <button id="btn-start-predict" className="button is-primary" type="button" disabled={!ready} title={noComplexity ? "Needs an approach" : "Needs an approach and a time target"} onClick={() => go("planned")}>Lock in &amp; start</button>
           </div>
         </div>
       </div>

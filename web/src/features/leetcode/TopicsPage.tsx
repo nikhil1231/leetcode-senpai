@@ -10,6 +10,7 @@ import { Loader, LoadError } from "@/components/ui/Loader";
 import { Modal } from "@/components/ui/Modal";
 import { StudyPromptButton } from "@/features/study/StudyPrompt";
 import { useStartFlow } from "./useStartFlow";
+import { CustomConcurrency } from "./CustomConcurrency";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useFlow } from "@/lib/flow-store";
 
@@ -31,7 +32,8 @@ function TopicModal({ topic, onClose }: { topic: Any; onClose: () => void }) {
   const start = useStartFlow();
   const router = useRouter();
   const q = useQuery({ queryKey: ["api", "topic-problems", topic.category, !!topic.practice], queryFn: () => api(`/problems?category=${encodeURIComponent(topic.category)}&sort=${topic.practice ? "acceptance" : "difficulty"}`) });
-  const rows: Any[] = q.data || [];
+  // Custom concurrency questions are in the library too, but listed apart, below LeetCode's own.
+  const rows: Any[] = (q.data || []).filter((r: Any) => r.source !== "custom");
   const row = (r: Any, i: number) => {
     const done = r.attempt_count > 0;
     const go = (mode: string) => { onClose(); start(r.slug, "adhoc", mode, r.title, r.neetcode_category || ""); };
@@ -62,6 +64,7 @@ function TopicModal({ topic, onClose }: { topic: Any; onClose: () => void }) {
         {q.isLoading ? <Loader message="Loading problems…" /> : q.error ? <LoadError error={q.error} retry={() => q.refetch()} />
           : !rows.length ? <p className="empty">No problems in this topic yet.</p>
           : <>{section("To do", rows.filter((r) => !r.attempt_count))}{section("Done", rows.filter((r) => r.attempt_count))}</>}
+        {topic.category === "Concurrency" && <CustomConcurrency onStarted={onClose} />}
       </div>
     </Modal>
   );

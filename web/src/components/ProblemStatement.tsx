@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { leetcodeProblemUrl } from "@/lib/format";
+import { isCustomSlug, leetcodeProblemUrl } from "@/lib/format";
 
 const ALLOWED = new Set(["P", "PRE", "CODE", "STRONG", "B", "EM", "I", "UL", "OL", "LI", "BR", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "SUP", "SUB", "SPAN", "IMG"]);
 
@@ -44,7 +44,7 @@ export function ProblemStatement({ problem, slug, error, className = "recall-sta
   const why = error && error.status === 503 ? error.message : error ? "Couldn't load the prompt — it's on LeetCode." : "Prompt unavailable.";
   return (
     <div className={className}>
-      <div className="problem-statement-source"><a href={url} target="_blank" rel="noopener">Open on LeetCode</a></div>
+      {!isCustomSlug(slug) && <div className="problem-statement-source"><a href={url} target="_blank" rel="noopener">Open on LeetCode</a></div>}
       {body ? <div dangerouslySetInnerHTML={{ __html: body }} /> : <p className="small">{why}</p>}
     </div>
   );

@@ -42,6 +42,7 @@ export function Palette() {
       { kind: "action", title: "See interview readiness across all sections", sub: "Overview", run: () => router.push("/readiness") },
       { kind: "action", title: "Start a System Design quickfire round", sub: "Practise", run: () => router.push("/system-design/quickfire") },
       { kind: "action", title: "Start any problem by URL, number or title", sub: "LeetCode", run: () => setQuickStart(true) },
+      { kind: "action", title: "Practise custom concurrency questions", sub: "LeetCode · Java", run: () => router.push("/leetcode/topics?topic=Concurrency") },
       { kind: "action", title: "Open the design builder", sub: "System Design", run: () => router.push("/system-design/simulators/builder~builder") },
       { kind: "action", title: "Play Ripple Ops", sub: "System Design", run: () => router.push("/system-design/simulators/game~ripple") },
     ];
