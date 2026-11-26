@@ -28,3 +28,10 @@ it("requests a hint from the shared sidebar, shows the conversation and focuses 
   fireEvent.click(within(coach).getByRole("button", { name: "Show the coach" }));
   expect(useLayout.getState().layout.coach).toBe(false);
 });
+
+it("shows an ended attempt with a frozen clock and saved explanation", () => {
+  render(<Workspace exercise={exercise} attempt={{ ...attempt, status: "abandoned", started_at: 1, elapsed_sec: 80, explanation: "My saved explanation" }} onAttempt={vi.fn()} onNext={vi.fn()} onExit={vi.fn()} />);
+  expect(screen.getByLabelText("Time on this exercise")).toHaveTextContent("1:20");
+  expect(screen.getByText("My saved explanation")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /^Submit$/ })).not.toBeInTheDocument();
+});

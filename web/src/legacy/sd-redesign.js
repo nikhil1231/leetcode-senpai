@@ -11,11 +11,13 @@
   const LIMIT = 600;
   let brief = null, result = null, draft = '', startedAt = 0, request = null, busy = false, error = '', ticker = null;
 
-  const elapsed = () => Math.floor((Date.now() - startedAt) / 1000);
+  let run = null, draftSave = null, endedAt = null;
+  const elapsed = () => Math.floor(((endedAt || Date.now()) - startedAt) / 1000);
   const clock = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   async function open(key) {
     brief = await call('/redesign/' + encodeURIComponent(key));
-    result = null; draft = ''; startedAt = Date.now(); request = rid(); error = '';
+    run = await call('/redesign/' + encodeURIComponent(key) + '/start', 'POST', {request_id: rid()});
+    endedAt = null; result = null; draft = run.text || ''; startedAt = run.created_at * 1000; request = run.request_id; error = '';
   }
   function resultHtml() {
     const status = {covered: ['✓', 'is-right'], partial: ['◐', 'is-partial'], missing: ['○', 'is-missing'], incorrect: ['✗', 'is-wrong']};
@@ -32,14 +34,21 @@
     return `<div class="sd-breadcrumb">${btn('← Today', 'home')}<span>/ Redesign from memory</span></div><div class="sd-page-intro"><span class="sd-eyebrow">REDESIGN FROM MEMORY · ${clock(LIMIT)}</span><h2 id="sd-heading" tabindex="-1">${esc(brief.title)}</h2><p>A blank page and the original brief. Write the design end to end as you would talk through it: requirements, numbers, API, data, components and the hard parts. No peeking: retrieving it is the exercise.</p></div>
       ${error ? `<div class="sd-error" role="alert">${esc(error)}</div>` : ''}
       <section class="sd-panel"><h3>The brief</h3>${md(brief.prompt)}${brief.requirements.length ? `<ul>${brief.requirements.map(r => `<li>${inline(r)}</li>`).join('')}</ul>` : ''}<p class="sd-muted">Stages to cover: ${brief.stages.map(esc).join(' · ')}</p></section>
-      ${result ? resultHtml() : `<section class="sd-panel"><div class="sd-section-title"><h3>Your design</h3><span class="sd-timer"><b id="sd-rd-clock">${clock(left)}</b> left</span></div><textarea class="textarea sd-redesign-text" rows="18" maxlength="12000" placeholder="1. Requirements…">${esc(draft)}</textarea><div class="sd-actions">${btn(busy ? 'Marking…' : 'Mark my redesign →', 'submit', busy ? 'disabled' : '', true)}<span class="sd-muted">${brief.tutor ? 'The tutor marks it against the walkthrough’s key points.' : 'You will tick off the key points yourself.'}</span></div></section>`}
+      ${result ? resultHtml() : `<section class="sd-panel"><div class="sd-section-title"><h3>Your design</h3><span class="sd-timer"><b id="sd-rd-clock">${clock(left)}</b> left</span></div><textarea ${endedAt ? 'readonly' : ''} class="textarea sd-redesign-text" rows="18" maxlength="12000" placeholder="1. Requirements…">${esc(draft)}</textarea><div class="sd-actions">${btn(endedAt ? 'Session ended' : busy ? 'Marking…' : 'Mark my redesign →', 'submit', busy || endedAt ? 'disabled' : '', true)}<span class="sd-muted">${brief.tutor ? 'The tutor marks it against the walkthrough’s key points.' : 'You will tick off the key points yourself.'}</span></div></section>`}
       ${brief.history.length ? `<p class="sd-muted">Earlier attempts: ${brief.history.map(h => `${new Date(h.at * 1000).toLocaleDateString()} · ${h.score === null ? 'unmarked' : Math.round(h.score * 100) + '%'}`).join(' — ')}</p>` : ''}`;
   }
   function stop() { clearInterval(ticker); ticker = null; }
   function wire(root) {
     stop();
-    root.querySelector('.sd-redesign-text')?.addEventListener('input', e => { draft = e.target.value; });
-    if (!result) ticker = setInterval(() => { const c = document.getElementById('sd-rd-clock'); if (!c) return stop(); c.textContent = clock(Math.max(0, LIMIT - elapsed())); }, 1000);
+    root.querySelector('.sd-redesign-text')?.addEventListener('input', e => {
+      draft = e.target.value;
+      clearTimeout(draftSave);
+      const current = run, text = draft;
+      draftSave = setTimeout(() => {
+        void call('/redesign/' + current.lesson_id + '/draft', 'PUT', {run_id: current.id, text}).catch(e => { error = e.message; window.H.toast(e.message); });
+      }, 500);
+    });
+    if (!result && !endedAt) ticker = setInterval(() => { const c = document.getElementById('sd-rd-clock'); if (!c) return stop(); c.textContent = clock(Math.max(0, LIMIT - elapsed())); }, 1000);
     root.querySelectorAll('[data-rd]').forEach(n => n.addEventListener('click', async () => {
       const a = n.dataset.rd;
       if (a === 'home') return window.SystemDesign.openView('home');
@@ -49,6 +58,7 @@
         if (a === 'submit') {
           if (draft.trim().length < 20) { root.querySelector('.sd-redesign-text')?.focus(); return; }
           busy = true; window.SystemDesign.repaint();
+          clearTimeout(draftSave);
           result = await call('/redesign/' + brief.lesson_id, 'POST', {request_id: request, text: draft, elapsed_sec: elapsed()});
         }
         if (a === 'self') {
@@ -59,5 +69,12 @@
       busy = false; window.SystemDesign.repaint();
     }));
   }
+  window.addEventListener('timed-sessions-status', event => {
+    if (run && !result && !endedAt && event.detail.server_now >= run.created_at &&
+        !event.detail.activities.some(a => a.key === 'design:' + run.id)) {
+      endedAt = Date.now(); stop(); clearTimeout(draftSave);
+      if (document.querySelector('.sd-redesign-text')) window.SystemDesign.repaint();
+    }
+  });
   window.DesignRedesign = {open, render, wire, stop, route: () => brief ? 'redesign/' + brief.lesson_id : 'home'};
 })();

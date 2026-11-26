@@ -168,7 +168,9 @@ def test_chat_is_saved_once_and_learning_help_is_recorded(client, monkeypatch):
 
 def test_lesson_exposure_follows_user_into_new_design(client):
     assert client.post('/api/system-design/lessons/retries', json={}).status_code == 200
-    assert start(client, 'jobs', mode='interview')['assisted'] is True
+    first = start(client, 'jobs', mode='interview')
+    assert first['assisted'] is True
+    client.store.put_design_record(first['id'], {**first, 'timer_ended': True}, first['revision'])
     assert start(client, 'seats', mode='interview')['assisted'] is False
 
 

@@ -46,7 +46,7 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   const box = useRef<HTMLTextAreaElement>(null);
   const revision = useRef(attempt.revision);
   const dirty = useRef(false);
-  const submitted = attempt.status === "submitted";
+  const submitted = attempt.status !== "open";
   const counts = useMemo(() => Object.fromEntries(Object.entries(files).map(([p, c]) => [p, c.split("\n").length - (c.endsWith("\n") ? 1 : 0)])), [files]);
   const refs = useMemo(() => parseRefs(text, counts), [text, counts]);
   const spans = useMemo(() => refSpans(text, counts), [text, counts]);
@@ -244,7 +244,7 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
         {title}
         {clockEl}
         {!submitted && <div className="cwf-actions">
-          <button className="button is-ghost" type="button" onClick={() => onNext()} title="Skip this one and start another">Skip</button>
+          <button className="button is-ghost" type="button" onClick={async () => { dirty.current = true; await save(); onNext(); }} title="End this exercise and start another">Skip</button>
           {exercise.can_run && <button className="button" type="button" disabled={running} onClick={runTests}>{running ? "Running…" : "Run tests"}</button>}
           <button className="button is-primary" type="button" disabled={busy || coachPending !== null} onClick={submit}>{busy ? "Marking…" : "Submit"}</button>
         </div>}
@@ -282,7 +282,8 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
                 <button className="panel-toggle" type="button" aria-label="Collapse the console" title="Collapse the console" onClick={() => patch({ console: !layout.console })}>&#x2304;</button>
               </div>
             </div>
-            {submitted ? <div className="console-panel"><ReviewPanel attempt={attempt} onAttempt={onAttempt} onOpen={open} onNext={onNext} category={exercise.category} /></div> : null}
+            {submitted && attempt.status !== "abandoned" ? <div className="console-panel"><ReviewPanel attempt={attempt} onAttempt={onAttempt} onOpen={open} onNext={onNext} category={exercise.category} /></div> : null}
+            {attempt.status === "abandoned" && <div className="console-panel"><p className="cw-note">Session ended. Your saved code and explanation are available here.</p><pre className="cw-note">{attempt.explanation}</pre></div>}
             {!submitted && !explainOn && <div className="console-panel"><TestPanel tab={dock === "changes" ? "changes" : "tests"} run={run} diff={diffText} /></div>}
             {!submitted && <div className={`console-panel cwf-explain${explainOn ? "" : " hidden"}`}>
               <div className="cw-field">

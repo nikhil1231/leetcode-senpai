@@ -51,6 +51,7 @@ def test_the_run_clock_shows_from_the_plan_time(client):
         "slug": "two-sum", "surface": "editor", "plan_status": "blank", "plan_time_sec": 240}).json()
     assert r["active"]["plan_sec"] == 240
     assert client.get("/api/session/active").json()["active"]["plan_sec"] == 240
+    client.post("/api/session/cancel")
     skipped = client.post("/api/session/start", json={
         "slug": "two-sum", "surface": "editor", "plan_status": "skipped"}).json()
     assert skipped["active"]["plan_sec"] == 0
@@ -96,6 +97,10 @@ def test_the_plan_prefetches_what_a_new_run_opens_with(client):
 def test_start_opens_the_recording_and_answers_with_the_editor_state(client):
     client.get("/api/problem/two-sum/recall-context?editor=1")  # hydrated while planning
     old = _start(client)
+    blocked = client.post("/api/session/start", json={"slug": "two-sum"})
+    assert blocked.status_code == 409
+    assert client.store.sessions[old]["status"] == "active"
+    client.post("/api/session/cancel")
     r = client.post("/api/session/start", json={
         "slug": "two-sum", "surface": "editor", "interview": True,
         "planned_edge_cases": ["empty", "Empty", "dupes"]}).json()
@@ -113,6 +118,7 @@ def test_start_opens_the_recording_and_answers_with_the_editor_state(client):
 def test_start_leaves_the_recording_to_the_editor_when_the_problem_isnt_hydrated(client):
     r = client.post("/api/session/start", json={"slug": "two-sum", "surface": "editor"}).json()
     assert r["editor"] is None and client.store.get_recording(r["session_id"]) is None
+    client.post("/api/session/cancel")
     lc = client.post("/api/session/start", json={"slug": "two-sum", "surface": "leetcode"}).json()
     assert lc["editor"] is None
 
@@ -452,6 +458,7 @@ def test_mock_runs_can_use_the_editor_and_older_clients_stay_on_leetcode(client)
     r = client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock",
                                                 "surface": "editor"}).json()
     assert r["active"]["surface"] == "editor"
+    client.post("/api/session/cancel")
     r = client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock"}).json()
     assert r["active"]["surface"] == "leetcode"
 
@@ -486,8 +493,10 @@ def test_mocks_in_the_editor_are_interview_mode_and_leetcode_runs_never_are(clie
     mock = client.post("/api/session/start", json={"slug": "two-sum", "kind": "mock",
                                                    "surface": "editor"}).json()
     assert mock["active"]["interview"] is True
+    client.post("/api/session/cancel")
     plain = client.post("/api/session/start", json={"slug": "two-sum", "interview": True}).json()
     assert plain["active"]["interview"] is False
+    client.post("/api/session/cancel")
     sid = _start(client)
     assert client.get(f"/api/editor/state?session_id={sid}").json()["runs_left"] is None
 
@@ -865,6 +874,7 @@ def test_switching_language_judges_in_it_and_the_next_run_opens_in_it(poly_clien
     poly_client.post("/api/editor/submit", json=body)
     assert poly_client.judged == [("run", "cpp"), ("submit", "cpp")]
     assert poly_client.get(f"/api/editor/state?session_id={sid}").json()["lang"] == "cpp"
+    poly_client.post("/api/session/cancel")
     nxt = poly_client.post("/api/session/start", json={"slug": "two-sum", "surface": "editor"}).json()
     assert nxt["editor"]["lang"] == "cpp" and nxt["editor"]["code"] == CPP
     assert poly_client.store.get_recording(nxt["session_id"])["lang"] == "cpp"
@@ -887,6 +897,7 @@ def test_a_database_dialect_is_remembered_apart_from_the_programming_language(sq
     sql_client.store.update_settings({"editor_lang": "cpp"})
     assert sql_client.post("/api/editor/lang", json={"session_id": sid, "lang": "postgresql"}).json()["ok"]
     assert sql_client.store.get_settings()["editor_lang"] == "cpp"   # the other kind of problem keeps its own
+    sql_client.post("/api/session/cancel")
     nxt = sql_client.post("/api/session/start", json={"slug": "combine-two-tables", "surface": "editor"}).json()
     assert nxt["editor"]["lang"] == "postgresql" and nxt["editor"]["code"] == "-- PostgreSQL\n"
 

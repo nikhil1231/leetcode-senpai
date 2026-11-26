@@ -25,7 +25,11 @@ export function SprintModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    api("/sprint/start", "POST", {}).then((data) => setRound({ data, isLoading: false }), (error) => setRound({ error, isLoading: false }));
+    api("/sprint/start", "POST", {}).then((data) => {
+      setRound({ data, isLoading: false });
+      if (data.current_index) setIndex(data.current_index);
+      if (data.results) setResults(data.results.map((a: Any) => ({ ...a, attempt_id: a.id })));
+    }, (error) => setRound({ error, isLoading: false }));
   }, []);
   const topics = useQuery({ queryKey: ["api", "/topics"], queryFn: () => api("/topics") });
   const [stage, setStage] = useState<"intro" | "rep" | "grading" | "summary" | "error">("intro");
@@ -41,6 +45,16 @@ export function SprintModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { if (stage !== "rep") return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [stage]);
   useEffect(() => { if (round.error) toast(round.error.message); }, [round.error, toast]);
+
+  useEffect(() => {
+    const check = (event: Event) => {
+      const data = (event as CustomEvent).detail;
+      if (round.data && !saving && (stage === "intro" || stage === "rep") &&
+          data.server_now >= round.data.started_at && !data.activities.some((a: { key: string }) => a.key === `sprint:${round.data.round_id}`)) onClose();
+    };
+    window.addEventListener("timed-sessions-status", check);
+    return () => window.removeEventListener("timed-sessions-status", check);
+  }, [round.data, saving, stage, onClose]);
 
   const rep = reps[index];
   const categories: string[] = useMemo(() => {
@@ -81,7 +95,7 @@ export function SprintModal({ onClose }: { onClose: () => void }) {
     <div className="overlay">
       <div className="overlay-card sprint-wide" role="dialog" aria-modal="true" aria-labelledby="sprint-heading">
         <div className="modal-titlebar"><div><h2 className="modal-title" id="sprint-heading">Sprint round</h2><p id="sprint-progress" className="small">{progress}</p></div>
-          <button id="btn-close-sprint" className="button is-ghost icon-button" type="button" aria-label="Close" title="Close" onClick={onClose}>&times;</button></div>
+          <button id="btn-close-sprint" className="button is-ghost icon-button" type="button" aria-label="Close" title="Close" onClick={() => { const id = round.data?.round_id; if (id && stage !== "summary") void api(`/sprint/${id}/abandon`, "POST").catch((e) => toast(e.message)); onClose(); }}>&times;</button></div>
         <div id="sprint-body">
           {round.isLoading && <Loader message="Building sprint round..." />}
           {round.error && <p className="missed"><b>Could not start sprint:</b> {round.error.message}</p>}

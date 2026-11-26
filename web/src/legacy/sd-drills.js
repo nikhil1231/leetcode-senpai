@@ -56,7 +56,7 @@
     if (busy) return;
     busy = true; error = '';
     try {
-      if (action === 'start') { sprint = await call('/drills', 'POST', {request_id: rid(), mode: node.dataset.mode}); startedAt = Date.now() / 1000; last = null; draft = ''; }
+      if (action === 'start') { sprint = await call('/drills', 'POST', {request_id: rid(), mode: node.dataset.mode}); startedAt = sprint.created_at; last = null; draft = ''; }
       if (action === 'answer') {
         const q = current(), value = draft.trim();
         if (!value) return;
@@ -71,7 +71,11 @@
     } catch (e) { error = e.message; }
     finally { busy = false; window.SystemDesign.repaint(); }
   }
-  async function open() { info = await call('/drills'); }
+  async function open() {
+    info = await call('/drills');
+    const key = new URLSearchParams(location.search).get('session');
+    if (key) { sprint = await call('/drills/' + encodeURIComponent(key)); startedAt = sprint.created_at; }
+  }
   function wire(root) {
     root.querySelectorAll('[data-drill]').forEach(n => n.addEventListener('click', () => act(n.dataset.drill, n)));
     const form = root.querySelector('#sd-drill-form'), input = root.querySelector('#sd-drill-answer');
@@ -83,5 +87,13 @@
     }
     if (sprint?.finished_at) window.DesignLedger?.slip(root.querySelector('[data-drill-slip]'), sprint.created_at);
   }
+  window.addEventListener('timed-sessions-status', event => {
+    if (countdown && sprint && !sprint.finished_at && event.detail.server_now >= sprint.created_at &&
+        !event.detail.activities.some(a => a.key === 'design:' + sprint.id)) {
+      stopClock();
+      const id = sprint.id;
+      void call('/drills/' + id).then(doc => { if (sprint?.id === id) { sprint = doc; if (document.querySelector('#sd-drill-form')) window.SystemDesign.repaint(); } }).catch(() => {});
+    }
+  });
   window.DesignDrills = {render, wire, open, stop: stopClock, isBusy: () => busy};
 })();

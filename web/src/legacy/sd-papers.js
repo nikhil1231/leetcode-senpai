@@ -105,14 +105,23 @@
 
   // ---------- Lifecycle ----------
   function tick() { const now = performance.now(); if (tickAt && document.visibilityState !== 'hidden') elapsed += (now - tickAt) / 1000; tickAt = now; }
-  function stop() { if (timer) tick(); clearInterval(timer); timer = null; tickAt = 0; clearTimeout(poll); poll = null; if (paper?.status === 'sitting') store(); }
+  let lastClockSync = 0, clockWrite = Promise.resolve();
+  function syncClock(paused) {
+    if (!paper || paper.status !== 'sitting' || paper.timer_ended) return;
+    lastClockSync = Date.now();
+    const snapshot = {key: 'design:' + paper.id, elapsed_sec: Math.floor(elapsed), paused};
+    clockWrite = clockWrite.then(() => api('/timed-sessions/clock', 'POST', snapshot)).catch(() => {});
+  }
+  function stop() { if (timer) { tick(); syncClock(true); } clearInterval(timer); timer = null; tickAt = 0; clearTimeout(poll); poll = null; if (paper?.status === 'sitting') store(); }
   function store() { try { sessionStorage.setItem('sd-paper-elapsed:' + paper.id, String(Math.floor(elapsed))); } catch (_) { /* optional */ } }
   function startClock() {
     stop();
     if (!paper || paper.status !== 'sitting' || !document.body.classList.contains('section-design')) return;
     tickAt = performance.now();
+    syncClock(false);
     timer = setInterval(() => {
       tick(); store();
+      if (Date.now() - lastClockSync > 10000) syncClock(document.visibilityState === 'hidden');
       const node = $('#sd-paper-clock');
       if (node) { node.textContent = `${clock(elapsed)} / ${clock(paper.time_limit_sec)}`; node.classList.toggle('is-over', elapsed > paper.time_limit_sec); }
     }, 1000);
@@ -131,7 +140,7 @@
     paper = doc; answers = {};
     Object.entries(doc.answers || {}).forEach(([n, a]) => { answers[n] = a.value; });
     let saved = 0; try { saved = Number(sessionStorage.getItem('sd-paper-elapsed:' + doc.id)) || 0; } catch (_) { /* optional */ }
-    elapsed = doc.status === 'sitting' ? saved : doc.elapsed_sec || 0;
+    elapsed = doc.status === 'sitting' ? Math.max(saved, doc.timer_elapsed_sec || 0) : doc.elapsed_sec || 0;
   }
   async function flush() { await Promise.all(Object.keys(saveTimers).map(n => { clearTimeout(saveTimers[n]); delete saveTimers[n]; return send(n); })); }
   function send(n) { return call('/papers/' + paper.id + '/answer', 'POST', {n: Number(n), value: answers[n] ?? null}); }
@@ -181,6 +190,8 @@
   let autostart = null;
   async function open() {
     list = await call('/papers');
+    const key = new URLSearchParams(location.search).get('session');
+    if (key) { adopt(await call('/papers/' + encodeURIComponent(key))); return; }
     if (!autostart) return;
     const wanted = autostart; autostart = null;
     if (list.sitting) { adopt(await call('/papers/' + list.sitting)); return; }
@@ -220,6 +231,14 @@
     if (paper && paper.status !== 'sitting') window.DesignLedger?.slip(root.querySelector('[data-paper-slip]'), paper.created_at);
     startClock(); schedulePoll();
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { if (timer) tick(); if (paper?.status === 'sitting') store(); } });
+  window.addEventListener('timed-sessions-status', event => {
+    if (timer && paper?.status === 'sitting' && event.detail.server_now >= paper.created_at &&
+        !event.detail.activities.some(a => a.key === 'design:' + paper.id)) {
+      stop();
+      const id = paper.id;
+      void call('/papers/' + id).then(doc => { if (paper?.id === id) { adopt(doc); window.SystemDesign.repaint(); } }).catch(() => {});
+    }
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { if (timer) { tick(); syncClock(true); } if (paper?.status === 'sitting') store(); } });
   window.DesignPapers = {render, wire, open, begin, stop, isBusy: () => busy, current: () => paper};
 })();

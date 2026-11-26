@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { navigate } from "@/lib/navigate";
 import { useHeading } from "@/lib/heading";
 import { useToast } from "@/lib/toast";
 import { Loader, LoadError } from "@/components/ui/Loader";
@@ -13,28 +14,52 @@ const TABS: [Mode, string, string][] = [["reading", "Code Reading", "Understand,
 const KEY = "senpai:coding-mode";
 const ago = (t: number) => { const d = Date.now() / 1000 - t; return d < 3600 ? `${Math.max(1, Math.round(d / 60))} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} d ago`; };
 
-export function CodingPage() {
+export function CodingPage({ initialAttemptId }: { initialAttemptId?: string }) {
   useHeading("Coding practice", "Read, debug and repair code you have never seen");
   const qc = useQueryClient();
   const toast = useToast();
   const [mode, setMode] = useState<Mode>("reading");
   const [session, setSession] = useState<Session | null>(null);
   useEffect(() => { const s = localStorage.getItem(KEY); if (s === "assisted" || s === "reading") setMode(s); }, []);
+  useEffect(() => {
+    if (!initialAttemptId) { setSession(null); return; }
+    let live = true;
+    api<Session>(`/coding/attempts/${encodeURIComponent(initialAttemptId)}`).then((s) => {
+      if (live) { setMode(s.exercise.mode); setSession(s); }
+    }).catch((e) => { if (live) toast(e.message); });
+    return () => { live = false; };
+  }, [initialAttemptId, toast]);
+  useEffect(() => {
+    const check = (event: Event) => {
+      const data = (event as CustomEvent).detail;
+      if (session?.attempt.status === "open" && data.server_now >= session.attempt.started_at &&
+          !data.activities.some((a: { key: string }) => a.key === `coding:${session.attempt.id}`)) {
+        toast("This session has ended."); setSession(null); navigate("/practical/coding");
+      }
+    };
+    window.addEventListener("timed-sessions-status", check);
+    return () => window.removeEventListener("timed-sessions-status", check);
+  }, [session, toast]);
   const ov = useQuery<Overview>({ queryKey: ["coding", "overview"], queryFn: () => api("/coding/overview"), refetchInterval: (q) => (q.state.data && Object.values(q.state.data.modes).some((m) => m.generating) ? 8000 : 60_000) });
 
   const start = useMutation({
     mutationFn: (b: { category?: string; new?: boolean }) => api<Session>(`/coding/${mode}/start`, "POST", b),
-    onSuccess: (s) => { setSession(s); qc.invalidateQueries({ queryKey: ["coding"] }); },
+    onSuccess: (s) => { navigate(`/practical/coding/${s.attempt.id}`); setSession(s); qc.invalidateQueries({ queryKey: ["coding"] }); },
     onError: (e) => toast((e as Error).message),
   });
-  const resume = async (id: string) => { try { setSession(await api<Session>(`/coding/attempts/${id}`)); } catch (e) { toast((e as Error).message); } };
+  const resume = (id: string) => navigate(`/practical/coding/${id}`);
 
   if (session) {
     return (
       <section className="tab cw-tab" id="tab-coding">
         <Workspace key={session.attempt.id} exercise={session.exercise} attempt={session.attempt}
           onAttempt={(a) => setSession((s) => (s ? { ...s, attempt: a } : s))}
-          onNext={(category) => start.mutate({ category, new: true })} onExit={() => { setSession(null); qc.invalidateQueries({ queryKey: ["coding"] }); }} />
+          onNext={(category) => {
+            void (async () => {
+              if (session.attempt.status === "open") await api("/timed-sessions/end", "POST", { key: `coding:${session.attempt.id}` });
+              start.mutate({ category, new: true });
+            })().catch((e) => toast(e.message));
+          }} onExit={() => { setSession(null); navigate("/practical/coding"); qc.invalidateQueries({ queryKey: ["coding"] }); }} />
       </section>
     );
   }

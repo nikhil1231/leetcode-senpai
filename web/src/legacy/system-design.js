@@ -46,6 +46,14 @@
     } catch (_) {}
   }
 
+  let lastClockSync = 0, clockWrite = Promise.resolve();
+  function syncClock(stopped = false) {
+    if (!session || !session.timed_session || session.timer_ended) return;
+    lastClockSync = Date.now();
+    const snapshot = {key: 'design:' + session.id,
+      elapsed_sec: Math.floor(session.elapsed_sec), paused: stopped || paused || !active || screen !== 'workspace' || document.visibilityState === 'hidden'};
+    clockWrite = clockWrite.then(() => api('/timed-sessions/clock', 'POST', snapshot)).catch(() => {});
+  }
   function tick() {
     const now = performance.now();
     if (lastTick && active && screen === 'workspace' && !paused && document.visibilityState !== 'hidden') {
@@ -53,19 +61,22 @@
       if ($('#sd-clock')) $('#sd-clock').textContent = clock(session.elapsed_sec);
     }
     lastTick = now;
+    if (Date.now() - lastClockSync > 10000) syncClock();
   }
 
   function stopTimers() {
     tick();
+    if (timer) syncClock(true);
     clearInterval(timer); timer = null; lastTick = 0;
     clearTimeout(poll); poll = null;
   }
 
   function startTimers() {
     stopTimers();
-    if (!active || !session || screen !== 'workspace') return;
+    if (!active || !session || session.timer_ended || screen !== 'workspace') return;
     lastTick = performance.now();
     timer = setInterval(tick, 1000);
+    syncClock();
     schedulePoll();
   }
 
@@ -325,6 +336,8 @@
   async function openSession(sid, navigation=null) {
     const result = await call('/sessions/' + sid);
     if(navigation!==null && navigation!==viewEpoch)return false;
+    const resumed = await call('/sessions/' + sid + '/resume', 'POST', {});
+    result.session = {...resumed, elapsed_sec: Math.max(resumed.elapsed_sec, result.session.elapsed_sec)};
     session = result.session; assessments = result.assessments; exercise = null; lesson = null;
     stage=0;side='brief';mobileBriefOpen=false;screen = 'workspace'; dirty = false; paused = false; conflictDraft=null; chatDraft=''; epoch++;
     session.timing_uncertain = true;
@@ -368,7 +381,7 @@
         if (action==='resume') await openSession(n.dataset.id);
         if (action==='home') { if (session) await saveDraft(); stopTimers();try{sessionStorage.removeItem(activeKey());}catch(_){} session=null; screen='cases'; lesson=null; epoch++; catalog=await call(); }
         if (action==='save') await saveDraft();
-        if (action==='pause') { tick(); paused=!paused; stash(); }
+        if (action==='pause') { if (session.timer_ended) session = await call('/sessions/' + session.id + '/resume', 'POST', {}); tick(); paused=!paused; syncClock(); stash(); }
         if (action==='assess') {
           await saveDraft();
           const result=await call(`/sessions/${session.id}/assess`,'POST',{revision:session.revision,request_id:id()});
@@ -434,7 +447,7 @@
     stopTimers();
     window.DesignLearning.stop();
     if(view==='workspace') {
-      let sid;try{sid=sessionStorage.getItem(activeKey());}catch(_){}
+      let sid = new URLSearchParams(location.search).get('session');try{sid ||= sessionStorage.getItem(activeKey());}catch(_){}
       if(sid){
         try {if(await openSession(sid,navigation))paint();return;}
         catch(e){error=e.message;paint();return;}
@@ -485,6 +498,15 @@
       if(session && wasActive) { session.timing_uncertain=true; stash(); if(!busy)saveDraft().catch(()=>{}); }
     } else { active=true; startTimers(); window.DesignLearning.startClock(); }
   }
+  window.addEventListener('timed-sessions-status', event => {
+    if (session?.timed_session && !session.timer_ended && screen === 'workspace' && active &&
+        event.detail.server_now >= session.created_at && !event.detail.activities.some(a => a.key === 'design:' + session.id)) {
+      const sid = session.id;
+      void call('/sessions/' + sid).then(result => {
+        if (session?.id === sid && result.session.timer_ended) { stopTimers(); session.timer_ended = true; paused = true; paint(); }
+      }).catch(() => {});
+    }
+  });
   document.addEventListener('visibilitychange',()=>{
     if(document.visibilityState==='hidden') { stopTimers(); if(session){session.timing_uncertain=true;stash();if(!busy)saveDraft().catch(()=>{});} }
     else if(active)startTimers();

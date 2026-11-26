@@ -8,7 +8,7 @@ const TRACKS = ["fundamentals", "ai", "experience", "practical"];
 export default async function Page({ params }: { params: Promise<{ track: string; path?: string[] }> }) {
   const { track, path = [] } = await params;
   if (!TRACKS.includes(track)) notFound();
-  if (track === "practical" && path[0] === "coding") return <CodingPage />;
+  if (track === "practical" && path[0] === "coding") return <CodingPage initialAttemptId={path[1]} />;
   if (track === "experience") return <ExperiencePage view={path[0] || "home"} arg={path.slice(1).join("/") || null} />;
   return <TrackRoute track={track} view={path.join("/") || "home"} />;
 }

@@ -34,6 +34,7 @@ from . import store as store_mod
 from .store import get_store
 
 log_events.install()
+from .timed_sessions import router as timed_sessions_router, timed_start, activities as timed_activities
 from .system_design import router as system_design_router
 from .system_design_learning import router as system_design_learning_router
 from .system_design_numbers import router as system_design_numbers_router
@@ -116,6 +117,7 @@ app.include_router(activity_router)
 app.include_router(tracks_router)
 app.include_router(coding_router)
 app.include_router(concurrency.router)
+app.include_router(timed_sessions_router)
 app.include_router(readiness_router)
 app.include_router(search_router)
 app.include_router(senpai_router)
@@ -1309,6 +1311,7 @@ def _hints_available(prob, s, settings):
 
 
 @app.post("/api/session/start")
+@timed_start('leetcode')
 def api_session_start(body: StartSession, bg: BackgroundTasks,
                       uid: str = Depends(auth.require_user),
                       lc=Depends(auth.leetcode_auth)):
@@ -1794,6 +1797,7 @@ async def api_editor_lang(body: EditorLang, uid: str = Depends(auth.require_user
 
 
 @app.post("/api/editor/optimize")
+@timed_start('optimize')
 def api_editor_optimize(body: EditorOptimize, uid: str = Depends(auth.require_user)):
     """Keep working on a solve that's Accepted but not yet rated: a new editor run
     from its accepted code, whose next Accepted replaces it rather than logging a
@@ -2344,11 +2348,22 @@ def _update_sprint_round_progress(store, round_id, slug, attempt_id):
 
 
 @app.post("/api/sprint/start")
+@timed_start('sprint')
 async def api_sprint_start(bg: BackgroundTasks,
                            body: SprintStart = Body(default_factory=SprintStart),
                            uid: str = Depends(auth.require_user),
                            lc=Depends(auth.leetcode_auth)):
     store = get_store(uid)
+    current = next((a for a in timed_activities(store) if a["kind"] == "sprint"), None)
+    active = store.get_sprint_round(current["id"]) if current else None
+    if active:
+        reps = []
+        for item in active.get('items', []):
+            p = await _hydrate_problem_content(store, item['slug'], lc)
+            reps.append({**item, 'content_html': (p or {}).get('content_html')})
+        results = [store.get_attempt(aid) for aid in active.get('attempt_ids', [])]
+        return {'round_id': active['id'], 'started_at': active['started_at'], 'reps': reps, 'current_index': active.get('current_index', 0),
+                'results': [a for a in results if a], 'llm_enabled': llm.enabled(store.get_settings())}
     problems, attempts, reviews, enrichments, settings = _gather(
         store.list_problems, store.list_attempts, lambda: _reviews(store),
         store.list_enrichments, store.get_settings)
@@ -2384,6 +2399,7 @@ async def api_sprint_start(bg: BackgroundTasks,
         bg.add_task(_warm_sprint_canonicals_bg, uid, [rep["slug"] for rep in reps])
     return {
         "round_id": round_id,
+        "started_at": now,
         "reps": reps,
         "llm_enabled": bool(selected and selected["enabled"]),
     }
@@ -3110,8 +3126,11 @@ def api_mock_status(uid: str = Depends(auth.require_user)):
 
 
 @app.post("/api/mock/start")
+@timed_start('mock')
 def api_mock_start(uid: str = Depends(auth.require_user)):
-    return mock.start(get_store(uid))
+    store = get_store(uid)
+    current = next((a for a in timed_activities(store) if a["kind"] == "mock"), None)
+    return store.get_mock(current["id"]) if current else mock.start(store)
 
 
 @app.post("/api/mock/{mock_id}/finish")

@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from . import auth, knowledge, llm, system_design_adaptive as adaptive, system_design_coach as coach
 from . import system_design_items as ledger_items, system_design_tutor as tutor
 from .store import get_store
+from .timed_sessions import timed_start, activities as timed_activities
 from .system_design_content import CASES
 from .system_design_curriculum import LESSONS, QUESTIONS
 
@@ -432,6 +433,36 @@ def redesign_brief(key: str, store=Depends(store_for)):
             'history': [{'id': x['id'], 'at': x['created_at'], 'score': x.get('score')} for x in past[-5:]]}
 
 
+class RedesignStart(BaseModel):
+    request_id: str = Field(pattern=r'^[a-f0-9]{32}$')
+
+
+@router.post('/redesign/{key}/start')
+@timed_start('redesign')
+def start_redesign(key: str, body: RedesignStart, store=Depends(store_for)):
+    if f'redesign:{key}' not in ledger_items.BY_ID:
+        raise HTTPException(404, 'No redesign for this lesson')
+    active = next((a for a in timed_activities(store) if a['kind'] == 'redesign' and a['href'].endswith('/' + key)), None)
+    current = store.get_design_record(active['id']) if active else None
+    return current or put(store, 'redesign_run_' + body.request_id,
+                          {'kind': 'redesign_run', 'lesson_id': key, 'request_id': body.request_id,
+                           'created_at': time.time(), 'text': ''})
+
+
+class RedesignDraft(BaseModel):
+    run_id: str
+    text: str = Field(max_length=12000)
+
+
+@router.put('/redesign/{key}/draft')
+def save_redesign(key: str, body: RedesignDraft, store=Depends(store_for)):
+    run = store.get_design_record(body.run_id)
+    if not run or run.get('kind') != 'redesign_run' or run['lesson_id'] != key or run.get('timer_ended'):
+        raise HTTPException(409, 'This redesign session has ended.')
+    put(store, body.run_id, {**run, 'text': body.text}, run['revision'])
+    return {'ok': True}
+
+
 class RedesignBody(BaseModel):
     request_id: str = Field(pattern=r'^[a-f0-9]{32}$')
     text: str = Field(min_length=20, max_length=12000)
@@ -449,6 +480,9 @@ async def submit_redesign(key: str, body: RedesignBody, store=Depends(store_for)
     r = redesign_rubric(key)
     doc = put(store, rid, {'kind': 'redesign', 'lesson_id': key, 'text': body.text, 'elapsed_sec': body.elapsed_sec,
                            'created_at': time.time(), 'score': None})
+    run = store.get_design_record('redesign_run_' + body.request_id)
+    if run and not run.get('timer_ended'):
+        put(store, run['id'], {**run, 'timer_ended': True, 'text': body.text}, run['revision'])
     result, message = await coach.grade_recall({'prompt': r['prompt'], 'points': r['points'], 'model': r['model']},
                                                body.text, store.get_settings())
     if result:

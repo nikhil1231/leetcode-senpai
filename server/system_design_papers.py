@@ -17,6 +17,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from .timed_sessions import timed_start, _visible_clock
 from . import auth, knowledge, llm, system_design_coach as coach, system_design_variants as variants
 from .store import get_store
 from .system_design_curriculum import CATEGORIES, LESSONS, QUESTIONS
@@ -379,13 +380,14 @@ def summaries(records):
 def list_papers(store=Depends(store_for)):
     records = store.list_design_records()
     sitting = next((r['id'] for r in sorted(records, key=lambda r: -r.get('created_at', 0))
-                    if r.get('kind') == 'paper' and r['status'] == 'sitting'), None)
+                    if r.get('kind') == 'paper' and r['status'] == 'sitting' and not r.get('timer_ended')), None)
     return {'papers': summaries(records)[:40], 'sitting': sitting, 'lengths': LENGTHS, 'sec_per_mark': SEC_PER_MARK,
             'grades': [{'grade': g, 'floor': f, 'meaning': m} for g, f, m in knowledge.GRADES],
             'coach_enabled': llm.enabled(store.get_settings())}
 
 
 @router.post('/papers')
+@timed_start('paper')
 def start_paper(body: Start, store=Depends(store_for)):
     key = 'paper_' + body.request_id
     old = store.get_design_record(key)
@@ -416,7 +418,9 @@ def start_paper(body: Start, store=Depends(store_for)):
 
 @router.get('/papers/{key}')
 def get_paper(key: str, store=Depends(store_for)):
-    return view(read(store, key))
+    doc = read(store, key)
+    clock = _visible_clock(store, 'design:' + key, time.time(), {'elapsed_sec': 0})
+    return {**view(doc), 'timer_elapsed_sec': clock['elapsed_sec']}
 
 
 @router.post('/papers/{key}/answer')

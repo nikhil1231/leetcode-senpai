@@ -106,6 +106,9 @@ def finish(store, mock_id):
     if not mock:
         return None
     sc, solved = score(store, mock)
+    for s in store.list_active_sessions():
+        if s.get("kind") == "mock" and s["slug"] in {p["slug"] for p in mock["problems"]}:
+            store.update_session(s["id"], {"status": "cancelled"})
     store.update_mock(mock_id, {"status": "finished", "score": sc,
                                 "finished_at": int(time.time()), "solved_count": solved})
     return {**mock, "id": mock_id, "status": "finished", "score": sc, "solved_count": solved}

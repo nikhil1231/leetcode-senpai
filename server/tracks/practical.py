@@ -17,6 +17,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ..timed_sessions import timed_start, activities as timed_activities
 from .. import knowledge, llm
 from . import ai_round, coach
 from .http import put, store_for
@@ -247,11 +248,12 @@ def get_exercise(key: str, store=Depends(store_for)):
 
 
 @router.post('/exercises/{key}/attempts')
+@timed_start('practical')
 def start_attempt(key: str, store=Depends(store_for)):
     ex = exercise(key)
-    current = open_attempt(store.list_track_records(TRACK), key)
+    current = next((a for a in timed_activities(store) if a['kind'] == 'practical' and a['exercise_id'] == key), None)
     if current:
-        return current
+        return store.get_track_record(TRACK, current['id'])
     now = time.time()
     return put(store, TRACK, 'attempt_' + secrets.token_hex(10),
                {'kind': 'attempt', 'exercise_id': key, 'status': 'open', 'started_at': now, 'updated_at': now,

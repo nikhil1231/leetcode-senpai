@@ -13,6 +13,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from .timed_sessions import timed_start
 from . import auth
 from .store import get_store
 
@@ -216,6 +217,7 @@ def close(doc, now):
 
 
 @router.post('/drills')
+@timed_start('drill')
 def start_sprint(body: StartSprint, store=Depends(store_for)):
     key = 'sprint_' + body.request_id
     old = store.get_design_record(key)

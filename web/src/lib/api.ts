@@ -49,8 +49,11 @@ export async function request(path: string, method: Method = "GET", body?: unkno
   }
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
+    if (typeof window !== "undefined" && payload.detail?.code === "timed_session_active")
+      window.dispatchEvent(new Event("timed-sessions-changed"));
     throw new ApiError(apiErrorMessage(payload.detail) || res.statusText, res.status);
   }
+  if (method !== "GET" && typeof window !== "undefined") window.dispatchEvent(new Event("timed-sessions-changed"));
   return res;
 }
 

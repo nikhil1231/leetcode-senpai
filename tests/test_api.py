@@ -556,6 +556,7 @@ def test_today_drill_lifecycle_cross_flow(client, monkeypatch):
 
     drill = next(i for i in initial["drills"] if i["slug"] == "3sum")
     goal_before = initial["goal"]
+    client.post("/api/session/cancel")
     started = client.post("/api/session/start", json={
         "slug": drill["slug"], "kind": "drill",
         "predicted_category": drill["category"],
@@ -759,7 +760,7 @@ def test_sprint_round_can_be_fetched_and_abandoned(client, monkeypatch):
     assert client.get("/api/sprint/active").json()["active"] is None
 
 
-def test_sprint_start_abandons_prior_round_without_touching_solve_session_or_reviews(client, monkeypatch):
+def test_sprint_start_blocks_a_live_solve_then_resumes_the_existing_round(client, monkeypatch):
     _enable_sprint_llm(monkeypatch)
     client.store.upsert_review("two-sum", {
         "slug": "two-sum", "due_date": "2000-01-01", "interval_days": 5,
@@ -769,15 +770,15 @@ def test_sprint_start_abandons_prior_round_without_touching_solve_session_or_rev
         "slug": "two-sum", "kind": "adhoc",
     }).json()
 
+    blocked = client.post("/api/sprint/start", json={"limit": 1})
+    assert blocked.status_code == 409
+    assert client.get("/api/session/active").json()["active"]["session_id"] == session["session_id"]
+    client.post("/api/session/cancel")
     first = client.post("/api/sprint/start", json={"limit": 1}).json()
     second = client.post("/api/sprint/start", json={"limit": 1}).json()
-
-    old_round = client.store.get_sprint_round(first["round_id"])
-    assert old_round["status"] == "abandoned"
-    assert client.get("/api/sprint/active").json()["active"]["id"] == second["round_id"]
-    assert client.get("/api/session/active").json()["active"]["session_id"] == session["session_id"]
+    assert first["round_id"] == second["round_id"]
+    assert client.store.get_sprint_round(first["round_id"])["status"] == "active"
     assert client.store.get_review("two-sum") == before_review
-    assert len(client.store.list_active_sessions()) == 1
 
 
 def test_sprint_submit_saves_answer_then_round_grade_enriches_attempt(client, monkeypatch):

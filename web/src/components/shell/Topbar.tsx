@@ -2,7 +2,7 @@
 import { useHeadingValue } from "@/lib/heading";
 import { useLeetcodeStatus, useOverview } from "@/lib/queries";
 import { useUi } from "@/lib/ui-store";
-import { useRun } from "@/lib/run-store";
+import { ActiveTask } from "./ActiveTask";
 import { StudyTopButtons } from "@/features/study/StudyPrompt";
 
 const LC_WARNING = {
@@ -24,8 +24,6 @@ export function Topbar() {
   const { data: o } = useOverview();
   const lc = useLeetcodeStatus().data?.state;
   const { setCookie, setQuickStart, setPageCoach, pageCoachOpen } = useUi();
-  const minimised = useRun((s) => s.minimised);
-  const setMinimised = useRun((s) => s.setMinimised);
   const warn = lc === "missing" || lc === "expired" ? LC_WARNING[lc] : null;
   return (
     <header className="topbar">
@@ -35,7 +33,7 @@ export function Topbar() {
       </div>
       <div className="topbar-side">
         {warn && <button id="lc-warning" className="lc-warning" type="button" title={warn[1]} onClick={() => setCookie(true)}>{warn[0]}</button>}
-        {minimised && <button id="btn-back-to-run" className="back-to-run" type="button" title="The clock is still running" onClick={() => setMinimised(false)}>Back to run</button>}
+        <ActiveTask />
         <div id="overview" className="overview">
           {o && (
             <>

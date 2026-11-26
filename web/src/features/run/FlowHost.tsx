@@ -10,6 +10,7 @@ import { useUi } from "@/lib/ui-store";
 import { useRoute } from "@/lib/nav";
 import { preloadCodeMirror } from "@/features/editor/codemirror";
 import { VoiceFab } from "@/components/VoiceFab";
+import { returnToActivity, type TimedActivity } from "@/components/shell/ActiveTask";
 import { ActiveRun } from "./ActiveRun";
 import { AnnotateModal } from "./AnnotateModal";
 import { CookieModal } from "./CookieModal";
@@ -54,9 +55,9 @@ export function FlowHost() {
   // The page behind a run steps aside: locked while a run is in front, free again once it is minimised.
   useEffect(() => {
     const locked = !!active && !minimised && section === "leetcode";
-    document.body.classList.toggle("has-active-session", !!active);
+    document.body.classList.toggle("has-active-session", !!active && section === "leetcode");
     document.body.classList.toggle("run-minimised", !!active && minimised);
-    document.body.classList.toggle("has-editor-run", !!active && active.surface === "editor");
+    document.body.classList.toggle("has-editor-run", !!active && active.surface === "editor" && section === "leetcode");
     for (const el of document.querySelectorAll<HTMLElement>("#tabs, #overview, #user-chip, #coach-chip, main")) {
       if (locked) { el.setAttribute("inert", ""); el.setAttribute("aria-hidden", "true"); } else { el.removeAttribute("inert"); el.removeAttribute("aria-hidden"); }
     }
@@ -125,10 +126,16 @@ export function FlowHost() {
   useEffect(() => {
     const r = flow.start; if (!r) return;
     flow.requestStart(null);
-    if (useRun.getState().active) { setMinimised(false); toast("Finish or end this run first."); return; }
-    if (r.mode === "recall") { flow.openRecall({ slug: r.slug, title: r.title, category: r.category, attemptId: r.recallAttemptId, gradingStatus: r.gradingStatus, kind: r.kind }); return; }
-    if (r.kind !== "mock") { setPredict({ slug: r.slug, kind: r.kind, title: r.title, category: r.category, interview: r.interview }); return; }
-    void startSession({ slug: r.slug, kind: r.kind, surface: "editor" });
+    void (async () => {
+      try {
+        const status = await api<{ activities: TimedActivity[] }>("/timed-sessions");
+        const existing = status.activities[0];
+        if (existing) { await returnToActivity(existing); toast("Finish or end the active session first."); return; }
+        if (r.mode === "recall") { flow.openRecall({ slug: r.slug, title: r.title, category: r.category, attemptId: r.recallAttemptId, gradingStatus: r.gradingStatus, kind: r.kind }); return; }
+        if (r.kind !== "mock") { setPredict({ slug: r.slug, kind: r.kind, title: r.title, category: r.category, interview: r.interview }); return; }
+        await startSession({ slug: r.slug, kind: r.kind, surface: "editor" });
+      } catch (e) { toast((e as Error).message); }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flow.start]);
 

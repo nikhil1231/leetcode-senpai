@@ -7,6 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from .timed_sessions import timed_start, _visible_clock
 from . import auth, llm, system_design_coach as coach
 from .store import get_store
 from .system_design_learning import course_summary
@@ -190,6 +191,7 @@ def profile(body: Profile, store=Depends(design_store)):
 
 
 @router.post('/sessions')
+@timed_start('design')
 def start(body: Start, store=Depends(design_store)):
     if body.case_id not in CASES:
         raise HTTPException(404, 'Unknown design case')
@@ -208,8 +210,17 @@ def start(body: Start, store=Depends(design_store)):
                       for r in store.list_design_records())
     return put(store, key, {'kind': 'session', 'case_id': body.case_id, 'case_version': VERSION,
                            'mode': body.mode, 'level': level, 'minutes': body.minutes, 'created_at': now,
-                           'updated_at': now, 'elapsed_sec': 0, 'timing_uncertain': False,
+                           'updated_at': now, 'elapsed_sec': 0, 'timing_uncertain': False, 'timed_session': True,
                            'fields': {k: '' for k in FIELDS}, 'chat': [], 'assisted': recent_help})
+
+
+@router.post('/sessions/{key}/resume')
+@timed_start('resume-design')
+def resume_session(key: str, store=Depends(design_store)):
+    session = record(store, key, 'session')
+    if not session.get('timed_session') or session.get('timer_ended'):
+        session = put(store, key, {**session, 'timed_session': True, 'timer_ended': False}, session['revision'])
+    return session
 
 
 @router.get('/sessions/{key}')
@@ -218,6 +229,8 @@ def get_session(key: str, store=Depends(design_store)):
     assessments = sorted((r for r in store.list_design_records()
                           if r.get('kind') == 'assessment' and r.get('session_id') == key),
                          key=lambda r: r['created_at'], reverse=True)
+    clock = _visible_clock(store, 'design:' + key, time.time(), {'elapsed_sec': session['elapsed_sec']})
+    session = {**session, 'elapsed_sec': max(session['elapsed_sec'], int(clock['elapsed_sec']))}
     return {'session': session, 'case': public_case(session['case_id']), 'assessments': assessments}
 
 

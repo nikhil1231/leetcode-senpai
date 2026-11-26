@@ -8,6 +8,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ..timed_sessions import timed_start, activities as timed_activities
 from .. import auth
 from ..store import get_store
 from ..tracks.http import put
@@ -100,15 +101,14 @@ class StartBody(BaseModel):
 
 
 @router.post('/{mode}/start')
+@timed_start('coding')
 async def start(mode: str, body: StartBody, uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     _mode(mode)
-    mine = sorted((a for a in queue.attempts(store) if a['mode'] == mode and a['status'] == 'open'), key=lambda a: -a['started_at'])
-    if mine and not body.new:
-        a = mine[0]
+    current = next((a for a in timed_activities(store) if a['kind'] == 'coding' and a.get('mode') == mode), None)
+    if current and not body.new:
+        a = store.get_track_record(AT, current['id'])
         return {'attempt': public_attempt(a, ex := _exercise(store, a)), 'exercise': S.public(ex)}
-    for a in mine:
-        put(store, AT, a['id'], {**a, 'status': 'abandoned'}, a['revision'])
     if body.category and body.category not in S.CATEGORIES[mode]:
         raise HTTPException(422, 'Unknown category')
     ex = queue.take(store, mode, body.category)

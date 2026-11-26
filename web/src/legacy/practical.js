@@ -130,6 +130,16 @@
       if (!review) loadCM().catch(() => {});
       return;
     }
+    const checkSession = event => {
+      const data = event.detail;
+      if (attempt.status === 'open' && data.server_now >= attempt.started_at &&
+          !data.activities.some(a => a.key === 'practical:' + attempt.id)) {
+        clearInterval(clock); clearTimeout(saveTimer); dirty = false;
+        toast('This session has ended.'); ctx.go('home');
+      }
+    };
+    window.addEventListener('timed-sessions-status', checkSession);
+    ctx.onLeave(() => window.removeEventListener('timed-sessions-status', checkSession));
     const contents = { ...ex.starter, ...attempt.files };
     const briefHtml = `<section class="sd-panel tr-brief"><details ${pair && chat.length ? '' : 'open'}><summary><b>Brief</b></summary>${md(ex.brief)}</details>
         ${review ? '' : `<details><summary><b>${pair ? 'Self-check' : 'Rubric'}</b></summary><ul class="tr-plain">${ex.rubric.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`}</section>`;
