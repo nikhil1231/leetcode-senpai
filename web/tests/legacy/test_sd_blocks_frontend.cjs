@@ -45,5 +45,5 @@ test('a whiteboard diagram shows states and a question box, without the wiring g
   edges:[['app','cache','GET'],['app','db',''],['cache','m','']],paths:[{label:'Miss',steps:[['app','cache','miss']]}]});
  assert.match(html,/Whiteboard/);assert.match(html,/is-state-down/);assert.match(html,/sd-arch-legend/);
  assert.match(html,/is-missing/);assert.doesNotMatch(html,/Wire it yourself/);assert.doesNotMatch(html,/sd-predict-choices/);
- assert.doesNotMatch(html,/<b>App/);assert.match(html,/▶ Miss/);
+ assert.doesNotMatch(html,/<b>App/);assert.match(html,/data-b="path"[^>]*>Miss</);
 });
