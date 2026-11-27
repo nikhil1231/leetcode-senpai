@@ -17,6 +17,7 @@ COURSES = {
     'fundamentals': {
         'categories': [
             ('languages', 'Languages and runtimes', 'Concurrency and memory in Java; how Python really runs.'),
+            ('java', 'Java in depth', 'The language and the JVM: types and strings, collections, classes and generics, exceptions and streams, garbage collection.'),
             ('systems', 'Operating systems, Linux and networking', 'Scheduling, memory, locks and file systems, then processes and what happens on the wire.'),
             ('data', 'Databases in depth', 'SQL from joins to window functions, schema design, and how Postgres keeps transactions apart.'),
             ('security', 'Security', 'Who you are, what you may do, and the web attacks interviewers ask about.'),
@@ -26,6 +27,7 @@ COURSES = {
         ],
         'order': {
             'languages': ['java-concurrency', 'python-runtime'],
+            'java': ['java-types', 'java-collections', 'java-oop', 'java-exceptions-streams', 'jvm-internals'],
             'systems': ['os-scheduling', 'os-memory', 'os-concurrency', 'os-filesystems', 'linux-processes', 'networking-stack'],
             'data': ['sql-queries', 'sql-schema', 'sql-windows', 'postgres-internals'],
             'security': ['auth-basics', 'oauth-oidc', 'web-attacks'],

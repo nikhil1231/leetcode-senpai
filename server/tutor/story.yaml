@@ -119,6 +119,7 @@ chapters:
     casebook: Ripple keeps growing into chat, video, rides through a partnership, and payments. Each is a new system to design from scratch.
   fundamentals:
     languages: Ripple's services run on Java and Python. When they misbehave, the runtime is the first suspect.
+    java: 'The payments service is Java, and its strangest bugs come from the language itself: a comparison that fails above 127, a map that forgets keys, a heap that fills over three days.'
     systems: Production is Linux boxes and networks. Priya wants you able to debug one live, at 3am, and to know why the kernel behaves as it does.
     data: Postgres holds the money. Every query, schema and internal decides whether the numbers are right and when it stalls.
     infrastructure: Ripple moves to Kubernetes on AWS with a real delivery pipeline. The platform is now part of your job.

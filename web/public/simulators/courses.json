@@ -70,6 +70,68 @@
    ]
   },
   {
+   "id": "refs",
+   "title": "Stack and heap, one line at a time",
+   "blurb": "Pick a program and step through it. The left side is the stack frames, the right side is the heap. Watch which variables share an object.",
+   "notes": "A variable of a reference type holds a reference, and passing it to a method copies the reference, not the object. Two references can point at one object (so a change through either is visible to both) or at two equal objects (so `==` is false while `equals` is true). Boxed numbers are objects too, which is where the Integer cache and unboxing NPEs come from.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "java-types",
+   "lessonTitle": "Java types, references and strings",
+   "challenges": [
+    "Show that a method cannot reassign the caller's variable",
+    "Find a pair of Integers where == says false but equals says true",
+    "Unbox a null and get a NullPointerException"
+   ]
+  },
+  {
+   "id": "hashmap",
+   "title": "Inside a HashMap",
+   "blurb": "Put keys into a HashMap and watch the buckets. Change how the key class computes hashCode, mutate a key after inserting it, or let the table fill up.",
+   "notes": "HashMap finds a key by its hash first and by `equals` second, so the two methods must agree and the fields they use must not change while the key is in a map. Resizing at 75% full keeps chains short on average, and treeifying a long chain caps the damage of a bad hash function at O(log n).",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "java-collections",
+   "lessonTitle": "equals, hashCode and the collections",
+   "challenges": [
+    "Fill the map past 75% of its capacity and watch it resize",
+    "Use a constant hashCode until a bucket turns into a tree",
+    "Mutate a key after inserting it, then fail to get it back",
+    "Override equals without hashCode and miss an equal key"
+   ]
+  },
+  {
+   "id": "streams",
+   "title": "Watch a stream pull its elements",
+   "blurb": "Build a pipeline over the list of Ripple link ids and run it. Each row shows which stage touched which element, in the order it happened.",
+   "notes": "A stream does nothing until a terminal operation pulls, and then each element travels the whole pipeline before the next one starts. Short-circuiting operations stop pulling as soon as they have their answer. Stateful operations like `sorted` are barriers: they must read everything first, which also makes them useless on infinite streams.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "java-exceptions-streams",
+   "lessonTitle": "Exceptions, lambdas and streams",
+   "challenges": [
+    "Build a pipeline that runs nothing at all",
+    "Make findFirst stop before reading the whole list",
+    "Add sorted and see it read every element before passing one on"
+   ]
+  },
+  {
+   "id": "jvmgc",
+   "title": "A generational heap under load",
+   "blurb": "Ripple's service allocates request objects, most of which die within one request, plus a cache that keeps some of them. Change the heap, the allocation rate and how much survives, and watch the young and old generations.",
+   "notes": "A minor GC costs time in proportion to what survives, not to how much was allocated, so lots of short-lived garbage is cheap. Trouble starts when objects live just long enough to be promoted, and when something keeps references it no longer needs: the old generation then grows after every collection until the JVM spends its time collecting and still runs out.",
+   "category": "fundamentals",
+   "categoryLabel": "Fundamentals",
+   "lesson": "jvm-internals",
+   "lessonTitle": "The JVM: class loading, JIT and garbage collection",
+   "challenges": [
+    "Find a setup where minor GCs are frequent but cheap, and the old generation stays flat",
+    "Keep objects alive just long enough to be promoted, so the old generation fills and has to be collected",
+    "Turn on the leak and run the heap out of memory",
+    "Switch to ZGC and keep the longest pause under 1 ms"
+   ]
+  },
+  {
    "id": "cpusched",
    "title": "A CPU scheduler",
    "blurb": "Choose a workload and a policy. Each bar is one job; green is running, red is ready but waiting. Add a context-switch cost to see what preemption costs.",

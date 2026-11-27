@@ -1,0 +1,200 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: java-exceptions-streams
+source_hash: cba9b0bb64fce24a
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-27'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.java-exceptions-streams.throwable-hierarchy
+  subtopic: The exception hierarchy
+  kind: fact
+  claim: Throwable splits into Error (JVM problems such as OutOfMemoryError, not to be caught) and Exception; RuntimeException and its subclasses are unchecked, and every other Exception is checked and must be caught or declared.
+  prompt: Which exceptions are checked and which unchecked in Java?
+  objectives:
+  - 0
+- id: fundamentals.java-exceptions-streams.checked-vs-unchecked-choice
+  subtopic: The exception hierarchy
+  kind: tradeoff
+  claim: Use checked exceptions for conditions a caller can recover from and unchecked ones for programming errors; many codebases prefer unchecked because checked ones don't compose with lambdas and spread throws clauses.
+  prompt: When should an exception be checked rather than unchecked?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-exceptions-streams.throwable-hierarchy
+- id: fundamentals.java-exceptions-streams.wrap-with-cause
+  subtopic: The exception hierarchy
+  kind: procedure
+  claim: Never swallow an exception in an empty catch; wrap it and pass the original as the cause (new X("msg", e)) so the stack trace survives, and catch as narrowly as you can.
+  prompt: How do you rethrow an exception without losing information?
+  objectives:
+  - 0
+- id: fundamentals.java-exceptions-streams.restore-interrupt-flag
+  subtopic: The exception hierarchy
+  kind: procedure
+  claim: Catching InterruptedException clears the thread's interrupt flag; if you can't rethrow it, call Thread.currentThread().interrupt() and finish up, or shutdown can hang.
+  prompt: What should code do with an InterruptedException it can't rethrow?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-exceptions-streams.throwable-hierarchy
+- id: fundamentals.java-exceptions-streams.exceptions-not-control-flow
+  subtopic: The exception hierarchy
+  kind: principle
+  claim: 'Don''t use exceptions for ordinary control flow: building the stack trace is expensive.'
+  prompt: Why shouldn't exceptions be used for normal control flow?
+  objectives:
+  - 0
+- id: fundamentals.java-exceptions-streams.finally-runs-and-traps
+  subtopic: finally and try-with-resources
+  kind: mechanism
+  claim: finally runs whether try completes, returns or throws (not if the JVM exits); a return in finally overrides the try's result and discards an in-flight exception, and an exception from finally replaces the original.
+  prompt: What are the traps of returning or throwing from a finally block?
+  objectives:
+  - 1
+- id: fundamentals.java-exceptions-streams.return-value-saved-before-finally
+  subtopic: finally and try-with-resources
+  kind: mechanism
+  claim: return x evaluates and saves x before finally runs, so changing the variable in finally doesn't change the returned value.
+  prompt: If finally changes a local after try returned it, which value is returned?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-exceptions-streams.finally-runs-and-traps
+- id: fundamentals.java-exceptions-streams.try-with-resources-suppressed
+  subtopic: finally and try-with-resources
+  kind: mechanism
+  claim: try-with-resources closes AutoCloseable resources in reverse order of opening; if both the body and close() throw, the body's exception propagates with the close() failure attached as suppressed.
+  prompt: What does try-with-resources do when both the body and close() throw?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-exceptions-streams.finally-runs-and-traps
+- id: fundamentals.java-exceptions-streams.functional-interfaces-shapes
+  subtopic: Lambdas and functional interfaces
+  kind: fact
+  claim: 'A lambda implements a functional interface (one abstract method): Supplier (nothing to T), Consumer (T to nothing), Function (T to R), Predicate (T to boolean), with primitive versions such as IntPredicate that avoid boxing.'
+  prompt: Name the main functional interfaces in java.util.function and their shapes.
+  objectives:
+  - 2
+- id: fundamentals.java-exceptions-streams.effectively-final-capture
+  subtopic: Lambdas and functional interfaces
+  kind: mechanism
+  claim: A lambda can only use local variables that are effectively final, because it captures their values; fields are read through the captured this, which can keep the enclosing object alive.
+  prompt: Why must local variables used in a lambda be effectively final?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-exceptions-streams.functional-interfaces-shapes
+- id: fundamentals.java-exceptions-streams.checked-exceptions-in-lambdas
+  subtopic: Lambdas and functional interfaces
+  kind: fact
+  claim: Standard functional interfaces declare no checked exceptions, so a lambda calling code that throws IOException must catch it, usually wrapping it in UncheckedIOException.
+  prompt: Why are checked exceptions awkward inside lambdas?
+  objectives:
+  - 0
+  - 2
+  requires:
+  - fundamentals.java-exceptions-streams.functional-interfaces-shapes
+  - fundamentals.java-exceptions-streams.throwable-hierarchy
+- id: fundamentals.java-exceptions-streams.streams-lazy-terminal
+  subtopic: Streams
+  kind: mechanism
+  claim: 'Stream intermediate operations are lazy: nothing runs until a terminal operation such as toList, forEach or findFirst, and then each element flows through the whole pipeline before the next.'
+  prompt: When does a stream pipeline actually run, and in what order are elements processed?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-exceptions-streams.functional-interfaces-shapes
+- id: fundamentals.java-exceptions-streams.short-circuit-operations
+  subtopic: Streams
+  kind: mechanism
+  claim: findFirst, anyMatch and limit stop pulling elements once they have their answer, so they can finish even on an infinite stream.
+  prompt: Which stream operations stop early, and why does that matter?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-exceptions-streams.streams-lazy-terminal
+- id: fundamentals.java-exceptions-streams.sorted-is-a-barrier
+  subtopic: Streams
+  kind: mechanism
+  claim: Stateful operations such as sorted and distinct must see every element before passing any on, so they read the whole source first and can't work on an infinite stream.
+  prompt: How does sorted change the order in which a stream processes elements?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-exceptions-streams.streams-lazy-terminal
+- id: fundamentals.java-exceptions-streams.streams-single-use-no-side-effects
+  subtopic: Streams
+  kind: principle
+  claim: A stream can be consumed once (reuse throws IllegalStateException), and lambdas in map or filter shouldn't modify the source or shared state; peek is for debugging.
+  prompt: What rules apply to reusing streams and side effects in them?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-exceptions-streams.streams-lazy-terminal
+- id: fundamentals.java-exceptions-streams.tomap-duplicate-key-throws
+  subtopic: Streams
+  kind: fact
+  claim: Collectors.toMap throws IllegalStateException on a duplicate key unless you pass a merge function; groupingBy collects lists per key and takes a downstream collector such as counting or summingLong.
+  prompt: What does Collectors.toMap do with duplicate keys, and how do you sum per key instead?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-exceptions-streams.streams-lazy-terminal
+- id: fundamentals.java-exceptions-streams.parallel-streams-common-pool
+  subtopic: Streams
+  kind: tradeoff
+  claim: parallelStream runs on the common ForkJoinPool and helps only for large, CPU-bound, independent work; blocking calls inside it starve every other user of that pool.
+  prompt: When does a parallel stream help, and what is its risk?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-concurrency.completablefuture-common-pool
+- id: fundamentals.java-exceptions-streams.optional-for-return-values
+  subtopic: Optional
+  kind: principle
+  claim: Use Optional for return values that may be absent, not for fields, parameters or collections; never return null from an Optional method, and avoid get() without a check.
+  prompt: Where should Optional be used, and where not?
+  objectives:
+  - 3
+- id: fundamentals.java-exceptions-streams.orelse-evaluates-eagerly
+  subtopic: Optional
+  kind: mechanism
+  claim: orElse(x) evaluates x even when a value is present, so orElse(loadFromDb()) always runs the query; orElseGet takes a Supplier that runs only when the value is missing.
+  prompt: What is the difference between Optional.orElse and orElseGet?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-exceptions-streams.optional-for-return-values
+items:
+  java-exceptions-streams-check-1-v2:
+  - fundamentals.java-exceptions-streams.throwable-hierarchy
+  java-exceptions-streams-check-2-v2:
+  - fundamentals.java-exceptions-streams.try-with-resources-suppressed
+  java-exceptions-streams-check-3-v2:
+  - fundamentals.java-exceptions-streams.streams-lazy-terminal
+  java-exceptions-streams-check-4-v2:
+  - fundamentals.java-exceptions-streams.effectively-final-capture
+  java-exceptions-streams-fire-1-v2:
+  - fundamentals.java-exceptions-streams.orelse-evaluates-eagerly
+  java-exceptions-streams-fire-2-v2:
+  - fundamentals.java-exceptions-streams.tomap-duplicate-key-throws
+  java-exceptions-streams-fire-3-v2:
+  - fundamentals.java-exceptions-streams.restore-interrupt-flag
+  java-exceptions-streams-fire-4-v2:
+  - fundamentals.java-exceptions-streams.finally-runs-and-traps
+  java-exceptions-streams:b1:
+  - fundamentals.java-exceptions-streams.return-value-saved-before-finally
+  - fundamentals.java-exceptions-streams.finally-runs-and-traps
+  java-exceptions-streams:b5:
+  - fundamentals.java-exceptions-streams.tomap-duplicate-key-throws
+  - fundamentals.java-exceptions-streams.orelse-evaluates-eagerly
+  java-exceptions-streams:b6:
+  - fundamentals.java-exceptions-streams.checked-vs-unchecked-choice
+  - fundamentals.java-exceptions-streams.wrap-with-cause
+  - fundamentals.java-exceptions-streams.restore-interrupt-flag

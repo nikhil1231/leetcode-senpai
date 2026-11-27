@@ -1,4 +1,4 @@
-// Fundamentals simulators: Java threads and pools, Python's GIL and event loop, Linux processes and
+// Fundamentals simulators: Java threads and pools, stack and heap, HashMap buckets, stream pulls and a generational heap, Python's GIL and event loop, Linux processes and
 // memory, Postgres MVCC and locks, Kubernetes rollouts and scheduling, a VPC packet tracer, IAM, deploy
 // strategies, a column rename, the home lab's reaper and deploys, and TCP/HTTP on the wire. The models
 // are pure (fund-models.js); this file draws them with the shared simulator helpers (sd-sims.js).
@@ -379,5 +379,109 @@
         html: stats([{ label: 'Page done', value: ms(r.slowest) }, { label: 'Packets lost', value: String(r.lost) }, { label: 'Resources delayed by a loss', value: `${r.stalled} of ${r.streams.length}`, tone: r.stalled > r.lost ? 'warn' : '' }])
           + bars(r.streams.map(x => ({ label: `resource ${x.stream + 1}`, value: x.ms, text: `${Math.round(x.ms)} ms${x.stall ? ` (+${Math.round(x.stall)})` : ''}`, cls: x.stall ? 'is-warn' : '' })), r.slowest)
           + `<p class="sim-note">${s.proto === 'h2' ? 'HTTP/2 multiplexes everything on one TCP connection, and TCP delivers bytes in order: one lost packet holds up every stream behind it until it is resent.' : s.proto === 'h3' ? 'QUIC recovers loss per stream, so a lost packet only delays its own resource, and the handshake is one round trip.' : 'HTTP/1.1 needs a connection per request in flight (browsers open 6), each with its own handshakes, and requests on a connection wait in line.'}</p>` };
+    }));
+  // ---------- Java: stack frames and the heap ----------
+  reg('refs', (el, cfg, api) => {
+    const st = { program: cfg.program || 'swap' }, seen = { swapFailed: 0, cacheMiss: 0, npe: 0, stringEq: 0 };
+    let run = M.refsRun(st.program), pos = 0;
+    const { ctl, out } = shell(el);
+    controls(ctl, [{ key: 'program', label: 'Program', type: 'select', options: Object.entries(M.JAVA_REFS).map(([k, p]) => [k, p.title]) }], st, () => { run = M.refsRun(st.program); pos = 0; api.touched(); paint(); });
+    const val = v => v == null ? '<em class="cs-null">null</em>' : v.r ? `<span class="fs-ref">→ #${v.r}</span>` : esc(v.p);
+    const field = v => v && v.r ? `→ #${v.r}` : JSON.stringify(v);
+    const paint = () => {
+      const s = run.steps[pos];
+      Object.keys(seen).forEach(k => { if (s.flags[k]) seen[k] = 1; });
+      const frames = [...s.frames].reverse().map(f => `<div class="fs-thread"><h5>${esc(f.name)}() <small>stack frame</small></h5><ul class="fs-vars">${Object.entries(f.vars).map(([k, v]) => `<li><b>${esc(k)}</b> ${val(v)}</li>`).join('') || '<li class="cs-null">no locals yet</li>'}</ul></div>`).join('');
+      const heap = Object.values(s.heap).map(o => `<li class="fs-obj${o.garbage ? ' is-garbage' : ''}${o.refs > 1 ? ' is-shared' : ''}"><b>#${o.id}</b> ${esc(o.cls)} ${o.text ? esc(o.text) : ''}${o.fields ? ` <span class="fs-fields">{${esc(Object.entries(o.fields).map(([k, v]) => `${k}: ${field(v)}`).join(', '))}}</span>` : ''}${o.tag ? ` <small>${esc(o.tag)}</small>` : ''}${o.garbage ? ' <small>garbage</small>' : o.refs > 1 ? ` <small>${o.refs} variables point here</small>` : ''}</li>`).join('');
+      out.innerHTML = `<div class="fs-threads"><div class="fs-thread"><h5>Code</h5><ol class="fs-code">${run.code.map((c, i) => `<li class="${i === s.line ? 'is-pc' : ''}">${esc(c)}</li>`).join('')}</ol></div>
+        <div class="fs-frames">${frames}</div><div class="fs-thread"><h5>Heap</h5><ul class="fs-heap">${heap || '<li class="cs-null">empty</li>'}</ul></div></div>
+        ${s.out.length || s.error ? `<div class="fs-mem"><span class="sd-eyebrow">OUTPUT</span>${s.out.map(t => `<span>${esc(t)}</span>`).join('')}${s.error ? `<span class="is-bad">${esc(s.error)}</span>` : ''}</div>` : ''}
+        ${s.note ? `<p class="sim-note">${esc(s.note)}</p>` : ''}
+        ${btns([['back', 'Back'], ['step', `Step (${pos + 1} of ${run.steps.length})`, true], ['reset', 'Start again']])}`;
+      out.querySelector('[data-do="step"]').disabled = pos >= run.steps.length - 1;
+      out.querySelector('[data-do="back"]').disabled = pos === 0;
+      api.metrics({ ...seen, program: st.program });
+    };
+    on(el, act => { api.touched(); if (act === 'step') pos = Math.min(run.steps.length - 1, pos + 1); if (act === 'back') pos = Math.max(0, pos - 1); if (act === 'reset') pos = 0; paint(); });
+    paint();
+    return { destroy() {} };
+  });
+
+  // ---------- Java: inside a HashMap ----------
+  reg('hashmap', (el, cfg, api) => {
+    const st = { hash: cfg.hash || 'string', cap: 16 }, seen = { lostKey: 0, missedEqual: 0 };
+    let s = M.hashMap(st), n = 0, mutated = null;
+    const { ctl, out } = shell(el);
+    controls(ctl, [{ key: 'hash', label: 'The key class\'s hashCode()', type: 'select', options: [['string', 'id.hashCode() (a good hash)'], ['length', 'id.length() (a weak hash)'], ['constant', 'return 42; (every key collides)'], ['identity', 'not overridden (equals only)']] },
+      { key: 'cap', label: 'Initial capacity', type: 'select', options: [[16, '16 (the default)'], [64, '64']] }], st, () => { s = M.hashMap(st); n = 0; mutated = null; api.touched(); paint(); });
+    const paint = () => {
+      const lens = s.buckets.map(b => b.length), longest = Math.max(...lens), last = s.last;
+      if (last && last.lostKey) seen.lostKey = 1;
+      if (last && last.missedEqual) seen.missedEqual = 1;
+      const cells = s.buckets.map((b, i) => `<span class="fs-bucket${b.length ? ' is-used' : ''}${b.length > 4 ? ' is-long' : ''}${s.trees.includes(i) ? ' is-tree' : ''}${last && last.bucket === i ? ' is-last' : ''}" title="bucket ${i}: ${b.length}">${b.length || ''}</span>`).join('');
+      const rows = s.buckets.map((b, i) => [i, b]).filter(([, b]) => b.length).slice(0, 10).map(([i, b]) => `<tr class="${last && last.bucket === i ? 'is-on' : ''}"><td>${i}${s.trees.includes(i) ? ' (tree)' : ''}</td><td>${esc(b.map(e => e.id + (mutated && e.id === mutated.to ? ' (changed)' : '')).join(', '))}</td></tr>`).join('');
+      const v = !last ? null : last.op === 'get' ? { ok: last.found, text: last.found ? `get("${last.id}") found it in bucket ${last.bucket} after ${last.cmp} comparison${last.cmp === 1 ? '' : 's'}.`
+        : last.missedEqual ? `get("${last.id}") returned null. An equal key is in the map, but the new key object has a different identity hash, so the lookup went to bucket ${last.bucket} and never called equals on it.`
+          : last.lostKey ? `get("${last.id}") returned null. The changed key still sits in the bucket for its old hash: looking up the new id goes to the wrong bucket, and looking up the old id finds the entry but equals says no.` : `get("${last.id}") returned null: no such key.` }
+        : last.op === 'mutate' ? { ok: false, text: `Changed the key's id from ${last.id} to ${last.to} while it was in the map. It stays in bucket ${last.bucket}, the bucket for its old hash.` }
+          : { ok: true, text: `put("${last.id}") went to bucket ${last.bucket}${last.found ? ' and replaced the existing value' : ''}${last.note ? `, and ${last.note}` : ''}.` };
+      out.innerHTML = stats([{ label: 'Entries', value: String(s.size) }, { label: 'Buckets', value: String(s.cap) }, { label: 'Resize after', value: String(Math.floor(s.cap * 0.75)) },
+        { label: 'Resizes', value: String(s.resizes) }, { label: 'Longest bucket', value: String(longest), tone: longest > 8 ? 'bad' : longest > 4 ? 'warn' : '' }])
+        + `<div class="fs-buckets">${cells}</div>${rows ? `<table class="fs-table"><thead><tr><th>Bucket</th><th>Keys</th></tr></thead><tbody>${rows}</tbody></table>` : ''}${verdictBox(v)}`
+        + btns([['put', `put("user-${n + 1}")`, true], ['put10', 'Put 10 more'], ['get', 'get("user-1") with a new key'], ['mutate', 'Change user-1\'s id'], ['getm', 'get("user-1x")'], ['reset', 'Empty the map']]);
+      out.querySelector('[data-do="mutate"]').disabled = !s.buckets.flat().some(e => e.id === 'user-1');
+      out.querySelector('[data-do="getm"]').disabled = !mutated;
+      api.metrics({ resized: s.resizes, treeified: s.treeified, ...seen, size: s.size, hash: st.hash });
+    };
+    on(el, act => {
+      api.touched();
+      if (act === 'put') s = M.hmPut(s, `user-${++n}`);
+      if (act === 'put10') for (let i = 0; i < 10; i++) s = M.hmPut(s, `user-${++n}`);
+      if (act === 'get') s = M.hmGet(s, 'user-1');
+      if (act === 'mutate') { s = M.hmMutate(s, 'user-1', 'user-1x'); mutated = { from: 'user-1', to: 'user-1x' }; }
+      if (act === 'getm') s = M.hmGet(s, 'user-1x');
+      if (act === 'reset') { s = M.hashMap(st); n = 0; mutated = null; }
+      paint();
+    });
+    paint();
+    return { destroy() {} };
+  });
+
+  // ---------- Java: a stream pulls its elements ----------
+  reg('streams', (el, cfg, api) => simple(el, cfg, api, { filter: true, sorted: false, map: true, limit: 0, terminal: 'none' },
+    [{ key: 'filter', label: '.filter(l -> l.clicks() >= 10)', type: 'toggle' }, { key: 'sorted', label: '.sorted(by clicks, highest first)', type: 'toggle' },
+      { key: 'map', label: '.map(l -> "link-" + l.id())', type: 'toggle' },
+      { key: 'limit', label: '.limit(…)', type: 'select', options: [[0, 'no limit'], [2, '.limit(2)'], [3, '.limit(3)']] },
+      { key: 'terminal', label: 'Terminal operation', type: 'select', options: [['none', 'none (just build the pipeline)'], ['toList', '.toList()'], ['findFirst', '.findFirst()'], ['anyMatch', '.anyMatch(clicks > 50)']] }],
+    p => {
+      const r = M.streamTrace(p), cols = r.stages;
+      const code = ['links.stream()', ...(p.filter ? ['    .filter(l -> l.clicks() >= 10)'] : []), ...(p.sorted ? ['    .sorted(comparing(Link::clicks).reversed())'] : []), ...(p.map ? ['    .map(l -> "link-" + l.id())'] : []),
+        ...(p.limit ? [`    .limit(${p.limit})`] : []), ...(p.terminal === 'none' ? [] : [`    .${p.terminal === 'anyMatch' ? 'anyMatch(l -> l.clicks() > 50)' : p.terminal + '()'}`])].join('\n') + ';';
+      const rows = r.events.map(e => `<tr>${cols.map(c => `<td class="${c === e.stage ? (e.ok === false || e.text === 'dropped' ? 'is-bad' : 'is-on') : ''}">${c === e.stage ? esc(e.stage === 'source' ? e.text : `${e.el}: ${e.text}`) : ''}</td>`).join('')}</tr>`).join('');
+      const result = p.terminal === 'none' ? 'nothing ran' : p.terminal === 'anyMatch' ? String(r.result) : p.terminal === 'findFirst' ? (r.result.length ? `Optional[${p.map ? 'link-' : ''}${r.result[0]}]` : 'Optional.empty') : `[${r.result.map(x => (p.map ? 'link-' : '') + x).join(', ')}]`;
+      return { metrics: { lazyNothing: r.lazyNothing, shortCircuit: r.shortCircuit, barrier: r.barrier, reads: r.reads, terminal: p.terminal },
+        html: `<pre class="sd-code" data-lang="java"><code>${esc(code)}</code></pre>`
+          + stats([{ label: 'Links read from the source', value: `${r.reads} of ${r.total}`, tone: r.reads < r.total && r.reads ? 'ok' : '' }, { label: 'Result', value: result }, { label: 'Events', value: String(r.events.length) }])
+          + (rows ? `<div class="cs-grid-wrap"><table class="fs-table fs-trace"><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>` : '')
+          + `<p class="sim-note">${p.terminal === 'none' ? 'Without a terminal operation the pipeline is only a description. Nothing reads the source, so nothing in it runs, not even a peek or a println in a lambda.' : p.sorted ? 'sorted has to see every element before it can emit the first one, so it reads the whole source before anything downstream runs.' : r.reads < r.total ? 'Each element goes through the whole pipeline before the next is read, and the terminal operation stopped pulling once it had its answer.' : 'Each element goes through the whole pipeline before the next one is read: one pass, not one pass per stage.'}</p>` };
+    }));
+
+  // ---------- Java: a generational heap ----------
+  const pms = n => n < 1 ? n.toFixed(2) + ' ms' : ms(n);
+  reg('jvmgc', (el, cfg, api) => simple(el, cfg, api, { heapMb: 1024, allocMbs: 200, survive: 10, lifetime: 'session', leakMbs: 0, collector: 'g1' },
+    [{ key: 'heapMb', label: 'Heap (-Xmx)', min: 256, max: 4096, step: 256, fmt: v => v + ' MB' }, { key: 'allocMbs', label: 'Allocation rate', min: 50, max: 1000, step: 50, fmt: v => v + ' MB/s' },
+      { key: 'survive', label: 'Still alive at a minor GC', min: 1, max: 40, fmt: v => v + '%' },
+      { key: 'lifetime', label: 'Survivors live for', type: 'select', options: [['request', 'one request (die before the next GC)'], ['session', 'about 20 s (a per-session cache)']] },
+      { key: 'leakMbs', label: 'Leak (kept for ever)', min: 0, max: 20, fmt: v => v ? v + ' MB/s' : 'none' },
+      { key: 'collector', label: 'Collector', type: 'select', options: [['g1', 'G1 (the default)'], ['parallel', 'Parallel'], ['zgc', 'ZGC']] }],
+    p => {
+      const r = M.javaGc(p), xs = r.series.map(x => x.t);
+      return { metrics: { healthy: r.healthy, oldGcs: r.oldGcs, oom: r.oom ? 1 : 0, maxPause: r.maxPause, minorGcs: r.minorGcs, collector: p.collector },
+        html: stats([{ label: 'Minor GCs', value: String(r.minorGcs) }, { label: 'Typical minor pause', value: pms(r.avgMinor) },
+          { label: 'Old-generation collections', value: String(r.oldGcs), tone: r.oldGcs > 10 ? 'bad' : r.oldGcs ? 'warn' : 'ok' }, { label: 'Longest pause', value: pms(r.maxPause), tone: r.maxPause > 200 ? 'bad' : r.maxPause > 50 ? 'warn' : '' },
+          { label: r.oom ? 'OutOfMemoryError' : 'Old gen live after last collection', value: r.oom ? `at ${Math.round(r.oom.t)} s` : `${Math.round(r.oldAfter)} MB`, tone: r.oom ? 'bad' : '' }])
+          + chart({ series: [{ label: 'Young generation used', cls: 's1', values: r.series.map(x => x.young), xs }, { label: 'Old generation used', cls: 's2', values: r.series.map(x => x.old), xs }, { label: 'Old generation still live', cls: 's3', values: r.series.map(x => x.oldLive), xs }],
+            xMax: 120, yMax: Math.max(r.oldCap, r.young) * 1.05, xLabel: 'seconds', yLabel: 'MB', hlines: [{ y: r.oldCap, label: 'old generation size' }], vlines: r.oom ? [{ x: r.oom.t, label: 'OOM' }] : [] })
+          + `<p class="sim-note">${r.oom ? 'Every old collection frees less, because the leaked objects are still reachable. The JVM spends its time collecting, then runs out. A bigger heap only moves the date.' : !r.oldGcs ? 'Almost everything dies young, so each minor GC copies a few megabytes and frees eden in one go. The old generation hardly grows.' : p.collector === 'zgc' ? 'ZGC collects the old generation concurrently, so the pauses stay tiny, at the cost of some CPU running alongside the application.' : 'Objects that live about 20 s survive enough minor GCs to be promoted, then die in the old generation, which fills with garbage and has to be collected with longer pauses.'}</p>` };
     }));
 })();

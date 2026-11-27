@@ -1,0 +1,202 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: java-oop
+source_hash: 8f1dd03c6a04dde8
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-27'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.java-oop.overloading-compile-time
+  subtopic: Overloading and overriding
+  kind: principle
+  claim: Overloads are chosen by the compiler from the static (declared) types of the arguments, so print(o) with Object o = "hi" calls print(Object) even if print(String) exists.
+  prompt: How does Java choose between overloaded methods?
+  objectives:
+  - 0
+- id: fundamentals.java-oop.overriding-dynamic-dispatch
+  subtopic: Overloading and overriding
+  kind: mechanism
+  claim: An overridden instance method is chosen at runtime from the object's actual class (dynamic dispatch), whatever the variable's declared type.
+  prompt: Which version of an overridden method runs when called through a parent-type variable?
+  objectives:
+  - 0
+- id: fundamentals.java-oop.static-methods-fields-not-polymorphic
+  subtopic: Overloading and overriding
+  kind: fact
+  claim: Static methods are hidden rather than overridden and fields aren't polymorphic, so both are resolved from the declared type; private and final methods are also bound at compile time.
+  prompt: Which members are not dispatched on the runtime class?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-oop.overriding-dynamic-dispatch
+- id: fundamentals.java-oop.override-annotation-rules
+  subtopic: Overloading and overriding
+  kind: fact
+  claim: An override may return a subtype (covariant return) but can't narrow visibility or throw broader checked exceptions; @Override turns an accidental overload into a compile error.
+  prompt: What may an override change, and why add @Override?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-oop.overriding-dynamic-dispatch
+  - fundamentals.java-oop.overloading-compile-time
+- id: fundamentals.java-oop.no-overridable-calls-in-constructor
+  subtopic: Overloading and overriding
+  kind: principle
+  claim: Calling an overridable method from a constructor runs the subclass version before the subclass's fields are initialised.
+  prompt: Why shouldn't a constructor call an overridable method?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-oop.overriding-dynamic-dispatch
+- id: fundamentals.java-oop.interface-vs-abstract-class
+  subtopic: Abstract classes, interfaces and the newer types
+  kind: tradeoff
+  claim: A class can implement many interfaces but extend one class; interfaces can have default, static and private methods but no instance state, so use an abstract class only when subclasses share state or setup.
+  prompt: When would you choose an abstract class over an interface in modern Java?
+  objectives:
+  - 1
+- id: fundamentals.java-oop.composition-over-inheritance
+  subtopic: Abstract classes, interfaces and the newer types
+  kind: principle
+  claim: Inheritance couples a subclass to its parent's internals, so prefer interfaces plus composition.
+  prompt: Why is composition usually preferred to inheritance?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-oop.interface-vs-abstract-class
+- id: fundamentals.java-oop.records-shallow-immutability
+  subtopic: Abstract classes, interfaces and the newer types
+  kind: fact
+  claim: A record is a final class with private final fields, accessors, and generated equals, hashCode and toString; it can't extend a class and is only shallowly immutable, so copy mutable components in a compact constructor.
+  prompt: What does a record give you, and what doesn't it make immutable?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - fundamentals.java-collections.records-generate-equals-hashcode
+- id: fundamentals.java-oop.enums-singletons
+  subtopic: Abstract classes, interfaces and the newer types
+  kind: fact
+  claim: Enum constants are singletons that can carry fields and behaviour; an enum is the simplest thread-safe singleton, and EnumMap and EnumSet are fast array- and bit-set-backed collections for them.
+  prompt: What makes enums useful beyond named constants?
+  objectives:
+  - 1
+- id: fundamentals.java-oop.sealed-exhaustive-switch
+  subtopic: Abstract classes, interfaces and the newer types
+  kind: mechanism
+  claim: A sealed interface lists its permitted subtypes, so a pattern-matching switch over it (Java 21) is checked for exhaustiveness and adding a subtype breaks the build where cases are missing.
+  prompt: What do sealed interfaces add to a switch over their subtypes?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-oop.interface-vs-abstract-class
+- id: fundamentals.java-oop.inner-class-holds-outer
+  subtopic: Abstract classes, interfaces and the newer types
+  kind: mechanism
+  claim: A non-static inner or anonymous class holds a hidden reference to its enclosing instance, so a long-lived listener or task can keep the outer object alive; make nested classes static unless they need it.
+  prompt: How can an anonymous inner-class listener cause a memory leak?
+  objectives:
+  - 1
+- id: fundamentals.java-oop.final-reference-not-object
+  subtopic: Immutability and final
+  kind: principle
+  claim: final on a variable or field prevents reassignment, not changes to the object it refers to; final methods can't be overridden and final classes can't be extended.
+  prompt: What does final prevent on a variable, a method and a class?
+  objectives:
+  - 2
+- id: fundamentals.java-oop.final-field-publication
+  subtopic: Immutability and final
+  kind: mechanism
+  claim: Final fields are visible to other threads once the constructor finishes, without synchronisation, provided this didn't escape during construction.
+  prompt: What memory-model guarantee do final fields give?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-oop.final-reference-not-object
+  - fundamentals.java-concurrency.happens-before-definition
+- id: fundamentals.java-oop.immutable-class-recipe
+  subtopic: Immutability and final
+  kind: procedure
+  claim: An immutable class is final (or has a private constructor), has private final fields and no setters, and makes defensive copies of mutable inputs and outputs, for example List.copyOf in the constructor.
+  prompt: What does a class need to be immutable?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-oop.final-reference-not-object
+  - fundamentals.java-collections.unmodifiable-view-vs-copy
+- id: fundamentals.java-oop.type-erasure-limits
+  subtopic: 'Generics: erasure and wildcards'
+  kind: mechanism
+  claim: Generic type arguments are erased at runtime, so you can't write new T(), new T[n] or instanceof List<String>, can't overload on type arguments, and can't use primitives as type arguments.
+  prompt: What can't you do with a generic type parameter because of erasure?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-types.eight-primitive-types
+- id: fundamentals.java-oop.generics-invariant
+  subtopic: 'Generics: erasure and wildcards'
+  kind: principle
+  claim: 'Generics are invariant: List<Integer> isn''t a List<Number>, or you could add a Double to a list of integers through it.'
+  prompt: Why isn't a List<Integer> a List<Number>?
+  objectives:
+  - 3
+- id: fundamentals.java-oop.arrays-covariant
+  subtopic: 'Generics: erasure and wildcards'
+  kind: fact
+  claim: Arrays are covariant (Integer[] is a Number[]), and storing the wrong type is caught at runtime with ArrayStoreException.
+  prompt: How do arrays differ from generics in subtyping, and what catches the hole?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-oop.generics-invariant
+- id: fundamentals.java-oop.pecs-wildcards
+  subtopic: 'Generics: erasure and wildcards'
+  kind: procedure
+  claim: 'PECS: use ? extends T for a producer you only read from and ? super T for a consumer you only add to, as in Collections.copy(List<? super T> dest, List<? extends T> src).'
+  prompt: Which wildcard do you use for a list you read from and for one you add to?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-oop.generics-invariant
+- id: fundamentals.java-oop.raw-types-avoid
+  subtopic: 'Generics: erasure and wildcards'
+  kind: fact
+  claim: Raw types (List without type arguments) switch off generic type checks and produce warnings; don't use them in new code.
+  prompt: What does using a raw type do?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-oop.type-erasure-limits
+items:
+  java-oop-check-1-v2:
+  - fundamentals.java-oop.overloading-compile-time
+  java-oop-check-2-v2:
+  - fundamentals.java-oop.generics-invariant
+  java-oop-check-3-v2:
+  - fundamentals.java-oop.records-shallow-immutability
+  java-oop-check-4-v2:
+  - fundamentals.java-oop.inner-class-holds-outer
+  java-oop-fire-1-v2:
+  - fundamentals.java-oop.pecs-wildcards
+  java-oop-fire-2-v2:
+  - fundamentals.java-oop.static-methods-fields-not-polymorphic
+  java-oop-fire-3-v2:
+  - fundamentals.java-oop.type-erasure-limits
+  java-oop-fire-4-v2:
+  - fundamentals.java-oop.final-reference-not-object
+  java-oop:b1:
+  - fundamentals.java-oop.overloading-compile-time
+  - fundamentals.java-oop.overriding-dynamic-dispatch
+  - fundamentals.java-oop.static-methods-fields-not-polymorphic
+  java-oop:b3:
+  - fundamentals.java-oop.immutable-class-recipe
+  - fundamentals.java-oop.final-reference-not-object
+  java-oop:b5:
+  - fundamentals.java-oop.pecs-wildcards
+  java-oop:b6:
+  - fundamentals.java-oop.interface-vs-abstract-class
+  - fundamentals.java-oop.composition-over-inheritance

@@ -102,3 +102,37 @@ test('slow start: a warm connection is faster; HTTP/2 stalls more streams per lo
  const s=p=>M.hol({proto:p,loss:0.05});
  assert.ok(s('h2').stalled>=s('h3').stalled && s('h3').slowest<s('h2').slowest);
 });
+test('stack and heap: a method cannot reassign the caller; == on boxed 128s is false; unboxing null throws',()=>{
+ const end=k=>M.refsRun(k).steps.at(-1);
+ const swap=end('swap'); assert.equal(swap.out[0],'1000 2000'); assert.equal(swap.frames.length,1);
+ const mutate=end('mutate'); assert.equal(mutate.out[0],'Ada'); assert.ok(Object.values(mutate.heap).some(o=>o.garbage));
+ assert.deepEqual(end('cache').out,['true','false','true','true']);
+ assert.match(end('unbox').error,/NullPointerException/);
+ const s=M.refsRun('cache').steps[0]; assert.equal(Object.values(s.heap)[0].refs,2);
+});
+test('HashMap: resizes past 75%, treeifies only at 64 buckets, and loses mutated or hash-less keys',()=>{
+ let s=M.hashMap(); for(let i=1;i<=12;i++) s=M.hmPut(s,'user-'+i); assert.equal(s.cap,16);
+ s=M.hmPut(s,'user-13'); assert.equal(s.cap,32); assert.equal(s.resizes,1); assert.ok(M.hmGet(s,'user-7').last.found);
+ let c=M.hashMap({hash:'constant'}); for(let i=1;i<=9;i++) c=M.hmPut(c,'k'+i); assert.equal(c.treeified,0); assert.equal(c.cap,32);
+ for(let i=10;i<=11;i++) c=M.hmPut(c,'k'+i); assert.equal(c.cap,64); assert.equal(c.treeified,1);
+ let id=M.hmPut(M.hashMap({hash:'identity'}),'user-1'); assert.equal(M.hmGet(id,'user-1').last.missedEqual,true);
+ assert.ok(M.hmGet(M.hmPut(M.hashMap(),'user-1'),'user-1').last.found);
+ const m=M.hmMutate(M.hmPut(M.hashMap(),'user-1'),'user-1','user-1x');
+ for(const k of ['user-1','user-1x']){ const g=M.hmGet(m,k).last; assert.equal(g.found,false); assert.equal(g.lostKey,true); }
+ assert.equal(M.strHash('hello'),99162322);
+});
+test('streams: nothing runs without a terminal op, findFirst short-circuits, sorted reads everything first',()=>{
+ assert.equal(M.streamTrace({filter:true,map:true}).events.length,0);
+ const first=M.streamTrace({filter:true,terminal:'findFirst'}); assert.equal(first.reads,2); assert.deepEqual(first.result,['b']);
+ const sorted=M.streamTrace({sorted:true,limit:2,terminal:'toList'}); assert.equal(sorted.barrier,1); assert.deepEqual(sorted.result,['e','h']);
+ const flow=M.streamTrace({filter:true,map:true,terminal:'toList'}).events.slice(0,5).map(e=>e.stage);
+ assert.deepEqual(flow,['source','filter','source','filter','map']);
+});
+test('generational GC: short-lived garbage is cheap, mid-life objects fill the old gen, a leak runs out, ZGC pauses stay tiny',()=>{
+ const g=o=>M.javaGc(o);
+ const healthy=g({lifetime:'request'}); assert.equal(healthy.healthy,1); assert.equal(healthy.oldGcs,0);
+ assert.ok(g({lifetime:'session'}).oldGcs>0);
+ const leak=g({lifetime:'request',leakMbs:10}); assert.ok(leak.oom && leak.oom.t<120);
+ assert.ok(g({lifetime:'request',leakMbs:10,heapMb:4096}).oom===null || g({lifetime:'request',leakMbs:10,heapMb:4096}).oom.t>leak.oom.t);
+ assert.ok(g({collector:'zgc'}).maxPause<1); assert.ok(g({collector:'parallel'}).maxPause>g({collector:'g1'}).maxPause);
+});

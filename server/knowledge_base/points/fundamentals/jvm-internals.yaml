@@ -1,0 +1,208 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: jvm-internals
+source_hash: 3456156721cf9d6d
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-27'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.jvm-internals.bytecode-and-jvm
+  subtopic: From source to running code
+  kind: fact
+  claim: javac compiles Java to bytecode in .class files, instructions for the JVM rather than a CPU, which the JVM loads, interprets and compiles at runtime.
+  prompt: What does javac produce, and what runs it?
+  objectives:
+  - 0
+- id: fundamentals.jvm-internals.lazy-class-loading-delegation
+  subtopic: From source to running code
+  kind: mechanism
+  claim: Classes are loaded lazily on first use through a hierarchy of class loaders (bootstrap, platform, application), each asking its parent first, so application code can't replace core classes.
+  prompt: When is a class loaded, and what is parent delegation?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.jvm-internals.bytecode-and-jvm
+- id: fundamentals.jvm-internals.class-init-holder-idiom
+  subtopic: From source to running code
+  kind: mechanism
+  claim: A class is initialised once, under a lock the JVM holds, the first time it's used, which is why the holder idiom gives a lazy, thread-safe singleton without explicit locking.
+  prompt: Why is the static holder idiom lazy and thread-safe?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.jvm-internals.lazy-class-loading-delegation
+- id: fundamentals.jvm-internals.tiered-jit-compilation
+  subtopic: From source to running code
+  kind: mechanism
+  claim: Methods start interpreted; tiered compilation compiles hot ones with C1, then with the optimising C2 using the gathered profile (inlining, bounds-check removal, escape analysis), and deoptimises if an assumption breaks.
+  prompt: How does the JVM turn hot bytecode into fast machine code?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.jvm-internals.bytecode-and-jvm
+- id: fundamentals.jvm-internals.warm-up-and-benchmarks
+  subtopic: From source to running code
+  kind: tradeoff
+  claim: A fresh JVM is slow until the JIT has compiled the hot paths (warm-up), and hand-written timing loops mislead because they measure the interpreter or get optimised away; use JMH.
+  prompt: Why are a new service's first requests slow, and how should you benchmark Java?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.jvm-internals.tiered-jit-compilation
+- id: fundamentals.jvm-internals.jvm-memory-areas
+  subtopic: The JVM's memory areas
+  kind: fact
+  claim: The JVM's memory is the heap (objects), metaspace (class metadata), one stack per thread, the code cache (JIT output) and direct native memory (NIO and Netty buffers), each sized separately.
+  prompt: What are the JVM's main memory areas and what does each hold?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-types.locals-on-stack-objects-on-heap
+- id: fundamentals.jvm-internals.oom-error-kinds
+  subtopic: The JVM's memory areas
+  kind: fact
+  claim: 'Each area fails differently: "Java heap space" for the heap, "Metaspace" for classes generated or loaded repeatedly, StackOverflowError for deep recursion, "unable to create native thread" for too many threads, "Direct buffer memory" for native buffers, and "GC overhead limit exceeded" when collection recovers almost nothing.'
+  prompt: Match the common OutOfMemoryError messages to their causes.
+  objectives:
+  - 1
+  requires:
+  - fundamentals.jvm-internals.jvm-memory-areas
+- id: fundamentals.jvm-internals.container-heap-sizing
+  subtopic: The JVM's memory areas
+  kind: procedure
+  claim: In a container the JVM defaults its maximum heap to 25% of the memory limit; set -XX:MaxRAMPercentage to about 60-75% and leave room for memory outside the heap, or the kernel OOM-kills the process with exit code 137.
+  prompt: How should you size the Java heap in a container?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.jvm-internals.jvm-memory-areas
+- id: fundamentals.jvm-internals.reachability-from-gc-roots
+  subtopic: How garbage collection works
+  kind: mechanism
+  claim: 'The JVM doesn''t reference-count: it marks everything reachable from GC roots (thread stacks, static fields, JNI references) and frees the rest, so unreachable cycles are collected.'
+  prompt: How does the JVM decide which objects are garbage?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-types.locals-on-stack-objects-on-heap
+- id: fundamentals.jvm-internals.generational-hypothesis
+  subtopic: How garbage collection works
+  kind: principle
+  claim: Most objects die young, so generational collectors allocate new objects in a young generation that's collected often and cheaply, and keep long-lived ones in an old generation.
+  prompt: Why are Java's garbage collectors generational?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.jvm-internals.reachability-from-gc-roots
+- id: fundamentals.jvm-internals.minor-gc-copies-survivors
+  subtopic: How garbage collection works
+  kind: mechanism
+  claim: New objects go into eden; a minor GC copies the live ones to a survivor space and frees eden at once, so its cost depends on what survives, not on how much garbage there is.
+  prompt: Why is a minor GC cheap even when eden is full of garbage?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.jvm-internals.generational-hypothesis
+- id: fundamentals.jvm-internals.aging-and-promotion
+  subtopic: How garbage collection works
+  kind: mechanism
+  claim: Each minor GC an object survives increases its age, and past a tenuring threshold (up to 15) it's promoted to the old generation, which is collected less often and more expensively.
+  prompt: How do objects get from the young to the old generation?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.jvm-internals.minor-gc-copies-survivors
+- id: fundamentals.jvm-internals.stop-the-world-pauses
+  subtopic: How garbage collection works
+  kind: fact
+  claim: A stop-the-world pause halts every application thread so the collector can work safely; modern collectors do most of their work concurrently to keep pauses short.
+  prompt: What is a stop-the-world pause?
+  objectives:
+  - 2
+- id: fundamentals.jvm-internals.g1-vs-zgc-vs-parallel
+  subtopic: How garbage collection works
+  kind: tradeoff
+  claim: G1, the default, collects heap regions with the most garbage first to meet a pause target (200 ms by default); ZGC works almost entirely concurrently with sub-millisecond pauses at some CPU cost; Parallel maximises throughput with longer pauses.
+  prompt: How do G1, ZGC and Parallel differ, and when would you pick each?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.jvm-internals.stop-the-world-pauses
+  - fundamentals.jvm-internals.generational-hypothesis
+- id: fundamentals.jvm-internals.java-leak-definition
+  subtopic: Memory leaks in Java
+  kind: principle
+  claim: A Java memory leak is an object that's still reachable but never used again, so the collector can't free it; a bigger heap or another collector only delays the failure.
+  prompt: What is a memory leak in a garbage-collected language like Java?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.jvm-internals.reachability-from-gc-roots
+- id: fundamentals.jvm-internals.common-leak-sources
+  subtopic: Memory leaks in Java
+  kind: fact
+  claim: Common leaks are static or long-lived collections without eviction, listeners never removed, ThreadLocal values left on pool threads, unclosed resources, and class loader leaks on redeploy.
+  prompt: What are common causes of Java memory leaks?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.jvm-internals.java-leak-definition
+- id: fundamentals.jvm-internals.leak-sign-rising-floor
+  subtopic: Memory leaks in Java
+  kind: principle
+  claim: The sign of a leak is heap use after each full collection that keeps rising, not a high peak before collections.
+  prompt: What in GC logs points to a memory leak?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.jvm-internals.java-leak-definition
+- id: fundamentals.jvm-internals.diagnose-with-heap-dump
+  subtopic: Memory leaks in Java
+  kind: procedure
+  claim: Diagnose a leak with GC logs or jstat, then a heap dump (jcmd GC.heap_dump or HeapDumpOnOutOfMemoryError) opened in Eclipse MAT to find what dominates the heap and the path from a GC root holding it; JFR records allocation cheaply in production.
+  prompt: How do you find what is leaking in a Java service?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.jvm-internals.leak-sign-rising-floor
+- id: fundamentals.jvm-internals.weak-soft-refs-bounded-cache
+  subtopic: Memory leaks in Java
+  kind: tradeoff
+  claim: WeakReference doesn't keep an object alive and SoftReference is cleared under memory pressure, but a cache is usually better bounded with a size limit and expiry, for example Caffeine.
+  prompt: Are weak or soft references a good way to build a cache?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.jvm-internals.java-leak-definition
+items:
+  jvm-internals-check-1-v2:
+  - fundamentals.jvm-internals.container-heap-sizing
+  jvm-internals-check-2-v2:
+  - fundamentals.jvm-internals.common-leak-sources
+  - fundamentals.jvm-internals.java-leak-definition
+  - fundamentals.jvm-internals.reachability-from-gc-roots
+  jvm-internals-check-3-v2:
+  - fundamentals.jvm-internals.minor-gc-copies-survivors
+  jvm-internals-check-4-v2:
+  - fundamentals.jvm-internals.warm-up-and-benchmarks
+  - fundamentals.jvm-internals.tiered-jit-compilation
+  jvm-internals-fire-1-v2:
+  - fundamentals.jvm-internals.oom-error-kinds
+  jvm-internals-fire-2-v2:
+  - fundamentals.jvm-internals.g1-vs-zgc-vs-parallel
+  jvm-internals-fire-3-v2:
+  - fundamentals.jvm-internals.leak-sign-rising-floor
+  jvm-internals-fire-4-v2:
+  - fundamentals.jvm-internals.class-init-holder-idiom
+  jvm-internals:b3:
+  - fundamentals.jvm-internals.leak-sign-rising-floor
+  - fundamentals.jvm-internals.diagnose-with-heap-dump
+  - fundamentals.jvm-internals.weak-soft-refs-bounded-cache
+  jvm-internals:b4:
+  - fundamentals.jvm-internals.reachability-from-gc-roots
+  - fundamentals.jvm-internals.generational-hypothesis
+  - fundamentals.jvm-internals.minor-gc-copies-survivors

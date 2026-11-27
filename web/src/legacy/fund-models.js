@@ -687,8 +687,203 @@
     return { streams: out, lost: lost.size, slowest: Math.max(...t), median: pct(t, 50), stalled: out.filter(o => o.stall > 0).length, params: P };
   }
 
+  // ---------- Java: stack frames and the heap, one line at a time ----------
+  // Each program is a script of operations on {frames, heap}; refsRun records a snapshot after every
+  // line so the player can step forwards and back. A value is {p: shown} (primitive or literal),
+  // {r: id} (a reference) or null.
+  const JAVA_REFS = {
+    swap: { title: 'swap(x, y) on two Integers', code: ['Integer x = 1000;', 'Integer y = 2000;', 'swap(x, y);', '  static void swap(Integer a, Integer b) {', '    Integer t = a;', '    a = b;', '    b = t;', '  }  // swap returns', 'System.out.println(x + " " + y);'],
+      ops: [[0, h => h.set('x', h.obj('Integer', '1000'))], [1, h => h.set('y', h.obj('Integer', '2000'))],
+        [3, h => h.call('swap', { a: h.get('x'), b: h.get('y') }), 'The call copies each reference into a new frame. a and b point at the same objects as x and y.'],
+        [4, h => h.set('t', h.get('a'))], [5, h => h.set('a', h.get('b')), 'a now points at 2000, but only swap\'s copy changed.'], [6, h => h.set('b', h.get('t'))],
+        [7, h => h.ret(), 'The frame is gone. Nothing in it ever touched x or y.'],
+        [8, h => { h.print('1000 2000'); h.flag('swapFailed'); }, 'Prints 1000 2000. A method can\'t reassign the caller\'s variables, so swap can\'t be written in Java.']] },
+    mutate: { title: 'Change an object, then replace it', code: ['User u = new User("Sam");', 'rename(u);', '  static void rename(User p) { p.name = "Ada"; }', 'replace(u);', '  static void replace(User p) { p = new User("Bo"); }', 'System.out.println(u.name);'],
+      ops: [[0, h => h.set('u', h.obj('User', null, { name: 'Sam' }))],
+        [2, h => { h.call('rename', { p: h.get('u') }); }, 'p is a copy of the reference, so it points at the same User.'],
+        [2, h => { h.field('p', 'name', 'Ada'); h.ret(); }, 'Changing a field through p changes the one shared object.'],
+        [4, h => { h.call('replace', { p: h.get('u') }); h.set('p', h.obj('User', null, { name: 'Bo' })); }, 'p now points at a new User. u still points at the old one.'],
+        [4, h => h.ret(), 'The frame is gone, and nothing refers to the "Bo" User any more: it\'s garbage.'],
+        [5, h => { h.print('Ada'); h.flag('swapFailed'); }, 'Prints Ada: the mutation is visible, the reassignment isn\'t.']] },
+    cache: { title: 'Integer == and the cache', code: ['Integer a = 127, b = 127;', 'a == b', 'Integer c = 128, d = 128;', 'c == d', 'c.equals(d)', 'int n = 128;  c == n'],
+      ops: [[0, h => { const ref = h.obj('Integer', '127', null, 'cached'); h.set('a', ref); h.set('b', ref); }, 'Integer.valueOf(127) returns the same cached object both times.'],
+        [1, h => h.print('true'), 'true: both variables hold the same reference.'],
+        [2, h => { h.set('c', h.obj('Integer', '128')); h.set('d', h.obj('Integer', '128')); }, '128 is outside -128..127, so each boxing creates a new object.'],
+        [3, h => h.print('false'), 'false: two different objects, even though both hold 128.'],
+        [4, h => { h.print('true'); h.flag('cacheMiss'); }, 'true: equals compares the values.'],
+        [5, h => { h.set('n', { p: '128' }); h.print('true'); }, 'true: comparing with an int unboxes c, so two numbers are compared.']] },
+    unbox: { title: 'Unbox a missing map value', code: ['Map<String, Integer> clicks = new HashMap<>();', 'clicks.put("home", 12);', 'Integer v = clicks.get("about");', 'int n = v;'],
+      ops: [[0, h => h.set('clicks', h.obj('HashMap', null, {}))],
+        [1, h => { h.put('clicks', 'home', h.obj('Integer', '12', null, 'cached')); }, 'The int 12 is boxed to an Integer to go in the map.'],
+        [2, h => h.set('v', null), 'No entry for "about", so get returns null. An Integer can hold null.'],
+        [3, h => { h.throw('NullPointerException: Cannot invoke "Integer.intValue()" because "v" is null'); h.flag('npe'); }, 'Unboxing calls v.intValue(), and v is null.']] },
+    strings: { title: 'String literals and new String', code: ['String a = "hi";', 'String b = "hi";', 'String c = new String("hi");', 'a == b', 'a == c', 'a.equals(c)'],
+      ops: [[0, h => h.set('a', h.obj('String', '"hi"', null, 'pooled')), 'A literal refers to the one "hi" in the string pool.'],
+        [1, h => h.set('b', h.get('a')), 'The same literal, the same pooled object.'],
+        [2, h => h.set('c', h.obj('String', '"hi"')), 'new String always makes a separate object.'],
+        [3, h => h.print('true')], [4, h => { h.print('false'); h.flag('stringEq'); }, 'false: same text, different objects.'], [5, h => h.print('true'), 'Compare strings with equals.']] },
+  };
+  function refsRun(name) {
+    const prog = JAVA_REFS[name];
+    const s = { frames: [{ name: 'main', vars: {} }], heap: {}, next: 1, out: [], error: null, flags: {} };
+    const top = () => s.frames[s.frames.length - 1];
+    const h = {
+      obj(cls, text, fields, tag) { const id = s.next++; s.heap[id] = { id, cls, text, fields: fields || null, tag: tag || '' }; return { r: id }; },
+      set(k, v) { top().vars[k] = v; },
+      get(k) { return top().vars[k]; },
+      call(name, args) { s.frames.push({ name, vars: { ...args } }); },
+      ret() { s.frames.pop(); },
+      field(k, f, v) { s.heap[top().vars[k].r].fields[f] = v; },
+      put(k, key, ref) { s.heap[top().vars[k].r].fields[key] = ref; },
+      print(t) { s.out.push(t); }, throw(t) { s.error = t; }, flag(f) { s.flags[f] = 1; },
+    };
+    const steps = [];
+    for (const [line, op, note] of prog.ops) { op(h); steps.push({ line, note: note || '', ...clone({ frames: s.frames, heap: s.heap, out: s.out, error: s.error, flags: s.flags }) }); }
+    for (const st of steps) {   // reachable from a frame (or from the JVM's caches), else garbage
+      const seen = new Set(Object.values(st.heap).filter(o => o.tag).map(o => o.id)), todo = [];
+      st.frames.forEach(f => Object.values(f.vars).forEach(v => v && v.r && todo.push(v.r)));
+      while (todo.length) { const id = todo.pop(); if (seen.has(id)) continue; seen.add(id); Object.values(st.heap[id].fields || {}).forEach(v => v && v.r && todo.push(v.r)); }
+      for (const o of Object.values(st.heap)) o.garbage = !seen.has(o.id);
+      const refs = {}; st.frames.forEach(f => Object.values(f.vars).forEach(v => { if (v && v.r) refs[v.r] = (refs[v.r] || 0) + 1; }));
+      for (const o of Object.values(st.heap)) o.refs = refs[o.id] || 0;
+    }
+    return { title: prog.title, code: prog.code, steps };
+  }
+
+  // ---------- Java: inside a HashMap ----------
+  // Keys are a small class with one String field, id. `hash` is how that class computes hashCode:
+  // 'string' (id.hashCode()), 'length' (id.length(), a weak hash), 'constant' (42) or 'identity'
+  // (equals overridden, hashCode not). The table follows java.util.HashMap: index = spread(h) & (n-1),
+  // resize past n * 0.75, a bucket longer than 8 becomes a tree once n >= 64 (smaller tables resize instead).
+  const strHash = t => { let h = 0; for (const ch of t) h = (Math.imul(31, h) + ch.charCodeAt(0)) | 0; return h; };
+  const spread = h => (h ^ (h >>> 16)) | 0;
+  function hashMap(o = {}) { return { hash: o.hash || 'string', cap: o.cap || 16, size: 0, buckets: Array.from({ length: o.cap || 16 }, () => []), trees: [], nextOid: 1, resizes: 0, treeified: 0, last: null, mutated: [] }; }
+  const keyHash = (s, oid, id) => s.hash === 'string' ? strHash(id) : s.hash === 'length' ? id.length : s.hash === 'constant' ? 42 : Math.imul(oid, 0x9E3779B1) | 0;
+  const hmIndex = (s, h) => spread(h) & (s.cap - 1);
+  function hmFind(s, h, id) {
+    const i = hmIndex(s, h), b = s.buckets[i];
+    let cmp = 0;
+    for (const e of b) { cmp++; if (e.h === h && e.id === id) return { i, e, cmp: s.trees.includes(i) ? Math.min(cmp, Math.ceil(Math.log2(b.length)) + 1) : cmp }; }
+    return { i, e: null, cmp: s.trees.includes(i) ? Math.ceil(Math.log2(b.length + 1)) : cmp };
+  }
+  function hmResize(s) {
+    const all = s.buckets.flat();
+    s.cap *= 2; s.resizes++;
+    s.buckets = Array.from({ length: s.cap }, () => []);
+    for (const e of all) s.buckets[hmIndex(s, e.h)].push(e);
+    s.trees = s.buckets.map((b, i) => (b.length > 6 && s.cap >= 64 && b.length > 8 ? i : -1)).filter(i => i >= 0);
+  }
+  function hmPut(prev, id) {
+    const s = clone(prev), oid = s.nextOid++, h = keyHash(s, oid, id), f = hmFind(s, h, id);
+    if (f.e) { f.e.value++; s.last = { op: 'put', id, bucket: f.i, found: true, cmp: f.cmp }; return s; }
+    s.buckets[f.i].push({ oid, id, h, value: 1 });
+    s.size++;
+    let note = '';
+    if (s.buckets[f.i].length > 8 && !s.trees.includes(f.i)) {
+      if (s.cap < 64) { hmResize(s); note = 'long bucket, table under 64: resized instead of treeifying'; } else { s.trees.push(f.i); s.treeified = 1; note = 'bucket turned into a red-black tree'; }
+    }
+    if (s.size > s.cap * 0.75) { hmResize(s); note = note || 'passed 75% full: doubled the table'; }
+    s.trees.forEach(i => { if (s.buckets[i].length > 8) s.treeified = 1; });
+    s.last = { op: 'put', id, bucket: hmIndex(s, h), found: false, cmp: f.cmp, note };
+    return s;
+  }
+  function hmGet(prev, id) {
+    const s = clone(prev), oid = s.nextOid++, h = keyHash(s, oid, id), f = hmFind(s, h, id);
+    const present = s.buckets.flat().some(e => e.id === id), mutatedFrom = s.mutated.find(m => m.from === id || m.to === id);
+    s.last = { op: 'get', id, bucket: f.i, found: !!f.e, cmp: f.cmp,
+      lostKey: !f.e && !!mutatedFrom, missedEqual: !f.e && present && s.hash === 'identity' };
+    return s;
+  }
+  function hmMutate(prev, id, to) {
+    const s = clone(prev), e = s.buckets.flat().find(x => x.id === id);
+    if (!e) return s;
+    e.id = to; s.mutated.push({ from: id, to });
+    s.last = { op: 'mutate', id, to, bucket: hmIndex(s, e.h), note: 'the entry stays in the bucket for its old hash' };
+    return s;
+  }
+
+  // ---------- Java: a stream pipeline pulls its elements ----------
+  // Fixed stage order: source, filter, sorted, map, limit, terminal. Returns every event in the order it
+  // happens, so laziness, one-element-at-a-time flow, short-circuiting and sorted's barrier are visible.
+  const LINKS = [{ id: 'a', clicks: 4 }, { id: 'b', clicks: 31 }, { id: 'c', clicks: 12 }, { id: 'd', clicks: 2 }, { id: 'e', clicks: 57 }, { id: 'f', clicks: 18 }, { id: 'g', clicks: 9 }, { id: 'h', clicks: 40 }];
+  function streamTrace(o = {}) {
+    const P = { filter: false, sorted: false, map: false, limit: 0, terminal: 'none', ...o }, ev = [];
+    const stages = ['source', ...(P.filter ? ['filter'] : []), ...(P.sorted ? ['sorted'] : []), ...(P.map ? ['map'] : []), ...(P.limit ? ['limit'] : []), ...(P.terminal !== 'none' ? [P.terminal] : [])];
+    const result = [];
+    if (P.terminal !== 'none') {
+      let taken = 0, done = false;
+      const downstream = x => {
+        if (P.map) ev.push({ stage: 'map', el: x.id, text: `"link-${x.id}"` });
+        if (P.limit) { taken++; ev.push({ stage: 'limit', el: x.id, text: `${taken} of ${P.limit}` }); }
+        if (P.terminal === 'anyMatch') { const ok = x.clicks > 50; ev.push({ stage: 'anyMatch', el: x.id, text: ok ? 'match: stop' : 'no', ok }); if (ok) { result.push(true); done = true; } }
+        else { ev.push({ stage: P.terminal, el: x.id, text: P.terminal === 'findFirst' ? 'found: stop' : 'collected' }); result.push(x.id); if (P.terminal === 'findFirst') done = true; }
+        if (P.limit && taken >= P.limit) done = true;
+      };
+      const buffer = [];
+      for (const x of LINKS) {
+        if (done) break;
+        ev.push({ stage: 'source', el: x.id, text: `${x.id} (${x.clicks})` });
+        if (P.filter) { const ok = x.clicks >= 10; ev.push({ stage: 'filter', el: x.id, text: ok ? 'kept' : 'dropped', ok }); if (!ok) continue; }
+        if (P.sorted) { buffer.push(x); ev.push({ stage: 'sorted', el: x.id, text: 'buffered' }); continue; }
+        downstream(x);
+      }
+      if (P.sorted) for (const x of buffer.sort((a, b) => b.clicks - a.clicks)) { if (done) break; ev.push({ stage: 'sorted', el: x.id, text: `emits ${x.id} (${x.clicks})` }); downstream(x); }
+    }
+    const reads = ev.filter(e => e.stage === 'source').length;
+    const lastRead = ev.map(e => e.stage).lastIndexOf('source'), firstAfter = ev.findIndex(e => e.stage === 'sorted' && e.text.startsWith('emits'));
+    return { stages, events: ev, reads, total: LINKS.length, result: P.terminal === 'anyMatch' ? result.length > 0 : result,
+      lazyNothing: P.terminal === 'none' ? 1 : 0, shortCircuit: P.terminal !== 'none' && reads < LINKS.length ? 1 : 0,
+      barrier: P.sorted && firstAfter > lastRead && reads === LINKS.length ? 1 : 0, params: P };
+  }
+
+  // ---------- Java: a generational heap ----------
+  // 0.1 s ticks for 120 s. Eden fills at the allocation rate; a minor GC copies survivors (the share
+  // still alive) into survivor space, ages them, and promotes objects older than the tenuring threshold.
+  // 'request' objects nearly all die before their second GC; 'session' objects live about 20 s, long
+  // enough to be promoted and then die in the old generation; the leak is retained for ever. G1 and
+  // Parallel pause for minor GCs in proportion to what they copy and collect the old generation when it
+  // passes 80%; ZGC works concurrently with tiny pauses. OOM when an old collection frees almost nothing.
+  function javaGc(o = {}) {
+    const P = { heapMb: 1024, allocMbs: 200, survive: 10, lifetime: 'session', leakMbs: 0, collector: 'g1', seconds: 120, ...o };
+    const young = P.heapMb / 3, eden = young * 0.8, survivorCap = young * 0.1, oldCap = P.heapMb - young, dt = 0.1, TENURE = 6;
+    let edenUsed = 0, cohorts = [], oldLive = 0, oldGarbage = 0, oldAging = [], t = 0, oom = null;
+    const series = [], pauses = [], minor = [], oldGcs = [];
+    const keep = P.lifetime === 'request' ? 0.05 : 0.85;   // of last GC's survivors, the share still alive at the next
+    for (let i = 0; i < P.seconds / dt && !oom; i++) {
+      t = i * dt;
+      edenUsed += P.allocMbs * dt;
+      oldLive += P.leakMbs * dt;
+      oldAging = oldAging.map(c => ({ mb: c.mb, left: c.left - dt })).filter(c => { if (c.left <= 0) { oldLive -= c.mb; oldGarbage += c.mb; return false; } return true; });
+      if (edenUsed >= eden) {
+        const fresh = edenUsed * P.survive / 100;
+        cohorts = cohorts.map(c => ({ mb: c.mb * keep, age: c.age + 1 })).filter(c => c.mb > 0.01);
+        cohorts.unshift({ mb: fresh, age: 1 });
+        let promoted = 0, inSurvivor = 0;
+        cohorts = cohorts.filter(c => { if (c.age > TENURE) { promoted += c.mb; return false; } return true; });
+        for (const c of cohorts) { if (inSurvivor + c.mb > survivorCap) { const over = inSurvivor + c.mb - survivorCap; promoted += over; c.mb -= over; } inSurvivor += c.mb; }
+        if (promoted) { oldLive += promoted; if (P.lifetime === 'session') oldAging.push({ mb: promoted, left: 20 - TENURE * eden / P.allocMbs }); else { oldLive -= promoted * 0.9; oldGarbage += promoted * 0.9; } }
+        const copied = inSurvivor + promoted, pause = P.collector === 'zgc' ? 0.05 + copied * 0.001 : 1 + copied * 0.4;
+        minor.push({ t, pause, copied }); pauses.push(pause);
+        edenUsed = 0;
+      }
+      if (oldLive + oldGarbage > oldCap * 0.8) {
+        const freed = oldGarbage, live = oldLive;
+        const pause = P.collector === 'zgc' ? 0.3 : P.collector === 'parallel' ? 50 + live * 0.8 : Math.min(200, 20 + live * 0.15) + (live > oldCap * 0.7 ? live * 0.8 : 0);
+        oldGarbage = 0; oldGcs.push({ t, pause, freed, live }); pauses.push(pause);
+        if (live > oldCap * 0.95) oom = { t };
+      }
+      if (oldLive > oldCap) oom = oom || { t };
+      if (i % 5 === 0) series.push({ t, young: edenUsed + cohorts.reduce((a, c) => a + c.mb, 0), old: Math.min(oldCap, oldLive + oldGarbage), oldLive: Math.min(oldCap, oldLive) });
+    }
+    const minorPauses = minor.map(m => m.pause);
+    return { series, minorGcs: minor.length, oldGcs: oldGcs.length, oom, maxPause: pauses.length ? Math.max(...pauses) : 0,
+      avgMinor: minorPauses.length ? minorPauses.reduce((a, b) => a + b, 0) / minorPauses.length : 0, oldCap, young, oldAfter: oldGcs.length ? oldGcs[oldGcs.length - 1].live : oldLive,
+      oldGcList: oldGcs, healthy: !oom && !oldGcs.length && minor.length >= 3 ? 1 : 0, params: P };
+  }
+
   const api = { rng, pct, PROGRAMS, interleave, step, verdict, finished, programOf, randomRun, threadPool, WORKLOADS, gil, eventLoop,
     container, act, jvmMemory, fdLeak, mvcc, sql, visible, lockQueue, cluster, kube, schedule, FLOWS, VPC_DEFAULT, trace, vpcScore,
-    evaluate, glob, deploy, MIGRATION_STEPS, migrate, reaper, pullDeploy, slowStart, hol };
+    evaluate, glob, deploy, MIGRATION_STEPS, migrate, reaper, pullDeploy, slowStart, hol,
+    JAVA_REFS, refsRun, strHash, hashMap, hmPut, hmGet, hmMutate, LINKS, streamTrace, javaGc };
   root.FundModels = api;
 })(typeof window !== 'undefined' ? window : globalThis);

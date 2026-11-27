@@ -1,0 +1,186 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: java-types
+source_hash: d89af2800ec029ce
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-27'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.java-types.eight-primitive-types
+  subtopic: Primitives and references
+  kind: fact
+  claim: Java has eight primitive types (byte, short, int, long, float, double, char, boolean); every other type, including arrays, String and the wrapper classes, is a reference type.
+  prompt: What are Java's primitive types, and what kind of type is everything else?
+  objectives:
+  - 0
+- id: fundamentals.java-types.locals-on-stack-objects-on-heap
+  subtopic: Primitives and references
+  kind: mechanism
+  claim: Local variables live in the method's stack frame, which disappears when the method returns; objects live on the heap until the garbage collector finds nothing refers to them. An object's fields, primitive or reference, live inside the object on the heap.
+  prompt: Where do local variables and objects live in Java, and when does each go away?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-types.eight-primitive-types
+- id: fundamentals.java-types.reference-equality-operator
+  subtopic: Primitives and references
+  kind: principle
+  claim: For primitives == compares values; for reference types it compares whether both references point at the same object. Compare objects by value with equals.
+  prompt: What does == compare for primitives and for objects?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-types.eight-primitive-types
+- id: fundamentals.java-types.always-pass-by-value
+  subtopic: Java is always pass-by-value
+  kind: principle
+  claim: 'Java is always pass-by-value: a method receives a copy of each argument, and for an object the copied value is the reference, so both caller and method point at the same object.'
+  prompt: Is Java pass-by-value or pass-by-reference, and what is copied for an object argument?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-types.locals-on-stack-objects-on-heap
+- id: fundamentals.java-types.mutation-visible-reassignment-not
+  subtopic: Java is always pass-by-value
+  kind: mechanism
+  claim: A method can change the object a parameter refers to and the caller sees it, but reassigning the parameter only redirects the method's copy, so a working swap(a, b) can't be written in Java.
+  prompt: Why can a method's setName call be seen by the caller while parameter = new User() can't?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-types.always-pass-by-value
+- id: fundamentals.java-types.integer-cache-range
+  subtopic: Autoboxing and the Integer cache
+  kind: fact
+  claim: Integer.valueOf, used by autoboxing, returns cached objects for -128 to 127, so == between two boxed values is true inside that range and usually false outside it.
+  prompt: Which boxed Integer values are cached, and what does that do to ==?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-types.reference-equality-operator
+- id: fundamentals.java-types.unboxing-null-npe
+  subtopic: Autoboxing and the Integer cache
+  kind: mechanism
+  claim: Unboxing a null wrapper calls intValue() or booleanValue() on null and throws NullPointerException, as in int n = map.get(missingKey) or if (booleanField).
+  prompt: Why can int n = map.get(key) throw NullPointerException?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-types.eight-primitive-types
+- id: fundamentals.java-types.mixed-comparison-unboxes
+  subtopic: Autoboxing and the Integer cache
+  kind: mechanism
+  claim: Comparing a wrapper with a primitive (Integer == int) unboxes the wrapper, so the values are compared.
+  prompt: What does == do when one side is an Integer and the other an int?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-types.reference-equality-operator
+- id: fundamentals.java-types.boxing-in-loops-allocates
+  subtopic: Autoboxing and the Integer cache
+  kind: tradeoff
+  claim: Accumulating into a wrapper such as Long sum in a loop allocates a new object on every iteration; use the primitive type in hot code.
+  prompt: Why is Long sum += x in a tight loop slow?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-types.eight-primitive-types
+- id: fundamentals.java-types.strings-immutable-why
+  subtopic: Strings
+  kind: principle
+  claim: 'Strings are immutable: every apparent change returns a new String. That makes them safe to share between threads, lets them cache their hash code as map keys, and makes the literal pool possible.'
+  prompt: Why are Java strings immutable, and what does that allow?
+  objectives:
+  - 2
+- id: fundamentals.java-types.string-pool-literals
+  subtopic: Strings
+  kind: mechanism
+  claim: String literals are interned in the string pool, so equal literals are the same object, but strings built at runtime (new String, concatenation of variables, input) are separate objects; compare strings with equals.
+  prompt: Why can "hi" == "hi" be true while comparing a literal with a request parameter is false?
+  objectives:
+  - 1
+  - 2
+  requires:
+  - fundamentals.java-types.reference-equality-operator
+  - fundamentals.java-types.strings-immutable-why
+- id: fundamentals.java-types.stringbuilder-for-loops
+  subtopic: Strings
+  kind: tradeoff
+  claim: Concatenating with += in a loop copies the whole string each time, which is quadratic; use StringBuilder. A single concatenation expression is already compiled efficiently.
+  prompt: When should you use StringBuilder instead of + for strings?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-types.strings-immutable-why
+- id: fundamentals.java-types.char-is-utf16-code-unit
+  subtopic: Strings
+  kind: fact
+  claim: A char is a 16-bit UTF-16 code unit, so a character such as an emoji takes two chars and String.length() counts code units. Since Java 9, Latin-1-only strings are stored one byte per character (compact strings).
+  prompt: What does String.length() count, and how many chars does an emoji take?
+  objectives:
+  - 2
+- id: fundamentals.java-types.int-overflow-wraps
+  subtopic: Numbers that surprise people
+  kind: fact
+  claim: int arithmetic overflows silently in two's complement (Integer.MAX_VALUE + 1 is Integer.MIN_VALUE); Math.addExact throws instead, and lo + (hi - lo) / 2 avoids midpoint overflow.
+  prompt: What happens when int arithmetic overflows in Java?
+  objectives:
+  - 3
+- id: fundamentals.java-types.division-and-remainder-sign
+  subtopic: Numbers that surprise people
+  kind: fact
+  claim: Integer division truncates towards zero and % takes the sign of the dividend, so -7 / 2 is -3 and -7 % 2 is -1; Math.floorMod gives a non-negative remainder.
+  prompt: What are -7 / 2 and -7 % 2 in Java?
+  objectives:
+  - 3
+- id: fundamentals.java-types.money-not-double
+  subtopic: Numbers that surprise people
+  kind: tradeoff
+  claim: double can't represent most decimal fractions exactly (0.1 + 0.2 isn't 0.3), so store money as a long count of the smallest unit or as BigDecimal built from a string.
+  prompt: How should money be stored in Java, and why not as a double?
+  objectives:
+  - 3
+- id: fundamentals.java-types.bigdecimal-equals-scale
+  subtopic: Numbers that surprise people
+  kind: fact
+  claim: BigDecimal.equals compares scale as well as value, so 2.0 and 2.00 aren't equal; compare amounts with compareTo.
+  prompt: Why is new BigDecimal("2.0").equals(new BigDecimal("2.00")) false?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-types.money-not-double
+items:
+  java-types-check-1-v2:
+  - fundamentals.java-types.integer-cache-range
+  - fundamentals.java-types.reference-equality-operator
+  java-types-check-2-v2:
+  - fundamentals.java-types.mutation-visible-reassignment-not
+  - fundamentals.java-types.always-pass-by-value
+  java-types-check-3-v2:
+  - fundamentals.java-types.unboxing-null-npe
+  java-types-check-4-v2:
+  - fundamentals.java-types.money-not-double
+  java-types-fire-1-v2:
+  - fundamentals.java-types.stringbuilder-for-loops
+  - fundamentals.java-types.strings-immutable-why
+  java-types-fire-2-v2:
+  - fundamentals.java-types.int-overflow-wraps
+  java-types-fire-3-v2:
+  - fundamentals.java-types.strings-immutable-why
+  java-types-fire-4-v2:
+  - fundamentals.java-types.division-and-remainder-sign
+  java-types:b1:
+  - fundamentals.java-types.mutation-visible-reassignment-not
+  - fundamentals.java-types.strings-immutable-why
+  java-types:b5:
+  - fundamentals.java-types.string-pool-literals
+  - fundamentals.java-types.unboxing-null-npe
+  java-types:b7:
+  - fundamentals.java-types.eight-primitive-types
+  java-types:b8:
+  - fundamentals.java-types.always-pass-by-value
+  - fundamentals.java-types.mutation-visible-reassignment-not

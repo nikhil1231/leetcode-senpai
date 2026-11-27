@@ -1,0 +1,208 @@
+# Knowledge points, drafted by scripts/generate_knowledge_points.py and reviewable by hand.
+# Point ids never change once published: retire a point instead of deleting it.
+section: fundamentals
+lesson: java-collections
+source_hash: 8168bd4b6164e934
+generated:
+  model: claude-code
+  prompt_version: 1
+  date: '2026-11-27'
+  linked: true
+  linked_by: claude-code
+points:
+- id: fundamentals.java-collections.equals-hashcode-contract
+  subtopic: The equals and hashCode contract
+  kind: principle
+  claim: If a.equals(b) then a.hashCode() must equal b.hashCode(); unequal objects may share a hash (a collision). Override both together, over the same fields.
+  prompt: What does the equals and hashCode contract require?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-types.reference-equality-operator
+- id: fundamentals.java-collections.equals-without-hashcode-misses
+  subtopic: The equals and hashCode contract
+  kind: mechanism
+  claim: Overriding equals but not hashCode leaves the identity hash, so an equal key built for a lookup goes to a different bucket and HashMap.get returns null without ever calling equals.
+  prompt: What goes wrong in a HashMap when a key class overrides equals but not hashCode?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-collections.equals-hashcode-contract
+- id: fundamentals.java-collections.equals-properties
+  subtopic: The equals and hashCode contract
+  kind: fact
+  claim: equals must be reflexive, symmetric, transitive and consistent, and x.equals(null) must be false; subclasses that add fields to equals often break symmetry.
+  prompt: What properties must an equals implementation have?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-collections.equals-hashcode-contract
+- id: fundamentals.java-collections.records-generate-equals-hashcode
+  subtopic: The equals and hashCode contract
+  kind: fact
+  claim: A record generates equals and hashCode from its components, which is the simplest way to get a correct value key; otherwise use Objects.equals and Objects.hash over the same fields.
+  prompt: What is the easiest way to get a correct equals and hashCode for a key class?
+  objectives:
+  - 0
+  requires:
+  - fundamentals.java-collections.equals-hashcode-contract
+- id: fundamentals.java-collections.mutable-keys-strand-entries
+  subtopic: The equals and hashCode contract
+  kind: mechanism
+  claim: Changing a key's fields after inserting it leaves the entry in the bucket for its old hash, so neither the old nor the new value finds it; map keys should be immutable.
+  prompt: What happens if you mutate a HashMap key after inserting it?
+  objectives:
+  - 0
+  - 1
+  requires:
+  - fundamentals.java-collections.equals-hashcode-contract
+- id: fundamentals.java-collections.hashmap-bucket-lookup
+  subtopic: Inside HashMap
+  kind: mechanism
+  claim: 'HashMap is an array of buckets: it spreads the key''s hashCode (h ^ h >>> 16), picks bucket hash & (capacity - 1) with capacity a power of two, then compares hashes and calls equals within that bucket.'
+  prompt: How does HashMap find the entry for a key?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-collections.equals-hashcode-contract
+- id: fundamentals.java-collections.hashmap-resize-load-factor
+  subtopic: Inside HashMap
+  kind: mechanism
+  claim: HashMap doubles its table and redistributes entries when size exceeds capacity × load factor (0.75 by default), so with 16 buckets the 13th entry triggers a resize and put stays O(1) on average.
+  prompt: When does a HashMap resize, and what does that keep its operations at?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-collections.hashmap-bucket-lookup
+- id: fundamentals.java-collections.presize-known-capacity
+  subtopic: Inside HashMap
+  kind: tradeoff
+  claim: If the number of entries is known in advance, pass an initial capacity to avoid repeated O(n) resizes.
+  prompt: How can you avoid HashMap resizes when you know how many entries it will hold?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-collections.hashmap-resize-load-factor
+- id: fundamentals.java-collections.treeify-long-buckets
+  subtopic: Inside HashMap
+  kind: mechanism
+  claim: Since Java 8, a bucket with more than 8 entries in a table of at least 64 buckets becomes a red-black tree, capping lookups at O(log n); smaller tables resize instead.
+  prompt: What does HashMap do with a bucket that collects many entries?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-collections.hashmap-bucket-lookup
+- id: fundamentals.java-collections.hashmap-nulls-order-safety
+  subtopic: Inside HashMap
+  kind: fact
+  claim: HashMap allows one null key and null values, has no defined iteration order and isn't thread-safe; HashSet is a HashMap with a dummy value.
+  prompt: Does HashMap allow nulls, keep order or support concurrent use?
+  objectives:
+  - 1
+  requires:
+  - fundamentals.java-collections.hashmap-bucket-lookup
+- id: fundamentals.java-collections.arraylist-vs-linkedlist
+  subtopic: Choosing a collection
+  kind: tradeoff
+  claim: ArrayList gives O(1) indexed get and amortised O(1) append; LinkedList is rarely better because each element is a separate node, using more memory and scattering data across the heap.
+  prompt: Why is ArrayList usually preferred to LinkedList?
+  objectives:
+  - 2
+- id: fundamentals.java-collections.arraydeque-for-queues
+  subtopic: Choosing a collection
+  kind: fact
+  claim: 'ArrayDeque is the usual queue and stack: O(1) at both ends, faster than LinkedList and Stack, and it rejects null elements.'
+  prompt: Which class should you use for a queue or a stack in Java?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-collections.arraylist-vs-linkedlist
+- id: fundamentals.java-collections.linkedhashmap-order-lru
+  subtopic: Choosing a collection
+  kind: mechanism
+  claim: LinkedHashMap keeps insertion order (or access order with accessOrder = true), and with removeEldestEntry it becomes an LRU cache.
+  prompt: How do you build an LRU cache from the standard collections?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-collections.hashmap-bucket-lookup
+- id: fundamentals.java-collections.treemap-sorted-floor
+  subtopic: Choosing a collection
+  kind: fact
+  claim: TreeMap is a red-black tree with O(log n) operations and navigation methods such as floorKey, ceilingKey and subMap, for sorted keys and "nearest key" lookups.
+  prompt: Which map answers "the latest entry at or before t", and how fast?
+  objectives:
+  - 2
+- id: fundamentals.java-collections.priorityqueue-heap-order
+  subtopic: Choosing a collection
+  kind: fact
+  claim: PriorityQueue is a binary heap with O(log n) offer and poll and O(1) peek; iterating it doesn't give sorted order, only repeated poll does.
+  prompt: What does a PriorityQueue guarantee, and what order does iterating it give?
+  objectives:
+  - 2
+- id: fundamentals.java-collections.treeset-uses-compareto
+  subtopic: Choosing a collection
+  kind: principle
+  claim: TreeMap and TreeSet decide equality with compareTo or the Comparator, not equals, so a comparator inconsistent with equals can merge or drop distinct elements.
+  prompt: How do TreeSet and TreeMap decide whether two keys are the same?
+  objectives:
+  - 2
+  requires:
+  - fundamentals.java-collections.treemap-sorted-floor
+  - fundamentals.java-collections.equals-hashcode-contract
+- id: fundamentals.java-collections.fail-fast-iterators
+  subtopic: Iterators, views and immutability
+  kind: mechanism
+  claim: 'Most java.util iterators are fail-fast: a structural change by anything other than the iterator makes the next step throw ConcurrentModificationException, even on one thread. Use iterator.remove or removeIf.'
+  prompt: Why does removing from a list inside a for-each loop throw, and how do you do it safely?
+  objectives:
+  - 3
+- id: fundamentals.java-collections.unmodifiable-view-vs-copy
+  subtopic: Iterators, views and immutability
+  kind: principle
+  claim: Collections.unmodifiableList is a read-only view that still shows later changes to the original; List.of, List.copyOf and stream.toList are truly immutable copies, and List.of rejects null.
+  prompt: What is the difference between Collections.unmodifiableList and List.copyOf?
+  objectives:
+  - 3
+- id: fundamentals.java-collections.arrays-aslist-fixed-size
+  subtopic: Iterators, views and immutability
+  kind: fact
+  claim: 'Arrays.asList returns a fixed-size list backed by the array: set writes through to the array, while add and remove throw UnsupportedOperationException.'
+  prompt: What can and can't you do with the list from Arrays.asList?
+  objectives:
+  - 3
+  requires:
+  - fundamentals.java-collections.unmodifiable-view-vs-copy
+items:
+  java-collections-check-1-v2:
+  - fundamentals.java-collections.equals-without-hashcode-misses
+  - fundamentals.java-collections.equals-hashcode-contract
+  java-collections-check-2-v2:
+  - fundamentals.java-collections.hashmap-resize-load-factor
+  java-collections-check-3-v2:
+  - fundamentals.java-collections.unmodifiable-view-vs-copy
+  java-collections-check-4-v2:
+  - fundamentals.java-collections.treemap-sorted-floor
+  java-collections-fire-1-v2:
+  - fundamentals.java-collections.fail-fast-iterators
+  java-collections-fire-2-v2:
+  - fundamentals.java-collections.treeify-long-buckets
+  java-collections-fire-3-v2:
+  - fundamentals.java-collections.arraydeque-for-queues
+  - fundamentals.java-collections.arraylist-vs-linkedlist
+  java-collections-fire-4-v2:
+  - fundamentals.java-collections.priorityqueue-heap-order
+  java-collections:b2:
+  - fundamentals.java-collections.mutable-keys-strand-entries
+  - fundamentals.java-collections.equals-hashcode-contract
+  - fundamentals.java-collections.records-generate-equals-hashcode
+  java-collections:b4:
+  - fundamentals.java-collections.linkedhashmap-order-lru
+  - fundamentals.java-collections.treemap-sorted-floor
+  - fundamentals.java-collections.priorityqueue-heap-order
+  java-collections:b6:
+  - fundamentals.java-collections.fail-fast-iterators
+  java-collections:b7:
+  - fundamentals.java-collections.hashmap-bucket-lookup
+  - fundamentals.java-collections.equals-without-hashcode-misses
+  - fundamentals.java-collections.hashmap-resize-load-factor

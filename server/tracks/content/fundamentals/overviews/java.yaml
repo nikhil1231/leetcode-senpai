@@ -1,0 +1,159 @@
+# The overview of one area of the fundamentals course. Format and rules: server/tutor/overviews.py and the system
+# design overviews (server/system_design_lessons/overviews/storage.yaml). Copy follows the Writing rules in CLAUDE.md.
+area: java
+title: Java in depth
+minutes: 40
+intro: |
+  This tour covers the five topics in this area, one short step each. Every step follows the same pattern: a problem at Ripple, the usual answer, its main drawback, and one fact worth keeping. Each step has something to try or a quick check.
+
+  Ripple's payments and links services are written in Java, and an interview for a Java role goes past syntax: what a variable actually holds, why a map loses entries, which method runs, where an exception went, and what the garbage collector is doing when latency spikes. The area goes from values and references up to the JVM itself. Threads and the memory model are in Languages and runtimes. The full lessons go further, and the page keeps your place if you stop part-way.
+picture:
+  title: One request through Ripple's payments service
+  plain: true
+  nodes:
+    - {id: client, label: Ripple API, kind: client, x: 0, y: 1}
+    - {id: svc, label: Payments service, kind: service, x: 1, y: 1, note: 'Java 21'}
+    - {id: cache, label: Merchant cache, kind: cache, x: 2, y: 0, note: 'HashMap'}
+    - {id: db, label: Postgres, kind: db, x: 2, y: 2}
+    - {id: heap, label: JVM heap, kind: process, x: 1, y: 2, note: 'young and old generations'}
+  edges:
+    - [client, svc]
+    - [svc, cache]
+    - [svc, db]
+    - [svc, heap]
+  paths:
+    - label: Check a refund
+      steps:
+        - [client, svc, 'A refund request arrives, and the service compares its amount with the original payment. If both are `Long` objects, `==` compares references, and it only works for small amounts (step 1).']
+        - [svc, cache, 'The merchant is looked up in an in-memory map keyed by a small key class. If that class overrides `equals` but not `hashCode`, every lookup misses (step 2).']
+    - label: Charge the right fee
+      steps:
+        - [svc, db, 'The service loads a list of payments, some of them card payments. Which fee method runs depends on whether it''s an overload, chosen at compile time, or an override, chosen at runtime (step 3).']
+        - [svc, db, 'Totals are summed with a stream. `Collectors.toMap` throws on the second payment for the same merchant unless it has a merge function (step 4).']
+    - label: Latency spikes after three days
+      steps:
+        - [svc, heap, 'Every request allocates short-lived objects, which the young generation clears cheaply. A cache that never evicts keeps entries reachable, so the old generation grows after every collection until full GCs take over (step 5).']
+picture_note: |
+  Press one of the requests under the diagram to follow it through the service. Each step of the tour picks up one moment where the language or the JVM behaves differently from what the code seems to say.
+steps:
+  - lesson: java-types
+    title: Values, references and strings
+    minutes: 8
+    problem: |
+      Ripple's refund check compares two amounts returned as `Long`. Every test passes, but in production refunds over £1.27 are reported as mismatches.
+    answer: |
+      Java has eight **primitive types** (`int`, `long`, `double`, `boolean` and so on), and a primitive variable holds the value. Everything else is a **reference type**: the variable holds a reference to an object on the heap, or `null`.
+      - **Java is always pass-by-value.** For an object, the value copied into the method is the reference, so the method can change the shared object but can't make the caller's variable point anywhere else.
+      - **`==` compares references** for objects. `Integer.valueOf` caches -128 to 127, so two boxed 127s are the same object and two boxed 128s aren't. Compare wrappers and strings with `equals`.
+      - **Unboxing `null` throws `NullPointerException`**: `int n = map.get(key)` fails when the key is missing.
+      - **Strings are immutable**, and literals are shared in the string pool. Build strings in a loop with `StringBuilder`.
+
+      Numbers have their own traps: `int` overflow wraps silently, `-7 % 2` is `-1`, and money is never a `double`. Use a `long` count of pence or `BigDecimal`.
+    catch: |
+      The Integer cache makes `==` on wrappers look correct in tests that use small numbers, so the bug only shows up with real data.
+    remember: |
+      Java passes references by value, and `==` on objects asks "same object?", not "same value?".
+    use: java-types/b3
+    use_note: Try the swap program first, then the Integer cache.
+    check: java-types/b1
+    later: [Compact strings and UTF-16, Integer division and floorMod, BigDecimal equals versus compareTo]
+    recap: Primitives hold values, references point at heap objects, and Java copies either into a method. Compare objects with equals.
+
+  - lesson: java-collections
+    title: equals, hashCode and the collections
+    minutes: 9
+    problem: |
+      Ripple caches sessions in a `HashMap<SessionKey, Session>`. `SessionKey` overrides `equals`, and yet every lookup with a freshly built key returns `null`.
+    answer: |
+      A `HashMap` is an array of buckets. It uses the key's `hashCode` to pick a bucket and then `equals` to find the key inside it. So:
+      - **Equal objects must have equal hash codes.** Override both, over the same fields, or use a record, which generates them.
+      - **Keys must not change** while they're in a map, or the entry is stranded in the bucket for its old hash.
+      - The map **doubles** when it passes 75% of its capacity, keeping operations O(1) on average, and turns a bucket with more than 8 entries into a **red-black tree**.
+
+      Pick the collection by the operations that must be fast: `ArrayList` for indexing, `ArrayDeque` for queues and stacks, `LinkedHashMap` for insertion order or an LRU cache, `TreeMap` for sorted keys and "nearest key" lookups, `PriorityQueue` for smallest-first. Removing from a list inside a for-each loop throws `ConcurrentModificationException`; use `removeIf`.
+    catch: |
+      `Collections.unmodifiableList` is only a view: the class that owns the list can still change it, and readers see the changes. `List.copyOf` makes a real immutable copy.
+    remember: |
+      HashMap looks by hash first and by equals second, so the two must agree and must not change.
+    use: java-collections/b1
+    use_note: The first and fourth challenges are enough for now (resize, then equals without hashCode).
+    check: java-collections/b6
+    later: [Treeification and collision attacks, TreeMap and comparators that disagree with equals, Arrays.asList and List.of]
+    recap: Override equals and hashCode together, keep keys immutable, and choose a collection by its fast operations.
+
+  - lesson: java-oop
+    title: Classes, interfaces and generics
+    minutes: 8
+    problem: |
+      Ripple's `FeeCalculator` has overloads `fee(Payment)` and `fee(CardPayment)`. Looping over a `List<Payment>` charges every card payment the generic fee.
+    answer: |
+      **Overloads** are chosen by the compiler from the declared types of the arguments. **Overrides** are chosen at runtime from the object's class. Static methods and fields aren't dispatched at runtime at all. So behaviour that depends on the kind of object belongs in an overridden method, or in a `switch` over a **sealed interface**, which the compiler checks for missing cases.
+
+      Prefer interfaces (which can have default methods but no state) and composition. Use **records** for data: they're final, with `equals`, `hashCode` and `toString` generated. An immutable class needs `private final` fields and **defensive copies** of any mutable collections it takes or returns.
+
+      **Generics** are checked at compile time and **erased** at runtime, and they're **invariant**: a `List<Integer>` isn't a `List<Number>`. Wildcards follow PECS: `? extends T` for a list you read from, `? super T` for one you add to.
+    catch: |
+      `final` stops a variable being reassigned, not the object being changed, and a record holding a `List` is only as immutable as that list.
+    remember: |
+      Overloads are picked at compile time from declared types; overrides at runtime from the object.
+    check: java-oop/b1
+    later: [Inner classes that leak their outer instance, Sealed interfaces with pattern matching, Arrays are covariant and generics aren't]
+    recap: Dispatch happens at runtime only for overridden instance methods. Records and sealed interfaces model data, and generics are erased and invariant.
+
+  - lesson: java-exceptions-streams
+    title: Exceptions, lambdas and streams
+    minutes: 8
+    problem: |
+      A Ripple worker hangs on shutdown for 30 seconds, and a reporting job fails as soon as a merchant has two settled payments in a day.
+    answer: |
+      **Checked exceptions** (`IOException`, `InterruptedException`) must be caught or declared, and suit failures a caller can recover from. **Unchecked** ones (`RuntimeException` and below) are for programming errors. Never swallow an exception: wrap it with the original as the cause. If you catch `InterruptedException` and can't rethrow it, call `Thread.currentThread().interrupt()` so the thread still stops.
+
+      `try`-with-resources closes resources in reverse order and keeps the body's exception, attaching any `close()` failure as **suppressed**. Never `return` from `finally`, which discards the exception in flight.
+
+      A **lambda** implements a functional interface and can only capture effectively final locals. A **stream** is lazy: nothing runs until a terminal operation, then each element goes through the whole pipeline. `Collectors.toMap` throws on a duplicate key unless you give it a merge function. With `Optional`, `orElse(x)` always evaluates `x`; use `orElseGet` for anything expensive.
+    catch: |
+      Checked exceptions don't fit inside lambdas, because `Function.apply` declares no `throws`, so stream code ends up wrapping them in unchecked ones.
+    remember: |
+      A stream with no terminal operation does nothing at all.
+    use: java-exceptions-streams/b3
+    check: java-exceptions-streams/b5
+    later: [Suppressed exceptions, Primitive functional interfaces, groupingBy with downstream collectors, Parallel streams and the common pool]
+    recap: Keep exceptions and their causes, restore the interrupt flag, close resources with try-with-resources, and remember streams are lazy.
+
+  - lesson: jvm-internals
+    title: The JVM and garbage collection
+    minutes: 9
+    problem: |
+      Ripple's links service gets slower over three days, with full GCs every few minutes by Thursday. In its container it's also killed with exit code 137 while the heap graph shows free space.
+    answer: |
+      Java compiles to **bytecode**. The JVM loads classes lazily, interprets them, and **JIT-compiles** the hot methods, which is why a fresh service is slow until it warms up.
+
+      The **garbage collector** frees every object that isn't reachable from the GC roots (thread stacks and static fields), cycles included. It's **generational**: new objects go into eden, a **minor GC** copies the few survivors out and frees the rest at once, and objects that survive several minor GCs are **promoted** to the old generation. G1 is the default and aims for a pause target; ZGC does nearly all its work concurrently, with pauses under a millisecond.
+
+      A **memory leak** in Java is an object that's still reachable but never used again: a static map with no eviction, a listener never removed, a `ThreadLocal` on a pool thread. The sign is a heap that's fuller **after each full GC**. Take a heap dump and find what holds it.
+
+      The heap isn't the whole process. Metaspace, thread stacks, the code cache and direct buffers all sit outside it, so in a container set `-XX:MaxRAMPercentage` (60% to 75%) and leave room for the rest.
+    catch: |
+      A bigger heap or a different collector only delays a leak. Neither can free objects that are still reachable.
+    remember: |
+      A minor GC's cost depends on what survives, not on how much garbage there is.
+    use: jvm-internals/b1
+    use_note: Try the healthy setup, then turn on the leak.
+    check: jvm-internals/b3
+    later: [Class loaders and parent delegation, The OutOfMemoryError family, Escape analysis and deoptimisation, Heap dumps and Flight Recorder]
+    recap: Reachable objects stay, young garbage is cheap, a rising floor after full GCs is a leak, and the heap is only part of a container's memory.
+finish:
+  check:
+    type: predict
+    prompt: |
+      A Ripple service builds a `Map<OrderKey, Order>` where `OrderKey` is a class with mutable fields and an overridden `equals`, but no `hashCode`. Lookups miss, and the heap grows by a few hundred MB a day. What's the best single change?
+    choices:
+      - Give the map a bigger initial capacity, so keys spread across more buckets and fewer lookups collide
+      - Make `OrderKey` a record, so equals and hashCode agree and the key can't change after insertion
+      - Switch the service to ZGC, so the old entries are collected concurrently without long pauses
+      - Wrap the map in `Collections.synchronizedMap`, so concurrent puts and gets can't corrupt the buckets
+    answer: 1
+    reveal: |
+      Without a matching `hashCode`, every lookup with a new key misses, so the code inserts the order again, and the map fills with duplicates that are still reachable: that's both the miss and the leak. A record generates `equals` and `hashCode` from the same final components, which fixes both. Capacity only changes how entries are spread, a different collector can't free reachable entries, and synchronisation fixes races, not the contract.
+  text: |
+    That's the whole area. You don't need to remember all of it. The full lessons go through each piece properly, and each should feel familiar now.

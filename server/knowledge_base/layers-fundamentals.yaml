@@ -45,6 +45,21 @@ java-concurrency:
 python-runtime:
   map: [gil-one-thread-bytecode, threads-for-io-bound, processes-for-cpu-bound, gil-not-thread-safe, event-loop-cooperative, blocking-call-freezes-loop]
   depth: [free-threaded-cpython, keep-task-reference, refcount-and-cycle-collector, tracemalloc-find-allocations, late-binding-closures, is-vs-equals]
+java-types:
+  map: [locals-on-stack-objects-on-heap, reference-equality-operator, always-pass-by-value, mutation-visible-reassignment-not, integer-cache-range, unboxing-null-npe, strings-immutable-why, money-not-double]
+  depth: [char-is-utf16-code-unit, mixed-comparison-unboxes, boxing-in-loops-allocates, bigdecimal-equals-scale]
+java-collections:
+  map: [equals-hashcode-contract, equals-without-hashcode-misses, mutable-keys-strand-entries, hashmap-bucket-lookup, hashmap-resize-load-factor, arraylist-vs-linkedlist, fail-fast-iterators]
+  depth: [equals-properties, treeify-long-buckets, presize-known-capacity, treeset-uses-compareto, arrays-aslist-fixed-size]
+java-oop:
+  map: [overloading-compile-time, overriding-dynamic-dispatch, interface-vs-abstract-class, records-shallow-immutability, final-reference-not-object, immutable-class-recipe, generics-invariant]
+  depth: [override-annotation-rules, no-overridable-calls-in-constructor, final-field-publication, arrays-covariant, raw-types-avoid]
+java-exceptions-streams:
+  map: [throwable-hierarchy, checked-vs-unchecked-choice, wrap-with-cause, try-with-resources-suppressed, effectively-final-capture, streams-lazy-terminal, orelse-evaluates-eagerly]
+  depth: [return-value-saved-before-finally, exceptions-not-control-flow, sorted-is-a-barrier, parallel-streams-common-pool, checked-exceptions-in-lambdas]
+jvm-internals:
+  map: [bytecode-and-jvm, tiered-jit-compilation, jvm-memory-areas, reachability-from-gc-roots, generational-hypothesis, minor-gc-copies-survivors, java-leak-definition, container-heap-sizing]
+  depth: [lazy-class-loading-delegation, class-init-holder-idiom, aging-and-promotion, weak-soft-refs-bounded-cache, diagnose-with-heap-dump]
 linux-processes:
   map: [fork-exec-creation, sigterm-vs-sigkill, graceful-shutdown-k8s, exit-code-137, oom-killer, fd-limit-leak, load-average-io]
   depth: [other-common-signals, pid1-shell-init-fix, vsz-vs-rss, fd-leak-vs-limit, network-kernel-tools, strace-perf-tools, jvm-container-memory]
