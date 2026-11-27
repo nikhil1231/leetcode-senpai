@@ -210,3 +210,23 @@
   .cwf .run-coach { min-height: 440px; }
   .cwf.coach-hidden .run-coach { min-height: 0; }
 }
+
+/* Language choice, the walkthrough's questions, Kotlin idioms, your own test and the practice interview */
+.cw-lang { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 4px 0 14px; }
+.cw-lang .cw-tabbtn { padding: 5px 13px; font-size: 13px; }
+.cw-lang .cw-note { flex-basis: 100%; margin: 2px 0 0; }
+.cw-verdict small { display: block; margin-top: 3px; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--text-2); }
+.cw-idioms { margin: 14px 0; }
+.cw-idioms summary { cursor: pointer; font-size: 13.5px; color: var(--text-2); }
+.cw-idiom-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.cw-idiom-table th { text-align: left; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding: 4px 8px; }
+.cw-idiom-table td { vertical-align: top; padding: 7px 8px; border-top: 1px solid var(--line); }
+.cw-idiom-table td code { white-space: pre-wrap; word-break: break-word; }
+.cw-idiom-table .cw-note { margin: 4px 0 0; }
+.cw-own-test h3 { font-size: 13px; margin: 12px 0 4px; }
+.cw-debrief { margin: 0 0 22px; }
+.cw-debrief > h3 { margin: 18px 0 0; }
+.run-chat .cw-chips { margin-top: 6px; }
+.run-chat .cw-chip { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cw-rail-tabs { padding: 0 12px; margin: 4px 0 2px; }
+.ch-msg.cw-turn-event .ch-bubble { border-left: 3px solid #e0a64f; padding-left: 10px; }

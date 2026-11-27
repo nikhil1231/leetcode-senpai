@@ -59,6 +59,8 @@ AREAS = [
          lambda: 'anthropic/claude-sonnet-5.5'),
     Area('coding', 'Coding examiner and assistant', 'Marks Coding Practice answers and plays the AI assistant in AI-assisted sessions.',
          'chat', lambda: 'anthropic/claude-sonnet-5.5'),
+    Area('coding_interview', 'Coding practice interviewer', 'Plays the interviewer you talk a Coding Practice exercise '
+         'through with, and writes the debrief at the end.', 'chat', lambda: 'anthropic/claude-sonnet-5.5'),
     Area('concurrency_gen', 'Concurrency questions', 'Writes the custom concurrency questions and solves them '
          'independently to check they are fair.', 'chat', lambda: 'anthropic/claude-sonnet-5.5'),
     Area('stt', 'Dictation', 'Transcribes spoken answers before grading.', 'stt', lambda: config.STT_MODEL),

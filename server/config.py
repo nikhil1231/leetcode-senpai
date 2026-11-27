@@ -168,6 +168,8 @@ DEFAULT_SETTINGS = {
     "target_job_source": "local",
     # When the interview is (YYYY-MM-DD). Blank: no countdown on the readiness overview.
     "interview_date": "",
+    # The language Coding Practice is made in: mixed, java, python or kotlin (server/coding/spec.py LANGUAGE_CHOICES).
+    "coding_language": "mixed",
     "senpai_charter": SENPAI_CHARTER,
     # The shared teaching voice (server/voice.py); blank uses the built-in one.
     "voice_tutor": "",

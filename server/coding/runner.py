@@ -43,6 +43,25 @@ def run_hidden(ex, learner=None, fixed=False):
     return _run(ex, overlay(ex, learner, fixed), ex['hidden_tests'], hidden=ex['hidden_tests'])
 
 
+def run_own(ex, learner, against):
+    """Your own test against the code you were given ('original'), your edits ('yours') or the reference fix ('fix').
+    Only your test runs, so a test that does not compile never breaks the exercise's own tests."""
+    path = (S.own_test(ex) or (None,))[0]
+    code = (learner or {}).get(path)
+    if not path or not isinstance(code, str):
+        raise sandbox.SandboxError('There is no test of yours to run')
+    files = overlay(ex, learner if against == 'yours' else None, fixed=against == 'fix')
+    files[path] = code
+    return _run(ex, files, {path: code})
+
+
+def ran(result):
+    """A sandbox summary, or an empty one when the run never got as far as the tests (it did not compile, or timed out)."""
+    if result.get('loaderror') or result.get('timed_out') or result.get('crashed'):
+        return {'passed': 0, 'total': 0, 'failed': []}
+    return sandbox.summary(result)
+
+
 def learner_rows(result, keep_messages=True):
     """Rows safe to send to the learner. Hidden-test messages stay server-side until the review."""
     return [{'id': r['id'].split('.', 1)[-1], 'status': r['status'], 'message': r['message'] if keep_messages else ''} for r in result.get('rows') or []]

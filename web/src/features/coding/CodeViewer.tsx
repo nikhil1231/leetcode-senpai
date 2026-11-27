@@ -25,7 +25,7 @@ export function CodeViewer({ path, code, language, readOnly = true, focus, onCha
 
   useEffect(() => {
     let destroyed = false, view: Any = null;
-    Promise.all([loadCodeMirror(), languageFor(SLUG[language] || language)]).then(([CM, lang]) => {
+    Promise.all([loadCodeMirror(), languageFor(/\.(md|txt)$/i.test(path) ? "text" : SLUG[language] || language)]).then(([CM, lang]) => {
       if (destroyed || !host.current) return;
       const set = CM.StateEffect.define();
       const field = CM.StateField.define({

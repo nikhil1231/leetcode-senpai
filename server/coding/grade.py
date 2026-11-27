@@ -62,7 +62,8 @@ def _repo(ex, limit=70_000):
 
 
 def build(ex, explanation, refs, hints_used, extra=''):
-    findings = [{'id': f['id'], 'text': f['text'], 'essential': f['key'], 'lines': f['locations']} for f in ex['findings']]
+    findings = [{'id': f['id'], 'text': f['text'], 'essential': f['key'], 'lines': f['locations'], **({'question': S.WALKTHROUGH_PARTS[f['part']]} if f.get('part') else {})}
+                for f in ex['findings']]
     return (
         f"TASK ({S.CATEGORY_LABELS[ex['category']]}):\n{ex['task']}\n\nREPOSITORY (line numbers on the left):\n{_repo(ex)}\n\n"
         f"HIDDEN FINDINGS:\n{json.dumps(findings, indent=1)}\n\nRUBRIC: {json.dumps(ex['rubric'])}\n"
@@ -139,5 +140,7 @@ def review(ex):
     r = ex.get('review') or {}
     return {'expected_behaviour': r.get('expected_behaviour', ''), 'execution_path': r.get('execution_path', ''),
             'root_cause': r.get('root_cause', ''), 'interactions': r.get('interactions', ''),
-            'findings': [{'id': f['id'], 'text': f['text'], 'key': f['key'], 'locations': f['locations']} for f in ex['findings']],
+            'findings': [{'id': f['id'], 'text': f['text'], 'key': f['key'], 'locations': f['locations'], **({'part': f['part']} if f.get('part') else {})}
+                         for f in ex['findings']],
+            'idioms': ex.get('idioms') or [],
             'model_answer': ex['model_answer'], 'fix_summary': ex.get('fix_summary', '')}

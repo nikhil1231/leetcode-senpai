@@ -12,13 +12,13 @@ from ..timed_sessions import timed_start, activities as timed_activities
 from .. import auth
 from ..store import get_store
 from ..tracks.http import put
-from . import assistant, coach, grade, model_io, queue, runner, sandbox, spec as S
+from . import assistant, coach, grade, interview, model_io, queue, runner, sandbox, spec as S
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/coding', tags=['coding'])
 AT, EX = queue.AT, queue.EX
 ATTEMPT_PUBLIC = ('id', 'mode', 'category', 'exercise_id', 'status', 'started_at', 'explanation', 'hints_used', 'revision',
-                  'submitted_at', 'elapsed_sec', 'files', 'runs', 'chat', 'last_run', 'coach_chat')
+                  'submitted_at', 'elapsed_sec', 'files', 'runs', 'chat', 'last_run', 'coach_chat', 'interview', 'via', 'own_test')
 
 
 def store_for(uid: str = Depends(auth.require_user)):
@@ -37,7 +37,7 @@ def public_attempt(a, ex=None):
     out['hints'] = (ex.get('hints') or [])[:a.get('hint_ladder_used', a.get('hints_used', 0))] if ex else []
     if a.get('status') == 'submitted':
         out['result'] = a.get('result')
-        out['needs_self_mark'] = not a.get('result')
+        out['needs_self_mark'] = not a.get('result') and a.get('via') != 'interview'
         out['review'] = grade.review(ex) if ex else None
         if ex and ex['category'] in S.EXECUTABLE:
             out['review']['reference_diff'] = runner.unified(ex, None, fixed=True)
@@ -82,17 +82,43 @@ def overview(uid: str = Depends(auth.require_user)):
     store = get_store(uid)
     done = queue.attempts(store)
     exs = queue.exercises(store)
-    modes = {}
+    modes, lang = {}, queue.choice(store)
     for m in S.MODES:
-        modes[m] = {**_summary(done, m), 'ready': len([e for e in queue.ready(store, m, exs) if e.get('source') != 'curated']), 'target': S.TARGET_READY * len(queue.categories(m)),
+        modes[m] = {**_summary(done, m), 'ready': len([e for e in queue.ready(store, m, exs) if e.get('source') != 'curated' and queue.matches(e, lang)]),
+                    'target': S.TARGET_READY * len(queue.categories(m)),
                     'overreliance': S.overreliance(done) if m == 'assisted' else False, 'generating': queue.generating(uid, m), 'error': queue.errors.get((uid, m)),
                     'open': next((a['id'] for a in sorted(done, key=lambda a: -a['started_at'])
                                   if a['mode'] == m and a['status'] == 'open'), None)}
         queue.kick(uid, m) if m == 'reading' or modes[m]['attempts'] or modes[m]['open'] else None
     recent = sorted((a for a in done if a['status'] == 'submitted'), key=lambda a: -a['submitted_at'])[:12]
-    return {'modes': modes, 'model': model_io.available(),
+    return {'modes': modes, 'model': model_io.available(), 'language': _language(lang),
             'recent': [{k: a.get(k) for k in ('id', 'mode', 'category', 'difficulty', 'score', 'process', 'title', 'submitted_at', 'hints_used')}
                        for a in recent]}
+
+
+def _language(choice):
+    runs = S.target_language(choice, 'repair')
+    return {'choice': choice, 'choices': [{'id': c, 'label': S.LANGUAGE_LABELS[c]} for c in S.LANGUAGE_CHOICES],
+            'note': ('Reading mix: mostly Java, some Python, a little Go and TypeScript. Exercises you run are Java or Python.'
+                     if choice == 'mixed' else f'Everything in {S.LANGUAGE_LABELS[choice]}.' if runs == choice else
+                     f'Reading exercises in {S.LANGUAGE_LABELS[choice]}. Exercises you edit and run are in {S.LANGUAGE_LABELS[runs]}, '
+                     f'because the sandbox cannot run {S.LANGUAGE_LABELS[choice]} yet.')}
+
+
+class LanguageBody(BaseModel):
+    language: str
+
+
+@router.put('/language')
+def set_language(body: LanguageBody, uid: str = Depends(auth.require_user)):
+    """The language to practise in. New exercises are made in it from now on; ones already made wait in case you switch back."""
+    if body.language not in S.LANGUAGE_CHOICES:
+        raise HTTPException(422, 'Unknown language')
+    store = get_store(uid)
+    store.update_settings({'coding_language': body.language})
+    for m in S.MODES:
+        queue.kick(uid, m)
+    return {'language': _language(body.language)}
 
 
 class StartBody(BaseModel):
@@ -120,7 +146,10 @@ async def start(mode: str, body: StartBody, uid: str = Depends(auth.require_user
              'language': ex['language'], 'skills': ex['skills'], 'title': ex['title'], 'status': 'open', 'started_at': now, 'updated_at': now,
              'explanation': '', 'hints_used': 0, 'files': {}, 'runs': []})
     queue.kick(uid, mode)
-    return {'attempt': public_attempt(a, ex), 'exercise': S.public(ex)}
+    want = S.target_language(queue.choice(store), ex['category'])
+    note = (f"No {S.LANGUAGE_LABELS[want]} exercise of this kind is ready yet, so this one is in {S.LANGUAGE_LABELS.get(ex['language'], ex['language'])}. "
+            f"More in {S.LANGUAGE_LABELS[want]} are being prepared.") if want and ex['language'] != want else None
+    return {'attempt': public_attempt(a, ex), 'exercise': S.public(ex), 'note': note}
 
 
 @router.get('/attempts/{aid}')
@@ -194,6 +223,8 @@ async def submit(aid: str, body: SubmitBody, store=Depends(store_for)):
         saved = put(store, AT, aid, {**saved, 'files': mine}, saved['revision'])
         tests = await _run_all(ex, mine)
         saved['your_diff'] = runner.unified(ex, mine)
+        if S.own_test_written(ex, mine):
+            saved['own_test'] = await _own_verdict(ex, mine, 'fix')
     if model_io.available():
         try:
             result = await _grade(ex, saved, refs, tests)
@@ -236,7 +267,7 @@ async def _grade(ex, a, refs, tests=None):
 
 
 def _learner_files(ex, files):
-    ok = set(ex.get('editable') or [])
+    ok = set(S.learner_paths(ex))
     return {p: c for p, c in files.items() if p in ok and isinstance(c, str) and len(c) <= S.MAX_FILE_BYTES}
 
 
@@ -256,6 +287,102 @@ def _combine(tests, marked):
         return {'score': test_score, 'process': None, 'process_note': '', 'findings': [], 'misconceptions': [], 'strengths': [], 'improve': [],
                 'summary': f"Marked on the tests alone: {vs['passed'] + hs['passed']} of {total} pass.", 'by': 'tests', 'tests': tests, 'test_score': test_score}
     return {**marked, 'score': round(0.65 * test_score + 0.35 * marked['score']), 'explanation_score': marked['score'], 'test_score': test_score, 'tests': tests}
+
+
+async def _own_verdict(ex, files, after):
+    """Your test on the code you were given and on the fixed code (`after`: your edits while you work, the reference fix
+    at submission, so the review says whether it catches the bug rather than whether it agrees with your fix)."""
+    before, fixed = await asyncio.gather(asyncio.to_thread(runner.run_own, ex, files, 'original'), asyncio.to_thread(runner.run_own, ex, files, after))
+    return {**S.own_test_verdict(runner.ran(before), runner.ran(fixed), after), 'against': after,
+            'original': runner.learner_rows(before), 'fixed': runner.learner_rows(fixed)}
+
+
+class FilesBody(BaseModel):
+    files: dict[str, str] = Field(default_factory=dict)
+
+
+@router.post('/attempts/{aid}/own-test')
+async def own_test(aid: str, body: FilesBody, store=Depends(store_for)):
+    """Run your own test on the code you were given and on your current code."""
+    a = _attempt(store, aid)
+    ex = _exercise(store, a)
+    if a['status'] != 'open' or not S.own_test(ex):
+        raise HTTPException(409, 'There is no test of yours to run here')
+    mine = {**(a.get('files') or {}), **_learner_files(ex, body.files)}
+    if not S.own_test_written(ex, mine):
+        raise HTTPException(422, f'Write your test in {S.own_test(ex)[0]} first')
+    verdict = await _own_verdict(ex, mine, 'yours')
+    a = _attempt(store, aid)
+    saved = put(store, AT, aid, {**a, 'files': {**(a.get('files') or {}), **_learner_files(ex, body.files)}}, a['revision'])
+    return {**verdict, 'revision': saved['revision']}
+
+
+class TalkBody(BaseModel):
+    text: str = Field(default='', max_length=8000)
+    files: dict[str, str] = Field(default_factory=dict)
+
+
+def _open_for_talk(store, aid):
+    a = _attempt(store, aid)
+    if a['status'] != 'open':
+        raise HTTPException(409, 'This exercise is finished')
+    if not model_io.available():
+        raise HTTPException(503, 'The interviewer needs a model, and none is configured.')
+    return a, _exercise(store, a)
+
+
+@router.post('/attempts/{aid}/interview')
+async def interview_turn(aid: str, body: TalkBody, store=Depends(store_for)):
+    """Your turn (saved first), then the interviewer's. An empty first turn asks the interviewer to open."""
+    a, ex = _open_for_talk(store, aid)
+    talk = dict(a.get('interview') or {'started_at': time.time(), 'turns': []})
+    text = body.text.strip()
+    if not text and interview.turns(talk):
+        raise HTTPException(422, 'Say something first')
+    if interview.yours(talk) >= interview.MAX_TURNS:
+        raise HTTPException(429, 'That is a long interview. Press Finish for the debrief.')
+    if text:
+        talk['turns'] = interview.turns(talk) + [{'id': secrets.token_hex(4), 'role': 'you', 'text': text, 'at': time.time()}]
+        a = put(store, AT, aid, {**a, 'interview': talk, 'files': {**(a.get('files') or {}), **_learner_files(ex, body.files)}}, a['revision'])
+    files = runner.overlay(ex, a.get('files'))
+    try:
+        out = await asyncio.to_thread(interview.reply, ex, files, talk)
+    except model_io.ModelError as e:
+        raise HTTPException(502, f'The interviewer did not answer ({e}). What you said is saved; press Next again.') from e
+    a = _attempt(store, aid)
+    talk = dict(a.get('interview') or talk)
+    talk['turns'] = interview.turns(talk) + [{'id': secrets.token_hex(4), 'role': 'interviewer', 'kind': out['kind'], 'text': out['text'],
+                                              'refs': out['refs'], 'at': time.time()}]
+    saved = put(store, AT, aid, {**a, 'interview': talk}, a['revision'])
+    return {'interview': talk, 'revision': saved['revision']}
+
+
+class FinishBody(BaseModel):
+    elapsed_sec: int = Field(default=0, ge=0, le=86400)
+
+
+@router.post('/attempts/{aid}/interview/finish')
+async def interview_finish(aid: str, body: FinishBody, store=Depends(store_for)):
+    """End the exercise with an informal debrief. No score, so your level and averages don't move; the skills it says to
+    work on are given more weight in what comes next (spec.flagged_skills)."""
+    a, ex = _open_for_talk(store, aid)
+    talk = a.get('interview') or {}
+    if not interview.yours(talk):
+        raise HTTPException(422, 'Talk the interviewer through it first')
+    now = time.time()
+    try:
+        d = await asyncio.to_thread(interview.debrief, ex, runner.overlay(ex, a.get('files')), talk, now)
+    except model_io.ModelError as e:
+        raise HTTPException(502, f'The debrief could not be written ({e}). Your interview is saved; press Finish again.') from e
+    a = _attempt(store, aid)
+    if a['status'] != 'open':
+        raise HTTPException(409, 'This exercise is finished')
+    done = put(store, AT, aid, {**a, 'status': 'submitted', 'submitted_at': now, 'via': 'interview', 'result': None, 'score': None,
+                                'elapsed_sec': body.elapsed_sec or int(now - a['started_at']),
+                                'explanation': a.get('explanation') or interview.transcript(talk)[:12000],
+                                'misconceptions': d['misconceptions'], 'interview': {**talk, 'debrief': d}}, a['revision'])
+    queue.kick(store.uid, a['mode'])
+    return {'attempt': public_attempt(done, ex)}
 
 
 class AssistBody(BaseModel):

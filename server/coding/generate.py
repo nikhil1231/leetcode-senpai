@@ -45,6 +45,41 @@ MARKSCHEME_RULE = (
     'and distinguish required understanding from optional deeper observations. Do not add cosmetic requirements.\n')
 
 
+KOTLIN = (
+    "Write idiomatic Kotlin as a Kotlin backend team would: Kotlin 2 with the standard library (kotlinx.coroutines only when "
+    "the level calls for async). Use the features such a team uses every day where they are natural, not as a tour: data "
+    "classes, nullable types with ?. ?: and !!, when expressions, sealed interfaces for results, extension functions, scope "
+    "functions (let, apply, also, run), named and default arguments, collection operations (map, filter, groupBy, associateBy, "
+    "fold), object declarations and companion objects. The reader knows Java well and is learning to read Kotlin.\n"
+    'Add META key "idioms": 4 to 8 objects {"kotlin":"a short form as it appears in this code","java":"what you would write in '
+    'Java instead","note":"one sentence on what it does"}, only for features that appear in this code, and none that hints at the answer.\n')
+JVM_SERVICE = (
+    "Lay it out like a small JVM backend service: an entry point (a handler or controller), a service holding the business logic, "
+    "and repository or client interfaces with in-memory implementations standing in for the database and other services. "
+    "Standard library only, no framework, but named and split the way a Spring team would split it.\n")
+WALKTHROUGH = (
+    "No bug report. The repository is a small working service with one weakness that only shows when something fails: an operation "
+    "of two or more steps that is not atomic (for example a balance debited before a ledger write, stock reserved before a payment "
+    "call, a cache written before the database), so a failure between the steps leaves state inconsistent, or a retry repeats an "
+    "effect. Do not make it obvious, and do not comment on it.\n"
+    "The task names one concrete request, with its input, and asks exactly these four numbered questions in this order:\n"
+    "1. Trace this request from where it enters to where it returns: which functions run, in which order, across which files.\n"
+    "2. What state is shared, between which components, requests or threads, and what protects it?\n"
+    "3. What happens if <one specific call in this request> throws? Name the call (for example \"the call to the ledger client\"), "
+    "not its consequences.\n"
+    "4. Describe the test you'd write to pin that behaviour down: its setup, the failure you'd inject and what it asserts.\n"
+    "Every answer must be derivable from reading the code.\n"
+    'META json keys: "title" (neutral, a few words), "task" (markdown: one sentence on the service, the request, then the four '
+    'questions), "findings" (5 to 8 objects: {"id":"f1","part":"trace|state|failure|test","text":"a fact the answer must state",'
+    '"key":true if essential,"anchors":[{"path":"...","snippet":"an exact, contiguous 1-4 line excerpt of that file"}]}; at least '
+    'one finding for each part; the trace and failure parts have a key finding with anchors; a test finding says what a good test '
+    'does (which collaborator to fake and make fail, what to assert about the state afterwards) and needs no anchors), "rubric" '
+    '(4-6 short criteria, at least one per question), "hints" (exactly 3: a nudge, a stronger nudge, a near-giveaway, none naming the '
+    'weakness), "review" ({"expected_behaviour":"...","execution_path":"numbered steps naming files and functions","root_cause":'
+    '"the failure-halfway weakness and its effect","interactions":"what a skim would miss"}), "model_answer" (the answer a strong '
+    'engineer would give out loud, 200-350 words, answering the four questions in order).\n')
+
+
 def build_prompt(spec):
     cat, lang, level = spec['category'], spec['language'], spec['difficulty']
     skills = ', '.join(S.SKILLS[s] for s in spec['skills'])
@@ -56,7 +91,11 @@ def build_prompt(spec):
         f"Skills it should exercise: {skills}.\n"
         f"Files: source files use the .{ext} extension, in one or more folders; at most {S.MAX_FILES} files, each under "
         f"{S.MAX_FILE_BYTES // 1000} KB. Include a short README.md that says what the service is for (not how it is built).\n\n")
-    if cat == 'comprehension':
+    if lang == 'kotlin':
+        base += KOTLIN
+    if cat == 'walkthrough':
+        task = (JVM_SERVICE if lang in ('java', 'kotlin') else '') + WALKTHROUGH
+    elif cat == 'comprehension':
         task = (
             "No bug is needed. The task asks the learner to understand the code: trace what happens for one concrete request "
             "or event end to end, say where state is persisted, how errors propagate, or predict the state or output after a "
@@ -85,7 +124,7 @@ def build_prompt(spec):
         task = build_executable(spec)
         if lang == 'java':
             task = task.replace('tests/test_visible.py', 'tests/VisibleTest.java').replace('tests/test_hidden.py', 'tests/HiddenTest.java')
-    example = 'exports/Store.java' if lang == 'java' else f'exports/store.{ext}'
+    example = {'java': 'exports/Store.java', 'kotlin': 'exports/Store.kt'}.get(lang, f'exports/store.{ext}')
     return base + task + MARKSCHEME_RULE + '\nOutput format: the <<<META>>> block first, then every file in its own block, for example\n<<<META>>>\n{...json...}\n<<<END>>>\n<<<FILE ' + example + '>>>\n...code...\n<<<END>>>\nThe path follows FILE after one space, with no quotes or path=.'
 
 
@@ -224,11 +263,14 @@ def assemble(spec, text, model):
         if needs_code and not locations and f.get('key'):
             raise GenError('a key finding has no location')
         findings.append({'id': str(f.get('id') or f'f{i + 1}'), 'text': str(f.get('text') or '')[:600],
-                         'key': bool(f.get('key')), 'locations': locations})
+                         'key': bool(f.get('key')), 'locations': locations,
+                         **({'part': f['part']} if spec['category'] == 'walkthrough' and f.get('part') in S.WALKTHROUGH_PARTS else {})})
     if not findings or not any(f['key'] for f in findings):
         findings = [{**f, 'key': True} for f in findings[:1]] + findings[1:]
     if not findings or not meta.get('task') or not meta.get('model_answer'):
         raise GenError('missing task, findings or model answer')
+    if spec['category'] == 'walkthrough' and not {'trace', 'failure'} <= {f.get('part') for f in findings}:
+        raise GenError('a walkthrough needs findings for the trace and for the failure')
     hints = [str(h) for h in (meta.get('hints') or [])][:3]
     rubric = [str(r) for r in (meta.get('rubric') or [])][:6]
     if len(hints) < 2 or len(rubric) < 2:
@@ -260,9 +302,14 @@ def assemble(spec, text, model):
         'visible_tests': visible, 'hidden_tests': blocks['HIDDEN'], 'reference_fix': blocks['FIX'],
         'findings': findings, 'rubric': rubric, 'hints': hints, 'review': meta['review'] if isinstance(meta.get('review'), dict) else {'expected_behaviour': str(meta.get('review') or '')},
         'model_answer': str(meta['model_answer'])[:2500], 'fix_summary': str(meta.get('fix_summary') or '')[:800],
-        'assistant_plan': _plan(spec, meta, blocks),
+        'assistant_plan': _plan(spec, meta, blocks), 'idioms': _idioms(meta) if spec['language'] == 'kotlin' else [],
         'status': 'draft', 'source': 'generated', 'created_at': time.time(), 'model': model, 'validation': {},
     }
+
+
+def _idioms(meta):
+    rows = [i for i in meta.get('idioms') or [] if isinstance(i, dict) and i.get('kotlin') and i.get('java')]
+    return [{k: str(i.get(k) or '')[:300] for k in ('kotlin', 'java', 'note')} for i in rows[:8]]
 
 
 def _plan(spec, meta, blocks):

@@ -62,7 +62,7 @@ def test_public_view_never_carries_hidden_material():
     for hidden in ('findings', 'model_answer', 'rubric', 'hidden_tests', 'reference_fix', 'assistant_plan', 'fix_summary', 'review'):
         assert hidden not in pub
     assert 'secret' not in repr(pub) and "'fixed'" not in repr(pub)
-    assert set(S.public(ex)) <= set(S.PUBLIC_KEYS) | {'files', 'editable', 'readonly', 'can_run', 'hint_count', 'curated', 'minutes', 'assistant'}
+    assert set(S.public(ex)) <= set(S.PUBLIC_KEYS) | {'files', 'editable', 'readonly', 'can_run', 'hint_count', 'curated', 'minutes', 'assistant', 'idioms', 'own_test'}
 
 
 REPLY = '''<<<META>>>
@@ -220,9 +220,8 @@ async def test_refill_stops_at_the_target_and_never_serves_a_failed_validation(s
         n['made'] += 1
         if n['made'] == 1:
             raise generate.GenError('failed validation: nope')
-        ex = generate.assemble({**SPEC, 'category': spec['category'], 'language': 'python'}, REPLY, 'm')
-        ex['difficulty'] = spec['difficulty']
-        ex['status'] = 'ready'
+        ex = generate.assemble({**SPEC, 'category': 'localisation', 'language': 'python'}, REPLY, 'm')
+        ex.update(category=spec['category'], difficulty=spec['difficulty'], status='ready')
         return ex
     monkeypatch.setattr(queue, 'make', fake_make)
     await queue.refill('alice', 'reading')
@@ -257,8 +256,8 @@ async def test_truncated_generation_stops_until_the_model_changes(store, monkeyp
     assert queue.take(store, 'reading')['source'] == 'curated'
 
     def recover(spec):
-        ex = generate.assemble({**SPEC, 'category': spec['category']}, REPLY, 'm')
-        return {**ex, 'difficulty': spec['difficulty'], 'status': 'ready'}
+        ex = generate.assemble(SPEC, REPLY, 'm')
+        return {**ex, 'category': spec['category'], 'difficulty': spec['difficulty'], 'status': 'ready'}
 
     model_areas._chosen['coding_gen'] = 'openai/gpt-6.1-sol'
     monkeypatch.setattr(queue, 'make', recover)

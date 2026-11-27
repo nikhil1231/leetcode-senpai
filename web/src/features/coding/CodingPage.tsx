@@ -7,9 +7,9 @@ import { useHeading } from "@/lib/heading";
 import { useToast } from "@/lib/toast";
 import { Loader, LoadError } from "@/components/ui/Loader";
 import { Workspace } from "./Workspace";
-import { CATEGORY_BLURBS, CATEGORY_LABELS, type Attempt, type Exercise, type Mode, type Overview } from "./types";
+import { CATEGORY_BLURBS, CATEGORY_LABELS, READING_CATEGORIES, type Attempt, type Exercise, type Mode, type Overview } from "./types";
 
-interface Session { attempt: Attempt; exercise: Exercise }
+interface Session { attempt: Attempt; exercise: Exercise; note?: string | null }
 const TABS: [Mode, string, string][] = [["reading", "Code Reading", "Understand, trace and debug a repository you have never seen. No AI helper."], ["assisted", "AI-Assisted", "Solve a task with an AI partner that is usually right, and sometimes isn't."]];
 const KEY = "senpai:coding-mode";
 const ago = (t: number) => { const d = Date.now() / 1000 - t; return d < 3600 ? `${Math.max(1, Math.round(d / 60))} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} d ago`; };
@@ -44,7 +44,12 @@ export function CodingPage({ initialAttemptId }: { initialAttemptId?: string }) 
 
   const start = useMutation({
     mutationFn: (b: { category?: string; new?: boolean }) => api<Session>(`/coding/${mode}/start`, "POST", b),
-    onSuccess: (s) => { navigate(`/practical/coding/${s.attempt.id}`); setSession(s); qc.invalidateQueries({ queryKey: ["coding"] }); },
+    onSuccess: (s) => { navigate(`/practical/coding/${s.attempt.id}`); setSession(s); if (s.note) toast(s.note); qc.invalidateQueries({ queryKey: ["coding"] }); },
+    onError: (e) => toast((e as Error).message),
+  });
+  const pickLanguage = useMutation({
+    mutationFn: (language: string) => api<{ language: Overview["language"] }>("/coding/language", "PUT", { language }),
+    onSuccess: (r) => { qc.setQueryData<Overview>(["coding", "overview"], (o) => (o ? { ...o, language: r.language } : o)); qc.invalidateQueries({ queryKey: ["coding"] }); },
     onError: (e) => toast((e as Error).message),
   });
   const resume = (id: string) => navigate(`/practical/coding/${id}`);
@@ -76,7 +81,14 @@ export function CodingPage({ initialAttemptId }: { initialAttemptId?: string }) 
         ))}
       </div>
       <p className="help">{info[2]}</p>
-      <p className="cw-note">{mode === "reading" ? "Reading mix: 70% Java, 25% Python, 5% Go and TypeScript. Repair exercises use Java and Python." : "Runnable exercises: mostly Java, with Python in roughly a 70:25 ratio."}</p>
+      <div className="cw-lang" role="radiogroup" aria-label="Language">
+        <span className="cw-kicker">Language</span>
+        {ov.data.language.choices.map((c) => (
+          <button key={c.id} type="button" role="radio" aria-checked={ov.data.language.choice === c.id} disabled={pickLanguage.isPending}
+            className={`cw-tabbtn ${ov.data.language.choice === c.id ? "is-on" : ""}`} onClick={() => pickLanguage.mutate(c.id)}>{c.label}</button>
+        ))}
+        <span className="cw-note">{ov.data.language.note}</span>
+      </div>
       <div className="cw-card">
         <div className="cw-card-main">
           <div>
@@ -92,7 +104,7 @@ export function CodingPage({ initialAttemptId }: { initialAttemptId?: string }) 
         </div>
         {(
           <div className="cw-cats">
-            {(mode === "reading" ? ["comprehension", "localisation", "repair"] : ["feature", "bugfix"]).map((c) => (
+            {(mode === "reading" ? READING_CATEGORIES : ["feature", "bugfix"]).map((c) => (
               <button key={c} type="button" className="cw-cat" disabled={start.isPending} onClick={() => start.mutate({ category: c, new: !!m.open })}>
                 <b>{CATEGORY_LABELS[c]}</b><span>{CATEGORY_BLURBS[c]}</span>
                 <em>{m.by_category[c] == null ? "not tried" : `average ${m.by_category[c]}`}</em>

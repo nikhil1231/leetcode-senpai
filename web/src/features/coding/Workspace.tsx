@@ -9,9 +9,10 @@ import { CONSOLE_PX, STATEMENT_PCT, useLayout } from "@/features/editor/editor-s
 import { CodeViewer, type Focus } from "./CodeViewer";
 import { parseRefs, refSpans, deleteRefAt, insertRef, refToken, type Ref } from "./refs";
 import { Assistant, type ChatMsg } from "./Assistant";
-import { ReviewPanel } from "./Review";
+import { ReviewPanel, Idioms, OwnTestResult } from "./Review";
+import { InterviewPanel } from "./Interview";
 import { TestPanel, type RunResult } from "./TestPanel";
-import { CATEGORY_LABELS, type Attempt, type Exercise } from "./types";
+import { CATEGORY_LABELS, type Attempt, type Exercise, type Interview, type OwnTest } from "./types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -38,7 +39,11 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   const [running, setRunning] = useState(false);
   const [diffText, setDiffText] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>(attempt.chat || []);
-  const [dock, setDock] = useState<"tests" | "changes" | "explain">("explain");
+  const [dock, setDock] = useState<"tests" | "changes" | "mine" | "explain">("explain");
+  const [talk, setTalk] = useState<Interview | undefined>(attempt.interview);
+  const [rail, setRail] = useState<"coach" | "interview">(attempt.interview?.turns.length ? "interview" : "coach");
+  const [mine, setMine] = useState<OwnTest | null>(null);
+  const [checking, setChecking] = useState(false);
   const [side, setSide] = useState<"task" | "assistant">("task");
   const filesRef = useRef(files);
   filesRef.current = files;
@@ -88,6 +93,7 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   }, [attempt.id, submitted]);
   useEffect(() => { if (!dirty.current) return; const t = setTimeout(save, SAVE_MS); return () => clearTimeout(t); }, [text, files, save]);
   const editedFiles = () => (exercise.editable.length ? Object.fromEntries(exercise.editable.map((p) => [p, filesRef.current[p]])) : undefined);
+  const walkthrough = exercise.category === "walkthrough";
 
   const runTests = async () => {
     if (running) return;
@@ -97,6 +103,15 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
       const r = await api(`/coding/attempts/${attempt.id}/run`, "POST", { files: editedFiles() });
       revision.current = r.revision; setRun(r); setDiffText(r.diff || ""); setDock((d) => (d === "changes" ? d : "tests"));
     } catch (e) { toast((e as Error).message); } finally { setRunning(false); }
+  };
+  const checkMine = async () => {
+    if (checking) return;
+    setChecking(true);
+    try {
+      await save();
+      const r = await api(`/coding/attempts/${attempt.id}/own-test`, "POST", { files: editedFiles() || {} });
+      revision.current = r.revision; setMine(r);
+    } catch (e) { toast((e as Error).message); } finally { setChecking(false); }
   };
   const showChanges = async () => {
     try { setDiffText((await api(`/coding/attempts/${attempt.id}/diff`, "POST", { files: editedFiles() })).diff || ""); } catch (e) { toast((e as Error).message); }
@@ -193,6 +208,8 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   ) : (
     <>
       <div className="cw-md" dangerouslySetInnerHTML={{ __html: mdToHtml(exercise.task) }} />
+      {exercise.own_test && !submitted && <p className="cw-note">Once you have found the bug, write a test that would have caught it in <code>{exercise.own_test}</code>, and check it in the Your test tab.</p>}
+      {!!exercise.idioms?.length && <details className="cw-idioms"><summary>Kotlin you'll meet here, with the Java you'd write</summary><Idioms items={exercise.idioms} /></details>}
       {hints.map((h, i) => <p key={i} className="cw-hint"><b>Hint {i + 1}.</b> {h}</p>)}
       {!submitted && hints.length > 0 && <p className="cw-note">Hints are counted in how this one is marked.</p>}
     </>
@@ -234,7 +251,7 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
   );
   const clockEl = <span className={`cw-clock ${exercise.minutes && elapsed > exercise.minutes * 60 ? "is-over" : ""}`} aria-label="Time on this exercise">{clock(elapsed)}{exercise.minutes ? ` / ${exercise.minutes}:00` : ""}</span>;
 
-  const tab = (id: "tests" | "changes" | "explain", label: string, on = () => setDock(id)) => (
+  const tab = (id: "tests" | "changes" | "mine" | "explain", label: string, on = () => setDock(id)) => (
     <button type="button" role="tab" aria-selected={(id === "explain" ? explainOn : dock === id)} className="pane-tab" onClick={on}>{label}</button>
   );
   return (
@@ -274,17 +291,22 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
                 <div className="pane-tabs" role="tablist">
                   {exercise.can_run && tab("tests", `Tests${run ? ` ${run.passed}/${run.total}` : ""}`)}
                   {exercise.can_run && tab("changes", "Your changes", () => { setDock("changes"); showChanges(); })}
+                  {exercise.own_test && tab("mine", "Your test")}
                   {tab("explain", "Your explanation")}
                 </div>
               )}
               <div className="console-tools">
-                {!submitted && exercise.can_run && !explainOn && <span>{run ? (run.timed_out ? "Timed out." : `${run.passed} of ${run.total} visible tests pass`) : "More checks run when you submit"}</span>}
+                {!submitted && dock === "mine" && <button className="button is-small" type="button" disabled={checking} onClick={checkMine}>{checking ? "Checking…" : "Check my test"}</button>}
+                {!submitted && exercise.can_run && !explainOn && dock !== "mine" && <span>{run ? (run.timed_out ? "Timed out." : `${run.passed} of ${run.total} visible tests pass`) : "More checks run when you submit"}</span>}
                 <button className="panel-toggle" type="button" aria-label="Collapse the console" title="Collapse the console" onClick={() => patch({ console: !layout.console })}>&#x2304;</button>
               </div>
             </div>
             {submitted && attempt.status !== "abandoned" ? <div className="console-panel"><ReviewPanel attempt={attempt} onAttempt={onAttempt} onOpen={open} onNext={onNext} category={exercise.category} /></div> : null}
             {attempt.status === "abandoned" && <div className="console-panel"><p className="cw-note">Session ended. Your saved code and explanation are available here.</p><pre className="cw-note">{attempt.explanation}</pre></div>}
-            {!submitted && !explainOn && <div className="console-panel"><TestPanel tab={dock === "changes" ? "changes" : "tests"} run={run} diff={diffText} /></div>}
+            {!submitted && !explainOn && dock !== "mine" && <div className="console-panel"><TestPanel tab={dock === "changes" ? "changes" : "tests"} run={run} diff={diffText} /></div>}
+            {!submitted && dock === "mine" && <div className="console-panel">
+              {mine ? <OwnTestResult result={mine} /> : <p className="cw-note">Write a test in <button type="button" className="cw-chip" onClick={() => open(exercise.own_test!)}>{exercise.own_test}</button> that fails on the code you were given and passes once it is fixed. Check my test runs it on the original code and on yours. When you submit, it is also run against the reference fix.</p>}
+            </div>}
             {!submitted && <div className={`console-panel cwf-explain${explainOn ? "" : " hidden"}`}>
               <div className="cw-field">
                 <div className="textarea cw-mirror" ref={mirror} aria-hidden="true">
@@ -297,7 +319,7 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
                 </div>
                 <textarea id="cw-text" ref={box} className="textarea cw-text" data-dictate rows={4} autoComplete="off" spellCheck={false} onKeyDown={onKey}
                   onScroll={(e) => { if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop; }}
-                  placeholder={exercise.can_run ? "Say what the bug was, why it happened, and how your change fixes it. Type it, or use the mic. Click line numbers in the code to add references like [file:12-30]." : "Say what happens, where it goes wrong, and why. Type it, or use the mic. Click line numbers in the code to add references like [file:12-30]; you don't have to pin one line."}
+                  placeholder={walkthrough ? "Answer the four questions in order: the path the request takes, the shared state, what happens if the named call fails, and the test you'd write. Type it, or use the mic. Click line numbers to add references like [file:12-30]." : exercise.can_run ? "Say what the bug was, why it happened, and how your change fixes it. Type it, or use the mic. Click line numbers in the code to add references like [file:12-30]." : "Say what happens, where it goes wrong, and why. Type it, or use the mic. Click line numbers in the code to add references like [file:12-30]; you don't have to pin one line."}
                   value={text} onChange={(e) => { setText(e.target.value); dirty.current = true; }} onBlur={save} />
               </div>
               <div className="cw-chips" aria-label="References in your explanation">
@@ -309,6 +331,13 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
         </div>
       </div>
       <CoachSidebar>
+        <div className="pane-tabs cw-rail-tabs" role="tablist" onClick={(e) => e.stopPropagation()}>
+          <button type="button" role="tab" aria-selected={rail === "coach"} className="pane-tab" onClick={() => setRail("coach")}>Coach</button>
+          <button type="button" role="tab" aria-selected={rail === "interview"} className="pane-tab" onClick={() => setRail("interview")}>Interview{talk?.turns.length ? ` (${talk.turns.filter((t) => t.role === "you").length})` : ""}</button>
+        </div>
+        {rail === "interview" ? <InterviewPanel attempt={attempt} talk={talk} onTalk={(t, r) => { setTalk(t); revision.current = r; }} onAttempt={onAttempt}
+          beforeTurn={save} files={() => editedFiles() || {}} elapsed={() => Math.round(Date.now() / 1000 - attempt.started_at)}
+          onOpen={(r) => open(r.path, r.start, r.end)} disabled={busy} /> : <>
         <div className="active-notes" onClick={(e) => e.stopPropagation()}>
           {!coachChat.length && <p className="coach-empty">Think out loud below, or ask for a hint. The coach points at relevant code without giving the answer.</p>}
           <p className="cw-note">Coach help is counted when this exercise is marked.</p>
@@ -318,11 +347,12 @@ export function Workspace({ exercise, attempt, onAttempt, onNext, onExit }: {
             ...coachChat.map((m): ChatMessage => ({ ...m, after: m.refs?.length ? <div className="cw-chips">{m.refs.map((r, i) => <button key={i} type="button" className="cw-chip" onClick={() => open(r.path, r.start, r.end)}>{refToken(r).slice(1, -1)}</button>)}<button type="button" className="note-action" onClick={() => setFocus(null)}>Clear marks</button></div> : undefined })),
             ...(coachPending === null ? [] : [{ id: "pending", role: "user" as const, text: coachPending }]),
           ]} running={coachPending !== null} disabled={submitted || busy} composer={!submitted} inputId="practical-coach-input"
-            placeholder="Message the interviewer" label="Talk to the interviewer" typingLabel="The interviewer is typing" onSend={askCoach} />
+            placeholder="Ask the coach" label="Talk to the coach" typingLabel="The coach is typing" onSend={askCoach} />
         </div>
         {!submitted && <div className="coach-actions" onClick={(e) => e.stopPropagation()}>
           <button className="button is-small" type="button" disabled={coachPending !== null || busy} onClick={() => { void askCoach().catch(() => {}); }}>{coachChat.length ? "Another hint" : "Give me a hint"}</button>
         </div>}
+        </>}
       </CoachSidebar>
     </div>
   );

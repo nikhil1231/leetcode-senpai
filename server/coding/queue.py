@@ -44,6 +44,17 @@ def ready(store, mode, exs=None):
     return [e for e in (exs if exs is not None else exercises(store)) if e.get('mode') == mode and e.get('status') == 'ready']
 
 
+def choice(store):
+    c = (store.get_settings() or {}).get('coding_language')
+    return c if c in S.LANGUAGE_CHOICES else 'mixed'
+
+
+def matches(ex, lang_choice):
+    """True when a ready exercise is in the language your choice asks for (any language, for the mixed rotation)."""
+    want = S.target_language(lang_choice, ex.get('category'))
+    return want is None or ex.get('language') == want
+
+
 def categories(mode):
     return [c for c in S.CATEGORIES[mode] if EXECUTABLE_ON or c not in S.EXECUTABLE]
 
@@ -78,9 +89,9 @@ async def refill(uid, mode):
             failures = 0
             while failures < 3:
                 store = get_store(uid)
-                exs, done = exercises(store), attempts(store)
+                exs, done, lang = exercises(store), attempts(store), choice(store)
                 level = S.difficulty(done, mode)
-                fresh = [e for e in ready(store, mode, exs) if e.get('source') != 'curated' and not S.stale(e, level)]
+                fresh = [e for e in ready(store, mode, exs) if e.get('source') != 'curated' and not S.stale(e, level) and matches(e, lang)]
                 short = [c for c in categories(mode) if len([e for e in fresh if e['category'] == c]) < S.TARGET_READY]
                 if not short:
                     break
@@ -90,7 +101,7 @@ async def refill(uid, mode):
                 recent = [e.get('archetype') for e in sorted(exs, key=lambda e: -e.get('created_at', 0))[:12]]
                 spec = S.choose(done, mode, recent_archetypes=recent, executable=EXECUTABLE_ON, category=category)
                 deficits = S.language_deficits([e for e in exs if e.get('status') in ('ready', 'served')], category in S.EXECUTABLE)
-                spec['language'] = max(deficits, key=deficits.get)
+                spec['language'] = S.target_language(lang, category) or max(deficits, key=deficits.get)
                 try:
                     ex = await asyncio.to_thread(make, spec)
                 except Exception as e:   # a failed attempt is logged, never shown as a broken exercise
@@ -119,26 +130,40 @@ def kick(uid, mode):
 
 
 def _prune(store):
-    served = sorted((e for e in exercises(store) if e.get('status') == 'served'), key=lambda e: -e.get('created_at', 0))
+    exs = exercises(store)
+    served = sorted((e for e in exs if e.get('status') == 'served'), key=lambda e: -e.get('created_at', 0))
     for old in served[KEEP_SERVED:]:
         store.delete_track_record(EX, old['id'])
+    # Ready ones in a language you have switched away from wait in case you switch back, but no more than a buffer's worth.
+    lang = choice(store)
+    for mode in S.MODES:
+        for c in categories(mode):
+            other = sorted((e for e in ready(store, mode, exs) if e['category'] == c and e.get('source') != 'curated' and not matches(e, lang)),
+                           key=lambda e: -e.get('created_at', 0))
+            for old in other[S.TARGET_READY:]:
+                store.delete_track_record(EX, old['id'])
 
 
 def take(store, mode, category=None):
-    """The best ready exercise for the latest results, marked served; else one from the curated pool. Never waits."""
-    exs, done = exercises(store), attempts(store)
+    """The best ready exercise for the latest results, marked served; else one from the curated pool. Never waits.
+    One in the language you chose comes first, a hand-written one in that language next, and only then another language."""
+    exs, done, lang = exercises(store), attempts(store), choice(store)
     level = S.difficulty(done, mode)
     weak = S.weakness(done, mode, 'category', list(S.CATEGORIES[mode]))
     pool = [e for e in ready(store, mode, exs) if category in (None, e['category'])]
+    seen = {e['title'] for e in exs if e.get('source') == 'curated'}
+    if not any(matches(e, lang) for e in pool):
+        ex = fallback.pick(mode, category, seen, language=lang, strict=True) if lang != 'mixed' else None
+        if ex is not None:
+            return store.put_track_record(EX, ex['id'], {**ex, 'status': 'served', 'served_at': time.time()})
     if pool:
         served = [e for e in exs if e.get('status') == 'served']
         deficits = {run: S.language_deficits(served, run) for run in (True, False)}
-        best = min(pool, key=lambda e: (S.fit(e, level),
+        best = min(pool, key=lambda e: (not matches(e, lang), S.fit(e, level),
                    -deficits[e['category'] in S.EXECUTABLE].get(e.get('language'), -1),
                    -weak.get(e['category'], 0.5), e.get('created_at', 0)))
         return store.put_track_record(EX, best['id'], {**best, 'status': 'served', 'served_at': time.time()}, best.get('revision'))
-    seen = {e['title'] for e in exs if e.get('source') == 'curated'}
-    ex = fallback.pick(mode, category, seen)
+    ex = fallback.pick(mode, category, seen, language=lang)
     if ex is None:
         return None
     return store.put_track_record(EX, ex['id'], {**ex, 'status': 'served', 'served_at': time.time()})

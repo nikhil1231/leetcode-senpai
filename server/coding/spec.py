@@ -5,7 +5,7 @@ import random
 import re
 
 MODES = ('reading', 'assisted')
-CATEGORIES = {'reading': ('comprehension', 'localisation', 'repair'), 'assisted': ('feature', 'bugfix')}
+CATEGORIES = {'reading': ('comprehension', 'walkthrough', 'localisation', 'repair'), 'assisted': ('feature', 'bugfix')}
 MAX_RUNS = 60
 MAX_ASSIST = 40            # assistant messages per attempt
 # Mistakes the assistant can be given to make: each is a flawed patch, written with the exercise and checked by running it.
@@ -19,12 +19,38 @@ MISTAKES = {
 }
 NO_MISTAKE_SHARE = 0.35    # sessions where the assistant is right, so suspicion is not the whole skill
 MINUTES = {1: 20, 2: 25, 3: 35, 4: 45, 5: 50}              # test runs per attempt
-CATEGORY_LABELS = {'comprehension': 'Code comprehension', 'localisation': 'Bug localisation', 'repair': 'Debug and repair',
-                   'feature': 'Feature', 'bugfix': 'Bug fix'}
+CATEGORY_LABELS = {'comprehension': 'Code comprehension', 'walkthrough': 'Service walkthrough', 'localisation': 'Bug localisation',
+                   'repair': 'Debug and repair', 'feature': 'Feature', 'bugfix': 'Bug fix'}
+# A walkthrough asks the four questions of a practical round about one request through a small service. Findings carry
+# the part they answer, so the review can show which question an answer covered.
+WALKTHROUGH_PARTS = {'trace': 'Trace the request', 'state': 'How state is shared', 'failure': 'If it fails halfway',
+                     'test': "The test you'd write"}
 EXECUTABLE = ('repair', 'feature', 'bugfix')   # categories whose code is edited and run (Python or Java, in the sandbox)
-LANGUAGES = {'python': ('py',), 'javascript': ('js', 'mjs'), 'go': ('go',), 'java': ('java',), 'typescript': ('ts', 'tsx')}
+LANGUAGES = {'python': ('py',), 'javascript': ('js', 'mjs'), 'go': ('go',), 'java': ('java',), 'typescript': ('ts', 'tsx'),
+             'kotlin': ('kt',)}
 READING_LANGUAGES = [('java', 70), ('python', 25), ('go', 2.5), ('typescript', 2.5)]
 EXECUTION_LANGUAGES = [('java', 70), ('python', 25)]
+# The language you choose to practise in (settings["coding_language"]). "mixed" is the weighted mix above. Kotlin is read,
+# not run (the sandbox has no Kotlin compiler), so exercises you edit and run fall back to its nearest neighbour, Java.
+LANGUAGE_CHOICES = ('mixed', 'java', 'python', 'kotlin')
+LANGUAGE_LABELS = {'mixed': 'Mixed', 'java': 'Java', 'python': 'Python', 'kotlin': 'Kotlin', 'go': 'Go', 'typescript': 'TypeScript'}
+RUN_INSTEAD = {'kotlin': 'java'}
+# Your own test, written in an exercise you edit and run: it should fail on the code you were given and pass once fixed.
+OWN_TEST = {'python': ('tests/test_mine.py', '''import unittest
+
+
+class MyTest(unittest.TestCase):
+    def test_catches_the_bug(self):
+        self.fail("Replace this with a test that fails on the original code and passes once it is fixed.")
+'''), 'java': ('tests/MineTest.java', '''package tests;
+
+public class MineTest {
+    // Each public static void test...() method is a test. Throw AssertionError (or use assert) when it fails.
+    public static void testCatchesTheBug() {
+        throw new AssertionError("Replace this with a test that fails on the original code and passes once it is fixed.");
+    }
+}
+''')}
 TARGET_READY = 2           # validated exercises kept per category
 LEVELS = 5
 MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES = 14, 24_000, 90_000
@@ -85,6 +111,11 @@ def public(ex):
     out['minutes'] = MINUTES.get(ex.get('difficulty'), 30) if ex.get('mode') == 'assisted' else None
     out['assistant'] = ex.get('mode') == 'assisted'
     out['curated'] = ex.get('source') == 'curated'
+    if (mine := own_test(ex)) and mine[0] not in out['files']:
+        out['files'] = {**out['files'], mine[0]: mine[1]}
+        out['editable'].append(mine[0])
+        out['own_test'] = mine[0]
+    out['idioms'] = ex.get('idioms') or []
     return out
 
 
@@ -197,6 +228,58 @@ def weakness(attempts, mode, key, values):
     return {v: (1 - max(0, min(100, sum(s) / len(s))) / 100) if s else 0.5 for v, s in scores.items()}
 
 
+def target_language(choice, category):
+    """The language to make or serve an exercise of `category` in, for your language choice; None for the mixed rotation."""
+    if choice not in LANGUAGE_CHOICES or choice == 'mixed':
+        return None
+    if category in EXECUTABLE and choice not in dict(EXECUTION_LANGUAGES):
+        return RUN_INSTEAD.get(choice)
+    return choice
+
+
+def flagged_skills(attempts, last=5):
+    """Skills the debriefs of your last few practice interviews said to work on, most recent first."""
+    out = []
+    talks = sorted((a for a in attempts if (a.get('interview') or {}).get('debrief')), key=lambda a: a['interview']['debrief'].get('at') or 0)
+    for a in reversed(talks[-last:]):
+        out += [s for s in a['interview']['debrief'].get('skills') or [] if s in SKILLS and s not in out]
+    return out
+
+
+def own_test(ex):
+    """(path, starter) of the test you may write for an exercise you edit and run, or None."""
+    if ex.get('category') not in EXECUTABLE or ex.get('language') not in OWN_TEST:
+        return None
+    return OWN_TEST[ex['language']]
+
+
+def learner_paths(ex):
+    """The files you may change: the editable sources, and your own test where there is one."""
+    mine = own_test(ex)
+    return [*(ex.get('editable') or []), *([mine[0]] if mine else [])]
+
+
+def own_test_written(ex, files):
+    mine = own_test(ex)
+    code = (files or {}).get(mine[0]) if mine else None
+    return bool(code and code.strip() and code != mine[1])
+
+
+def own_test_verdict(on_original, on_fix, against='reference'):
+    """What your test shows, from its results on the code you were given and on the fixed code (sandbox summaries).
+    A test proves it catches the bug when something fails before the fix and everything passes after it. `against` is
+    'yours' while you work, when the "fixed" code is your current code and may not be fixed yet."""
+    if not on_original.get('total') or not on_fix.get('total'):
+        return {'catches': False, 'note': "Your test didn't run. Check that it compiles and that its test methods are named test..."}
+    fails_before, passes_after = bool(on_original['failed']), not on_fix['failed']
+    note = ('It fails on the original code and passes once fixed, so it catches the bug.' if fails_before and passes_after else
+            'It passes on the original code, so it would not have caught the bug.' if not fails_before else
+            'It fails on the fixed code too, so it tests something other than the bug, or expects the wrong behaviour.' if against != 'yours' else
+            "It fails on your code too. If you haven't fixed the bug yet, fix it and check again; if you have, the test expects "
+            'something other than the fix.')
+    return {'catches': fails_before and passes_after, 'fails_before': fails_before, 'passes_after': passes_after, 'note': note}
+
+
 def choose(attempts, mode, rng=None, recent_archetypes=(), executable=False, category=None):
     """The next exercise to make or serve: {mode, category, difficulty, skills, language, archetype}. Leans toward the
     categories and skills with the weakest recent results, and never repeats a recent scenario."""
@@ -206,6 +289,8 @@ def choose(attempts, mode, rng=None, recent_archetypes=(), executable=False, cat
     wc = weakness(attempts, mode, 'category', cats)
     category = category if category in cats else rng.choices(cats, weights=[0.4 + wc[c] for c in cats])[0]
     ws = weakness(attempts, mode, 'skills', list(SKILLS))
+    for s in flagged_skills(attempts)[:3]:      # what a recent practice interview said to work on
+        ws[s] += 0.3
     skills = [s for s, _ in sorted(ws.items(), key=lambda kv: -kv[1] - rng.random() * 0.15)[:2]]
     fresh = [a for a in ARCHETYPES if a not in set(recent_archetypes)] or ARCHETYPES
     langs = EXECUTION_LANGUAGES if category in EXECUTABLE else READING_LANGUAGES

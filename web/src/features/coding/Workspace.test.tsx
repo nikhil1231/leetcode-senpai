@@ -35,3 +35,29 @@ it("shows an ended attempt with a frozen clock and saved explanation", () => {
   expect(screen.getByText("My saved explanation")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /^Submit$/ })).not.toBeInTheDocument();
 });
+
+it("runs a practice interview in the rail: the interviewer opens, you talk, and Finish shows the debrief", async () => {
+  const onAttempt = vi.fn();
+  vi.mocked(api).mockImplementation(async (path: string, _m?: string, body?: unknown) => {
+    if (path.endsWith("/interview/finish")) return { attempt: { ...attempt, status: "submitted", via: "interview" } };
+    const said = (body as { text: string }).text;
+    return { revision: 3, interview: { started_at: 1, turns: [
+      ...(said ? [{ id: "y", role: "you", text: said, at: 2 }] : []),
+      { id: "m", role: "interviewer", kind: said ? "event" : "question", text: said ? "The ledger is timing out. [a.py:1]" : "Where would you start?", refs: said ? [{ path: "a.py", start: 1, end: 1 }] : [], at: 3 },
+    ] } };
+  });
+  render(<Workspace exercise={{ ...exercise, category: "walkthrough" }} attempt={attempt} onAttempt={onAttempt} onNext={vi.fn()} onExit={vi.fn()} />);
+  const coach = screen.getByRole("complementary", { name: "Coach" });
+  fireEvent.click(within(coach).getByRole("tab", { name: "Interview" }));
+  fireEvent.click(within(coach).getByRole("button", { name: "Start the interview" }));
+  await waitFor(() => expect(api).toHaveBeenCalledWith("/coding/attempts/at/interview", "POST", { text: "", files: {} }));
+  expect(await within(coach).findByText("Where would you start?")).toBeInTheDocument();
+  expect(within(coach).queryByRole("button", { name: "Finish and debrief" })).not.toBeInTheDocument();   // nothing said yet
+  expect(screen.getByPlaceholderText(/Answer the four questions in order/)).toBeInTheDocument();
+});
+
+it("shows the Kotlin idioms of an exercise in the brief, folded", () => {
+  render(<Workspace exercise={{ ...exercise, language: "kotlin", idioms: [{ kotlin: "a ?: b", java: "a != null ? a : b", note: "Elvis" }] }} attempt={attempt} onAttempt={vi.fn()} onNext={vi.fn()} onExit={vi.fn()} />);
+  expect(screen.getByText(/Kotlin you'll meet here/)).toBeInTheDocument();
+  expect(screen.getByText("a ?: b")).toBeInTheDocument();
+});

@@ -49,6 +49,7 @@ export async function languageFor(lang: string, schema: Record<string, string[]>
     case "dart": return stream((await import("@codemirror/legacy-modes/mode/clike")).dart);
     case "swift": return stream((await import("@codemirror/legacy-modes/mode/swift")).swift);
     case "ruby": return stream((await import("@codemirror/legacy-modes/mode/ruby")).ruby);
+    case "text": return [];
     default: return (await import("@codemirror/lang-python")).python();
   }
 }

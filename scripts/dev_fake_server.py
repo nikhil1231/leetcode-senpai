@@ -2,6 +2,7 @@
 
     uv run scripts/dev_fake_server.py            # http://127.0.0.1:8000
     FAKE_CHAT=1 uv run scripts/dev_fake_server.py   # chats answer with canned replies, streamed slowly
+    REAL_CHAT=1 LOCALROUTER_URL=http://127.0.0.1:8787/api/v1 uv run scripts/dev_fake_server.py   # real chat via LocalRouter
     CONCURRENCY_JSON='/tmp/q_*.json' uv run scripts/dev_fake_server.py   # with generated concurrency questions
 
 Auth is bypassed and nothing is persisted, so it is the safe thing to point `web/` (or a browser) at while
@@ -137,7 +138,14 @@ def build():
         raise RuntimeError("Model calls are off in the fake dev server")
     for name in ("_raw_generate", "_raw_transcribe", "_raw_image", "_raw_look"):
         setattr(llm, name, reject)
-    if os.environ.get("FAKE_CHAT"):
+    if os.environ.get("REAL_CHAT") and config.LOCALROUTER_URL:
+        # Real chat through LocalRouter (free) for trying conversation features; nothing is generated in the background.
+        from server.coding import queue as coding_queue
+
+        async def no_refill(*args, **kwargs):
+            return None
+        coding_queue.refill = no_refill
+    elif os.environ.get("FAKE_CHAT"):
         config.OPENROUTER_API_KEY = "fake"
         llm._raw_chat = lambda model, messages, options=None: {"content": fake_reply(messages), "model": "fake/chat", "usage": {}}
         llm._raw_chat_stream = fake_stream
