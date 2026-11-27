@@ -576,12 +576,12 @@ API: `GET /api/tutor`, `GET /api/tutor/lessons/{section}/{lesson}`, `POST /api/t
 feedback: warm, upbeat, judges ideas rather than wording) and the cast's personalities, which live
 in `server/tutor/story.yaml` (`personality` and `leads` per character). Every surface that teaches
 starts from it: the tutor and its role-play modes (Jo, Marcus, Priya, with Sam chiming in), the
-Telegram, feed and walk grader (which replies as the cast member who asked), in-lesson
-explanations, recall grading, the design-case coach, the examiner's report and the track coaches.
-On Telegram each card is written by the character who asks it (`drip/assess.phrase`: the
-point's question as a short message from a colleague at Ripple, told what was recently sent so it
-doesn't repeat itself, graded against the question as asked; the template is the fallback), and
-reveals, skips and self-grades get that character's own lines (`lines` in story.yaml). The daily
+Telegram, feed and walk grader, in-lesson explanations, recall grading, the design-case coach,
+the examiner's report and the track coaches.
+Telegram uses the shared tutor voice for questions and follow-up chat, and the shared feedback
+voice to explain why an answer was right or wrong. Both use the voice saved in Settings.
+Cards have a plain question, optional review context and usually four options; reveals, skips
+and self-grades use short, warm acknowledgements without character names or roleplay. The daily
 Senpai and the LeetCode helpers keep their own voice.
 
 ### Ripple After Dark (the daily podcast)
@@ -646,7 +646,7 @@ catalog maps (`sources.mapped`).
 ### Telegram drip (questions wherever you are)
 
 `server/drip/`: a background task in the app that sends about six questions a day on Telegram,
-picked from the knowledge base and voiced by the story's cast, and grades text or voice replies
+picked from the knowledge base in the tutor's voice, and grades text or voice replies
 with the tutor model (or lets you self-grade without it). A partly-right answer opens a gap
 (the missing piece and a question about it); the next card for that idea asks only that. Everything is recorded in the
 knowledge base as source `telegram`. Off unless `TELEGRAM_BOT_TOKEN` is set; serves only

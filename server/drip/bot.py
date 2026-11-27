@@ -4,7 +4,7 @@ Synchronous and step-driven (`step` = one long poll, the updates it returned, th
 tick), so tests drive it with a fake transport and a fixed clock. State is one small document
 (`drip/state`); each card sent is its own document (`drip/card-<n>`). Only the configured chat
 is served; before one is configured, /start replies with the chat id to put in the env. A message
-with no question open goes to whoever asked the last card, in character, until the next card.
+with no question open continues with the tutor about the last card until the next card.
 """
 import asyncio
 import base64
@@ -420,10 +420,10 @@ class Bot:
         self.say(cards.result_text(verdict, grade['feedback'], point))
 
     def grade(self, point, text, ask=None, focus=None):
-        return assess.grade(self.store, point, text, ask, focus, in_story=True)
+        return assess.grade(self.store, point, text, ask, focus)
 
     def talk(self, text, now):
-        """A message with no question open: carry on the chat with whoever asked the last card, until the
+        """A message with no question open: carry on the chat with the tutor about the last card, until the
         next card arrives. The model sees that card's exchange only (assess.chat)."""
         c = self.card(self.state['n']) if self.state['n'] else None
         point = self.point(c) if c else None

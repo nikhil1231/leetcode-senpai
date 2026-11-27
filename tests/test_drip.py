@@ -9,7 +9,6 @@ import pytest
 from server import config, llm, voice
 from server.drip import assess, bot as drip, cards
 from server.knowledge_base import api as kb_api, catalog as kcat, model as kmodel
-from server.tutor import story
 from tests.fake_store import FakeStore
 
 LON = ZoneInfo('Europe/London')
@@ -65,11 +64,11 @@ def test_pick_prefers_misconceptions_then_weak_then_seen_then_started_lessons():
 def test_card_text_puts_the_plain_question_first_and_escapes_html():
     p = {**kcat.CATALOG['points'][MISS], 'prompt': 'Is 1 < 2 & does it matter?'}
     text = cards.card_text(p)
-    assert text.startswith('<b>Is 1 &lt; 2 &amp; does it matter?</b>\n<i>Marcus: ') and not text.endswith(':</i>')
-    assert '<i>Marcus: You just opened Uber. ' in cards.card_text(p, context='You just opened Uber.')
-    composed = {'question': 'Which wins?', 'lead': 'Board meeting <today>.', 'options': ['a < b', 'b', 'c', 'd'], 'answer': 1}
+    assert text == '<b>Is 1 &lt; 2 &amp; does it matter?</b>'
+    assert '<i>You just opened Uber.</i>' in cards.card_text(p, context='You just opened Uber.')
+    composed = {'question': 'Which wins?', 'lead': 'From <today>.', 'options': ['a < b', 'b', 'c', 'd'], 'answer': 1}
     text = cards.card_text(p, composed=composed)
-    assert text == '<b>Which wins?</b>\n<i>Marcus: Board meeting &lt;today&gt;.</i>\n\nA. a &lt; b\nB. b\nC. c\nD. d'
+    assert text == '<b>Which wins?</b>\n<i>From &lt;today&gt;.</i>\n\nA. a &lt; b\nB. b\nC. c\nD. d'
     assert cards.card_text(p, composed={'question': 'Which wins?', 'lead': ''}) == '<b>Which wins?</b>'
 
 
@@ -126,7 +125,7 @@ def env(monkeypatch):
     grades, env_prompts = [], []
 
     def fake(provider, model, system, prompt, schema, options=None):
-        assert schema is cards.Grade and not llm.forbidden_model(model) and system == cards.STORY_GRADE_SYSTEM
+        assert schema is cards.Grade and not llm.forbidden_model(model) and system == voice.live(cards.GRADE_SYSTEM)
         assert json.loads(prompt)['ANSWER']
         env_prompts.append(json.loads(prompt))
         return {'content': json.dumps({'missing': '', 'follow_up': '', 'misconception': '', **grades.pop(0)})}
@@ -137,13 +136,13 @@ def env(monkeypatch):
 
     def chat(model, messages, options=None):
         assert not llm.forbidden_model(model)
-        if messages[0]['content'].startswith(cards.CHAT_SYSTEM):
+        if messages[0]['content'].startswith(voice.live(cards.CHAT_SYSTEM)):
             talks.append(messages)
             return {'content': f'"Reply {len(talks)}"', 'usage': {}}
-        assert messages[0]['content'] == assess.COMPOSE_SYSTEM
+        assert messages[0]['content'] == voice.live(assess.COMPOSE_SYSTEM)
         p = json.loads(messages[1]['content'])
         phrasings.append(p)
-        card = {'question': f'"Plain: {p["QUESTION"]}"', 'lead': 'Quick one from Ripple.', 'options': [], 'answer': None, 'why': ''}
+        card = {'question': f'"Plain: {p["QUESTION"]}"', 'lead': 'A little review from today.', 'options': [], 'answer': None, 'why': ''}
         if p['CHOICE']:
             card.update(options=['Right one', 'Wrong one', 'Also wrong', 'Wrong too'], answer=0, why='Because it is.')
         return {'content': '```json\n' + json.dumps(card) + '\n```', 'usage': {}}
@@ -195,14 +194,14 @@ def test_a_typed_answer_is_graded_and_recorded(env):
     grades.append({'verdict': 'wrong', 'feedback': 'You described latency, not load.', 'misconception': 'thinks caches only cut latency'})
     tg.updates = [msg('caches just make it faster')]
     b.step(poll=0)
-    assert tg.last().startswith('❌ <b>Priya:</b> You described latency') and '<blockquote expandable><b>The idea</b>' in tg.last()
+    assert tg.last().startswith('❌ You described latency') and '<blockquote expandable><b>The idea</b>' in tg.last()
     e = events(store)[-1]
     assert (e['source'], e['strength'], e['clean'], e['points']) == ('telegram', 'soft', False, [c['point']])
     m = store.list_knowledge('knowledge_misconceptions')[0]
     assert m['source'] == 'telegram' and m['quote'] == 'caches just make it faster'
     assert store.get_knowledge('drip', 'card-1')['verdict'] == 'wrong' and b.state['pending'] is None
     assert b.state['offset'] == tg_offset(store)
-    assert b.prompts[-1]['STORY'] == story.BIBLE['pitch']   # the reply stays inside the story
+    assert 'STORY' not in b.prompts[-1] and 'SPEAKER' not in b.prompts[-1]
 
 
 def tg_offset(store):
@@ -215,7 +214,7 @@ def test_without_the_model_you_see_the_answer_and_grade_yourself(env, monkeypatc
     b.send_card(clock.t)
     tg.updates = [msg('my guess')]
     b.step(poll=0)
-    assert tg.last().startswith('<b>Priya:</b> ') and tg.sent[-1]['reply_markup']['inline_keyboard'][0][0]['callback_data'] == 'self:1:1'
+    assert tg.last().startswith("Here's the idea to keep in mind.") and tg.sent[-1]['reply_markup']['inline_keyboard'][0][0]['callback_data'] == 'self:1:1'
     tg.updates = [press('self:1:1')]
     b.step(poll=0)
     assert events(store)[-1]['clean'] is True and store.get_knowledge('drip', 'card-1')['self_graded']
@@ -231,7 +230,7 @@ def test_skip_and_reveal_buttons(env):
     b.send_card(clock.t)
     tg.updates = [press('reveal:2'), press('self:2:0')]
     b.step(poll=0)
-    assert events(store)[-1]['clean'] is False and tg.last()[len('<b>Priya:</b> '):] in voice.member('priya')['lines']['missed']
+    assert events(store)[-1]['clean'] is False and tg.last() == cards.moment_text(b.point(store.get_knowledge('drip', 'card-2')), 'missed')
 
 
 def test_voice_notes_are_transcribed_then_graded(env, monkeypatch):
@@ -257,7 +256,7 @@ def test_commands_and_strangers(env):
     tg.updates = [msg('/resume'), msg('/next'), msg('/next'), msg('/stats'), msg('/help')]
     b.step(poll=0)
     texts = [s['text'] for s in tg.sent[1:]]
-    assert texts[0].startswith('Back on') and texts[2].startswith('Still waiting') and 'Ripple is at' in texts[3]
+    assert texts[0].startswith('Back on') and texts[2].startswith('Still waiting') and 'ideas.' in texts[3] and 'Ripple' not in texts[3]
     assert '/next' in texts[4] and b.state['paused'] is False
 
 
@@ -547,22 +546,21 @@ def test_podcast_command_sends_audio_and_nothing_makes_one_unasked(env, monkeypa
     assert not hasattr(b, 'morning_podcast') and len(uploads) == 1
 
 
-def test_the_grader_speaks_as_the_colleague_who_asked():
-    from server import voice
-    from server.knowledge_base import catalog as kcat
+def test_the_grader_uses_the_shared_tutor_feedback_voice():
     p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
     payload = cards.grade_payload(p, 'my answer')
-    assert payload['SPEAKER'] == voice.persona('priya') and 'SPEAKER' in cards.GRADE_SYSTEM and voice.FEEDBACK in cards.GRADE_SYSTEM
-    assert voice.lead('priya', p['id']).rstrip(' :') in cards.card_text(p)
+    assert payload == {'QUESTION': p['prompt'], 'CLAIM': p['claim'], 'ANSWER': 'my answer'}
+    assert voice.FEEDBACK in cards.GRADE_SYSTEM
+    assert cards.card_text(p) == f'<b>{p["prompt"]}</b>'
 
 
 def test_cards_lead_with_the_plain_question_and_are_graded_against_it(env):
     b, store, tg, clock, grades = env
     c = b.send_card(clock.t)
     p = b.phrasings[-1]
-    assert p['SPEAKER'] == voice.persona('priya') and p['IDEA'] and p['REASON'] == c['reason']
-    assert c['ask'] == f'Plain: {p["QUESTION"]}' and c['lead'] == 'Quick one from Ripple.'   # quotes stripped
-    assert tg.sent[-1]['text'].startswith(f'<b>Plain: ') and '<i>Priya: Quick one from Ripple.</i>' in tg.sent[-1]['text']
+    assert 'SPEAKER' not in p and p['IDEA'] and p['REASON'] == c['reason']
+    assert c['ask'] == f'Plain: {p["QUESTION"]}' and c['lead'] == 'A little review from today.'   # quotes stripped
+    assert tg.sent[-1]['text'].startswith(f'<b>Plain: ') and '<i>A little review from today.</i>' in tg.sent[-1]['text']
     grades.append({'verdict': 'right', 'feedback': 'Nice.', 'misconception': ''})
     tg.updates = [msg('dns, edge, lb, service, then the commit')]
     b.step(poll=0)
@@ -608,7 +606,7 @@ def test_a_one_tap_card_can_still_be_answered_in_words(env):
     grades.append({'verdict': 'right', 'feedback': 'Nice.'})
     tg.updates = [msg('the right one, because reasons')]
     b.step(poll=0)
-    assert b.prompts[-1]['QUESTION'] == c['ask'] and tg.last().startswith('✅ <b>Priya:</b> Nice.')
+    assert b.prompts[-1]['QUESTION'] == c['ask'] and tg.last().startswith('✅ Nice.')
     tg.updates = [msg('/next')]
     b.step(poll=0)
     nxt = store.get_knowledge('drip', f'card-{b.state["n"]}')
@@ -619,7 +617,7 @@ def test_a_one_tap_card_can_still_be_answered_in_words(env):
 
 def test_a_self_introduction_is_dropped_from_the_lead(env, monkeypatch):
     b, store, tg, clock, grades = env
-    card = {'question': 'what commits the write?', 'lead': 'Priya here — reviewing the deploy.', 'options': [], 'answer': None}
+    card = {'question': 'what commits the write?', 'lead': 'Tutor here — reviewing the deploy.', 'options': [], 'answer': None}
     monkeypatch.setattr(llm, '_raw_chat', lambda *a, **k: {'content': json.dumps(card)})
     p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
     assert assess.compose(store, p, 'new', choice=False) == {'question': 'What commits the write?', 'lead': 'Reviewing the deploy.'}
@@ -637,7 +635,7 @@ def test_without_the_model_cards_use_the_template(env, monkeypatch):
     b, store, tg, clock, grades = env
     monkeypatch.setattr(config, 'OPENROUTER_API_KEY', '')
     c = b.send_card(clock.t)
-    assert b.phrasings == [] and any(lead.rstrip(' :') in tg.sent[-1]['text'] for lead in voice.member('priya')['leads'])
+    assert b.phrasings == [] and tg.sent[-1]['text'] == cards.card_text(b.point(c))
     assert 'options' not in c and len(tg.sent[-1]['reply_markup']['inline_keyboard']) == 1
 
 
@@ -684,20 +682,19 @@ def test_only_ideas_met_outside_telegram_are_asked():
     assert cards.pick(c, {}, {}, [], T0, met=set()) == (None, None)
 
 
-def test_after_an_answer_you_keep_talking_to_whoever_asked_until_the_next_card(env):
+def test_after_an_answer_you_keep_talking_to_the_tutor_until_the_next_card(env):
     b, store, tg, clock, grades = env
     b.send_card(clock.t)
     grades.append({'verdict': 'right', 'feedback': 'Old exchange.'})
     tg.updates = [msg('first card answer')]
     b.step(poll=0)
     c = b.send_card(clock.t)
-    who = cards.speaker(b.point(c))['name']
-    grades.append({'verdict': 'partly', 'feedback': 'The board goes quiet on the missing bit.'})
+    grades.append({'verdict': 'partly', 'feedback': 'There is a missing piece.'})
     tg.updates = [msg('my answer')]
     b.step(poll=0)
     tg.updates = [msg('wait, why does that matter?')]
     b.step(poll=0)
-    assert tg.last() == f'<b>{who}:</b> Reply 1' and b.state['pending'] is None
+    assert tg.last() == 'Reply 1' and b.state['pending'] is None
     sent = b.talks[-1]
     assert [m['role'] for m in sent] == ['system', 'assistant', 'user', 'assistant', 'user']
     assert sent[1]['content'] == c['ask'] and sent[2]['content'] == 'my answer' and sent[-1]['content'] == 'wait, why does that matter?'
@@ -729,8 +726,50 @@ def test_without_the_model_a_message_after_the_answer_gets_the_old_nudge(env, mo
 
 def test_feed_grading_keeps_the_tutor_voice():
     p = next(p for p in kcat.active(kcat.CATALOG) if p['kind'] == 'procedure')
-    assert 'STORY' not in cards.grade_payload(p, 'x') and cards.grade_payload(p, 'x', in_story=True)['STORY']
-    assert 'tick or a cross' in cards.STORY_GRADE_SYSTEM and 'tick' not in cards.GRADE_SYSTEM
+    assert 'STORY' not in cards.grade_payload(p, 'x') and 'SPEAKER' not in cards.grade_payload(p, 'x')
+    assert voice.FEEDBACK in cards.GRADE_SYSTEM and voice.TUTOR in cards.CHAT_SYSTEM
+
+
+def test_saved_voices_reach_card_composition_grading_and_follow_up_chat(env, monkeypatch):
+    b, store, tg, clock, grades = env
+    monkeypatch.setattr(voice, 'TUTOR', 'Saved conversational voice.')
+    monkeypatch.setattr(voice, 'FEEDBACK', 'Saved feedback voice.')
+    systems = []
+
+    def chat(model, messages, options=None):
+        systems.append(messages[0]['content'])
+        if 'Reply with JSON only' in messages[0]['content']:
+            return {'content': json.dumps({'question': 'What limits database load?', 'lead': ''})}
+        return {'content': 'The cache serves hits without reaching the database.'}
+
+    def grade(provider, model, system, prompt, schema, options=None):
+        systems.append(system)
+        return {'content': json.dumps({'verdict': 'right', 'feedback': 'Hits avoid a database request.',
+                                       'misconception': '', 'missing': '', 'follow_up': ''})}
+
+    monkeypatch.setattr(llm, '_raw_chat', chat)
+    monkeypatch.setattr(llm, '_raw_generate', grade)
+    b.rng.random = lambda: 0.1  # an open question
+    b.send_card(clock.t)
+    tg.updates = [msg('Only misses reach the database.'), msg('Why?')]
+    b.step(poll=0)
+    assert len(systems) == 3
+    assert 'Saved conversational voice.' in systems[0] and 'Saved feedback voice.' in systems[0]
+    assert 'Saved feedback voice.' in systems[1] and 'Saved conversational voice.' in systems[2]
+    assert all(voice.DEFAULT_TUTOR not in s and voice.DEFAULT_FEEDBACK not in s for s in systems)
+    assert tg.last() == 'The cache serves hits without reaching the database.'
+    assert events(store)[-1]['clean'] is True
+
+
+def test_tutor_messages_escape_html_without_cast_names():
+    p = {**kcat.CATALOG['points'][MISS], 'claim': 'Hits < requests & misses.'}
+    assert cards.chat_text(p, 'Hits < requests & misses.') == 'Hits &lt; requests &amp; misses.'
+    assert cards.result_text('partly', 'Hits < requests.', p).startswith('🟡 Hits &lt; requests.')
+    assert 'Hits &lt; requests &amp; misses.' in cards.reveal_text(p, 'Why < matters')
+    assert 'Why &lt; matters' in cards.reveal_text(p, 'Why < matters')
+    messages = [cards.HELP, cards.reveal_text(p), cards.result_text('right', 'Yes.', p),
+                *(cards.moment_text(p, kind) for kind in ('skip', 'knew', 'missed'))]
+    assert not any(name in text for name in ('Marcus', 'Priya', 'Jo', 'Sam') for text in messages)
 
 
 def test_unanswered_streak_counts_from_the_newest_card():
